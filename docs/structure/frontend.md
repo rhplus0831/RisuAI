@@ -79,11 +79,13 @@ Startup is server-backed only when the SPA is served by Fastify and
 4. `src/ts/storage/database.svelte.ts` applies the projection into `DBState.db`.
 5. The projection write guard is enabled so normal browser code cannot mutate
    server-owned state directly.
-6. `src/ts/server/events.ts` subscribes to `/api/v1/events`.
+6. `src/ts/server/events.ts` subscribes to `/api/v1/events`, sending the cached
+   revision as `sinceRevision` / `Last-Event-ID` so retained command events can
+   replay across the bootstrap-to-stream and reconnect windows.
 7. Command events enter a serial surgical-sync chain in `src/ts/bootstrap.ts`:
    own echoes / already-applied revisions are skipped, contiguous foreign events
-   fetch `GET /api/v1/projection/:resource`, and gaps, reconnects, or projection
-   errors fall back to a full bootstrap refresh.
+   fetch `GET /api/v1/projection/:resource`, and gaps, replay-unavailable
+   responses, or projection errors fall back to a full bootstrap refresh.
 8. Memory events can update Hypa V3 progress UI directly.
 
 When debugging stale UI, check command success revision, the SSE event stream,

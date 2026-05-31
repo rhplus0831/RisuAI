@@ -123,9 +123,15 @@ Event kinds:
 
 The browser keeps a cached revision cursor. Own echoes / already-applied events are
 skipped, contiguous foreign events fetch a targeted projection slice through
-`GET /api/v1/projection/:resource`, and revision gaps or reconnects fall back to a full
-bootstrap refresh. `characters` slices are message-free, so the client resets chat
-hydration and rehydrates the open chat after a re-stub.
+`GET /api/v1/projection/:resource`, and revision gaps fall back to a full bootstrap
+refresh. Command events are sent with SSE `id: <revision>`; reconnects send
+`sinceRevision` / `Last-Event-ID` so the server can replay retained command events
+from the in-memory history before resuming live fanout. If replay is unavailable
+(history truncated, process restarted, or cursor is ahead), the server returns
+`409 event_replay_unavailable` and the browser full-bootstraps before subscribing
+again. Memory events are live progress signals only and are not replayed.
+`characters` slices are message-free, so the client resets chat hydration and
+rehydrates the open chat after a re-stub.
 
 ## Binary And Streaming Surfaces
 

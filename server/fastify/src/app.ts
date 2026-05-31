@@ -212,7 +212,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     realmUrl: config.realmUrl,
   })
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
-  registerEventsRoutes(app, authState, commandEventSink, memoryEventBus)
+  registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus)
   registerAssetsRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerProxyRoutes(app, authState)

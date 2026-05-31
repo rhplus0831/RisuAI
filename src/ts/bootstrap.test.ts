@@ -31,6 +31,7 @@ const serverBootstrapState = vi.hoisted(() => ({
 }))
 const serverEventsState = vi.hoisted(() => ({
   subscriptions: [] as Array<{
+    sinceRevision?: number | null
     onCommandEvent: (event: {
       type: string
       revision: number
@@ -43,10 +44,12 @@ const serverEventsState = vi.hoisted(() => ({
       sideEffect?: { kind: string; payload: unknown }
     }) => void
     onError?: (error: string) => void
+    onClose?: () => void
   }>,
   unsubscribe: vi.fn(),
   subscribe: vi.fn(
     async (input: {
+      sinceRevision?: number | null
       onCommandEvent: (event: {
         type: string
         revision: number
@@ -59,6 +62,7 @@ const serverEventsState = vi.hoisted(() => ({
         sideEffect?: { kind: string; payload: unknown }
       }) => void
       onError?: (error: string) => void
+      onClose?: () => void
     }) => {
       serverEventsState.subscriptions.push(input)
       return { status: 'ok' as const, unsubscribe: serverEventsState.unsubscribe }
@@ -296,6 +300,7 @@ describe('web bootstrap startup source', () => {
     expect(forageSpies.getItem).not.toHaveBeenCalled()
     expect(forageSpies.setItem).not.toHaveBeenCalled()
     expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
+    expect(serverEventsState.subscriptions[0].sinceRevision).toBe(5)
   })
 
   it('skips its own echoed command events without any refetch', async () => {
@@ -391,12 +396,41 @@ describe('web bootstrap startup source', () => {
     expect(peekCachedServerCommandRevision()).toBe(9)
   })
 
-  it('re-subscribes and full-bootstraps after the event stream drops', async () => {
+  it('re-subscribes with a replay cursor after the event stream drops', async () => {
     vi.useFakeTimers()
     try {
       await loadWebInitialDatabase()
       expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
 
+      const subscription = serverEventsState.subscriptions[0]
+      subscription.onError?.('stream dropped')
+
+      await vi.advanceTimersByTimeAsync(1000)
+
+      // Reconnected by asking the server to replay after the last applied revision.
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
+      expect(serverEventsState.subscriptions[1].sinceRevision).toBe(5)
+      expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+      expect(peekCachedServerCommandRevision()).toBe(5)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('full-bootstraps when reconnect replay is unavailable', async () => {
+    vi.useFakeTimers()
+    try {
+      await loadWebInitialDatabase()
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
+      const subscribeMock = serverEventsState.subscribe as any
+      subscribeMock.mockImplementationOnce(async (input: any) => {
+        serverEventsState.subscriptions.push(input)
+        return {
+          status: 'replay-unavailable' as const,
+          error: 'event_replay_unavailable',
+          currentRevision: 6,
+        }
+      })
       serverBootstrapState.response = {
         status: 'ok',
         projection: {
@@ -406,14 +440,15 @@ describe('web bootstrap startup source', () => {
       }
 
       const subscription = serverEventsState.subscriptions[0]
-      subscription.onError?.('stream dropped')
+      subscription.onClose?.()
 
       await vi.advanceTimersByTimeAsync(1000)
 
-      // Reconnected and reconciled the full projection.
+      await vi.waitFor(() => {
+        expect(DBState.db.language).toBe('ko')
+      })
       expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
       expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
-      expect(DBState.db.language).toBe('ko')
       expect(peekCachedServerCommandRevision()).toBe(6)
     } finally {
       vi.useRealTimers()

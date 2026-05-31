@@ -35,12 +35,21 @@ export interface SubscribeServerCommandEventsInput {
   onCommandEvent: ServerCommandEventHandler
   onMemoryEvent?: ServerMemoryEventHandler
   onError?: (error: string) => void
+  onClose?: () => void
+  sinceRevision?: number | null
   signal?: AbortSignal | null
 }
 
 export type ServerCommandEventSubscriptionResult =
   | { status: 'ok'; unsubscribe: () => void }
   | { status: 'error'; error: string }
+  | {
+      status: 'replay-unavailable'
+      error: string
+      currentRevision: number
+      oldestRevision?: number
+      latestRevision?: number
+    }
   | { status: 'unavailable' }
 
 export function canUseServerEvents(): boolean {
@@ -68,19 +77,38 @@ export async function subscribeServerCommandEvents(
   }
 
   const auth = await getNodeServerProxyAuth()
+  const headers: Record<string, string> = {
+    'risu-auth': auth,
+  }
+  const sinceRevision =
+    Number.isInteger(input.sinceRevision) && (input.sinceRevision as number) >= 0
+      ? (input.sinceRevision as number)
+      : null
+  const endpoint =
+    sinceRevision === null
+      ? EVENTS_ENDPOINT
+      : `${EVENTS_ENDPOINT}?sinceRevision=${encodeURIComponent(String(sinceRevision))}`
+  if (sinceRevision !== null) {
+    headers['Last-Event-ID'] = String(sinceRevision)
+  }
+
   let response: Response
   try {
-    response = await fetch(EVENTS_ENDPOINT, {
+    response = await fetch(endpoint, {
       method: 'GET',
       signal: controller.signal,
-      headers: {
-        'risu-auth': auth,
-      },
+      headers,
     })
   } catch (err) {
     if (input.signal) input.signal.removeEventListener('abort', stop)
     const message = err instanceof Error ? err.message : String(err)
     return { status: 'error', error: `Network error: ${message}` }
+  }
+
+  if (response.status === 409) {
+    if (input.signal) input.signal.removeEventListener('abort', stop)
+    const replayError = await parseReplayUnavailableResponse(response)
+    if (replayError) return replayError
   }
 
   if (!response.ok) {
@@ -94,6 +122,7 @@ export async function subscribeServerCommandEvents(
   }
 
   void (async () => {
+    let completed = false
     try {
       for await (const frame of iterateSseEvents(response.body!, controller.signal)) {
         if (stopped) continue
@@ -105,12 +134,16 @@ export async function subscribeServerCommandEvents(
           if (event) input.onMemoryEvent?.(event)
         }
       }
+      completed = true
     } catch (err) {
       if (!stopped && !controller.signal.aborted) {
         const message = err instanceof Error ? err.message : String(err)
         input.onError?.(`Event stream error: ${message}`)
       }
     } finally {
+      if (completed && !stopped && !controller.signal.aborted) {
+        input.onClose?.()
+      }
       if (input.signal) input.signal.removeEventListener('abort', stop)
     }
   })()
@@ -118,6 +151,35 @@ export async function subscribeServerCommandEvents(
   return {
     status: 'ok',
     unsubscribe: stop,
+  }
+}
+
+async function parseReplayUnavailableResponse(
+  response: Response,
+): Promise<Extract<ServerCommandEventSubscriptionResult, { status: 'replay-unavailable' }> | null> {
+  let parsed: unknown
+  try {
+    parsed = await response.json()
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+  const record = parsed as Record<string, unknown>
+  if (record.error !== 'event_replay_unavailable') return null
+  if (!Number.isInteger(record.currentRevision) || (record.currentRevision as number) < 0) {
+    return null
+  }
+
+  return {
+    status: 'replay-unavailable',
+    error: 'event_replay_unavailable',
+    currentRevision: record.currentRevision as number,
+    ...(Number.isInteger(record.oldestRevision)
+      ? { oldestRevision: record.oldestRevision as number }
+      : {}),
+    ...(Number.isInteger(record.latestRevision)
+      ? { latestRevision: record.latestRevision as number }
+      : {}),
   }
 }
 

@@ -295,6 +295,7 @@ describe('Phase 9-5a command events stream', () => {
 
     try {
       const text = await readUntil(reader!, (chunk) => chunk.includes('settings.updated'))
+      expect(text).toContain('id: 2')
       expect(text).toContain('event: command')
       const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
       expect(dataLine).toBeDefined()
@@ -307,6 +308,120 @@ describe('Phase 9-5a command events stream', () => {
       abort.abort()
       reader?.releaseLock()
     }
+  })
+
+  it('replays retained command events after the requested revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      streamGeminiThoughts: false,
+    })
+    const command = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { streamGeminiThoughts: true } },
+    })
+    expect(command.statusCode).toBe(200)
+    const nextRevision = command.json().revision as number
+
+    const baseUrl = await listen(harness.app)
+    const abort = new AbortController()
+    const res = await fetch(`${baseUrl}/api/v1/events?sinceRevision=${revision}`, {
+      headers: { 'risu-auth': assertion },
+      signal: abort.signal,
+    })
+    const reader = res.body?.getReader()
+    expect(reader).toBeDefined()
+
+    try {
+      expect(res.status).toBe(200)
+      const text = await readUntil(reader!, (chunk) => chunk.includes('settings.updated'))
+      expect(text).toContain(`id: ${nextRevision}`)
+      expect(text).toContain('event: command')
+      const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+      expect(dataLine).toBeDefined()
+      expect(JSON.parse(dataLine!.slice('data: '.length))).toEqual({
+        type: 'settings.updated',
+        revision: nextRevision,
+        resource: 'settings',
+      })
+    } finally {
+      abort.abort()
+      reader?.releaseLock()
+    }
+  })
+
+  it('accepts Last-Event-ID as a replay cursor', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      streamGeminiThoughts: false,
+    })
+    const command = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { streamGeminiThoughts: true } },
+    })
+    expect(command.statusCode).toBe(200)
+    const nextRevision = command.json().revision as number
+
+    const baseUrl = await listen(harness.app)
+    const abort = new AbortController()
+    const res = await fetch(`${baseUrl}/api/v1/events`, {
+      headers: {
+        'risu-auth': assertion,
+        'Last-Event-ID': String(revision),
+      },
+      signal: abort.signal,
+    })
+    const reader = res.body?.getReader()
+    expect(reader).toBeDefined()
+
+    try {
+      expect(res.status).toBe(200)
+      const text = await readUntil(reader!, (chunk) => chunk.includes('settings.updated'))
+      expect(text).toContain(`id: ${nextRevision}`)
+    } finally {
+      abort.abort()
+      reader?.releaseLock()
+    }
+  })
+
+  it('reports replay unavailable when retained history cannot cover the cursor', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      streamGeminiThoughts: false,
+    })
+    harness.commandEvents.clear()
+
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/events?sinceRevision=0',
+      headers: { 'risu-auth': assertion },
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(res.json()).toEqual({
+      error: 'event_replay_unavailable',
+      requestedRevision: 0,
+      currentRevision: revision,
+    })
+  })
+
+  it('rejects invalid replay cursors before opening the stream', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/events?sinceRevision=wat',
+      headers: { 'risu-auth': assertion },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({
+      error: 'invalid_event_replay_cursor',
+      reason: 'sinceRevision must be a non-negative integer',
+    })
   })
 
   it('delivers memory progress events from memory job mutations', async () => {

@@ -24,6 +24,7 @@ interface CapturedFetch {
   url: string
   method: string
   authHeader: string | null
+  lastEventIdHeader: string | null
   signal: AbortSignal | null
 }
 
@@ -47,6 +48,7 @@ function stubEventsFetch(body: string | null, status = 200): CapturedFetch[] {
         url: String(input),
         method: init.method ?? 'GET',
         authHeader: headers?.['risu-auth'] ?? null,
+        lastEventIdHeader: headers?.['Last-Event-ID'] ?? null,
         signal: init.signal ?? null,
       })
       return new Response(body === null ? null : streamOf(body), { status })
@@ -78,9 +80,9 @@ describe('server command event subscription helper', () => {
     platformState.isFastifyServer = false
     expect(canUseServerEvents()).toBe(false)
 
-    await expect(
-      subscribeServerCommandEvents({ onCommandEvent: vi.fn() }),
-    ).resolves.toEqual({ status: 'unavailable' })
+    await expect(subscribeServerCommandEvents({ onCommandEvent: vi.fn() })).resolves.toEqual({
+      status: 'unavailable',
+    })
   })
 
   it('fetches the event stream with auth and emits command and memory events', async () => {
@@ -156,12 +158,64 @@ describe('server command event subscription helper', () => {
   it('returns an error for event stream HTTP failures', async () => {
     stubEventsFetch('{"error":"missing_auth"}', 401)
 
-    await expect(
-      subscribeServerCommandEvents({ onCommandEvent: vi.fn() }),
-    ).resolves.toEqual({
+    await expect(subscribeServerCommandEvents({ onCommandEvent: vi.fn() })).resolves.toEqual({
       status: 'error',
       error: 'HTTP 401',
     })
+  })
+
+  it('requests command-event replay with the cached revision cursor', async () => {
+    const calls = stubEventsFetch(': connected\n\n')
+
+    const subscription = await subscribeServerCommandEvents({
+      sinceRevision: 7,
+      onCommandEvent: vi.fn(),
+    })
+
+    expect(subscription.status).toBe('ok')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      url: '/api/v1/events?sinceRevision=7',
+      method: 'GET',
+      authHeader: 'events-auth-token',
+      lastEventIdHeader: '7',
+    })
+  })
+
+  it('returns replay-unavailable for exhausted server history', async () => {
+    stubEventsFetch(
+      JSON.stringify({
+        error: 'event_replay_unavailable',
+        requestedRevision: 3,
+        currentRevision: 12,
+        oldestRevision: 8,
+        latestRevision: 12,
+      }),
+      409,
+    )
+
+    await expect(
+      subscribeServerCommandEvents({ sinceRevision: 3, onCommandEvent: vi.fn() }),
+    ).resolves.toEqual({
+      status: 'replay-unavailable',
+      error: 'event_replay_unavailable',
+      currentRevision: 12,
+      oldestRevision: 8,
+      latestRevision: 12,
+    })
+  })
+
+  it('notifies callers when the event stream closes cleanly', async () => {
+    stubEventsFetch(': connected\n\n')
+    const onClose = vi.fn()
+
+    const subscription = await subscribeServerCommandEvents({
+      onCommandEvent: vi.fn(),
+      onClose,
+    })
+
+    expect(subscription.status).toBe('ok')
+    await waitFor(() => onClose.mock.calls.length === 1)
   })
 
   it('aborts the stream when unsubscribed', async () => {

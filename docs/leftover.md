@@ -153,10 +153,6 @@ against the tree on 2026-05-31 (branch `fastify`).
   `routes/memoryJobs.ts`. The `StreamJob.writerSessionId` field captured at M1 job
   creation is the hook left for this (currently stored but unused by the completion
   write, which is a server-owned completion of an already-authorized job).
-- **SSE reconnect replay buffer.** Lazy projection intentionally uses revision gap
-  detection plus full-bootstrap fallback on reconnect; there is still no `Last-Event-ID`
-  replay buffer or equivalent event-history endpoint. Add one only if reconnect traffic
-  or latency makes the current full-bootstrap fallback too expensive.
 
 ---
 

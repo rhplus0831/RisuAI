@@ -23,8 +23,16 @@ describe('parseSseEvent', () => {
     expect(parseSseEvent('data: hello')).toEqual({ event: 'message', data: 'hello' })
   })
 
-  it('concatenates multiple data lines', () => {
-    expect(parseSseEvent('event: x\ndata: a\ndata: b').data).toBe('ab')
+  it('joins multiple data lines with newlines', () => {
+    expect(parseSseEvent('event: x\ndata: a\ndata: b').data).toBe('a\nb')
+  })
+
+  it('extracts optional event ids', () => {
+    expect(parseSseEvent('id: 42\nevent: command\ndata: {}')).toEqual({
+      event: 'command',
+      data: '{}',
+      id: '42',
+    })
   })
 })
 
@@ -52,6 +60,16 @@ describe('iterateSseEvents', () => {
     const seen: Array<{ event: string; data: string }> = []
     for await (const frame of iterateSseEvents(body, null)) seen.push(frame)
     expect(seen).toEqual([{ event: 'prompt', data: '{"ok":true}' }])
+  })
+
+  it('supports CRLF separators and a final unterminated frame', async () => {
+    const body = streamOf('event: stage\r\ndata: {"s":1}\r\n\r\nevent: done\r\ndata: {}')
+    const seen: Array<{ event: string; data: string }> = []
+    for await (const frame of iterateSseEvents(body, null)) seen.push(frame)
+    expect(seen).toEqual([
+      { event: 'stage', data: '{"s":1}' },
+      { event: 'done', data: '{}' },
+    ])
   })
 
   it('stops iterating once the signal is already aborted', async () => {

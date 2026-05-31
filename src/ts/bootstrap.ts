@@ -244,10 +244,14 @@ async function startServerProjectionEvents() {
   teardownServerProjectionSubscription()
   serverProjectionEventsDesired = true
   const subscription = await subscribeServerCommandEvents({
+    sinceRevision: peekCachedServerCommandRevision(),
     onCommandEvent: handleServerCommandEvent,
     onMemoryEvent: applyServerMemoryEvent,
     onError: (error) => {
       console.warn(error)
+      scheduleServerProjectionReconnect()
+    },
+    onClose: () => {
       scheduleServerProjectionReconnect()
     },
   })
@@ -256,6 +260,14 @@ async function startServerProjectionEvents() {
   } else if (subscription.status === 'error') {
     console.warn(`Server event subscription failed: ${subscription.error}`)
     scheduleServerProjectionReconnect()
+  } else if (subscription.status === 'replay-unavailable') {
+    console.warn(
+      `Server event replay unavailable at revision ${subscription.currentRevision}; refreshing projection`,
+    )
+    enqueueServerProjectionSync(async () => {
+      await fullBootstrapResync()
+      scheduleServerProjectionReconnect()
+    })
   }
 }
 
@@ -271,9 +283,6 @@ function scheduleServerProjectionReconnect() {
     if (!serverProjectionEventsDesired) return
     void (async () => {
       await startServerProjectionEvents()
-      // Self-heal: a dropped stream may have missed events, so reconcile the
-      // full projection on reconnect (the gap/reconnect fallback).
-      enqueueServerProjectionSync(() => fullBootstrapResync())
     })()
   }, SERVER_PROJECTION_RECONNECT_DELAY_MS)
 }

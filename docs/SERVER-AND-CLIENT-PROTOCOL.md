@@ -16,17 +16,17 @@ The current protocol is coherent and mostly well-defended:
 - The main consistency controls are `baseRevision` optimistic concurrency,
   SQLite `BEGIN IMMEDIATE` command transactions, one revision bump per command,
   command events, explicit route auth, and the active-writer lease.
-- Streaming is split by purpose: `/api/v1/events` is a live projection
-  invalidation stream, `/api/v1/generate/chat` is the server-assembled chat
-  generation stream, Realm import can stream progress, and proxy stream jobs use
-  WebSockets.
+- Streaming is split by purpose: `/api/v1/events` is a projection invalidation
+  stream with command-event replay, `/api/v1/generate/chat` is the
+  server-assembled chat generation stream, Realm import can stream progress, and
+  proxy stream jobs use WebSockets.
 - Durable chat generation is reliable across browser disconnects and reloads,
   but generation jobs are process-memory only and do not survive a server
   restart.
-- The largest performance risks are full-bootstrap fallback after event stream
-  gaps, full database hydration/clone work inside command mutations, unbounded
-  bulk hydration on the client, and media/base64 payload size in generation and
-  import paths.
+- The largest performance risks are full-bootstrap fallback after replay misses
+  or projection gaps, full database hydration/clone work inside command
+  mutations, unbounded bulk hydration on the client, and media/base64 payload
+  size in generation and import paths.
 - The largest protocol maintenance risk is manual coverage: active-writer route
   classification, command event resource projection fields, and client/server
   SSE type mirrors all need to stay synchronized.
@@ -86,7 +86,7 @@ Important surfaces:
 | Bootstrap             | `GET /api/v1/bootstrap`                                         | Registers writer intent when the browser sends `risu-writer-session`; returns projection and active generation jobs.          |
 | Projection            | `GET /api/v1/projection/:resource`                              | Targeted top-level fields, `mode: full` fallback, chat/lorebook hydration modes.                                              |
 | Commands              | `/api/v1/commands/*`                                            | Revision-checked domain mutations and command events.                                                                         |
-| Events                | `GET /api/v1/events`                                            | Live SSE fanout for `command` and `memory` events, with heartbeat comments.                                                   |
+| Events                | `GET /api/v1/events`                                            | SSE fanout for `command` and `memory` events, command-event ids/replay, and heartbeat comments.                               |
 | Assets                | `POST /api/v1/assets`, `GET/HEAD /api/v1/assets/:id`, `/exists` | Upload is authenticated and writer-gated; reads/existence are intentionally public.                                           |
 | Save/import/backup    | `.risu` import/export, backup create/list/restore/delete        | Import/restore produce state command events.                                                                                  |
 | Realm import          | `POST /api/v1/import/realm-character`                           | JSON response or progress SSE depending on `Accept: text/event-stream`.                                                       |
@@ -116,8 +116,9 @@ Key client modules:
 - `src/ts/server/commands.ts` centralizes command transport, cached revision
   management, 409 conflict handling, optimistic rollback hooks, and 423 stale
   writer handling.
-- `src/ts/server/events.ts` subscribes to `/api/v1/events`, parses `command`
-  and `memory` SSE frames, and discards malformed frames.
+- `src/ts/server/events.ts` subscribes to `/api/v1/events`, sends the cached
+  command revision as a replay cursor, parses `command` and `memory` SSE frames,
+  and discards malformed frames.
 - `src/ts/server/projection.ts` reads targeted projection, chat messages, and
   character lorebook hydration payloads.
 - `src/ts/server/chatMessageHydration.svelte.ts` caches hydrated chat and
@@ -142,25 +143,33 @@ trusted projection application paths can thaw it
 
 `GET /api/v1/events` writes:
 
-- `event: command`, with `{ type, revision, resource, id?, parentId? }`
+- `id: <revision>` plus `event: command`, with
+  `{ type, revision, resource, id?, parentId? }`
 - `event: memory`, with memory job/progress payloads
 - SSE comments for `connected` and `heartbeat`
 
-The route is live fanout only: it writes the current stream, subscribes to
-in-memory event buses, and cleans up on connection close
+The route can replay retained command events before live fanout. The browser may
+send `?sinceRevision=<n>` or `Last-Event-ID: <n>`, meaning it has already applied
+all command events through revision `n`. The server checks the in-memory
+1000-event command history (`server/fastify/src/commands/events.ts:20`) against
+the current SQLite revision; if the history covers every revision from `n + 1`
+through the current revision, those command frames are written first and the
+stream then subscribes to live command/memory event buses. If the cursor cannot
+be covered (history truncation, process restart, or client cursor ahead), the
+route returns `409 event_replay_unavailable` and does not open SSE
 (`server/fastify/src/routes/events.ts:25`,
-`server/fastify/src/routes/events.ts:37`). The command event sink retains up to
-1000 events (`server/fastify/src/commands/events.ts:20`), but the route does
-not currently send historical events, event ids, or `Last-Event-ID` replay.
+`server/fastify/src/routes/events.ts:37`). Memory events remain live-only
+progress signals.
 
 The browser reconciles events serially:
 
 - `event.revision <= cached` means own echo or already applied; skip.
 - `event.revision === cached + 1` means contiguous foreign event; fetch targeted
   projection for `event.resource`.
-- A revision gap, unknown resource, projection error, or reconnect falls back to
-  full bootstrap (`src/ts/bootstrap.ts:284`,
-  `src/ts/bootstrap.ts:351`).
+- A revision gap, unknown resource, projection error, or replay-unavailable
+  response falls back to full bootstrap (`src/ts/bootstrap.ts:284`,
+  `src/ts/bootstrap.ts:351`). A normal reconnect sends the cached revision and
+  relies on replay instead of full-bootstrapping.
 
 ### Chat Generation SSE
 
@@ -231,7 +240,8 @@ signals, not the durability source.
 - Command events are best-effort invalidators; subscriber failures are swallowed
   after commit so a broken event stream cannot roll back a committed command
   (`server/fastify/src/commands/events.ts:352`).
-- Event reconnect and revision gaps self-heal through full bootstrap.
+- Event reconnects replay retained command history by revision cursor when
+  possible; replay misses and revision gaps self-heal through full bootstrap.
 - Chat projection is protected from accidental browser mutation by the write
   guard.
 - Durable generation handles disconnect, reattach, cancel, one-job-per-chat, and
@@ -240,9 +250,9 @@ signals, not the durability source.
 
 ### Gaps And Residual Risks
 
-- `/api/v1/events` has no event ids, resume cursor, or replay endpoint. Reconnect
-  is reliable because it full-bootstraps, but that is costlier than replay.
-- The command event sink's 1000-entry history is not used for wire replay today.
+- `/api/v1/events` replay is process-memory only and bounded by the command
+  sink's 1000-entry history. Server restarts, long disconnects, or history
+  truncation still fall back to full bootstrap rather than historical replay.
 - Active-writer classification is manual path logic in
   `server/fastify/src/activeWriter.ts`; new server-owned mutations must update
   that file and the architecture audit.
@@ -253,10 +263,9 @@ signals, not the durability source.
   generation does not survive server restart.
 - If durable generation result persistence fails, the job emits an `error`; there
   is no persistent retry queue for generation result writes.
-- The shared SSE parser ignores a final unterminated buffer and joins multi-line
-  `data:` lines without restoring newline separators
-  (`src/ts/process/request/sseParse.ts:12`). Current server writers emit simple
-  JSON lines, so this is low-risk unless future streams use broader SSE features.
+- Projection command replay depends on command events remaining one-revision
+  contiguous. Any future server-owned revision bump without a command event will
+  force reconnecting clients into the full-bootstrap fallback.
 - Archive docs contain historical contradictions around auto-reattach and older
   browser-persisted generation notes. The present-tense `docs/structure/*` docs
   and current tests are more reliable sources.
@@ -287,8 +296,9 @@ signals, not the durability source.
   serialization, runs mutation logic, strips messages, writes `db.json`, and emits
   an event (`server/fastify/src/commands/mutations.ts:62`). This is simple and
   safe, but large databases make command latency sensitive to full-object size.
-- Full bootstrap is the fallback for event gaps, reconnects, unknown resources,
-  and projection errors. Frequent SSE drops can repeatedly move the full stub
+- Full bootstrap is still the fallback for replay misses, revision gaps, unknown
+  resources, and projection errors. Normal SSE reconnects use command-event
+  replay, but long disconnects or server restarts can still move the full stub
   projection over the wire (`src/ts/bootstrap.ts:351`).
 - Bulk hydration uses unbounded `Promise.all()` across every chat or every
   character lorebook (`src/ts/server/chatMessageHydration.svelte.ts:149`,
@@ -334,9 +344,10 @@ Important coverage exists in:
   exception coverage.
 - `server/fastify/__tests__/activeWriter.test.ts`: stale writer behavior across
   commands, imports, assets, backups, storage, generation, and memory jobs.
-- `server/fastify/__tests__/events.test.ts`: command and memory SSE delivery and
-  cleanup.
-- `src/ts/bootstrap.test.ts`: client projection event gap and reconnect behavior.
+- `server/fastify/__tests__/events.test.ts`: command/memory SSE delivery,
+  command-event replay, and cleanup.
+- `src/ts/bootstrap.test.ts`: client projection event gap, replay, and reconnect
+  behavior.
 - `server/fastify/__tests__/projection.test.ts`: targeted projection and asset
   no-op projection behavior.
 - `src/ts/server/chatMessageHydration.test.ts`: hydration dedupe/reset behavior.
@@ -356,9 +367,8 @@ Important coverage exists in:
 These are not required fixes for the current protocol, but they are the most
 useful next hardening points:
 
-1. Add event ids plus `Last-Event-ID` or another replay cursor to
-   `/api/v1/events`, using the existing command event history or a persisted
-   event table.
+1. Persist command-event history if replay across server restart becomes worth
+   the added storage/cleanup surface.
 2. Add a bounded-concurrency helper for bulk chat and lorebook hydration.
 3. Expand protocol invariant audits to cover the durable-generation classifier,
    `activeGenerationJobs` reattach flow, and client/server chat SSE frame

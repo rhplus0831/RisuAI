@@ -8,15 +8,35 @@
  * once.
  */
 
-/** Parse one SSE block (text between `\n\n` separators) into its event name + data. */
-export function parseSseEvent(block: string): { event: string; data: string } {
+export interface ParsedSseEvent {
+  event: string
+  data: string
+  id?: string
+}
+
+/** Parse one SSE block (text between blank-line separators) into its event name + data. */
+export function parseSseEvent(block: string): ParsedSseEvent {
   let event = 'message'
-  let data = ''
-  for (const line of block.split('\n')) {
-    if (line.startsWith('event: ')) event = line.slice(7).trim()
-    else if (line.startsWith('data: ')) data += line.slice(6)
+  let id: string | undefined
+  const dataLines: string[] = []
+
+  for (const line of normalizeSseLineEndings(block).split('\n')) {
+    if (line.length === 0 || line.startsWith(':')) continue
+    const separator = line.indexOf(':')
+    const field = separator === -1 ? line : line.slice(0, separator)
+    let value = separator === -1 ? '' : line.slice(separator + 1)
+    if (value.startsWith(' ')) value = value.slice(1)
+
+    if (field === 'event') event = value.trim()
+    else if (field === 'data') dataLines.push(value)
+    else if (field === 'id') id = value
   }
-  return { event, data }
+
+  return {
+    event,
+    data: dataLines.join('\n'),
+    ...(id !== undefined ? { id } : {}),
+  }
 }
 
 /**
@@ -27,7 +47,7 @@ export function parseSseEvent(block: string): { event: string; data: string } {
 export async function* iterateSseEvents(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal | null,
-): AsyncGenerator<{ event: string; data: string }> {
+): AsyncGenerator<ParsedSseEvent> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
@@ -50,15 +70,35 @@ export async function* iterateSseEvents(
       const { value, done } = await reader.read()
       if (done) break
       buf += decoder.decode(value, { stream: true })
-      let sepIdx = buf.indexOf('\n\n')
-      while (sepIdx !== -1) {
-        const block = buf.slice(0, sepIdx)
-        buf = buf.slice(sepIdx + 2)
+      let separator = findSseSeparator(buf)
+      while (separator) {
+        const block = buf.slice(0, separator.index)
+        buf = buf.slice(separator.index + separator.length)
         yield parseSseEvent(block)
-        sepIdx = buf.indexOf('\n\n')
+        separator = findSseSeparator(buf)
       }
+    }
+
+    buf += decoder.decode()
+    if (!aborted && buf.trim().length > 0) {
+      yield parseSseEvent(buf)
     }
   } finally {
     if (signal) signal.removeEventListener('abort', onAbort)
   }
+}
+
+function normalizeSseLineEndings(value: string): string {
+  return value.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+}
+
+function findSseSeparator(value: string): { index: number; length: number } | null {
+  let best: { index: number; length: number } | null = null
+  for (const separator of ['\r\n\r\n', '\n\n', '\r\r']) {
+    const index = value.indexOf(separator)
+    if (index !== -1 && (best === null || index < best.index)) {
+      best = { index, length: separator.length }
+    }
+  }
+  return best
 }

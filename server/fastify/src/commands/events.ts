@@ -19,6 +19,65 @@ export interface CommandEventSink {
 
 export const COMMAND_EVENT_HISTORY_LIMIT = 1000
 
+export type CommandEventReplaySelection =
+  | { status: 'ok'; events: readonly CommandEvent[] }
+  | {
+      status: 'unavailable'
+      currentRevision: number
+      oldestRevision?: number
+      latestRevision?: number
+    }
+
+export function selectCommandEventReplay(
+  history: readonly CommandEvent[],
+  sinceRevision: number,
+  currentRevision: number,
+): CommandEventReplaySelection {
+  if (sinceRevision === currentRevision) {
+    return { status: 'ok', events: [] }
+  }
+  if (sinceRevision > currentRevision) {
+    const oldestRevision = history[0]?.revision
+    const latestRevision = history.at(-1)?.revision
+    return {
+      status: 'unavailable',
+      currentRevision,
+      ...(oldestRevision !== undefined ? { oldestRevision } : {}),
+      ...(latestRevision !== undefined ? { latestRevision } : {}),
+    }
+  }
+
+  const oldestRevision = history[0]?.revision
+  const latestRevision = history.at(-1)?.revision
+  const events = history.filter(
+    (event) => event.revision > sinceRevision && event.revision <= currentRevision,
+  )
+
+  let expectedRevision = sinceRevision + 1
+  for (const event of events) {
+    if (event.revision !== expectedRevision) {
+      return {
+        status: 'unavailable',
+        currentRevision,
+        ...(oldestRevision !== undefined ? { oldestRevision } : {}),
+        ...(latestRevision !== undefined ? { latestRevision } : {}),
+      }
+    }
+    expectedRevision += 1
+  }
+
+  if (expectedRevision !== currentRevision + 1) {
+    return {
+      status: 'unavailable',
+      currentRevision,
+      ...(oldestRevision !== undefined ? { oldestRevision } : {}),
+      ...(latestRevision !== undefined ? { latestRevision } : {}),
+    }
+  }
+
+  return { status: 'ok', events }
+}
+
 export const COMMAND_EVENT_CATALOG = {
   settingsUpdated: {
     type: 'settings.updated',
