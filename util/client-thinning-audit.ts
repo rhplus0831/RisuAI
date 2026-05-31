@@ -1,6 +1,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { Node, Project, SourceFile, SyntaxKind, type FunctionDeclaration } from 'ts-morph'
+import {
+  PROTOCOL_ROUTE_MANIFEST,
+  findProtocolRouteDecision,
+  isProtocolMutatingMethod,
+  protocolRouteMatches,
+  routeRequiresActiveWriter,
+  type ProtocolRouteManifestEntry,
+} from '../server/fastify/src/routeManifest.js'
 
 interface Finding {
   check: string
@@ -19,23 +27,6 @@ interface RouteRegistration {
   route: string
   file: string
   line: number
-}
-
-type MutatingRouteKind =
-  | 'active-writer'
-  | 'auth-session'
-  | 'read-only-post'
-  | 'runtime-generation'
-  | 'runtime-proxy'
-  | 'stateless-helper'
-
-interface MutatingRouteRule {
-  methods?: string[]
-  route?: string
-  routePrefix?: string
-  kind: MutatingRouteKind
-  reason: string
-  activeWriterNeedles?: string[]
 }
 
 interface AssetWalkerField {
@@ -63,6 +54,7 @@ const sourcePaths = [
   'server/fastify/src/app.ts',
   'server/fastify/src/activeWriter.ts',
   'server/fastify/src/auth.ts',
+  'server/fastify/src/routeManifest.ts',
   'server/fastify/src/db.ts',
   'server/fastify/src/repository.ts',
   'server/fastify/src/providerSecrets.ts',
@@ -356,183 +348,38 @@ function checkCommandRouteLocalIdMinting(check: string, sourceFile: SourceFile):
   })
 }
 
-const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE'])
-
-const MUTATING_ROUTE_RULES: MutatingRouteRule[] = [
-  {
-    routePrefix: '/api/v1/commands/',
-    kind: 'active-writer',
-    reason: 'public command routes mutate server-owned JSON state',
-    activeWriterNeedles: ["path.startsWith('/api/v1/commands/')"],
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/import/risusave',
-    kind: 'active-writer',
-    reason: 'risusave import replaces the repository database',
-    activeWriterNeedles: ["path === '/api/v1/import/risusave'"],
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/import/realm-character',
-    kind: 'active-writer',
-    reason: 'Realm character import writes fetched assets and appends a character',
-    activeWriterNeedles: ["path === '/api/v1/import/realm-character'"],
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/assets',
-    kind: 'active-writer',
-    reason: 'asset upload writes repository asset metadata and blobs',
-    activeWriterNeedles: ["path === '/api/v1/assets'"],
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/assets/bulk',
-    kind: 'active-writer',
-    reason: 'bulk asset upload writes repository asset metadata and blobs',
-    activeWriterNeedles: ["path === '/api/v1/assets/bulk'"],
-  },
-  {
-    routePrefix: '/api/v1/backups',
-    kind: 'active-writer',
-    reason: 'backup create, restore, and delete mutate server-owned backup/repository state',
-    activeWriterNeedles: ["path.startsWith('/api/v1/backups')"],
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/generate/chat',
-    kind: 'active-writer',
-    reason: 'chat generation can create memory chunks and enqueue memory jobs',
-    activeWriterNeedles: ["path === '/api/v1/generate/chat'"],
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/generate/preview-prompt',
-    kind: 'active-writer',
-    reason: 'prompt preview can run generation-time memory planning',
-    activeWriterNeedles: ["path === '/api/v1/generate/preview-prompt'"],
-  },
-  {
-    methods: ['DELETE'],
-    route: '/api/v1/generate/chat/:id',
-    kind: 'active-writer',
-    reason: 'durable-generation cancel is authorized by the current active writer (writer handoff)',
-    activeWriterNeedles: ["method === 'DELETE'", '/^\\/api\\/v1\\/generate\\/chat\\/[^/]+$/'],
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/memory/jobs',
-    kind: 'active-writer',
-    reason: 'memory job creation writes durable SQLite job state',
-    activeWriterNeedles: ["path === '/api/v1/memory/jobs'"],
-  },
-  {
-    methods: ['DELETE'],
-    route: '/api/v1/memory/jobs/:id',
-    kind: 'active-writer',
-    reason: 'memory job cancellation writes durable SQLite job state',
-    activeWriterNeedles: ["method === 'DELETE'", "path.startsWith('/api/v1/memory/jobs/')"],
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/storage/write',
-    kind: 'active-writer',
-    reason: 'legacy storage write mutates server-owned compatibility files',
-    activeWriterNeedles: ["path === '/api/v1/storage/write'"],
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/storage/remove',
-    kind: 'active-writer',
-    reason: 'legacy storage remove mutates server-owned compatibility files',
-    activeWriterNeedles: ["path === '/api/v1/storage/remove'"],
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/auth/setup',
-    kind: 'auth-session',
-    reason: 'auth bootstrap writes password state before a browser writer session exists',
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/auth/login',
-    kind: 'auth-session',
-    reason: 'login records trusted public keys as auth metadata, not Risu JSON/SQLite state',
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/auth/crypto',
-    kind: 'stateless-helper',
-    reason: 'crypto helper returns a hash and does not persist state',
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/assets/exists',
-    kind: 'read-only-post',
-    reason: 'asset existence probe reads repository state despite using POST for request size',
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/generate/completion',
-    kind: 'runtime-generation',
-    reason: 'provider completion is a runtime request and does not write local durable state',
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/proxy/fetch',
-    kind: 'runtime-proxy',
-    reason: 'generic fetch proxy forwards an upstream request without local durable writes',
-  },
-  {
-    methods: ['POST'],
-    route: '/api/v1/proxy/stream-jobs',
-    kind: 'runtime-proxy',
-    reason: 'stream job creation stores only in-memory proxy job state',
-  },
-  {
-    methods: ['DELETE'],
-    route: '/api/v1/proxy/stream-jobs/:id',
-    kind: 'runtime-proxy',
-    reason: 'stream job cancellation deletes only in-memory proxy job state',
-  },
-  {
-    methods: ['POST', 'PUT', 'PATCH', 'DELETE'],
-    routePrefix: '/api/v1/hub/',
-    kind: 'runtime-proxy',
-    reason: 'hub routes forward to the configured hub service instead of mutating local state',
-  },
-]
-
 function isMutatingMethod(method: string): boolean {
-  return MUTATING_METHODS.has(method)
+  return isProtocolMutatingMethod(method)
 }
 
-function routeRuleMatches(rule: MutatingRouteRule, route: RouteRegistration): boolean {
-  if (rule.methods && !rule.methods.includes(route.method)) return false
-  if (rule.route && rule.route === route.route) return true
-  if (rule.routePrefix && route.route.startsWith(rule.routePrefix)) return true
-  return false
-}
-
-function classifyMutatingRoute(route: RouteRegistration): MutatingRouteRule | undefined {
-  return MUTATING_ROUTE_RULES.find((rule) => routeRuleMatches(rule, route))
+function classifyMutatingRoute(route: RouteRegistration): ProtocolRouteManifestEntry | undefined {
+  return findProtocolRouteDecision(route.method, route.route)
 }
 
 function routeKey(route: Pick<RouteRegistration, 'method' | 'route'>): string {
   return `${route.method} ${route.route}`
 }
 
-function assertMutatingRouteRulesAreLive(
+function assertProtocolManifestMutatingEntriesAreLive(
   check: string,
   mutatingRoutes: readonly RouteRegistration[],
 ): void {
-  for (const rule of MUTATING_ROUTE_RULES) {
-    const matchingRoutes = mutatingRoutes.filter((route) => routeRuleMatches(rule, route))
+  for (const entry of PROTOCOL_ROUTE_MANIFEST) {
+    const mutatingMethods = entry.methods.filter((method) => isProtocolMutatingMethod(method))
+    if (mutatingMethods.length === 0) continue
+    if (!entry.path.startsWith('/api/v1/')) continue
+
+    const matchingRoutes = mutatingRoutes.filter((route) =>
+      protocolRouteMatches(entry, route.method, route.route),
+    )
     if (matchingRoutes.length === 0) {
-      const target = rule.route ?? `${rule.routePrefix}*`
-      const methods = rule.methods?.join('/') ?? 'POST/PATCH/PUT/DELETE'
-      fail(check, `mutating route classification is stale: no discovered ${methods} ${target}.`)
+      const methods = mutatingMethods.join('/')
+      fail(
+        check,
+        `protocol route manifest entry is stale: no discovered ${methods} ${entry.path}.`,
+        undefined,
+        'server/fastify/src/routeManifest.ts',
+      )
     }
   }
 }
@@ -583,6 +430,14 @@ function checkActiveWriterGuard(): void {
   }
 
   const activeWriterText = text('server/fastify/src/activeWriter.ts')
+  if (!activeWriterText.includes('routeRequiresActiveWriter(method, path)')) {
+    fail(
+      check,
+      'active-writer classifier must be driven by the shared protocol route manifest.',
+      undefined,
+      'server/fastify/src/activeWriter.ts',
+    )
+  }
 
   const routeFiles = project
     .getSourceFiles()
@@ -594,7 +449,7 @@ function checkActiveWriterGuard(): void {
     fail(check, 'No mutating Fastify routes were discovered; audit route extraction is stale.')
   }
 
-  assertMutatingRouteRulesAreLive(check, mutatingRoutes)
+  assertProtocolManifestMutatingEntriesAreLive(check, mutatingRoutes)
 
   for (const route of mutatingRoutes) {
     const classification = classifyMutatingRoute(route)
@@ -608,16 +463,15 @@ function checkActiveWriterGuard(): void {
       continue
     }
 
-    if (classification.kind !== 'active-writer') continue
-    for (const needle of classification.activeWriterNeedles ?? []) {
-      if (!activeWriterText.includes(needle)) {
-        fail(
-          check,
-          `active-writer classifier does not cover ${routeKey(route)} (${classification.reason}); missing ${needle}.`,
-          undefined,
-          'server/fastify/src/activeWriter.ts',
-        )
-      }
+    const manifestRequiresWriter = classification.activeWriter.decision === 'active-writer'
+    const runtimeRequiresWriter = routeRequiresActiveWriter(route.method, route.route)
+    if (manifestRequiresWriter !== runtimeRequiresWriter) {
+      fail(
+        check,
+        `active-writer manifest/runtime mismatch for ${routeKey(route)} (${classification.activeWriter.reason}).`,
+        undefined,
+        'server/fastify/src/routeManifest.ts',
+      )
     }
   }
 

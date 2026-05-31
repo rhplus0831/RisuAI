@@ -6,16 +6,14 @@ import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
+import { findProtocolRouteDecision, isProtocolMutatingMethod } from '../src/routeManifest.js'
 
 // Table-wide protection invariants for the Fastify port.
 //
-// The auth (`requireAuth`) and active-writer (`isServerOwnedMutation`) gates are
-// applied per-route by hand. `activeWriter.test.ts` and `smoke.test.ts` exercise a
-// hand-picked subset; nothing asserts the property across the *whole* live route
-// table, so a newly added mutating route that forgets `requireAuth` would mutate
-// SQLite/db.json/assets unauthenticated and pass the existing suite. These tests
-// derive the route set from the running app (`printRoutes`) and enforce the
-// property over every mutating route, so an omission fails here.
+// Auth (`requireAuth`) stays explicit in route handlers, while route ownership
+// decisions live in the protocol manifest. These tests derive the route set from
+// the running app (`printRoutes`) and make every API route carry a manifest
+// decision, then enforce the auth decisions against the live handlers.
 
 const subtle = webcrypto.subtle
 
@@ -47,25 +45,7 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
-
-// Routes that are intentionally reachable without a `risu-auth` assertion. Each
-// entry is a deliberate, documented decision; everything else MUST require auth.
-//   - auth/setup + auth/login: the password-bootstrap handshake (setup self-refuses
-//     once a password exists).
-//   - auth/crypto: a stateless sha256 helper, no server state.
-//   - assets/exists: a read-only existence probe (no mutation).
-//   - the `*` catch-all: the static SPA fallback (serves the client shell / 404s).
-const PUBLIC_MUTATING_ROUTES = new Set<string>([
-  'POST /api/v1/auth/setup',
-  'POST /api/v1/auth/login',
-  'POST /api/v1/auth/crypto',
-  'POST /api/v1/assets/exists',
-  'POST *',
-  'PUT *',
-  'PATCH *',
-  'DELETE *',
-])
+type InjectMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS'
 
 interface ParsedRoute {
   method: string
@@ -107,7 +87,7 @@ function parseRouteTree(tree: string): ParsedRoute[] {
 
 /** Replace `:param` route segments with a concrete placeholder so inject hits it. */
 function concreteUrl(path: string): string {
-  return path.replace(/:[^/]+/g, 'x')
+  return path.replace(/:[^/]+/g, 'x').replace(/\*/g, 'x')
 }
 
 async function setupPassword(app: FastifyInstance): Promise<string> {
@@ -154,25 +134,41 @@ afterEach(async () => {
 })
 
 describe('route protection (table-wide auth enforcement)', () => {
-  it('requires auth on every mutating API route once a password is set', async () => {
+  it('has a protocol-manifest decision for every live API route', async () => {
+    const routes = parseRouteTree(harness.app.printRoutes({ commonPrefix: false }))
+    const unclassified = routes
+      .filter((route) => route.path.startsWith('/api/v1/'))
+      .filter((route) => !findProtocolRouteDecision(route.method, route.path))
+      .map((route) => `${route.method} ${route.path}`)
+
+    expect(unclassified).toEqual([])
+  })
+
+  it('requires auth on every manifest-protected API route once a password is set', async () => {
     await setupPassword(harness.app)
 
     const routes = parseRouteTree(harness.app.printRoutes({ commonPrefix: false }))
-    const mutating = routes.filter(
-      (r) => MUTATING_METHODS.has(r.method) && r.path.startsWith('/api/v1/'),
-    )
+    const apiRoutes = routes.filter((route) => route.path.startsWith('/api/v1/'))
     // Sanity: the parser actually found the command surface.
-    expect(mutating.length).toBeGreaterThan(50)
+    expect(
+      apiRoutes.filter((route) => isProtocolMutatingMethod(route.method)).length,
+    ).toBeGreaterThan(50)
 
     const unprotected: string[] = []
-    for (const route of mutating) {
+    for (const route of apiRoutes) {
       const key = `${route.method} ${route.path}`
-      if (PUBLIC_MUTATING_ROUTES.has(key)) continue
-      const res = await harness.app.inject({
-        method: route.method as 'POST',
+      const decision = findProtocolRouteDecision(route.method, route.path)
+      if (!decision || decision.auth.decision === 'public') continue
+
+      const method = route.method as InjectMethod
+      const request = {
+        method,
         url: concreteUrl(route.path),
+        ...(isProtocolMutatingMethod(route.method) ? { payload: {} } : {}),
+      }
+      const res = await harness.app.inject({
+        ...request,
         // No `risu-auth` header: a protected route must reject before doing work.
-        payload: {},
       })
       // requireAuth rejects with 401; anything else (200/400/404/409/423/500…)
       // means the handler ran past the auth gate without a token.
@@ -191,9 +187,9 @@ describe('route protection (table-wide auth enforcement)', () => {
     const crypto = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/auth/crypto',
-      payload: { value: 'abc' },
+      payload: { data: 'abc' },
     })
-    expect(crypto.statusCode).not.toBe(401)
+    expect(crypto.statusCode).toBe(200)
 
     // assets/exists: a read-only probe, reachable without a token.
     const exists = await harness.app.inject({
@@ -202,6 +198,14 @@ describe('route protection (table-wide auth enforcement)', () => {
       payload: { ids: [] },
     })
     expect(exists.statusCode).not.toBe(401)
+
+    // content-addressed asset reads are public; a missing asset should 404, not 401.
+    const missingAssetId = 'a'.repeat(64)
+    const asset = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/assets/${missingAssetId}`,
+    })
+    expect(asset.statusCode).toBe(404)
   })
 
   it('requires auth on the durable-generation reattach + cancel routes', async () => {

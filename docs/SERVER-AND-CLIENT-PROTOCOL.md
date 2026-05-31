@@ -27,9 +27,9 @@ The current protocol is coherent and mostly well-defended:
   or projection gaps, full database hydration/clone work inside command
   mutations, unbounded bulk hydration on the client, and media/base64 payload
   size in generation and import paths.
-- The largest protocol maintenance risk is manual coverage: active-writer route
-  classification, command event resource projection fields, and client/server
-  SSE type mirrors all need to stay synchronized.
+- The largest protocol maintenance risks are command event resource projection
+  fields and client/server SSE type mirrors. Route auth/ownership coverage now
+  flows through the shared Fastify route manifest.
 
 ## Communication Model
 
@@ -39,7 +39,8 @@ The server/client contract has four layers.
    Browser requests send `risu-auth`; server routes call `requireAuth()`
    explicitly instead of relying on global auth middleware
    (`server/fastify/src/http.ts:12`). Mutating server-owned routes are also
-   gated by `risu-writer-session`; stale writers receive
+   gated by `risu-writer-session` according to
+   `server/fastify/src/routeManifest.ts`; stale writers receive
    `423 active_writer_stale` (`server/fastify/src/activeWriter.ts:20`,
    `src/ts/server/activeWriterSession.ts:17`).
 
@@ -253,9 +254,9 @@ signals, not the durability source.
 - `/api/v1/events` replay is bounded to the retained SQLite command-event
   history. Long disconnects beyond that window still fall back to full
   bootstrap.
-- Active-writer classification is manual path logic in
-  `server/fastify/src/activeWriter.ts`; new server-owned mutations must update
-  that file and the architecture audit.
+- New API routes must be classified in `server/fastify/src/routeManifest.ts`;
+  the active-writer guard, route-protection tests, and architecture audit share
+  that route/protocol inventory.
 - Command conflicts are surfaced to callers but not automatically retried.
   Optimistic UI is rolled back, and user/application flow must decide what to do
   next.
@@ -369,11 +370,9 @@ These are not required fixes for the current protocol, but they are the most
 useful next hardening points:
 
 1. Add a bounded-concurrency helper for bulk chat and lorebook hydration.
-2. Expand protocol invariant audits to cover the durable-generation classifier,
-   `activeGenerationJobs` reattach flow, and client/server chat SSE frame
-   taxonomy.
-3. Make the active-writer mutation classifier table-driven from route metadata or
-   a shared route manifest instead of hand-maintained path checks.
+2. Expand protocol invariant audits to cover the `activeGenerationJobs` reattach
+   flow and client/server chat SSE frame taxonomy.
+3. Continue narrowing projection refreshes for message/generation events.
 4. Decide whether generation result persistence needs a retryable durable queue,
    similar in spirit to memory jobs.
 5. Reconcile stale archive notes that still describe auto-reattach or

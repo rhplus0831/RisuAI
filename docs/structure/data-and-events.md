@@ -71,18 +71,16 @@ Fastify also has a global active-writer `preHandler` guard registered from
 writer-intent bootstrap request and sends `risu-writer-session` on server-owned
 mutations. Stale writer sessions receive `423 active_writer_stale`.
 
-`server/fastify/src/activeWriter.ts` classifies command routes, asset uploads,
-backups, `POST /api/v1/import/risusave`,
-`POST /api/v1/import/realm-character`, `POST /api/v1/generate/chat`,
-`POST /api/v1/generate/preview-prompt`, `DELETE /api/v1/generate/chat/:id`
-(durable-generation cancel — writer handoff lets a new writer stop a prior,
-now-disconnected writer's generation), memory job create +
-`DELETE /api/v1/memory/jobs/:id`, and legacy storage writes/removes as guarded
-server-owned mutations. The durable-generation reattach route
-`GET /api/v1/generate/chat/:id/stream` is read-only (observe) and intentionally **not**
-gated. When you add a mutating route, classify it here _and_ add its matching entry to
-the EC5 rule table in `util/client-thinning-audit.ts` (the audit fails on an
-unclassified mutating route).
+`server/fastify/src/routeManifest.ts` is the route/protocol inventory for auth,
+active-writer decisions, streaming shape, and public exceptions. The active-writer
+guard in `server/fastify/src/activeWriter.ts`, route-protection tests, and the
+EC5 architecture audit all read from that manifest. It classifies command
+routes, asset uploads, backups, imports, chat generation, prompt preview,
+durable-generation cancel, memory job create/cancel, and legacy storage
+writes/removes as guarded server-owned mutations. The durable-generation
+reattach route `GET /api/v1/generate/chat/:id/stream` is read-only (observe) and
+intentionally **not** gated. When you add an API route, add the manifest decision;
+the tests/audit fail on unclassified routes.
 
 ## Bootstrap And Projection
 

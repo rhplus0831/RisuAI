@@ -323,4 +323,39 @@ describe('active writer session guard', () => {
       }),
     )
   })
+
+  it('keeps streaming observe and public asset exceptions outside the writer gate', async () => {
+    await bootstrapSession(harness.app, 'session-a')
+    await bootstrapSession(harness.app, 'session-b')
+
+    expectStaleWriter(
+      await harness.app.inject({
+        method: 'DELETE',
+        url: '/api/v1/generate/chat/job-1',
+        headers: authedHeaders('session-a'),
+      }),
+    )
+
+    const reattach = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/generate/chat/job-1/stream',
+      headers: authedHeaders('session-a'),
+    })
+    expect(reattach.statusCode).toBe(404)
+
+    const eventCursorError = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/events?sinceRevision=not-a-number',
+      headers: authedHeaders('session-a'),
+    })
+    expect(eventCursorError.statusCode).toBe(400)
+
+    const exists = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/exists',
+      headers: authedHeaders('session-a'),
+      payload: { ids: [] },
+    })
+    expect(exists.statusCode).toBe(200)
+  })
 })

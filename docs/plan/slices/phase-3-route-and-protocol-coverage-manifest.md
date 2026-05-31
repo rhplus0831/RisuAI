@@ -3,7 +3,7 @@
 Back to original plan:
 [`server-client-protocol-stability-performance.md`](../server-client-protocol-stability-performance.md#phase-3-route-and-protocol-coverage-manifest)
 
-Status: planning slice.
+Status: completed on 2026-05-31.
 
 Goal: reduce drift between route registration, active-writer classification,
 route-protection tests, and architecture audit rules.
@@ -21,6 +21,10 @@ route-protection tests, and architecture audit rules.
 Done when the manifest is a faithful inventory of current route ownership and
 protection decisions.
 
+Completed with `server/fastify/src/routeManifest.ts`, which records route
+method/path matching, auth decisions, active-writer decisions, streaming shape,
+and documented public or conditional exceptions.
+
 ### 3.2 Active-Writer Coverage
 
 - Use the manifest to drive or verify active-writer classification in
@@ -30,6 +34,9 @@ protection decisions.
 
 Done when active-writer drift is caught by tests or generated expectations.
 
+Completed by driving `server/fastify/src/activeWriter.ts` from the shared route
+manifest through `routeRequiresActiveWriter()`.
+
 ### 3.3 Route Protection Coverage
 
 - Use the manifest to drive or verify route protection expectations.
@@ -37,6 +44,10 @@ Done when active-writer drift is caught by tests or generated expectations.
 - Keep Fastify route auth explicit with `requireAuth()` decisions.
 
 Done when adding a route without an auth decision fails a test or audit.
+
+Completed in `server/fastify/__tests__/routeProtection.test.ts`, which derives
+the live Fastify route table and requires every `/api/v1/*` route to have a
+manifest decision before checking auth behavior.
 
 ### 3.4 Architecture Audit Coverage
 
@@ -47,6 +58,9 @@ Done when adding a route without an auth decision fails a test or audit.
 Done when the architecture audit no longer requires a separate conceptual copy
 of the mutating route list.
 
+Completed by replacing the audit's local mutating-route rule table with
+manifest lookups in `util/client-thinning-audit.ts`.
+
 ### 3.5 Special Cases
 
 - Preserve `/api/v1/events` as authenticated streaming but not writer-gated.
@@ -55,6 +69,10 @@ of the mutating route list.
 - Preserve public asset reads/existence as intentional public exceptions.
 
 Done when special cases are documented in the manifest and covered by tests.
+
+Completed for authenticated `/api/v1/events`, durable generation reattach and
+cancel, runtime proxy/generation routes, and public content-addressed asset
+reads/existence probes.
 
 ## Acceptance
 

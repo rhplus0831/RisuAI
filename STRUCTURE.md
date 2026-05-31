@@ -95,9 +95,9 @@ phase scope docs, and design references.
 - New Fastify routes should be registered from `buildApp()` in
   `server/fastify/src/app.ts` and should call `requireAuth()` explicitly unless
   the route is intentionally public.
-- New mutating routes also need an active-writer decision in
-  `server/fastify/src/activeWriter.ts` and a matching architecture-audit rule in
-  `util/client-thinning-audit.ts`.
+- New API routes need a route/protocol manifest decision in
+  `server/fastify/src/routeManifest.ts`; active-writer classification, route
+  protection tests, and the architecture audit all read from that manifest.
 - Revision-tracked `data/db.json` mutations should go through the command
   mutation path so `baseRevision`, revision bumps, and command events stay in
   sync. Explicit server-owned mutation routes include import/restore, asset

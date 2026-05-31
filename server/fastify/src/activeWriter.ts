@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { routeRequiresActiveWriter } from './routeManifest.js'
 
 export const ACTIVE_WRITER_SESSION_HEADER = 'risu-writer-session'
 
@@ -48,24 +49,6 @@ function sendStaleWriterReply(reply: FastifyReply): void {
 
 function isServerOwnedMutation(req: FastifyRequest): boolean {
   const method = req.method.toUpperCase()
-  if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) return false
-
   const path = req.url.split('?')[0] ?? req.url
-  if (path.startsWith('/api/v1/commands/')) return true
-  if (method === 'POST' && path === '/api/v1/import/risusave') return true
-  if (method === 'POST' && path === '/api/v1/import/realm-character') return true
-  if (method === 'POST' && path === '/api/v1/assets') return true
-  if (method === 'POST' && path === '/api/v1/assets/bulk') return true
-  if (path.startsWith('/api/v1/backups')) return true
-  if (method === 'POST' && path === '/api/v1/generate/chat') return true
-  if (method === 'POST' && path === '/api/v1/generate/preview-prompt') return true
-  // Durable generation cancel: authorized by the *current* active writer (writer
-  // handoff — a new writer can stop a prior, now-disconnected writer's generation).
-  // The reattach `GET …/:id/stream` is read-only (observe) and intentionally not gated.
-  if (method === 'DELETE' && /^\/api\/v1\/generate\/chat\/[^/]+$/.test(path)) return true
-  if (method === 'POST' && path === '/api/v1/memory/jobs') return true
-  if (method === 'DELETE' && path.startsWith('/api/v1/memory/jobs/')) return true
-  return (
-    method === 'POST' && (path === '/api/v1/storage/write' || path === '/api/v1/storage/remove')
-  )
+  return routeRequiresActiveWriter(method, path)
 }
