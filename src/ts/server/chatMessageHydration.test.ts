@@ -14,6 +14,8 @@ vi.mock('./projection', () => ({
 
 import { DBState, selectedCharID } from '../stores.svelte'
 import {
+  BULK_HYDRATION_CONCURRENCY,
+  ensureAllCharacterLorebooksHydrated,
   ensureAllChatsHydrated,
   hydrateActiveCharacterLorebook,
   hydrateActiveChat,
@@ -39,6 +41,35 @@ function seedTwoStubChats() {
         ],
       },
     ],
+  }
+  selectedCharID.set(0)
+}
+
+function seedManyStubChats(count: number) {
+  ;(DBState as { db: unknown }).db = {
+    characters: [
+      {
+        chaId: 'char-1',
+        chatPage: 0,
+        chats: Array.from({ length: count }, (_, index) => ({
+          id: `chat-${index + 1}`,
+          message: [],
+        })),
+      },
+    ],
+  }
+  selectedCharID.set(0)
+}
+
+function seedManyLorebookStubCharacters(count: number) {
+  ;(DBState as { db: unknown }).db = {
+    enableLorebookStubs: true,
+    characters: Array.from({ length: count }, (_, index) => ({
+      chaId: `char-${index + 1}`,
+      chatPage: 0,
+      chats: [{ id: `chat-${index + 1}`, message: [] }],
+      globalLore: [],
+    })),
   }
   selectedCharID.set(0)
 }
@@ -100,6 +131,24 @@ describe('chat message hydration bridge', () => {
     expect(db().characters[0].chats[1].message).toEqual([
       { role: 'user', data: 'chat-2', chatId: 'm-chat-2' },
     ])
+  })
+
+  it('bounds bulk chat hydration concurrency', async () => {
+    seedManyStubChats(BULK_HYDRATION_CONCURRENCY * 3)
+    let activeRequests = 0
+    let maxActiveRequests = 0
+    projectionState.fetchChat.mockImplementation(async (chatId: string) => {
+      activeRequests += 1
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests)
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      activeRequests -= 1
+      return okResult(chatId, [{ role: 'user', data: chatId, chatId: `m-${chatId}` }])
+    })
+
+    await ensureAllChatsHydrated()
+
+    expect(projectionState.fetchChat).toHaveBeenCalledTimes(BULK_HYDRATION_CONCURRENCY * 3)
+    expect(maxActiveRequests).toBeLessThanOrEqual(BULK_HYDRATION_CONCURRENCY)
   })
 
   it('resetChatHydration makes ensureAllChatsHydrated refetch re-stubbed chats', async () => {
@@ -178,6 +227,29 @@ describe('character globalLore hydration (Phase 5)', () => {
     // Deduped on a second call (no refetch).
     await hydrateActiveCharacterLorebook()
     expect(projectionState.fetchCharLore).toHaveBeenCalledTimes(1)
+  })
+
+  it('bounds bulk character lorebook hydration concurrency', async () => {
+    seedManyLorebookStubCharacters(BULK_HYDRATION_CONCURRENCY * 3)
+    let activeRequests = 0
+    let maxActiveRequests = 0
+    projectionState.fetchCharLore.mockImplementation(async (characterId: string) => {
+      activeRequests += 1
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests)
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      activeRequests -= 1
+      return {
+        status: 'ok',
+        revision: 1,
+        characterId,
+        globalLore: [{ key: characterId, content: 'lore' }],
+      }
+    })
+
+    await ensureAllCharacterLorebooksHydrated()
+
+    expect(projectionState.fetchCharLore).toHaveBeenCalledTimes(BULK_HYDRATION_CONCURRENCY * 3)
+    expect(maxActiveRequests).toBeLessThanOrEqual(BULK_HYDRATION_CONCURRENCY)
   })
 
   it('is a no-op when stubs are off (globalLore stays resident, no fetch)', async () => {

@@ -3,7 +3,7 @@
 Back to original plan:
 [`server-client-protocol-stability-performance.md`](../server-client-protocol-stability-performance.md#phase-1-bound-bulk-hydration)
 
-Status: planning slice.
+Status: implemented.
 
 Goal: prevent export/tokenizer/cold-storage flows from opening an unbounded
 number of projection requests.
@@ -48,6 +48,17 @@ honoring the concurrency cap.
 
 Done when tests prove the cap without making hydration order part of the
 contract.
+
+## Implemented Notes
+
+- Bulk chat and character-lorebook hydration now use the shared
+  `BULK_HYDRATION_CONCURRENCY` cap in
+  `src/ts/server/chatMessageHydration.svelte.ts`.
+- The cap is fixed at `4` concurrent projection requests and is intentionally
+  not user-configurable.
+- Per-id request dedupe, stale response drops, reset-generation behavior, and
+  open-chat reroll-buffer hydration remain inside the existing single-id
+  hydration functions.
 
 ## Acceptance
 

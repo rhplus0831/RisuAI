@@ -18,6 +18,8 @@ import {
   recordHydrationStaleDrop,
 } from './protocolDiagnostics'
 
+export const BULK_HYDRATION_CONCURRENCY = 4
+
 // The bootstrap ships chat *stubs* (empty message[]). This bridge hydrates a
 // chat's messages when it is opened and re-hydrates the open chat after a
 // projection apply re-stubs it. Bulk readers that need every chat call
@@ -172,7 +174,9 @@ export async function ensureAllCharacterLorebooksHydrated(): Promise<void> {
     }
   }
   recordBulkHydration('characterLorebook', ids.length)
-  await Promise.all(ids.map((id) => hydrateCharacterLorebook(id, false)))
+  await runBounded(ids, BULK_HYDRATION_CONCURRENCY, (id) =>
+    hydrateCharacterLorebook(id, false),
+  )
 }
 
 /**
@@ -210,7 +214,27 @@ export async function ensureAllChatsHydrated(): Promise<void> {
     }
   }
   recordBulkHydration('chat', ids.length)
-  await Promise.all(ids.map((id) => hydrateChat(id, false)))
+  await runBounded(ids, BULK_HYDRATION_CONCURRENCY, (id) => hydrateChat(id, false))
+}
+
+async function runBounded<T>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return
+  let nextIndex = 0
+  const workerCount = Math.min(Math.max(1, concurrency), items.length)
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex
+        nextIndex += 1
+        if (index >= items.length) return
+        await worker(items[index])
+      }
+    }),
+  )
 }
 
 let wired = false
