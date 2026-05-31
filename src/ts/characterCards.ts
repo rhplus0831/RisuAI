@@ -67,7 +67,10 @@ import {
 } from './characterCommands'
 import { createGlobalModule } from './moduleCommands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
-import { importRealmCharacterFromServer } from './server/realmImport'
+import {
+  importRealmCharacterFromServer,
+  type ServerRealmImportProgress,
+} from './server/realmImport'
 import { fetchServerBootstrapProjectionReadOnly } from './server/bootstrap'
 import { setCachedServerCommandRevision } from './server/commands'
 import { resetChatHydration } from './server/chatMessageHydration.svelte'
@@ -1780,21 +1783,25 @@ export async function downloadRisuHub(
       })
     }
     if (isFastifyServer) {
-      const imported = await importRealmCharacterFromServer(id)
+      const onProgress = showRealmImportProgress
+      const imported = await importRealmCharacterFromServer(id, { onProgress })
       if (imported.status === 'low-level-access') {
         const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
         if (!confirmed) {
           alertStore.set({ type: 'none', msg: '' })
           return
         }
-        const retry = await importRealmCharacterFromServer(id, { allowLowLevelAccess: true })
+        const retry = await importRealmCharacterFromServer(id, {
+          allowLowLevelAccess: true,
+          onProgress,
+        })
         if (retry.status !== 'ok') {
           if (retry.status !== 'unsupported') {
             alertError(retry.status === 'error' ? retry.error : 'Error while importing')
             return
           }
         } else {
-          await finishServerRealmImport(retry.characterId, arg)
+          await finishServerRealmImport(retry.characterId, arg, onProgress)
           return
         }
       } else if (imported.status !== 'ok') {
@@ -1803,7 +1810,7 @@ export async function downloadRisuHub(
           return
         }
       } else {
-        await finishServerRealmImport(imported.characterId, arg)
+        await finishServerRealmImport(imported.characterId, arg, onProgress)
         return
       }
     }
@@ -1881,8 +1888,19 @@ async function finishServerRealmImport(
   arg: {
     forceRedirect?: boolean
   },
+  reportProgress?: (progress: ServerRealmImportProgress) => void,
 ) {
+  reportProgress?.({
+    phase: 'refresh',
+    message: 'Refreshing imported character',
+    percent: 96,
+  })
   await refreshServerProjectionAfterRealmImport()
+  reportProgress?.({
+    phase: 'refresh',
+    message: 'Realm import complete',
+    percent: 100,
+  })
   checkCharOrder()
   const db = getDatabase()
   const index = db.characters.findIndex((character) => character.chaId === characterId)
@@ -1895,6 +1913,14 @@ async function finishServerRealmImport(
   } else {
     alertNormal(language.importedCharacter)
   }
+}
+
+function showRealmImportProgress(progress: ServerRealmImportProgress) {
+  alertStore.set({
+    type: 'progress',
+    msg: progress.message,
+    submsg: progress.percent.toFixed(2),
+  })
 }
 
 async function refreshServerProjectionAfterRealmImport() {

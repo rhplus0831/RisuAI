@@ -275,6 +275,28 @@ function manyDisplayAssetRealmCharx(assetCount: number): Uint8Array {
   return fflate.zipSync(files, { level: 0 })
 }
 
+function parseSsePayload(payload: string): Array<{ event: string; data: unknown }> {
+  return payload
+    .trim()
+    .split('\n\n')
+    .filter(Boolean)
+    .map((block) => {
+      let event = 'message'
+      let data = ''
+      for (const line of block.split('\n')) {
+        if (line.startsWith('event: ')) event = line.slice(7)
+        if (line.startsWith('data: ')) data += line.slice(6)
+      }
+      return { event, data: JSON.parse(data) as unknown }
+    })
+}
+
+function progressPercents(frames: Array<{ event: string; data: unknown }>): number[] {
+  return frames
+    .filter((frame) => frame.event === 'progress')
+    .map((frame) => (frame.data as { percent: number }).percent)
+}
+
 let harness: Harness
 let echo: EchoServer
 
@@ -289,6 +311,140 @@ afterEach(async () => {
 })
 
 describe('Realm character import route', () => {
+  it('streams progress while importing JSON Realm cards', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ card: realmCard(), img: 'main-img' }))
+        return
+      }
+      if (req.url === '/resource/main-img') {
+        res.writeHead(200, { 'content-type': 'image/png' })
+        res.end('main image')
+        return
+      }
+      if (req.url === '/resource/emotion-img') {
+        res.writeHead(200, { 'content-type': 'image/png' })
+        res.end('emotion image')
+        return
+      }
+      if (req.url === '/resource/theme-css') {
+        res.writeHead(200, { 'content-type': 'text/css' })
+        res.end('body { color: red; }')
+        return
+      }
+      if (req.url === '/resource/voice-wav') {
+        res.writeHead(200, { 'content-type': 'audio/wav' })
+        res.end('voice data')
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: {
+        accept: 'text/event-stream',
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+      },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('text/event-stream')
+    const frames = parseSsePayload(res.payload)
+    expect(frames.map((frame) => frame.event)).toContain('progress')
+    expect(frames.at(-1)).toMatchObject({
+      event: 'done',
+      data: { characterId: expect.any(String), revision: expect.any(Number) },
+    })
+    expect(progressPercents(frames)).toEqual([...progressPercents(frames)].sort((a, b) => a - b))
+    expect(progressPercents(frames).at(-1)).toBe(100)
+  })
+
+  it('streams low-level-access confirmation requests without writing assets', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ card: realmCard({ lowLevelAccess: true }), img: 'main-img' }))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: {
+        accept: 'text/event-stream',
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+      },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const frames = parseSsePayload(res.payload)
+    expect(frames.at(-1)).toEqual({
+      event: 'low_level_access',
+      data: {
+        error: 'Character import requires low-level-access confirmation',
+        code: 'low_level_access_confirmation_required',
+      },
+    })
+    expect(loadPersisted(harness.dataDir).assets).toHaveLength(0)
+  })
+
+  it('streams charx extraction and asset progress', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        const bytes = Buffer.from(realmCharx())
+        res.writeHead(200, {
+          'content-type': 'application/charx',
+          'content-length': String(bytes.byteLength),
+        })
+        res.end(bytes)
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: {
+        accept: 'text/event-stream',
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+      },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const frames = parseSsePayload(res.payload)
+    const progress = frames
+      .filter((frame) => frame.event === 'progress')
+      .map((frame) => frame.data as { phase: string; percent: number })
+    expect(progress.map((frame) => frame.phase)).toEqual(
+      expect.arrayContaining(['download', 'extract', 'assets', 'convert', 'commit']),
+    )
+    expect(frames.at(-1)).toMatchObject({ event: 'done' })
+  })
+
   it('fetches Realm assets server-side and creates the character in one client request', async () => {
     echo.setResponder((req, res) => {
       if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {

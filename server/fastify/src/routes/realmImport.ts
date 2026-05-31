@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
@@ -57,6 +57,22 @@ interface RealmImportBody {
   allowLowLevelAccess?: unknown
 }
 
+export type RealmImportProgressPhase =
+  | 'validate'
+  | 'download'
+  | 'extract'
+  | 'assets'
+  | 'convert'
+  | 'commit'
+
+export interface RealmImportProgress {
+  phase: RealmImportProgressPhase
+  message: string
+  percent: number
+}
+
+type RealmImportProgressReporter = (progress: RealmImportProgress) => void
+
 interface StagedCharxAsset {
   fileName: string
   filePath: string
@@ -83,6 +99,20 @@ class UpstreamError extends Error {
   }
 }
 
+class RevisionConflictError extends Error {
+  constructor(readonly currentRevision: number) {
+    super('Revision mismatch')
+    this.name = 'RevisionConflictError'
+  }
+}
+
+class UnsupportedRealmDownloadError extends Error {
+  constructor(readonly contentType: string) {
+    super(`Unsupported Realm download content-type: ${contentType}`)
+    this.name = 'UnsupportedRealmDownloadError'
+  }
+}
+
 export function registerRealmImportRoutes(
   app: FastifyInstance,
   db: DatabaseSync,
@@ -99,88 +129,33 @@ export function registerRealmImportRoutes(
 
     try {
       const body = (req.body ?? {}) as RealmImportBody
-      // Validate the caller's revision before doing potentially expensive
-      // upstream fetches. Asset writes below intentionally advance the revision;
-      // the final character command uses the then-current revision.
-      const requestedBaseRevision = readBaseRevision(body)
-      const currentRevision = getSchemaState(db).revision
-      if (requestedBaseRevision !== currentRevision) {
-        reply.code(409)
-        return { error: 'Revision mismatch', currentRevision }
-      }
-
-      const id = readRealmId(body.id)
-      const dynamic = await fetchRealmDynamicPayload(realmUrl, id)
-      try {
-        if (dynamic.contentType === 'application/json') {
-          const payload = readRecord(dynamic.body, 'Realm download response')
-          const card = readRecord(payload.card, 'Realm download response.card')
-          const data = readRecord(card.data, 'Realm download response.card.data')
-          const extensions = ensureRecordField(data, 'extensions')
-          const risuai = ensureRecordField(extensions, 'risuai')
-          risuai.risuRealmImportId = id
-          if (risuai.lowLevelAccess === true && body.allowLowLevelAccess !== true) {
-            throw new LowLevelAccessImportError()
-          }
-
-          const imgResource = readNonEmptyString(payload.img, 'Realm download response.img')
-          const mainImageId = await saveFetchedAsset({
+      if (acceptsProgressStream(req.headers.accept)) {
+        await streamRealmImport(reply, (reportProgress) =>
+          runRealmImport({
             db,
             dataDir,
             eventSink,
-            source: { kind: 'resource', id: imgResource, fileName: 'realm.png' },
+            body,
             hubUrl,
-          })
-
-          const character = await convertRealmCharacterCard(card, {
-            mainImageId,
-            allowLowLevelAccess: body.allowLowLevelAccess === true,
-            storeAsset: (source) => saveFetchedAsset({ db, dataDir, eventSink, source, hubUrl }),
-          })
-
-          const result = appendRealmCharacter({
-            db,
-            dataDir,
-            eventSink,
-            character,
-          })
-
-          return {
-            revision: result.revision,
-            event: result.event,
-            characterId: result.extra.characterId,
-          }
-        }
-
-        if (CHARX_CONTENT_TYPES.has(dynamic.contentType) && dynamic.filePath && dynamic.tempDir) {
-          const result = await importRealmCharx({
-            db,
-            dataDir,
-            eventSink,
-            filePath: dynamic.filePath,
-            tempDir: dynamic.tempDir,
-            allowLowLevelAccess: body.allowLowLevelAccess === true,
-          })
-
-          return {
-            revision: result.revision,
-            event: result.event,
-            characterId: result.extra.characterId,
-          }
-        }
-
-        reply.code(415)
-        return {
-          error: `Unsupported Realm download content-type: ${dynamic.contentType}`,
-          code: 'unsupported_realm_download',
-        }
-      } finally {
-        await cleanupRealmDynamicPayload(dynamic)
+            realmUrl,
+            reportProgress,
+          }),
+        )
+        return
       }
+      return await runRealmImport({ db, dataDir, eventSink, body, hubUrl, realmUrl })
     } catch (err) {
+      if (err instanceof RevisionConflictError) {
+        reply.code(409)
+        return { error: err.message, currentRevision: err.currentRevision }
+      }
       if (err instanceof LowLevelAccessImportError) {
         reply.code(409)
         return { error: err.message, code: 'low_level_access_confirmation_required' }
+      }
+      if (err instanceof UnsupportedRealmDownloadError) {
+        reply.code(415)
+        return { error: err.message, code: 'unsupported_realm_download' }
       }
       if (err instanceof ValidationError) {
         reply.code(400)
@@ -195,9 +170,191 @@ export function registerRealmImportRoutes(
   })
 }
 
+async function runRealmImport(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  body: RealmImportBody
+  hubUrl: string
+  realmUrl: string
+  reportProgress?: RealmImportProgressReporter
+}): Promise<{ revision: number; event: unknown; characterId: string }> {
+  const reportProgress = createMonotonicProgressReporter(args.reportProgress)
+  reportProgress({ phase: 'validate', message: 'Preparing Realm import', percent: 1 })
+
+  // Validate the caller's revision before doing potentially expensive
+  // upstream fetches. Asset writes below intentionally advance the revision;
+  // the final character command uses the then-current revision.
+  const requestedBaseRevision = readBaseRevision(args.body)
+  const currentRevision = getSchemaState(args.db).revision
+  if (requestedBaseRevision !== currentRevision) {
+    throw new RevisionConflictError(currentRevision)
+  }
+
+  const id = readRealmId(args.body.id)
+  reportProgress({ phase: 'download', message: 'Downloading Realm character', percent: 5 })
+  const dynamic = await fetchRealmDynamicPayload(args.realmUrl, id, (percent) => {
+    reportProgress({
+      phase: 'download',
+      message: 'Downloading Realm character',
+      percent: scaleProgress(percent, 5, 30),
+    })
+  })
+  try {
+    reportProgress({ phase: 'download', message: 'Realm character downloaded', percent: 30 })
+    if (dynamic.contentType === 'application/json') {
+      return await importRealmJsonCard({
+        db: args.db,
+        dataDir: args.dataDir,
+        eventSink: args.eventSink,
+        body: args.body,
+        dynamicBody: dynamic.body,
+        hubUrl: args.hubUrl,
+        id,
+        reportProgress,
+      })
+    }
+
+    if (CHARX_CONTENT_TYPES.has(dynamic.contentType) && dynamic.filePath && dynamic.tempDir) {
+      const result = await importRealmCharx({
+        db: args.db,
+        dataDir: args.dataDir,
+        eventSink: args.eventSink,
+        filePath: dynamic.filePath,
+        tempDir: dynamic.tempDir,
+        allowLowLevelAccess: args.body.allowLowLevelAccess === true,
+        reportProgress,
+      })
+
+      reportProgress({ phase: 'commit', message: 'Realm import complete', percent: 100 })
+      return {
+        revision: result.revision,
+        event: result.event,
+        characterId: result.extra.characterId,
+      }
+    }
+
+    throw new UnsupportedRealmDownloadError(dynamic.contentType)
+  } finally {
+    await cleanupRealmDynamicPayload(dynamic)
+  }
+}
+
+async function importRealmJsonCard(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  body: RealmImportBody
+  dynamicBody: unknown
+  hubUrl: string
+  id: string
+  reportProgress: RealmImportProgressReporter
+}): Promise<{ revision: number; event: unknown; characterId: string }> {
+  const payload = readRecord(args.dynamicBody, 'Realm download response')
+  const card = readRecord(payload.card, 'Realm download response.card')
+  const data = readRecord(card.data, 'Realm download response.card.data')
+  const extensions = ensureRecordField(data, 'extensions')
+  const risuai = ensureRecordField(extensions, 'risuai')
+  risuai.risuRealmImportId = args.id
+  if (risuai.lowLevelAccess === true && args.body.allowLowLevelAccess !== true) {
+    throw new LowLevelAccessImportError()
+  }
+
+  args.reportProgress({ phase: 'assets', message: 'Saving main image', percent: 35 })
+  const imgResource = readNonEmptyString(payload.img, 'Realm download response.img')
+  const mainImageId = await saveFetchedAsset({
+    db: args.db,
+    dataDir: args.dataDir,
+    eventSink: args.eventSink,
+    source: { kind: 'resource', id: imgResource, fileName: 'realm.png' },
+    hubUrl: args.hubUrl,
+  })
+
+  const assetProgress = createCountingAssetProgress(card, args.reportProgress, 40, 82)
+  args.reportProgress({ phase: 'convert', message: 'Converting character card', percent: 40 })
+  const character = await convertRealmCharacterCard(card, {
+    mainImageId,
+    allowLowLevelAccess: args.body.allowLowLevelAccess === true,
+    storeAsset: async (source) => {
+      const assetId = await saveFetchedAsset({
+        db: args.db,
+        dataDir: args.dataDir,
+        eventSink: args.eventSink,
+        source,
+        hubUrl: args.hubUrl,
+      })
+      assetProgress()
+      return assetId
+    },
+  })
+
+  args.reportProgress({ phase: 'commit', message: 'Saving character', percent: 90 })
+  const result = appendRealmCharacter({
+    db: args.db,
+    dataDir: args.dataDir,
+    eventSink: args.eventSink,
+    character,
+  })
+
+  args.reportProgress({ phase: 'commit', message: 'Realm import complete', percent: 100 })
+  return {
+    revision: result.revision,
+    event: result.event,
+    characterId: result.extra.characterId,
+  }
+}
+
+async function streamRealmImport(
+  reply: FastifyReply,
+  run: (
+    reportProgress: RealmImportProgressReporter,
+  ) => Promise<{ revision: number; event: unknown; characterId: string }>,
+): Promise<void> {
+  reply.hijack()
+  reply.raw.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache, no-transform',
+    connection: 'keep-alive',
+    'x-accel-buffering': 'no',
+  })
+
+  const write = (event: string, payload: unknown): void => {
+    if (!reply.raw.writableEnded) {
+      reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`)
+    }
+  }
+
+  try {
+    const result = await run((progress) => write('progress', progress))
+    write('done', result)
+  } catch (err) {
+    if (err instanceof RevisionConflictError) {
+      write('conflict', { error: err.message, currentRevision: err.currentRevision })
+    } else if (err instanceof LowLevelAccessImportError) {
+      write('low_level_access', {
+        error: err.message,
+        code: 'low_level_access_confirmation_required',
+      })
+    } else if (err instanceof UnsupportedRealmDownloadError) {
+      write('unsupported', { error: err.message, code: 'unsupported_realm_download' })
+    } else if (err instanceof ValidationError || err instanceof UpstreamError) {
+      write('error', { error: err.message })
+    } else {
+      write('error', { error: err instanceof Error ? err.message : String(err) })
+    }
+  } finally {
+    reply.raw.end()
+  }
+}
+
+function acceptsProgressStream(accept: unknown): boolean {
+  return typeof accept === 'string' && accept.includes('text/event-stream')
+}
+
 async function fetchRealmDynamicPayload(
   realmUrl: string,
   id: string,
+  reportDownloadProgress?: (percent: number) => void,
 ): Promise<RealmDynamicPayload> {
   const url = `${realmUrl}${REALM_DYNAMIC_PATH}${encodeURIComponent(id)}?cors=true`
   const res = await fetch(url, {
@@ -210,7 +367,11 @@ async function fetchRealmDynamicPayload(
   }
   const contentType = normalizeContentType(res.headers.get('content-type'))
   if (contentType !== 'application/json') {
-    return { contentType, body: null, ...(await writeRealmDownloadToTempFile(res)) }
+    return {
+      contentType,
+      body: null,
+      ...(await writeRealmDownloadToTempFile(res, reportDownloadProgress)),
+    }
   }
   let body: unknown
   try {
@@ -223,10 +384,12 @@ async function fetchRealmDynamicPayload(
 
 async function writeRealmDownloadToTempFile(
   res: Response,
+  reportDownloadProgress?: (percent: number) => void,
 ): Promise<{ filePath: string; tempDir: string }> {
   const tempDir = await fs.promises.mkdtemp(path.join(tmpdir(), 'risu-realm-charx-'))
   const filePath = path.join(tempDir, 'realm.charx')
   let totalBytes = 0
+  const contentLength = readPositiveContentLength(res.headers.get('content-length'))
 
   try {
     if (!res.body) {
@@ -240,6 +403,9 @@ async function writeRealmDownloadToTempFile(
         if (totalBytes > MAX_REALM_CHARX_DOWNLOAD_BYTES) {
           callback(new UpstreamError('Realm download too large', 413))
           return
+        }
+        if (contentLength) {
+          reportDownloadProgress?.(Math.min(100, (totalBytes / contentLength) * 100))
         }
         callback(null, chunk)
       },
@@ -269,7 +435,9 @@ async function importRealmCharx(args: {
   filePath: string
   tempDir: string
   allowLowLevelAccess: boolean
+  reportProgress?: RealmImportProgressReporter
 }): Promise<JsonCommandMutationResult<{ characterId: string }>> {
+  args.reportProgress?.({ phase: 'extract', message: 'Reading character card', percent: 32 })
   const cardBytes = await readCharxCard(args.filePath)
   const card = parseJsonBytes(cardBytes, 'card.json')
   const data = readRecord(readRecord(card, 'card').data, 'card.data')
@@ -279,14 +447,37 @@ async function importRealmCharx(args: {
     throw new LowLevelAccessImportError()
   }
 
-  const stagedAssets = await stageCharxAssets(args.filePath, path.join(args.tempDir, 'assets'))
+  args.reportProgress?.({ phase: 'extract', message: 'Extracting package assets', percent: 38 })
+  const assetTotal = countEmbeddedCardAssets(card)
+  const extractProgress = createStepProgress({
+    phase: 'extract',
+    message: 'Extracting package assets',
+    reportProgress: args.reportProgress,
+    total: assetTotal,
+    start: 38,
+    end: 62,
+  })
+  const stagedAssets = await stageCharxAssets(args.filePath, path.join(args.tempDir, 'assets'), {
+    onAssetStaged: extractProgress,
+  })
+  args.reportProgress?.({ phase: 'assets', message: 'Saving package assets', percent: 65 })
+  const persistProgress = createStepProgress({
+    phase: 'assets',
+    message: 'Saving package assets',
+    reportProgress: args.reportProgress,
+    total: stagedAssets.length,
+    start: 65,
+    end: 82,
+  })
   const assetDict = saveStagedCharxAssets({
     db: args.db,
     dataDir: args.dataDir,
     eventSink: args.eventSink,
     stagedAssets,
+    onAssetSaved: persistProgress,
   })
 
+  args.reportProgress?.({ phase: 'convert', message: 'Converting character card', percent: 85 })
   const character = await convertRealmCharacterCard(card, {
     allowLowLevelAccess: args.allowLowLevelAccess,
     assetDict,
@@ -300,6 +491,7 @@ async function importRealmCharx(args: {
       }),
   })
 
+  args.reportProgress?.({ phase: 'commit', message: 'Saving character', percent: 92 })
   return appendRealmCharacter({
     db: args.db,
     dataDir: args.dataDir,
@@ -367,7 +559,11 @@ async function readCharxCard(filePath: string): Promise<Uint8Array> {
   return cardBytes
 }
 
-async function stageCharxAssets(filePath: string, stageDir: string): Promise<StagedCharxAsset[]> {
+async function stageCharxAssets(
+  filePath: string,
+  stageDir: string,
+  options: { onAssetStaged?: () => void } = {},
+): Promise<StagedCharxAsset[]> {
   await fs.promises.mkdir(stageDir, { recursive: true })
   const stagedAssets: StagedCharxAsset[] = []
   let nextAssetIndex = 0
@@ -418,6 +614,7 @@ async function stageCharxAssets(filePath: string, stageDir: string): Promise<Sta
           return
         }
         stagedAssets.push({ fileName: file.name, filePath: stagedPath, byteLength })
+        options.onAssetStaged?.()
       }
     }
     file.start()
@@ -476,6 +673,7 @@ function saveStagedCharxAssets(args: {
   dataDir: string
   eventSink: CommandEventSink
   stagedAssets: StagedCharxAsset[]
+  onAssetSaved?: () => void
 }): Record<string, string> {
   const persisted = loadPersisted(args.dataDir)
   const nextAssets = [...persisted.assets]
@@ -507,6 +705,7 @@ function saveStagedCharxAssets(args: {
         fs.writeFileSync(file, bytes)
       }
       assetDict[staged.fileName] = entry.id
+      args.onAssetSaved?.()
       continue
     }
 
@@ -521,6 +720,7 @@ function saveStagedCharxAssets(args: {
     assetById.set(id, entry)
     createdAssets.push(entry)
     assetDict[staged.fileName] = entry.id
+    args.onAssetSaved?.()
   }
 
   if (createdAssets.length > 0) {
@@ -610,6 +810,109 @@ function extensionFromFileName(fileName: string | undefined): string | null {
 
 function normalizeContentType(value: string | null): string {
   return (value ?? 'application/octet-stream').split(';')[0].trim().toLowerCase()
+}
+
+function readPositiveContentLength(value: string | null): number | null {
+  if (!value) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function scaleProgress(percent: number, start: number, end: number): number {
+  const clamped = Math.max(0, Math.min(100, percent))
+  return start + ((end - start) * clamped) / 100
+}
+
+function createMonotonicProgressReporter(
+  reportProgress?: RealmImportProgressReporter,
+): RealmImportProgressReporter {
+  let lastPercent = 0
+  return (progress) => {
+    if (!reportProgress) return
+    const percent = Math.max(lastPercent, Math.min(100, Math.max(0, progress.percent)))
+    lastPercent = percent
+    reportProgress({ ...progress, percent: Number(percent.toFixed(2)) })
+  }
+}
+
+function createStepProgress(args: {
+  phase: RealmImportProgressPhase
+  message: string
+  reportProgress?: RealmImportProgressReporter
+  total: number
+  start: number
+  end: number
+}): () => void {
+  let completed = 0
+  return () => {
+    completed += 1
+    if (!args.reportProgress || args.total < 1) return
+    args.reportProgress({
+      phase: args.phase,
+      message: args.message,
+      percent: scaleProgress((completed / args.total) * 100, args.start, args.end),
+    })
+  }
+}
+
+function createCountingAssetProgress(
+  card: JsonRecord,
+  reportProgress: RealmImportProgressReporter,
+  start: number,
+  end: number,
+): () => void {
+  return createStepProgress({
+    phase: 'assets',
+    message: 'Saving card assets',
+    reportProgress,
+    total: countExternalCardAssets(card),
+    start,
+    end,
+  })
+}
+
+function countExternalCardAssets(card: JsonRecord): number {
+  const data = readOptionalRecord(card.data)
+  const risuExt = readOptionalRecord(readOptionalRecord(data?.extensions)?.risuai)
+  let count = 0
+  for (const entry of arrayValue(risuExt?.emotions)) {
+    if (Array.isArray(entry) && typeof entry[1] === 'string' && !entry[1].startsWith('__asset:')) {
+      count += 1
+    }
+  }
+  for (const entry of arrayValue(risuExt?.additionalAssets)) {
+    if (Array.isArray(entry) && typeof entry[1] === 'string' && !entry[1].startsWith('__asset:')) {
+      count += 1
+    }
+  }
+  const vits = readOptionalRecord(risuExt?.vits)
+  if (vits) {
+    for (const value of Object.values(vits)) {
+      if (typeof value === 'string' && !value.startsWith('__asset:')) count += 1
+    }
+  }
+  for (const asset of arrayValue(data?.assets)) {
+    const record = readOptionalRecord(asset)
+    const uri = typeof record?.uri === 'string' ? record.uri : ''
+    if (uri.startsWith('data:')) count += 1
+  }
+  return count
+}
+
+function countEmbeddedCardAssets(card: unknown): number {
+  const root = readOptionalRecord(card)
+  const data = readOptionalRecord(root?.data)
+  let count = 0
+  for (const asset of arrayValue(data?.assets)) {
+    const record = readOptionalRecord(asset)
+    const uri = typeof record?.uri === 'string' ? record.uri : ''
+    if (uri.startsWith('__asset:') || uri.startsWith('embeded://')) count += 1
+  }
+  return count
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
 }
 
 function readRealmId(value: unknown): string {
