@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 
 const subtle = webcrypto.subtle
 

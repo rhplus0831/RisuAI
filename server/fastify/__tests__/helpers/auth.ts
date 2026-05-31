@@ -1,4 +1,5 @@
 import { webcrypto } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 import type { FastifyInstance } from 'fastify'
 import { expect } from 'vitest'
 

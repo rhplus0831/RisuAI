@@ -2,6 +2,7 @@
 export function requiresActiveWriter(method: string, path: string): boolean {
   if (path.startsWith('/api/v1/commands/')) return true
   if (path === '/api/v1/import/risusave') return true
+  if (path === '/api/v1/import/realm-character') return true
   if (path === '/api/v1/assets') return true
   if (path.startsWith('/api/v1/backups')) return true
   if (path === '/api/v1/generate/chat') return true

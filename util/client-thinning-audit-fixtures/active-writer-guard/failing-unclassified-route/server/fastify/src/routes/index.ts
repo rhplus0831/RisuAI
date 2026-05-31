@@ -19,6 +19,7 @@ export function registerRoutes(app: RouteApp): void {
   // Active-writer guarded mutation routes.
   app.post('/api/v1/commands/settings', noop)
   app.post('/api/v1/import/risusave', noop)
+  app.post('/api/v1/import/realm-character', noop)
   app.post('/api/v1/assets', noop)
   app.post('/api/v1/backups', noop)
   app.post('/api/v1/generate/chat', noop)

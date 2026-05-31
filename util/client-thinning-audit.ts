@@ -538,6 +538,7 @@ function checkActiveWriterGuard(): void {
   const guardIndex = appText.indexOf('registerActiveWriterGuard(app, activeWriterState)')
   const mutationRegistrarIndexes = [
     'registerSaveRoutes(',
+    'registerRealmImportRoutes(',
     'registerCommandRoutes(',
     'registerAssetsRoutes(',
     'registerBackupRoutes(',

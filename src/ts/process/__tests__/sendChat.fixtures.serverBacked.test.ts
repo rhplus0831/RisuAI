@@ -138,6 +138,7 @@ import {
   sendChat,
 } from '../index.svelte'
 import { buildApp } from '../../../../server/fastify/src/app'
+import { setupAuthedClient } from '../../../../server/fastify/__tests__/helpers/auth'
 import type {
   ChatProviderDispatchContext,
   GenerationChatRouteOptions,
@@ -374,6 +375,7 @@ interface RouteBackedDispatchCall {
 interface RouteBackedHarness {
   app: FastifyInstance
   dataDir: string
+  authAssertion: string
   chatCalls: RouteBackedChatCall[]
   commandCalls: RouteBackedCommandCall[]
   dispatchCalls: RouteBackedDispatchCall[]
@@ -392,6 +394,7 @@ async function persistedChatMessages(
   const res = await harness.app.inject({
     method: 'GET',
     url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+    headers: { 'risu-auth': harness.authAssertion },
   })
   expect(res.statusCode).toBe(200)
   return res.json().message as Array<Record<string, unknown>>
@@ -437,6 +440,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
     generationChat,
     memoryWorker: false,
   })
+  const { assertion: authAssertion } = await setupAuthedClient(app)
 
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const rawUrl =
@@ -445,6 +449,10 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
     const url = rawUrl.startsWith('http') ? new URL(rawUrl).pathname : rawUrl
     const method = toInjectMethod(init?.method)
     const headers = headersRecord(init?.headers)
+    const injectHeaders = { ...headers }
+    if (injectHeaders['risu-auth'] === 'fixture-auth-token') {
+      injectHeaders['risu-auth'] = authAssertion
+    }
     const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
     if (url === '/api/v1/generate/chat') {
       chatCalls.push({
@@ -469,7 +477,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
     const res = await app.inject({
       method,
       url,
-      headers,
+      headers: injectHeaders,
       payload,
     })
     const responseHeaders: Record<string, string> = {}
@@ -486,6 +494,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
   return {
     app,
     dataDir,
+    authAssertion,
     chatCalls,
     commandCalls,
     dispatchCalls,
@@ -497,6 +506,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
       const res = await app.inject({
         method: 'POST',
         url: '/api/v1/import/risusave',
+        headers: { 'risu-auth': authAssertion },
         payload: { database: cloned },
       })
       expect(res.statusCode).toBe(200)
@@ -815,7 +825,11 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // The route persisted the assembly-time delta itself: bootstrap shows the
       // written scriptstate. simple-send is durable, so the job also persists the
       // result message at completion — assembly write = rev 2, result write = rev 3.
-      const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+      const bootstrap = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': harness.authAssertion },
+      })
       expect(bootstrap.statusCode).toBe(200)
       const persistedChat = bootstrap.json().database.characters[0].chats[0]
       expect(persistedChat.scriptstate).toEqual({ $score: '9' })
@@ -885,7 +899,11 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       // Durable: the job persisted the post-gen scriptstate delta + the result
       // message in one bump at completion (seed = 1 → persist = 2).
-      const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+      const bootstrap = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': harness.authAssertion },
+      })
       expect(bootstrap.statusCode).toBe(200)
       const persistedChat = bootstrap.json().database.characters[0].chats[0]
       expect(persistedChat.scriptstate).toMatchObject({ $mood: 'happy' })
@@ -941,7 +959,11 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         call.url.includes('/generation-result'),
       )
       expect(generationResultPosts).toEqual([])
-      const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+      const bootstrap = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': harness.authAssertion },
+      })
       const persistedAssistant = [...(await persistedChatMessages(harness))]
         .reverse()
         .find((m: { role: string }) => m.role === 'char')
