@@ -55,6 +55,7 @@ function isServerOwnedMutation(req: FastifyRequest): boolean {
   if (method === 'POST' && path === '/api/v1/import/risusave') return true
   if (method === 'POST' && path === '/api/v1/import/realm-character') return true
   if (method === 'POST' && path === '/api/v1/assets') return true
+  if (method === 'POST' && path === '/api/v1/assets/bulk') return true
   if (path.startsWith('/api/v1/backups')) return true
   if (method === 'POST' && path === '/api/v1/generate/chat') return true
   if (method === 'POST' && path === '/api/v1/generate/preview-prompt') return true

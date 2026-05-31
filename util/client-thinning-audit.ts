@@ -387,6 +387,13 @@ const MUTATING_ROUTE_RULES: MutatingRouteRule[] = [
     activeWriterNeedles: ["path === '/api/v1/assets'"],
   },
   {
+    methods: ['POST'],
+    route: '/api/v1/assets/bulk',
+    kind: 'active-writer',
+    reason: 'bulk asset upload writes repository asset metadata and blobs',
+    activeWriterNeedles: ["path === '/api/v1/assets/bulk'"],
+  },
+  {
     routePrefix: '/api/v1/backups',
     kind: 'active-writer',
     reason: 'backup create, restore, and delete mutate server-owned backup/repository state',
@@ -1253,19 +1260,28 @@ function checkAssetPersistenceSemantics(): void {
   const assetCommands = source('server/fastify/src/commands/assets.ts')
   const characters = source('server/fastify/src/commands/characters.ts')
   const addAssetBody = getFunctionBodyText(repository, 'addAsset')
+  const addAssetsBody = getFunctionBodyText(repository, 'addAssets')
   const optionalRefBody = getFunctionBodyText(assetCommands, 'validateOptionalServerAssetRef')
   const characterText = text('server/fastify/src/commands/characters.ts')
+
+  if (!addAssetBody.includes('return addAssets(db, dataDir, [args])[0]')) {
+    fail(
+      check,
+      'addAsset must delegate to addAssets so single and bulk uploads share persistence semantics.',
+      repository.getFunction('addAsset'),
+    )
+  }
 
   for (const needle of [
     'const file = assetPath(dataDir, existing)',
     'if (!fs.existsSync(file))',
-    'fs.writeFileSync(file, args.bytes)',
+    'fs.writeFileSync(file, asset.bytes)',
   ]) {
-    if (!addAssetBody.includes(needle)) {
+    if (!addAssetsBody.includes(needle)) {
       fail(
         check,
-        `addAsset must heal missing blobs for existing asset metadata; missing ${needle}.`,
-        repository.getFunction('addAsset'),
+        `addAssets must heal missing blobs for existing asset metadata; missing ${needle}.`,
+        repository.getFunction('addAssets'),
       )
     }
   }

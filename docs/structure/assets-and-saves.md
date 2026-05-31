@@ -21,10 +21,12 @@ extensions and dedupes by content hash.
 
 `POST /api/v1/assets` accepts raw bytes of supported asset content types. The
 asset parser is installed globally from `buildApp()` for the supported asset
-content types, while the route still requires auth. A newly-created asset bumps
-the repository revision and emits `asset.created` so clients can advance their
-revision cursor; uploading bytes that already exist returns the existing id
-without creating a duplicate.
+content types, while the route still requires auth. `POST /api/v1/assets/bulk`
+accepts JSON base64 asset batches so import paths can register many assets
+without rapidly dispatching one HTTP request per file. A newly-created asset (or
+bulk batch) bumps the repository revision and emits `asset.created` so clients
+can advance their revision cursor; uploading bytes that already exist returns
+the existing id without creating a duplicate.
 
 `GET` and `HEAD /api/v1/assets/:id` are public immutable reads. They serve only
 ids present in metadata and on disk. `POST /api/v1/assets/exists` validates ids

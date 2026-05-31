@@ -22,7 +22,7 @@ import {
   downloadFile,
   forageStorage,
   readImage,
-  saveAsset,
+  saveAssets,
 } from '../globalApi.svelte'
 import { selectSingleFile, sleep } from '../util'
 import { v4 } from 'uuid'
@@ -203,7 +203,6 @@ export async function readModule(buf: Buffer): Promise<RisuModule> {
 
   let module = main.module
 
-  const maxConcurrentAssetSaves = 10
   const retryDelayMs = 5000
   const maxRetries = 3
   const totalAssets = module.assets?.length ?? 0
@@ -218,42 +217,43 @@ export async function readModule(buf: Buffer): Promise<RisuModule> {
     if (tasks.length === 0) {
       return []
     }
-    const inFlight = new Set<Promise<void>>()
     const failed: AssetTask[] = []
-    const runTask = (task: AssetTask) => {
-      const promise = (async () => {
-        try {
-          const decoded = await decodeRPack(task.data)
-          if (!module.assets?.[task.index]) {
-            throw new Error(`Missing asset metadata for index ${task.index}`)
-          }
-          // Preserve the module asset's declared filename (the [2] slot of
-          // the [name, asset_id, filename] tuple) so persisted metadata
-          // matches the source extension.
-          module.assets[task.index][1] = await saveAsset(
-            decoded,
-            '',
-            module.assets[task.index][2] ?? '',
-          )
-          completed += 1
-        } catch (error) {
-          failed.push(task)
-        } finally {
-          alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
-        }
-      })()
-      inFlight.add(promise)
-      promise.finally(() => inFlight.delete(promise))
-    }
-
+    const decodedTasks: { task: AssetTask; decoded: Uint8Array; fileName: string }[] = []
     for (const task of tasks) {
-      while (inFlight.size >= maxConcurrentAssetSaves) {
-        await Promise.race(inFlight)
+      try {
+        const decoded = await decodeRPack(task.data)
+        if (!module.assets?.[task.index]) {
+          throw new Error(`Missing asset metadata for index ${task.index}`)
+        }
+        decodedTasks.push({
+          task,
+          decoded,
+          fileName: module.assets[task.index][2] ?? '',
+        })
+      } catch (error) {
+        failed.push(task)
       }
-      runTask(task)
+      alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
     }
 
-    await Promise.all(inFlight)
+    try {
+      const savedAssetIds = await saveAssets(
+        decodedTasks.map((task) => ({
+          data: task.decoded,
+          fileName: task.fileName,
+        })),
+      )
+      for (let i = 0; i < decodedTasks.length; i++) {
+        // Preserve the module asset's declared filename (the [2] slot of
+        // the [name, asset_id, filename] tuple) so persisted metadata
+        // matches the source extension.
+        module.assets[decodedTasks[i].task.index][1] = savedAssetIds[i]
+        completed += 1
+      }
+    } catch (error) {
+      failed.push(...decodedTasks.map((task) => task.task))
+    }
+    alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
     return failed
   }
 

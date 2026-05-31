@@ -524,38 +524,70 @@ export interface AddAssetResult {
   revision: number
 }
 
-export function addAsset(
+interface AddAssetInput {
+  bytes: Buffer
+  contentType: string
+}
+
+export function addAsset(db: DatabaseSync, dataDir: string, args: AddAssetInput): AddAssetResult {
+  return addAssets(db, dataDir, [args])[0]
+}
+
+export function addAssets(
   db: DatabaseSync,
   dataDir: string,
-  args: { bytes: Buffer; contentType: string },
-): AddAssetResult {
-  const ext = CONTENT_TYPE_EXTENSIONS[args.contentType]
-  if (!ext) {
-    throw new ValidationError(`Unsupported content-type: ${args.contentType}`)
-  }
-  const sha256 = createHash('sha256').update(args.bytes).digest('hex')
-  const persisted = loadPersisted(dataDir)
-  const existing = persisted.assets.find((a) => a.id === sha256)
-  if (existing) {
-    const file = assetPath(dataDir, existing)
-    if (!fs.existsSync(file)) {
-      fs.mkdirSync(assetsDir(dataDir), { recursive: true })
-      fs.writeFileSync(file, args.bytes)
+  assets: readonly AddAssetInput[],
+): AddAssetResult[] {
+  for (const asset of assets) {
+    if (!CONTENT_TYPE_EXTENSIONS[asset.contentType]) {
+      throw new ValidationError(`Unsupported content-type: ${asset.contentType}`)
     }
-    return { entry: existing, created: false, revision: getSchemaState(db).revision }
   }
-  fs.mkdirSync(assetsDir(dataDir), { recursive: true })
-  const file = path.join(assetsDir(dataDir), `${sha256}.${ext}`)
-  fs.writeFileSync(file, args.bytes)
-  const entry: PersistedAsset = {
-    id: sha256,
-    ext,
-    size: args.bytes.length,
-    contentType: args.contentType,
+
+  const persisted = loadPersisted(dataDir)
+  const assetById = new Map(persisted.assets.map((asset) => [asset.id, asset]))
+  const nextAssets = [...persisted.assets]
+  const createdResults: AddAssetResult[] = []
+  const results: AddAssetResult[] = []
+  const currentRevision = getSchemaState(db).revision
+
+  for (const asset of assets) {
+    const ext = CONTENT_TYPE_EXTENSIONS[asset.contentType]
+    const sha256 = createHash('sha256').update(asset.bytes).digest('hex')
+    const existing = assetById.get(sha256)
+    if (existing) {
+      const file = assetPath(dataDir, existing)
+      if (!fs.existsSync(file)) {
+        fs.mkdirSync(assetsDir(dataDir), { recursive: true })
+        fs.writeFileSync(file, asset.bytes)
+      }
+      results.push({ entry: existing, created: false, revision: currentRevision })
+      continue
+    }
+
+    fs.mkdirSync(assetsDir(dataDir), { recursive: true })
+    const file = path.join(assetsDir(dataDir), `${sha256}.${ext}`)
+    fs.writeFileSync(file, asset.bytes)
+    const entry: PersistedAsset = {
+      id: sha256,
+      ext,
+      size: asset.bytes.length,
+      contentType: asset.contentType,
+    }
+    nextAssets.push(entry)
+    assetById.set(entry.id, entry)
+    const result = { entry, created: true, revision: currentRevision }
+    createdResults.push(result)
+    results.push(result)
   }
-  writePersisted(dataDir, { ...persisted, assets: [...persisted.assets, entry] })
+
+  if (createdResults.length === 0) {
+    return results
+  }
+
+  writePersisted(dataDir, { ...persisted, assets: nextAssets })
   const revision = bumpRevision(db)
-  return { entry, created: true, revision }
+  return results.map((result) => ({ ...result, revision }))
 }
 
 export function missingAssetIds(dataDir: string, ids: string[]): string[] {

@@ -41,6 +41,7 @@ import {
   openURL,
   readImage,
   saveAsset,
+  saveAssets,
   VirtualWriter,
 } from './globalApi.svelte'
 import { isFastifyServer } from 'src/ts/platform'
@@ -243,6 +244,7 @@ export async function importCharacterProcess(f: {
     returnTrimed: true,
   })
   const assets: { [key: string]: string } = {}
+  const embeddedAssetPayloads: { index: string; data: Uint8Array }[] = []
   for await (const chunk of readGenerator) {
     if (!chunk) {
       continue
@@ -279,10 +281,23 @@ export async function importCharacterProcess(f: {
 
       readedPngChunks++
 
-      // audit:image-default — CCv3 PNG-embedded asset payloads are images;
-      // server metadata may default to PNG content-type.
-      const assetId = await saveAsset(assetData)
-      assets[assetIndex] = assetId
+      embeddedAssetPayloads.push({ index: assetIndex, data: assetData })
+    }
+  }
+
+  if (embeddedAssetPayloads.length > 0) {
+    alertStore.set({
+      type: 'progress',
+      msg: 'Loading... (Saving Assets)',
+      submsg: '0.00',
+    })
+    // audit:image-default — CCv3 PNG-embedded asset payloads are images;
+    // server metadata may default to PNG content-type.
+    const savedAssetIds = await saveAssets(
+      embeddedAssetPayloads.map((asset) => ({ data: asset.data })),
+    )
+    for (let i = 0; i < embeddedAssetPayloads.length; i++) {
+      assets[embeddedAssetPayloads[i].index] = savedAssetIds[i]
     }
   }
 
@@ -677,6 +692,8 @@ async function importCharacterCardSpec(
   let vits: null | OnnxModelFiles = null
   if (risuext && card.spec === 'chara_card_v2') {
     if (risuext.emotions) {
+      const importedEmotions: ([string, string] | undefined)[] = []
+      const emotionUploads: { targetIndex: number; data: Uint8Array }[] = []
       for (let i = 0; i < risuext.emotions.length; i++) {
         alertStore.set({
           type: 'progress',
@@ -690,20 +707,35 @@ async function importCharacterCardSpec(
           if (!imgp) {
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
-          emotions.push([risuext.emotions[i][0], imgp])
+          importedEmotions[i] = [risuext.emotions[i][0], imgp]
           continue
         }
         // audit:image-default — emotion images carried inline in cards are
         // image bytes; PNG default is honest for the persisted metadata.
-        const imgp = await saveAsset(
-          mode === 'hub'
-            ? await getHubResources(risuext.emotions[i][1])
-            : Buffer.from(risuext.emotions[i][1], 'base64'),
-        )
-        emotions.push([risuext.emotions[i][0], imgp])
+        emotionUploads.push({
+          targetIndex: i,
+          data:
+            mode === 'hub'
+              ? await getHubResources(risuext.emotions[i][1])
+              : Buffer.from(risuext.emotions[i][1], 'base64'),
+        })
       }
+      const savedEmotionAssets = await saveAssets(
+        emotionUploads.map((asset) => ({ data: asset.data })),
+      )
+      for (let i = 0; i < emotionUploads.length; i++) {
+        const targetIndex = emotionUploads[i].targetIndex
+        importedEmotions[targetIndex] = [risuext.emotions[targetIndex][0], savedEmotionAssets[i]]
+      }
+      emotions.push(...importedEmotions.filter((entry): entry is [string, string] => !!entry))
     }
     if (risuext.additionalAssets) {
+      const importedAdditionalAssets: ([string, string, string] | undefined)[] = []
+      const additionalAssetUploads: {
+        targetIndex: number
+        data: Uint8Array
+        fileName: string
+      }[] = []
       for (let i = 0; i < risuext.additionalAssets.length; i++) {
         alertStore.set({
           type: 'progress',
@@ -722,21 +754,39 @@ async function importCharacterCardSpec(
           if (!imgp) {
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
-          extAssets.push([risuext.additionalAssets[i][0], imgp, fileName])
+          importedAdditionalAssets[i] = [risuext.additionalAssets[i][0], imgp, fileName]
           continue
         }
-        const imgp = await saveAsset(
-          mode === 'hub'
-            ? await getHubResources(risuext.additionalAssets[i][1])
-            : Buffer.from(risuext.additionalAssets[i][1], 'base64'),
-          '',
+        additionalAssetUploads.push({
+          targetIndex: i,
+          data:
+            mode === 'hub'
+              ? await getHubResources(risuext.additionalAssets[i][1])
+              : Buffer.from(risuext.additionalAssets[i][1], 'base64'),
           fileName,
-        )
-        extAssets.push([risuext.additionalAssets[i][0], imgp, fileName])
+        })
       }
+      const savedAdditionalAssets = await saveAssets(
+        additionalAssetUploads.map((asset) => ({
+          data: asset.data,
+          fileName: asset.fileName,
+        })),
+      )
+      for (let i = 0; i < additionalAssetUploads.length; i++) {
+        const targetIndex = additionalAssetUploads[i].targetIndex
+        importedAdditionalAssets[targetIndex] = [
+          risuext.additionalAssets[targetIndex][0],
+          savedAdditionalAssets[i],
+          additionalAssetUploads[i].fileName,
+        ]
+      }
+      extAssets.push(
+        ...importedAdditionalAssets.filter((entry): entry is [string, string, string] => !!entry),
+      )
     }
     if (risuext.vits) {
       const keys = Object.keys(risuext.vits)
+      const vitsUploads: { key: string; data: Uint8Array }[] = []
       for (let i = 0; i < keys.length; i++) {
         alertStore.set({
           type: 'progress',
@@ -756,14 +806,19 @@ async function importCharacterCardSpec(
         }
         // VITS payloads are audio/model files; preserve the source key's
         // extension (e.g. `.wav`, `.ogg`) so server metadata is honest.
-        const imgp = await saveAsset(
-          mode === 'hub'
-            ? await getHubResources(risuext.vits[key])
-            : Buffer.from(risuext.vits[key], 'base64'),
-          '',
+        vitsUploads.push({
           key,
-        )
-        risuext.vits[key] = imgp
+          data:
+            mode === 'hub'
+              ? await getHubResources(risuext.vits[key])
+              : Buffer.from(risuext.vits[key], 'base64'),
+        })
+      }
+      const savedVitsAssets = await saveAssets(
+        vitsUploads.map((asset) => ({ data: asset.data, fileName: asset.key })),
+      )
+      for (let i = 0; i < vitsUploads.length; i++) {
+        risuext.vits[vitsUploads[i].key] = savedVitsAssets[i]
       }
 
       if (keys.length > 0) {
@@ -786,6 +841,8 @@ async function importCharacterCardSpec(
   if (card.spec === 'chara_card_v3') {
     const data = card.data //required for type checking
     if (data.assets) {
+      const resolvedAssetUris: (string | undefined)[] = []
+      const dataUriUploads: { targetIndex: number; data: Uint8Array }[] = []
       for (let i = 0; i < data.assets.length; i++) {
         alertStore.set({
           type: 'progress',
@@ -795,37 +852,52 @@ async function importCharacterCardSpec(
         if (i % 100 === 0) {
           await sleep(10)
         }
-        let fileName = ''
-        let imgp = ''
-        if (data.assets[i].name) {
-          fileName = data.assets[i].name
-        }
         if (data.assets[i].uri.startsWith('__asset:')) {
           const key = data.assets[i].uri.replace('__asset:', '')
-          imgp = assetDict[key]
-          if (!imgp) {
+          const assetId = assetDict[key]
+          if (!assetId) {
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
+          resolvedAssetUris[i] = assetId
         } else if (data.assets[i].uri === 'ccdefault:') {
-          imgp = im
+          resolvedAssetUris[i] = im
         } else if (data.assets[i].uri.startsWith('embeded://')) {
           const key = data.assets[i].uri.replace('embeded://', '')
-          imgp = assetDict[key]
-          if (!imgp) {
+          const assetId = assetDict[key]
+          if (!assetId) {
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
+          resolvedAssetUris[i] = assetId
         } else if (data.assets[i].uri.startsWith('data:')) {
           //data uri
-          const b64 = data.assets[i].uri.split(',')[1]
+          const b64 = data.assets[i].uri.split(',')[1] ?? ''
           if (b64.length < 50 * 1024 * 1024) {
             // audit:image-default — CCv3 inline data: URI assets are image
             // bytes by convention; PNG default is acceptable.
-            imgp = await saveAsset(Buffer.from(b64, 'base64'))
+            dataUriUploads.push({ targetIndex: i, data: Buffer.from(b64, 'base64') })
           } else {
             alertError('Data URI too large')
             continue
           }
         } else {
+          continue
+        }
+      }
+
+      const savedDataUriAssets = await saveAssets(
+        dataUriUploads.map((asset) => ({ data: asset.data })),
+      )
+      for (let i = 0; i < dataUriUploads.length; i++) {
+        resolvedAssetUris[dataUriUploads[i].targetIndex] = savedDataUriAssets[i]
+      }
+
+      for (let i = 0; i < data.assets.length; i++) {
+        let fileName = ''
+        if (data.assets[i].name) {
+          fileName = data.assets[i].name
+        }
+        const imgp = resolvedAssetUris[i]
+        if (!imgp) {
           continue
         }
         if (data.assets[i].type === 'emotion') {

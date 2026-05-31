@@ -139,6 +139,20 @@ const SERVER_ASSET_CONTENT_TYPES: Record<string, string> = {
   woff2: 'font/woff2',
 }
 
+const SERVER_ASSET_BULK_MAX_ITEMS = 32
+const SERVER_ASSET_BULK_MAX_RAW_BYTES = 32 * 1024 * 1024
+
+export interface AssetSaveInput {
+  data: Uint8Array
+  customId?: string
+  fileName?: string
+}
+
+interface PreparedServerAssetUpload {
+  data: Uint8Array
+  contentType: string
+}
+
 /**
  * Gets the source URL of a file.
  *
@@ -152,11 +166,7 @@ export async function getFileSrc(loc: string) {
     // (including raw http://https:// values from a poisoned projection) are
     // rejected with an empty string so an <img src=""> renders broken
     // instead of fetching the attacker-controlled origin.
-    if (
-      loc.startsWith('/api/v1/assets/') ||
-      loc.startsWith('data:') ||
-      loc.startsWith('blob:')
-    ) {
+    if (loc.startsWith('/api/v1/assets/') || loc.startsWith('data:') || loc.startsWith('blob:')) {
       return loc
     }
     const resolved = serverAssetUrl(loc)
@@ -209,6 +219,11 @@ export async function readImage(data: string) {
  * @returns {Promise<string>} - A promise that resolves to the path of the saved asset file.
  */
 export async function saveAsset(data: Uint8Array, customId: string = '', fileName: string = '') {
+  const fileExtension = assetExtensionFromFileName(fileName)
+  if (isFastifyServer) {
+    return uploadServerAsset(data, fileExtension)
+  }
+
   let id = ''
   if (customId !== '') {
     id = customId
@@ -219,51 +234,179 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
       id = uuidv4()
     }
   }
-  let fileExtension: string = 'png'
-  if (fileName && fileName.split('.').length > 0) {
-    fileExtension = fileName.split('.').pop()?.toLowerCase() ?? 'png'
-  }
-  if (isFastifyServer) {
-    const contentType = SERVER_ASSET_CONTENT_TYPES[fileExtension]
-    if (!contentType) {
-      throw new Error(`Unsupported server asset extension: ${fileExtension}`)
-    }
-    const auth = await getNodeServerProxyAuth()
-    const uploadBody = data.buffer.slice(
-      data.byteOffset,
-      data.byteOffset + data.byteLength,
-    ) as ArrayBuffer
-    const response = await fetch('/api/v1/assets', {
-      method: 'POST',
-      headers: {
-        'content-type': contentType,
-        'risu-auth': auth,
-        ...activeWriterSessionHeader(),
-      },
-      body: uploadBody,
-    })
-    if (!response.ok) {
-      handleActiveWriterStaleResponse(response)
-      const body = await response.text().catch(() => '')
-      throw new Error(body || `Failed to upload server asset: ${response.status}`)
-    }
-    const responseBody = (await response.json()) as { assetId?: unknown; revision?: unknown }
-    if (typeof responseBody.assetId !== 'string') {
-      throw new Error('Server asset upload response missing assetId')
-    }
-    // A new asset bumps the repository revision; advance the cached command
-    // revision so the next command does not race on a stale baseRevision.
-    if (typeof responseBody.revision === 'number') {
-      setCachedServerCommandRevision(responseBody.revision)
-    }
-    return responseBody.assetId
-  }
   let form = `assets/${id}.${fileExtension}`
   const replacer = await forageStorage.setItem(form, data)
   if (replacer) {
     return replacer
   }
   return form
+}
+
+export async function saveAssets(assets: readonly AssetSaveInput[]): Promise<string[]> {
+  if (assets.length === 0) return []
+  if (!isFastifyServer) {
+    const saved: string[] = []
+    for (const asset of assets) {
+      saved.push(await saveAsset(asset.data, asset.customId ?? '', asset.fileName ?? ''))
+    }
+    return saved
+  }
+
+  const prepared = assets.map((asset) => ({
+    data: asset.data,
+    contentType: serverAssetContentType(assetExtensionFromFileName(asset.fileName ?? '')),
+  }))
+  const saved: string[] = []
+  for (const batch of chunkServerAssetUploads(prepared)) {
+    saved.push(...(await uploadServerAssetsBatch(batch)))
+  }
+  return saved
+}
+
+function assetExtensionFromFileName(fileName: string): string {
+  let fileExtension = 'png'
+  if (fileName && fileName.split('.').length > 0) {
+    fileExtension = fileName.split('.').pop()?.toLowerCase() ?? 'png'
+  }
+  return fileExtension
+}
+
+function serverAssetContentType(fileExtension: string): string {
+  const contentType = SERVER_ASSET_CONTENT_TYPES[fileExtension]
+  if (!contentType) {
+    throw new Error(`Unsupported server asset extension: ${fileExtension}`)
+  }
+  return contentType
+}
+
+async function uploadServerAsset(data: Uint8Array, fileExtension: string): Promise<string> {
+  const contentType = serverAssetContentType(fileExtension)
+  const auth = await getNodeServerProxyAuth()
+  const uploadBody = data.buffer.slice(
+    data.byteOffset,
+    data.byteOffset + data.byteLength,
+  ) as ArrayBuffer
+  const response = await fetch('/api/v1/assets', {
+    method: 'POST',
+    headers: {
+      'content-type': contentType,
+      'risu-auth': auth,
+      ...activeWriterSessionHeader(),
+    },
+    body: uploadBody,
+  })
+  if (!response.ok) {
+    handleActiveWriterStaleResponse(response)
+    const body = await response.text().catch(() => '')
+    throw new Error(body || `Failed to upload server asset: ${response.status}`)
+  }
+  const responseBody = (await response.json()) as { assetId?: unknown; revision?: unknown }
+  if (typeof responseBody.assetId !== 'string') {
+    throw new Error('Server asset upload response missing assetId')
+  }
+  advanceServerAssetRevision(responseBody.revision)
+  return responseBody.assetId
+}
+
+function chunkServerAssetUploads(
+  assets: readonly PreparedServerAssetUpload[],
+): PreparedServerAssetUpload[][] {
+  const chunks: PreparedServerAssetUpload[][] = []
+  let chunk: PreparedServerAssetUpload[] = []
+  let chunkBytes = 0
+  const flush = () => {
+    if (chunk.length === 0) return
+    chunks.push(chunk)
+    chunk = []
+    chunkBytes = 0
+  }
+
+  for (const asset of assets) {
+    if (
+      chunk.length > 0 &&
+      (chunk.length >= SERVER_ASSET_BULK_MAX_ITEMS ||
+        chunkBytes + asset.data.byteLength > SERVER_ASSET_BULK_MAX_RAW_BYTES)
+    ) {
+      flush()
+    }
+    chunk.push(asset)
+    chunkBytes += asset.data.byteLength
+  }
+  flush()
+  return chunks
+}
+
+async function uploadServerAssetsBatch(
+  assets: readonly PreparedServerAssetUpload[],
+): Promise<string[]> {
+  if (assets.length === 0) return []
+  if (assets.length === 1) {
+    const [asset] = assets
+    const extension =
+      Object.entries(SERVER_ASSET_CONTENT_TYPES).find(([, contentType]) => {
+        return contentType === asset.contentType
+      })?.[0] ?? 'png'
+    return [await uploadServerAsset(asset.data, extension)]
+  }
+
+  const auth = await getNodeServerProxyAuth()
+  const response = await fetch('/api/v1/assets/bulk', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'risu-auth': auth,
+      ...activeWriterSessionHeader(),
+    },
+    body: JSON.stringify({
+      assets: assets.map((asset) => ({
+        contentType: asset.contentType,
+        data: Buffer.from(asset.data).toString('base64'),
+      })),
+    }),
+  })
+
+  if (response.status === 413 && assets.length > 1) {
+    const midpoint = Math.ceil(assets.length / 2)
+    return [
+      ...(await uploadServerAssetsBatch(assets.slice(0, midpoint))),
+      ...(await uploadServerAssetsBatch(assets.slice(midpoint))),
+    ]
+  }
+
+  if (!response.ok) {
+    handleActiveWriterStaleResponse(response)
+    const body = await response.text().catch(() => '')
+    throw new Error(body || `Failed to upload server assets: ${response.status}`)
+  }
+
+  const responseBody = (await response.json()) as {
+    assets?: unknown
+    revision?: unknown
+  }
+  if (!Array.isArray(responseBody.assets) || responseBody.assets.length !== assets.length) {
+    throw new Error('Server bulk asset upload response has invalid assets')
+  }
+  advanceServerAssetRevision(responseBody.revision)
+  return responseBody.assets.map((asset, index) => {
+    if (!asset || typeof asset !== 'object') {
+      throw new Error(`Server bulk asset upload response asset[${index}] is invalid`)
+    }
+    const assetId = (asset as { assetId?: unknown }).assetId
+    if (typeof assetId !== 'string') {
+      throw new Error(`Server bulk asset upload response asset[${index}] missing assetId`)
+    }
+    const revision = (asset as { revision?: unknown }).revision
+    advanceServerAssetRevision(revision)
+    return assetId
+  })
+}
+
+function advanceServerAssetRevision(revision: unknown): void {
+  // A new asset bumps the repository revision; advance the cached command
+  // revision so the next command does not race on a stale baseRevision.
+  if (typeof revision === 'number') {
+    setCachedServerCommandRevision(revision)
+  }
 }
 
 /**

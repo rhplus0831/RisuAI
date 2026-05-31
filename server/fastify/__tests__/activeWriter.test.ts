@@ -163,6 +163,19 @@ describe('active writer session guard', () => {
     expectStaleWriter(
       await harness.app.inject({
         method: 'POST',
+        url: '/api/v1/assets/bulk',
+        headers: authedHeaders('session-a'),
+        payload: {
+          assets: [
+            { contentType: 'image/png', data: Buffer.from('stale-asset').toString('base64') },
+          ],
+        },
+      }),
+    )
+
+    expectStaleWriter(
+      await harness.app.inject({
+        method: 'POST',
         url: '/api/v1/backups',
         headers: authedHeaders('session-a'),
         payload: { label: 'stale backup' },

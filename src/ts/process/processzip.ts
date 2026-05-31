@@ -1,11 +1,12 @@
 import {
   AppendableBuffer,
   saveAsset,
+  saveAssets,
   type LocalWriter,
   type VirtualWriter,
 } from '../globalApi.svelte'
 import * as fflate from 'fflate'
-import { asBuffer, Semaphore, sleep } from '../util'
+import { asBuffer } from '../util'
 import { alertStore } from '../alert'
 import { hasher } from '../parser/parser.svelte'
 import { hubURL } from '../characterCards'
@@ -15,7 +16,8 @@ const MAX_ASSET_SIZE_BYTES = 50 * 1024 * 1024 // 50MB
 const CHUNK_SIZE_BYTES = 1024 * 1024 // 1MB
 
 // Queue management constants
-const MAX_CONCURRENT_ASSET_SAVES = 10
+const MAX_BULK_ASSET_SAVE_ITEMS = 32
+const MAX_BULK_ASSET_SAVE_BYTES = 32 * 1024 * 1024
 
 // HTTP status code ranges
 const HTTP_STATUS_OK_MIN = 200
@@ -170,9 +172,6 @@ export class CharXImporter {
   // ZIP streaming parser
   unzip: fflate.Unzip
 
-  // Asset save semaphore
-  private semaphore: Semaphore
-
   // Completion tracking
   private totalEnqueued: number = 0
   private totalCompleted: number = 0
@@ -183,6 +182,9 @@ export class CharXImporter {
   private completionSettled: boolean = false
   private errors: Error[] = []
   private onProgress?: (done: number, total: number) => void
+  private pendingAssetBatch: { id: string; data: Uint8Array }[] = []
+  private pendingAssetBatchBytes: number = 0
+  private assetBatchFlushChain: Promise<void> = Promise.resolve()
 
   // Results: filename -> saved asset ID mapping
   assets: { [key: string]: string } = {}
@@ -208,8 +210,6 @@ export class CharXImporter {
     this.unzip = new fflate.Unzip()
     this.unzip.register(fflate.UnzipInflate)
     this.unzip.onfile = (file) => this.#handleFile(file)
-
-    this.semaphore = new Semaphore(MAX_CONCURRENT_ASSET_SAVES)
     this.onProgress = (done, total) => {
       if (this.alertInfo) {
         alertStore.set({
@@ -382,7 +382,7 @@ export class CharXImporter {
       // Ignore other JSON files
     } else {
       // All other files are treated as assets (images, etc.)
-      this.#processAssetQueue({
+      this.#queueAssetForSave({
         id: fileName,
         data: assetData,
       })
@@ -392,32 +392,57 @@ export class CharXImporter {
   }
 
   /**
-   * Queues an asset for saving with concurrency control.
+   * Queues an asset for bulk saving. This keeps ZIP imports from dispatching
+   * one asset registration request per file in server-backed mode.
    */
-  async #processAssetQueue(asset: { id: string; data: Uint8Array }) {
+  #queueAssetForSave(asset: { id: string; data: Uint8Array }) {
     this.totalEnqueued += 1
-    let acquired = false
-    try {
-      await this.semaphore.acquire()
-      acquired = true
-      // audit:image-default — CharX zip asset payloads are image bytes by
-      // convention; PNG default matches the existing `assets/<sha>.png`
-      // path scheme used by `skipSaving`.
-      const assetSaveId = this.skipSaving
-        ? `assets/${await hasher(asset.data)}.png`
-        : await saveAsset(asset.data)
-
-      this.assets[asset.id] = assetSaveId
-    } catch (error) {
-      this.errors.push(error instanceof Error ? error : new Error(String(error)))
-    } finally {
-      if (acquired) {
-        this.semaphore.release()
-      }
-      this.totalCompleted += 1
-      this.onProgress?.(this.totalCompleted, this.totalEnqueued)
-      this.#checkCompletion()
+    this.pendingAssetBatch.push(asset)
+    this.pendingAssetBatchBytes += asset.data.byteLength
+    if (
+      this.pendingAssetBatch.length >= MAX_BULK_ASSET_SAVE_ITEMS ||
+      this.pendingAssetBatchBytes >= MAX_BULK_ASSET_SAVE_BYTES
+    ) {
+      void this.#flushAssetBatch()
     }
+  }
+
+  #flushAssetBatch(): Promise<void> {
+    if (this.pendingAssetBatch.length === 0) {
+      return this.assetBatchFlushChain
+    }
+
+    const batch = this.pendingAssetBatch
+    this.pendingAssetBatch = []
+    this.pendingAssetBatchBytes = 0
+
+    const run = async () => {
+      try {
+        // audit:image-default — CharX zip asset payloads are image bytes by
+        // convention; PNG default matches the existing `assets/<sha>.png`
+        // path scheme used by `skipSaving`.
+        const savedAssetIds = this.skipSaving
+          ? await Promise.all(
+              batch.map((asset) => hasher(asset.data).then((id) => `assets/${id}.png`)),
+            )
+          : await saveAssets(batch.map((asset) => ({ data: asset.data })))
+        if (savedAssetIds.length !== batch.length) {
+          throw new Error('Bulk asset save returned an unexpected result count')
+        }
+        for (let i = 0; i < batch.length; i++) {
+          this.assets[batch[i].id] = savedAssetIds[i]
+        }
+      } catch (error) {
+        this.errors.push(error instanceof Error ? error : new Error(String(error)))
+      } finally {
+        this.totalCompleted += batch.length
+        this.onProgress?.(this.totalCompleted, this.totalEnqueued)
+        this.#checkCompletion()
+      }
+    }
+
+    this.assetBatchFlushChain = this.assetBatchFlushChain.then(run, run)
+    return this.assetBatchFlushChain
   }
 
   /**
@@ -425,6 +450,8 @@ export class CharXImporter {
    * Saves hash signal if needed and marks the queue as complete.
    */
   async #finalize() {
+    void this.#flushAssetBatch()
+
     // Save hash signal for server sync if needed.
     // audit:image-default — the hash signal is an opaque tracking marker
     // persisted alongside the CharX asset set; the persisted extension is

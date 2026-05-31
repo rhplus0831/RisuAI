@@ -89,6 +89,8 @@ const PNG_BYTES = Buffer.from(
   'hex',
 )
 const PNG_SHA = createHash('sha256').update(PNG_BYTES).digest('hex')
+const OTHER_PNG_BYTES = Buffer.from('other-png-bytes')
+const OTHER_PNG_SHA = createHash('sha256').update(OTHER_PNG_BYTES).digest('hex')
 
 let harness: Harness
 
@@ -182,6 +184,86 @@ describe('Phase 2C assets', () => {
       payload: PNG_BYTES,
     })
     expect(second.statusCode).toBe(200)
+    expect(harness.commandEvents.list()).toHaveLength(1)
+  })
+
+  it('bulk uploads assets with one revision and ordered results', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        assets: [
+          { contentType: 'image/png', data: PNG_BYTES.toString('base64') },
+          { contentType: 'image/png', data: OTHER_PNG_BYTES.toString('base64') },
+        ],
+      },
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(res.json()).toEqual({
+      assets: [
+        {
+          assetId: PNG_SHA,
+          size: PNG_BYTES.length,
+          contentType: 'image/png',
+          revision: 1,
+          created: true,
+        },
+        {
+          assetId: OTHER_PNG_SHA,
+          size: OTHER_PNG_BYTES.length,
+          contentType: 'image/png',
+          revision: 1,
+          created: true,
+        },
+      ],
+      revision: 1,
+    })
+    expect(harness.commandEvents.list()).toEqual([
+      { type: 'asset.created', resource: 'asset', revision: 1, id: PNG_SHA },
+      { type: 'asset.created', resource: 'asset', revision: 1, id: OTHER_PNG_SHA },
+    ])
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(true)
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`))).toBe(true)
+  })
+
+  it('bulk upload is idempotent for existing assets', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const first = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        assets: [{ contentType: 'image/png', data: PNG_BYTES.toString('base64') }],
+      },
+    })
+    expect(first.statusCode).toBe(201)
+
+    const second = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        assets: [{ contentType: 'image/png', data: PNG_BYTES.toString('base64') }],
+      },
+    })
+
+    expect(second.statusCode).toBe(200)
+    expect(second.json()).toEqual({
+      assets: [
+        {
+          assetId: PNG_SHA,
+          size: PNG_BYTES.length,
+          contentType: 'image/png',
+          revision: 1,
+          created: false,
+        },
+      ],
+      revision: 1,
+    })
     expect(harness.commandEvents.list()).toHaveLength(1)
   })
 
@@ -351,6 +433,25 @@ describe('Phase 2C assets', () => {
       payload: { ids: ['not-a-sha'] },
     })
     expect(res.statusCode).toBe(400)
+  })
+
+  it('POST /assets/bulk rejects malformed asset payloads', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const badBase64 = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: { assets: [{ contentType: 'image/png', data: 'not base64!!!' }] },
+    })
+    expect(badBase64.statusCode).toBe(400)
+
+    const badContentType = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: { assets: [{ contentType: 'application/x-evil', data: 'aGVsbG8=' }] },
+    })
+    expect(badContentType.statusCode).toBe(400)
   })
 
   it('uploaded asset appears in bootstrap response', async () => {

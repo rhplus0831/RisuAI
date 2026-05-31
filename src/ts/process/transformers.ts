@@ -7,7 +7,7 @@ import type {
   ImageToTextOutput,
 } from '@huggingface/transformers'
 import { unzip } from 'fflate'
-import { loadAsset, saveAsset } from 'src/ts/globalApi.svelte'
+import { loadAsset, saveAssets } from 'src/ts/globalApi.svelte'
 import { selectSingleFile, asBuffer } from 'src/ts/util'
 import { v4 } from 'uuid'
 let tfCache: Cache = null
@@ -197,10 +197,15 @@ export const registerOnnxModel = async (): Promise<OnnxModelFiles> => {
   let fileIdMapped: { [key: string]: string } = {}
 
   const keys = Object.keys(unziped)
+  const savedAssetIds = await saveAssets(
+    keys.map((key) => ({
+      data: unziped[key],
+      fileName: key.endsWith('.onnx') ? key : '',
+    })),
+  )
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i]
-    const file = unziped[key]
-    const fid = await saveAsset(file, '', key.endsWith('.onnx') ? key : '')
+    const fid = savedAssetIds[i]
     let url = key
     if (url.startsWith('/')) {
       url = url.substring(1)
