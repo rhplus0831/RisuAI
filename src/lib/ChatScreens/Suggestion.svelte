@@ -1,12 +1,7 @@
 <script lang="ts">
   import { requestChatData } from 'src/ts/process/request/request'
   import { doingChat, type OpenAIChat } from '../../ts/process/index.svelte'
-  import {
-    setDatabase,
-    type character,
-    type Message,
-    type Database,
-  } from '../../ts/storage/database.svelte'
+  import { type character, type Message } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import { translate } from 'src/ts/translator/translator'
@@ -17,6 +12,7 @@
   import { onDestroy } from 'svelte'
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
   import { defaultAutoSuggestPrompt } from '../../ts/storage/defaultPrompts.js'
+  import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
 
   interface Props {
     send: () => any
@@ -31,19 +27,26 @@
   let suggestMessagesTranslated: string[] = $state()
   let toggleTranslate: boolean = $state(DBState.db.autoTranslate)
   let progress: boolean = $state()
-  let progressChatPage = -1
   let abortController: AbortController
-  let chatPage: number = $state()
+  let chatPage: number | undefined = $state()
+  let progressChatId: string | undefined
+  let suggestionRequestId = 0
 
   const updateSuggestions = () => {
     if ($selectedCharID > -1 && !$doingChat) {
-      if (progressChatPage > 0 && progressChatPage != chatPage) {
+      const currentChar = DBState.db.characters[$selectedCharID]
+      const currentChat = currentChar?.chats[currentChar.chatPage]
+      if (progress && progressChatId && progressChatId !== currentChat?.id) {
         progress = false
         abortController?.abort()
       }
-      let currentChar = DBState.db.characters[$selectedCharID]
-      suggestMessages = currentChar?.chats[currentChar.chatPage].suggestMessages
+      suggestMessages = currentChat?.suggestMessages
     }
+  }
+
+  function persistSuggestions(chatId: string | undefined, suggestions: string[]) {
+    if (!chatId) return
+    dispatchUpdateChat(chatId, { suggestMessages: suggestions }, currentChatStateSnapshot())
   }
 
   const unsub = doingChat.subscribe(async (v) => {
@@ -58,10 +61,16 @@
       (!suggestMessages || suggestMessages.length === 0) &&
       !progress
     ) {
+      const requestSelectedCharId = $selectedCharID
       let currentChar: character = DBState.db.characters[$selectedCharID]
+      const requestCharacterId = currentChar?.chaId
+      const requestChatPage = currentChar?.chatPage
+      const requestChat = currentChar?.chats[requestChatPage]
+      const requestChatId = requestChat?.id
+      if (!currentChar || !requestChat) return
       let messages: Message[] = []
 
-      messages = [...messages, ...currentChar.chats[currentChar.chatPage].message]
+      messages = [...messages, ...requestChat.message]
       let lastMessages: Message[] = messages.slice(Math.max(messages.length - 10, 0))
       if (lastMessages.length === 0) return
       const prompt =
@@ -99,8 +108,9 @@
       }
 
       progress = true
-      progressChatPage = chatPage
+      progressChatId = requestChatId
       abortController = new AbortController()
+      const requestId = ++suggestionRequestId
       requestChatData(
         {
           formated: promptbody,
@@ -110,22 +120,31 @@
         'submodel',
         abortController.signal,
       ).then((rq2) => {
+        const liveChar = DBState.db.characters[$selectedCharID]
+        const liveChat = liveChar?.chats[liveChar.chatPage]
+        const staleResponse =
+          requestId !== suggestionRequestId ||
+          requestSelectedCharId !== $selectedCharID ||
+          requestCharacterId !== liveChar?.chaId ||
+          requestChatId !== liveChat?.id
         if (
           rq2.type !== 'fail' &&
           rq2.type !== 'streaming' &&
           rq2.type !== 'multiline' &&
-          progress
+          progress &&
+          !staleResponse
         ) {
           var suggestMessagesNew = rq2.result
             .split('\n')
             .filter((msg) => msg.startsWith('-'))
             .map((msg) => msg.replace('-', '').trim())
-          const db: Database = DBState.db
-          db.characters[$selectedCharID].chats[currentChar.chatPage].suggestMessages =
-            suggestMessagesNew
           suggestMessages = suggestMessagesNew
+          persistSuggestions(requestChatId, suggestMessagesNew)
         }
-        progress = false
+        if (requestId === suggestionRequestId) {
+          progress = false
+          progressChatId = undefined
+        }
       })
     }
   })
@@ -146,7 +165,7 @@
   $effect.pre(() => {
     $selectedCharID
     //FIXME add selectedChatPage for optimize render
-    chatPage = DBState.db.characters[$selectedCharID].chatPage
+    chatPage = DBState.db.characters[$selectedCharID]?.chatPage
     updateSuggestions()
   })
   $effect.pre(() => {
@@ -182,6 +201,9 @@
           alertConfirm(language.askReRollAutoSuggestions).then((result) => {
             if (result) {
               suggestMessages = []
+              const currentChar = DBState.db.characters[$selectedCharID]
+              const currentChat = currentChar?.chats[currentChar.chatPage]
+              persistSuggestions(currentChat?.id, [])
               doingChat.set(true)
               doingChat.set(false)
             }

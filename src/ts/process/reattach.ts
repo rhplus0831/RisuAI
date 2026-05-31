@@ -39,7 +39,12 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
 
   reattaching = true
   try {
-    const { sendChat, doingChat } = await import('./index.svelte')
+    const {
+      sendChat,
+      doingChat,
+      createActiveGenerationAbortController,
+      clearActiveGenerationAbortController,
+    } = await import('./index.svelte')
     if (get(doingChat)) return
     // Consume the job up front so a re-render / re-selection does not double
     // reattach while this one streams.
@@ -47,11 +52,17 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
     // Carry the running job's mode so the replayed stream renders on the right
     // row (continue extends the existing row; regenerate targets its slot) rather
     // than as a fresh send. Older servers omit `mode` and are treated as send.
-    await sendChat(-1, {
-      reattachJobId: job.jobId,
-      continue: job.mode === 'continue' ? true : undefined,
-      regenerateMessageId: job.mode === 'regenerate' ? job.regenerateMessageId : undefined,
-    })
+    const controller = createActiveGenerationAbortController()
+    try {
+      await sendChat(-1, {
+        signal: controller.signal,
+        reattachJobId: job.jobId,
+        continue: job.mode === 'continue' ? true : undefined,
+        regenerateMessageId: job.mode === 'regenerate' ? job.regenerateMessageId : undefined,
+      })
+    } finally {
+      clearActiveGenerationAbortController(controller)
+    }
   } catch {
     // Reattach is an optimization; the persisted result still surfaces via the
     // projection refresh.

@@ -33,10 +33,21 @@
   } from '../../ts/stores.svelte'
   import { tick } from 'svelte'
   import Chat from './Chat.svelte'
-  import { getCharacterByIndex, setCharacterByIndex } from '../../ts/storage/database.svelte'
+  import {
+    getCharacterByIndex,
+    setCharacterByIndex,
+    type Message,
+  } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import { getCharImage } from '../../ts/characters'
-  import { chatProcessStage, doingChat, sendChat } from '../../ts/process/index.svelte'
+  import {
+    abortActiveGeneration,
+    chatProcessStage,
+    clearActiveGenerationAbortController,
+    createActiveGenerationAbortController,
+    doingChat,
+    sendChat,
+  } from '../../ts/process/index.svelte'
   import { sleep } from '../../ts/util'
   import { language } from '../../lang'
   import { isExpTranslator, translate } from '../../ts/translator/translator'
@@ -72,8 +83,14 @@
   import Chats from './Chats.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
-  import { currentChatStateSnapshot, dispatchReplaceMessages } from 'src/ts/chatCommands'
+  import {
+    cloneJsonValue,
+    currentChatStateSnapshot,
+    dispatchReplaceMessages,
+    dispatchUpdateChat,
+  } from 'src/ts/chatCommands'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   const loadPlaygroundMenu = () =>
     import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
@@ -191,7 +208,7 @@
     const previous = currentChatStateSnapshot()
     const currentChatRecord =
       DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
-    let cha = currentChatRecord.message
+    let cha: Message[] = cloneJsonValue(currentChatRecord.message ?? [])
     let transcriptChanged = false
 
     if (messageInput.startsWith('/')) {
@@ -258,9 +275,17 @@
     }
     messageInput = ''
     messageInputTranslate = ''
-    currentChatRecord.message = cha
-    if (transcriptChanged && currentChatRecord.id) {
-      dispatchReplaceMessages(currentChatRecord.id, cha, previous)
+    if (transcriptChanged) {
+      withTrustedServerProjectionWrite(() => {
+        const liveCharacter = DBState.db.characters[selectedChar]
+        const liveChat = liveCharacter?.chats[liveCharacter.chatPage]
+        if (liveChat && (!currentChatRecord.id || liveChat.id === currentChatRecord.id)) {
+          liveChat.message = cloneJsonValue(cha)
+        }
+      })
+      if (currentChatRecord.id) {
+        dispatchReplaceMessages(currentChatRecord.id, cha, previous)
+      }
     }
     await sleep(10)
     updateInputSizeAll()
@@ -289,8 +314,6 @@
     }
   }
 
-  let abortController: null | AbortController = null
-
   async function sendChatMain(
     continued: boolean = false,
     regenerateMessageId?: string,
@@ -300,7 +323,7 @@
       DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
         .message.length
     messageInput = ''
-    abortController = new AbortController()
+    const abortController = createActiveGenerationAbortController()
     try {
       const ok = await sendChat(-1, {
         signal: abortController.signal,
@@ -323,13 +346,13 @@
     } catch (error) {
       console.error(error)
       alertError(error)
+    } finally {
+      clearActiveGenerationAbortController(abortController)
     }
   }
 
   function abortChat() {
-    if (abortController) {
-      abortController.abort()
-    }
+    abortActiveGeneration()
   }
 
   let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
@@ -430,8 +453,10 @@
   }
 
   async function screenShot() {
+    const previousLoadPages = loadPages
     try {
       loadPages = Infinity
+      await tick()
       const html2canvas = await import('html-to-image')
       const chats = document.querySelectorAll('.default-chat-screen .risu-chat')
       alertWait('Taking screenShot...')
@@ -481,10 +506,29 @@
         mergedCanvas.remove()
       }
       alertNormal(language.screenshotSaved)
-      loadPages = 10
     } catch (error) {
       console.error(error)
       alertError('Error while taking screenshot')
+    } finally {
+      loadPages = previousLoadPages
+    }
+  }
+
+  function updateGreetingIndex(fmIndex: number) {
+    const selectedChar = $selectedCharID
+    const character = DBState.db.characters[selectedChar]
+    const chat = character?.chats[character.chatPage]
+    if (!chat) return
+    const previous = currentChatStateSnapshot()
+    withTrustedServerProjectionWrite(() => {
+      const liveCharacter = DBState.db.characters[selectedChar]
+      const liveChat = liveCharacter?.chats[liveCharacter.chatPage]
+      if (liveChat?.id === chat.id) {
+        liveChat.fmIndex = fmIndex
+      }
+    })
+    if (chat.id) {
+      dispatchUpdateChat(chat.id, { fmIndex }, previous)
     }
   }
 </script>
@@ -718,19 +762,25 @@
           <div
             onclick={(e) => {
               const previous = currentChatStateSnapshot()
+              const selectedChar = $selectedCharID
               const currentChatRecord =
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
+                DBState.db.characters[selectedChar].chats[
+                  DBState.db.characters[selectedChar].chatPage
                 ]
-              currentChatRecord.message.push({
+              const nextMessages = cloneJsonValue(currentChatRecord.message ?? [])
+              nextMessages.push({
                 role: 'char',
                 data: '',
               })
-              DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ] = currentChatRecord
+              withTrustedServerProjectionWrite(() => {
+                const liveCharacter = DBState.db.characters[selectedChar]
+                const liveChat = liveCharacter?.chats[liveCharacter.chatPage]
+                if (liveChat && (!currentChatRecord.id || liveChat.id === currentChatRecord.id)) {
+                  liveChat.message = cloneJsonValue(nextMessages)
+                }
+              })
               if (currentChatRecord.id) {
-                dispatchReplaceMessages(currentChatRecord.id, currentChatRecord.message, previous)
+                dispatchReplaceMessages(currentChatRecord.id, nextMessages, previous)
               }
             }}
             class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
@@ -777,7 +827,13 @@
           {#each fileInput as file, i}
             {#await getInlayAsset(file) then inlayAsset}
               <div class="relative">
-                {#if inlayAsset.type === 'image'}
+                {#if !inlayAsset}
+                  <div
+                    class="w-48 h-24 border border-darkborderc rounded-md flex items-center justify-center text-textcolor2"
+                  >
+                    Missing file
+                  </div>
+                {:else if inlayAsset.type === 'image'}
                   <img
                     src={inlayAsset.data}
                     alt="Inlay"
@@ -906,13 +962,10 @@
                   DBState.db.characters[$selectedCharID].chatPage
                 ]
               if (chat.fmIndex >= cha.alternateGreetings.length - 1) {
-                chat.fmIndex = -1
+                updateGreetingIndex(-1)
               } else {
-                chat.fmIndex += 1
+                updateGreetingIndex(chat.fmIndex + 1)
               }
-              DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ] = chat
             }}
             unReroll={() => {
               const cha = DBState.db.characters[$selectedCharID]
@@ -921,13 +974,10 @@
                   DBState.db.characters[$selectedCharID].chatPage
                 ]
               if (chat.fmIndex === -1) {
-                chat.fmIndex = cha.alternateGreetings.length - 1
+                updateGreetingIndex(cha.alternateGreetings.length - 1)
               } else {
-                chat.fmIndex -= 1
+                updateGreetingIndex(chat.fmIndex - 1)
               }
-              DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ] = chat
             }}
             isLastMemory={false}
             currentPage={(DBState.db.characters[$selectedCharID].chats[

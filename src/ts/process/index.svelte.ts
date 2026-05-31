@@ -52,6 +52,26 @@ export let requestTokenParts: { [key: string]: requestTokenPart[] } = {}
 export let previewFormated: OpenAIChat[] = []
 export let previewBody: string = ''
 
+let activeGenerationAbortController: AbortController | null = null
+
+export function createActiveGenerationAbortController(): AbortController {
+  const controller = new AbortController()
+  activeGenerationAbortController = controller
+  abortChat.set(false)
+  return controller
+}
+
+export function clearActiveGenerationAbortController(controller: AbortController): void {
+  if (activeGenerationAbortController === controller) {
+    activeGenerationAbortController = null
+  }
+}
+
+export function abortActiveGeneration(): void {
+  abortChat.set(true)
+  activeGenerationAbortController?.abort()
+}
+
 export async function sendChat(
   chatProcessIndex = -1,
   arg: {
