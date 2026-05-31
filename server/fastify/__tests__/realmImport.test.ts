@@ -233,6 +233,48 @@ function jpegPrefixedRealmCharx(): Uint8Array {
   return bytes
 }
 
+function manyDisplayAssetRealmCharx(assetCount: number): Uint8Array {
+  const assets = Array.from({ length: assetCount }, (_, index) => ({
+    type: 'x-risu-asset',
+    uri: `__asset:assets/display/display-${index}.png`,
+    name: `display-${index}`,
+    ext: 'png',
+  }))
+  const card = {
+    spec: 'chara_card_v3',
+    spec_version: '3.0',
+    data: {
+      name: 'Realm Many Assets',
+      description: 'packed character with many display assets',
+      personality: '',
+      scenario: '',
+      first_mes: 'hello from many assets',
+      mes_example: '',
+      creator_notes: '',
+      system_prompt: '',
+      post_history_instructions: '',
+      alternate_greetings: [],
+      tags: [],
+      creator: '',
+      character_version: '1',
+      extensions: { risuai: {} },
+      assets: [
+        { type: 'icon', uri: 'embeded://assets/main.png', name: 'main', ext: 'png' },
+        ...assets,
+      ],
+    },
+  }
+  const files: Record<string, Uint8Array> = {
+    'card.json': new TextEncoder().encode(JSON.stringify(card)),
+    'assets/main.png': new TextEncoder().encode('main image'),
+  }
+  for (let i = 0; i < assetCount; i += 1) {
+    files[`assets/display/display-${i}.png`] = new TextEncoder().encode(`display image ${i}`)
+    files[`x_meta/display-${i}.json`] = new TextEncoder().encode('{"ok":true}')
+  }
+  return fflate.zipSync(files, { level: 0 })
+}
+
 let harness: Harness
 let echo: EchoServer
 
@@ -420,4 +462,34 @@ describe('Realm character import route', () => {
     expect(character.name).toBe('Realm CharX')
     expect(persisted.assets).toHaveLength(3)
   })
+
+  it('imports Realm charx packages with thousands of display assets', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/charx' })
+        res.end(Buffer.from(manyDisplayAssetRealmCharx(7000)))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const persisted = loadPersisted(harness.dataDir)
+    expect(persisted.assets).toHaveLength(7001)
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> })
+      .characters[0]
+    expect(character.name).toBe('Realm Many Assets')
+    expect(character.additionalAssets).toHaveLength(7000)
+  }, 30000)
 })
