@@ -21,15 +21,28 @@
   import PlaygroundInlayExplorer from './PlaygroundInlayExplorer.svelte'
   import {
     currentCharacterStateSnapshot,
-    dispatchCreateCharacter,
     dispatchSelectCharacter,
+    toCharacterSnapshot,
   } from 'src/ts/characterCommands'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import {
+    canUseServerCommands,
+    createAndSelectCharacterCommand,
+    runServerCommand,
+  } from 'src/ts/server/commands'
+  import { fetchServerProjectionResource } from 'src/ts/server/projection'
+  import { mergeServerProjectionFields } from 'src/ts/storage/database.svelte'
+  import { resetChatHydration } from 'src/ts/server/chatMessageHydration.svelte'
+  import {
+    recordHydratedCharacterLorebooks,
+    resetLorebookHydration,
+  } from 'src/ts/server/lorebookBridge.svelte'
 
   let easterEggTouch = $state(0)
+  const playgroundCharacterId = '§playground'
 
-  const playgroundChat = () => {
-    const charIndex = findCharacterIndexbyId('§playground')
+  const playgroundChat = async () => {
+    const charIndex = findCharacterIndexbyId(playgroundCharacterId)
     PlaygroundStore.set(2)
 
     if (charIndex !== -1) {
@@ -46,16 +59,57 @@
       return
     }
 
-    const previous = currentCharacterStateSnapshot()
     const character = createBlankChar()
-    character.chaId = '§playground'
+    character.chaId = playgroundCharacterId
+    character.utilityBot = true
+    character.name = 'assistant'
+    character.firstMessage = '{{none}}'
+    const formattedChar = characterFormatUpdate(character)
+    const lastInteraction = Date.now()
+    formattedChar.lastInteraction = lastInteraction
+
+    if (canUseServerCommands()) {
+      const result = await runServerCommand({
+        command: (baseRevision) =>
+          createAndSelectCharacterCommand({
+            baseRevision,
+            character: toCharacterSnapshot(formattedChar),
+            lastInteraction,
+          }),
+      })
+      if (result.status !== 'ok') {
+        console.warn('Unable to create playground character', result)
+      }
+      await refreshPlaygroundProjection()
+      selectPlaygroundCharacter()
+      return
+    }
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters.push(character)
+      DBState.db.characters.push(formattedChar)
+      const index = DBState.db.characters.length - 1
+      ;(DBState.db as unknown as { currentChar?: number }).currentChar = index
+      selectedCharID.set(index)
     })
-    dispatchCreateCharacter(character, previous)
+  }
 
-    playgroundChat()
+  async function refreshPlaygroundProjection() {
+    const result = await fetchServerProjectionResource('character', {
+      id: playgroundCharacterId,
+    })
+    if (result.status !== 'ok' || result.mode !== 'fields') return
+    mergeServerProjectionFields(result.fields)
+    if (Object.prototype.hasOwnProperty.call(result.fields, 'characters')) {
+      resetChatHydration()
+      resetLorebookHydration()
+      recordHydratedCharacterLorebooks(result.fields.characters)
+    }
+  }
+
+  function selectPlaygroundCharacter() {
+    const index = findCharacterIndexbyId(playgroundCharacterId)
+    if (index === -1) return
+    selectedCharID.set(index)
   }
 </script>
 
@@ -68,7 +122,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1 md:col-span-2"
         onclick={() => {
-          playgroundChat()
+          void playgroundChat()
         }}
       >
         <h1 class="text-2xl font-bold text-start">{language.Chat}</h1>

@@ -19,7 +19,7 @@ interface PendingCharacterPatch {
   timer: ReturnType<typeof setTimeout> | null
 }
 
-let pendingPatch: PendingCharacterPatch | null = null
+const pendingPatches = new Map<string, PendingCharacterPatch>()
 let suppressRollbackDispatch = false
 
 export interface WatchServerBackedCharacterProfileOptions {
@@ -158,25 +158,25 @@ function queueCharacterPatch(
   previous: CharacterStateSnapshot,
   delay: number,
 ): void {
+  const pendingPatch = pendingPatches.get(characterId)
   if (pendingPatch?.timer) clearTimeout(pendingPatch.timer)
 
-  pendingPatch =
-    pendingPatch && pendingPatch.characterId === characterId
-      ? {
-          ...pendingPatch,
-          patch: { ...pendingPatch.patch, ...patch },
-          timer: null,
-        }
-      : {
-          characterId,
-          patch,
-          previous,
-          timer: null,
-        }
+  const nextPatch: PendingCharacterPatch = pendingPatch
+    ? {
+        ...pendingPatch,
+        patch: { ...pendingPatch.patch, ...patch },
+        timer: null,
+      }
+    : {
+        characterId,
+        patch,
+        previous,
+        timer: null,
+      }
 
-  pendingPatch.timer = setTimeout(() => {
-    const commandPatch = pendingPatch
-    pendingPatch = null
+  nextPatch.timer = setTimeout(() => {
+    const commandPatch = pendingPatches.get(characterId)
+    pendingPatches.delete(characterId)
     if (!commandPatch) return
 
     dispatchUpdateCharacter(
@@ -189,6 +189,7 @@ function queueCharacterPatch(
       rollbackServerBackedCharacterProfile,
     )
   }, delay)
+  pendingPatches.set(characterId, nextPatch)
 }
 
 function scalarCharacterProfile(character: Record<string, unknown>): CharacterSnapshot {

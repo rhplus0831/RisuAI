@@ -283,11 +283,15 @@ export async function exportChat(page: number) {
         ? (await alertSelect([language.includePersonaName, language.hidePersonaName])) === '1'
         : false
     const selectedID = get(selectedCharID)
-    const db = DBState.db
-    const chat = db.characters[selectedID].chats[page]
-    const char = db.characters[selectedID]
+    const chatId = DBState.db.characters[selectedID]?.chats?.[page]?.id
     // The exported chat may not be the open (hydrated) one.
-    if (chat?.id) await hydrateChatMessages(chat.id)
+    if (chatId) await hydrateChatMessages(chatId)
+    const db = DBState.db
+    const char = db.characters[selectedID]
+    const chat = char?.chats?.[page]
+    if (!char || !chat) {
+      throw new Error('Chat no longer exists')
+    }
     const date = new Date().toJSON()
     const htmlChatParse = async (v: string) => {
       v = parseMarkdownSafe(v)

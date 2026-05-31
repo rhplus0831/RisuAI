@@ -27,8 +27,8 @@ interface PendingFolderPatch {
   timer: ReturnType<typeof setTimeout> | null
 }
 
-let pendingChatPatch: PendingChatPatch | null = null
-let pendingFolderPatch: PendingFolderPatch | null = null
+const pendingChatPatches = new Map<string, PendingChatPatch>()
+const pendingFolderPatches = new Map<string, PendingFolderPatch>()
 let suppressRollbackDispatch = false
 let activeStop: (() => void) | null = null
 let watcherRefs = 0
@@ -123,28 +123,29 @@ function queueChatPatch(
   previous: ChatStateSnapshot,
   delay: number,
 ): void {
+  const pendingChatPatch = pendingChatPatches.get(chatId)
   if (pendingChatPatch?.timer) clearTimeout(pendingChatPatch.timer)
 
-  pendingChatPatch =
-    pendingChatPatch && pendingChatPatch.chatId === chatId
-      ? {
-          ...pendingChatPatch,
-          patch: { ...pendingChatPatch.patch, ...patch },
-          timer: null,
-        }
-      : {
-          chatId,
-          patch,
-          previous,
-          timer: null,
-        }
+  const nextPatch: PendingChatPatch = pendingChatPatch
+    ? {
+        ...pendingChatPatch,
+        patch: { ...pendingChatPatch.patch, ...patch },
+        timer: null,
+      }
+    : {
+        chatId,
+        patch,
+        previous,
+        timer: null,
+      }
 
-  pendingChatPatch.timer = setTimeout(() => {
-    const commandPatch = pendingChatPatch
-    pendingChatPatch = null
+  nextPatch.timer = setTimeout(() => {
+    const commandPatch = pendingChatPatches.get(chatId)
+    pendingChatPatches.delete(chatId)
     if (!commandPatch) return
     dispatchUpdateChat(commandPatch.chatId, commandPatch.patch, commandPatch.previous)
   }, delay)
+  pendingChatPatches.set(chatId, nextPatch)
 }
 
 function queueFolderPatch(
@@ -153,28 +154,29 @@ function queueFolderPatch(
   previous: ChatStateSnapshot,
   delay: number,
 ): void {
+  const pendingFolderPatch = pendingFolderPatches.get(folderId)
   if (pendingFolderPatch?.timer) clearTimeout(pendingFolderPatch.timer)
 
-  pendingFolderPatch =
-    pendingFolderPatch && pendingFolderPatch.folderId === folderId
-      ? {
-          ...pendingFolderPatch,
-          patch: { ...pendingFolderPatch.patch, ...patch },
-          timer: null,
-        }
-      : {
-          folderId,
-          patch,
-          previous,
-          timer: null,
-        }
+  const nextPatch: PendingFolderPatch = pendingFolderPatch
+    ? {
+        ...pendingFolderPatch,
+        patch: { ...pendingFolderPatch.patch, ...patch },
+        timer: null,
+      }
+    : {
+        folderId,
+        patch,
+        previous,
+        timer: null,
+      }
 
-  pendingFolderPatch.timer = setTimeout(() => {
-    const commandPatch = pendingFolderPatch
-    pendingFolderPatch = null
+  nextPatch.timer = setTimeout(() => {
+    const commandPatch = pendingFolderPatches.get(folderId)
+    pendingFolderPatches.delete(folderId)
     if (!commandPatch) return
     dispatchUpdateChatFolder(commandPatch.folderId, commandPatch.patch, commandPatch.previous)
   }, delay)
+  pendingFolderPatches.set(folderId, nextPatch)
 }
 
 function scalarChatMetadata(chat: ChatSnapshot): ChatSnapshot {

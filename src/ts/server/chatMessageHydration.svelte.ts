@@ -6,6 +6,7 @@ import {
 } from '../storage/database.svelte'
 import { seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
 import { markCharacterLorebookHydrated } from './lorebookBridge.svelte'
+import { peekCachedServerCommandRevision } from './commands'
 import {
   canUseServerProjection,
   fetchServerCharacterLorebook,
@@ -20,12 +21,14 @@ import {
 // Chat ids whose messages this client has already hydrated this session, so
 // re-opening a chat does not refetch. Cleared on a full re-stub (resync).
 const hydratedChatIds = new Set<string>()
-const inFlight = new Set<string>()
+const inFlight = new Map<string, Promise<void>>()
+let chatHydrationGeneration = 0
 
 // Character ids whose `globalLore` this client has hydrated this session (only
 // when the EXPERIMENTAL `enableLorebookStubs` setting is on).
 const hydratedCharLorebookIds = new Set<string>()
-const charLorebookInFlight = new Set<string>()
+const charLorebookInFlight = new Map<string, Promise<void>>()
+let charLorebookHydrationGeneration = 0
 
 function activeChatId(): string | undefined {
   const selId = get(selectedCharID)
@@ -39,22 +42,39 @@ function activeChatId(): string | undefined {
 async function hydrateChat(chatId: string, force: boolean): Promise<void> {
   if (!canUseServerProjection()) return
   if (!force && hydratedChatIds.has(chatId)) return
-  if (inFlight.has(chatId)) return
-  inFlight.add(chatId)
-  try {
-    const result = await fetchServerChatMessages(chatId)
-    if (result.status === 'ok') {
-      hydrateServerChatMessages(chatId, result.message, result.hypaV3Data)
+  const currentRequest = inFlight.get(chatId)
+  if (currentRequest) return currentRequest
+
+  const generation = chatHydrationGeneration
+  let request: Promise<void>
+  request = (async () => {
+    try {
+      const result = await fetchServerChatMessages(chatId)
+      if (
+        result.status !== 'ok' ||
+        result.chatId !== chatId ||
+        generation !== chatHydrationGeneration ||
+        isOlderThanAppliedRevision(result.revision)
+      ) {
+        return
+      }
+
+      const applied = hydrateServerChatMessages(chatId, result.message, result.hypaV3Data)
+      if (!applied) return
       hydratedChatIds.add(chatId)
       // Only the open chat's tail drives the swipe buffer; seed it from this
       // chat's persisted reroll candidates so rerolls survive a reload.
       if (activeChatId() === chatId) {
         seedRerollBufferFromAlternates(result.message, result.alternates)
       }
+    } finally {
+      if (inFlight.get(chatId) === request) {
+        inFlight.delete(chatId)
+      }
     }
-  } finally {
-    inFlight.delete(chatId)
-  }
+  })()
+  inFlight.set(chatId, request)
+  return request
 }
 
 /** Hydrate the currently-open chat's messages (no-op if already hydrated). */
@@ -82,19 +102,36 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
   // globalLore is already resident — no fetch needed and nothing to hydrate.
   if (!DBState.db?.enableLorebookStubs) return
   if (!force && hydratedCharLorebookIds.has(characterId)) return
-  if (charLorebookInFlight.has(characterId)) return
-  charLorebookInFlight.add(characterId)
-  try {
-    const result = await fetchServerCharacterLorebook(characterId)
-    if (result.status === 'ok') {
-      hydrateServerCharacterLorebook(characterId, result.globalLore)
+  const currentRequest = charLorebookInFlight.get(characterId)
+  if (currentRequest) return currentRequest
+
+  const generation = charLorebookHydrationGeneration
+  let request: Promise<void>
+  request = (async () => {
+    try {
+      const result = await fetchServerCharacterLorebook(characterId)
+      if (
+        result.status !== 'ok' ||
+        result.characterId !== characterId ||
+        generation !== charLorebookHydrationGeneration ||
+        isOlderThanAppliedRevision(result.revision)
+      ) {
+        return
+      }
+
+      const applied = hydrateServerCharacterLorebook(characterId, result.globalLore)
+      if (!applied) return
       // Mark hydrated so the lorebook watcher tracks (and persists) edits to it.
       markCharacterLorebookHydrated(characterId)
       hydratedCharLorebookIds.add(characterId)
+    } finally {
+      if (charLorebookInFlight.get(characterId) === request) {
+        charLorebookInFlight.delete(characterId)
+      }
     }
-  } finally {
-    charLorebookInFlight.delete(characterId)
-  }
+  })()
+  charLorebookInFlight.set(characterId, request)
+  return request
 }
 
 /** Hydrate the open character's `globalLore` (no-op if already hydrated / stubs off). */
@@ -130,11 +167,18 @@ export async function ensureAllCharacterLorebooksHydrated(): Promise<void> {
  */
 export function resetChatHydration(): void {
   hydratedChatIds.clear()
+  chatHydrationGeneration += 1
   inFlight.clear()
   // A re-stub also re-stubs character globalLore; forget these marks so the open
   // character re-hydrates (the lorebook registry is reset in bootstrap.ts).
   hydratedCharLorebookIds.clear()
+  charLorebookHydrationGeneration += 1
   charLorebookInFlight.clear()
+}
+
+function isOlderThanAppliedRevision(revision: number): boolean {
+  const appliedRevision = peekCachedServerCommandRevision()
+  return appliedRevision !== null && revision < appliedRevision
 }
 
 /**
