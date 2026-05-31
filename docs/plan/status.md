@@ -18,14 +18,14 @@ Completed foundations:
   gaps.
 - `/api/v1/events` subscribes to command events before selecting replay, queues
   setup-time command events, and drains events not already covered by replay.
+- Backup restore now forces a trusted read-only bootstrap resync before the
+  browser reports success or advances past the restored projection.
 - `server/fastify/src/routeManifest.ts` drives route protocol ownership,
   active-writer classification, route-protection tests, and the architecture
   audit.
 
 Active correctness risks from [`../AUDIT.md`](../AUDIT.md):
 
-- Backup restore can leave the active browser on stale pre-restore projection
-  state.
 - Durable generation reattach can miss required `prompt` and `info` frames.
 - Hypa V3 modal and bookmark UI paths can still attempt direct guarded
   projection writes.
@@ -54,7 +54,7 @@ Active performance risks:
 | Phase                                                     | Status                               | Open when working on...                                                                 |
 | --------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
 | [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, bounded hydration, durable event history, route manifest coverage.    |
-| [Phase 1](phases/phase-1-correctness-hardening.md)        | Active priority                      | Restore resync, generation replay frames, direct projection writes.                     |
+| [Phase 1](phases/phase-1-correctness-hardening.md)        | Active priority                      | Generation replay frames and direct projection writes.                                  |
 | [Phase 2](phases/phase-2-command-write-cost.md)           | Planned                              | Whole-corpus command mutation cost and narrow write paths.                              |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Planned                              | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Planned                              | SSE backpressure, generation reattach triggers, resend caps, finalization retry.        |

@@ -1,7 +1,7 @@
 # Phase 1: Correctness Hardening
 
-Status: active priority. Event replay/subscribe race implemented; remaining
-P1 slices are restore resync, durable generation frame replay, and direct
+Status: active priority. Event replay/subscribe race and restore resync are
+implemented; remaining P1 slices are durable generation frame replay and direct
 projection write fixes.
 
 Goal: close the confirmed P1 correctness issues from `docs/AUDIT.md` before
@@ -20,7 +20,8 @@ optimizing lower-severity costs.
 ## Slices
 
 - [`event-replay-subscribe-race.md`](slices/phase-1-correctness-hardening/event-replay-subscribe-race.md)
-- [`backup-restore-resync.md`](slices/phase-1-correctness-hardening/backup-restore-resync.md)
+- [`backup-restore-resync.md`](slices/phase-1-correctness-hardening/backup-restore-resync.md) -
+  implemented
 - [`durable-generation-frame-replay.md`](slices/phase-1-correctness-hardening/durable-generation-frame-replay.md)
 - [`direct-projection-write-fixes.md`](slices/phase-1-correctness-hardening/direct-projection-write-fixes.md)
 
@@ -39,4 +40,4 @@ optimizing lower-severity costs.
 - `pnpm api:test -- server/fastify/__tests__/events.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/backups.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/durableGeneration.test.ts`
-- `pnpm test -- src/ts/bootstrap.test.ts`
+- `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/backups.test.ts src/ts/server/bootstrap.test.ts`

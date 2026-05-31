@@ -1,7 +1,8 @@
 import { isFastifyServer } from '../platform'
 import { getNodeServerProxyAuth } from '../storage/nodeStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
-import { setCachedServerCommandRevision, type CommandEvent } from './commands'
+import type { CommandEvent } from './commands'
+import { forceServerProjectionResync } from './projectionResync'
 
 const BACKUPS_ENDPOINT = '/api/v1/backups'
 
@@ -61,7 +62,7 @@ export async function restoreServerBackup(input: {
   id: string
   signal?: AbortSignal | null
 }): Promise<ServerBackupResult<{ revision: number; event?: CommandEvent }>> {
-  return requestServerBackupJson(`/${encodeURIComponent(input.id)}/restore`, {
+  const restored = await requestServerBackupJson(`/${encodeURIComponent(input.id)}/restore`, {
     method: 'POST',
     signal: input.signal,
     validate: (body) => {
@@ -74,11 +75,22 @@ export async function restoreServerBackup(input: {
         ...(isCommandEvent(record.event) ? { event: record.event } : {}),
       }
     },
-    map: (result) => {
-      setCachedServerCommandRevision(result.revision)
-      return result
-    },
+    map: (result) => result,
   })
+  if (restored.status !== 'ok') return restored
+
+  const resync = await forceServerProjectionResync('backup-restore')
+  if (resync.status !== 'ok') {
+    return {
+      status: 'error',
+      error:
+        resync.status === 'unavailable'
+          ? 'Backup restored, but server bootstrap is unavailable; reload to refresh projection state.'
+          : `Backup restored, but projection refresh failed: ${resync.error}`,
+    }
+  }
+
+  return restored
 }
 
 export async function deleteServerBackup(input: {

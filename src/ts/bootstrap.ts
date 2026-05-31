@@ -50,6 +50,7 @@ import {
   type CommandEvent,
 } from './server/commands'
 import { fetchServerProjectionResource } from './server/projection'
+import { forceServerProjectionResync } from './server/projectionResync'
 import {
   hydrateActiveCharacterLorebook,
   hydrateActiveChat,
@@ -63,15 +64,12 @@ import {
 import { setActiveGenerationJobs, startActiveGenerationReattach } from './process/reattach'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 import { isFastifyServer } from './platform'
-import { recordFullBootstrapResync } from './server/protocolDiagnostics'
 
 // Delay before re-subscribing to the command-event stream after it drops. On
 // reconnect we full-bootstrap to recover any events missed while disconnected.
 const SERVER_PROJECTION_RECONNECT_DELAY_MS = 1000
 
 let serverProjectionEventSubscription: { unsubscribe: () => void } | null = null
-let serverProjectionRefreshInFlight = false
-let serverProjectionRefreshPending = false
 // Serializes the surgical-sync decision tree so inbound command events are
 // applied strictly in arrival order (gap detection per-event, not batched).
 let serverProjectionSyncChain: Promise<void> = Promise.resolve()
@@ -138,13 +136,6 @@ export async function loadData() {
       alertError(error)
     }
   }
-}
-
-/** Raw projection characters before format defaults hide lorebook stubs. */
-function rawProjectionCharacters(
-  database: Database | undefined,
-): ReadonlyArray<{ chaId?: string; globalLore?: unknown }> | undefined {
-  return database?.characters as ReadonlyArray<{ chaId?: string; globalLore?: unknown }> | undefined
 }
 
 export async function loadWebInitialDatabase() {
@@ -237,8 +228,6 @@ export function stopServerProjectionEvents() {
     clearTimeout(serverProjectionReconnectTimer)
     serverProjectionReconnectTimer = null
   }
-  serverProjectionRefreshInFlight = false
-  serverProjectionRefreshPending = false
 }
 
 async function startServerProjectionEvents() {
@@ -266,7 +255,7 @@ async function startServerProjectionEvents() {
       `Server event replay unavailable at revision ${subscription.currentRevision}; refreshing projection`,
     )
     enqueueServerProjectionSync(async () => {
-      await fullBootstrapResync('event-replay-unavailable')
+      await forceServerProjectionResync('event-replay-unavailable')
       scheduleServerProjectionReconnect()
     })
   }
@@ -319,7 +308,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
   const cached = peekCachedServerCommandRevision()
   if (cached === null) {
     // No baseline yet: reconcile from scratch.
-    await fullBootstrapResync('no-baseline')
+    await forceServerProjectionResync('no-baseline')
     return
   }
   if (event.revision <= cached) {
@@ -354,7 +343,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       return
     }
     // 'full' mode, error, or unavailable → fall back to a full reconcile.
-    await fullBootstrapResync(
+    await forceServerProjectionResync(
       result.status === 'ok' && result.mode === 'full'
         ? 'projection-full-mode'
         : 'projection-error',
@@ -362,46 +351,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
     return
   }
   // Gap detected (event.revision > cached + 1) → self-healing full bootstrap.
-  await fullBootstrapResync('revision-gap')
-}
-
-async function fullBootstrapResync(reason: string): Promise<void> {
-  recordFullBootstrapResync(reason)
-  if (serverProjectionRefreshInFlight) {
-    serverProjectionRefreshPending = true
-    return
-  }
-
-  serverProjectionRefreshInFlight = true
-  try {
-    do {
-      serverProjectionRefreshPending = false
-      const bootstrap = await fetchServerBootstrapProjectionReadOnly()
-      if (bootstrap.status === 'ok') {
-        if (bootstrap.projection.database == null) {
-          console.warn('Server projection refresh returned an empty database')
-          continue
-        }
-        applyServerProjectionDatabase(bootstrap.projection.database)
-        setCachedServerCommandRevision(bootstrap.projection.revision)
-        setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
-        // The full re-apply re-stubbed every chat; forget cached hydration and
-        // re-hydrate the open chat.
-        resetChatHydration()
-        void hydrateActiveChat({ force: true })
-        // The re-apply also re-stubs character globalLore: re-record hydrated
-        // marks from the fresh raw projection, then re-hydrate the open character
-        // globalLore (no-op unless stubs are on).
-        resetLorebookHydration()
-        recordHydratedCharacterLorebooks(rawProjectionCharacters(bootstrap.projection.database))
-        void hydrateActiveCharacterLorebook({ force: true })
-      } else if (bootstrap.status === 'error') {
-        console.warn(`Server projection refresh failed: ${bootstrap.error}`)
-      }
-    } while (serverProjectionRefreshPending)
-  } finally {
-    serverProjectionRefreshInFlight = false
-  }
+  await forceServerProjectionResync('revision-gap')
 }
 
 /**

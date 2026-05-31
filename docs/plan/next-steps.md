@@ -18,11 +18,9 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-1. Make backup restore force a trusted resync or apply returned projection:
-   [`backup-restore-resync.md`](phases/slices/phase-1-correctness-hardening/backup-restore-resync.md).
-2. Make durable generation reattach replay required lifecycle frames:
+1. Make durable generation reattach replay required lifecycle frames:
    [`durable-generation-frame-replay.md`](phases/slices/phase-1-correctness-hardening/durable-generation-frame-replay.md).
-3. Remove direct guarded projection writes in the Hypa V3 and bookmark UI paths:
+2. Remove direct guarded projection writes in the Hypa V3 and bookmark UI paths:
    [`direct-projection-write-fixes.md`](phases/slices/phase-1-correctness-hardening/direct-projection-write-fixes.md).
 
 After those P1 slices, prefer measured P2 work:
@@ -65,6 +63,7 @@ touches shared protocol behavior.
 - `pnpm api:test -- server/fastify/__tests__/events.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/backups.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/durableGeneration.test.ts`
+- `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/backups.test.ts src/ts/server/bootstrap.test.ts`
 - `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/chatMessageHydration.test.ts`
 - `pnpm client-thinning:audit`
 - `pnpm api:test`

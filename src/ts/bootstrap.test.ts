@@ -374,6 +374,38 @@ describe('web bootstrap startup source', () => {
     expect(peekCachedServerCommandRevision()).toBe(6)
   })
 
+  it('full-bootstraps restored state events so the active projection changes', async () => {
+    await loadWebInitialDatabase()
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 6,
+        database: {
+          characters: [{ chaId: 'restored-char', name: 'Restored', chats: [] }],
+          modules: [],
+          personas: [],
+          language: 'ko',
+        },
+      },
+    }
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({ type: 'state.restored', revision: 6, resource: 'state' })
+
+    await vi.waitFor(() => {
+      expect(DBState.db).toMatchObject({
+        language: 'ko',
+        characters: [{ chaId: 'restored-char', name: 'Restored', chats: [] }],
+      })
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('state', {
+      id: undefined,
+      parentId: undefined,
+    })
+    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(peekCachedServerCommandRevision()).toBe(6)
+  })
+
   it('full-bootstraps on a revision gap, without a targeted fetch', async () => {
     await loadWebInitialDatabase()
     serverBootstrapState.response = {

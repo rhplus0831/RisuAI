@@ -44,18 +44,28 @@ export function canUseServerBootstrap(): boolean {
 export async function fetchServerBootstrapProjection(
   signal?: AbortSignal | null,
 ): Promise<ServerBootstrapResult> {
-  return fetchServerBootstrapProjectionWithMode({ signal, registerActiveWriter: true })
+  return fetchServerBootstrapProjectionWithMode({
+    signal,
+    registerActiveWriter: true,
+    cacheRevision: true,
+  })
 }
 
 export async function fetchServerBootstrapProjectionReadOnly(
   signal?: AbortSignal | null,
+  options: { cacheRevision?: boolean } = {},
 ): Promise<ServerBootstrapResult> {
-  return fetchServerBootstrapProjectionWithMode({ signal, registerActiveWriter: false })
+  return fetchServerBootstrapProjectionWithMode({
+    signal,
+    registerActiveWriter: false,
+    cacheRevision: options.cacheRevision ?? true,
+  })
 }
 
 async function fetchServerBootstrapProjectionWithMode(input: {
   signal?: AbortSignal | null
   registerActiveWriter: boolean
+  cacheRevision: boolean
 }): Promise<ServerBootstrapResult> {
   if (!canUseServerBootstrap()) return { status: 'unavailable' }
 
@@ -104,7 +114,9 @@ async function fetchServerBootstrapProjectionWithMode(input: {
     return { status: 'error', error: 'Invalid bootstrap database' }
   }
 
-  setCachedServerCommandRevision(revision as number)
+  if (input.cacheRevision) {
+    setCachedServerCommandRevision(revision as number)
+  }
 
   return {
     status: 'ok',
@@ -128,11 +140,7 @@ function parseActiveGenerationJobs(value: unknown): ActiveGenerationJob[] {
     const record = entry as Record<string, unknown>
     if (typeof record.chatId === 'string' && typeof record.jobId === 'string') {
       const job: ActiveGenerationJob = { chatId: record.chatId, jobId: record.jobId }
-      if (
-        record.mode === 'send' ||
-        record.mode === 'continue' ||
-        record.mode === 'regenerate'
-      ) {
+      if (record.mode === 'send' || record.mode === 'continue' || record.mode === 'regenerate') {
         job.mode = record.mode
       }
       if (typeof record.regenerateMessageId === 'string') {

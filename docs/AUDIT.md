@@ -28,11 +28,11 @@ HTTP routes. It builds on `docs/SERVER-AND-CLIENT.md` and
   server command mutation path: even small JSON commands load the full persisted
   database, hydrate all chat messages, clone the whole database, scan all chats
   for diffs, write `db.json`, persist a command event, and emit to SSE clients.
-- Several correctness risks look like Fastify migration side effects: backup
-  restore can leave the active client on stale projection state, and durable
+- Several correctness risks look like Fastify migration side effects: durable
   generation reattach can fail to replay prompt/info frames required by the
-  browser. The event subscribe/replay race has been closed by subscribing
-  before replay snapshot selection and draining setup-time command events.
+  browser, and some UI paths can still attempt direct projection writes. The
+  event subscribe/replay race and backup restore stale-projection risk have
+  both been closed.
 - Client-side direct writes to server-backed projection state are mostly
   blocked by the projection write guard, but two UI paths appear to mutate
   `DBState.db` directly before dispatching or without dispatching a server
@@ -135,22 +135,27 @@ drains setup-time command events that were not already covered by replay
 (`server/fastify/src/routes/events.ts:126`). A regression test opens an event
 stream while a command lands during setup.
 
-### P1: Backup Restore Can Leave The Active Client On A Stale Projection
+### Resolved P1: Backup Restore Active Projection Resync
 
-The restore route restores server state, creates a `stateRestored` event, and
-returns only `{ revision, event }` (`server/fastify/src/routes/backups.ts:43`,
-`server/fastify/src/routes/backups.ts:53`). The client helper advances the
-cached command revision immediately (`src/ts/server/backups.ts:77`), while
-`loadInternalBackup()` only shows a success alert and does not apply or refetch
-the restored projection (`src/ts/globalApi.svelte.ts:1792`). When the SSE echo
-arrives, `processServerCommandEvent()` can skip it because the cached revision
-already equals the restore revision (`src/ts/bootstrap.ts:325`). The active
-browser can then keep editing pre-restore state using the post-restore revision.
+The restore route still restores server state, creates a `stateRestored` event,
+and returns `{ revision, event }` (`server/fastify/src/routes/backups.ts:53`,
+`server/fastify/src/routes/backups.ts:56`). The stale-projection risk was that
+the client cached that restore revision before applying or refetching the
+restored projection, so the SSE echo could be skipped as already handled.
 
-Recommendation: after a successful restore, force a full bootstrap resync before
-advancing/skipping projection, or make restore return a projection and apply it
-through the trusted projection path. Add a restore test that asserts the active
-client projection changes immediately.
+Resolution: `restoreServerBackup()` now waits for a trusted read-only bootstrap
+resync after a successful restore response and no longer caches the restore
+revision from the restore body alone (`src/ts/server/backups.ts:65`,
+`src/ts/server/backups.ts:82`). The shared resync helper fetches bootstrap with
+revision caching disabled, applies the restored projection, and only then
+advances the cached command revision (`src/ts/server/projectionResync.ts:52`,
+`src/ts/server/projectionResync.ts:60`, `src/ts/server/projectionResync.ts:61`).
+If the follow-up resync fails, the helper reports an explicit partial-success
+error instead of showing a loaded-backup success over stale client state. Tests
+assert both the active projection update and the no-cache-on-resync-failure
+case (`src/ts/server/backups.test.ts:170`,
+`src/ts/server/backups.test.ts:220`), and the event path still full-bootstrap
+resyncs `state.restored` echoes (`src/ts/bootstrap.test.ts:377`).
 
 ### P1: Durable Generation Reattach Does Not Preserve Required Frames
 
@@ -556,9 +561,8 @@ suppression mechanism.
 
 ## Recommended Priority Order
 
-1. Fix the P1 correctness issues: event subscribe/replay race, backup restore
-   stale projection, durable generation reattach replay, and direct guarded
-   projection writes in Hypa V3/bookmark UI.
+1. Fix the remaining P1 correctness issues: durable generation reattach replay
+   and direct guarded projection writes in Hypa V3/bookmark UI.
 2. Reduce the command mutation hot path by adding narrow persistence paths for
    settings, metadata, and message operations.
 3. Make targeted projection and asset metadata lookup avoid full `db.json`
@@ -581,8 +585,6 @@ and bounded hydration concurrency.
 
 Important gaps for this audit:
 
-- no test that closes the event replay/subscribe race;
-- no test that restore applies projection to the active client;
 - no durable-generation test that drops a viewer after `prompt`/`info` and
   reattaches later;
 - no tests for direct projection-guard violations in Hypa V3 modal and bookmark

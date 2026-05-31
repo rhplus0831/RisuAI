@@ -22,7 +22,11 @@ import {
   fetchServerBootstrapProjectionReadOnly,
 } from './bootstrap'
 import { ACTIVE_WRITER_SESSION_HEADER } from './activeWriterSession'
-import { clearCachedServerCommandRevision, getServerCommandBaseRevision } from './commands'
+import {
+  clearCachedServerCommandRevision,
+  getServerCommandBaseRevision,
+  peekCachedServerCommandRevision,
+} from './commands'
 
 interface CapturedFetch {
   url: string
@@ -129,6 +133,22 @@ describe('server bootstrap projection helper', () => {
       },
     ])
     await expect(getServerCommandBaseRevision()).resolves.toBe(13)
+  })
+
+  it('can fetch a read-only projection without caching its revision', async () => {
+    stubBootstrapFetch(() => ({
+      revision: 14,
+      database: { characters: [], language: 'en' },
+    }))
+
+    await expect(
+      fetchServerBootstrapProjectionReadOnly(null, { cacheRevision: false }),
+    ).resolves.toMatchObject({
+      status: 'ok',
+      projection: { revision: 14 },
+    })
+
+    expect(peekCachedServerCommandRevision()).toBeNull()
   })
 
   it('maps bootstrap HTTP errors to status:error', async () => {
