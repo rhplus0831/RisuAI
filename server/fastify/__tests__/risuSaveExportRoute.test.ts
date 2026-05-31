@@ -9,6 +9,7 @@ import { decodeRisuSaveBlockEnvelope } from '../src/risuSave/blockCodec.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { classifyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
 import { writePersisted } from '../src/repository.js'
+import { setupAuthedClient } from './helpers/auth.js'
 
 interface Harness {
   app: FastifyInstance
@@ -90,30 +91,31 @@ function expectExportRequiredShape(database: Record<string, unknown>): void {
   expect(Array.isArray(database.pluginCustomStorage)).toBe(false)
 }
 
-async function setupPassword(app: FastifyInstance): Promise<void> {
-  const setup = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/setup',
-    payload: { password: 'hunter2' },
-  })
-  expect(setup.statusCode).toBe(200)
-}
-
 let harness: Harness
+let assertion: string
 
 beforeEach(async () => {
   harness = await startHarness()
+  ;({ assertion } = await setupAuthedClient(harness.app))
 })
 
 afterEach(async () => {
   await stopHarness(harness)
 })
 
+function authedInject(opts: Record<string, unknown>) {
+  const headers = (opts.headers ?? {}) as Record<string, string>
+  return harness.app.inject({
+    ...opts,
+    headers: { 'risu-auth': assertion, ...headers },
+  })
+}
+
 describe('Phase 9-8b repository .risu export route', () => {
   it('exports repository snapshots as downloadable RISUSAVE block bytes by default', async () => {
     persistExportableDatabase(harness.dataDir)
 
-    const exported = await harness.app.inject({
+    const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave',
     })
@@ -143,7 +145,7 @@ describe('Phase 9-8b repository .risu export route', () => {
   it('supports compressed block exports with explicit query parameters', async () => {
     persistExportableDatabase(harness.dataDir)
 
-    const exported = await harness.app.inject({
+    const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave?envelope=risusave-blocks&compression=true',
     })
@@ -165,7 +167,7 @@ describe('Phase 9-8b repository .risu export route', () => {
   it('supports route-ready legacy envelope exports', async () => {
     persistExportableDatabase(harness.dataDir)
 
-    const exported = await harness.app.inject({
+    const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave?envelope=legacy-raw',
     })
@@ -185,7 +187,7 @@ describe('Phase 9-8b repository .risu export route', () => {
       assets: [],
     })
 
-    const exported = await harness.app.inject({
+    const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave?envelope=risusave-blocks',
     })
@@ -197,7 +199,6 @@ describe('Phase 9-8b repository .risu export route', () => {
 
   it('rejects unauthenticated exports once a password is set', async () => {
     persistExportableDatabase(harness.dataDir)
-    await setupPassword(harness.app)
 
     const exported = await harness.app.inject({
       method: 'GET',
@@ -211,7 +212,7 @@ describe('Phase 9-8b repository .risu export route', () => {
   it('rejects invalid export query parameters', async () => {
     persistExportableDatabase(harness.dataDir)
 
-    const badEnvelope = await harness.app.inject({
+    const badEnvelope = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave?envelope=zip',
     })
@@ -221,7 +222,7 @@ describe('Phase 9-8b repository .risu export route', () => {
     })
     expect(harness.commandEvents.list()).toEqual([])
 
-    const badCompression = await harness.app.inject({
+    const badCompression = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave?envelope=legacy-raw&compression=true',
     })
@@ -233,7 +234,7 @@ describe('Phase 9-8b repository .risu export route', () => {
   })
 
   it('returns validation errors for missing or malformed persisted databases', async () => {
-    const missing = await harness.app.inject({
+    const missing = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave',
     })
@@ -271,7 +272,7 @@ describe('Phase 9-8b repository .risu export route', () => {
       }),
     )
 
-    const malformed = await harness.app.inject({
+    const malformed = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave',
     })

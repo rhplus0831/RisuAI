@@ -16,6 +16,7 @@ import {
   listMemorySummaries,
 } from '../src/memoryRepository.js'
 import { writePersisted } from '../src/repository.js'
+import { setupAuthedClient } from './helpers/auth.js'
 
 process.env.LOG_LEVEL = 'silent'
 
@@ -133,9 +134,11 @@ describe('legacy Hypa V3 memory import', () => {
       },
     })
     try {
+      const { assertion } = await setupAuthedClient(app)
       const imported = await app.inject({
         method: 'POST',
         url: '/api/v1/import/risusave',
+        headers: { 'risu-auth': assertion },
         payload: { database: legacyDatabase() },
       })
       expect(imported.statusCode).toBe(200)
@@ -169,6 +172,7 @@ describe('legacy Hypa V3 memory import', () => {
       const replaced = await app.inject({
         method: 'POST',
         url: '/api/v1/import/risusave',
+        headers: { 'risu-auth': assertion },
         payload: { database: { characters: [] } },
       })
       expect(replaced.statusCode).toBe(200)

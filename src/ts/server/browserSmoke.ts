@@ -4,12 +4,13 @@ import { getDatabase, type Database } from '../storage/database.svelte'
 import { getRerollBuffer, reroll, unReroll } from '../process/rerollNavigation.svelte'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { patchRuntimeSettings, runServerCommand, type ServerCommandResult } from './commands'
+import { getNodeServerProxyAuth } from '../storage/nodeStorage'
 
 declare global {
   interface Window {
     __RISU_FASTIFY_BROWSER_SMOKE__?: {
       assertDirectProjectionWriteRejected: () => boolean
-      activeWriterHeaders: () => Record<string, string>
+      activeWriterHeaders: () => Promise<Record<string, string>>
       getDatabaseSnapshot: () => Database
       isLoaded: () => boolean
       patchRuntimeSettings: (
@@ -28,7 +29,10 @@ declare global {
 
 export function installFastifyBrowserSmokeHook() {
   window.__RISU_FASTIFY_BROWSER_SMOKE__ = {
-    activeWriterHeaders: () => activeWriterSessionHeader(),
+    activeWriterHeaders: async () => ({
+      'risu-auth': await getNodeServerProxyAuth(),
+      ...activeWriterSessionHeader(),
+    }),
     assertDirectProjectionWriteRejected: () => {
       try {
         ;(getDatabase() as unknown as Record<string, unknown>).language =

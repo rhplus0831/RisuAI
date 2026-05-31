@@ -88,6 +88,7 @@ async function enqueue(app: FastifyInstance, payload: Record<string, unknown>): 
   const res = await app.inject({
     method: 'POST',
     url: '/api/v1/memory/jobs',
+    headers: { 'risu-auth': assertion },
     payload,
   })
   expect(res.statusCode).toBe(201)
@@ -95,9 +96,11 @@ async function enqueue(app: FastifyInstance, payload: Record<string, unknown>): 
 }
 
 let harness: Harness
+let assertion: string
 
 beforeEach(async () => {
   harness = await startHarness()
+  ;({ assertion } = await setupAuthedClient(harness.app))
 })
 
 afterEach(async () => {
@@ -106,12 +109,6 @@ afterEach(async () => {
 
 describe('Phase 8-2e memory job routes', () => {
   it('rejects all memory job routes without auth when a password is set', async () => {
-    await harness.app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/setup',
-      payload: { password: 'hunter2' },
-    })
-
     for (const op of [
       { method: 'POST' as const, url: '/api/v1/memory/jobs', payload: {} },
       { method: 'GET' as const, url: '/api/v1/memory/jobs' },
@@ -126,6 +123,7 @@ describe('Phase 8-2e memory job routes', () => {
     const res = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/memory/jobs',
+      headers: { 'risu-auth': assertion },
       payload: {
         chatId: 'chat-1',
         kind: 'summarize',
@@ -184,10 +182,12 @@ describe('Phase 8-2e memory job routes', () => {
         throw new Error('memory event sink exploded')
       },
     })
+    ;({ assertion } = await setupAuthedClient(harness.app))
 
     const res = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/memory/jobs',
+      headers: { 'risu-auth': assertion },
       payload: {
         chatId: 'chat-1',
         kind: 'summarize',
@@ -200,6 +200,7 @@ describe('Phase 8-2e memory job routes', () => {
     const listed = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/memory/jobs?chatId=chat-1',
+      headers: { 'risu-auth': assertion },
     })
     expect(listed.statusCode).toBe(200)
     expect((listed.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([
@@ -226,10 +227,15 @@ describe('Phase 8-2e memory job routes', () => {
     const cancel = await harness.app.inject({
       method: 'DELETE',
       url: `/api/v1/memory/jobs/${chunkJob.id}`,
+      headers: { 'risu-auth': assertion },
     })
     expect(cancel.statusCode).toBe(200)
 
-    const active = await harness.app.inject({ method: 'GET', url: '/api/v1/memory/jobs' })
+    const active = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/jobs',
+      headers: { 'risu-auth': assertion },
+    })
     expect(active.statusCode).toBe(200)
     const activeJobs = (active.json() as { jobs: MemoryJob[] }).jobs
     expect(activeJobs).toHaveLength(2)
@@ -241,6 +247,7 @@ describe('Phase 8-2e memory job routes', () => {
     const chatFiltered = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/memory/jobs?chatId=chat-1',
+      headers: { 'risu-auth': assertion },
     })
     expect(chatFiltered.statusCode).toBe(200)
     expect((chatFiltered.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([
@@ -250,6 +257,7 @@ describe('Phase 8-2e memory job routes', () => {
     const kindFiltered = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/memory/jobs?kind=embed',
+      headers: { 'risu-auth': assertion },
     })
     expect(kindFiltered.statusCode).toBe(200)
     expect((kindFiltered.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([
@@ -259,6 +267,7 @@ describe('Phase 8-2e memory job routes', () => {
     const cancelled = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/memory/jobs?status=cancelled',
+      headers: { 'risu-auth': assertion },
     })
     expect(cancelled.statusCode).toBe(200)
     expect((cancelled.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([
@@ -277,6 +286,7 @@ describe('Phase 8-2e memory job routes', () => {
     const res = await harness.app.inject({
       method: 'DELETE',
       url: `/api/v1/memory/jobs/${job.id}`,
+      headers: { 'risu-auth': assertion },
     })
 
     expect(res.statusCode).toBe(200)
@@ -315,6 +325,7 @@ describe('Phase 8-2e memory job routes', () => {
     const second = await harness.app.inject({
       method: 'DELETE',
       url: `/api/v1/memory/jobs/${job.id}`,
+      headers: { 'risu-auth': assertion },
     })
     expect(second.statusCode).toBe(404)
   })
@@ -331,6 +342,7 @@ describe('Phase 8-2e memory job routes', () => {
       const res = await harness.app.inject({
         method: 'POST',
         url: '/api/v1/memory/jobs',
+        headers: { 'risu-auth': assertion },
         payload,
       })
       expect(res.statusCode, JSON.stringify(payload)).toBe(400)
@@ -341,19 +353,19 @@ describe('Phase 8-2e memory job routes', () => {
       '/api/v1/memory/jobs?status=unknown',
       '/api/v1/memory/jobs?chatId=',
     ]) {
-      const res = await harness.app.inject({ method: 'GET', url })
+      const res = await harness.app.inject({ method: 'GET', url, headers: { 'risu-auth': assertion } })
       expect(res.statusCode, url).toBe(400)
     }
 
     const missing = await harness.app.inject({
       method: 'DELETE',
       url: '/api/v1/memory/jobs/no-such-job',
+      headers: { 'risu-auth': assertion },
     })
     expect(missing.statusCode).toBe(404)
   })
 
   it('accepts authenticated memory job requests', async () => {
-    const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/memory/jobs',

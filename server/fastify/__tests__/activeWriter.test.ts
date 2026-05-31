@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
 import { buildApp } from '../src/app.js'
+import { setupAuthedClient } from './helpers/auth.js'
 
 interface Harness {
   app: FastifyInstance
@@ -37,9 +38,16 @@ async function bootstrapSession(app: FastifyInstance, sessionId: string): Promis
   const res = await app.inject({
     method: 'GET',
     url: '/api/v1/bootstrap',
-    headers: { [ACTIVE_WRITER_SESSION_HEADER]: sessionId },
+    headers: { 'risu-auth': assertion, [ACTIVE_WRITER_SESSION_HEADER]: sessionId },
   })
   expect(res.statusCode).toBe(200)
+}
+
+function authedHeaders(sessionId?: string): Record<string, string> {
+  return {
+    'risu-auth': assertion,
+    ...(sessionId ? { [ACTIVE_WRITER_SESSION_HEADER]: sessionId } : {}),
+  }
 }
 
 function expectStaleWriter(res: { statusCode: number; json: () => unknown }): void {
@@ -48,9 +56,11 @@ function expectStaleWriter(res: { statusCode: number; json: () => unknown }): vo
 }
 
 let harness: Harness
+let assertion: string
 
 beforeEach(async () => {
   harness = await startHarness()
+  ;({ assertion } = await setupAuthedClient(harness.app))
 })
 
 afterEach(async () => {
@@ -64,7 +74,7 @@ describe('active writer session guard', () => {
     const imported = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/import/risusave',
-      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-b' },
+      headers: authedHeaders('session-b'),
       payload: { database: { useServerPromptAssembly: false } },
     })
     expect(imported.statusCode).toBe(200)
@@ -72,7 +82,7 @@ describe('active writer session guard', () => {
     const stale = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
-      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+      headers: authedHeaders('session-a'),
       payload: { baseRevision: 1, patch: { useServerPromptAssembly: true } },
     })
     expectStaleWriter(stale)
@@ -80,7 +90,7 @@ describe('active writer session guard', () => {
     const active = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
-      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-b' },
+      headers: authedHeaders('session-b'),
       payload: { baseRevision: 1, patch: { useServerPromptAssembly: true } },
     })
     expect(active.statusCode).toBe(200)
@@ -94,7 +104,7 @@ describe('active writer session guard', () => {
     const imported = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/import/risusave',
-      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-b' },
+      headers: authedHeaders('session-b'),
       payload: { database: { useServerPromptAssembly: false } },
     })
     expect(imported.statusCode).toBe(200)
@@ -102,13 +112,14 @@ describe('active writer session guard', () => {
     const passiveRefresh = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
+      headers: authedHeaders(),
     })
     expect(passiveRefresh.statusCode).toBe(200)
 
     const staleAfterPassiveRefresh = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
-      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+      headers: authedHeaders('session-a'),
       payload: { baseRevision: 1, patch: { useServerPromptAssembly: true } },
     })
     expectStaleWriter(staleAfterPassiveRefresh)
@@ -122,7 +133,7 @@ describe('active writer session guard', () => {
       await harness.app.inject({
         method: 'POST',
         url: '/api/v1/import/risusave',
-        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        headers: authedHeaders('session-a'),
         payload: { database: { greeting: 'stale' } },
       }),
     )
@@ -131,7 +142,7 @@ describe('active writer session guard', () => {
       await harness.app.inject({
         method: 'POST',
         url: '/api/v1/import/realm-character',
-        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        headers: authedHeaders('session-a'),
         payload: { id: 'realm-id', baseRevision: 0 },
       }),
     )
@@ -141,6 +152,7 @@ describe('active writer session guard', () => {
         method: 'POST',
         url: '/api/v1/assets',
         headers: {
+          'risu-auth': assertion,
           [ACTIVE_WRITER_SESSION_HEADER]: 'session-a',
           'content-type': 'image/png',
         },
@@ -152,7 +164,7 @@ describe('active writer session guard', () => {
       await harness.app.inject({
         method: 'POST',
         url: '/api/v1/backups',
-        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        headers: authedHeaders('session-a'),
         payload: { label: 'stale backup' },
       }),
     )
@@ -162,6 +174,7 @@ describe('active writer session guard', () => {
         method: 'POST',
         url: '/api/v1/storage/write',
         headers: {
+          'risu-auth': assertion,
           [ACTIVE_WRITER_SESSION_HEADER]: 'session-a',
           'content-type': 'application/octet-stream',
           'file-path': Buffer.from('legacy-key').toString('hex'),
@@ -178,7 +191,7 @@ describe('active writer session guard', () => {
     const backup = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/backups',
-      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-b' },
+      headers: authedHeaders('session-b'),
       payload: { label: 'active backup' },
     })
     expect(backup.statusCode).toBe(201)
@@ -188,7 +201,7 @@ describe('active writer session guard', () => {
       await harness.app.inject({
         method: 'POST',
         url: `/api/v1/backups/${encodeURIComponent(backupId)}/restore`,
-        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        headers: authedHeaders('session-a'),
       }),
     )
 
@@ -196,7 +209,7 @@ describe('active writer session guard', () => {
       await harness.app.inject({
         method: 'DELETE',
         url: `/api/v1/backups/${encodeURIComponent(backupId)}`,
-        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        headers: authedHeaders('session-a'),
       }),
     )
 
@@ -205,6 +218,7 @@ describe('active writer session guard', () => {
         method: 'POST',
         url: '/api/v1/storage/remove',
         headers: {
+          'risu-auth': assertion,
           [ACTIVE_WRITER_SESSION_HEADER]: 'session-a',
           'file-path': Buffer.from('legacy-key').toString('hex'),
         },
@@ -220,7 +234,7 @@ describe('active writer session guard', () => {
       await harness.app.inject({
         method: 'POST',
         url: '/api/v1/memory/jobs',
-        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        headers: authedHeaders('session-a'),
         payload: {
           chatId: 'chat-1',
           kind: 'summarize',
@@ -232,7 +246,7 @@ describe('active writer session guard', () => {
     const created = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/memory/jobs',
-      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-b' },
+      headers: authedHeaders('session-b'),
       payload: {
         chatId: 'chat-1',
         kind: 'summarize',
@@ -245,7 +259,7 @@ describe('active writer session guard', () => {
     const listed = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/memory/jobs?chatId=chat-1',
-      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+      headers: authedHeaders('session-a'),
     })
     expect(listed.statusCode).toBe(200)
     expect(listed.json().jobs).toHaveLength(1)
@@ -254,14 +268,14 @@ describe('active writer session guard', () => {
       await harness.app.inject({
         method: 'DELETE',
         url: `/api/v1/memory/jobs/${encodeURIComponent(jobId)}`,
-        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        headers: authedHeaders('session-a'),
       }),
     )
 
     const cancelled = await harness.app.inject({
       method: 'DELETE',
       url: `/api/v1/memory/jobs/${encodeURIComponent(jobId)}`,
-      headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-b' },
+      headers: authedHeaders('session-b'),
     })
     expect(cancelled.statusCode).toBe(200)
     expect(cancelled.json().job.status).toBe('cancelled')
@@ -275,7 +289,7 @@ describe('active writer session guard', () => {
       await harness.app.inject({
         method: 'POST',
         url: '/api/v1/generate/chat',
-        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        headers: authedHeaders('session-a'),
         payload: {
           chatId: 'chat-1',
           characterId: 'char-1',
@@ -288,7 +302,7 @@ describe('active writer session guard', () => {
       await harness.app.inject({
         method: 'POST',
         url: '/api/v1/generate/preview-prompt',
-        headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+        headers: authedHeaders('session-a'),
         payload: {
           chatId: 'chat-1',
           characterId: 'char-1',

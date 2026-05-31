@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import type { ChatProviderDispatcher } from '../src/routes/generationChat.js'
+import { setupAuthedClient } from './helpers/auth.js'
 
 // Durable generation lives on a detached job whose lifecycle is not tied to the
 // request connection, so these use a real listening server + `fetch`. `app.inject`
@@ -82,6 +83,7 @@ const fixtureDatabase = {
 }
 
 let harness: Harness
+let assertion: string
 
 beforeEach(async () => {
   providerImpl = () => {
@@ -91,6 +93,7 @@ beforeEach(async () => {
     return g()
   }
   harness = await startHarness()
+  ;({ assertion } = await setupAuthedClient(harness.app))
   await seedDatabase(fixtureDatabase)
 })
 
@@ -104,10 +107,14 @@ afterEach(async () => {
 async function seedDatabase(database: unknown): Promise<void> {
   const res = await fetch(`${harness.baseUrl}/api/v1/import/risusave`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'risu-auth': assertion },
     body: JSON.stringify({ database }),
   })
   expect(res.status).toBe(200)
+}
+
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { 'risu-auth': assertion, ...extra }
 }
 
 interface ParsedEvent {
@@ -166,7 +173,7 @@ function postDurable(
   body: Record<string, unknown>,
   init: { signal?: AbortSignal; writerSession?: string } = {},
 ): Promise<Response> {
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  const headers: Record<string, string> = authHeaders({ 'content-type': 'application/json' })
   if (init.writerSession) headers['risu-writer-session'] = init.writerSession
   return fetch(`${harness.baseUrl}/api/v1/generate/chat`, {
     method: 'POST',
@@ -231,7 +238,7 @@ async function bootstrap(): Promise<{
   database: { characters: Array<{ chats: Array<{ message: Array<Record<string, unknown>>; scriptstate?: Record<string, unknown> }> }> }
   revision: number
 }> {
-  const res = await fetch(`${harness.baseUrl}/api/v1/bootstrap`)
+  const res = await fetch(`${harness.baseUrl}/api/v1/bootstrap`, { headers: authHeaders() })
   expect(res.status).toBe(200)
   return (await res.json()) as never
 }
@@ -244,6 +251,7 @@ async function chatMessages(
   if (!chat?.id) return []
   const res = await fetch(
     `${harness.baseUrl}/api/v1/projection/chatMessages?id=${encodeURIComponent(chat.id)}`,
+    { headers: authHeaders() },
   )
   expect(res.status).toBe(200)
   return ((await res.json()) as { message: Array<Record<string, unknown>> }).message
@@ -283,6 +291,7 @@ async function seedChatWithMessages(messages: Array<Record<string, unknown>>): P
 async function cancelJob(jobId: string): Promise<void> {
   const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
     method: 'DELETE',
+    headers: authHeaders(),
   })
   expect(del.status).toBe(200)
 }
@@ -337,7 +346,7 @@ describe('Durable generation (Milestone 1)', () => {
     const reController = newController()
     const re = await fetch(
       `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
-      { signal: reController.signal },
+      { headers: authHeaders(), signal: reController.signal },
     )
     expect(re.status).toBe(200)
     gated.release()
@@ -374,7 +383,7 @@ describe('Durable generation (Milestone 1)', () => {
     const reController = newController()
     const re = await fetch(
       `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
-      { signal: reController.signal },
+      { headers: authHeaders(), signal: reController.signal },
     )
     gated.release()
     const reEvents = await readSse(re, (ev) => ev.type === 'done')
@@ -415,7 +424,7 @@ describe('Durable generation (Milestone 1)', () => {
     const reController = newController()
     const re = await fetch(
       `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
-      { signal: reController.signal },
+      { headers: authHeaders(), signal: reController.signal },
     )
     const reEvents = await readSse(re, () => false)
     expect(reEvents.some((e) => e.type === 'job_accepted')).toBe(true)
@@ -439,12 +448,13 @@ describe('Durable generation (Milestone 1)', () => {
     const obsController = newController()
     const obs = await fetch(
       `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
-      { signal: obsController.signal },
+      { headers: authHeaders(), signal: obsController.signal },
     )
     const obsEventsPromise = readSse(obs, (ev) => ev.type === 'done')
 
     const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
       method: 'DELETE',
+      headers: authHeaders(),
     })
     expect(del.status).toBe(200)
 
@@ -473,7 +483,7 @@ describe('Durable generation (Milestone 1)', () => {
   it('rejects a durable send from a stale (non-active) writer with 423', async () => {
     // writer-a claims the active-writer role via bootstrap.
     const claim = await fetch(`${harness.baseUrl}/api/v1/bootstrap`, {
-      headers: { 'risu-writer-session': 'writer-a' },
+      headers: authHeaders({ 'risu-writer-session': 'writer-a' }),
     })
     expect(claim.status).toBe(200)
 
@@ -503,6 +513,7 @@ describe('Durable generation (Milestone 1)', () => {
 
     const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
       method: 'DELETE',
+      headers: authHeaders(),
     })
     expect(del.status).toBe(200)
     expect((await del.json()).success).toBe(true)
@@ -515,7 +526,7 @@ describe('Durable generation (Milestone 1)', () => {
   it('lets a new writer cancel a prior writer’s generation (writer handoff)', async () => {
     // writer-a claims, starts a generation, then "disconnects".
     await fetch(`${harness.baseUrl}/api/v1/bootstrap`, {
-      headers: { 'risu-writer-session': 'writer-a' },
+      headers: authHeaders({ 'risu-writer-session': 'writer-a' }),
     })
     const gated = makeGatedProvider({ before: 'partial' })
     providerImpl = gated.dispatchProvider
@@ -530,11 +541,11 @@ describe('Durable generation (Milestone 1)', () => {
 
     // writer-b becomes the active writer and cancels the abandoned job.
     await fetch(`${harness.baseUrl}/api/v1/bootstrap`, {
-      headers: { 'risu-writer-session': 'writer-b' },
+      headers: authHeaders({ 'risu-writer-session': 'writer-b' }),
     })
     const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
       method: 'DELETE',
-      headers: { 'risu-writer-session': 'writer-b' },
+      headers: authHeaders({ 'risu-writer-session': 'writer-b' }),
     })
     expect(del.status).toBe(200)
 
@@ -841,10 +852,13 @@ describe('Durable generation (Milestone 1)', () => {
   })
 
   it('returns 404 reattaching/cancelling an unknown job', async () => {
-    const re = await fetch(`${harness.baseUrl}/api/v1/generate/chat/no-such-job/stream`)
+    const re = await fetch(`${harness.baseUrl}/api/v1/generate/chat/no-such-job/stream`, {
+      headers: authHeaders(),
+    })
     expect(re.status).toBe(404)
     const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/no-such-job`, {
       method: 'DELETE',
+      headers: authHeaders(),
     })
     expect(del.status).toBe(404)
   })

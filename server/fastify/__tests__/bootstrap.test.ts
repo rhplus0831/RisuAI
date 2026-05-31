@@ -115,17 +115,9 @@ function expectNormalizedAdaDatabase(
 }
 
 describe('Phase 2A bootstrap + import', () => {
-  it('returns empty database on a fresh data dir (no password)', async () => {
+  it('rejects bootstrap on a fresh data dir until a password is set', async () => {
     const res = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
-    expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({
-      revision: 0,
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      database: null,
-      assetBaseUrl: '/api/v1/assets',
-      // Empty when no generation is in flight.
-      activeGenerationJobs: [],
-    })
+    expect(res.statusCode).toBe(401)
   })
 
   it('rejects unauthenticated bootstrap once a password is set', async () => {

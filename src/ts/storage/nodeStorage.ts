@@ -20,6 +20,14 @@ const ROUTES = {
 
 type AuthStatus = 'unset' | 'incorrect' | 'success'
 
+const FASTIFY_BROWSER_SMOKE_PASSWORD = 'risu-fastify-browser-smoke'
+
+function fastifyBrowserSmokePassword(): string | null {
+  return isFastifyServer && import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE'
+    ? FASTIFY_BROWSER_SMOKE_PASSWORD
+    : null
+}
+
 async function fetchAuthStatus(assertion: string): Promise<AuthStatus> {
   const res = await fetch(ROUTES.status, {
     headers: { 'risu-auth': assertion },
@@ -187,7 +195,10 @@ export class NodeStorage {
       if (status === 'unset') {
         const keypair = await this.getKeyPair()
         const publicKey = await crypto.subtle.exportKey('jwk', keypair.publicKey)
-        const input = await digestPassword(await alertInput(language.setNodePassword))
+        const smokePassword = fastifyBrowserSmokePassword()
+        const input = await digestPassword(
+          smokePassword ?? (await alertInput(language.setNodePassword)),
+        )
         const s = await fetch(ROUTES.setPassword, {
           method: 'POST',
           body: JSON.stringify({
@@ -215,7 +226,10 @@ export class NodeStorage {
       } else if (status === 'incorrect') {
         const keypair = await this.getKeyPair()
         const publicKey = await crypto.subtle.exportKey('jwk', keypair.publicKey)
-        const input = await digestPassword(await alertInput(language.inputNodePassword))
+        const smokePassword = fastifyBrowserSmokePassword()
+        const input = await digestPassword(
+          smokePassword ?? (await alertInput(language.inputNodePassword)),
+        )
 
         const s = await fetch(ROUTES.login, {
           method: 'POST',
@@ -253,9 +267,6 @@ export class NodeStorage {
 const sharedNodeStorage = new NodeStorage()
 
 export async function getNodeServerProxyAuth() {
-  if (isFastifyServer && import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE') {
-    return ''
-  }
   return await sharedNodeStorage.getProxyAuth()
 }
 

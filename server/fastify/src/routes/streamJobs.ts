@@ -35,7 +35,10 @@ async function checkProxyAuth(
   req: FastifyRequest,
   reply: FastifyReply,
 ): Promise<boolean> {
-  if (!hasPassword(authState)) return true
+  if (!hasPassword(authState)) {
+    reply.code(401).send({ error: 'Auth required' })
+    return false
+  }
   const token = extractRisuAuth(req)
   if (!token) {
     reply.code(401).send({ error: 'Auth required' })
@@ -54,7 +57,10 @@ async function checkProxyAuthWithQuery(
   req: FastifyRequest<{ Querystring: WsQuerystring }>,
   reply: FastifyReply,
 ): Promise<boolean> {
-  if (!hasPassword(authState)) return true
+  if (!hasPassword(authState)) {
+    reply.code(401).send({ error: 'Auth required' })
+    return false
+  }
   const headerToken = extractRisuAuth(req)
   const queryToken =
     typeof req.query['risu-auth'] === 'string' ? req.query['risu-auth'] : ''

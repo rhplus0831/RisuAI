@@ -191,6 +191,15 @@ afterEach(async () => {
 })
 
 describe('Phase 3B-2 POST /api/v1/proxy/stream-jobs', () => {
+  it('returns 401 before password setup', async () => {
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/proxy/stream-jobs',
+      payload: { url: echo.url },
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
   it('returns 401 without auth once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',

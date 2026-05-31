@@ -14,7 +14,10 @@ export async function requireAuth(
   req: FastifyRequest,
   reply: FastifyReply,
 ): Promise<boolean> {
-  if (!hasPassword(state)) return true
+  if (!hasPassword(state)) {
+    reply.code(401).send({ error: 'Auth required' })
+    return false
+  }
   const token = extractRisuAuth(req)
   if (!token) {
     reply.code(401).send({ error: 'Auth required' })

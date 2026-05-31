@@ -154,9 +154,11 @@ function seedMemoryRows(dataDir: string): void {
 }
 
 let harness: Harness
+let assertion: string
 
 beforeEach(async () => {
   harness = await startHarness()
+  ;({ assertion } = await setupAuthedClient(harness.app))
 })
 
 afterEach(async () => {
@@ -165,12 +167,6 @@ afterEach(async () => {
 
 describe('Phase 8-7a memory read routes', () => {
   it('rejects memory read routes without auth when a password is set', async () => {
-    await harness.app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/setup',
-      payload: { password: 'hunter2' },
-    })
-
     for (const url of ['/api/v1/memory/chunks/chat-1', '/api/v1/memory/summaries/chat-1']) {
       const res = await harness.app.inject({ method: 'GET', url })
       expect(res.statusCode, url).toBe(401)
@@ -183,6 +179,7 @@ describe('Phase 8-7a memory read routes', () => {
     const res = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/memory/chunks/chat-1',
+      headers: { 'risu-auth': assertion },
     })
 
     expect(res.statusCode).toBe(200)
@@ -229,6 +226,7 @@ describe('Phase 8-7a memory read routes', () => {
     const all = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/memory/summaries/chat-1',
+      headers: { 'risu-auth': assertion },
     })
     expect(all.statusCode).toBe(200)
     const allSummaries = (all.json() as { summaries: MemorySummary[] }).summaries
@@ -257,6 +255,7 @@ describe('Phase 8-7a memory read routes', () => {
     const filtered = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/memory/summaries/chat-1?model=model-a',
+      headers: { 'risu-auth': assertion },
     })
     expect(filtered.statusCode).toBe(200)
     expect((filtered.json() as { summaries: MemorySummary[] }).summaries).toMatchObject([
@@ -270,6 +269,7 @@ describe('Phase 8-7a memory read routes', () => {
     const chunks = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/memory/chunks/missing-chat',
+      headers: { 'risu-auth': assertion },
     })
     expect(chunks.statusCode).toBe(200)
     expect(chunks.json()).toEqual({ chunks: [] })
@@ -277,6 +277,7 @@ describe('Phase 8-7a memory read routes', () => {
     const summaries = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/memory/summaries/chat-1?model=missing-model',
+      headers: { 'risu-auth': assertion },
     })
     expect(summaries.statusCode).toBe(200)
     expect(summaries.json()).toEqual({ summaries: [] })
@@ -286,6 +287,7 @@ describe('Phase 8-7a memory read routes', () => {
     const res = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/memory/summaries/chat-1?model=',
+      headers: { 'risu-auth': assertion },
     })
     expect(res.statusCode).toBe(400)
     expect(res.json()).toEqual({ error: 'model must be a non-empty string when provided' })
@@ -293,7 +295,6 @@ describe('Phase 8-7a memory read routes', () => {
 
   it('accepts authenticated memory read requests', async () => {
     seedMemoryRows(harness.dataDir)
-    const { assertion } = await setupAuthedClient(harness.app)
 
     const chunks = await harness.app.inject({
       method: 'GET',

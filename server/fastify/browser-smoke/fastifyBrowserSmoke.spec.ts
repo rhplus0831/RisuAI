@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../src/app.js'
 import type { FastifyInstance } from 'fastify'
+import { setupBrowserSmokeAuth } from './auth.js'
 
 interface Harness {
   app: FastifyInstance
@@ -24,7 +25,7 @@ declare global {
     }
     __RISU_FASTIFY_BROWSER_SMOKE__?: {
       assertDirectProjectionWriteRejected: () => boolean
-      activeWriterHeaders: () => Record<string, string>
+      activeWriterHeaders: () => Promise<Record<string, string>>
       getDatabaseSnapshot: () => Record<string, unknown>
       patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<Record<string, unknown>>
       waitForLoaded: () => Promise<void>
@@ -36,7 +37,8 @@ let harness: Harness
 
 test.beforeAll(async () => {
   harness = await startHarness()
-  await importDatabase(harness.app, {
+  const assertion = await setupBrowserSmokeAuth(harness.app)
+  await importDatabase(harness.app, assertion, {
     version: 1,
     didFirstSetup: true,
     formatversion: 5,
@@ -184,6 +186,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   })
 
   const apiRouteResults = await page.evaluate(async () => {
+    const activeWriterHeaders = await window.__RISU_FASTIFY_BROWSER_SMOKE__!.activeWriterHeaders()
     const generated = await fetch('/api/v1/generate/completion', {
       body: JSON.stringify({
         provider: 'echo',
@@ -192,17 +195,22 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
         stream: false,
         options: { echo: { message: 'pong', delayMs: 0 } },
       }),
-      headers: { 'content-type': 'application/json' },
+      headers: { ...activeWriterHeaders, 'content-type': 'application/json' },
       method: 'POST',
     })
     const generatedBody = await generated.json()
 
-    const chunks = await fetch('/api/v1/memory/chunks/chat-smoke')
-    const summaries = await fetch('/api/v1/memory/summaries/chat-smoke')
-    const exported = await fetch('/api/v1/export/risusave')
+    const chunks = await fetch('/api/v1/memory/chunks/chat-smoke', {
+      headers: activeWriterHeaders,
+    })
+    const summaries = await fetch('/api/v1/memory/summaries/chat-smoke', {
+      headers: activeWriterHeaders,
+    })
+    const exported = await fetch('/api/v1/export/risusave', {
+      headers: activeWriterHeaders,
+    })
     const exportedBytes = await exported.blob()
     const importForm = new FormData()
-    const activeWriterHeaders = window.__RISU_FASTIFY_BROWSER_SMOKE__!.activeWriterHeaders()
     importForm.append('file', exportedBytes, 'database.risu')
     const imported = await fetch('/api/v1/import/risusave', {
       body: importForm,
@@ -210,7 +218,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
       method: 'POST',
     })
     const importedBody = await imported.json()
-    const bundle = await fetch('/api/v1/export/bundle')
+    const bundle = await fetch('/api/v1/export/bundle', { headers: activeWriterHeaders })
 
     const uploaded = await fetch('/api/v1/assets', {
       body: new Uint8Array([1, 2, 3]),
@@ -218,7 +226,9 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
       method: 'POST',
     })
     const uploadedBody = await uploaded.json()
-    const asset = await fetch(`/api/v1/assets/${uploadedBody.assetId}`)
+    const asset = await fetch(`/api/v1/assets/${uploadedBody.assetId}`, {
+      headers: activeWriterHeaders,
+    })
 
     return {
       asset: asset.status,
@@ -267,7 +277,13 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
     [],
   )
   await expect
-    .poll(() => page.evaluate(() => window.__RISU_FASTIFY_STORAGE_WRITE_AUDIT__?.records ?? []))
+    .poll(() =>
+      page.evaluate(() =>
+        (window.__RISU_FASTIFY_STORAGE_WRITE_AUDIT__?.records ?? []).filter(
+          (record) => record.surface !== 'indexedDB',
+        ),
+      ),
+    )
     .toEqual([])
 })
 
@@ -298,10 +314,15 @@ async function startHarness(): Promise<Harness> {
   }
 }
 
-async function importDatabase(app: FastifyInstance, database: Record<string, unknown>) {
+async function importDatabase(
+  app: FastifyInstance,
+  auth: string,
+  database: Record<string, unknown>,
+) {
   const imported = await app.inject({
     method: 'POST',
     url: '/api/v1/import/risusave',
+    headers: { 'risu-auth': auth },
     payload: { database },
   })
   expect(imported.statusCode).toBe(200)

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../src/app.js'
 import type { FastifyInstance } from 'fastify'
+import { setupBrowserSmokeAuth } from './auth.js'
 
 // Swipe persistence E2E. Proves the real Fastify-served browser reconstructs the
 // reroll swipe buffer from persisted alternate rows after a reload, and that
@@ -18,7 +19,7 @@ interface Harness {
 declare global {
   interface Window {
     __RISU_FASTIFY_BROWSER_SMOKE__?: {
-      activeWriterHeaders: () => Record<string, string>
+      activeWriterHeaders: () => Promise<Record<string, string>>
       getDatabaseSnapshot: () => Record<string, unknown>
       getRerollCandidates: () => string[]
       selectCharacter: (index: number) => void
@@ -32,7 +33,8 @@ let harness: Harness
 
 test.beforeAll(async () => {
   harness = await startHarness()
-  await importDatabase(harness.app, rerollFixtureDatabase())
+  const assertion = await setupBrowserSmokeAuth(harness.app)
+  await importDatabase(harness.app, assertion, rerollFixtureDatabase())
 })
 
 test.afterAll(async () => {
@@ -76,7 +78,7 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
   // Drive a real server regenerate (echo provider) — the displaced 'old reply' AND
   // the new candidate both land in the reroll buffer (server alternate rows).
   const regenerateStatus = await page.evaluate(async () => {
-    const headers = window.__RISU_FASTIFY_BROWSER_SMOKE__!.activeWriterHeaders()
+    const headers = await window.__RISU_FASTIFY_BROWSER_SMOKE__!.activeWriterHeaders()
     const res = await fetch('/api/v1/generate/chat', {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json' },
@@ -141,7 +143,7 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
           const message = (
             snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>
           )[0].chats[0].message
-          return message.at(-1)!.data
+          return message.at(-1)?.data ?? ''
         }),
       { timeout: 15_000 },
     )
@@ -234,10 +236,15 @@ async function startHarness(): Promise<Harness> {
   return { app, baseUrl: `http://127.0.0.1:${address.port}`, dataDir }
 }
 
-async function importDatabase(app: FastifyInstance, database: Record<string, unknown>) {
+async function importDatabase(
+  app: FastifyInstance,
+  auth: string,
+  database: Record<string, unknown>,
+) {
   const imported = await app.inject({
     method: 'POST',
     url: '/api/v1/import/risusave',
+    headers: { 'risu-auth': auth },
     payload: { database },
   })
   expect(imported.statusCode).toBe(200)

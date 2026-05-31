@@ -8,6 +8,7 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { writePersisted, assetsDir } from '../src/repository.js'
+import { setupAuthedClient } from './helpers/auth.js'
 
 interface Harness {
   app: FastifyInstance
@@ -88,15 +89,6 @@ function persistBundleDatabase(dataDir: string): void {
   writeFileSync(path.join(dir, `${ORPHANED_ASSET}.png`), Buffer.from('orphan'))
 }
 
-async function setupPassword(app: FastifyInstance): Promise<void> {
-  const setup = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/setup',
-    payload: { password: 'hunter2' },
-  })
-  expect(setup.statusCode).toBe(200)
-}
-
 function unzipBundle(bytes: Buffer): Record<string, Uint8Array> {
   return fflate.unzipSync(new Uint8Array(bytes))
 }
@@ -108,20 +100,30 @@ function parseManifest(files: Record<string, Uint8Array>): Record<string, unknow
 }
 
 let harness: Harness
+let assertion: string
 
 beforeEach(async () => {
   harness = await startHarness()
+  ;({ assertion } = await setupAuthedClient(harness.app))
 })
 
 afterEach(async () => {
   await stopHarness(harness)
 })
 
+function authedInject(opts: Record<string, unknown>) {
+  const headers = (opts.headers ?? {}) as Record<string, string>
+  return harness.app.inject({
+    ...opts,
+    headers: { 'risu-auth': assertion, ...headers },
+  })
+}
+
 describe('Phase 9-8d repository .risu bundle export route', () => {
   it('exports a zip with the .risu file, manifest, and only walked present assets', async () => {
     persistBundleDatabase(harness.dataDir)
 
-    const exported = await harness.app.inject({
+    const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/bundle',
     })
@@ -193,7 +195,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
   it('passes export query options through to the bundled .risu file and manifest', async () => {
     persistBundleDatabase(harness.dataDir)
 
-    const exported = await harness.app.inject({
+    const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/bundle?envelope=legacy-raw',
     })
@@ -230,7 +232,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     mkdirSync(dir, { recursive: true })
     writeFileSync(path.join(dir, `${INCLUDED_ASSET}.png`), Buffer.from('legacy-path-png'))
 
-    const exported = await harness.app.inject({
+    const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/bundle',
     })
@@ -249,7 +251,6 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
 
   it('rejects unauthenticated bundle exports once a password is set', async () => {
     persistBundleDatabase(harness.dataDir)
-    await setupPassword(harness.app)
 
     const exported = await harness.app.inject({
       method: 'GET',
@@ -263,7 +264,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
   it('rejects invalid bundle export query parameters', async () => {
     persistBundleDatabase(harness.dataDir)
 
-    const badEnvelope = await harness.app.inject({
+    const badEnvelope = await authedInject({
       method: 'GET',
       url: '/api/v1/export/bundle?envelope=zip',
     })
@@ -273,7 +274,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     })
     expect(harness.commandEvents.list()).toEqual([])
 
-    const badCompression = await harness.app.inject({
+    const badCompression = await authedInject({
       method: 'GET',
       url: '/api/v1/export/bundle?envelope=legacy-raw&compression=true',
     })
@@ -285,7 +286,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
   })
 
   it('returns validation errors for missing persisted databases', async () => {
-    const exported = await harness.app.inject({
+    const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/bundle',
     })

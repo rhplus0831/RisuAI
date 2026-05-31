@@ -6,6 +6,7 @@ import { buildApp } from '../src/app.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { resourceProjectionFields } from '../src/routes/projection.js'
 import type { FastifyInstance } from 'fastify'
+import { setupAuthedClient } from './helpers/auth.js'
 
 interface Harness {
   app: FastifyInstance
@@ -29,9 +30,11 @@ async function startHarness(): Promise<Harness> {
 }
 
 let harness: Harness
+let assertion: string
 
 beforeEach(async () => {
   harness = await startHarness()
+  ;({ assertion } = await setupAuthedClient(harness.app))
 })
 
 afterEach(async () => {
@@ -43,6 +46,7 @@ async function importDatabase(database: unknown): Promise<number> {
   const res = await harness.app.inject({
     method: 'POST',
     url: '/api/v1/import/risusave',
+    headers: { 'risu-auth': assertion },
     payload: { database },
   })
   expect(res.statusCode).toBe(200)
@@ -50,7 +54,11 @@ async function importDatabase(database: unknown): Promise<number> {
 }
 
 async function getProjection(resource: string) {
-  return harness.app.inject({ method: 'GET', url: `/api/v1/projection/${resource}` })
+  return harness.app.inject({
+    method: 'GET',
+    url: `/api/v1/projection/${resource}`,
+    headers: { 'risu-auth': assertion },
+  })
 }
 
 describe('targeted projection route (lazy-projection Phase 2)', () => {
@@ -68,7 +76,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.resource).toBe('character')
     expect(body.mode).toBe('fields')
     // Only the resource's owned keys are present.
-    expect(Object.keys(body.fields).sort()).toEqual(['characterOrder', 'characters'])
+    expect(Object.keys(body.fields).sort()).toEqual(['characterOrder', 'characters', 'currentChar'])
     expect(body.fields.characters[0]).toMatchObject({ chaId: 'char-a', name: 'Ada' })
     expect(body.fields).not.toHaveProperty('botPresets')
     expect(body.fields).not.toHaveProperty('language')
@@ -113,7 +121,11 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
   it('maps every command-event resource to either fields or full', () => {
     // The structural resources the decision tree narrows; everything else
     // (settings/state/pluginStorage/unknown) intentionally falls back to full.
-    expect(resourceProjectionFields('character')).toEqual(['characters', 'characterOrder'])
+    expect(resourceProjectionFields('character')).toEqual([
+      'characters',
+      'characterOrder',
+      'currentChar',
+    ])
     expect(resourceProjectionFields('generation')).toEqual(['characters'])
     expect(resourceProjectionFields('asset')).toEqual([])
     expect(resourceProjectionFields('settings')).toBeNull()
@@ -152,6 +164,7 @@ describe('Phase 5 lorebook stubs (enableLorebookStubs)', () => {
     const res = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/projection/characterLorebook?id=char-a',
+      headers: { 'risu-auth': assertion },
     })
     expect(res.statusCode).toBe(200)
     const body = res.json()
@@ -166,6 +179,7 @@ describe('Phase 5 lorebook stubs (enableLorebookStubs)', () => {
     const res = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/projection/characterLorebook',
+      headers: { 'risu-auth': assertion },
     })
     expect(res.statusCode).toBe(200)
     expect(res.json().mode).toBe('full')

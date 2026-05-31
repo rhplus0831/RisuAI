@@ -8,6 +8,7 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { writePersisted } from '../src/repository.js'
+import { setupAuthedClient } from './helpers/auth.js'
 
 interface Harness {
   app: FastifyInstance
@@ -97,18 +98,28 @@ function expectExportRequiredShape(database: Record<string, unknown>): void {
 }
 
 let harness: Harness
+let assertion: string
 
 beforeEach(async () => {
   harness = await startHarness()
+  ;({ assertion } = await setupAuthedClient(harness.app))
 })
 
 afterEach(async () => {
   await stopHarness(harness)
 })
 
+function authedInject(opts: Record<string, unknown>) {
+  const headers = (opts.headers ?? {}) as Record<string, string>
+  return harness.app.inject({
+    ...opts,
+    headers: { 'risu-auth': assertion, ...headers },
+  })
+}
+
 describe('Phase 9-8a multipart .risu import route', () => {
   it('keeps JSON fixture import behavior available', async () => {
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       payload: { database: { v: 1 } },
@@ -126,10 +137,10 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
     expect(harness.commandEvents.list()).toEqual([imported.json().event])
 
-    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     expectExportRequiredShape(bootstrap.json().database)
 
-    const exported = await harness.app.inject({
+    const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave?envelope=risusave-blocks',
     })
@@ -149,7 +160,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
       }
       delete database[missingKey]
 
-      const imported = await harness.app.inject({
+      const imported = await authedInject({
         method: 'POST',
         url: '/api/v1/import/risusave',
         payload: { database },
@@ -157,10 +168,10 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
       expect(imported.statusCode).toBe(200)
 
-      const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+      const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
       expectExportRequiredShape(bootstrap.json().database)
 
-      const exported = await harness.app.inject({
+      const exported = await authedInject({
         method: 'GET',
         url: '/api/v1/export/risusave?envelope=risusave-blocks',
       })
@@ -169,7 +180,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
   )
 
   it('normalizes malformed JSON resource families into the exportable current shape', async () => {
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       payload: {
@@ -186,10 +197,10 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     expect(imported.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     expectExportRequiredShape(bootstrap.json().database)
 
-    const exported = await harness.app.inject({
+    const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave?envelope=risusave-blocks',
     })
@@ -197,7 +208,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
   })
 
   it('normalizes JSON database imports through the current-shape .risu normalizer', async () => {
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       payload: {
@@ -228,7 +239,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(200)
 
     // Messages are hydrated via the per-chat endpoint, not the stub.
-    const hydration = await harness.app.inject({
+    const hydration = await authedInject({
       method: 'GET',
       url: '/api/v1/projection/chatMessages?id=chat-a',
     })
@@ -246,7 +257,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(messages.every((message) => typeof message.chatId === 'string' && message.chatId)).toBe(
       true,
     )
-    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().database).toMatchObject({
       characters: [
         expect.objectContaining({
@@ -266,7 +277,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
   })
 
   it('rejects malformed JSON database imports without mutating persistence', async () => {
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       payload: { database: 'not an object' },
@@ -275,7 +286,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: 'database must be an object' })
 
-    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(0)
     expect(bootstrap.json().database).toBeNull()
     expect(harness.commandEvents.list()).toEqual([])
@@ -294,7 +305,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
       ],
     })
 
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       payload: {
@@ -319,11 +330,6 @@ describe('Phase 9-8a multipart .risu import route', () => {
   })
 
   it('rejects unauthenticated multipart imports once a password is set', async () => {
-    await harness.app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/setup',
-      payload: { password: 'hunter2' },
-    })
     const upload = multipartRisuSave(fixtureBytes('legacy-raw-basic'))
 
     const imported = await harness.app.inject({
@@ -340,7 +346,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
   it('imports legacy .risu uploads through the server codec', async () => {
     const upload = multipartRisuSave(fixtureBytes('legacy-raw-basic'))
 
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       headers: { 'content-type': upload.contentType },
@@ -373,7 +379,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
   it('imports RISUSAVE block uploads and reports unsupported references', async () => {
     const upload = multipartRisuSave(fixtureBytes('risusave-remote-reference'))
 
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       headers: { 'content-type': upload.contentType },
@@ -419,7 +425,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
       ]),
     )
 
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       headers: { 'content-type': upload.contentType },
@@ -428,13 +434,13 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     expect(imported.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().database.customRootField).toEqual({ enabled: true })
     expectExportRequiredShape(bootstrap.json().database)
   })
 
   it('rejects RISUSAVE root-component resource-family overwrites without mutating persistence', async () => {
-    const seeded = await harness.app.inject({
+    const seeded = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       payload: { database: { version: 1, customRootField: { kept: true } } },
@@ -456,7 +462,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
       ]),
     )
 
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       headers: { 'content-type': upload.contentType },
@@ -469,13 +475,13 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
     expect(harness.commandEvents.list()).toEqual([seeded.json().event])
 
-    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(1)
     expect(bootstrap.json().database.version).toBe(1)
     expect(bootstrap.json().database.customRootField).toEqual({ kept: true })
     expectExportRequiredShape(bootstrap.json().database)
 
-    const exported = await harness.app.inject({
+    const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave?envelope=risusave-blocks',
     })
@@ -485,7 +491,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
   it('rejects multipart requests without an uploaded file', async () => {
     const upload = multipartTextOnly()
 
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       headers: { 'content-type': upload.contentType },
@@ -500,7 +506,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
   it('rejects malformed .risu uploads without mutating persistence', async () => {
     const upload = multipartRisuSave(fixtureBytes('malformed-unknown-envelope'))
 
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       headers: { 'content-type': upload.contentType },
@@ -510,7 +516,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: 'Unsupported .risu envelope: unknown' })
 
-    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(0)
     expect(bootstrap.json().database).toBeNull()
     expect(harness.commandEvents.list()).toEqual([])
@@ -520,7 +526,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     // Valid 'RISUSAVE\0' envelope header followed by a truncated block.
     const upload = multipartRisuSave(new TextEncoder().encode('RISUSAVE\0x'))
 
-    const imported = await harness.app.inject({
+    const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
       headers: { 'content-type': upload.contentType },
@@ -530,7 +536,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: 'Malformed RISUSAVE block header at offset 9' })
 
-    const bootstrap = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(0)
     expect(bootstrap.json().database).toBeNull()
     expect(harness.commandEvents.list()).toEqual([])

@@ -418,10 +418,14 @@ describe('Phase 9-5a command events stream', () => {
   })
 
   it('unsubscribes listeners when the stream closes', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
     const baseUrl = await listen(harness.app)
     const abort = new AbortController()
 
-    const res = await fetch(`${baseUrl}/api/v1/events`, { signal: abort.signal })
+    const res = await fetch(`${baseUrl}/api/v1/events`, {
+      headers: { 'risu-auth': assertion },
+      signal: abort.signal,
+    })
     const reader = res.body?.getReader()
     expect(reader).toBeDefined()
     await readUntil(reader!, (chunk) => chunk.includes(': connected\n\n'))
