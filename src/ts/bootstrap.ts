@@ -63,6 +63,7 @@ import {
 import { setActiveGenerationJobs, startActiveGenerationReattach } from './process/reattach'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 import { isFastifyServer } from './platform'
+import { recordFullBootstrapResync } from './server/protocolDiagnostics'
 
 // Delay before re-subscribing to the command-event stream after it drops. On
 // reconnect we full-bootstrap to recover any events missed while disconnected.
@@ -265,7 +266,7 @@ async function startServerProjectionEvents() {
       `Server event replay unavailable at revision ${subscription.currentRevision}; refreshing projection`,
     )
     enqueueServerProjectionSync(async () => {
-      await fullBootstrapResync()
+      await fullBootstrapResync('event-replay-unavailable')
       scheduleServerProjectionReconnect()
     })
   }
@@ -318,7 +319,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
   const cached = peekCachedServerCommandRevision()
   if (cached === null) {
     // No baseline yet: reconcile from scratch.
-    await fullBootstrapResync()
+    await fullBootstrapResync('no-baseline')
     return
   }
   if (event.revision <= cached) {
@@ -353,14 +354,19 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       return
     }
     // 'full' mode, error, or unavailable → fall back to a full reconcile.
-    await fullBootstrapResync()
+    await fullBootstrapResync(
+      result.status === 'ok' && result.mode === 'full'
+        ? 'projection-full-mode'
+        : 'projection-error',
+    )
     return
   }
   // Gap detected (event.revision > cached + 1) → self-healing full bootstrap.
-  await fullBootstrapResync()
+  await fullBootstrapResync('revision-gap')
 }
 
-async function fullBootstrapResync(): Promise<void> {
+async function fullBootstrapResync(reason: string): Promise<void> {
+  recordFullBootstrapResync(reason)
   if (serverProjectionRefreshInFlight) {
     serverProjectionRefreshPending = true
     return

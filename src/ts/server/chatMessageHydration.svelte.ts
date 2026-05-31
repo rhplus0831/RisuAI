@@ -12,6 +12,11 @@ import {
   fetchServerCharacterLorebook,
   fetchServerChatMessages,
 } from './projection'
+import {
+  beginHydrationRequest,
+  recordBulkHydration,
+  recordHydrationStaleDrop,
+} from './protocolDiagnostics'
 
 // The bootstrap ships chat *stubs* (empty message[]). This bridge hydrates a
 // chat's messages when it is opened and re-hydrates the open chat after a
@@ -49,13 +54,17 @@ async function hydrateChat(chatId: string, force: boolean): Promise<void> {
   let request: Promise<void>
   request = (async () => {
     try {
-      const result = await fetchServerChatMessages(chatId)
-      if (
-        result.status !== 'ok' ||
-        result.chatId !== chatId ||
-        generation !== chatHydrationGeneration ||
-        isOlderThanAppliedRevision(result.revision)
-      ) {
+      const endRequest = beginHydrationRequest('chat')
+      const result = await fetchServerChatMessages(chatId).finally(endRequest)
+      if (result.status !== 'ok' || result.chatId !== chatId) {
+        return
+      }
+      if (generation !== chatHydrationGeneration) {
+        recordHydrationStaleDrop('chat', 'generation-reset')
+        return
+      }
+      if (isOlderThanAppliedRevision(result.revision)) {
+        recordHydrationStaleDrop('chat', 'older-than-applied-revision')
         return
       }
 
@@ -109,13 +118,17 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
   let request: Promise<void>
   request = (async () => {
     try {
-      const result = await fetchServerCharacterLorebook(characterId)
-      if (
-        result.status !== 'ok' ||
-        result.characterId !== characterId ||
-        generation !== charLorebookHydrationGeneration ||
-        isOlderThanAppliedRevision(result.revision)
-      ) {
+      const endRequest = beginHydrationRequest('characterLorebook')
+      const result = await fetchServerCharacterLorebook(characterId).finally(endRequest)
+      if (result.status !== 'ok' || result.characterId !== characterId) {
+        return
+      }
+      if (generation !== charLorebookHydrationGeneration) {
+        recordHydrationStaleDrop('characterLorebook', 'generation-reset')
+        return
+      }
+      if (isOlderThanAppliedRevision(result.revision)) {
+        recordHydrationStaleDrop('characterLorebook', 'older-than-applied-revision')
         return
       }
 
@@ -158,6 +171,7 @@ export async function ensureAllCharacterLorebooksHydrated(): Promise<void> {
       ids.push(character.chaId)
     }
   }
+  recordBulkHydration('characterLorebook', ids.length)
   await Promise.all(ids.map((id) => hydrateCharacterLorebook(id, false)))
 }
 
@@ -195,6 +209,7 @@ export async function ensureAllChatsHydrated(): Promise<void> {
       }
     }
   }
+  recordBulkHydration('chat', ids.length)
   await Promise.all(ids.map((id) => hydrateChat(id, false)))
 }
 

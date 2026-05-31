@@ -9,6 +9,7 @@ import {
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import type { MemoryEvent, MemoryEventBus } from '../memoryEvents.js'
+import { emitProtocolMetric } from '../protocolMetrics.js'
 
 function writeSseComment(raw: NodeJS.WritableStream, comment: string): void {
   raw.write(`: ${comment}\n\n`)
@@ -42,12 +43,24 @@ export function registerEventsRoutes(
     }
 
     const currentRevision = getSchemaState(db).revision
+    const history = commandEvents.list()
     const replay =
       cursor.sinceRevision === null
         ? { status: 'ok' as const, events: [] as readonly CommandEvent[] }
-        : selectCommandEventReplay(commandEvents.list(), cursor.sinceRevision, currentRevision)
+        : selectCommandEventReplay(history, cursor.sinceRevision, currentRevision)
 
     if (replay.status === 'unavailable') {
+      emitProtocolMetric(
+        'event_replay',
+        {
+          status: 'unavailable',
+          requestedRevision: cursor.sinceRevision,
+          currentRevision: replay.currentRevision,
+          oldestRevision: replay.oldestRevision,
+          latestRevision: replay.latestRevision,
+        },
+        req.log,
+      )
       reply.code(409).send({
         error: 'event_replay_unavailable',
         requestedRevision: cursor.sinceRevision,
@@ -57,6 +70,18 @@ export function registerEventsRoutes(
       })
       return
     }
+    emitProtocolMetric(
+      'event_replay',
+      {
+        status: 'ok',
+        requestedRevision: cursor.sinceRevision,
+        currentRevision,
+        replayedEventCount: replay.events.length,
+        oldestRevision: history[0]?.revision,
+        latestRevision: history.at(-1)?.revision,
+      },
+      req.log,
+    )
 
     reply.hijack()
     reply.raw.writeHead(200, {

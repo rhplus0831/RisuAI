@@ -48,6 +48,7 @@ import {
 import { ACTIVE_WRITER_SESSION_HEADER } from '../activeWriter.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import type { JobClient, StreamJob } from '../streamJobs.js'
+import { emitProtocolMetric, protocolDurationMs, protocolNowMs } from '../protocolMetrics.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
@@ -609,6 +610,7 @@ async function buildPostGenerationFrame(args: {
   )
 
   let revision: number
+  const persistStartedAt = protocolNowMs()
   try {
     revision = persistServerGenerationResult({
       db: args.db,
@@ -619,12 +621,26 @@ async function buildPostGenerationFrame(args: {
       chatVarMutations,
       targetMessageId,
     })
-  } catch {
+  } catch (err) {
+    emitProtocolMetric('generation_persistence', {
+      status: 'inline_error',
+      generationId: args.generationId,
+      chatId: args.input.chatId,
+      durationMs: protocolDurationMs(persistStartedAt),
+      error: errorMessage(err, 'failed to persist the generation result'),
+    })
     // Chat changed / gone during persist: leave the browser's optimistic copy
     // and terminate cleanly (no frame).
     return undefined
   }
 
+  emitProtocolMetric('generation_persistence', {
+    status: postGen ? 'inline_ok' : 'inline_raw_fallback',
+    generationId: args.generationId,
+    chatId: args.input.chatId,
+    revision,
+    durationMs: protocolDurationMs(persistStartedAt),
+  })
   return buildPostGenerationFrameBody(revision, postGen)
 }
 
@@ -1071,6 +1087,7 @@ async function buildDurablePostGeneration(args: {
   )
 
   let revision: number
+  const persistStartedAt = protocolNowMs()
   try {
     revision = persistServerGenerationResult({
       db: args.db,
@@ -1082,6 +1099,13 @@ async function buildDurablePostGeneration(args: {
       targetMessageId,
     })
   } catch (err) {
+    emitProtocolMetric('generation_persistence', {
+      status: 'terminal_error',
+      generationId: args.generationId,
+      chatId: args.input.chatId,
+      durationMs: protocolDurationMs(persistStartedAt),
+      error: errorMessage(err, 'failed to persist the generation result'),
+    })
     args.emit({
       type: 'error',
       error: errorMessage(err, 'failed to persist the generation result'),
@@ -1092,6 +1116,13 @@ async function buildDurablePostGeneration(args: {
   // `postGen === undefined` means the derivation threw: the client may be gone, so
   // warn rather than silently keep an optimistic copy (the inline path's choice).
   if (!postGen) {
+    emitProtocolMetric('generation_persistence', {
+      status: 'raw_fallback',
+      generationId: args.generationId,
+      chatId: args.input.chatId,
+      revision,
+      durationMs: protocolDurationMs(persistStartedAt),
+    })
     args.emit({
       type: 'warning',
       message: 'server post-generation derivation failed; persisted the raw provider text.',
@@ -1099,6 +1130,13 @@ async function buildDurablePostGeneration(args: {
     return { revision }
   }
 
+  emitProtocolMetric('generation_persistence', {
+    status: 'ok',
+    generationId: args.generationId,
+    chatId: args.input.chatId,
+    revision,
+    durationMs: protocolDurationMs(persistStartedAt),
+  })
   return buildPostGenerationFrameBody(revision, postGen)
 }
 

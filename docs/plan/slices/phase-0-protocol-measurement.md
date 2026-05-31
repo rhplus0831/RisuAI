@@ -3,7 +3,7 @@
 Back to original plan:
 [`server-client-protocol-stability-performance.md`](../server-client-protocol-stability-performance.md#phase-0-protocol-measurement)
 
-Status: planning slice.
+Status: implemented.
 
 Goal: make the existing pressure points visible before changing behavior.
 
@@ -53,6 +53,28 @@ for diagnosis.
 
 Done when the phase has both automated test coverage and one repeatable manual
 diagnostic flow.
+
+## Implemented Notes
+
+- Server protocol metrics are opt-in via `RISU_PROTOCOL_METRICS=1`. When enabled,
+  structured `protocol metric` log records cover command mutation section timing,
+  bootstrap/projection payload bytes, event replay success/miss state, durable
+  generation persistence outcomes, and Realm `charx` staged asset counts/bytes.
+- Client protocol diagnostics are opt-in via `localStorage.risu:protocol-debug`
+  set to `1` or `true`. When enabled, debug records distinguish full-bootstrap
+  resync reasons (`event-replay-unavailable`, `revision-gap`,
+  `projection-full-mode`, `projection-error`, and `no-baseline`), bulk hydration
+  fanout counts, maximum observed hydration concurrency, and stale hydration
+  drops.
+- Manual reconnect readout:
+  1. Start the API with `RISU_PROTOCOL_METRICS=1`.
+  2. In the browser console, run
+     `localStorage.setItem('risu:protocol-debug', '1')` and reload.
+  3. Disconnect/reconnect `/api/v1/events`.
+  4. A normal replay emits `event_replay` with `status: "ok"` and client debug
+     output does not show a full-bootstrap reason.
+  5. A replay miss emits `event_replay` with `status: "unavailable"` and the
+     client reports `event-replay-unavailable` before re-subscribing.
 
 ## Acceptance
 

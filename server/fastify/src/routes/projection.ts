@@ -9,6 +9,7 @@ import {
   loadStubProjection,
 } from '../repository.js'
 import { maskProviderSecrets } from '../providerSecrets.js'
+import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
 
 // Targeted per-resource projection.
 //
@@ -77,10 +78,12 @@ export function registerProjectionRoutes(
       if (resource === 'chatMessages') {
         const chatId = req.query.id
         if (typeof chatId !== 'string' || chatId.trim() === '') {
-          return { revision, resource, mode: 'full' as const }
+          const response = { revision, resource, mode: 'full' as const }
+          emitProjectionMetric(req.log, resource, revision, response)
+          return response
         }
         const hydration = loadChatHydration(db, dataDir, chatId)
-        return {
+        const response = {
           revision,
           resource,
           mode: 'chat-messages' as const,
@@ -91,6 +94,8 @@ export function registerProjectionRoutes(
           // client ignores it.
           alternates: hydration.alternates,
         }
+        emitProjectionMetric(req.log, resource, revision, response, { id: chatId })
+        return response
       }
 
       // Per-character `globalLore` hydration fills the stubbed globalLore on
@@ -98,23 +103,29 @@ export function registerProjectionRoutes(
       if (resource === 'characterLorebook') {
         const characterId = req.query.id
         if (typeof characterId !== 'string' || characterId.trim() === '') {
-          return { revision, resource, mode: 'full' as const }
+          const response = { revision, resource, mode: 'full' as const }
+          emitProjectionMetric(req.log, resource, revision, response)
+          return response
         }
         const hydration = loadCharacterLorebookHydration(dataDir, characterId)
-        return {
+        const response = {
           revision,
           resource,
           mode: 'character-lorebook' as const,
           characterId,
           globalLore: hydration.globalLore,
         }
+        emitProjectionMetric(req.log, resource, revision, response, { id: characterId })
+        return response
       }
 
       const fieldKeys = resourceProjectionFields(resource)
 
       if (fieldKeys === null) {
         // Unknown or sprawling resource: tell the client to full-bootstrap.
-        return { revision, resource, mode: 'full' as const }
+        const response = { revision, resource, mode: 'full' as const }
+        emitProjectionMetric(req.log, resource, revision, response)
+        return response
       }
 
       // Ship chat stubs (message-free) here too; the client re-hydrates the open
@@ -132,7 +143,31 @@ export function registerProjectionRoutes(
         }
       }
 
-      return { revision, resource, mode: 'fields' as const, fields }
+      const response = { revision, resource, mode: 'fields' as const, fields }
+      emitProjectionMetric(req.log, resource, revision, response, {
+        fieldCount: Object.keys(fields).length,
+        fieldKeys,
+      })
+      return response
     },
+  )
+}
+
+function emitProjectionMetric(
+  logger: FastifyInstance['log'],
+  resource: string,
+  revision: number,
+  response: unknown,
+  extra: Record<string, unknown> = {},
+): void {
+  emitProtocolMetric(
+    'projection_response',
+    {
+      resource,
+      revision,
+      payloadBytes: jsonPayloadBytes(response),
+      ...extra,
+    },
+    logger,
   )
 }

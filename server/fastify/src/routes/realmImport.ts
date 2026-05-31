@@ -38,6 +38,7 @@ import {
   convertRealmCharacterCard,
   type RealmAssetSource,
 } from '../realmImport/characterCard.js'
+import { emitProtocolMetric } from '../protocolMetrics.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -459,6 +460,10 @@ async function importRealmCharx(args: {
   })
   const stagedAssets = await stageCharxAssets(args.filePath, path.join(args.tempDir, 'assets'), {
     onAssetStaged: extractProgress,
+  })
+  emitProtocolMetric('realm_import_staged_assets', {
+    stagedAssetCount: stagedAssets.length,
+    stagedAssetBytes: stagedAssets.reduce((sum, asset) => sum + asset.byteLength, 0),
   })
   args.reportProgress?.({ phase: 'assets', message: 'Saving package assets', percent: 65 })
   const persistProgress = createStepProgress({
