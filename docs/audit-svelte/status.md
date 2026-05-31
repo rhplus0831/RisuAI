@@ -46,10 +46,10 @@ Last updated: 2026-05-31.
 - RealmFrame Ping Loop Has No Cancellation
 - Plugin Alert Continue Action Is Hidden In Details
 - NewGUI Button Has Missing Branches And Events
-- Chat Format Settings Lack Client Command Mapping
 
 ## Completed Items
 
+- Chat Format Settings Lack Client Command Mapping
 - One-Item Drop Lists Can Corrupt The List
 - Realm Upload Mode Buttons Toggle The Wrong State
 - Plugin Select Options Render Literal Text

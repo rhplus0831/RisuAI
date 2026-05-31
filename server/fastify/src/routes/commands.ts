@@ -358,6 +358,8 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'openrouterFallback',
     'openrouterProvider',
     'useInstructPrompt',
+    'instructChatTemplate',
+    'JinjaTemplate',
     'nanogptKey',
     'nanogptRequestModel',
     'nanogptRequestModelName',

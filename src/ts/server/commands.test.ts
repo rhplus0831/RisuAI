@@ -243,6 +243,8 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('openrouterMiddleOut')).toBe('providers')
     expect(settingsGroupForKey('openrouterProvider')).toBe('providers')
     expect(settingsGroupForKey('useInstructPrompt')).toBe('providers')
+    expect(settingsGroupForKey('instructChatTemplate')).toBe('providers')
+    expect(settingsGroupForKey('JinjaTemplate')).toBe('providers')
     expect(settingsGroupForKey('seperateModels')).toBe('runtime')
     expect(settingsGroupForKey('seperateModelsForAxModels')).toBe('runtime')
     expect(settingsGroupForKey('doNotChangeSeperateModels')).toBe('runtime')

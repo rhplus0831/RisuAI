@@ -643,6 +643,40 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('applies chat format settings through the provider settings command', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      instructChatTemplate: 'chatml',
+      JinjaTemplate: '',
+    })
+    const jinjaTemplate = '{% for message in messages %}{{ message.content }}{% endfor %}'
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/providers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          instructChatTemplate: 'jinja',
+          JinjaTemplate: jinjaTemplate,
+        },
+      },
+    })
+
+    expect(res.statusCode, res.body).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      instructChatTemplate: 'jinja',
+      JinjaTemplate: jinjaTemplate,
+    })
+  })
+
   it('preserves masked provider placeholders while replacing explicit new secrets', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

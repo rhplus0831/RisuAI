@@ -16,9 +16,21 @@ vi.mock('../storage/nodeStorage', () => ({
   getNodeServerProxyAuth: async () => 'setting-auth-token',
 }))
 
-import { clearCachedServerCommandRevision } from '../server/commands'
+import { clearCachedServerCommandRevision, settingsGroupForKey } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
 import { DBState } from '../stores.svelte'
+import { accessibilitySettingsItems } from './accessibilitySettingsData'
+import { advancedSettingsItems } from './advancedSettingsData'
+import {
+  basicParameterItems,
+  modelSpecificParameterItems,
+  penaltyParameterItems,
+  samplingParameterItems,
+  seedSetting,
+} from './botSettingsParamsData'
+import { chatFormatSettingsItems } from './chatFormatSettingsData'
+import { displaySettingsItems } from './displaySettingsData.svelte'
+import { languageSettingsItems } from './languageSettingsData.svelte'
 import type { SettingContext, SettingItem } from './types'
 import { setSettingValue } from './utils'
 
@@ -27,6 +39,19 @@ interface CapturedFetch {
   method: string
   body: unknown
 }
+
+const settingRendererItemSets: SettingItem[][] = [
+  accessibilitySettingsItems,
+  advancedSettingsItems,
+  basicParameterItems,
+  [seedSetting],
+  samplingParameterItems,
+  penaltyParameterItems,
+  modelSpecificParameterItems,
+  chatFormatSettingsItems,
+  displaySettingsItems,
+  languageSettingsItems,
+]
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -53,6 +78,24 @@ function stubSettingsFetch(): CapturedFetch[] {
   return calls
 }
 
+function collectSettingItems(items: SettingItem[]): SettingItem[] {
+  const collected: SettingItem[] = []
+
+  for (const item of items) {
+    collected.push(item)
+    if (item.options?.children) {
+      collected.push(...collectSettingItems(item.options.children))
+    }
+  }
+
+  return collected
+}
+
+function serverCommandKeyForSetting(item: SettingItem): string | null {
+  if (item.bindPath) return item.bindPath.split('.')[0] ?? null
+  return item.bindKey ? String(item.bindKey) : null
+}
+
 beforeEach(() => {
   platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
@@ -66,6 +109,18 @@ afterEach(() => {
 })
 
 describe('server-backed data-driven settings', () => {
+  it('maps every data-driven SettingRenderer binding to a server command group', () => {
+    const missing = settingRendererItemSets
+      .flatMap(collectSettingItems)
+      .flatMap((item) => {
+        const key = serverCommandKeyForSetting(item)
+        if (!key || settingsGroupForKey(key)) return []
+        return [`${item.id} -> ${key}`]
+      })
+
+    expect(missing).toEqual([])
+  })
+
   it('surfaces conflicts without replaying the same setting patch', async () => {
     const calls = stubSettingsFetch()
     const item: SettingItem = {
