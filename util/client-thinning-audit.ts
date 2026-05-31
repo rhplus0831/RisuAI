@@ -3497,6 +3497,45 @@ function checkDevToolScriptstateCommandBacked(): void {
   }
 }
 
+function checkDevToolAutopilotCommandBacked(): void {
+  const check = 'A4R-devtool autopilot command-backed'
+  const rl = 'src/lib/SideBars/DevTool.svelte'
+  const absolute = path.join(root, rl)
+  if (!fs.existsSync(absolute)) {
+    return
+  }
+
+  const body = text(rl)
+  const start = body.indexOf("<Accordion styled name={'Autopilot'}>")
+  if (start === -1) {
+    fail(
+      check,
+      'DevTool Autopilot accordion is missing; command-backed path cannot be verified.',
+      undefined,
+      rl,
+    )
+    return
+  }
+  const end = body.indexOf('</Accordion>', start)
+  const section = end === -1 ? body.slice(start) : body.slice(start, end)
+  if (!section.includes('appendCurrentChatUserMessageForSend')) {
+    fail(
+      check,
+      'DevTool Autopilot must append user messages through appendCurrentChatUserMessageForSend before sendChat.',
+      undefined,
+      rl,
+    )
+  }
+  if (/\.message\.push\s*\(/.test(section) || /\bsetDatabase\s*\(/.test(section)) {
+    fail(
+      check,
+      'DevTool Autopilot directly mutates the chat projection; route user-message appends through the command helper.',
+      undefined,
+      rl,
+    )
+  }
+}
+
 function selectedChecks(checks: AuditCheck[]): AuditCheck[] {
   const selected = process.env.CLIENT_THINNING_AUDIT_CHECK_IDS
   if (!selected) return checks
@@ -3644,6 +3683,7 @@ const auditChecks: AuditCheck[] = [
   { id: 'A4R-saveasset filename classification', run: checkAlpha4SaveAssetClassification },
   { id: 'A4R-pluginv2 no server-side plugin execution', run: checkPluginV2NoServerExecution },
   { id: 'A4R-devtool scriptstate command-backed', run: checkDevToolScriptstateCommandBacked },
+  { id: 'A4R-devtool autopilot command-backed', run: checkDevToolAutopilotCommandBacked },
   {
     id: 'A4R-group-chat-removed legacy group chat removed from client',
     run: checkGroupChatRemoved,

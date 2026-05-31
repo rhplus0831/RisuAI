@@ -4,13 +4,13 @@
   import NumberInput from '../UI/GUI/NumberInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { getRequestLog } from 'src/ts/globalApi.svelte'
-  import { alertMd, alertWait } from 'src/ts/alert'
+  import { alertError, alertMd, alertWait } from 'src/ts/alert'
   import Accordion from '../UI/Accordion.svelte'
   import { getCharToken, getChatToken } from 'src/ts/tokenizer'
   import { tokenizePreset } from 'src/ts/process/prompt'
 
   import { DBState } from 'src/ts/stores.svelte'
-  import { getDatabase, setDatabase, type Chat } from 'src/ts/storage/database.svelte'
+  import { type Chat } from 'src/ts/storage/database.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import { HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
@@ -21,7 +21,11 @@
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import { loadLoreBookV3Prompt } from 'src/ts/process/lorebook.svelte'
   import { getModules } from 'src/ts/process/modules'
-  import { currentChatStateSnapshot, dispatchPatchChatScriptstate } from 'src/ts/chatCommands'
+  import {
+    appendCurrentChatUserMessageForSend,
+    currentChatStateSnapshot,
+    dispatchPatchChatScriptstate,
+  } from 'src/ts/chatCommands'
   import {
     canUseServerCommands,
     type ChatScriptstatePatch,
@@ -331,17 +335,11 @@
         if ($doingChat) {
           return
         }
-        // Apply the optimistic message inside a trusted write before sendChat persists it.
-        withTrustedServerProjectionWrite(() => {
-          const db = getDatabase()
-          const currentChar = db.characters[$selectedCharID]
-          const currentChat = currentChar.chats[currentChar.chatPage]
-          currentChat.message.push({
-            role: 'user',
-            data: autopilot[i],
-          })
-          setDatabase(db)
-        })
+        const appended = await appendCurrentChatUserMessageForSend(autopilot[i])
+        if (appended.status !== 'ok') {
+          alertError(appended.error)
+          return
+        }
         await sendChat(i)
       }
     }}>Run</Button

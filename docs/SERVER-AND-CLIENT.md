@@ -28,9 +28,9 @@ plugin/runtime surfaces, MCP/local tool orchestration, and the non-Fastify/local
 compatibility stack.
 
 The main server-owned responsibilities that still leak through the client are
-DevTool Autopilot direct message insertion, first-run/default normalization seams,
-client-built provider payloads for server completion, browser-local inlay bytes,
-and the closeout path for local prompt assembly/provider dispatch.
+first-run/default normalization seams, client-built provider payloads for server
+completion, browser-local inlay bytes, and the closeout path for local prompt
+assembly/provider dispatch.
 
 ## Current Client Responsibilities
 
@@ -85,6 +85,9 @@ and the closeout path for local prompt assembly/provider dispatch.
 - DevTool scriptstate editing now commits variable changes through the chat
   scriptstate command helper; the variable editor no longer binds form inputs
   directly into the server projection.
+- DevTool Autopilot now appends each user row through the current-chat message
+  command helper before calling `sendChat(i)`; the run button no longer mutates
+  `currentChat.message` or calls `setDatabase(db)` directly.
 - Chat messages, Hypa V3 data, and reroll alternates are split into SQLite and
   hydrated back into the browser projection only when needed.
 - Assets, backups, Realm import, `.risu` import/export, memory jobs, proxying,
@@ -93,20 +96,6 @@ and the closeout path for local prompt assembly/provider dispatch.
   unless a supported bridge command exists.
 
 ## Server-Owned Items Still In The Client
-
-### P1: DevTool Autopilot inserts user messages by direct projection mutation
-
-The Autopilot run button appends user messages to `currentChat.message`, calls
-`setDatabase(db)`, and then calls `sendChat(i)`. It uses
-`withTrustedServerProjectionWrite`, but that only bypasses the client projection
-guard; it is not a server mutation boundary. Normal chat input should persist
-transcript changes through the command path before generation.
-
-Evidence:
-
-- `src/lib/SideBars/DevTool.svelte:246`
-- `src/lib/ChatScreens/DefaultChatScreen.svelte`
-- `src/ts/chatCommands.ts`
 
 ### P1: First-run/default normalization still has a client seam
 
@@ -211,8 +200,9 @@ Evidence:
 
 ## Verification Notes
 
-- Ran `pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/browserLocalSurface.test.ts src/ts/server/commands.test.ts`.
-- Ran `CLIENT_THINNING_AUDIT_CHECK_IDS='A4R-devtool scriptstate command-backed' pnpm client-thinning:audit`.
+- Ran `pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/browserLocalSurface.test.ts src/ts/process/__tests__/command.projectionGuard.test.ts`.
+- Ran `pnpm exec vitest run src/ts/server/commands.test.ts`.
+- Ran `CLIENT_THINNING_AUDIT_CHECK_IDS='A4R-devtool autopilot command-backed,A4R-devtool scriptstate command-backed' pnpm client-thinning:audit`.
 - Ran `pnpm check`.
 - Ran `pnpm client-thinning:audit`. It failed on the existing server invariant:
   `POST /api/v1/commands/state/initialize` calls `seedInitialDatabase()`, which

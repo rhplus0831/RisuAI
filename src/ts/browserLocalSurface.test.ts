@@ -66,4 +66,13 @@ describe('Fastify-only browser local surface policy', () => {
     expect(devTool).toContain('dispatchPatchChatScriptstate')
     expect(devTool).not.toMatch(/bind:value=\{[\s\S]{0,240}?scriptstate\[/)
   })
+
+  it('routes DevTool Autopilot message appends through a command helper', () => {
+    const devTool = readWorkspaceFile('src/lib/SideBars/DevTool.svelte')
+    const autopilotSection = devTool.slice(devTool.indexOf("<Accordion styled name={'Autopilot'}>"))
+
+    expect(autopilotSection).toContain('appendCurrentChatUserMessageForSend')
+    expect(autopilotSection).not.toMatch(/\.message\.push\(/)
+    expect(autopilotSection).not.toContain('setDatabase(')
+  })
 })

@@ -34,6 +34,10 @@ export interface ChatStateSnapshot {
   selectedCharID: number
 }
 
+export type AppendCurrentChatUserMessageResult =
+  | { status: 'ok'; messageId: string }
+  | { status: 'error'; error: string }
+
 export const CHAT_PATCH_ALLOWED_KEYS = new Set([
   'name',
   'note',
@@ -401,6 +405,65 @@ export function dispatchAppendMessage(
       }),
     () => restoreChatState(previous),
   )
+}
+
+export async function appendCurrentChatUserMessageForSend(
+  data: string,
+): Promise<AppendCurrentChatUserMessageResult> {
+  const selectedChar = get(selectedCharID)
+  const previous = currentChatStateSnapshot()
+  const message: Message = {
+    role: 'user',
+    data,
+    time: Date.now(),
+  }
+  const messageId = ensureMessageId(message)
+  let chatId: string | undefined
+  let applied = false
+
+  withTrustedServerProjectionWrite(() => {
+    const character = DBState.db.characters?.[selectedChar]
+    const chat = character?.chats?.[character.chatPage]
+    if (!chat) return
+    chat.message ??= []
+    chat.message.push(cloneJsonValue(message))
+    chatId = chat.id
+    applied = true
+  })
+
+  if (!applied) {
+    return { status: 'error', error: 'No current chat is selected.' }
+  }
+
+  if (!canUseServerCommands()) {
+    return { status: 'ok', messageId }
+  }
+
+  if (!chatId) {
+    restoreChatState(previous)
+    return { status: 'error', error: 'The current chat has no server id.' }
+  }
+
+  const result = await runServerCommand({
+    command: (baseRevision) =>
+      appendMessageCommand({
+        baseRevision,
+        chatId,
+        message: toMessageSnapshot(message),
+      }),
+    rollback: () => restoreChatState(previous),
+  })
+
+  if (result.status === 'ok') {
+    return { status: 'ok', messageId: result.messageId ?? messageId }
+  }
+  if (result.status === 'conflict') {
+    return { status: 'error', error: `Server revision conflict (${result.currentRevision}).` }
+  }
+  if (result.status === 'unavailable') {
+    return { status: 'error', error: 'Server commands are unavailable.' }
+  }
+  return { status: 'error', error: result.error }
 }
 
 export function dispatchUpdateMessage(

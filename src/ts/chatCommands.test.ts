@@ -27,6 +27,7 @@ import {
 } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 import {
+  appendCurrentChatUserMessageForSend,
   currentChatStateSnapshot,
   dispatchCreateChat,
   dispatchCreateChatFolder,
@@ -110,6 +111,21 @@ function stubCommandFetch(): CapturedFetch[] {
             id: 'chat-a',
           },
           chatId: 'chat-a',
+        })
+      }
+      if (url === '/api/v1/commands/chats/chat-a/messages') {
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+        return jsonResponse({
+          revision: 17,
+          event: {
+            type: 'message.appended',
+            revision: 17,
+            resource: 'message',
+            id: body.message?.chatId,
+            parentId: 'chat-a',
+          },
+          chatId: 'chat-a',
+          messageId: body.message?.chatId,
         })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -297,6 +313,49 @@ describe('chat command projection helpers', () => {
     expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
   })
 
+  it('appends DevTool Autopilot user messages through an awaited message command', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(() => {
+      DBState.db.characters[0].chats[0].message.push({ role: 'user', data: 'direct' })
+    }).toThrow()
+
+    const result = await appendCurrentChatUserMessageForSend('autopilot row')
+
+    expect(result.status).toBe('ok')
+    await waitForCallCount(calls, 2)
+    const message = DBState.db.characters[0].chats[0].message[0]
+    expect(message).toMatchObject({
+      role: 'user',
+      data: 'autopilot row',
+      chatId: expect.any(String),
+      time: expect.any(Number),
+    })
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        method: 'GET',
+        authHeader: 'chat-command-token',
+        body: null,
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/messages',
+        method: 'POST',
+        authHeader: 'chat-command-token',
+        body: {
+          baseRevision: 10,
+          message: {
+            role: 'user',
+            data: 'autopilot row',
+            chatId: message.chatId,
+            time: message.time,
+          },
+        },
+      },
+    ])
+  })
+
   it('rolls back optimistic scriptstate edits when the command fails', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -328,5 +387,35 @@ describe('chat command projection helpers', () => {
 
     await waitForCallCount(calls, 2)
     expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
+  })
+
+  it('rolls back optimistic Autopilot appends when the message command fails', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a/messages') {
+          return jsonResponse({ error: 'nope' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setServerProjectionWriteGuardEnabled(true)
+
+    const result = await appendCurrentChatUserMessageForSend('failed autopilot row')
+
+    expect(result).toEqual({ status: 'error', error: 'nope' })
+    await waitForCallCount(calls, 2)
+    expect(DBState.db.characters[0].chats[0].message).toEqual([])
   })
 })
