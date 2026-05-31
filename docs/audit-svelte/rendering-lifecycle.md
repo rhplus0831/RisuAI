@@ -253,7 +253,10 @@
 
 ## NewGUI Button Has Missing Branches And Events
 
-- Source:
+- Status:
+  Resolved by removing unused `src/lib/UI/NewGUI/Button.svelte`; live button
+  imports use `src/lib/UI/GUI/Button.svelte`.
+- Former source:
   `src/lib/UI/NewGUI/Button.svelte:4-12`,
   `src/lib/UI/NewGUI/Button.svelte:17-91`
 - Symptom:
@@ -263,5 +266,4 @@
   Only `primary` and `danger` branches are rendered, `color` has no default, and
   rest props/events are not forwarded to the `<button>`.
 - Remediation:
-  Add a default/secondary branch and forward button attributes/events through
-  rest props.
+  Delete the dead in-progress component rather than fixing unreachable behavior.

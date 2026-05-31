@@ -27,7 +27,7 @@ SSE application, display state, TTS playback, image previews, and plugin runtime
 | `src/lib/Mobile/`      | Mobile shell components.                                               |
 | `src/lib/LiteUI/`      | Lite UI components.                                                    |
 | `src/lib/Playground/`  | Playground/tooling UI surfaces.                                        |
-| `src/lib/UI/`          | Shared UI primitives, GUI, NewGUI, Realm components.                   |
+| `src/lib/UI/`          | Shared UI primitives, GUI, and Realm components.                       |
 | `src/lib/Others/`      | Modals, alerts, welcome, editor, loadout, misc UI pieces.              |
 | `src/lang/`            | Localization data.                                                     |
 | `src/ts/`              | Non-component client and domain logic.                                 |

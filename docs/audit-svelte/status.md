@@ -43,7 +43,6 @@ Last updated: 2026-05-31.
 - Realm Detail Popup Closes On Inner Clicks
 - Realm Upload Validates Stale Creator Notes
 - RealmFrame Ping Loop Has No Cancellation
-- NewGUI Button Has Missing Branches And Events
 
 ## Completed Items
 
@@ -52,4 +51,5 @@ Last updated: 2026-05-31.
 - One-Item Drop Lists Can Corrupt The List
 - Realm Upload Mode Buttons Toggle The Wrong State
 - Plugin Select Options Render Literal Text
+- NewGUI Button Has Missing Branches And Events
 - Plugin Alert Continue Action Is Hidden In Details
