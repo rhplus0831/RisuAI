@@ -28,10 +28,9 @@ plugin/runtime surfaces, MCP/local tool orchestration, and the non-Fastify/local
 compatibility stack.
 
 The main server-owned responsibilities that still leak through the client are
-DevTool direct mutation of `scriptstate`, DevTool Autopilot direct message
-insertion, first-run/default normalization seams, client-built provider payloads
-for server completion, browser-local inlay bytes, and the closeout path for local
-prompt assembly/provider dispatch.
+DevTool Autopilot direct message insertion, first-run/default normalization seams,
+client-built provider payloads for server completion, browser-local inlay bytes,
+and the closeout path for local prompt assembly/provider dispatch.
 
 ## Current Client Responsibilities
 
@@ -83,6 +82,9 @@ prompt assembly/provider dispatch.
   text.
 - Server `/chat` persists generation results and scriptstate through the
   command/mutation path instead of relying on browser-local DB saves.
+- DevTool scriptstate editing now commits variable changes through the chat
+  scriptstate command helper; the variable editor no longer binds form inputs
+  directly into the server projection.
 - Chat messages, Hypa V3 data, and reroll alternates are split into SQLite and
   hydrated back into the browser projection only when needed.
 - Assets, backups, Realm import, `.risu` import/export, memory jobs, proxying,
@@ -91,20 +93,6 @@ prompt assembly/provider dispatch.
   unless a supported bridge command exists.
 
 ## Server-Owned Items Still In The Client
-
-### P0: DevTool scriptstate editing bypasses server commands
-
-`src/lib/SideBars/DevTool.svelte` binds form inputs directly into
-`DBState.db.characters[...].chats[...].scriptstate[key]`. Scriptstate is durable
-server state: normal writes go through command-backed helpers and server
-generation also persists scriptstate. In Fastify mode, this DevTool surface should
-either dispatch a scriptstate patch command or become read-only.
-
-Evidence:
-
-- `src/lib/SideBars/DevTool.svelte:112`
-- `src/ts/chatCommands.ts`
-- `server/fastify/src/routes/generationChat.ts`
 
 ### P1: DevTool Autopilot inserts user messages by direct projection mutation
 
@@ -223,8 +211,10 @@ Evidence:
 
 ## Verification Notes
 
+- Ran `pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/browserLocalSurface.test.ts src/ts/server/commands.test.ts`.
+- Ran `CLIENT_THINNING_AUDIT_CHECK_IDS='A4R-devtool scriptstate command-backed' pnpm client-thinning:audit`.
+- Ran `pnpm check`.
 - Ran `pnpm client-thinning:audit`. It failed on the existing server invariant:
   `POST /api/v1/commands/state/initialize` calls `seedInitialDatabase()`, which
   transitively reaches ID minting. This should be tracked separately from the
   client/server ownership cleanup above.
-- No application source files were edited as part of this audit report.

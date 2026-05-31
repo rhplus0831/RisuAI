@@ -3470,6 +3470,33 @@ function checkGroupChatRemoved(): void {
   }
 }
 
+function checkDevToolScriptstateCommandBacked(): void {
+  const check = 'A4R-devtool scriptstate command-backed'
+  const rl = 'src/lib/SideBars/DevTool.svelte'
+  const absolute = path.join(root, rl)
+  if (!fs.existsSync(absolute)) {
+    return
+  }
+
+  const body = text(rl)
+  if (/bind:value=\{[\s\S]{0,240}?scriptstate\[/.test(body)) {
+    fail(
+      check,
+      'DevTool variable editors bind directly into chat.scriptstate; route edits through the scriptstate command helper.',
+      undefined,
+      rl,
+    )
+  }
+  if (!body.includes('dispatchPatchChatScriptstate')) {
+    fail(
+      check,
+      'DevTool scriptstate editing must dispatch through dispatchPatchChatScriptstate.',
+      undefined,
+      rl,
+    )
+  }
+}
+
 function selectedChecks(checks: AuditCheck[]): AuditCheck[] {
   const selected = process.env.CLIENT_THINNING_AUDIT_CHECK_IDS
   if (!selected) return checks
@@ -3616,6 +3643,7 @@ const auditChecks: AuditCheck[] = [
   { id: 'A4R-bounded process-lifetime accumulators', run: checkAlpha4BoundedAccumulators },
   { id: 'A4R-saveasset filename classification', run: checkAlpha4SaveAssetClassification },
   { id: 'A4R-pluginv2 no server-side plugin execution', run: checkPluginV2NoServerExecution },
+  { id: 'A4R-devtool scriptstate command-backed', run: checkDevToolScriptstateCommandBacked },
   {
     id: 'A4R-group-chat-removed legacy group chat removed from client',
     run: checkGroupChatRemoved,

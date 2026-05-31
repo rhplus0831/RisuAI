@@ -13,7 +13,7 @@ workstream docs now live under [`archive/client-thinning/`](archive/client-thinn
 [`archive/lazy-projection/`](archive/lazy-projection/).
 
 The codebase is the source of truth. Where a claim cites a file, it was verified
-against the tree on 2026-05-30 (branch `fastify`).
+against the tree on 2026-05-31 (branch `fastify`).
 
 ---
 
@@ -50,6 +50,15 @@ against the tree on 2026-05-30 (branch `fastify`).
   auto-reattach now consumes `activeGenerationJobs`; durable generation now includes
   `send`, `continue`, and `regenerate`; contiguous command events use targeted
   projection fetches instead of a debounced full-bootstrap refresh.
+
+## Resolved during follow-up (2026-05-31)
+
+- **DevTool scriptstate editing no longer bypasses server commands.** The variable
+  editor in `src/lib/SideBars/DevTool.svelte` now commits string/number/boolean
+  changes through the chat scriptstate command helper instead of binding inputs
+  directly into `DBState.db.characters[...].chats[...].scriptstate[...]`. The
+  client guard is backed by a focused test and a dedicated audit check
+  (`A4R-devtool scriptstate command-backed`).
 
 ---
 

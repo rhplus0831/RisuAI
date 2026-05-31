@@ -153,6 +153,9 @@ Important files:
 
 If a UI change needs to persist state, find or add a command route on the server,
 then call it through a browser-side command helper.
+For example, the DevTool variable editor uses the chat scriptstate command helper
+for durable scriptstate changes; form controls should not bind directly into
+`DBState.db` for server-owned fields.
 
 ## Fastify SPA Integration
 

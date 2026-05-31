@@ -10,7 +10,7 @@
   import { tokenizePreset } from 'src/ts/process/prompt'
 
   import { DBState } from 'src/ts/stores.svelte'
-  import { getDatabase, setDatabase } from 'src/ts/storage/database.svelte'
+  import { getDatabase, setDatabase, type Chat } from 'src/ts/storage/database.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import { HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
@@ -21,6 +21,13 @@
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import { loadLoreBookV3Prompt } from 'src/ts/process/lorebook.svelte'
   import { getModules } from 'src/ts/process/modules'
+  import { currentChatStateSnapshot, dispatchPatchChatScriptstate } from 'src/ts/chatCommands'
+  import {
+    canUseServerCommands,
+    type ChatScriptstatePatch,
+    type ChatScriptstateValue,
+  } from 'src/ts/server/commands'
+  import CheckInput from '../UI/GUI/CheckInput.svelte'
 
   let previewMode = $state('chat')
   let previewJoin = $state('yes')
@@ -107,30 +114,111 @@
   }
 
   let autopilot = $state([])
+
+  function currentDevToolChat(): Chat | undefined {
+    const character = DBState.db.characters?.[$selectedCharID]
+    return character?.chats?.[character.chatPage]
+  }
+
+  function currentScriptstateEntries(): Array<[string, unknown]> {
+    return Object.entries(currentDevToolChat()?.scriptstate ?? {})
+  }
+
+  function commitScriptstateValue(key: string, value: unknown): void {
+    const chat = currentDevToolChat()
+    if (!chat || !isEditableScriptstateValue(value)) return
+    if (snapshotJson(chat.scriptstate?.[key]) === snapshotJson(value)) return
+
+    const patch: ChatScriptstatePatch = { [key]: cloneJsonValue(value) }
+    if (canUseServerCommands()) {
+      if (!chat.id) return
+      const chatId = chat.id
+      const previous = currentChatStateSnapshot()
+      withTrustedServerProjectionWrite(() => {
+        applyScriptstatePatch(chatId, patch)
+      })
+      dispatchPatchChatScriptstate(chatId, patch, [], previous)
+      return
+    }
+
+    applyScriptstatePatchToChat(chat, patch)
+  }
+
+  function applyScriptstatePatch(
+    chatId: string,
+    patch: ChatScriptstatePatch,
+    deleteKeys: string[] = [],
+  ): void {
+    const chat = findChatById(chatId)
+    if (!chat) return
+    applyScriptstatePatchToChat(chat, patch, deleteKeys)
+  }
+
+  function applyScriptstatePatchToChat(
+    chat: Chat,
+    patch: ChatScriptstatePatch,
+    deleteKeys: string[] = [],
+  ): void {
+    chat.scriptstate ??= {}
+    for (const key of deleteKeys) {
+      delete chat.scriptstate[key]
+    }
+    Object.assign(chat.scriptstate, cloneJsonValue(patch))
+    if (Object.keys(chat.scriptstate).length === 0) {
+      delete chat.scriptstate
+    }
+  }
+
+  function findChatById(chatId: string): Chat | undefined {
+    for (const character of DBState.db.characters ?? []) {
+      const chat = character.chats?.find((candidate) => candidate.id === chatId)
+      if (chat) return chat
+    }
+    return undefined
+  }
+
+  function isEditableScriptstateValue(value: unknown): value is ChatScriptstateValue {
+    return (
+      typeof value === 'string' ||
+      typeof value === 'boolean' ||
+      (typeof value === 'number' && Number.isFinite(value))
+    )
+  }
+
+  function snapshotJson(value: unknown): string {
+    const snapshot = JSON.stringify(value)
+    return snapshot === undefined ? '__undefined__' : snapshot
+  }
+
+  function cloneJsonValue<T>(value: T): T {
+    if (value === undefined) return value
+    return JSON.parse(JSON.stringify(value)) as T
+  }
 </script>
 
 <Accordion styled name={'Variables'}>
   <div class="rounded-md border border-darkborderc grid grid-cols-2 gap-2 p-2">
-    {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate && Object.keys(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate).length > 0}
-      {#each Object.keys(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate) as key}
+    {#if currentScriptstateEntries().length > 0}
+      {#each currentScriptstateEntries() as [key, value] (key)}
         <span>{key}</span>
-        {#if typeof DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate[key] === 'object'}
+        {#if typeof value === 'object'}
           <div class="p-2 text-center">Object</div>
-        {:else if typeof DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate[key] === 'string'}
+        {:else if typeof value === 'string'}
           <TextInput
-            bind:value={
-              DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ].scriptstate[key] as string
-            }
+            {value}
+            onchange={(event) => commitScriptstateValue(key, event.currentTarget.value)}
           />
-        {:else if typeof DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].scriptstate[key] === 'number'}
+        {:else if typeof value === 'number'}
           <NumberInput
-            bind:value={
-              DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ].scriptstate[key] as number
-            }
+            {value}
+            onChange={(event) => commitScriptstateValue(key, event.currentTarget.valueAsNumber)}
+          />
+        {:else if typeof value === 'boolean'}
+          <CheckInput
+            check={value}
+            hiddenName
+            name={key}
+            onChange={(checked) => commitScriptstateValue(key, checked)}
           />
         {/if}
       {/each}

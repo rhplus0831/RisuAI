@@ -59,4 +59,11 @@ describe('Fastify-only browser local surface policy', () => {
     expect(globalApi).not.toContain("key.includes('dbbackup-')")
     expect(globalApi).not.toContain('Loaded backup')
   })
+
+  it('does not bind DevTool variable editors directly to server scriptstate', () => {
+    const devTool = readWorkspaceFile('src/lib/SideBars/DevTool.svelte')
+
+    expect(devTool).toContain('dispatchPatchChatScriptstate')
+    expect(devTool).not.toMatch(/bind:value=\{[\s\S]{0,240}?scriptstate\[/)
+  })
 })

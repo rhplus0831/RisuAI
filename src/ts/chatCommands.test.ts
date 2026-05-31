@@ -21,12 +21,16 @@ import {
   type ChatFolderSnapshot,
   type ChatSnapshot,
 } from './server/commands'
-import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 import {
   currentChatStateSnapshot,
   dispatchCreateChat,
   dispatchCreateChatFolder,
+  dispatchPatchChatScriptstate,
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
   dispatchUpdateChat,
@@ -96,6 +100,18 @@ function stubCommandFetch(): CapturedFetch[] {
           selectedChatId: 'chat-a',
         })
       }
+      if (url === '/api/v1/commands/chats/chat-a/scriptstate') {
+        return jsonResponse({
+          revision: 16,
+          event: {
+            type: 'chat.scriptstate.updated',
+            revision: 16,
+            resource: 'chat',
+            id: 'chat-a',
+          },
+          chatId: 'chat-a',
+        })
+      }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
   )
@@ -121,7 +137,13 @@ beforeEach(() => {
         name: 'Character',
         chatPage: 0,
         chats: [
-          { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
+          {
+            id: 'chat-a',
+            name: 'Chat A',
+            folderId: null,
+            message: [],
+            scriptstate: { $score: '1', $old: 'gone' },
+          },
           { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
         ],
         chatFolders: [{ id: 'folder-a', name: 'Folder', folded: false }],
@@ -237,5 +259,74 @@ describe('chat command projection helpers', () => {
         },
       },
     ])
+  })
+
+  it('routes DevTool-style scriptstate edits through the chat scriptstate command', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentChatStateSnapshot()
+
+    expect(() => {
+      DBState.db.characters[0].chats[0].scriptstate!.$score = 'direct'
+    }).toThrow()
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].scriptstate!.$score = '9'
+    })
+    dispatchPatchChatScriptstate('chat-a', { $score: '9' }, [], previous)
+
+    await waitForCallCount(calls, 2)
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        method: 'GET',
+        authHeader: 'chat-command-token',
+        body: null,
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/scriptstate',
+        method: 'PATCH',
+        authHeader: 'chat-command-token',
+        body: {
+          baseRevision: 10,
+          patch: { $score: '9' },
+          deleteKeys: [],
+        },
+      },
+    ])
+    expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
+  })
+
+  it('rolls back optimistic scriptstate edits when the command fails', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a/scriptstate') {
+          return jsonResponse({ error: 'nope' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentChatStateSnapshot()
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].scriptstate!.$score = 'failed'
+    })
+    dispatchPatchChatScriptstate('chat-a', { $score: 'failed' }, [], previous)
+
+    await waitForCallCount(calls, 2)
+    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
   })
 })
