@@ -44,9 +44,8 @@ function deriveMode(input: ServerPromptAssemblyInput): DurableGenerationMode {
  *      never generate → `non-durable`.
  *   2. delegate to `resolveServerPromptAssembly`. Anything other than `server`
  *      → `non-durable`, carrying the assembly gate's `unsupported` reason (or a
- *      generic "not server-assembled" for the `local` arm: `!isFastifyServer`
- *      or the `useServerPromptAssembly` master-enable off). This single
- *      delegation inherits ALL of the assembly subset: non-text send, group
+ *      generic "not server-assembled" for the `local` arm: `!isFastifyServer`).
+ *      This single delegation inherits ALL of the assembly subset: non-text send, group
  *      char, non-server-routable provider, non-vision image caption fallback,
  *      interactive Lua dialogs, and pluginV2 edit/replacer hooks all stay
  *      `non-durable`; image-input multimodal/asset content, the image-gen view

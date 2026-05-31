@@ -239,7 +239,7 @@ describe('active-writer header validation', () => {
       method: 'POST',
       url: '/api/v1/import/risusave',
       headers: { 'risu-auth': assertion },
-      payload: { database: { useServerPromptAssembly: false } },
+      payload: { database: { streamGeminiThoughts: false } },
     })
     expect(noHeader.statusCode).toBe(423)
     expect(noHeader.json()).toMatchObject({ error: 'active_writer_stale' })
@@ -258,7 +258,7 @@ describe('active-writer header validation', () => {
         method: 'POST',
         url: '/api/v1/import/risusave',
         headers: { 'risu-auth': assertion, [ACTIVE_WRITER_SESSION_HEADER]: bad },
-        payload: { database: { useServerPromptAssembly: false } },
+        payload: { database: { streamGeminiThoughts: false } },
       })
       expect(res.statusCode).toBe(423)
     }
@@ -272,7 +272,7 @@ describe('active-writer header validation', () => {
       method: 'POST',
       url: '/api/v1/import/risusave',
       headers: { 'risu-auth': assertion },
-      payload: { database: { useServerPromptAssembly: false } },
+      payload: { database: { streamGeminiThoughts: false } },
     })
     expect(res.statusCode).toBe(200)
   })

@@ -317,7 +317,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   useLegacyGUI: 'display',
   usePlainFetch: 'runtime',
   useSayNothing: 'advanced',
-  useServerPromptAssembly: 'runtime',
   useStreaming: 'runtime',
   useTokenizerCaching: 'advanced',
   username: 'account',
@@ -352,9 +351,7 @@ export type ServerCommandResult<T extends Record<string, unknown> = {}> =
 
 export type SettingsPatch = Record<string, unknown>
 
-export interface RuntimeSettingsPatch extends SettingsPatch {
-  useServerPromptAssembly?: boolean
-}
+export type RuntimeSettingsPatch = SettingsPatch
 
 export interface PatchRuntimeSettingsInput {
   baseRevision: number

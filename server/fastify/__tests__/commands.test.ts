@@ -175,7 +175,7 @@ describe('Phase 9-1 command foundation', () => {
     const res = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
-      payload: { baseRevision: 0, patch: { useServerPromptAssembly: true } },
+      payload: { baseRevision: 0, patch: { streamGeminiThoughts: true } },
     })
 
     expect(res.statusCode).toBe(401)
@@ -188,7 +188,7 @@ describe('Phase 9-1 command foundation', () => {
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
       headers: { 'risu-auth': assertion },
-      payload: { patch: { useServerPromptAssembly: true } },
+      payload: { patch: { streamGeminiThoughts: true } },
     })
     expect(missing.statusCode).toBe(400)
     expect(missing.json().error).toBe('baseRevision must be a non-negative integer')
@@ -197,7 +197,7 @@ describe('Phase 9-1 command foundation', () => {
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: '0', patch: { useServerPromptAssembly: true } },
+      payload: { baseRevision: '0', patch: { streamGeminiThoughts: true } },
     })
     expect(invalid.statusCode).toBe(400)
     expect(invalid.json().error).toBe('baseRevision must be a non-negative integer')
@@ -205,13 +205,13 @@ describe('Phase 9-1 command foundation', () => {
 
   it('returns 409 with the current revision when baseRevision is stale', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    await importDatabase(harness.app, assertion, { useServerPromptAssembly: false })
+    await importDatabase(harness.app, assertion, { streamGeminiThoughts: false })
 
     const res = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: 0, patch: { useServerPromptAssembly: true } },
+      payload: { baseRevision: 0, patch: { streamGeminiThoughts: true } },
     })
 
     expect(res.statusCode).toBe(409)
@@ -220,7 +220,7 @@ describe('Phase 9-1 command foundation', () => {
 
   it('emits no event and leaves revision + db.json untouched on a stale (409) write', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    await importDatabase(harness.app, assertion, { useServerPromptAssembly: false })
+    await importDatabase(harness.app, assertion, { streamGeminiThoughts: false })
     // Drop the import's own event so we observe only what the stale write does.
     harness.commandEvents.clear()
 
@@ -228,7 +228,7 @@ describe('Phase 9-1 command foundation', () => {
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: 0, patch: { useServerPromptAssembly: true } },
+      payload: { baseRevision: 0, patch: { streamGeminiThoughts: true } },
     })
     expect(res.statusCode).toBe(409)
 
@@ -242,16 +242,16 @@ describe('Phase 9-1 command foundation', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database).toMatchObject({ useServerPromptAssembly: false })
+    expect(bootstrap.json().database).toMatchObject({ streamGeminiThoughts: false })
 
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database).toMatchObject({ useServerPromptAssembly: false })
+    expect(onDisk.database).toMatchObject({ streamGeminiThoughts: false })
   })
 
   it('applies the runtime settings harness command, emits an event, and appears in bootstrap', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      useServerPromptAssembly: false,
+      streamGeminiThoughts: false,
       greeting: 'hi',
     })
     harness.commandEvents.clear()
@@ -260,7 +260,7 @@ describe('Phase 9-1 command foundation', () => {
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, patch: { useServerPromptAssembly: true } },
+      payload: { baseRevision: revision, patch: { streamGeminiThoughts: true } },
     })
 
     expect(res.statusCode).toBe(200)
@@ -282,7 +282,7 @@ describe('Phase 9-1 command foundation', () => {
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(2)
     expect(bootstrap.json().database).toMatchObject({
-      useServerPromptAssembly: true,
+      streamGeminiThoughts: true,
       greeting: 'hi',
     })
   })
@@ -290,18 +290,18 @@ describe('Phase 9-1 command foundation', () => {
   it('does not bump revision or mutate db.json on validation failure', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      useServerPromptAssembly: false,
+      streamGeminiThoughts: false,
     })
 
     const res = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, patch: { useServerPromptAssembly: 'yes' } },
+      payload: { baseRevision: revision, patch: { streamGeminiThoughts: 'yes' } },
     })
 
     expect(res.statusCode).toBe(400)
-    expect(res.json().error).toBe('useServerPromptAssembly must be a boolean')
+    expect(res.json().error).toBe('streamGeminiThoughts must be a boolean')
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -309,10 +309,10 @@ describe('Phase 9-1 command foundation', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database).toMatchObject({ useServerPromptAssembly: false })
+    expect(bootstrap.json().database).toMatchObject({ streamGeminiThoughts: false })
 
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database).toMatchObject({ useServerPromptAssembly: false })
+    expect(onDisk.database).toMatchObject({ streamGeminiThoughts: false })
   })
 
   it('rolls back a thrown JSON command mutation before bumping revision', () => {
@@ -321,7 +321,7 @@ describe('Phase 9-1 command foundation', () => {
     const commandEvents = createCommandEventSink()
     writePersisted(dataDir, {
       _version: 1,
-      database: { useServerPromptAssembly: false },
+      database: { streamGeminiThoughts: false },
       assets: [],
     })
 
@@ -334,14 +334,14 @@ describe('Phase 9-1 command foundation', () => {
           eventSink: commandEvents,
           mutate(database) {
             const target = database as Record<string, unknown>
-            target.useServerPromptAssembly = true
+            target.streamGeminiThoughts = true
             throw new Error('boom')
           },
         }),
       ).toThrow('boom')
 
       expect(getSchemaState(db).revision).toBe(0)
-      expect(loadPersisted(dataDir).database).toEqual({ useServerPromptAssembly: false })
+      expect(loadPersisted(dataDir).database).toEqual({ streamGeminiThoughts: false })
       expect(commandEvents.list()).toEqual([])
     } finally {
       db.close()
@@ -399,7 +399,6 @@ describe('first-run database seed', () => {
       characters: [],
       botPresets: [{ id: 'default-preset', name: 'Default' }],
       personas: [{ id: 'default-persona', name: 'User' }],
-      useServerPromptAssembly: true,
     })
 
     // The previously-rejected settings command now succeeds against revision 1.

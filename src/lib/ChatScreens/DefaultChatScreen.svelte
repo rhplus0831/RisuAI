@@ -242,7 +242,7 @@
       if (char.type === 'character') {
         // Server prompt assembly owns submit-time input triggers/editinput;
         // browser-side handling would double-apply them in Fastify mode.
-        if (isFastifyServer && DBState.db.useServerPromptAssembly) {
+        if (isFastifyServer) {
           cha.push({
             role: 'user',
             data: messageInput,

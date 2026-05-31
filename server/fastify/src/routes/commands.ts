@@ -415,7 +415,6 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'echoDelay',
   ],
   runtime: [
-    'useServerPromptAssembly',
     'useStreaming',
     'streamGeminiThoughts',
     'maxContext',
@@ -779,6 +778,7 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'sideMenuRerollButton',
   'simplifiedToolUse',
   'strictJsonSchema',
+  'streamGeminiThoughts',
   'swipe',
   'textBorder',
   'textScreenRounded',
@@ -796,7 +796,6 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'useLegacyGUI',
   'usePlainFetch',
   'useSayNothing',
-  'useServerPromptAssembly',
   'useStreaming',
   'useTokenizerCaching',
 ])

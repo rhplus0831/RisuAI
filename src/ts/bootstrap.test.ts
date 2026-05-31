@@ -210,7 +210,6 @@ function serverDefaultDatabase() {
     textAreaTextSize: 0,
     formatversion: 5,
     characterOrder: [],
-    useServerPromptAssembly: true,
   }
 }
 
@@ -585,7 +584,6 @@ describe('web bootstrap startup source', () => {
       characters: [],
       botPresets: [{ id: 'default-preset', name: 'Default' }],
       personas: [{ id: 'default-persona', name: 'User' }],
-      useServerPromptAssembly: true,
     })
     expect(peekCachedServerCommandRevision()).toBe(1)
     expect(get(loadedStore)).toBe(true)

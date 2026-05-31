@@ -163,6 +163,7 @@ export function normalizeDatabaseDefaults(
 ): JsonRecord {
   const providerDefaults = options.providerDefaults ?? true
 
+  delete database.useServerPromptAssembly
   normalizeCharacters(database)
 
   if (providerDefaults) {
@@ -436,7 +437,6 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'newMessageButtonStyle', 'bottom-center')
   setDefault(database, 'echoMessage', 'Echo Message')
   setDefault(database, 'echoDelay', 0)
-  setDefault(database, 'useServerPromptAssembly', true)
   setDefault(database, 'createFolderOnBranch', true)
   setDefault(database, 'hamburgerButtonBottom', false)
   setDefault(database, 'dynamicModelRegistry', true)

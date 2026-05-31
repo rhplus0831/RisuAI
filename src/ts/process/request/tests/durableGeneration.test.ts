@@ -46,7 +46,6 @@ function seedDb(overrides: Partial<Database> = {}): void {
   setDatabase({
     aiModel: 'echo_model',
     subModel: 'echo_model',
-    useServerPromptAssembly: true,
     characters: [],
     maxContext: 4000,
     botPresetsId: 0,
@@ -214,14 +213,6 @@ describe('resolveDurableGeneration', () => {
   describe('non-durable — inherited from the assembly gate (never a hard fail)', () => {
     it('is non-durable when not in Fastify mode (assembly local)', () => {
       platformState.isFastifyServer = false
-      expect(resolveDurableGeneration(makeInput())).toEqual({
-        type: 'non-durable',
-        reason: 'not server-assembled',
-      })
-    })
-
-    it('is non-durable when the useServerPromptAssembly master-enable is off (assembly local)', () => {
-      seedDb({ useServerPromptAssembly: false })
       expect(resolveDurableGeneration(makeInput())).toEqual({
         type: 'non-durable',
         reason: 'not server-assembled',

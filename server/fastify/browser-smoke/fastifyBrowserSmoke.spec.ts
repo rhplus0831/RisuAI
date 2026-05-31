@@ -67,7 +67,7 @@ test.beforeAll(async () => {
     language: 'en',
     loreBookToken: 8000,
     mainPrompt: '',
-    useServerPromptAssembly: false,
+    streamGeminiThoughts: false,
   })
 })
 
@@ -168,7 +168,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   const initialProjection = await page.evaluate(() =>
     window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot(),
   )
-  expect(initialProjection?.useServerPromptAssembly).toBe(false)
+  expect(initialProjection?.streamGeminiThoughts).toBe(false)
   expect(
     await page.evaluate(() =>
       window.__RISU_FASTIFY_BROWSER_SMOKE__!.assertDirectProjectionWriteRejected(),
@@ -177,7 +177,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
 
   const commandResult = await page.evaluate(() =>
     window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({
-      useServerPromptAssembly: true,
+      streamGeminiThoughts: true,
     }),
   )
   expect(commandResult).toMatchObject({
@@ -259,7 +259,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   await expect
     .poll(() =>
       page.evaluate(
-        () => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().useServerPromptAssembly,
+        () => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().streamGeminiThoughts,
       ),
     )
     .toBe(true)

@@ -75,7 +75,7 @@ describe('active writer session guard', () => {
       method: 'POST',
       url: '/api/v1/import/risusave',
       headers: authedHeaders('session-b'),
-      payload: { database: { useServerPromptAssembly: false } },
+      payload: { database: { streamGeminiThoughts: false } },
     })
     expect(imported.statusCode).toBe(200)
 
@@ -83,7 +83,7 @@ describe('active writer session guard', () => {
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
       headers: authedHeaders('session-a'),
-      payload: { baseRevision: 1, patch: { useServerPromptAssembly: true } },
+      payload: { baseRevision: 1, patch: { streamGeminiThoughts: true } },
     })
     expectStaleWriter(stale)
 
@@ -91,7 +91,7 @@ describe('active writer session guard', () => {
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
       headers: authedHeaders('session-b'),
-      payload: { baseRevision: 1, patch: { useServerPromptAssembly: true } },
+      payload: { baseRevision: 1, patch: { streamGeminiThoughts: true } },
     })
     expect(active.statusCode).toBe(200)
     expect(active.json().revision).toBe(2)
@@ -105,7 +105,7 @@ describe('active writer session guard', () => {
       method: 'POST',
       url: '/api/v1/import/risusave',
       headers: authedHeaders('session-b'),
-      payload: { database: { useServerPromptAssembly: false } },
+      payload: { database: { streamGeminiThoughts: false } },
     })
     expect(imported.statusCode).toBe(200)
 
@@ -120,7 +120,7 @@ describe('active writer session guard', () => {
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
       headers: authedHeaders('session-a'),
-      payload: { baseRevision: 1, patch: { useServerPromptAssembly: true } },
+      payload: { baseRevision: 1, patch: { streamGeminiThoughts: true } },
     })
     expectStaleWriter(staleAfterPassiveRefresh)
   })

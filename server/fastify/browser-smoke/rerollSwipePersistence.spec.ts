@@ -206,7 +206,6 @@ function rerollFixtureDatabase(): Record<string, unknown> {
     mainPrompt: 'MAIN',
     maxContext: 100_000,
     maxResponse: 50,
-    useServerPromptAssembly: true,
     aiModel: 'echo_model',
     echoMessage: 'rerolled reply',
     echoDelay: 0,

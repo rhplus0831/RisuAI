@@ -165,7 +165,7 @@ describe('server command API adapter', () => {
 
     const result = await patchRuntimeSettings({
       baseRevision: 1,
-      patch: { useServerPromptAssembly: true },
+      patch: { streamGeminiThoughts: true },
     })
 
     expect(result).toEqual({ status: 'ok', revision: 2, event })
@@ -177,7 +177,7 @@ describe('server command API adapter', () => {
         contentType: 'application/json',
         body: {
           baseRevision: 1,
-          patch: { useServerPromptAssembly: true },
+          patch: { streamGeminiThoughts: true },
         },
       },
     ])
@@ -325,7 +325,7 @@ describe('server command API adapter', () => {
 
     const result = await patchRuntimeSettings({
       baseRevision: 6,
-      patch: { useServerPromptAssembly: true },
+      patch: { streamGeminiThoughts: true },
     })
 
     expect(result).toEqual({ status: 'conflict', currentRevision: 7 })
@@ -333,18 +333,18 @@ describe('server command API adapter', () => {
 
   it('maps command errors to status:error', async () => {
     const commandFetch = makeCommandFetch(() =>
-      jsonResponse({ error: 'useServerPromptAssembly must be a boolean' }, 400),
+      jsonResponse({ error: 'streamGeminiThoughts must be a boolean' }, 400),
     )
     vi.stubGlobal('fetch', commandFetch.fetch)
 
     const result = await patchRuntimeSettings({
       baseRevision: 1,
-      patch: { useServerPromptAssembly: true },
+      patch: { streamGeminiThoughts: true },
     })
 
     expect(result).toEqual({
       status: 'error',
-      error: 'useServerPromptAssembly must be a boolean',
+      error: 'streamGeminiThoughts must be a boolean',
     })
   })
 
@@ -541,7 +541,7 @@ describe('server command API adapter', () => {
 
     const result = await patchRuntimeSettings({
       baseRevision: 1,
-      patch: { useServerPromptAssembly: true },
+      patch: { streamGeminiThoughts: true },
     })
 
     expect(result).toEqual({ status: 'unavailable' })

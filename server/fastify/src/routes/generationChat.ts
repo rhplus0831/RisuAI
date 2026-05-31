@@ -287,14 +287,11 @@ function loadDatabaseDeps(dataDir: string, db: DatabaseSync): RouteAssembleDeps 
 function shouldDispatchProvider(
   input: AssembleInput,
   database: Database | null,
-  options: GenerationChatRouteOptions,
 ): database is Database {
   if (!(input.mode === 'send' || input.mode === 'continue' || input.mode === 'regenerate')) {
     return false
   }
-  return (
-    database !== null && (database.useServerPromptAssembly === true || !!options.dispatchProvider)
-  )
+  return database !== null
 }
 
 function createGenerationInfo(
@@ -690,7 +687,7 @@ async function streamAssembly(
           prompt: result.prompt,
         }
         const generationId = randomUUID()
-        const shouldDispatch = shouldDispatchProvider(input, database, options)
+        const shouldDispatch = shouldDispatchProvider(input, database)
         const generationInfo =
           shouldDispatch && database
             ? createGenerationInfo(database, generationId, successfulResult, promptMs)
@@ -1200,7 +1197,7 @@ async function runGenerationJob(args: {
           stopSending: false,
           prompt: result.prompt,
         }
-        const shouldDispatch = shouldDispatchProvider(input, database, options)
+        const shouldDispatch = shouldDispatchProvider(input, database)
         const generationInfo =
           shouldDispatch && database
             ? createGenerationInfo(database, generationId, successfulResult, promptMs)

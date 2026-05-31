@@ -509,7 +509,7 @@ describe('client-thinning audit fixtures', () => {
     )
   })
 
-  it('fails a fixture that exposes useServerGeneration as a server settings command', async () => {
+  it('fails a fixture that exposes provider-routing escape hatches as settings', async () => {
     const result = await runAuditFixture(
       'provider-ownership/failing-useservergeneration-setting',
       providerOwnershipCheck,
@@ -519,6 +519,12 @@ describe('client-thinning audit fixtures', () => {
     expect(result.stderr).toContain(`[${providerOwnershipCheck}]`)
     expect(result.stderr).toContain(
       'useServerGeneration must not be exposed as a Fastify server settings command.',
+    )
+    expect(result.stderr).toContain(
+      'useServerPromptAssembly must not route Fastify prompt assembly to the browser-local assembler.',
+    )
+    expect(result.stderr).toContain(
+      'useServerPromptAssembly must not be exposed as a Fastify server settings command.',
     )
   })
 

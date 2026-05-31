@@ -27,10 +27,9 @@ consumption, reattach/cancel controls, browser-only post-generation effects,
 plugin/runtime surfaces, MCP/local tool orchestration, and the non-Fastify/local
 compatibility stack.
 
-The main server-owned responsibility that still leaks through the client is the
-closeout path for local prompt assembly/provider dispatch. Fastify-mode inlay
-bytes now live in the server asset store; the browser only keeps UI metadata and
-legacy id aliases.
+Fastify-mode prompt assembly/provider dispatch no longer has a browser-local
+escape hatch. Fastify-mode inlay bytes now live in the server asset store; the
+browser only keeps UI metadata and legacy id aliases.
 
 ## Current Client Responsibilities
 
@@ -45,7 +44,7 @@ legacy id aliases.
 | Browser auth and storage adapters    | Creates short-lived browser assertion tokens, attaches active-writer headers, calls legacy storage APIs, and adapts asset reads/writes to Fastify routes.                                                                       | `src/ts/storage/nodeStorage.ts`, `src/ts/globalApi.svelte.ts`, `src/ts/server/assets.ts`                                                                                                                               |
 | Chat send orchestration              | Chooses server/local routing, manages abort state, sends `/api/v1/generate/chat`, consumes SSE frames, applies terminal patches, maps legacy inlay ids to server asset ids, reattaches active jobs, and issues cancel requests. | `src/ts/process/index.svelte.ts`, `src/ts/process/serverBackedSendChat.ts`, `src/ts/process/request/serverChat.ts`, `src/ts/process/reattach.ts`                                                                       |
 | Lower-level completion routing       | For auxiliary requests, sends already-assembled prompt intent to Fastify in server mode, consumes completion SSE/JSON, and keeps local provider dispatch for non-Fastify mode.                                                  | `src/ts/process/request/request.ts`, `src/ts/process/request/serverCompletion.ts`                                                                                                                                      |
-| Local compatibility stack            | Keeps the full in-browser prompt assembler and provider dispatch for non-Fastify mode, tests, unsupported content, and the `useServerPromptAssembly=false` escape hatch.                                                        | `src/ts/process/sendChatPromptAssembly.ts`, `src/ts/process/request/serverPromptAssembly.ts`, `src/ts/process/request/dispatchRequest.ts`                                                                              |
+| Local compatibility stack            | Keeps the full in-browser prompt assembler and provider dispatch for non-Fastify mode, local compatibility, and parity tests. Unsupported Fastify content hard-fails instead of falling back to this stack.                    | `src/ts/process/sendChatPromptAssembly.ts`, `src/ts/process/request/serverPromptAssembly.ts`, `src/ts/process/request/dispatchRequest.ts`                                                                              |
 | Browser-only post-generation effects | Runs UI/audio/effect work that is not durable server mutation: notifications, TTS/display effects, emotion fallback, automatic image generation, and inlay rendering.                                                           | `src/ts/process/postGeneration/orchestrateResponse.ts`, `src/ts/process/postGeneration/runStage4.ts`, `src/ts/process/postGeneration/emotionFallbackEmbedding.ts`, `src/ts/process/postGeneration/imggenStableDiff.ts` |
 | Plugins and local tools              | Hosts browser plugin runtime, blocks unsupported server-mode resource keys, reports Plugin V3 runtime capabilities, and runs MCP/local filesystem orchestration from the browser side.                                          | `src/ts/plugins/plugins.svelte.ts`, `src/ts/plugins/pluginSafeClass.ts`, `src/ts/plugins/apiV3/v3.svelte.ts`, `src/ts/process/mcp/*`                                                                                   |
 | Local ML and legacy helpers          | Retains browser Hypa/memory helpers, embeddings, WebLLM, transformers, PDF/file helpers, and image-caption fallback code for non-server or unsupported paths.                                                                   | `src/ts/process/memory/hypav3.ts`, `src/ts/process/memory/hypamemory.ts`, `src/ts/process/webllm.ts`, `src/ts/process/transformers.ts`, `src/ts/process/promptAssembly/formatHistoryMessage.ts`                        |
@@ -74,8 +73,9 @@ legacy id aliases.
 - Fastify mode no longer persists the main database through browser `saveDb()`;
   `saveDb()` returns early and the server command/projection path owns durable
   state.
-- Supported chat sends use server prompt assembly and `/api/v1/generate/chat` by
-  default because `useServerPromptAssembly` defaults to `true`.
+- Supported Fastify chat sends use server prompt assembly and
+  `/api/v1/generate/chat`; the old `useServerPromptAssembly=false` Fastify
+  escape hatch has been removed.
 - Server-side prompt assembly now covers the core A-path work: input trigger,
   `editinput`, lore/history/memory/render sections, token budgeting, output
   trigger, `editoutput`, run vars, scriptstate derivation, and final assistant
@@ -107,22 +107,11 @@ legacy id aliases.
   sends messages and sampling controls only, while the server resolves the
   selected provider, wire model, endpoint, provider options, and secrets from the
   unmasked database.
+- Fastify-mode prompt assembly no longer exposes a flag-off local fallback:
+  `resolveServerPromptAssembly()` returns `local` only outside Fastify mode, and
+  `pnpm client-thinning:audit` guards against reintroducing the flag.
 
 ## Server-Owned Items Still In The Client
-
-### P2: Local prompt assembly/provider dispatch remains as an escape hatch
-
-`resolveServerPromptAssembly()` still returns `local` in non-Fastify mode and
-when `useServerPromptAssembly=false`. The default is server assembly, and
-unsupported content hard-fails instead of silently falling back, so this is a
-closeout item rather than an active split-brain path.
-
-Evidence:
-
-- `src/ts/process/request/serverPromptAssembly.ts:200`
-- `src/ts/process/sendChatPromptAssembly.ts`
-- `src/ts/storage/database.svelte.ts:774`
-- `docs/leftover.md`
 
 ### P3: `.risu` codec/browser file glue is duplicated
 

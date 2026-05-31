@@ -1354,6 +1354,14 @@ function checkProviderOwnership(): void {
       )
     }
   }
+  if (serverPromptAssemblyText.includes('useServerPromptAssembly')) {
+    fail(
+      check,
+      'useServerPromptAssembly must not route Fastify prompt assembly to the browser-local assembler.',
+      undefined,
+      serverPromptAssembly,
+    )
+  }
 
   const google = source('src/ts/process/request/google.ts')
   const googleText = google.getFullText()
@@ -1376,6 +1384,23 @@ function checkProviderOwnership(): void {
       check,
       'useServerGeneration must not be exposed as a Fastify server settings command.',
       clientCommands.getVariableDeclaration('SERVER_SETTINGS_GROUP_BY_KEY'),
+    )
+  }
+  if (settingsKeys.includes('useServerPromptAssembly')) {
+    fail(
+      check,
+      'useServerPromptAssembly must not be exposed as a Fastify server settings command.',
+      clientCommands.getVariableDeclaration('SERVER_SETTINGS_GROUP_BY_KEY'),
+    )
+  }
+
+  const serverCommandRoutes = loadOptionalSource('server/fastify/src/routes/commands.ts')
+  if (serverCommandRoutes?.getFullText().includes("'useServerPromptAssembly'")) {
+    fail(
+      check,
+      'useServerPromptAssembly must not be accepted by Fastify settings routes.',
+      undefined,
+      serverCommandRoutes,
     )
   }
 }

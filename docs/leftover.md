@@ -66,6 +66,11 @@ against the tree on 2026-05-31 (branch `fastify`).
   id-to-asset-id aliases; prompt assembly resolves bytes from `data/assets/`.
   Asset GC and bundle export now hydrate chat messages so inlay-token references
   are counted with the rest of the asset graph.
+- **`useServerPromptAssembly` flag removed.** Fastify-mode prompt assembly no
+  longer has a flag-off browser-local escape hatch: `resolveServerPromptAssembly()`
+  returns `local` only outside Fastify mode, server settings no longer expose the
+  flag, legacy persisted values are normalized away on server import/defaulting,
+  and `pnpm client-thinning:audit` now guards against reintroducing it.
 
 ---
 
@@ -73,17 +78,6 @@ against the tree on 2026-05-31 (branch `fastify`).
 
 ### Needs a decision
 
-- **Remove the `useServerPromptAssembly` flag.** Its `local` arm is the only surviving
-  `local` verdict in Fastify mode; it is kept because tests / specific cases set it
-  `false` to exercise the in-browser assembler. Trigger: when the local in-browser
-  assembler path is itself removed, the flag and its `local` return can be deleted.
-  This is the _end_ of the prompt-assembly thinning sub-family, not a gap to patch.
-  Source: `archive/client-thinning/phases/slices/slice-1-a1-foundation-classifier.md`;
-  `src/ts/storage/database.svelte.ts:781`.
-  - Note: the in-code JSDoc (`database.svelte.ts:~1361`) attributes the default-`true`
-    flip to "the decision-#5 closeout"; the closeout record numbers it **decision #1**
-    (decision #5 is the provider-resolver unification). Harmless label mismatch; align
-    when the flag is next touched.
 - **`Message.saying` field fate / load-time group filter.** Decision #3 keeps
   `Message.saying` (single-character speaker attribution; removal gated on a designed
   replacement attribution model). Decision #4 keeps the `setDatabase` `type !== 'group'`

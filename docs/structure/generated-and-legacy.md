@@ -48,8 +48,8 @@ workstream records under `docs/archive/` (the Fastify migration,
 `docs/archive/client-thinning/`, `docs/archive/durable-generation/`, and
 `docs/archive/lazy-projection/`) as historical design/decision references.
 Two large server-owned subsystems landed via those workstreams and are now core
-runtime, not legacy: **server-default prompt assembly** (`useServerPromptAssembly`
-defaults true; `resolveServerPromptAssembly` + `server/fastify/src/prompt/`) and
+runtime, not legacy: **server prompt assembly** (`resolveServerPromptAssembly` +
+`server/fastify/src/prompt/`, with local assembly only outside Fastify mode) and
 **durable generation** (`server/fastify/src/generationJobs.ts`; see backend.md).
 
 `src/LiteMain.svelte` is currently an unwired legacy/lite shell. The real browser

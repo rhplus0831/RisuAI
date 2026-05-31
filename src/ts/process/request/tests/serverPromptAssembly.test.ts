@@ -47,7 +47,6 @@ function seedDb(overrides: Partial<Database> = {}): void {
   setDatabase({
     aiModel: 'echo_model',
     subModel: 'echo_model',
-    useServerPromptAssembly: true,
     characters: [],
     maxContext: 4000,
     botPresetsId: 0,
@@ -106,14 +105,9 @@ afterEach(() => {
 })
 
 describe('resolveServerPromptAssembly', () => {
-  describe('local — only when the server path is disengaged', () => {
+  describe('local — only outside Fastify mode', () => {
     it('returns local when not in Fastify mode (dev/web/tests)', () => {
       platformState.isFastifyServer = false
-      expect(resolveServerPromptAssembly(makeInput())).toEqual({ type: 'local' })
-    })
-
-    it('returns local when the useServerPromptAssembly master-enable is off', () => {
-      seedDb({ useServerPromptAssembly: false })
       expect(resolveServerPromptAssembly(makeInput())).toEqual({ type: 'local' })
     })
   })
@@ -266,7 +260,7 @@ describe('resolveServerPromptAssembly', () => {
       expectUnsupported(resolveServerPromptAssembly(input))
     })
 
-    it('rejects a group character (legacy; explicit signal per the flag JSDoc)', () => {
+    it('rejects a group character (legacy; explicit unsupported signal)', () => {
       const input = makeInput({ currentChar: makeChar({ type: 'group' } as never) })
       expectUnsupported(resolveServerPromptAssembly(input))
     })

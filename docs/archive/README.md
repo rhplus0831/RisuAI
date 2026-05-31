@@ -16,8 +16,8 @@ truth.
 ## Still-open work
 
 The 2026-05-30 workstreams have intentionally-deferred items and follow-ups (e.g.
-durable-generation Milestone 2 / server-restart durability, client-thinning
-`useServerPromptAssembly` removal, and multi-tenant Lua hardening). The single live tracker is
+durable-generation Milestone 2 / server-restart durability and multi-tenant Lua
+hardening). The single live tracker is
 [`../leftover.md`](../leftover.md).
 
 ## Note on `fastify/client-thinning/`

@@ -100,14 +100,12 @@ experimental in the server repository comments.
 ## Server-Side Generation Flow
 
 `sendChat` (`src/ts/process/index.svelte.ts`) is the browser orchestrator. In Fastify
-mode the **server owns prompt assembly and the provider call** by default
-(`useServerPromptAssembly` defaults `true`):
+mode the **server owns prompt assembly and the provider call**:
 
 1. The send is classified by `resolveServerPromptAssembly`
    (`src/ts/process/request/serverPromptAssembly.ts`) + the shared
    `resolveProviderCapability` table — `local | server | unsupported`. `unsupported`
-   throws (no silent fallback); `local` only happens when `!isFastifyServer` or the
-   flag is explicitly `false`.
+   throws (no silent fallback); `local` only happens when `!isFastifyServer`.
 2. For a `server` send the browser POSTs raw inputs to `/api/v1/generate/chat` and
    parses the SSE stream via `src/ts/process/request/serverChat.ts`. Chat streams
    may include durable `job_accepted`, stage, prompt, `message_patch`, info,

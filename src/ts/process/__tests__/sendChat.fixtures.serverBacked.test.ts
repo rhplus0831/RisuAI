@@ -7,17 +7,10 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { get } from 'svelte/store'
 import type { FastifyInstance } from 'fastify'
 
-// Server-backed dual-mode sweep. Unlike sendChat.fixtures.test.ts, this file does
-// NOT vi.mock('../request/request'): the real request module loads and the call
-// lands on a stubbed `fetch` that emulates the completion route.
-//
-// Each dual-mode fixture's expected snapshot is shared with the local sweep
-// (under `expected/<name>.json`). The shared subset asserted here is
-// everything except `providerCalls` — the local sweep records into the
-// provider fake at the requestChatData boundary; the server-backed sweep
-// records into `serverCompletionCalls` at the fetch boundary. Both paths
-// produce the same chat state, stages, side effects, and lifecycle flags,
-// which is what the shared snapshot pins.
+// Server-backed sendChat sweep. Unlike sendChat.fixtures.test.ts, this file does
+// NOT vi.mock('../request/request'): supported Fastify sends go through
+// `/api/v1/generate/chat`, so the browser-local assembler is never used in
+// server-backed mode.
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 
@@ -100,16 +93,6 @@ import { loadFixture } from '../__fixtures__/loadFixture'
 import {
   getServerCompletionCalls,
   resetServerCompletionCalls,
-  serverCompletionFetch,
-  setEchoResult,
-  setAnthropicResult,
-  setBedrockResult,
-  setCohereResult,
-  setDeepSeekResult,
-  setGeminiResult,
-  setHordeResult,
-  setMistralResult,
-  setOpenAIResult,
 } from '../__fixtures__/mocks/serverCompletionFetch'
 import {
   getServerChatCalls,
@@ -124,7 +107,7 @@ import {
 } from '../__fixtures__/mocks/serverChatFetch'
 import { isTokenizerUrl, serveTokenizerFetch } from '../__fixtures__/mocks/tokenizerFetch'
 import { getSideEffectCalls, resetSideEffectCalls } from '../__fixtures__/sideEffects'
-import { loadProviderScript, resetProviderState } from '../__fixtures__/providerFake'
+import { resetProviderState } from '../__fixtures__/providerFake'
 import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
 import { DBState, hypaV3ProgressStore } from '../../stores.svelte'
 import type { Chat } from '../../storage/database.svelte'
@@ -152,21 +135,6 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-const DUAL_MODE_FIXTURES = [
-  'echo-basic',
-  'openai-basic',
-  'anthropic-basic',
-  'mistral-basic',
-  'cohere-basic',
-  'deepseek-basic',
-  'gemini-basic',
-  'gemini-vertex-basic',
-  'bedrock-basic',
-  'horde-basic',
-  'mistral-reverse-proxy-basic',
-  'anthropic-reverse-proxy-basic',
-] as const
-
 const ROUTE_BACKED_CHAT_FIXTURES = [
   'simple-send',
   'continue',
@@ -174,23 +142,6 @@ const ROUTE_BACKED_CHAT_FIXTURES = [
   'preview',
   'preview-prompt',
 ] as const
-
-type DualModeFixture = (typeof DUAL_MODE_FIXTURES)[number]
-
-const RESULT_SETTERS_BY_FIXTURE: Record<DualModeFixture, (text: string) => void> = {
-  'echo-basic': setEchoResult,
-  'openai-basic': setOpenAIResult,
-  'anthropic-basic': setAnthropicResult,
-  'mistral-basic': setMistralResult,
-  'cohere-basic': setCohereResult,
-  'deepseek-basic': setDeepSeekResult,
-  'gemini-basic': setGeminiResult,
-  'gemini-vertex-basic': setGeminiResult,
-  'bedrock-basic': setBedrockResult,
-  'horde-basic': setHordeResult,
-  'mistral-reverse-proxy-basic': setMistralResult,
-  'anthropic-reverse-proxy-basic': setAnthropicResult,
-}
 
 async function loadExpected(name: string): Promise<FixtureSnapshot> {
   const path = resolve(HERE, '..', '__fixtures__', 'expected', `${name}.json`)
@@ -390,7 +341,6 @@ function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[num
     utilOverride: false,
     ...(DBState.db.promptSettings ?? {}),
   }
-  DBState.db.useServerPromptAssembly = true
   if (name === 'regenerate') {
     chat.message.push({
       role: 'char',
@@ -428,113 +378,6 @@ function firstRerollText(snapshot: FixtureSnapshot): string | null {
   }
   return null
 }
-
-describe('sendChat fixtures (server-backed)', () => {
-  beforeAll(() => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
-    vi.stubGlobal('fetch', serverCompletionFetch)
-  })
-
-  afterAll(() => {
-    vi.useRealTimers()
-    vi.unstubAllGlobals()
-  })
-
-  beforeEach(() => {
-    vi.stubGlobal('safeStructuredClone', (v: unknown) =>
-      v === undefined ? undefined : JSON.parse(JSON.stringify(v)),
-    )
-    platformState.isFastifyServer = true
-    resetProviderState()
-    resetSideEffectCalls()
-    resetServerCompletionCalls()
-    hypaV3ProgressStore.set({
-      open: false,
-      miniMsg: '',
-      msg: '',
-      subMsg: '',
-    })
-    doingChat.set(false)
-    abortChat.set(false)
-    chatProcessStage.set(0)
-    uuidState.counter = 0
-    setServerProjectionWriteGuardEnabled(false)
-  })
-
-  let cleanups: (() => void)[] = []
-  afterEach(() => {
-    setServerProjectionWriteGuardEnabled(false)
-    while (cleanups.length > 0) cleanups.pop()!()
-  })
-
-  it.each(DUAL_MODE_FIXTURES)('%s', async (name) => {
-    const loaded = await loadFixture(name)
-    cleanups.push(loaded.cleanup)
-
-    // This sweep exercises LOCAL prompt assembly + server *completion* dispatch
-    // (it asserts a POST to /generate/completion below and compares to the local
-    // golden). Server prompt assembly now defaults on (decision-#5 closeout), so
-    // opt out explicitly to keep covering the flag-off completion-dispatch path;
-    // the /chat route-backed (server prompt assembly) path is the next describe.
-    DBState.db.useServerPromptAssembly = false
-
-    // Wire the upstream jsonl's reply text into the fixture's server-side
-    // resolver so the fetch stub returns the same text the local sweep sees. Without this, the
-    // stub falls back to its DEFAULT_*_RESULT, which diverges from the snapshot.
-    try {
-      const script = await loadProviderScript(name)
-      const first = script[0]
-      if (first && (first.type === 'success' || first.type === 'fail')) {
-        const text = typeof first.result === 'string' ? first.result : ''
-        if (text.length > 0) {
-          RESULT_SETTERS_BY_FIXTURE[name](text)
-        }
-      }
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code
-      if (code !== 'ENOENT') throw err
-    }
-
-    const stageRecorder = recordStages()
-    const args: Parameters<typeof sendChat>[1] = { ...(loaded.fixture.sendChatArgs ?? {}) }
-    setServerProjectionWriteGuardEnabled(true)
-    await sendChat(-1, args)
-    const stages = stageRecorder.stop()
-    const captured = captureSnapshot(stages)
-
-    const expected = await loadExpected(name)
-
-    // Shared snapshot contract: everything except providerCalls. The local
-    // sweep records into the provider fake at the requestChatData boundary;
-    // this sweep records into serverCompletionCalls at the fetch boundary.
-    const { providerCalls: _expectedPC, ...sharedExpected } = expected
-    const { providerCalls: capturedPC, ...sharedCaptured } = captured
-    expect(sharedCaptured).toEqual(sharedExpected)
-    expect(capturedPC).toEqual([])
-
-    // Adapter telemetry: one provider-wire-free POST to
-    // /api/v1/generate/completion. The browser supplies the already-assembled
-    // prompt and completion intent; Fastify owns provider/model/options.
-    const calls = getServerCompletionCalls()
-    const expectedFormated = expected.providerCalls[0].formated
-    expect(calls).toHaveLength(1)
-    expect(calls[0]).toMatchObject({
-      url: '/api/v1/generate/completion',
-      method: 'POST',
-      authHeader: 'fixture-auth-token',
-      kind: 'server-intent',
-      stream: false,
-      mode: 'model',
-      maxTokens: 200,
-      currentCharName: 'Tess',
-      messagesLength: Array.isArray(expectedFormated) ? expectedFormated.length : 0,
-    })
-    expect(JSON.stringify(calls[0])).not.toMatch(
-      /"(provider|model|options|apiKey|baseUrl|credentials)"\s*:/,
-    )
-  })
-})
 
 describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
   beforeAll(() => {
@@ -866,7 +709,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         utilOverride: false,
         ...(DBState.db.promptSettings ?? {}),
       }
-      DBState.db.useServerPromptAssembly = true
       // The fixture ships `promptTemplate: null`, which the risusave import
       // coerces to `[]` — and the server then treats an empty array as an
       // (empty) active template, assembling zero rows. That null-coercion is a
@@ -983,7 +825,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
           utilOverride: false,
           ...(DBState.db.promptSettings ?? {}),
         }
-        DBState.db.useServerPromptAssembly = true
         ;(DBState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
 
         await harness.seed(DBState.db)
@@ -1126,8 +967,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   it('pins hypav3-memory server-backed prompt rows and progress side effects', async () => {
     const loaded = await loadFixture('hypav3-memory')
     cleanups.push(loaded.cleanup)
-    DBState.db.useServerPromptAssembly = true
-
     const expected = await loadExpected('hypav3-memory')
     const providerCall = expected.providerCalls[0]
     expect(providerCall).toBeDefined()
@@ -1207,8 +1046,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   it('rolls back server-applied chat mutations when /chat dispatch fails after streaming starts', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
-    DBState.db.useServerPromptAssembly = true
-
     const originalMessages = JSON.parse(
       JSON.stringify(DBState.db.characters[0].chats[0].message),
     ) as Chat['message']
@@ -1272,7 +1109,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   it('runs server-sent tts side effects once on successful /chat dispatch', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
-    DBState.db.useServerPromptAssembly = true
     DBState.db.ttsAutoSpeech = true
 
     setServerChatPrompt(

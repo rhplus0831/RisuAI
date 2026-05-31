@@ -5,4 +5,5 @@ export const SERVER_SETTINGS_GROUP_BY_KEY = {
   temperature: 'generation',
   maxContext: 'generation',
   useServerGeneration: 'generation',
+  useServerPromptAssembly: 'runtime',
 }

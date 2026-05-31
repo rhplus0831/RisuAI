@@ -771,12 +771,6 @@ export function setDatabase(data: Database) {
   data.newMessageButtonStyle ??= 'bottom-center'
   data.echoMessage ??= 'Echo Message'
   data.echoDelay ??= 0
-  // Incomplete-migration gate (see the `useServerPromptAssembly` JSDoc on the
-  // Database type). Server `/chat` prompt assembly is the supported default path;
-  // documented `unsupported` content classes hard-fail rather than silently
-  // falling back to local. Tests / cases exercising the local assembler set this
-  // `false` explicitly. Not deprecated.
-  data.useServerPromptAssembly ??= true
   if (!isFastifyServer) {
     //this is intended to forcely reduce the size of the database in web
     data.promptInfoInsideChat = false
@@ -1416,22 +1410,6 @@ export interface Database {
   pluginDevelopMode?: boolean
   echoMessage?: string
   echoDelay?: number
-  /**
-   * Route browser prompt assembly through the server `POST /api/v1/generate/chat`
-   * route instead of the in-browser path.
-   * Server-side completion dispatch is mandatory in Fastify mode; this
-   * setting controls prompt assembly only.
-   *
-   * EXPERIMENTAL / INCOMPLETE-MIGRATION GATE — not a stable user setting and NOT
-   * deprecated. Defaults to `true`: server prompt assembly is the supported
-   * default path, and its provider-routing decision is shared with the completion
-   * path via `resolveProviderCapability`. The documented `unsupported` content
-   * classes (non-vision image caption fallback, interactive
-   * Lua dialogs, plugin-V2 script hooks, group-chat legacy) hard-fail by default
-   * instead of silently falling back to local assembly. Tests / specific cases set
-   * this `false` to exercise `assembleLocalSendChatPrompt`. See docs/client-thinning/.
-   */
-  useServerPromptAssembly?: boolean
   /**
    * Lazy-projection Phase 5 (EXPERIMENTAL, Fastify-only, off by default — NOT
    * RECOMMENDED). When on, the server projection ships character `globalLore` as a

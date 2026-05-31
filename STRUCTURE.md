@@ -102,9 +102,10 @@ phase scope docs, and design references.
   mutation path so `baseRevision`, revision bumps, and command events stay in
   sync. Explicit server-owned mutation routes include import/restore, asset
   upload, generation, and memory job creation/cancel.
-- Server-side prompt assembly is the default Fastify path: `useServerPromptAssembly`
-  defaults `true`, so a supported send is classified by `resolveServerPromptAssembly`
-  plus the shared `resolveProviderCapability` table and routed to the server
-  assembler; unsupported shapes hard-fail.
+- Server-side prompt assembly is the only Fastify chat-send path: a supported
+  send is classified by `resolveServerPromptAssembly` plus the shared
+  `resolveProviderCapability` table and routed to the server assembler;
+  unsupported shapes hard-fail. The browser-local assembler remains only for
+  non-Fastify compatibility.
 - Root TypeScript is intentionally loose for browser code; `server/fastify` has
   its own strict TypeScript config.

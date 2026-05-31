@@ -78,7 +78,7 @@ function modelAcceptsImageInput(): boolean {
 // via `listenEdit`, so the mode a script hooks is not statically knowable — but a
 // script that never names these tokens cannot invoke them, so a source scan is a
 // sound conservative gate (false positives keep a send in the browser; never a
-// silent server drop).
+// hard fail).
 const INTERACTIVE_LUA_API_RE = /\b(?:alertInput|alertSelect|alertConfirm)\b/
 
 /** Whether any `triggerlua` effect's source references an interactive dialog API. */
@@ -141,19 +141,19 @@ function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | n
   // server equivalent. Rather than emit a silently captionless prompt, any
   // image/asset/inlay content on a non-vision model is `unsupported`.
   if (sendHasMultimodalOrAsset(input.currentChat) && !modelAcceptsImageInput()) {
-    return 'This model has no image input, so image/asset content would need the browser caption fallback, which server prompt assembly cannot reproduce. Disable server prompt assembly to send it.'
+    return 'This model has no image input, so image/asset content would need the browser caption fallback, which server prompt assembly cannot reproduce. Select a vision-capable server-routed model before retrying.'
   }
   // Image-gen / emotion view instructions are server-assembled. The post-gen
   // image generation / inlay-screen rendering stays a browser effect.
   // Lua scripts route to the server unless they reference an interactive dialog
   // API the server cannot drive.
   if (luaUsesInteractiveApi(input.currentChar)) {
-    return 'Lua scripts using interactive dialogs (alertInput / alertSelect / alertConfirm) require the browser and are not supported by server prompt assembly. Disable server prompt assembly to send.'
+    return 'Lua scripts using interactive dialogs (alertInput / alertSelect / alertConfirm) require the browser and are not supported by server prompt assembly.'
   }
   // pluginV2 edit hooks stay permanently `unsupported` (no-port list; deprecated
   // by Plugin V3). Reported separately from Lua; see `hasPluginV2EditSet`.
   if (hasPluginV2EditSet()) {
-    return 'Plugin (V2) scripts run only in the browser plugin runtime and are not supported by server prompt assembly. Disable server prompt assembly to send.'
+    return 'Plugin (V2) scripts run only in the browser plugin runtime and are not supported by server prompt assembly.'
   }
   return null
 }
@@ -235,12 +235,7 @@ function resolveServerProviderPreflight(): ServerPromptAssemblyRoute | null {
  * preflight so unsupported Fastify sends fail before mutating chat state.
  *
  * Decision order (copying the precedent):
- *   1. `!isFastifyServer` → `local` (the precedent's only `local`; dev/web/tests).
- *   1b. master enable off → `local`. `useServerPromptAssembly` is an experimental,
- *       default-off migration gate (`database.svelte.ts:1354`); while off, server
- *       assembly is not attempted and the send uses the local assembler exactly as
- *       before. This is the one `local` verdict that survives in Fastify mode
- *       until a deliberate closeout removes/default-enables the migration gate.
+ *   1. `!isFastifyServer` → `local` (legacy web/dev/tests).
  *   2. mode / user-message structural check (subsumes the old, silently-falling
  *      `canUseServerAssembly` at `serverBackedSendChat.ts:142`).
  *   3. single, non-group character.
@@ -251,14 +246,13 @@ function resolveServerProviderPreflight(): ServerPromptAssemblyRoute | null {
  *      server-assembled; pluginV2 edit hooks stay a permanent hard fail.
  *   6. otherwise → `server`.
  *
- * From step 2 on (Fastify mode, flag on) the verdict is always `server` or
+ * From step 2 on (Fastify mode) the verdict is always `server` or
  * `unsupported` — never a silent local fall-through.
  */
 export function resolveServerPromptAssembly(
   input: ServerPromptAssemblyInput,
 ): ServerPromptAssemblyRoute {
   if (!isFastifyServer) return { type: 'local' }
-  if (!getDatabase().useServerPromptAssembly) return { type: 'local' }
 
   const mode = deriveMode(input)
   if (mode === 'send') {

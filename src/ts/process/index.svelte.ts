@@ -183,10 +183,9 @@ export async function sendChat(
 
     // Server-side prompt assembly with browser-side patch replay. Send-like calls
     // consume the `/chat` provider stream; preview modes only read the assembled
-    // prompt payload. In Fastify mode with `useServerPromptAssembly` on, supported
-    // text sends are server-mandatory and out-of-subset sends hard-fail instead of
-    // silently falling through to local assembly. The local branch remains for
-    // dev/web/tests and for the flag-off path.
+    // prompt payload. In Fastify mode, supported text sends are server-mandatory
+    // and out-of-subset sends hard-fail instead of silently falling through to
+    // local assembly. The local branch remains for legacy web/dev/tests.
     if (arg.reattachJobId) {
       // Re-attach to a live durable generation instead of assembling and
       // dispatching a fresh send. The job is server-persisted, so the browser only

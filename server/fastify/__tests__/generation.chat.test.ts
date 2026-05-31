@@ -132,7 +132,6 @@ const fixtureDatabase = {
   mainPrompt: 'MAIN',
   maxContext: 100_000,
   maxResponse: 50,
-  useServerPromptAssembly: false,
 }
 
 async function seedDatabase(
@@ -292,6 +291,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       'message_patch',
       'stage',
       'info',
+      'error',
       'done',
     ])
     const patch = events.find((e) => e.type === 'message_patch')?.data.patch as
@@ -385,6 +385,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       'message_patch',
       'stage',
       'info',
+      'error',
       'done',
     ])
     const prompt = events.find((e) => e.type === 'prompt')!
@@ -406,10 +407,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       messageMutations: expect.any(Array),
       chatVarMutations: expect.any(Array),
     })
-    // The prompt stage closes after the patch, then telemetry rides before the terminal done.
-    expect(events.at(-3)).toEqual({ type: 'stage', data: { stage: 'prompt', status: 'end' } })
-    expect(events.at(-2)?.type).toBe('info')
-    expect(events.at(-1)).toEqual({ type: 'done', data: {} })
+    // The prompt stage closes after the patch, then telemetry rides before the
+    // provider-dispatch terminal frames.
+    expect(events.at(-4)).toEqual({ type: 'stage', data: { stage: 'prompt', status: 'end' } })
+    expect(events.at(-3)?.type).toBe('info')
+    expect(events.at(-2)?.type).toBe('error')
+    expect(events.at(-1)?.type).toBe('done')
   })
 
   it('emits an info event with token counts and the response budget', async () => {
@@ -1372,11 +1375,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(typeof events.at(-1)?.data.generationId).toBe('string')
   })
 
-  it('uses the production server dispatcher when the prompt-assembly gate is enabled', async () => {
+  it('uses the production server dispatcher for generating modes', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, {
       ...fixtureDatabase,
-      useServerPromptAssembly: true,
       aiModel: 'echo_model',
       echoMessage: 'server echo reply',
       echoDelay: 0,
@@ -1434,11 +1436,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   // trigger, and `editoutput` over the generated text. The chat-var delta is
   // persisted and surfaced, with final text / resend, on `done.postGeneration`.
 
-  /** A server-dispatch echo db (`useServerPromptAssembly` + echo) with char overrides. */
+  /** A server-dispatch echo db with char overrides. */
   function dbWithServerDispatch(charOverride: Record<string, unknown>): unknown {
     return {
       ...fixtureDatabase,
-      useServerPromptAssembly: true,
       aiModel: 'echo_model',
       echoMessage: 'server echo reply',
       echoDelay: 0,
@@ -1592,7 +1593,6 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   ): Promise<void> {
     return seedDatabase(harness.app, assertion, {
       ...fixtureDatabase,
-      useServerPromptAssembly: true,
       aiModel: 'echo_model',
       echoMessage,
       echoDelay: 0,
@@ -1803,7 +1803,6 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       const { assertion } = await setupAuthedClient(harness.app)
       await seedDatabase(harness.app, assertion, {
         ...fixtureDatabase,
-        useServerPromptAssembly: true,
         ...database,
       })
 

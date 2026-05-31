@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Preview-path wiring. With `db.useServerPromptAssembly` on and a preview /
-// previewPrompt call, sendChat short-circuits to the `/chat` route (stubbed by
-// serverChatFetch) and threads the assembled prompt into `previewFormated` /
-// `previewBody` without dispatching.
+// Preview-path wiring. In Fastify mode, preview / previewPrompt calls
+// short-circuit to the `/chat` route (stubbed by serverChatFetch) and thread the
+// assembled prompt into `previewFormated` / `previewBody` without dispatching.
 //
 // The mock preamble mirrors sendChat.fixtures.serverBacked.test.ts: index.svelte
 // pulls in the post-generation + tokenizer graph at import time, so the
@@ -13,8 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 
 // Negative-reachability probe: when armed, entering the local assembler throws.
-// Defaults to a passthrough so the rest of the suite (incl. the gate-off test,
-// which legitimately runs local assembly) is unaffected.
+// Defaults to a passthrough so the non-Fastify local preview test can still run
+// local assembly.
 const localAssemblerState = vi.hoisted(() => ({ throwIfEntered: false }))
 
 vi.mock('../../platform', async (importActual) => {
@@ -111,7 +110,6 @@ afterEach(() => {
 async function seedEcho(): Promise<void> {
   const loaded = await loadFixture('echo-basic')
   cleanups.push(loaded.cleanup)
-  DBState.db.useServerPromptAssembly = true
 }
 
 describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
@@ -178,14 +176,14 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     })
   })
 
-  it('does not route to /chat when the gate is off', async () => {
+  it('does not route to /chat outside Fastify mode', async () => {
     await seedEcho()
-    DBState.db.useServerPromptAssembly = false
+    platformState.isFastifyServer = false
     vi.stubGlobal('fetch', serverChatFetch)
 
-    // With the gate off the local assembly path runs; if it happened to hit
-    // the stub it would throw (URL is not /api/v1/generate/chat). We only
-    // assert no /chat call was recorded.
+    // Outside Fastify mode the local preview path runs; if it happened to hit the
+    // stub it would throw (URL is not /api/v1/generate/chat). We only assert no
+    // /chat call was recorded.
     await chatModule.sendChat(-1, { preview: true }).catch(() => {})
     expect(getServerChatCalls()).toHaveLength(0)
   })

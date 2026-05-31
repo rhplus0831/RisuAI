@@ -272,7 +272,7 @@ describe('Phase 9-5a command events stream', () => {
   it('delivers command events from successful command mutations', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      useServerPromptAssembly: false,
+      streamGeminiThoughts: false,
     })
     const baseUrl = await listen(harness.app)
     const abort = new AbortController()
@@ -289,7 +289,7 @@ describe('Phase 9-5a command events stream', () => {
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, patch: { useServerPromptAssembly: true } },
+      payload: { baseRevision: revision, patch: { streamGeminiThoughts: true } },
     })
     expect(command.statusCode).toBe(200)
 

@@ -40,9 +40,7 @@
   const currentChat = $derived(
     DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage],
   )
-  const serverBackedMemoryMode = $derived(
-    canUseServerMemoryApi() && DBState.db.useServerPromptAssembly,
-  )
+  const serverBackedMemoryMode = $derived(canUseServerMemoryApi())
   const currentChatId = $derived(currentChat.id ?? '')
 
   let categories = $derived(
