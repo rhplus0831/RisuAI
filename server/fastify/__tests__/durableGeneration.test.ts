@@ -324,20 +324,22 @@ describe('Durable generation (Milestone 1)', () => {
     expect((await chatMessages(boot)).filter((m) => m.role === 'char')).toHaveLength(1)
   })
 
-  // Drop the initial connection mid-stream, reattach to the still-running job,
-  // then let it produce the remaining tokens and terminal done.
-  it('reattaches to an in-flight generation and receives the remaining events (EC-D3)', async () => {
+  // Drop the initial connection after it received prompt/info, reattach to the
+  // still-running job, then let it produce the remaining tokens and terminal done.
+  it('reattaches to an in-flight generation with prompt/info replayed (EC-D3)', async () => {
     const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
     providerImpl = gated.dispatchProvider
 
     const controller = newController()
     const res = await postDurable({}, { signal: controller.signal })
     let jobId = ''
-    await readSse(res, (ev) => {
+    const initialEvents = await readSse(res, (ev) => {
       if (ev.type === 'job_accepted') jobId = ev.data.jobId as string
       return ev.type === 'token'
     })
     expect(jobId.length).toBeGreaterThan(0)
+    expect(initialEvents.some((e) => e.type === 'prompt')).toBe(true)
+    expect(initialEvents.some((e) => e.type === 'info')).toBe(true)
     // Drop the initial connection while the job is still gated (in-flight).
     controller.abort()
 
@@ -352,6 +354,9 @@ describe('Durable generation (Milestone 1)', () => {
     gated.release()
     const reEvents = await readSse(re, (ev) => ev.type === 'done')
     expect(reEvents[0]?.type).toBe('job_accepted')
+    expect(reEvents.some((e) => e.type === 'prompt')).toBe(true)
+    expect(reEvents.some((e) => e.type === 'info')).toBe(true)
+    expect(reEvents.some((e) => e.type === 'token' && e.data.content === 'Hel')).toBe(true)
     expect(reEvents.some((e) => e.type === 'token' && e.data.content === 'lo')).toBe(true)
     expect(reEvents.at(-1)?.type).toBe('done')
     reController.abort()

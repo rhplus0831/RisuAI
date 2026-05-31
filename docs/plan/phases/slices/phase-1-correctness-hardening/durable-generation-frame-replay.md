@@ -1,6 +1,6 @@
 # Durable Generation Frame Replay
 
-Status: active priority.
+Status: implemented.
 
 ## Source Anchors
 
@@ -30,6 +30,15 @@ viewer saw them and disconnected.
   `prompt` and `info`.
 - `done` without prior required frames is no longer a normal reattach outcome.
 - Tests cover disconnect after `prompt`/`info` and later reattach.
+
+## Implementation Notes
+
+- Durable chat generation jobs enable a replay log on `JobRegistry` while proxy
+  stream jobs continue to use connection-gap pending buffers.
+- Reattach reconstructs `job_accepted` at viewer attach time and replays the
+  retained prompt/chat SSE frames through the existing event taxonomy.
+- Replay keeps the latest `info` frame and protects lifecycle/state frames while
+  trimming droppable stage/token tail frames under the existing pending limits.
 
 ## Validation
 

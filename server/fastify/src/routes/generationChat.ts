@@ -1423,6 +1423,7 @@ function startDurableGeneration(args: {
     return
   }
   const job = generationJobs.registry.create({ timeoutMs: undefined, heartbeatSec: undefined })
+  generationJobs.registry.enableReplay(job)
   job.chatId = input.chatId
   job.writerSessionId = readWriterSessionHeader(req)
   // Record the generating mode and regenerate target so reload-resume can render

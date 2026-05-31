@@ -157,10 +157,11 @@ case (`src/ts/server/backups.test.ts:170`,
 `src/ts/server/backups.test.ts:220`), and the event path still full-bootstrap
 resyncs `state.restored` echoes (`src/ts/bootstrap.test.ts:377`).
 
-### P1: Durable Generation Reattach Does Not Preserve Required Frames
+### Resolved P1: Durable Generation Reattach Preserves Required Frames
 
-`JobRegistry.pushRaw()` only buffers stream frames while no clients are attached;
-if any client is attached, it sends live and does not append to the replay buffer
+Previously, `JobRegistry.pushRaw()` only buffered stream frames while no clients
+were attached; if any client was attached, it sent live and did not append to
+the replay buffer
 (`server/fastify/src/streamJobs.ts:187`,
 `server/fastify/src/streamJobs.ts:202`). `attach()` sends whatever is pending
 and then clears the shared pending buffer (`server/fastify/src/streamJobs.ts:211`,
@@ -172,10 +173,14 @@ The client does not consider a server chat stream ready until both `prompt` and
 `info` are seen (`src/ts/process/request/serverChat.ts:364`), and it reports an
 error on `done` without a prompt (`src/ts/process/request/serverChat.ts:451`).
 
-Recommendation: durable generation needs a per-job replay log or state snapshot
-that is independent of viewer count. At minimum, retain/replay `job_accepted`,
-`prompt`, latest `info`, message patches, side effects, token tail/result, and
-terminal frames for the job lifetime.
+Resolution: durable chat generation jobs now enable a per-job replay log that is
+independent of viewer count. Reattach reconstructs `job_accepted`, then replays
+retained chat SSE frames including `prompt`, latest `info`, state frames, token
+tail/result, and terminal frames through the same client parser. Proxy stream
+jobs keep the prior pending-buffer semantics. A regression test drops the first
+viewer after `prompt`/`info`, reattaches while the provider is still gated, and
+asserts that the reattached stream reaches `done` with the required lifecycle
+frames.
 
 ### P1: Direct Client Writes To Server-Backed Projection State Still Exist
 
@@ -561,8 +566,8 @@ suppression mechanism.
 
 ## Recommended Priority Order
 
-1. Fix the remaining P1 correctness issues: durable generation reattach replay
-   and direct guarded projection writes in Hypa V3/bookmark UI.
+1. Fix the remaining P1 correctness issue: direct guarded projection writes in
+   Hypa V3/bookmark UI.
 2. Reduce the command mutation hot path by adding narrow persistence paths for
    settings, metadata, and message operations.
 3. Make targeted projection and asset metadata lookup avoid full `db.json`
@@ -585,8 +590,6 @@ and bounded hydration concurrency.
 
 Important gaps for this audit:
 
-- no durable-generation test that drops a viewer after `prompt`/`info` and
-  reattaches later;
 - no tests for direct projection-guard violations in Hypa V3 modal and bookmark
   list interactions;
 - no query-count or request-count assertions for projection, hydration, asset

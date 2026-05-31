@@ -42,6 +42,8 @@ export interface StreamJob {
   clients: Set<JobClient>
   pendingEvents: string[]
   pendingBytes: number
+  replayEvents?: string[]
+  replayBytes?: number
   abortController: AbortController
   deadlineAt: number
   heartbeatSec: number
@@ -61,6 +63,16 @@ export interface StreamJob {
   mode?: 'send' | 'continue' | 'regenerate'
   regenerateMessageId?: string
 }
+
+const DURABLE_REPLAY_PROTECTED_EVENTS = new Set([
+  'prompt',
+  'info',
+  'message_patch',
+  'side_effect',
+  'warning',
+  'error',
+  'done',
+])
 
 const PRIVATE_BLOCKS = (() => {
   const list = new net.BlockList()
@@ -135,6 +147,43 @@ export interface CreateJobOptions {
   now?: number
 }
 
+function serializedSseEventType(text: string): string | undefined {
+  const firstLineEnd = text.search(/\r?\n/)
+  const firstLine = firstLineEnd === -1 ? text : text.slice(0, firstLineEnd)
+  return firstLine.startsWith('event: ') ? firstLine.slice('event: '.length).trim() : undefined
+}
+
+function removeReplayFrame(job: StreamJob, index: number): void {
+  if (!job.replayEvents || job.replayBytes === undefined) return
+  const [removed] = job.replayEvents.splice(index, 1)
+  if (removed) job.replayBytes -= Buffer.byteLength(removed)
+}
+
+function appendDurableReplayFrame(job: StreamJob, text: string): void {
+  if (!job.replayEvents || job.replayBytes === undefined) return
+  const type = serializedSseEventType(text)
+  if (type === 'info') {
+    const existingInfoIndex = job.replayEvents.findIndex(
+      (event) => serializedSseEventType(event) === 'info',
+    )
+    if (existingInfoIndex !== -1) removeReplayFrame(job, existingInfoIndex)
+  }
+  job.replayEvents.push(text)
+  job.replayBytes += Buffer.byteLength(text)
+
+  while (
+    job.replayEvents.length > PROXY_STREAM_MAX_PENDING_EVENTS ||
+    job.replayBytes > PROXY_STREAM_MAX_PENDING_BYTES
+  ) {
+    const droppableIndex = job.replayEvents.findIndex((event) => {
+      const eventType = serializedSseEventType(event)
+      return !eventType || !DURABLE_REPLAY_PROTECTED_EVENTS.has(eventType)
+    })
+    if (droppableIndex === -1) break
+    removeReplayFrame(job, droppableIndex)
+  }
+}
+
 export class JobRegistry {
   private readonly jobs = new Map<string, StreamJob>()
 
@@ -176,6 +225,11 @@ export class JobRegistry {
     return job
   }
 
+  enableReplay(job: StreamJob): void {
+    job.replayEvents = []
+    job.replayBytes = 0
+  }
+
   /**
    * Buffer (no client attached) or fan out an **already-serialized** frame
    * string. Generalizes {@link pushEvent} so the durable-generation runner can
@@ -186,7 +240,9 @@ export class JobRegistry {
    */
   pushRaw(job: StreamJob, text: string, now?: number): void {
     job.updatedAt = now ?? Date.now()
+    appendDurableReplayFrame(job, text)
     if (job.clients.size === 0) {
+      if (job.replayEvents) return
       job.pendingEvents.push(text)
       job.pendingBytes += Buffer.byteLength(text)
       while (
@@ -212,11 +268,14 @@ export class JobRegistry {
     const job = this.jobs.get(jobId)
     if (!job) return null
     job.clients.add(client)
-    for (const text of job.pendingEvents) {
+    const replayEvents = job.replayEvents ?? job.pendingEvents
+    for (const text of replayEvents) {
       if (client.open) client.send(text)
     }
-    job.pendingEvents = []
-    job.pendingBytes = 0
+    if (!job.replayEvents) {
+      job.pendingEvents = []
+      job.pendingBytes = 0
+    }
     return job
   }
 

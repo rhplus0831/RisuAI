@@ -1,8 +1,8 @@
 # Phase 1: Correctness Hardening
 
-Status: active priority. Event replay/subscribe race and restore resync are
-implemented; remaining P1 slices are durable generation frame replay and direct
-projection write fixes.
+Status: active priority. Event replay/subscribe race, restore resync, and
+durable generation frame replay are implemented; the remaining P1 slice is
+direct projection write fixes.
 
 Goal: close the confirmed P1 correctness issues from `docs/AUDIT.md` before
 optimizing lower-severity costs.
@@ -22,7 +22,8 @@ optimizing lower-severity costs.
 - [`event-replay-subscribe-race.md`](slices/phase-1-correctness-hardening/event-replay-subscribe-race.md)
 - [`backup-restore-resync.md`](slices/phase-1-correctness-hardening/backup-restore-resync.md) -
   implemented
-- [`durable-generation-frame-replay.md`](slices/phase-1-correctness-hardening/durable-generation-frame-replay.md)
+- [`durable-generation-frame-replay.md`](slices/phase-1-correctness-hardening/durable-generation-frame-replay.md) -
+  implemented
 - [`direct-projection-write-fixes.md`](slices/phase-1-correctness-hardening/direct-projection-write-fixes.md)
 
 ## Exit Criteria
