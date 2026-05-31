@@ -68,7 +68,9 @@ and stream envelopes remain available for compatibility.
 JSON cards plus referenced hub resources server-side, and also handles Realm
 `charx`/zip packages by decoding `card.json` plus packaged assets. It persists
 those resources as content-addressed assets, then appends the converted
-character through the command mutation path.
+character through the command mutation path. When the browser asks for
+`text/event-stream`, the same route streams progress and terminal status frames
+for long downloads/imports.
 
 ## Backups
 

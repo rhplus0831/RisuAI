@@ -14,8 +14,9 @@ SSE application, display state, TTS playback, image previews, and plugin runtime
   settings, mobile, modal, welcome, and popup components. Its top-level render
   switch chooses loading, legal/setup, settings, mobile UI, grid/catalog, or the
   regular sidebar plus chat surface.
-- `src/LiteMain.svelte` is the lite UI entry shell used by the lite/mobile-ish
-  path.
+- `src/LiteMain.svelte` exists, but it is not a current entrypoint. The live
+  lite/mobile-ish path is `VITE_RISU_LITE` + `src/ts/lite.ts` driving
+  `src/App.svelte`'s mobile branch.
 
 ## Directory Guide
 
@@ -34,27 +35,31 @@ SSE application, display state, TTS playback, image previews, and plugin runtime
 
 Useful `src/ts` subdirectories:
 
-| Path                      | Purpose                                                                                                                                                                    |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/server/`          | Browser adapters for Fastify bootstrap, commands, events, backups, assets.                                                                                                 |
-| `src/ts/storage/`         | Client database state, server-backed storage, `.risu` import/export.                                                                                                       |
-| `src/ts/process/`         | Request flow (`index.svelte.ts` = `sendChat`), prompt/client-side helpers, memory client adapters, post-generation.                                                        |
-| `src/ts/process/request/` | Server-vs-local routing: `serverPromptAssembly.ts` + `durableGeneration.ts` classifiers, the `providerCapability.ts` table, and the `/chat` SSE adapter (`serverChat.ts`). |
-| `src/ts/model/`           | Client model lists and provider-related browser logic.                                                                                                                     |
-| `src/ts/parser/`          | Chat/parser utilities and tests.                                                                                                                                           |
-| `src/ts/plugins/`         | Plugin loading and browser-side plugin runtime.                                                                                                                            |
-| `src/ts/media/`           | Image/media helpers and compression.                                                                                                                                       |
-| `src/ts/gui/`             | Theme, GUI size, color scheme, and display helpers.                                                                                                                        |
-| `src/ts/setting/`         | Data-driven settings metadata and custom setting component helpers.                                                                                                        |
-| `src/ts/translator/`      | Translator presets and browser-side translation helpers.                                                                                                                   |
-| `src/ts/network/`         | Local-network and proxy-stream WebSocket helpers.                                                                                                                          |
-| `src/ts/kei/`             | Risu-Kei backup integration.                                                                                                                                               |
+| Path                      | Purpose                                                                                                                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/ts/server/`          | Browser adapters for Fastify bootstrap, commands, events, backups, assets, active-writer headers, projection/hydration, bridge watchers, settings bridge, Realm import, and smoke hooks. |
+| `src/ts/storage/`         | Client database state, server-backed storage, `.risu` import/export.                                                                                                                     |
+| `src/ts/process/`         | Request flow (`index.svelte.ts` = `sendChat`), prompt/client-side helpers, memory client adapters, post-generation.                                                                      |
+| `src/ts/process/request/` | Server-vs-local routing: `serverPromptAssembly.ts` + `durableGeneration.ts` classifiers, the `providerCapability.ts` table, and the `/chat` SSE adapter (`serverChat.ts`).               |
+| `src/ts/model/`           | Client model lists and provider-related browser logic.                                                                                                                                   |
+| `src/ts/parser/`          | Chat/parser utilities and tests.                                                                                                                                                         |
+| `src/ts/plugins/`         | Plugin loading and browser-side plugin runtime.                                                                                                                                          |
+| `src/ts/media/`           | Image/media helpers and compression.                                                                                                                                                     |
+| `src/ts/gui/`             | Theme, GUI size, color scheme, and display helpers.                                                                                                                                      |
+| `src/ts/setting/`         | Data-driven settings metadata and custom setting component helpers.                                                                                                                      |
+| `src/ts/translator/`      | Translator presets and browser-side translation helpers.                                                                                                                                 |
+| `src/ts/network/`         | Local-network and proxy-stream WebSocket helpers.                                                                                                                                        |
+| `src/ts/kei/`             | Risu-Kei backup integration.                                                                                                                                                             |
 
 Useful `src/ts/process` subdirectories:
 
 | Path                             | Purpose                                                                                                        |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `src/ts/process/request/`        | Server/local request routing, provider capability checks, server chat/completion/memory adapters, SSE parsing. |
+| `src/ts/process/dispatch/`       | Local provider dispatch helper used by `sendChat` when the Fastify server path is not selected.                |
+| `src/ts/process/models/`         | Request-time model string and provider-specific prompt string helpers retained for local paths.                |
+| `src/ts/process/embedding/`      | Additional-information embedding helpers retained for local Hypa flows.                                        |
+| `src/ts/process/dynamicutils/`   | Dynamic file utilities such as PDF-to-image/text extraction.                                                   |
 | `src/ts/process/promptAssembly/` | Browser-side prompt assembly helpers retained for local/non-Fastify paths and parity tests.                    |
 | `src/ts/process/promptBudget/`   | Token-budget preflight/finalization helpers.                                                                   |
 | `src/ts/process/postGeneration/` | Browser-side post-generation helpers used by local paths and tests.                                            |
@@ -104,9 +109,11 @@ mode the **server owns prompt assembly and the provider call** by default
    throws (no silent fallback); `local` only happens when `!isFastifyServer` or the
    flag is explicitly `false`.
 2. For a `server` send the browser POSTs raw inputs to `/api/v1/generate/chat` and
-   consumes the SSE stream (stage / prompt / `message_patch` / info / token / error /
-   done frames) via `src/ts/process/request/serverChat.ts`. It renders streamed tokens
-   and applies the server's post-generation patch + final text from `done.postGeneration`.
+   parses the SSE stream via `src/ts/process/request/serverChat.ts`. Chat streams
+   may include durable `job_accepted`, stage, prompt, `message_patch`, info,
+   token, `side_effect`, warning, error, and done frames. The browser renders
+   streamed tokens, collects side effects, reconciles revisions, and applies the
+   server's post-generation patch + final text from `done.postGeneration`.
 3. On every server-dispatch path the server persists the final generation result, so
    the browser suppresses its old generation-result command. Browser persistence remains
    only for the local assembler/dispatcher path.
@@ -164,6 +171,10 @@ Vite dev mode and production Fastify serving differ:
 Fastify mode asset uploads go through `/api/v1/assets`; asset URLs normalize to
 `/api/v1/assets/:id`. The source-side helpers are in `src/ts/globalApi.svelte.ts`
 and `src/ts/server/assets.ts`.
+
+Realm character imports use `src/ts/server/realmImport.ts`, which can consume the
+server's progress SSE and reconcile the command revision after the imported
+character is committed.
 
 `src/ts/storage/nodeStorage.ts` still backs active `/api/v1/storage/*` endpoints.
 Despite the route filename `legacyStorage.ts`, this bridge is part of the current

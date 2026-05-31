@@ -16,7 +16,8 @@ the route surface consumed by the Svelte client.
 - `server/fastify/src/config.ts` loads most server env vars:
   `RISU_API_HOST`, `RISU_API_PORT`, `RISU_API_DATA_DIR`,
   `RISU_API_BODY_LIMIT`, `TRUST_PROXY`, `RISU_API_STATIC_ROOT`, and
-  `RISU_HUB_URL`. `LOG_LEVEL` is read directly in `server/fastify/src/app.ts`.
+  `RISU_HUB_URL`, and `RISU_REALM_URL`. `LOG_LEVEL` is read directly in
+  `server/fastify/src/app.ts`.
 
 The app factory is test-friendly: many pieces are injectable through
 `BuildAppOptions`, including generation chat dispatch, memory worker behavior,
@@ -56,6 +57,7 @@ Route modules export `registerXRoutes(app, ...)` and register concrete
 | Bootstrap          | `routes/bootstrap.ts`      | Returns current projection and revision.                                                                                                               |
 | Projection         | `routes/projection.ts`     | Targeted projection refresh plus chat/global-lore hydration.                                                                                           |
 | Save/import/export | `routes/save.ts`           | `.risu` import/export and bundle export.                                                                                                               |
+| Realm import       | `routes/realmImport.ts`    | Server-side RisuRealm JSON/`charx` import, asset persistence, progress SSE, and character creation.                                                    |
 | Commands           | `routes/commands.ts`       | Large command registrar for settings and domain mutations.                                                                                             |
 | Events             | `routes/events.ts`         | SSE stream for command and memory events.                                                                                                              |
 | Assets             | `routes/assets.ts`         | Upload and read content-addressed assets.                                                                                                              |
@@ -71,7 +73,9 @@ Route modules export `registerXRoutes(app, ...)` and register concrete
 
 Most route handlers call `requireAuth(authState, req, reply)` manually. There is
 no global auth middleware. Public routes are intentional and include health,
-auth status/setup/login, some asset reads/existence checks, and auth crypto.
+auth status/setup/login, auth crypto, some asset reads/existence checks, and
+hub `GET`/`HEAD`/`OPTIONS` passthrough when no `x-risu-node-path` override is
+used.
 
 ## Commands
 
@@ -112,16 +116,19 @@ High-level flow (non-durable / inline path, `streamAssembly`):
 3. Load the persisted database with chat messages joined from SQLite.
 4. Call `prompt/assemble.ts`. Assembly runs the server **Lua VM**
    (`prompt/luaRuntime.ts`) for non-interactive `editRequest` / `editprocess` /
-   input-trigger / `editinput` hooks, and persists the assembly-time scriptstate
-   delta to `data/db.json` itself (C-A1).
-5. Emit SSE stage, prompt, `message_patch`, info, warning, token, error, and done frames.
+   input-trigger / `editinput` hooks, and persists assembly-time chat-var
+   deltas plus optional input-trigger / `editinput` submit-transcript rewrites
+   through the command mutation path (C-A1).
+5. Emit SSE stage, prompt, `message_patch`, info, `side_effect`, warning, token,
+   error, and done frames.
 6. Dispatch the provider call through `prompt/chatDispatch.ts`.
 7. Convert provider frames to chat SSE in `prompt/providerTransport.ts`.
 8. After dispatch, run the **A2 post-generation pass** (`runServerPostGeneration` in
    `prompt/assemble.ts`): the run-var pass, the `'output'` trigger, and `editoutput`.
    The derived scriptstate delta is persisted and the final text / resend / revision
-   ride on `done.postGeneration`. A thrown post-gen pass is best-effort-swallowed on
-   the inline path (no frame, no browser fallback — a code TODO marks this).
+   ride on `done.postGeneration`. On the inline path, a derivation failure
+   persists the raw provider text best-effort; a persist failure is swallowed and
+   the browser keeps its optimistic copy.
 
 `POST /api/v1/generate/preview-prompt` shares the route module and runs the
 server assembler for prompt preview without committing a generation result.
@@ -189,6 +196,11 @@ Important files:
 
 The worker starts in `buildApp()` unless disabled through test options, and it
 is stopped in the app `onClose` hook.
+
+Prompt assembly can also do Hypa V3 maintenance while selecting memory: it can
+clean orphaned prompt-memory rows, create planned chunks/jobs, and enqueue
+follow-up summarize/embed work. That is why generation and preview-prompt routes
+are treated as server-owned mutations by the active-writer guard.
 
 ## Saves, Assets, And Backups
 

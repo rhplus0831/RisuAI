@@ -11,6 +11,7 @@ generated, local-only, historical, or intentionally no-port.
 | `node_modules/`, `server/fastify/node_modules/` | Installed dependencies.                                                                                                  |
 | `test-results/`                                 | Playwright/test output.                                                                                                  |
 | `data/`                                         | Local runtime state: SQLite, `db.json`, assets, backups, auth files. Useful for manual debugging, not source.            |
+| `scripts/`                                      | Ignored local scratch/tooling directory when present.                                                                    |
 | `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                              |
 | `src/ts/rpack/`                                 | Vendored rpack implementation; also excluded from Prettier.                                                              |
 
@@ -44,12 +45,16 @@ for why decisions were made, but they are not always current implementation
 guidance. Prefer the present-tense root [`../../STRUCTURE.md`](../../STRUCTURE.md)
 and companion docs in `docs/structure/` for current state, and treat the
 workstream records under `docs/archive/` (the Fastify migration,
-`docs/archive/client-thinning/`, and `docs/archive/durable-generation/`) as
-historical design/decision references.
+`docs/archive/client-thinning/`, `docs/archive/durable-generation/`, and
+`docs/archive/lazy-projection/`) as historical design/decision references.
 Two large server-owned subsystems landed via those workstreams and are now core
 runtime, not legacy: **server-default prompt assembly** (`useServerPromptAssembly`
 defaults true; `resolveServerPromptAssembly` + `server/fastify/src/prompt/`) and
 **durable generation** (`server/fastify/src/generationJobs.ts`; see backend.md).
+
+`src/LiteMain.svelte` is currently an unwired legacy/lite shell. The real browser
+entrypoint is `src/main.ts`, and the live lite mode is `VITE_RISU_LITE` driving
+the mobile branch in `src/App.svelte`.
 
 ## Legacy Names That Are Still Active
 

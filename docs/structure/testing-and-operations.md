@@ -76,26 +76,27 @@ comma-separated list of check ids from `util/client-thinning-audit.ts`.
 
 Server:
 
-| Variable               | Default                 | Notes                                                             |
-| ---------------------- | ----------------------- | ----------------------------------------------------------------- |
-| `RISU_API_HOST`        | `0.0.0.0`               | Fastify listen host.                                              |
-| `RISU_API_PORT`        | `6002`                  | Fastify listen port.                                              |
-| `RISU_API_DATA_DIR`    | `<repo>/data`           | SQLite, `db.json`, assets, backups, auth files.                   |
-| `RISU_API_BODY_LIMIT`  | `104857600`             | Body and multipart file limit.                                    |
-| `TRUST_PROXY`          | `false`                 | Fastify trust proxy setting; accepts boolean, integer, or string. |
-| `RISU_API_STATIC_ROOT` | `<repo>/dist`           | Static SPA root; empty, `none`, or `off` disables.                |
-| `RISU_HUB_URL`         | `https://sv.risuai.xyz` | Hub passthrough target.                                           |
-| `LOG_LEVEL`            | `info`                  | Use `silent` to disable Fastify logger.                           |
+| Variable               | Default                    | Notes                                                             |
+| ---------------------- | -------------------------- | ----------------------------------------------------------------- |
+| `RISU_API_HOST`        | `0.0.0.0`                  | Fastify listen host.                                              |
+| `RISU_API_PORT`        | `6002`                     | Fastify listen port.                                              |
+| `RISU_API_DATA_DIR`    | `<repo>/data`              | SQLite, `db.json`, assets, backups, auth files.                   |
+| `RISU_API_BODY_LIMIT`  | `104857600`                | Body and multipart file limit.                                    |
+| `TRUST_PROXY`          | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string. |
+| `RISU_API_STATIC_ROOT` | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                |
+| `RISU_HUB_URL`         | `https://sv.risuai.xyz`    | Hub passthrough target.                                           |
+| `RISU_REALM_URL`       | `https://realm.risuai.net` | Realm character import target.                                    |
+| `LOG_LEVEL`            | `info`                     | Use `silent` to disable Fastify logger.                           |
 
 Client/build:
 
-| Variable                                                                         | Notes                                                |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `RISU_API_PROXY_TARGET`                                                          | Vite dev proxy target for `/api`.                    |
-| `VITE_RISU_LEGAL_CONFIGURED`                                                     | Controls legal/setup gating in builds and smoke.     |
-| `VITE_FASTIFY_BROWSER_SMOKE`                                                     | Enables browser smoke hook and auth bypass behavior. |
-| `VITE_RISU_LITE`                                                                 | Enables lite/mobile-ish UI path.                     |
-| `VITE_AD_CLIENT`, `VITE_AD_CLIENT_MOBILE`, `VITE_AD_SLOT`, `VITE_AD_SLOT_MOBILE` | Ad UI configuration.                                 |
+| Variable                                                                         | Notes                                                                |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `RISU_API_PROXY_TARGET`                                                          | Vite dev proxy target for `/api`.                                    |
+| `VITE_RISU_LEGAL_CONFIGURED`                                                     | Controls legal/setup gating in builds and smoke.                     |
+| `VITE_FASTIFY_BROWSER_SMOKE`                                                     | Enables the browser smoke hook and fixed smoke password setup/login. |
+| `VITE_RISU_LITE`                                                                 | Enables lite/mobile-ish UI path.                                     |
+| `VITE_AD_CLIENT`, `VITE_AD_CLIENT_MOBILE`, `VITE_AD_SLOT`, `VITE_AD_SLOT_MOBILE` | Ad UI configuration.                                                 |
 
 Test/audit:
 

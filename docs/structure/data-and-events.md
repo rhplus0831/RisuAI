@@ -11,7 +11,7 @@ revision-checked commands when it needs persistence.
 | Domain JSON | `data/db.json`                                           | Server | The main Risu `Database` blob minus chat message arrays / per-chat `hypaV3Data`, plus the asset manifest.                                         |
 | Assets      | `data/assets/<sha256>.<ext>`                             | Server | Content-addressed images, audio, video, fonts, CSS, and other supported asset bytes.                                                              |
 | Backups     | `data/backups/<id>/`                                     | Server | Snapshot `db.json`, `assets/`, `risu.db`, `save/`, plus `manifest.json`.                                                                          |
-| Auth files  | `data/__password`, `data/__known_public_key_hashes.json` | Server | Single-user password hash string and registered browser public key hashes.                                                                        |
+| Auth files  | `data/__password`, `data/__known_public_key_hashes.json` | Server | Single-user stored password value (normally client-digested via `/api/v1/auth/crypto`) and registered browser public key hashes.                  |
 
 `server/fastify/src/repository.ts` is the main file for `db.json`, assets, backups,
 the message-table join/split boundary, and the stub projection. `server/fastify/src/db.ts`
@@ -41,9 +41,12 @@ There are command-adjacent server-owned exceptions:
 - Asset upload writes asset metadata and bumps revision directly, then emits
   `asset.created`; asset GC can remove unreferenced asset metadata without a
   revision/event because no projected database field references it.
-- Import, backup restore, and server-owned generation persistence write through
-  repository/server-owned paths rather than ordinary resource commands. They
-  still need explicit auth and active-writer decisions.
+- `.risu` import, Realm character import, backup restore, and server-owned
+  generation persistence write through repository/server-owned paths rather than
+  ordinary resource commands. They still need explicit auth and active-writer
+  decisions. Realm import validates `baseRevision` before upstream downloads;
+  asset writes during import may bump revision before the final
+  `character.created` event.
 
 ## Auth Contract
 
@@ -66,10 +69,12 @@ Fastify also has a global active-writer `preHandler` guard registered from
 writer-intent bootstrap request and sends `risu-writer-session` on server-owned
 mutations. Stale writer sessions receive `423 active_writer_stale`.
 
-`server/fastify/src/activeWriter.ts` classifies command routes, imports, asset
-uploads, backups, `POST /api/v1/generate/chat`, `/api/v1/generate/preview-prompt`,
-`DELETE /api/v1/generate/chat/:id` (durable-generation cancel — writer handoff lets a
-new writer stop a prior, now-disconnected writer's generation), memory job create +
+`server/fastify/src/activeWriter.ts` classifies command routes, asset uploads,
+backups, `POST /api/v1/import/risusave`,
+`POST /api/v1/import/realm-character`, `POST /api/v1/generate/chat`,
+`POST /api/v1/generate/preview-prompt`, `DELETE /api/v1/generate/chat/:id`
+(durable-generation cancel — writer handoff lets a new writer stop a prior,
+now-disconnected writer's generation), memory job create +
 `DELETE /api/v1/memory/jobs/:id`, and legacy storage writes/removes as guarded
 server-owned mutations. The durable-generation reattach route
 `GET /api/v1/generate/chat/:id/stream` is read-only (observe) and intentionally **not**
@@ -131,11 +136,16 @@ and `routes/legacyStorage.ts` before changing body parser behavior.
 
 Streaming surfaces write directly to raw replies or WebSockets:
 
+- `routes/generation.ts` writes completion SSE (`chunk`, `error`, `done`) for
+  streaming `/api/v1/generate/completion` requests.
 - `routes/generationChat.ts` writes chat SSE frames. On the **non-durable** (inline)
   path it aborts the provider call on client close. On the **durable** path a client
   close only _detaches_ the viewer — the detached `GenerationJobRegistry` job keeps
   running and buffers its frames for a 30s reattach grace; cancel is the explicit
   `DELETE .../:id`, not a disconnect. See backend.md "Durable Generation".
+- `routes/realmImport.ts` can write Realm import progress SSE (`progress`,
+  `done`, `conflict`, `low_level_access`, `unsupported`, `error`) when the
+  browser requests `text/event-stream`.
 - `routes/events.ts` hijacks the response for command/memory SSE.
 - `routes/streamJobs.ts` creates proxy stream jobs and attaches WebSockets
   (the reusable `JobRegistry` that durable generation wraps).
