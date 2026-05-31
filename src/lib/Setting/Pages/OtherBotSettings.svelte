@@ -249,7 +249,7 @@
     )
 
     // Reset reference_mode for text-to-image models
-    if (selectedModel?.supportsImageInput) {
+    if (!selectedModel?.supportsImageInput) {
       wavespeedImageDraft.value.reference_mode = ''
       wavespeedImageDraft.value.reference_image = undefined
       wavespeedImageDraft.value.reference_base64image = undefined

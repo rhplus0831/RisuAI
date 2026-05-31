@@ -17,6 +17,7 @@
     createBlankPlugin,
     importPlugin,
     loadPlugins,
+    type RisuPlugin,
     updatePlugin,
   } from 'src/ts/plugins/plugins.svelte'
   import {
@@ -34,11 +35,37 @@
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import { hotReloadPluginFiles } from 'src/ts/plugins/apiV3/developMode'
 
-  let showParams = $state([])
+  let expandedPluginNames = $state<string[]>([])
 
-  function setPluginArg(index: number, arg: string, value: number | string) {
-    const plugin = DBState.db.plugins?.[index]
-    if (!plugin) return
+  function findPluginByName(pluginName: string): { plugin: RisuPlugin; index: number } | null {
+    const plugins = DBState.db.plugins ?? []
+    const index = plugins.findIndex((candidate) => candidate.name === pluginName)
+    if (index === -1) return null
+    return { plugin: plugins[index], index }
+  }
+
+  function pluginParamsId(pluginName: string): string {
+    return `plugin-params-${pluginName.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+  }
+
+  function isPluginExpanded(pluginName: string): boolean {
+    return expandedPluginNames.includes(pluginName)
+  }
+
+  function togglePluginParams(pluginName: string): void {
+    expandedPluginNames = isPluginExpanded(pluginName)
+      ? expandedPluginNames.filter((name) => name !== pluginName)
+      : [...expandedPluginNames, pluginName]
+  }
+
+  function getPluginArg(pluginName: string, arg: string): number | string {
+    return findPluginByName(pluginName)?.plugin.realArg?.[arg] ?? ''
+  }
+
+  function setPluginArg(pluginName: string, arg: string, value: number | string) {
+    const current = findPluginByName(pluginName)
+    if (!current) return
+    const { plugin, index } = current
     const previous = currentPluginStateSnapshot()
     const nextRealArg = {
       ...(plugin.realArg ?? {}),
@@ -62,36 +89,31 @@
   {#if !DBState.db.plugins || DBState.db.plugins?.length === 0}
     <span class="text-textcolor2">{language.noPlugins}</span>
   {/if}
-  {#each DBState.db.plugins as plugin, i}
+  {#each DBState.db.plugins as plugin, i (plugin.name)}
     {#if i !== 0}
       <div class="border-darkborderc mt-2 mb-2 w-full border-solid border-b-1 seperator"></div>
     {/if}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div
-      class="flex gap-2"
-      aria-labelledby="show-params"
-      role="button"
-      tabindex="0"
-      onclick={() => {
-        if (showParams.includes(i)) {
-          showParams.splice(showParams.indexOf(i), 1)
-        } else {
-          showParams.push(i)
-        }
-      }}
-    >
-      <div class="font-bold grow">
+    <div class="flex gap-2 items-center">
+      <button
+        class="font-bold grow text-left"
+        aria-expanded={isPluginExpanded(plugin.name)}
+        aria-controls={pluginParamsId(plugin.name)}
+        onclick={() => {
+          togglePluginParams(plugin.name)
+        }}
+      >
         <span>
           {plugin.displayName ?? plugin.name}
         </span>
         {#if hotReloading.includes(plugin.name)}
           <span class="text-sm rounded bg-amber-700 ml-2 px-2 py-1 text-white"> Hot </span>
         {/if}
-      </div>
+      </button>
       {#if plugin.version === 2 || plugin.version === '2.1'}
         <button
           class="text-yellow-400 hover:gray-200 cursor-pointer"
-          onclick={() => {
+          onclick={(e) => {
+            e.stopPropagation()
             alertMd(language.pluginV2Warning)
           }}
         >
@@ -108,6 +130,9 @@
               rel="nofollow noopener noreferrer"
               class="text-textcolor2 hover:text-textcolor cursor-pointer"
               title={link.hoverText}
+              onclick={(e) => {
+                e.stopPropagation()
+              }}
             >
               <LinkIcon></LinkIcon>
             </a>
@@ -120,10 +145,12 @@
           {#if updateInfo}
             <button
               class="text-green-400 hover:gray-200 cursor-pointer"
-              onclick={async () => {
+              onclick={async (e) => {
+                e.stopPropagation()
                 const v = await alertConfirm(language.pluginUpdateFoundInstallIt)
                 if (v) {
-                  updatePlugin(plugin)
+                  const current = findPluginByName(plugin.name)
+                  if (current) updatePlugin(current.plugin)
                 }
               }}
             >
@@ -136,15 +163,19 @@
       <button
         class="textcolor2 hover:gray-200 cursor-pointer"
         onclick={async (e) => {
+          e.stopPropagation()
+          const current = findPluginByName(plugin.name)
+          if (!current) return
+          const { plugin: currentPlugin, index } = current
           const previous = currentPluginStateSnapshot()
-          const enabled = !plugin.enabled
+          const enabled = !currentPlugin.enabled
           withTrustedServerProjectionWrite(() => {
-            DBState.db.plugins[i] = {
-              ...plugin,
+            DBState.db.plugins[index] = {
+              ...currentPlugin,
               enabled,
             }
           })
-          dispatchEnablePlugin(plugin.name, enabled, previous)
+          dispatchEnablePlugin(currentPlugin.name, enabled, previous)
           loadPlugins()
           e.preventDefault()
         }}
@@ -158,19 +189,24 @@
 
       <button
         class="textcolor2 hover:gray-200 cursor-pointer"
-        onclick={async () => {
+        onclick={async (e) => {
+          e.stopPropagation()
           const v = await alertConfirm(language.removeConfirm + (plugin.displayName ?? plugin.name))
           if (v) {
+            const current = findPluginByName(plugin.name)
+            if (!current) return
+            const { plugin: currentPlugin } = current
             const previous = currentPluginStateSnapshot()
             withTrustedServerProjectionWrite(() => {
-              if (DBState.db.currentPluginProvider === plugin.name) {
+              if (DBState.db.currentPluginProvider === currentPlugin.name) {
                 DBState.db.currentPluginProvider = ''
               }
-              const plugins = DBState.db.plugins ?? []
-              plugins.splice(i, 1)
-              DBState.db.plugins = plugins
+              DBState.db.plugins = (DBState.db.plugins ?? []).filter(
+                (candidate) => candidate.name !== currentPlugin.name,
+              )
             })
-            dispatchDeletePlugin(plugin.name, previous)
+            expandedPluginNames = expandedPluginNames.filter((name) => name !== currentPlugin.name)
+            dispatchDeletePlugin(currentPlugin.name, previous)
             loadPlugins()
           }
         }}
@@ -184,8 +220,8 @@
           .replace('{{plugin_version}}', 'API V1')
           .replace('{{required_version}}', 'API V3')}
       </span>
-    {:else if Object.keys(plugin.arguments).filter((i) => !i.startsWith('hidden_')).length > 0 && showParams.includes(i)}
-      <div class="flex flex-col mt-2 bg-dark-900/50 p-3">
+    {:else if Object.keys(plugin.arguments).filter((i) => !i.startsWith('hidden_')).length > 0 && isPluginExpanded(plugin.name)}
+      <div id={pluginParamsId(plugin.name)} class="flex flex-col mt-2 bg-dark-900/50 p-3">
         {#each Object.keys(plugin.arguments) as arg}
           {#if !arg.startsWith('hidden_')}
             {#if typeof plugin?.argMeta?.[arg]?.divider === 'string'}
@@ -212,8 +248,8 @@
               <SelectInput
                 className="mt-2 mb-4"
                 bind:value={
-                  () => DBState.db.plugins[i].realArg[arg] as string,
-                  (value) => setPluginArg(i, arg, value)
+                  () => getPluginArg(plugin.name, arg) as string,
+                  (value) => setPluginArg(plugin.name, arg, value)
                 }
               >
                 {#each plugin.arguments[arg] as a}
@@ -224,18 +260,18 @@
               {#if plugin?.argMeta?.[arg]?.textarea}
                 <TextAreaInput
                   bind:value={
-                    () => DBState.db.plugins[i].realArg[arg] as string,
-                    (value) => setPluginArg(i, arg, value)
+                    () => getPluginArg(plugin.name, arg) as string,
+                    (value) => setPluginArg(plugin.name, arg, value)
                   }
                   placeholder={plugin?.argMeta?.[arg]?.placeholder}
                 />
               {:else if plugin?.argMeta?.[arg]?.radio}
                 {#each plugin?.argMeta?.[arg]?.radio?.split(',') as radioOption}
                   <CheckInput
-                    check={DBState.db.plugins[i].realArg[arg] === radioOption.split('|').at(-1)}
+                    check={getPluginArg(plugin.name, arg) === radioOption.split('|').at(-1)}
                     onChange={(e) => {
                       if (e) {
-                        setPluginArg(i, arg, radioOption.split('|').at(-1))
+                        setPluginArg(plugin.name, arg, radioOption.split('|').at(-1))
                       }
                     }}
                     margin={false}
@@ -245,8 +281,8 @@
               {:else}
                 <TextInput
                   bind:value={
-                    () => DBState.db.plugins[i].realArg[arg] as string,
-                    (value) => setPluginArg(i, arg, value)
+                    () => getPluginArg(plugin.name, arg) as string,
+                    (value) => setPluginArg(plugin.name, arg, value)
                   }
                   placeholder={plugin?.argMeta?.[arg]?.placeholder}
                 />
@@ -254,9 +290,9 @@
             {:else if plugin.arguments[arg] === 'int'}
               {#if plugin?.argMeta?.[arg]?.checkbox}
                 <CheckInput
-                  check={DBState.db.plugins[i].realArg[arg] === '1'}
+                  check={getPluginArg(plugin.name, arg) === '1'}
                   onChange={(e) => {
-                    setPluginArg(i, arg, e ? '1' : '0')
+                    setPluginArg(plugin.name, arg, e ? '1' : '0')
                   }}
                   margin={false}
                   name={plugin?.argMeta?.[arg]?.checkbox === '1'
@@ -266,11 +302,11 @@
               {:else if plugin?.argMeta?.[arg]?.radio}
                 {#each plugin?.argMeta?.[arg]?.radio?.split(',') as radioOption}
                   <CheckInput
-                    check={DBState.db.plugins[i].realArg[arg] ===
+                    check={getPluginArg(plugin.name, arg) ===
                       parseInt(radioOption.split('|').at(-1))}
                     onChange={(e) => {
                       if (e) {
-                        setPluginArg(i, arg, parseInt(radioOption.split('|').at(-1)))
+                        setPluginArg(plugin.name, arg, parseInt(radioOption.split('|').at(-1)))
                       }
                     }}
                     margin={false}
@@ -280,8 +316,8 @@
               {:else}
                 <NumberInput
                   bind:value={
-                    () => DBState.db.plugins[i].realArg[arg] as number,
-                    (value) => setPluginArg(i, arg, value)
+                    () => getPluginArg(plugin.name, arg) as number,
+                    (value) => setPluginArg(plugin.name, arg, value)
                   }
                   placeholder={plugin?.argMeta?.[arg]?.placeholder}
                 />

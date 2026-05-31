@@ -446,6 +446,10 @@
     return JSON.parse(JSON.stringify(value)) as T
   }
 
+  function usesTextgenStreamUrl(model: string): boolean {
+    return model === 'textgen_webui' || model === 'mancer'
+  }
+
   $effect(() => {
     mainPromptDraft.value
     jailbreakDraft.value
@@ -454,7 +458,10 @@
   })
 
   $effect.pre(() => {
-    if (DBState.db.aiModel === 'textgen_webui' || DBState.db.subModel === 'mancer') {
+    if (
+      usesTextgenStreamUrl(DBState.db.aiModel) ||
+      usesTextgenStreamUrl(DBState.db.subModel)
+    ) {
       useStreamingDraft.value = textgenWebUIStreamURLDraft.value.startsWith('wss://')
     }
   })

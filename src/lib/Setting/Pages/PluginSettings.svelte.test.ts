@@ -76,8 +76,10 @@ describe('PluginSettings', () => {
   it('renders select argument labels from plugin option values', async () => {
     component = mount(PluginSettings, { target })
 
-    const pluginRow = target.querySelector('[role="button"]') as HTMLElement | null
-    expect(pluginRow).not.toBeNull()
+    const pluginRow = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Plugin C'),
+    )
+    expect(pluginRow).toBeTruthy()
     pluginRow?.click()
     await tick()
 

@@ -395,7 +395,8 @@
                     }
                   }}
                   class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                  onclick={() => {
+                  onclick={(e) => {
+                    e.stopPropagation()
                     editMode = !editMode
                   }}
                 >
@@ -475,7 +476,8 @@
                           }
                         }}
                         class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                        onclick={async () => {
+                        onclick={async (e) => {
+                          e.stopPropagation()
                           const option = await alertChatOptions()
                           switch (option) {
                             case 0: {
@@ -529,7 +531,8 @@
                           }
                         }}
                         class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                        onclick={() => {
+                        onclick={(e) => {
+                          e.stopPropagation()
                           editMode = !editMode
                         }}
                       >
@@ -626,7 +629,8 @@
                     }
                   }}
                   class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                  onclick={async () => {
+                  onclick={async (e) => {
+                    e.stopPropagation()
                     const option = await alertChatOptions()
                     switch (option) {
                       case 0: {
@@ -679,7 +683,8 @@
                     }
                   }}
                   class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                  onclick={() => {
+                  onclick={(e) => {
+                    e.stopPropagation()
                     editMode = !editMode
                   }}
                 >

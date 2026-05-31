@@ -33,8 +33,9 @@
   }
 
   let { currentModule = $bindable() }: Props = $props()
-  let assetFileExtensions: string[] = $state([])
-  let assetFilePath: string[] = $state([])
+  let assetFileExtensions: Record<string, string | undefined> = $state({})
+  let assetFilePath: Record<string, string | undefined> = $state({})
+  let assetPreviewRun = 0
 
   $effect(() => {
     const stopLorebooks = watchServerBackedLorebooks()
@@ -45,19 +46,29 @@
     }
   })
 
-  $effect.pre(() => {
+  const moduleAssetSourceKey = $derived(
+    DBState.db.useAdditionalAssetsPreview
+      ? (currentModule?.assets ?? []).map((asset) => `${asset[1]}:${asset[2] ?? ''}`).join('\n')
+      : '',
+  )
+
+  $effect(() => {
+    moduleAssetSourceKey
+    const run = ++assetPreviewRun
+    const nextExtensions: Record<string, string | undefined> = {}
+    assetFilePath = {}
     if (DBState.db.useAdditionalAssetsPreview) {
-      if (currentModule?.assets) {
-        for (let i = 0; i < currentModule.assets.length; i++) {
-          if (currentModule.assets[i].length > 2 && currentModule.assets[i][2]) {
-            assetFileExtensions[i] = currentModule.assets[i][2]
-          } else assetFileExtensions[i] = currentModule.assets[i][1].split('.').pop()
-          getFileSrc(currentModule.assets[i][1]).then((filePath) => {
-            assetFilePath[i] = filePath
-          })
-        }
+      for (const asset of currentModule?.assets ?? []) {
+        const assetPath = asset[1]
+        nextExtensions[assetPath] =
+          asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
+        getFileSrc(assetPath).then((filePath) => {
+          if (run !== assetPreviewRun) return
+          assetFilePath[assetPath] = filePath
+        })
       }
     }
+    assetFileExtensions = nextExtensions
   })
 
   function addLorebook() {
@@ -372,21 +383,25 @@
             <td colspan="3">{language.noData}</td>
           </tr>
         {:else}
-          {#each currentModule.assets as assets, i}
+          {#each currentModule.assets as assets, i (assets[1])}
             <tr>
               <td class="font-medium truncate">
-                {#if assetFilePath[i] && DBState.db.useAdditionalAssetsPreview}
-                  {#if assetFileExtensions[i] === 'mp4'}
+                {#if assetFilePath[assets[1]] && DBState.db.useAdditionalAssetsPreview}
+                  {#if assetFileExtensions[assets[1]] === 'mp4'}
                     <!-- svelte-ignore a11y_media_has_caption -->
                     <video controls class="mt-2 px-2 w-full m-1 rounded-md"
-                      ><source src={assetFilePath[i]} type="video/mp4" /></video
+                      ><source src={assetFilePath[assets[1]]} type="video/mp4" /></video
                     >
-                  {:else if assetFileExtensions[i] === 'mp3'}
+                  {:else if assetFileExtensions[assets[1]] === 'mp3'}
                     <audio controls class="mt-2 px-2 w-full h-16 m-1 rounded-md" loop
-                      ><source src={assetFilePath[i]} type="audio/mpeg" /></audio
+                      ><source src={assetFilePath[assets[1]]} type="audio/mpeg" /></audio
                     >
                   {:else}
-                    <img src={assetFilePath[i]} class="w-16 h-16 m-1 rounded-md" alt={assets[0]} />
+                    <img
+                      src={assetFilePath[assets[1]]}
+                      class="w-16 h-16 m-1 rounded-md"
+                      alt={assets[0]}
+                    />
                   {/if}
                 {/if}
                 <TextInput

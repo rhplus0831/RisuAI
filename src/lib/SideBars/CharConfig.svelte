@@ -86,6 +86,7 @@
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import { watchServerBackedScriptDefinitions } from 'src/ts/server/scriptDefinitionBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -249,8 +250,13 @@
     }, 0)
   }
 
-  let assetFileExtensions: string[] = $state([])
-  let assetFilePath: string[] = $state([])
+  let assetFileExtensions: Record<string, string | undefined> = $state({})
+  let assetFilePath: Record<string, string | undefined> = $state({})
+  let assetPreviewRun = 0
+  let authorNoteDraft = $state('')
+  let authorNoteChatId: string | null = $state(null)
+  let authorNoteServerNote = ''
+  let authorNoteLastSubmitted = ''
   let licensed = $state(
     DBState.db.characters[$selectedCharID].type === 'character'
       ? (DBState.db.characters[$selectedCharID] as character).license
@@ -261,44 +267,75 @@
     const chara = DBState.db.characters[$selectedCharID]
     const desc = chara.desc
     const firstMsg = chara.firstMessage
-    const localNote = chara.chats[chara.chatPage].note
+    const localNote = authorNoteDraft
 
     untrack(() => {
       scheduleTokenize(desc, firstMsg, localNote)
     })
   })
 
-  $effect.pre(() => {
+  const selectedCharacterAssetSourceKey = $derived(
+    DBState.db.characters[$selectedCharID]?.type === 'character' &&
+      DBState.db.useAdditionalAssetsPreview
+      ? ((characterDraft.value as unknown as character).additionalAssets ?? [])
+          .map((asset) => `${asset[1]}:${asset[2] ?? ''}`)
+          .join('\n')
+      : '',
+  )
+
+  $effect(() => {
+    selectedCharacterAssetSourceKey
+    const run = ++assetPreviewRun
+    const nextExtensions: Record<string, string | undefined> = {}
+    assetFilePath = {}
     if (
       DBState.db.characters[$selectedCharID].type === 'character' &&
       DBState.db.useAdditionalAssetsPreview
     ) {
-      if ((DBState.db.characters[$selectedCharID] as character).additionalAssets) {
-        for (
-          let i = 0;
-          i < (DBState.db.characters[$selectedCharID] as character).additionalAssets.length;
-          i++
-        ) {
-          if (
-            (DBState.db.characters[$selectedCharID] as character).additionalAssets[i].length > 2 &&
-            (DBState.db.characters[$selectedCharID] as character).additionalAssets[i][2]
-          ) {
-            assetFileExtensions[i] = (
-              DBState.db.characters[$selectedCharID] as character
-            ).additionalAssets[i][2]
-          } else
-            assetFileExtensions[i] = (
-              DBState.db.characters[$selectedCharID] as character
-            ).additionalAssets[i][1]
-              .split('.')
-              .pop()
-          getFileSrc(
-            (DBState.db.characters[$selectedCharID] as character).additionalAssets[i][1],
-          ).then((filePath) => {
-            assetFilePath[i] = filePath
-          })
-        }
+      for (const asset of (characterDraft.value as unknown as character).additionalAssets ?? []) {
+        const assetPath = asset[1]
+        nextExtensions[assetPath] =
+          asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
+        getFileSrc(assetPath).then((filePath) => {
+          if (run !== assetPreviewRun) return
+          assetFilePath[assetPath] = filePath
+        })
       }
+    }
+    assetFileExtensions = nextExtensions
+  })
+
+  $effect(() => {
+    const character = DBState.db.characters[$selectedCharID]
+    const chat = character?.chats?.[character.chatPage]
+    const nextChatId = chat?.id ?? null
+    const nextNote = chat?.note ?? ''
+    if (nextChatId !== authorNoteChatId) {
+      authorNoteChatId = nextChatId
+      authorNoteDraft = nextNote
+      authorNoteServerNote = nextNote
+      authorNoteLastSubmitted = nextNote
+    } else if (nextNote !== authorNoteServerNote) {
+      authorNoteServerNote = nextNote
+      if (authorNoteDraft === authorNoteLastSubmitted) {
+        authorNoteDraft = nextNote
+      }
+      authorNoteLastSubmitted = nextNote
+    }
+  })
+
+  $effect(() => {
+    const chatId = authorNoteChatId
+    const note = authorNoteDraft
+    if (!chatId || note === authorNoteLastSubmitted) return
+
+    const timer = setTimeout(() => {
+      authorNoteLastSubmitted = note
+      dispatchUpdateChat(chatId, { note }, currentChatStateSnapshot())
+    }, 250)
+
+    return () => {
+      clearTimeout(timer)
     }
   })
 
@@ -589,10 +626,7 @@
   <TextAreaInput
     margin="both"
     autocomplete="off"
-    bind:value={
-      DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-        .note
-    }
+    bind:value={authorNoteDraft}
     highlight
     placeholder={getAuthorNoteDefaultText()}
   />
@@ -920,22 +954,22 @@
               <td class="text-textcolor2"> No Assets</td>
             </tr>
           {:else}
-            {#each characterDraft.value.additionalAssets as assets, i}
+            {#each characterDraft.value.additionalAssets as assets, i (assets[1])}
               <tr>
                 <td class="font-medium truncate">
-                  {#if assetFilePath[i] && DBState.db.useAdditionalAssetsPreview}
-                    {#if assetFileExtensions[i] === 'mp4'}
+                  {#if assetFilePath[assets[1]] && DBState.db.useAdditionalAssetsPreview}
+                    {#if assetFileExtensions[assets[1]] === 'mp4'}
                       <!-- svelte-ignore a11y_media_has_caption -->
                       <video controls class="mt-2 px-2 w-full m-1 rounded-md"
-                        ><source src={assetFilePath[i]} type="video/mp4" /></video
+                        ><source src={assetFilePath[assets[1]]} type="video/mp4" /></video
                       >
-                    {:else if assetFileExtensions[i] === 'mp3'}
+                    {:else if assetFileExtensions[assets[1]] === 'mp3'}
                       <audio controls class="mt-2 px-2 w-full h-16 m-1 rounded-md" loop
-                        ><source src={assetFilePath[i]} type="audio/mpeg" /></audio
+                        ><source src={assetFilePath[assets[1]]} type="audio/mpeg" /></audio
                       >
-                    {:else if ['png', 'webp', 'jpeg', 'jpg', 'gif'].includes(assetFileExtensions[i])}
+                    {:else if ['png', 'webp', 'jpeg', 'jpg', 'gif'].includes(assetFileExtensions[assets[1]] ?? '')}
                       <img
-                        src={assetFilePath[i]}
+                        src={assetFilePath[assets[1]]}
                         class="w-16 h-16 m-1 rounded-md"
                         alt={assets[0]}
                       />
