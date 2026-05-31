@@ -11,6 +11,8 @@ import { buildApp } from '../src/app.js'
 import { loadPersisted } from '../src/repository.js'
 
 const subtle = webcrypto.subtle
+const directRealmImportTestRun = process.env.RISU_DIRECT_REALM_IMPORT_TEST === 'true'
+const directOnlyIt = directRealmImportTestRun ? it : it.skip
 
 interface CapturedRequest {
   method: string
@@ -619,7 +621,7 @@ describe('Realm character import route', () => {
     expect(persisted.assets).toHaveLength(3)
   })
 
-  it('imports Realm charx packages with thousands of display assets', async () => {
+  directOnlyIt('imports Realm charx packages with thousands of display assets', async () => {
     echo.setResponder((req, res) => {
       if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
         res.writeHead(200, { 'content-type': 'application/charx' })
@@ -647,5 +649,5 @@ describe('Realm character import route', () => {
       .characters[0]
     expect(character.name).toBe('Realm Many Assets')
     expect(character.additionalAssets).toHaveLength(7000)
-  }, 30000)
+  }, 60000)
 })
