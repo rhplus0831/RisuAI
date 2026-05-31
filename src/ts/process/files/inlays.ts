@@ -4,13 +4,22 @@ import { getImageType } from 'src/ts/media'
 import { getDatabase } from '../../storage/database.svelte'
 import { getModelInfo, LLMFlags, LLMFormat } from 'src/ts/model/modellist'
 import { asBuffer } from '../../util'
+import { isFastifyServer } from '../../platform'
+import {
+  readServerAsset,
+  serverAssetIdFromReference,
+  SERVER_INLAY_SIGNATURE_CONTENT_TYPE,
+  uploadServerAssetBytes,
+} from '../../server/assets'
 
 export type InlayAsset = {
-  data: string | Blob
+  data?: string | Blob
   /** File extension */
   ext: string
   height?: number
   name: string
+  /** Fastify server asset id for browser-local legacy inlay ids. */
+  serverAssetId?: string
   type: 'image' | 'video' | 'audio' | 'signature'
   width?: number
 }
@@ -26,11 +35,72 @@ const inlayStorage = localforage.createInstance({
   storeName: 'inlay',
 })
 
+function inlayContentType(type: InlayAsset['type'], ext: string): string {
+  if (type === 'signature') return SERVER_INLAY_SIGNATURE_CONTENT_TYPE
+  if (type === 'image') return ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
+  if (type === 'audio') {
+    if (ext === 'mp3') return 'audio/mpeg'
+    return `audio/${ext}`
+  }
+  if (ext === 'mkv') return 'video/x-matroska'
+  return `video/${ext}`
+}
+
+function inlayTypeFromContentType(contentType: string): InlayAsset['type'] | null {
+  if (contentType === SERVER_INLAY_SIGNATURE_CONTENT_TYPE) return 'signature'
+  if (contentType.startsWith('image/')) return 'image'
+  if (contentType.startsWith('audio/')) return 'audio'
+  if (contentType.startsWith('video/')) return 'video'
+  return null
+}
+
+function dataUriToBytes(data: string): { bytes: Uint8Array; contentType: string } {
+  const splitDataURI = data.split(',')
+  const byteString = atob(splitDataURI[1] ?? '')
+  const contentType = splitDataURI[0]?.split(':')[1]?.split(';')[0] ?? 'application/octet-stream'
+
+  const bytes = new Uint8Array(byteString.length)
+  for (let i = 0; i < byteString.length; i++) {
+    bytes[i] = byteString.charCodeAt(i)
+  }
+  return { bytes, contentType }
+}
+
+async function blobToBytes(blob: Blob): Promise<Uint8Array> {
+  return new Uint8Array(await blob.arrayBuffer())
+}
+
+async function uploadInlayAssetToServer(img: InlayAsset): Promise<string> {
+  if (img.serverAssetId) return img.serverAssetId
+  if (img.data === undefined) {
+    throw new Error(`Inlay asset ${img.name} has no local bytes to upload`)
+  }
+
+  if (img.data instanceof Blob) {
+    const contentType = img.data.type || inlayContentType(img.type, img.ext)
+    return uploadServerAssetBytes(await blobToBytes(img.data), contentType)
+  }
+
+  if (img.type === 'signature') {
+    return uploadServerAssetBytes(
+      new TextEncoder().encode(img.data),
+      SERVER_INLAY_SIGNATURE_CONTENT_TYPE,
+    )
+  }
+
+  const { bytes, contentType } = dataUriToBytes(img.data)
+  return uploadServerAssetBytes(bytes, contentType || inlayContentType(img.type, img.ext))
+}
+
+async function rememberServerInlayAsset(id: string, img: InlayAsset): Promise<void> {
+  await inlayStorage.setItem(id, { ...img, data: undefined })
+}
+
 export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
-  const extention = img.name.split('.').at(-1)
+  const extention = img.name.split('.').at(-1)?.toLowerCase()
   const imgObj = new Image()
 
-  if (inlayImageExts.includes(extention)) {
+  if (extention && inlayImageExts.includes(extention)) {
     imgObj.src = URL.createObjectURL(new Blob([asBuffer(img.data)], { type: `image/${extention}` }))
 
     return await writeInlayImage(imgObj, {
@@ -39,8 +109,18 @@ export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
     })
   }
 
-  if (inlayAudioExts.includes(extention)) {
+  if (extention && inlayAudioExts.includes(extention)) {
     const audioBlob = new Blob([asBuffer(img.data)], { type: `audio/${extention}` })
+    if (isFastifyServer) {
+      const assetId = await uploadServerAssetBytes(img.data, inlayContentType('audio', extention))
+      await rememberServerInlayAsset(assetId, {
+        name: img.name,
+        ext: extention,
+        type: 'audio',
+        serverAssetId: assetId,
+      })
+      return assetId
+    }
     const imgid = v4()
 
     await inlayStorage.setItem(imgid, {
@@ -53,8 +133,18 @@ export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
     return `${imgid}`
   }
 
-  if (inlayVideoExts.includes(extention)) {
+  if (extention && inlayVideoExts.includes(extention)) {
     const videoBlob = new Blob([asBuffer(img.data)], { type: `video/${extention}` })
+    if (isFastifyServer) {
+      const assetId = await uploadServerAssetBytes(img.data, inlayContentType('video', extention))
+      await rememberServerInlayAsset(assetId, {
+        name: img.name,
+        ext: extention,
+        type: 'video',
+        serverAssetId: assetId,
+      })
+      return assetId
+    }
     const imgid = v4()
 
     await inlayStorage.setItem(imgid, {
@@ -103,6 +193,29 @@ export async function writeInlayImage(
 
   const imgid = arg.id ?? v4()
 
+  if (isFastifyServer) {
+    const assetId = await uploadServerAssetBytes(await blobToBytes(imageBlob as Blob), 'image/png')
+    await rememberServerInlayAsset(assetId, {
+      name: arg.name ?? assetId,
+      ext: 'png',
+      height: drawHeight,
+      width: drawWidth,
+      type: 'image',
+      serverAssetId: assetId,
+    })
+    if (arg.id && arg.id !== assetId) {
+      await rememberServerInlayAsset(arg.id, {
+        name: arg.name ?? arg.id,
+        ext: 'png',
+        height: drawHeight,
+        width: drawWidth,
+        type: 'image',
+        serverAssetId: assetId,
+      })
+    }
+    return assetId
+  }
+
   await inlayStorage.setItem(imgid, {
     name: arg.name ?? imgid,
     data: imageBlob,
@@ -125,6 +238,29 @@ export type InlaySignature = {
 }
 
 export async function saveInlayedSignature(sigid: string, signature: InlaySignature) {
+  if (isFastifyServer) {
+    const data = JSON.stringify(signature)
+    const assetId = await uploadServerAssetBytes(
+      new TextEncoder().encode(data),
+      SERVER_INLAY_SIGNATURE_CONTENT_TYPE,
+    )
+    await rememberServerInlayAsset(assetId, {
+      name: sigid,
+      ext: 'json',
+      type: 'signature',
+      serverAssetId: assetId,
+    })
+    if (sigid !== assetId) {
+      await rememberServerInlayAsset(sigid, {
+        name: sigid,
+        ext: 'json',
+        type: 'signature',
+        serverAssetId: assetId,
+      })
+    }
+    return assetId
+  }
+
   await inlayStorage.setItem(sigid, {
     name: sigid,
     data: JSON.stringify(signature),
@@ -161,10 +297,39 @@ function blobToBase64(blob: Blob): Promise<string> {
 
 // Returns with base64 data URI
 export async function getInlayAsset(id: string) {
+  if (isFastifyServer) {
+    const serverAsset = await getServerInlayAssetId(id)
+    if (serverAsset) {
+      const meta = await inlayStorage.getItem<InlayAsset | null>(id)
+      try {
+        const stored = await readServerAsset(serverAsset)
+        const type = inlayTypeFromContentType(stored.contentType)
+        if (type) {
+          const data =
+            type === 'signature'
+              ? new TextDecoder().decode(stored.bytes)
+              : `data:${stored.contentType};base64,${Buffer.from(stored.bytes).toString('base64')}`
+          return {
+            name: meta?.name ?? serverAsset,
+            ext: meta?.ext ?? stored.extension,
+            height: meta?.height,
+            width: meta?.width,
+            type,
+            serverAssetId: serverAsset,
+            data,
+          } satisfies InlayAsset & { data: string }
+        }
+      } catch {
+        // Fall through to the browser-local legacy read below.
+      }
+    }
+  }
+
   const img = await inlayStorage.getItem<InlayAsset | null>(id)
   if (img === null) {
     return null
   }
+  if (img.data === undefined) return null
 
   let data: string
   if (img.data instanceof Blob) {
@@ -178,10 +343,35 @@ export async function getInlayAsset(id: string) {
 
 // Returns with Blob
 export async function getInlayAssetBlob(id: string) {
+  if (isFastifyServer) {
+    const serverAsset = await getServerInlayAssetId(id)
+    if (serverAsset) {
+      const meta = await inlayStorage.getItem<InlayAsset | null>(id)
+      try {
+        const stored = await readServerAsset(serverAsset)
+        const type = inlayTypeFromContentType(stored.contentType)
+        if (type) {
+          return {
+            name: meta?.name ?? serverAsset,
+            ext: meta?.ext ?? stored.extension,
+            height: meta?.height,
+            width: meta?.width,
+            type,
+            serverAssetId: serverAsset,
+            data: new Blob([asBuffer(stored.bytes)], { type: stored.contentType }),
+          } satisfies InlayAsset & { data: Blob }
+        }
+      } catch {
+        // Fall through to the browser-local legacy read below.
+      }
+    }
+  }
+
   const img = await inlayStorage.getItem<InlayAsset | null>(id)
   if (img === null) {
     return null
   }
+  if (img.data === undefined) return null
 
   let data: Blob
   if (typeof img.data === 'string') {
@@ -205,7 +395,16 @@ export async function listInlayAssets(): Promise<[id: string, InlayAsset][]> {
 }
 
 export async function setInlayAsset(id: string, img: InlayAsset) {
+  if (isFastifyServer) {
+    const assetId = await uploadInlayAssetToServer(img)
+    await rememberServerInlayAsset(id, { ...img, serverAssetId: assetId })
+    if (id !== assetId) {
+      await rememberServerInlayAsset(assetId, { ...img, serverAssetId: assetId })
+    }
+    return assetId
+  }
   await inlayStorage.setItem(id, img)
+  return id
 }
 
 export async function removeInlayAsset(id: string) {
@@ -215,6 +414,34 @@ export async function removeInlayAsset(id: string) {
 export function supportsInlayImage() {
   const db = getDatabase()
   return getModelInfo(db.aiModel).flags.includes(LLMFlags.hasImageInput)
+}
+
+export async function getServerInlayAssetId(id: string): Promise<string | null> {
+  if (!isFastifyServer) return null
+  const direct = serverAssetIdFromReference(id)
+  if (direct) return direct
+
+  const img = await inlayStorage.getItem<InlayAsset | null>(id)
+  if (!img) return null
+  if (img.serverAssetId) return img.serverAssetId
+
+  const assetId = await uploadInlayAssetToServer(img)
+  await rememberServerInlayAsset(id, { ...img, serverAssetId: assetId })
+  await rememberServerInlayAsset(assetId, { ...img, serverAssetId: assetId })
+  return assetId
+}
+
+export async function getInlayAssetMetadata(
+  id: string,
+): Promise<Pick<InlayAsset, 'height' | 'name' | 'type' | 'width'> | null> {
+  const img = await inlayStorage.getItem<InlayAsset | null>(id)
+  if (!img) return null
+  return {
+    name: img.name,
+    type: img.type,
+    ...(typeof img.height === 'number' ? { height: img.height } : {}),
+    ...(typeof img.width === 'number' ? { width: img.width } : {}),
+  }
 }
 
 export async function reencodeImage(img: Uint8Array) {

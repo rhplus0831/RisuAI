@@ -21,6 +21,7 @@ const PREBUILT_EXCLUDE = '7'.repeat(64)
 const GPT_SOVITS_REF = '8'.repeat(64)
 const MISSING = '9'.repeat(64)
 const ORPHANED = '0'.repeat(64)
+const CHAT_INLAY = 'a1'.repeat(32)
 
 function asset(id: string): PersistedAsset {
   return { id, ext: 'png', size: 1, contentType: 'image/png' }
@@ -51,6 +52,18 @@ describe('Phase 9-8c RISUSAVE asset reference walker', () => {
             image: CHAR_IMAGE,
             emotionImages: [['happy', EMOTION]],
             additionalAssets: [['manual', ADDITIONAL, 'png']],
+            chats: [
+              {
+                id: 'chat-a',
+                message: [
+                  {
+                    chatId: 'message-a',
+                    role: 'user',
+                    data: `look {{inlayeddata::${CHAT_INLAY}}}`,
+                  },
+                ],
+              },
+            ],
             vits: { id: 'vits-a', files: { model: VITS } },
             ccAssets: [{ type: 'icon', uri: CC_ASSET, name: 'main', ext: 'png' }],
             prebuiltAssetExclude: [PREBUILT_EXCLUDE],
@@ -77,12 +90,13 @@ describe('Phase 9-8c RISUSAVE asset reference walker', () => {
         asset(MODULE_ASSET),
         asset(PREBUILT_EXCLUDE),
         asset(GPT_SOVITS_REF),
+        asset(CHAT_INLAY),
         asset(ORPHANED),
       ],
     )
 
     expect(summarizeRisuSaveAssetReport(report)).toEqual({
-      referencedCount: 15,
+      referencedCount: 16,
       missingCount: 1,
       orphanedCount: 1,
     })

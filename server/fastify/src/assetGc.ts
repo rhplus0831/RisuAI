@@ -1,10 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import type { DatabaseSync } from 'node:sqlite'
 import {
   assetPath,
   assetsDir,
   isValidAssetId,
   loadPersisted,
+  loadPersistedWithMessages,
   writePersisted,
 } from './repository.js'
 import { buildRisuSaveAssetReport } from './risuSave/assetReferences.js'
@@ -20,6 +22,8 @@ export const ASSET_GC_INTERVAL_MS = 15 * 60_000
 export const ASSET_GC_GRACE_MS = 60 * 60_000
 
 export interface AssetGcOptions {
+  /** SQLite connection used to hydrate chat-message references. */
+  db?: DatabaseSync
   /** Minimum age (by file mtime) before an unreferenced asset may be deleted. */
   graceMs?: number
   /** Injectable clock (ms epoch) for tests. */
@@ -73,7 +77,7 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
     scannedOrphans: 0,
   }
 
-  const persisted = loadPersisted(dataDir)
+  const persisted = opts.db ? loadPersistedWithMessages(opts.db, dataDir) : loadPersisted(dataDir)
   const report = buildRisuSaveAssetReport(persisted.database, persisted.assets)
   result.scannedOrphans = report.orphaned.length
 

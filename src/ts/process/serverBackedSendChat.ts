@@ -7,7 +7,7 @@ import type {
   MessagePresetInfo,
 } from '../storage/database.svelte'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
-import { getInlayAsset } from './files/inlays'
+import { getInlayAssetMetadata, getServerInlayAssetId } from './files/inlays'
 import { runInlayScreen } from './inlayScreen'
 import { applyServerHypaV3Progress } from './request/serverMemory'
 import { applyServerChatRestoration, applyServerMessagePatch } from './request/serverMessagePatch'
@@ -109,11 +109,10 @@ function applyServerMessagePatches(args: {
   return DBState.db.characters[selectedChar].chats[selectedChat]
 }
 
-/** One inlay asset shipped on the `/generate/chat` request `inlayAssets`. */
-interface ServerInlayAssetPayload {
+/** Legacy browser-local inlay id mapped to a server-owned asset id. */
+interface ServerInlayAssetRefPayload {
   id: string
-  type: 'image' | 'video' | 'audio' | 'signature'
-  base64: string
+  assetId: string
   width?: number
   height?: number
 }
@@ -121,16 +120,16 @@ interface ServerInlayAssetPayload {
 const INLAY_MARKER_RE = /{{(inlay|inlayed|inlayeddata)::(.+?)}}/g
 
 /**
- * Inlay bytes (`{{inlay/inlayed/inlayeddata::id}}`) live only in the browser's
- * localForage `inlayStorage`; the server has no copy. Resolve every inlay id the
- * chat references and ship the bytes so the server `getInlay` can return them.
+ * New Fastify inlay ids are server asset ids. For legacy browser-local ids,
+ * upload the bytes once through the asset route and send only an id mapping so
+ * the server resolves all prompt-time bytes from its own asset store.
  *
  * Id-collection mirrors `formatHistoryMessage.ts:73-91`: `char`-role messages
  * surface only `inlayeddata` ids (the SPA quirk where `inlay`/`inlayed` tags are
  * stripped from a bot turn without surfacing their assets); every other role
  * surfaces all three tag types.
  */
-async function collectServerInlayAssets(chat: Chat): Promise<ServerInlayAssetPayload[]> {
+async function collectServerInlayAssetRefs(chat: Chat): Promise<ServerInlayAssetRefPayload[]> {
   const ids = new Set<string>()
   for (const message of chat.message ?? []) {
     if (typeof message.data !== 'string') continue
@@ -140,24 +139,19 @@ async function collectServerInlayAssets(chat: Chat): Promise<ServerInlayAssetPay
     }
   }
 
-  const assets: ServerInlayAssetPayload[] = []
+  const refs: ServerInlayAssetRefPayload[] = []
   for (const id of ids) {
-    const inlay = await getInlayAsset(id)
-    if (!inlay) continue
-    if (
-      inlay.type !== 'image' &&
-      inlay.type !== 'video' &&
-      inlay.type !== 'audio' &&
-      inlay.type !== 'signature'
-    ) {
-      continue
-    }
-    const payload: ServerInlayAssetPayload = { id, type: inlay.type, base64: inlay.data }
-    if (typeof inlay.width === 'number') payload.width = inlay.width
-    if (typeof inlay.height === 'number') payload.height = inlay.height
-    assets.push(payload)
+    const assetId = await getServerInlayAssetId(id)
+    if (!assetId || assetId === id) continue
+    const metadata = await getInlayAssetMetadata(id)
+    refs.push({
+      id,
+      assetId,
+      ...(typeof metadata?.width === 'number' ? { width: metadata.width } : {}),
+      ...(typeof metadata?.height === 'number' ? { height: metadata.height } : {}),
+    })
   }
-  return assets
+  return refs
 }
 
 export async function assembleServerBackedSendChat(args: {
@@ -207,12 +201,12 @@ export async function assembleServerBackedSendChat(args: {
   if (args.durable && (mode === 'send' || mode === 'continue' || mode === 'regenerate')) {
     input.durable = true
   }
-  // Ship browser-only inlay bytes so the server assembler can inline image/asset
-  // multimodals instead of dropping them. Asset-store bytes (`{{asset_prompt::}}`)
-  // are resolved server-side and need no client payload.
-  const inlayAssets = await collectServerInlayAssets(args.currentChat)
-  if (inlayAssets.length > 0) {
-    input.inlayAssets = inlayAssets
+  // New inlay tokens are server asset ids already. Legacy browser-local ids are
+  // uploaded before dispatch and sent as id->assetId aliases only; no inlay bytes
+  // ride the chat request anymore.
+  const inlayAssetRefs = await collectServerInlayAssetRefs(args.currentChat)
+  if (inlayAssetRefs.length > 0) {
+    input.inlayAssetRefs = inlayAssetRefs
   }
 
   const wantsServerDispatch = !args.preview && !args.previewPrompt

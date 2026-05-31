@@ -174,7 +174,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
       ? null
       : setInterval(() => {
           try {
-            runAssetGc(config.dataDir, assetGcOptions)
+            runAssetGc(config.dataDir, { ...assetGcOptions, db })
           } catch (err) {
             app.log.error({ err }, 'asset GC sweep failed')
           }

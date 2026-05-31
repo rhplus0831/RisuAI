@@ -902,8 +902,60 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(chat.message).toEqual([])
   })
 
-  it('inlines request inlayAssets into the assembled prompt multimodals (slice 3a)', async () => {
+  it('inlines server-owned inlay assets into the assembled prompt multimodals (slice 3a)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    const bytes = Buffer.from('server-inlay-bytes')
+    const upload = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'risu-auth': assertion, 'content-type': 'image/png' },
+      payload: bytes,
+    })
+    expect(upload.statusCode).toBe(201)
+    const assetId = upload.json().assetId as string
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithHistoryMessage(`look {{inlayeddata::${assetId}}}`),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const prompt = parseEvents(res.body).find((e) => e.type === 'prompt')!
+    const formated = prompt.data.formated as Array<{
+      role: string
+      content: unknown
+      multimodals?: unknown
+    }>
+    const userRow = formated.find(
+      (row) =>
+        row.role === 'user' && typeof row.content === 'string' && row.content.includes('look'),
+    )
+    // `processInlays` resolved the id from the server asset store and pushed bytes…
+    expect(userRow?.multimodals).toEqual([
+      { type: 'image', base64: `data:image/png;base64,${bytes.toString('base64')}` },
+    ])
+    // …and stripped the marker from the row text.
+    expect(userRow?.content).not.toContain(`{{inlayeddata::${assetId}}}`)
+  })
+
+  it('maps legacy request inlayAssetRefs to server-owned bytes without base64 payloads', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const bytes = Buffer.from('legacy-inlay-bytes')
+    const upload = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'risu-auth': assertion, 'content-type': 'image/png' },
+      payload: bytes,
+    })
+    expect(upload.statusCode).toBe(201)
+    const assetId = upload.json().assetId as string
     await seedDatabase(harness.app, assertion, dbWithHistoryMessage('look {{inlayeddata::abc}}'))
 
     const res = await harness.app.inject({
@@ -912,9 +964,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         ...basePayload,
-        inlayAssets: [
-          { id: 'abc', type: 'image', base64: 'data:image/png;base64,AAAA', width: 2, height: 3 },
-        ],
+        inlayAssetRefs: [{ id: 'abc', assetId }],
       },
     })
     expect(res.statusCode).toBe(200)
@@ -929,12 +979,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       (row) =>
         row.role === 'user' && typeof row.content === 'string' && row.content.includes('look'),
     )
-    // `processInlays` resolved the id from the request payload and pushed bytes…
     expect(userRow?.multimodals).toEqual([
-      { type: 'image', base64: 'data:image/png;base64,AAAA', width: 2, height: 3 },
+      { type: 'image', base64: `data:image/png;base64,${bytes.toString('base64')}` },
     ])
-    // …and stripped the marker from the row text.
-    expect(userRow?.content).not.toContain('{{inlayeddata::abc}}')
   })
 
   it('inlines a stored {{asset_prompt::}} asset into the prompt multimodals (slice 3a)', async () => {

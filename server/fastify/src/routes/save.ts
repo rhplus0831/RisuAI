@@ -105,6 +105,7 @@ export function registerSaveRoutes(
       const options = parseExportQuery(req.query)
       const risuBytes = encodeRepositoryRisuSaveExport(db, dataDir, options)
       const bundle = buildRepositoryRisuSaveBundleExport({
+        db,
         dataDir,
         risuBytes,
         envelope: options.envelope,
@@ -190,6 +191,6 @@ function applyImportedDatabase(
   replaceLegacyHypaV3MemoryRows(db, database)
   return {
     ...result,
-    assetReport: summarizeRisuSaveAssetReport(buildRepositoryRisuSaveAssetReport(dataDir)),
+    assetReport: summarizeRisuSaveAssetReport(buildRepositoryRisuSaveAssetReport(dataDir, db)),
   }
 }

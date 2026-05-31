@@ -875,6 +875,16 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       ;(DBState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
 
       await harness.seed(DBState.db)
+      const inlayUpload = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/assets',
+        headers: { 'risu-auth': harness.authAssertion, 'content-type': 'image/png' },
+        payload: Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+          'base64',
+        ),
+      })
+      expect(inlayUpload.statusCode).toBe(201)
       vi.stubGlobal('fetch', harness.fetch)
       harness.setDispatchText('I see a small image.')
 
@@ -883,14 +893,14 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       expect(ok).toBe(true)
 
-      // The browser resolved the inlay bytes the server lacks (localForage) and
-      // shipped them on the request so the server `getInlay` could return them.
+      // The browser resolved the legacy inlay id to a server asset id. Only the
+      // reference rides the request; the server reads bytes from its asset store.
       expect(harness.chatCalls).toHaveLength(1)
-      expect(harness.chatCalls[0].body.inlayAssets).toEqual([
+      expect(harness.chatCalls[0].body.inlayAssets).toBeUndefined()
+      expect(harness.chatCalls[0].body.inlayAssetRefs).toEqual([
         {
           id: 'test-image',
-          type: 'image',
-          base64: expect.stringContaining('data:image/png;base64,'),
+          assetId: '63ef318d96b5d0d0ceba6e04a4e622b1158335cdc67c49e27839132c6f655058',
           width: 1,
           height: 1,
         },

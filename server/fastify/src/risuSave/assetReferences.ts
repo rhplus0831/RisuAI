@@ -1,4 +1,10 @@
-import { type PersistedAsset, loadPersisted, isValidAssetId } from '../repository.js'
+import type { DatabaseSync } from 'node:sqlite'
+import {
+  type PersistedAsset,
+  isValidAssetId,
+  loadPersisted,
+  loadPersistedWithMessages,
+} from '../repository.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -16,8 +22,13 @@ export interface RisuSaveAssetReport {
   orphaned: PersistedAsset[]
 }
 
-export function buildRepositoryRisuSaveAssetReport(dataDir: string): RisuSaveAssetReport {
-  const persisted = loadPersisted(dataDir)
+const INLAY_TOKEN_RE = /\{\{(inlay|inlayed|inlayeddata)::(.+?)\}\}/g
+
+export function buildRepositoryRisuSaveAssetReport(
+  dataDir: string,
+  db?: DatabaseSync,
+): RisuSaveAssetReport {
+  const persisted = db ? loadPersistedWithMessages(db, dataDir) : loadPersisted(dataDir)
   return buildRisuSaveAssetReport(persisted.database, persisted.assets)
 }
 
@@ -89,6 +100,7 @@ function collectRisuSaveAssetReferences(database: unknown): RisuSaveAssetReferen
     addReference(found, record.image, `${prefix}.image`)
     addTupleReferences(found, record.emotionImages, `${prefix}.emotionImages`)
     addTupleReferences(found, record.additionalAssets, `${prefix}.additionalAssets`)
+    addChatInlayReferences(found, record.chats, `${prefix}.chats`)
     addCcAssetReferences(found, record.ccAssets, `${prefix}.ccAssets`)
     addVitsReferences(found, record.vits, `${prefix}.vits.files`)
     addReferenceList(found, record.prebuiltAssetExclude, `${prefix}.prebuiltAssetExclude`)
@@ -98,6 +110,26 @@ function collectRisuSaveAssetReferences(database: unknown): RisuSaveAssetReferen
   return [...found.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([id, paths]) => ({ id, paths: [...paths].sort() }))
+}
+
+function addChatInlayReferences(
+  found: Map<string, Set<string>>,
+  value: unknown,
+  label: string,
+): void {
+  readArray(value).forEach((chat, chatIndex) => {
+    const chatRecord = readRecord(chat)
+    if (!chatRecord) return
+    readArray(chatRecord.message).forEach((message, messageIndex) => {
+      const messageRecord = readRecord(message)
+      if (typeof messageRecord?.data !== 'string') return
+      for (const match of messageRecord.data.matchAll(INLAY_TOKEN_RE)) {
+        const tag = match[1]
+        const id = match[2]
+        addReference(found, id, `${label}[${chatIndex}].message[${messageIndex}].data.${tag}`)
+      }
+    })
+  })
 }
 
 function addTupleReferences(found: Map<string, Set<string>>, value: unknown, label: string): void {

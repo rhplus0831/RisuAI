@@ -64,7 +64,13 @@ import {
 } from './server/activeWriterSession'
 import { setCachedServerCommandRevision } from './server/commands'
 import { currentChatStateSnapshot, dispatchUpdateChat } from './chatCommands'
-import { readServerAssetBytes, serverAssetUrl } from './server/assets'
+import {
+  readServerAssetBytes,
+  serverAssetContentType,
+  serverAssetUrl,
+  uploadServerAsset,
+  SERVER_ASSET_CONTENT_TYPES,
+} from './server/assets'
 import { listServerBackups, restoreServerBackup } from './server/backups'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 
@@ -115,28 +121,6 @@ let fileCache: {
 } = {
   origin: [],
   res: [],
-}
-
-const SERVER_ASSET_CONTENT_TYPES: Record<string, string> = {
-  onnx: 'application/x-onnx',
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-  gif: 'image/gif',
-  avif: 'image/avif',
-  mp3: 'audio/mpeg',
-  wav: 'audio/wav',
-  ogg: 'audio/ogg',
-  weba: 'audio/webm',
-  webm: 'video/webm',
-  mp4: 'video/mp4',
-  svg: 'image/svg+xml',
-  css: 'text/css',
-  ttf: 'font/ttf',
-  otf: 'font/otf',
-  woff: 'font/woff',
-  woff2: 'font/woff2',
 }
 
 const SERVER_ASSET_BULK_MAX_ITEMS = 32
@@ -269,43 +253,6 @@ function assetExtensionFromFileName(fileName: string): string {
     fileExtension = fileName.split('.').pop()?.toLowerCase() ?? 'png'
   }
   return fileExtension
-}
-
-function serverAssetContentType(fileExtension: string): string {
-  const contentType = SERVER_ASSET_CONTENT_TYPES[fileExtension]
-  if (!contentType) {
-    throw new Error(`Unsupported server asset extension: ${fileExtension}`)
-  }
-  return contentType
-}
-
-async function uploadServerAsset(data: Uint8Array, fileExtension: string): Promise<string> {
-  const contentType = serverAssetContentType(fileExtension)
-  const auth = await getNodeServerProxyAuth()
-  const uploadBody = data.buffer.slice(
-    data.byteOffset,
-    data.byteOffset + data.byteLength,
-  ) as ArrayBuffer
-  const response = await fetch('/api/v1/assets', {
-    method: 'POST',
-    headers: {
-      'content-type': contentType,
-      'risu-auth': auth,
-      ...activeWriterSessionHeader(),
-    },
-    body: uploadBody,
-  })
-  if (!response.ok) {
-    handleActiveWriterStaleResponse(response)
-    const body = await response.text().catch(() => '')
-    throw new Error(body || `Failed to upload server asset: ${response.status}`)
-  }
-  const responseBody = (await response.json()) as { assetId?: unknown; revision?: unknown }
-  if (typeof responseBody.assetId !== 'string') {
-    throw new Error('Server asset upload response missing assetId')
-  }
-  advanceServerAssetRevision(responseBody.revision)
-  return responseBody.assetId
 }
 
 function chunkServerAssetUploads(

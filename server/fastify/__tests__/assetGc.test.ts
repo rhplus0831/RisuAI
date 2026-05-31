@@ -4,6 +4,8 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runAssetGc } from '../src/assetGc.js'
 import { assetsDir, loadPersisted, type PersistedAsset } from '../src/repository.js'
+import { openDatabase } from '../src/db.js'
+import { replaceAllChatMessages } from '../src/messageStore.js'
 
 const REFERENCED = 'a'.repeat(64)
 const SHARED = 'b'.repeat(64)
@@ -55,12 +57,7 @@ describe('runAssetGc', () => {
       JSON.stringify({
         _version: 1,
         database,
-        assets: [
-          asset(REFERENCED),
-          asset(SHARED),
-          asset(ORPHAN_OLD),
-          asset(ORPHAN_FRESH),
-        ],
+        assets: [asset(REFERENCED), asset(SHARED), asset(ORPHAN_OLD), asset(ORPHAN_FRESH)],
       }),
     )
     const refFile = writeAssetFile(REFERENCED, OLD_MTIME)
@@ -146,5 +143,42 @@ describe('runAssetGc', () => {
     expect(result.deletedAssetIds).toEqual([])
     expect(result.deletedStrayFiles).toEqual([])
     expect(loadPersisted(dataDir).assets).toEqual([asset(REFERENCED)])
+  })
+
+  it('keeps assets referenced only by SQLite chat-message inlay tokens', () => {
+    const database = { characters: [{ chaId: 'char-a', chats: [{ id: 'chat-a' }] }] }
+    writeFileSync(
+      path.join(dataDir, 'db.json'),
+      JSON.stringify({
+        _version: 1,
+        database,
+        assets: [asset(REFERENCED), asset(ORPHAN_OLD)],
+      }),
+    )
+    const referencedFile = writeAssetFile(REFERENCED, OLD_MTIME)
+    const orphanFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
+    const db = openDatabase(dataDir)
+    try {
+      replaceAllChatMessages(db, [
+        {
+          chatId: 'chat-a',
+          messages: [
+            {
+              chatId: 'message-a',
+              role: 'user',
+              data: `look {{inlayeddata::${REFERENCED}}}`,
+            },
+          ],
+        },
+      ])
+
+      const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+
+      expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
+      expect(existsSync(referencedFile)).toBe(true)
+      expect(existsSync(orphanFile)).toBe(false)
+    } finally {
+      db.close()
+    }
   })
 })

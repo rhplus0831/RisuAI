@@ -20,6 +20,7 @@ import {
 
 export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
   'application/x-onnx': 'onnx',
+  'application/x-risu-inlay-signature+json': 'json',
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
@@ -28,9 +29,11 @@ export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
   'audio/mpeg': 'mp3',
   'audio/wav': 'wav',
   'audio/ogg': 'ogg',
+  'audio/flac': 'flac',
   'audio/webm': 'weba',
   'video/mp4': 'mp4',
   'video/webm': 'webm',
+  'video/x-matroska': 'mkv',
   'image/svg+xml': 'svg',
   'text/css': 'css',
   'font/ttf': 'ttf',

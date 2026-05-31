@@ -44,8 +44,9 @@ function deriveMode(input: ServerPromptAssemblyInput): ServerPromptAssemblyMode 
 
 // Inlay / asset markers the local converter resolves into image/asset bytes
 // (`formatHistoryMessage.ts:76,85,154`). The server assembler resolves them too:
-// inlay bytes ride the request `inlayAssets`, and asset bytes come from the
-// server store. Only the non-vision caption case below remains unsupported.
+// inlay and asset bytes come from the server store. Legacy inlay ids can ride
+// the request as id aliases, but never as base64 bytes. Only the non-vision
+// caption case below remains unsupported.
 const INLAY_MARKER = /\{\{(?:inlay|inlayed|inlayeddata)::/i
 const ASSET_MARKER = /\{\{asset_?prompt::/i
 

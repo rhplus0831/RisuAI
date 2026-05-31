@@ -59,6 +59,13 @@ against the tree on 2026-05-31 (branch `fastify`).
   directly into `DBState.db.characters[...].chats[...].scriptstate[...]`. The
   client guard is backed by a focused test and a dedicated audit check
   (`A4R-devtool scriptstate command-backed`).
+- **Fastify-mode inlay bytes no longer remain browser-local.** Inlay images,
+  audio/video, and signature payloads created in server-backed mode are uploaded
+  through `/api/v1/assets` and referenced by content-addressed asset id. Legacy
+  browser-local inlay ids are uploaded once and sent to `/generate/chat` only as
+  id-to-asset-id aliases; prompt assembly resolves bytes from `data/assets/`.
+  Asset GC and bundle export now hydrate chat messages so inlay-token references
+  are counted with the rest of the asset graph.
 
 ---
 

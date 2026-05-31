@@ -20,6 +20,25 @@ export async function getInlayAsset(id: string) {
   return null
 }
 
+export async function getServerInlayAssetId(id: string) {
+  if (id === 'test-image') {
+    return '63ef318d96b5d0d0ceba6e04a4e622b1158335cdc67c49e27839132c6f655058'
+  }
+  return null
+}
+
+export async function getInlayAssetMetadata(id: string) {
+  if (id === 'test-image') {
+    return {
+      name: 'test-image.png',
+      type: 'image' as const,
+      width: 1,
+      height: 1,
+    }
+  }
+  return null
+}
+
 export async function getInlayAssetBlob(_id: string) {
   return null
 }

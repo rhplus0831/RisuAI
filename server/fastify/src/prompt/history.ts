@@ -1,24 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import type {
-  Chat,
-  Message,
-  character,
-} from '../../../../src/ts/storage/database.svelte'
-import type {
-  MultiModal,
-  OpenAIChat,
-} from '../../../../src/ts/process/index.svelte'
+import type { Chat, Message, character } from '../../../../src/ts/storage/database.svelte'
+import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { processScript } from './scripts.js'
-import {
-  getActiveModules,
-  getModuleAssets,
-} from './modules.js'
-import {
-  getDepthPrompts,
-  resolvePosition,
-  type LorebookActivationReport,
-} from './lorebook.js'
+import { getActiveModules, getModuleAssets } from './modules.js'
+import { getDepthPrompts, resolvePosition, type LorebookActivationReport } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { runStartTrigger, type TriggerRunResult } from './triggers.js'
@@ -56,8 +42,9 @@ import { runStartTrigger, type TriggerRunResult } from './triggers.js'
  *
  * Multimodal inlays + `{{asset_prompt::}}`. Adds an
  * `AssetLookup` DI seam so the route layer can resolve inlay ids and
- * asset names to `MultiModal` bytes from request-body `inlayAssets` and
- * the asset store. Defaults to a no-op lookup so prompt-leaf
+ * asset names to `MultiModal` bytes from the server asset store. Legacy
+ * inlay ids may be aliased by request metadata, but bytes stay server-owned.
+ * Defaults to a no-op lookup so prompt-leaf
  * tests can assert tag stripping without standing up the storage path.
  *
  * Inlay tag handling mirrors `formatHistoryMessage.ts:73-132`:
@@ -155,10 +142,7 @@ function pushMultimodal(arr: MultiModal[], m: MultiModal): void {
 const SEND_NAME_WRAPPER = `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>`
 const THOUGHTS_RE = /<Thoughts>(.+?)<\/Thoughts>/gms
 
-export function exampleMessage(
-  ctx: ExpandContext,
-  char: character,
-): OpenAIChat[] {
+export function exampleMessage(ctx: ExpandContext, char: character): OpenAIChat[] {
   const raw = char.exampleMessage ?? ''
   if (raw === '') return []
 
@@ -193,10 +177,7 @@ export function exampleMessage(
         content: trimmed.split(':', 2)[1].trimStart(),
         name: 'example_assistant',
       }
-    } else if (
-      lowered.startsWith('{{user}}:') ||
-      lowered.startsWith('<user>:')
-    ) {
+    } else if (lowered.startsWith('{{user}}:') || lowered.startsWith('<user>:')) {
       flush()
       current = {
         role: 'user',
@@ -355,12 +336,7 @@ async function formatHistoryMessage(
   )
   formatted = postThoughts
 
-  const assetResult = processAssetPrompts(
-    formatted,
-    currentChar,
-    moduleAssets,
-    assetLookup,
-  )
+  const assetResult = processAssetPrompts(formatted, currentChar, moduleAssets, assetLookup)
   formatted = assetResult.text
   for (const m of assetResult.multimodals) pushMultimodal(multimodals, m)
 
@@ -421,9 +397,7 @@ export async function buildHistoryWindow(
 ): Promise<HistoryWindowResult> {
   const db = ctx.database
   const messages: OpenAIChat[] = []
-  const moduleAssets = getModuleAssets(
-    getActiveModules(db, currentChar, currentChat),
-  )
+  const moduleAssets = getModuleAssets(getActiveModules(db, currentChar, currentChat))
   const { encoding, options } = tokenizerOptionsFromDb(db)
   let addedTokens = 0
 
@@ -470,8 +444,8 @@ export async function buildHistoryWindow(
     const fmIndex = currentChat.fmIndex ?? -1
     const firstMsgSource =
       fmIndex === -1
-        ? currentChar.firstMessage ?? ''
-        : currentChar.alternateGreetings?.[fmIndex] ?? ''
+        ? (currentChar.firstMessage ?? '')
+        : (currentChar.alternateGreetings?.[fmIndex] ?? '')
     const preExpanded = expandVariables(firstMsgSource, {
       ...ctx,
       chara: currentChar,
@@ -479,12 +453,7 @@ export async function buildHistoryWindow(
     // Lua `editprocess` no-op hook. The SPA threads the first message through
     // `processScript` with `chatID = -1`, so `runLuaEditTrigger` sees `{ index: -1 }`.
     const luaProcessed = await editProcess(preExpanded, -1)
-    let content = processScript(
-      ctx,
-      currentChar,
-      luaProcessed,
-      'editprocess',
-    )
+    let content = processScript(ctx, currentChar, luaProcessed, 'editprocess')
     const firstMessage: OpenAIChat = { role: 'assistant', content }
     if (usingPromptTemplate && db.promptSettings?.sendName) {
       firstMessage.content = `${currentChar.name}: ${content}`

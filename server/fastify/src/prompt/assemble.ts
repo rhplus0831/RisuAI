@@ -39,7 +39,7 @@ import {
   type AssetLookup,
   type EditProcessHook,
 } from './history.js'
-import { buildAssetLookup, type ResolveStoredAssetImage } from './assetLookup.js'
+import { buildAssetLookup, type ResolveStoredAsset } from './assetLookup.js'
 import { buildMemoryWindow } from './memory.js'
 import {
   assemblePromptMemoryRows,
@@ -97,12 +97,10 @@ export interface AssembleDeps {
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
   /**
    * Resolve a stored-asset reference (sha256 id or `assets/<id>.<ext>` path) to
-   * image bytes for `{{asset_prompt::}}` / the char icon. The route
-   * binds this to the on-disk assets store; absent, asset prompts drop their
-   * bytes (the pre-3a behavior). Inlay bytes ride the request `inlayAssets`, not
-   * this resolver.
+   * prompt multimodal bytes. The route binds this to the on-disk assets store;
+   * absent, asset and inlay prompts drop their bytes.
    */
-  resolveStoredAssetImage?: ResolveStoredAssetImage
+  resolveStoredAsset?: ResolveStoredAsset
 }
 
 export interface PromptMemoryChunkPlanningDiagnostics {
@@ -126,7 +124,10 @@ export interface AssembleInput {
   userMessage?: string
   resetMessages?: boolean
   expectedRevision?: number
+  /** Legacy compatibility only; Fastify inlay bytes should live in `/assets`. */
   inlayAssets?: unknown[]
+  /** Legacy browser-local inlay id -> server asset id aliases. */
+  inlayAssetRefs?: unknown[]
 }
 
 export type AssembleMutationSource =
@@ -342,8 +343,8 @@ export interface AssemblyState {
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
   /**
    * The non-empty asset lookup the history walk resolves inlay / asset bytes
-   * through. Built in `beginAssembly` from the request `inlayAssets` + the
-   * route's store resolver; falls back to `NO_ASSETS` when unset.
+   * through. Built in `beginAssembly` from the route's store resolver plus
+   * optional legacy inlay id aliases; falls back to `NO_ASSETS` when unset.
    */
   assetLookup?: AssetLookup
 }
@@ -442,7 +443,8 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
       currentChar,
       currentChat,
       inlayAssets: input.inlayAssets,
-      resolveStoredAssetImage: deps.resolveStoredAssetImage,
+      inlayAssetRefs: input.inlayAssetRefs,
+      resolveStoredAsset: deps.resolveStoredAsset,
     }),
   }
 }
@@ -1461,7 +1463,15 @@ async function applyEditOutput(
     editCtx,
   )
   out = expandVariables(out, { ...state.ctx, chara: state.currentChar }).text
-  out = processScript(state.ctx, state.currentChar, out, 'editoutput', {}, msgIndex, state.currentChat)
+  out = processScript(
+    state.ctx,
+    state.currentChar,
+    out,
+    'editoutput',
+    {},
+    msgIndex,
+    state.currentChat,
+  )
   if (varEngine.varChanged) {
     state.varChanged = true
     syncWorkingScriptstate(state)

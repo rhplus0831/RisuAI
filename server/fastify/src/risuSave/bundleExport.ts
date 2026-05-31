@@ -1,10 +1,7 @@
 import fs from 'node:fs'
+import type { DatabaseSync } from 'node:sqlite'
 import * as fflate from 'fflate'
-import {
-  type PersistedAsset,
-  assetPath,
-  loadPersisted,
-} from '../repository.js'
+import { type PersistedAsset, assetPath, loadPersistedWithMessages } from '../repository.js'
 import {
   type RisuSaveAssetReference,
   buildRisuSaveAssetReport,
@@ -34,6 +31,7 @@ export interface RisuSaveBundleManifest {
 }
 
 export interface RisuSaveBundleExportInput {
+  db: DatabaseSync
   dataDir: string
   risuBytes: Uint8Array
   envelope: string
@@ -52,7 +50,7 @@ const ASSET_PREFIX = 'assets'
 export function buildRepositoryRisuSaveBundleExport(
   input: RisuSaveBundleExportInput,
 ): RisuSaveBundleExport {
-  const persisted = loadPersisted(input.dataDir)
+  const persisted = loadPersistedWithMessages(input.db, input.dataDir)
   const report = buildRisuSaveAssetReport(persisted.database, persisted.assets)
   const assetsById = new Map(persisted.assets.map((asset) => [asset.id, asset]))
   const files: fflate.Zippable = {

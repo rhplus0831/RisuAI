@@ -162,6 +162,33 @@ describe('Phase 2C assets', () => {
     expect(Buffer.from(readFileSync(onDisk))).toEqual(bytes)
   })
 
+  it('preserves inlay signature upload metadata without using the JSON parser', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const bytes = Buffer.from(JSON.stringify({ source: 'gemini', signatures: [] }))
+    const sha = createHash('sha256').update(bytes).digest('hex')
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: {
+        'content-type': 'application/x-risu-inlay-signature+json',
+        'risu-auth': assertion,
+      },
+      payload: bytes,
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(res.json()).toEqual({
+      assetId: sha,
+      size: bytes.length,
+      contentType: 'application/x-risu-inlay-signature+json',
+      revision: 1,
+    })
+    const onDisk = path.join(harness.dataDir, 'assets', `${sha}.json`)
+    expect(existsSync(onDisk)).toBe(true)
+    expect(Buffer.from(readFileSync(onDisk))).toEqual(bytes)
+  })
+
   it('emits an asset.created event with the bumped revision only for new assets', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
 

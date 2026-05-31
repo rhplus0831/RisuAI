@@ -50,6 +50,7 @@ import type { GenerationJobRegistry } from '../generationJobs.js'
 import type { JobClient, StreamJob } from '../streamJobs.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
+const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
 
 interface ChatRequestBody {
   chatId?: unknown
@@ -62,6 +63,7 @@ interface ChatRequestBody {
   resetMessages?: unknown
   expectedRevision?: unknown
   inlayAssets?: unknown
+  inlayAssetRefs?: unknown
   clientCapabilities?: unknown
   durable?: unknown
 }
@@ -135,6 +137,9 @@ function validate(body: ChatRequestBody): { ok: true } | { ok: false; error: str
   if (body.inlayAssets !== undefined && !Array.isArray(body.inlayAssets)) {
     return { ok: false, error: 'inlayAssets must be an array when provided' }
   }
+  if (body.inlayAssetRefs !== undefined && !Array.isArray(body.inlayAssetRefs)) {
+    return { ok: false, error: 'inlayAssetRefs must be an array when provided' }
+  }
   if (body.durable !== undefined && typeof body.durable !== 'boolean') {
     return { ok: false, error: 'durable must be a boolean when provided' }
   }
@@ -163,6 +168,9 @@ function validatePreview(body: ChatRequestBody): { ok: true } | { ok: false; err
   }
   if (body.inlayAssets !== undefined && !Array.isArray(body.inlayAssets)) {
     return { ok: false, error: 'inlayAssets must be an array when provided' }
+  }
+  if (body.inlayAssetRefs !== undefined && !Array.isArray(body.inlayAssetRefs)) {
+    return { ok: false, error: 'inlayAssetRefs must be an array when provided' }
   }
   return { ok: true }
 }
@@ -194,6 +202,7 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
     resetMessages: typeof body.resetMessages === 'boolean' ? body.resetMessages : undefined,
     expectedRevision: typeof body.expectedRevision === 'number' ? body.expectedRevision : undefined,
     inlayAssets: Array.isArray(body.inlayAssets) ? body.inlayAssets : undefined,
+    inlayAssetRefs: Array.isArray(body.inlayAssetRefs) ? body.inlayAssetRefs : undefined,
   }
 }
 
@@ -230,7 +239,19 @@ function assetIdFromReference(reference: string): string | null {
  * stored content-type. Returns `undefined` for an unresolvable reference so the
  * marker is stripped without bytes when assets are missing.
  */
-function resolveStoredAssetImage(dataDir: string, reference: string): MultiModal | undefined {
+function multimodalTypeFromContentType(contentType: string): MultiModal['type'] | null {
+  if (contentType === SERVER_INLAY_SIGNATURE_CONTENT_TYPE) return 'signature'
+  if (contentType.startsWith('image/')) return 'image'
+  if (contentType.startsWith('audio/')) return 'audio'
+  if (contentType.startsWith('video/')) return 'video'
+  return null
+}
+
+function resolveStoredAsset(
+  dataDir: string,
+  reference: string,
+  purpose: 'asset_prompt' | 'inlay',
+): MultiModal | undefined {
   const id = assetIdFromReference(reference)
   if (!id) return undefined
   const entry = assetById(dataDir, id)
@@ -238,7 +259,15 @@ function resolveStoredAssetImage(dataDir: string, reference: string): MultiModal
   const file = assetPath(dataDir, entry)
   if (!fs.existsSync(file)) return undefined
   const bytes = fs.readFileSync(file)
-  return { type: 'image', base64: `data:image/png;base64,${bytes.toString('base64')}` }
+  if (purpose === 'asset_prompt') {
+    return { type: 'image', base64: `data:image/png;base64,${bytes.toString('base64')}` }
+  }
+  const type = multimodalTypeFromContentType(entry.contentType)
+  if (!type) return undefined
+  if (type === 'signature') {
+    return { type, base64: bytes.toString('utf8') }
+  }
+  return { type, base64: `data:${entry.contentType};base64,${bytes.toString('base64')}` }
 }
 
 function loadDatabaseDeps(dataDir: string, db: DatabaseSync): RouteAssembleDeps {
@@ -251,7 +280,7 @@ function loadDatabaseDeps(dataDir: string, db: DatabaseSync): RouteAssembleDeps 
     loadMemoryDatabase: () => db,
     loadPromptMemoryQueryVectors: () => [],
     getDatabase: () => database,
-    resolveStoredAssetImage: (reference) => resolveStoredAssetImage(dataDir, reference),
+    resolveStoredAsset: (reference, purpose) => resolveStoredAsset(dataDir, reference, purpose),
   }
 }
 
@@ -335,8 +364,7 @@ function persistAssemblyMutations(args: {
     }
   }
   const hasVarWrite = Object.keys(patch).length > 0 || deleteKeys.length > 0
-  const persistMessages =
-    !!args.submitTranscriptChanged && Array.isArray(args.submitMessages)
+  const persistMessages = !!args.submitTranscriptChanged && Array.isArray(args.submitMessages)
   if (!hasVarWrite && !persistMessages) return undefined
 
   const { revision: baseRevision } = getSchemaState(args.db)
@@ -422,8 +450,7 @@ function resolveInlineGenerationMessage(args: {
   )
   return {
     message,
-    targetMessageId:
-      args.input.mode === 'regenerate' ? args.input.regenerateMessageId : undefined,
+    targetMessageId: args.input.mode === 'regenerate' ? args.input.regenerateMessageId : undefined,
   }
 }
 
@@ -472,8 +499,7 @@ function buildRawModeMessage(args: {
       generationInfo: args.generationInfo,
       promptInfo: args.promptInfo,
     }),
-    targetMessageId:
-      args.input.mode === 'regenerate' ? args.input.regenerateMessageId : undefined,
+    targetMessageId: args.input.mode === 'regenerate' ? args.input.regenerateMessageId : undefined,
   }
 }
 
@@ -574,14 +600,16 @@ async function buildPostGenerationFrame(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
 }): Promise<PostGenerationFrame | undefined> {
-  const { postGen, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult({
-    state: args.state,
-    input: args.input,
-    completionText: args.completionText,
-    generationId: args.generationId,
-    generationInfo: args.generationInfo,
-    promptInfo: args.promptInfo,
-  })
+  const { postGen, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult(
+    {
+      state: args.state,
+      input: args.input,
+      completionText: args.completionText,
+      generationId: args.generationId,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+    },
+  )
 
   let revision: number
   try {
@@ -1034,14 +1062,16 @@ async function buildDurablePostGeneration(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
 }): Promise<PostGenerationFrame | undefined> {
-  const { postGen, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult({
-    state: args.state,
-    input: args.input,
-    completionText: args.completionText,
-    generationId: args.generationId,
-    generationInfo: args.generationInfo,
-    promptInfo: args.promptInfo,
-  })
+  const { postGen, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult(
+    {
+      state: args.state,
+      input: args.input,
+      completionText: args.completionText,
+      generationId: args.generationId,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+    },
+  )
 
   let revision: number
   try {
@@ -1055,7 +1085,10 @@ async function buildDurablePostGeneration(args: {
       targetMessageId,
     })
   } catch (err) {
-    args.emit({ type: 'error', error: errorMessage(err, 'failed to persist the generation result') })
+    args.emit({
+      type: 'error',
+      error: errorMessage(err, 'failed to persist the generation result'),
+    })
     return undefined
   }
 
@@ -1405,18 +1438,15 @@ export function registerGenerationChatRoutes(
   // Reattach to a running, or done-within-grace, durable generation over SSE.
   // Observe is open to any authenticated client; completed jobs are read back via
   // the normal projection refresh.
-  app.get<{ Params: { id: string } }>(
-    '/api/v1/generate/chat/:id/stream',
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
-      const job = generationJobs.registry.get(req.params.id)
-      if (!job) {
-        reply.code(404).send({ error: 'Job not found' })
-        return
-      }
-      attachGenerationViewer(req, reply, generationJobs, job)
-    },
-  )
+  app.get<{ Params: { id: string } }>('/api/v1/generate/chat/:id/stream', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    const job = generationJobs.registry.get(req.params.id)
+    if (!job) {
+      reply.code(404).send({ error: 'Job not found' })
+      return
+    }
+    attachGenerationViewer(req, reply, generationJobs, job)
+  })
 
   // Explicit cancel is authorized by the current active writer. It aborts provider
   // dispatch; the runner persists the streaming-so-far text and clears the

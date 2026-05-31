@@ -17,7 +17,10 @@ runtime state directly.
 Asset ids are lowercase sha256 hex strings. Asset bytes live at
 `data/assets/<sha256>.<ext>` and metadata lives in the `assets` array inside
 `data/db.json`. `repository.ts` maps supported content types to stable file
-extensions and dedupes by content hash.
+extensions and dedupes by content hash. Fastify-mode inlay media and signature
+payloads use this same store; new inlay tokens carry the asset id directly, and
+legacy browser-local inlay ids are mapped to asset ids without sending base64
+bytes in `/generate/chat`.
 
 `POST /api/v1/assets` accepts raw bytes of supported asset content types. The
 asset parser is installed globally from `buildApp()` for the supported asset
@@ -39,9 +42,11 @@ used by `.risu` export, then removes unreferenced asset metadata and stray asset
 files. A grace window based on file mtime protects the upload-then-reference
 race where bytes are uploaded in one request and referenced by a later command.
 
-`buildApp()` wires a periodic GC timer unless tests pass `assetGc: false`. Asset
-GC does not bump the revision or emit a command event because it only removes
-bytes that the projected database no longer references.
+`buildApp()` wires a periodic GC timer unless tests pass `assetGc: false`. The
+GC pass hydrates SQLite chat messages before walking references so inlay tokens
+inside chat history protect their server assets. Asset GC does not bump the
+revision or emit a command event because it only removes bytes that the
+projected database no longer references.
 
 ## `.risu` Import And Export
 

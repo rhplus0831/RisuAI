@@ -43,7 +43,10 @@ export interface ServerChatInput {
   loadoutId?: string
   resetMessages?: boolean
   expectedRevision?: number
+  /** Legacy compatibility only; Fastify inlay bytes should live in `/assets`. */
   inlayAssets?: unknown[]
+  /** Legacy browser-local inlay id -> server asset id aliases. */
+  inlayAssetRefs?: unknown[]
   /**
    * When set, the server runs this as a detached, reconnectable job and persists
    * the result itself, so the browser suppresses its own generation-result persist.
