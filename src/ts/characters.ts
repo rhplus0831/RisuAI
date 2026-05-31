@@ -28,7 +28,13 @@ import {
 } from './util'
 import { v4 as uuidv4, v4 } from 'uuid'
 import { getImageType } from './media'
-import { DBState, MobileGUIStack, OpenRealmStore, selectedCharID } from './stores.svelte'
+import {
+  DBState,
+  MobileGUIStack,
+  OpenRealmStore,
+  botMakerMode,
+  selectedCharID,
+} from './stores.svelte'
 import {
   AppendableBuffer,
   changeChatTo,
@@ -963,6 +969,7 @@ export async function changeChar(
     return
   }
   reseter()
+  botMakerMode.set(false)
   if (DBState.db.characters?.[index]?.coldstorage) {
     if (isFastifyServer) {
       alertError('Cold-storage character hydration is not supported in server-backed web mode yet')

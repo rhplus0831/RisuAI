@@ -65,6 +65,25 @@ export function ensureClientTriggerDefinitionIds(triggers: triggerscript[]): tri
 }
 
 export function ensureAllClientScriptDefinitionIds(): void {
+  let needsUpdate = false
+  for (const character of DBState.db.characters ?? []) {
+    needsUpdate ||= needsScriptDefinitionIds(character.customscript ?? [])
+    needsUpdate ||= needsTriggerDefinitionIds(character.triggerscript ?? [])
+    if (needsUpdate) break
+  }
+  if (!needsUpdate) {
+    for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
+      if (Array.isArray(module.regex)) {
+        needsUpdate ||= needsScriptDefinitionIds(module.regex)
+      }
+      if (Array.isArray(module.trigger)) {
+        needsUpdate ||= needsTriggerDefinitionIds(module.trigger)
+      }
+      if (needsUpdate) break
+    }
+  }
+  if (!needsUpdate) return
+
   withTrustedServerProjectionWrite(() => {
     for (const character of DBState.db.characters ?? []) {
       character.customscript = ensureClientScriptDefinitionIds(character.customscript ?? [])
@@ -79,6 +98,14 @@ export function ensureAllClientScriptDefinitionIds(): void {
       }
     }
   })
+}
+
+function needsScriptDefinitionIds(scripts: customscript[]): boolean {
+  return (scripts ?? []).some((script) => !(typeof script.id === 'string' && script.id.trim()))
+}
+
+function needsTriggerDefinitionIds(triggers: triggerscript[]): boolean {
+  return (triggers ?? []).some((trigger) => !(typeof trigger.id === 'string' && trigger.id.trim()))
 }
 
 export function dispatchReplaceCharacterScripts(

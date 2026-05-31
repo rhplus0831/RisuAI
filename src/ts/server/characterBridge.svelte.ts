@@ -3,7 +3,6 @@ import { get } from 'svelte/store'
 import {
   CHARACTER_PATCH_EXCLUDED_KEYS,
   cloneJsonValue,
-  currentCharacterStateSnapshot,
   dispatchUpdateCharacter,
   restoreCharacterState,
   sanitizeCharacterPatch,
@@ -107,13 +106,11 @@ export function watchServerBackedCharacterProfile(
   let initialized = false
   let previousSelected = -1
   let previousProfileSnapshot = ''
-  let previousState = currentCharacterStateSnapshot()
 
   const stop = $effect.root(() => {
     $effect(() => {
       const index = get(selectedCharID)
       const character = DBState.db.characters?.[index]
-      const currentState = currentCharacterStateSnapshot()
       const currentProfile = character
         ? scalarCharacterProfile(character as unknown as Record<string, unknown>)
         : {}
@@ -123,7 +120,6 @@ export function watchServerBackedCharacterProfile(
         initialized = true
         previousSelected = index
         previousProfileSnapshot = currentProfileSnapshot
-        previousState = currentState
         return
       }
 
@@ -132,18 +128,24 @@ export function watchServerBackedCharacterProfile(
         currentProfileSnapshot === previousProfileSnapshot ||
         !character.chaId
       ) {
-        previousState = currentState
+        if (suppressRollbackDispatch) {
+          previousProfileSnapshot = currentProfileSnapshot
+        }
         return
       }
 
       const previousProfile = JSON.parse(previousProfileSnapshot) as CharacterSnapshot
       const patch = changedProfileFields(previousProfile, currentProfile)
       if (Object.keys(patch).length > 0) {
+        const previousState = selectedCharacterProfileSnapshot(
+          character.chaId,
+          previousProfile,
+          get(selectedCharID),
+        )
         untrack(() => queueCharacterPatch(character.chaId, patch, previousState, delayMs))
       }
 
       previousProfileSnapshot = currentProfileSnapshot
-      previousState = currentState
     })
   })
 
@@ -190,7 +192,27 @@ function queueCharacterPatch(
 }
 
 function scalarCharacterProfile(character: Record<string, unknown>): CharacterSnapshot {
-  return sanitizeCharacterPatch(cloneJsonValue(character) as CharacterSnapshot)
+  const profile: CharacterSnapshot = {}
+  for (const [key, value] of Object.entries(character)) {
+    if (CHARACTER_PATCH_EXCLUDED_KEYS.has(key) || value === undefined) continue
+    profile[key] = cloneJsonValue(value)
+  }
+  return profile
+}
+
+function selectedCharacterProfileSnapshot(
+  characterId: string,
+  profile: CharacterSnapshot,
+  selected: number,
+): CharacterStateSnapshot {
+  return {
+    characters: [],
+    characterOrder: [],
+    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    selectedCharID: selected,
+    profileCharacterId: characterId,
+    profile,
+  } as CharacterStateSnapshot
 }
 
 function changedProfileFields(
@@ -332,9 +354,24 @@ function snapshotJson(value: unknown): string {
 }
 
 export function rollbackServerBackedCharacterProfile(snapshot: CharacterStateSnapshot): void {
+  const profileSnapshot = snapshot as CharacterStateSnapshot & {
+    profileCharacterId?: string
+    profile?: CharacterSnapshot
+  }
+
   suppressRollbackDispatch = true
   try {
-    restoreCharacterState(snapshot)
+    if (profileSnapshot.profileCharacterId && profileSnapshot.profile) {
+      withTrustedServerProjectionWrite(() => {
+        const character = DBState.db.characters?.find(
+          (candidate) => candidate.chaId === profileSnapshot.profileCharacterId,
+        )
+        if (!character) return
+        Object.assign(character, cloneJsonValue(profileSnapshot.profile))
+      })
+    } else {
+      restoreCharacterState(snapshot)
+    }
   } finally {
     queueMicrotask(() => {
       suppressRollbackDispatch = false

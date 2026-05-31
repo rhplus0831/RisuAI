@@ -211,20 +211,42 @@
     localNote: '',
     charaNote: '',
   }
+  let tokenizeRun = 0
 
-  async function loadTokenize(desc: string | null, firstMsg: string | null, localNote: string) {
+  async function loadTokenize(
+    desc: string | null,
+    firstMsg: string | null,
+    localNote: string,
+    run: number,
+  ) {
     if (desc !== null && lasttokens.desc !== desc) {
+      const count = await tokenizeAccurate(desc)
+      if (run !== tokenizeRun) return
       lasttokens.desc = desc
-      tokens.desc = await tokenizeAccurate(desc)
+      tokens.desc = count
     }
     if (firstMsg !== null && lasttokens.firstMsg !== firstMsg) {
+      const count = await tokenizeAccurate(firstMsg)
+      if (run !== tokenizeRun) return
       lasttokens.firstMsg = firstMsg
-      tokens.firstMsg = await tokenizeAccurate(firstMsg)
+      tokens.firstMsg = count
     }
     if (lasttokens.localNote !== localNote) {
+      const count = await tokenizeAccurate(localNote)
+      if (run !== tokenizeRun) return
       lasttokens.localNote = localNote
-      tokens.localNote = await tokenizeAccurate(localNote)
+      tokens.localNote = count
     }
+  }
+
+  function scheduleTokenize(desc: string | null, firstMsg: string | null, localNote: string) {
+    const run = ++tokenizeRun
+    setTimeout(() => {
+      requestAnimationFrame(() => {
+        if (run !== tokenizeRun) return
+        void loadTokenize(desc, firstMsg, localNote, run)
+      })
+    }, 0)
   }
 
   let assetFileExtensions: string[] = $state([])
@@ -242,7 +264,7 @@
     const localNote = chara.chats[chara.chatPage].note
 
     untrack(() => {
-      loadTokenize(desc, firstMsg, localNote)
+      scheduleTokenize(desc, firstMsg, localNote)
     })
   })
 
@@ -1108,10 +1130,7 @@
         <span class="text-textcolor">Web Speech isn't supported in your browser or OS</span>
       {:else}
         <span class="text-textcolor">{language.Speech}</span>
-        <SelectInput
-          className="mb-4 mt-2"
-          bind:value={characterDraft.value.ttsSpeech}
-        >
+        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.ttsSpeech}>
           <OptionInput value="">Auto</OptionInput>
           {#each getWebSpeechTTSVoices() as voice}
             <OptionInput value={voice}>{voice}</OptionInput>
@@ -1131,10 +1150,7 @@
       >
       {#await getElevenTTSVoices() then voices}
         <span class="text-textcolor">{language.Speech}</span>
-        <SelectInput
-          className="mb-4 mt-2"
-          bind:value={characterDraft.value.ttsSpeech}
-        >
+        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.ttsSpeech}>
           <OptionInput value="">Unset</OptionInput>
           {#each voices as voice}
             <OptionInput value={voice.voice_id}>{voice.name}</OptionInput>
@@ -1143,10 +1159,7 @@
       {/await}
     {:else if characterDraft.value.ttsMode === 'VOICEVOX'}
       <span class="text-textcolor">Speaker</span>
-      <SelectInput
-        className="mb-4 mt-2"
-        bind:value={characterDraft.value.voicevoxConfig.speaker}
-      >
+      <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.voicevoxConfig.speaker}>
         {#await getVOICEVOXVoices() then voices}
           {#each voices as voice}
             <OptionInput
@@ -1159,14 +1172,9 @@
       </SelectInput>
       {#if characterDraft.value.voicevoxConfig.speaker}
         <span class="text=neutral-200">Style</span>
-        <SelectInput
-          className="mb-4 mt-2"
-          bind:value={characterDraft.value.ttsSpeech}
-        >
+        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.ttsSpeech}>
           {#each JSON.parse(characterDraft.value.voicevoxConfig.speaker) as styles}
-            <OptionInput
-              value={styles.id}
-              selected={characterDraft.value.ttsSpeech === styles.id}
+            <OptionInput value={styles.id} selected={characterDraft.value.ttsSpeech === styles.id}
               >{styles.name}</OptionInput
             >
           {/each}
@@ -1208,10 +1216,7 @@
       <Check bind:check={characterDraft.value.naittsConfig.customvoice} />
       {#if !characterDraft.value.naittsConfig.customvoice}
         <span class="text-textcolor">Voice</span>
-        <SelectInput
-          className="mb-4 mt-2"
-          bind:value={characterDraft.value.naittsConfig.voice}
-        >
+        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.naittsConfig.voice}>
           {#await getNovelAIVoices() then voices}
             {#each voices as voiceGroup}
               <optgroup label={voiceGroup.gender} class="bg-darkbg appearance-none">
@@ -1228,26 +1233,17 @@
         </SelectInput>
       {:else}
         <span class="text-textcolor">Voice</span>
-        <TextInput
-          size={'sm'}
-          bind:value={characterDraft.value.naittsConfig.voice}
-        />
+        <TextInput size={'sm'} bind:value={characterDraft.value.naittsConfig.voice} />
       {/if}
       <span class="text-textcolor">Version</span>
-      <SelectInput
-        className="mb-4 mt-2"
-        bind:value={characterDraft.value.naittsConfig.version}
-      >
+      <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.naittsConfig.version}>
         <OptionInput value="v1">v1</OptionInput>
         <OptionInput value="v2">v2</OptionInput>
       </SelectInput>
     {:else if characterDraft.value.ttsMode === 'openai'}
       <span class="text-textcolor">Voice</span>
       {#if !characterDraft.value.oaiTTSConfig?.enabled}
-        <SelectInput
-          className="mb-4 mt-2"
-          bind:value={characterDraft.value.oaiVoice}
-        >
+        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.oaiVoice}>
           <OptionInput value="">Unset</OptionInput>
           {#each oaiVoices as voice}
             <OptionInput value={voice}>{voice}</OptionInput>
@@ -1288,10 +1284,7 @@
         />
 
         <span class="text-textcolor">Response Format</span>
-        <SelectInput
-          className="mb-4 mt-2"
-          bind:value={characterDraft.value.oaiTTSConfig.format}
-        >
+        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.oaiTTSConfig.format}>
           <OptionInput value="mp3">mp3</OptionInput>
           <OptionInput value="opus">opus</OptionInput>
           <OptionInput value="aac">aac</OptionInput>
@@ -1302,10 +1295,7 @@
       {/if}
     {:else if characterDraft.value.ttsMode === 'huggingface'}
       <span class="text-textcolor">Model</span>
-      <TextInput
-        className="mb-4 mt-2"
-        bind:value={characterDraft.value.hfTTS.model}
-      />
+      <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.hfTTS.model} />
 
       <span class="text-textcolor">Language</span>
       <TextInput
@@ -1315,9 +1305,7 @@
       />
     {:else if characterDraft.value.ttsMode === 'vits'}
       {#if characterDraft.value.vits}
-        <span class="text-textcolor"
-          >{characterDraft.value.vits.name ?? 'Unnamed VitsModel'}</span
-        >
+        <span class="text-textcolor">{characterDraft.value.vits.name ?? 'Unnamed VitsModel'}</span>
       {:else}
         <span class="text-textcolor">No Model</span>
       {/if}
@@ -1341,10 +1329,7 @@
         bind:value={characterDraft.value.gptSoVitsConfig.volume}
       />
       <span class="text-textcolor">URL</span>
-      <TextInput
-        className="mb-4 mt-2"
-        bind:value={characterDraft.value.gptSoVitsConfig.url}
-      />
+      <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.url} />
 
       <span class="text-textcolor">Use Auto Path</span>
       <Check bind:check={characterDraft.value.gptSoVitsConfig.use_auto_path} />
@@ -1510,10 +1495,7 @@
       />
 
       <span class="mt-2 text-textcolor">Normalize</span>
-      <Check
-        className="mb-4 mt-2"
-        bind:check={characterDraft.value.fishSpeechConfig.normalize}
-      />
+      <Check className="mb-4 mt-2" bind:check={characterDraft.value.fishSpeechConfig.normalize} />
     {/if}
     {#if characterDraft.value.ttsMode}
       <div class="flex items-center mt-2">
@@ -1655,17 +1637,11 @@
   <span class="text-textcolor mt-2"
     >{language.defaultVariables} <Help key="defaultVariables" /></span
   >
-  <TextAreaInput
-    margin="both"
-    autocomplete="off"
-    bind:value={characterDraft.value.defaultVariables}
+  <TextAreaInput margin="both" autocomplete="off" bind:value={characterDraft.value.defaultVariables}
   ></TextAreaInput>
 
   <span class="text-textcolor mt-2">{language.translatorNote} <Help key="translatorNote" /></span>
-  <TextAreaInput
-    margin="both"
-    autocomplete="off"
-    bind:value={characterDraft.value.translatorNote}
+  <TextAreaInput margin="both" autocomplete="off" bind:value={characterDraft.value.translatorNote}
   ></TextAreaInput>
 
   <span class="text-textcolor">{language.creator}</span>
@@ -1676,26 +1652,15 @@
   />
 
   <span class="text-textcolor">{language.CharVersion}</span>
-  <TextInput
-    size="sm"
-    bind:value={characterDraft.value.additionalData.character_version}
-  />
+  <TextInput size="sm" bind:value={characterDraft.value.additionalData.character_version} />
 
   <span class="text-textcolor">{language.nickname} <Help key="nickname" /></span>
   <TextInput size="sm" bind:value={characterDraft.value.nickname} />
 
   <span class="text-textcolor">{language.depthPrompt}</span>
   <div class="flex justify-center items-center">
-    <NumberInput
-      size="sm"
-      bind:value={characterDraft.value.depth_prompt.depth}
-      className="w-12"
-    />
-    <TextInput
-      size="sm"
-      bind:value={characterDraft.value.depth_prompt.prompt}
-      className="flex-1"
-    />
+    <NumberInput size="sm" bind:value={characterDraft.value.depth_prompt.depth} className="w-12" />
+    <TextInput size="sm" bind:value={characterDraft.value.depth_prompt.prompt} className="flex-1" />
   </div>
 
   <span class="text-textcolor mt-2">{language.altGreet}</span>
