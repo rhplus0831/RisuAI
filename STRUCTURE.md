@@ -46,29 +46,30 @@ phase scope docs, and design references.
 
 ## Top-Level Map
 
-| Path                                                                                 | Purpose                                                                                                          |
-| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`                              | pnpm scripts, dependencies, install policy, and the locked dependency graph.                                     |
-| `index.html`, `vite.config.ts`, `src/`                                               | Svelte 5 browser app and Vite build/dev configuration.                                                           |
-| `src/etc/`                                                                           | Bundled app media, CBS docs, patch notes, and tokenizer seed data imported by the client.                        |
-| `server/fastify/`                                                                    | Fastify API, persistence, prompt assembly, generation, memory, server tests, browser smoke.                      |
-| `public/`                                                                            | Static source assets copied by Vite; `public/token/` is vendor tokenizer data.                                   |
-| `resources/`                                                                         | App icon and splash image resources.                                                                             |
-| `tsconfig*.json`, `vitest*.ts`, `playwright*.ts`                                     | TypeScript, Vitest, and Playwright configuration.                                                                |
-| `.prettierrc.json`, `.prettierignore`                                                | Prettier formatting policy.                                                                                      |
-| `util/client-thinning-audit.ts`, `util/client-thinning-audit.test.ts`                | ts-morph architecture invariant audit and its regression tests.                                                  |
-| `util/client-thinning-audit-fixtures/`                                               | Fixture corpus for the architecture audit; source-like test data, not runtime code.                              |
-| `util/risuUserscript.user.js`                                                        | Risu userscript bridge exposing `GM_fetch` for cross-origin browser requests.                                    |
-| `Dockerfile`, `docker-compose.yml`                                                   | Container build/run path.                                                                                        |
-| `README.md`, `plugins.md`, `version.json`, `LICENSE`                                 | Project-facing docs, plugin notes, packaged version metadata, and license.                                       |
-| `AGENTS.md`, `CLAUDE.md`, `HANDOVER.md`                                              | Local agent/handoff instructions and context.                                                                    |
-| `.github/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.dockerignore`    | Repository automation, editor recommendations, install policy, merge attributes, and ignore/container rules.     |
-| `docs/structure/`                                                                    | Focused present-tense structure notes.                                                                           |
-| `docs/FASTIFY-REPORT.md`, `docs/SERVER-AND-CLIENT*.md`                               | Dated Fastify ownership, responsibility, and protocol audit reports.                                             |
-| `docs/plan/`                                                                         | Server/client protocol stability and performance plan plus phase slices.                                         |
-| `docs/leftover.md`                                                                   | Live tracker of intentionally-deferred items across the closed workstreams.                                      |
-| `docs/archive/`                                                                      | Closed workstream records: Fastify, client thinning, durable generation, and lazy projection.                    |
-| `dist/`, `data/`, `node_modules/`, `test-results/`, `scripts/`, `.idea/`, `.claude/` | Generated, installed, ignored scratch, local runtime/test output, or local editor/agent state; do not hand-edit. |
+| Path                                                                                 | Purpose                                                                                                              |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`                              | pnpm scripts, dependencies, install policy, and the locked dependency graph.                                         |
+| `index.html`, `vite.config.ts`, `src/`                                               | Svelte 5 browser app and Vite build/dev configuration.                                                               |
+| `src/etc/`                                                                           | Bundled app media, CBS docs, patch notes, and tokenizer seed data imported by the client.                            |
+| `server/fastify/`                                                                    | Fastify API, persistence, prompt assembly, generation, memory, server tests, browser smoke.                          |
+| `public/`                                                                            | Static source assets copied by Vite; `public/token/` is vendor tokenizer data.                                       |
+| `resources/`                                                                         | App icon and splash image resources.                                                                                 |
+| `tsconfig*.json`, `vitest*.ts`, `playwright*.ts`                                     | TypeScript, Vitest, and Playwright configuration.                                                                    |
+| `.prettierrc.json`, `.prettierignore`                                                | Prettier formatting policy.                                                                                          |
+| `util/client-thinning-audit.ts`, `util/client-thinning-audit.test.ts`                | ts-morph architecture invariant audit and its regression tests.                                                      |
+| `util/client-thinning-audit-fixtures/`                                               | Fixture corpus for the architecture audit; source-like test data, not runtime code.                                  |
+| `util/risuUserscript.user.js`                                                        | Risu userscript bridge exposing `GM_fetch` for cross-origin browser requests.                                        |
+| `Dockerfile`, `docker-compose.yml`                                                   | Container build/run path.                                                                                            |
+| `README.md`, `plugins.md`, `version.json`, `LICENSE`                                 | Project-facing docs, plugin notes, packaged version metadata, and license.                                           |
+| `AGENTS.md`, `CLAUDE.md`, `HANDOVER.md`                                              | Local agent/handoff instructions and context.                                                                        |
+| `.github/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.dockerignore`    | Repository automation, editor recommendations, install policy, merge attributes, and ignore/container rules.         |
+| `docs/structure/`                                                                    | Focused present-tense structure notes.                                                                               |
+| `docs/FASTIFY-REPORT.md`, `docs/SERVER-AND-CLIENT*.md`                               | Dated Fastify ownership, responsibility, and protocol audit reports.                                                 |
+| `docs/plan/`                                                                         | Canonical server/client protocol stability and performance plan; `status.md` and `next-steps.md` route phase slices. |
+| `docs/server-client-protocol-stability-performance/`                                 | Compatibility entry for the merged protocol stability/performance workstream; points back to `docs/plan/`.           |
+| `docs/leftover.md`                                                                   | Live tracker of intentionally-deferred items across the closed workstreams.                                          |
+| `docs/archive/`                                                                      | Closed workstream records: Fastify, client thinning, durable generation, and lazy projection.                        |
+| `dist/`, `data/`, `node_modules/`, `test-results/`, `scripts/`, `.idea/`, `.claude/` | Generated, installed, ignored scratch, local runtime/test output, or local editor/agent state; do not hand-edit.     |
 
 ## Runtime Entrypoints
 
