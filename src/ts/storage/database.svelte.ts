@@ -797,7 +797,10 @@ export function setDatabase(data: Database) {
 }
 
 export function applyServerProjectionDatabase(data: Database) {
-  return withTrustedServerProjectionWrite(() => setDatabase(data))
+  return withTrustedServerProjectionWrite(() => {
+    changeLanguage(data.language)
+    setDatabaseLite(data)
+  })
 }
 
 /**
@@ -850,7 +853,10 @@ export function hydrateServerChatMessages(
  * on character-open. Targets by `chaId`; a trusted projection write so it passes
  * the read-only guard. Returns true if found and hydrated.
  */
-export function hydrateServerCharacterLorebook(characterId: string, globalLore: unknown[]): boolean {
+export function hydrateServerCharacterLorebook(
+  characterId: string,
+  globalLore: unknown[],
+): boolean {
   return withTrustedServerProjectionWrite(() => {
     for (const character of DBState.db.characters ?? []) {
       if (character.chaId === characterId) {

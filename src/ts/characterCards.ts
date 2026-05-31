@@ -2002,7 +2002,10 @@ async function refreshServerProjectionAfterRealmImport() {
       bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
     )
   }
-  applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
+  if (bootstrap.projection.database == null) {
+    throw new Error('Server bootstrap returned an empty database after Realm import')
+  }
+  applyServerProjectionDatabase(bootstrap.projection.database)
   setCachedServerCommandRevision(bootstrap.projection.revision)
   resetChatHydration()
   resetLorebookHydration()

@@ -368,7 +368,7 @@ describe('first-run database seed', () => {
     expect(res.json().error).toBe('database must be an object before settings commands can run')
   })
 
-  it('seeds the default database, emits an event, and unblocks settings commands', async () => {
+  it('creates the server default database, emits an event, and unblocks settings commands', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     harness.commandEvents.clear()
 
@@ -376,7 +376,7 @@ describe('first-run database seed', () => {
       method: 'POST',
       url: '/api/v1/commands/state/initialize',
       headers: { 'risu-auth': assertion },
-      payload: { database: { username: 'User', temperature: 80 } },
+      payload: {},
     })
 
     expect(seeded.statusCode).toBe(200)
@@ -391,9 +391,16 @@ describe('first-run database seed', () => {
     })
     expect(harness.commandEvents.list()).toEqual([seeded.json().event])
 
-    // db.json now holds the seeded database.
+    // db.json now holds the server-created default database.
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database).toMatchObject({ username: 'User', temperature: 80 })
+    expect(onDisk.database).toMatchObject({
+      username: 'User',
+      temperature: 80,
+      characters: [],
+      botPresets: [{ id: 'default-preset', name: 'Default' }],
+      personas: [{ id: 'default-persona', name: 'User' }],
+      useServerPromptAssembly: true,
+    })
 
     // The previously-rejected settings command now succeeds against revision 1.
     const account = await harness.app.inject({
@@ -426,7 +433,7 @@ describe('first-run database seed', () => {
       method: 'POST',
       url: '/api/v1/commands/state/initialize',
       headers: { 'risu-auth': assertion },
-      payload: { database: { username: 'Should not overwrite' } },
+      payload: {},
     })
 
     expect(seeded.statusCode).toBe(200)
@@ -443,19 +450,32 @@ describe('first-run database seed', () => {
     expect(bootstrap.json().database).toMatchObject({ username: 'Existing' })
   })
 
-  it('rejects a non-object seed payload', async () => {
+  it('rejects request-shaped database seed payloads', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
 
-    for (const database of [null, ['array'], 'string']) {
-      const res = await harness.app.inject({
-        method: 'POST',
-        url: '/api/v1/commands/state/initialize',
-        headers: { 'risu-auth': assertion },
-        payload: { database },
-      })
-      expect(res.statusCode).toBe(400)
-      expect(res.json().error).toBe('database payload must be an object')
-    }
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/state/initialize',
+      headers: { 'risu-auth': assertion },
+      payload: { database: { username: 'client-shaped' } },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('database payload is no longer accepted for state initialization')
+  })
+
+  it('rejects non-object initialize bodies', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/state/initialize',
+      headers: { 'risu-auth': assertion },
+      payload: ['array'],
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('request body must be an object')
   })
 })
 
@@ -1579,7 +1599,13 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().database.botPresets).toEqual([
-      { id: 'preset-a', name: 'A', mainPrompt: 'a prompt' },
+      {
+        id: 'preset-a',
+        name: 'A',
+        mainPrompt: 'a prompt',
+        localNetworkMode: false,
+        localNetworkTimeoutSec: 600,
+      },
       { id: 'preset-b', name: 'B renamed', mainPrompt: 'b prompt' },
     ])
   })
@@ -1636,7 +1662,13 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().database.botPresets).toEqual([
-      { id: 'preset-a', name: 'A', image: '-' },
+      {
+        id: 'preset-a',
+        name: 'A',
+        image: '-',
+        localNetworkMode: false,
+        localNetworkTimeoutSec: 600,
+      },
       { id: 'preset-b', name: 'B', image: uploaded.assetId },
     ])
   })
@@ -1727,7 +1759,15 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.botPresets).toEqual([{ id: 'preset-a', name: 'A', image: '' }])
+    expect(bootstrap.json().database.botPresets).toEqual([
+      {
+        id: 'preset-a',
+        name: 'A',
+        image: '',
+        localNetworkMode: false,
+        localNetworkTimeoutSec: 600,
+      },
+    ])
   })
 
   it('selects and applies a preset while saving the previously selected snapshot', async () => {

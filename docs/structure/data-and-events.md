@@ -36,8 +36,9 @@ revision from bootstrap and command responses.
 
 There are command-adjacent server-owned exceptions:
 
-- `/api/v1/commands/state/initialize` seeds a never-initialized server and does
-  not take `baseRevision`.
+- `/api/v1/commands/state/initialize` creates the server-owned default database
+  for a never-initialized server and does not take `baseRevision` or accept a
+  browser-provided database payload.
 - Asset upload writes asset metadata and bumps revision directly, then emits
   `asset.created`; asset GC can remove unreferenced asset metadata without a
   revision/event because no projected database field references it.

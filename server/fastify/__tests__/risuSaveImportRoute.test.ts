@@ -373,7 +373,14 @@ describe('Phase 9-8a multipart .risu import route', () => {
     const persisted = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
     expect(persisted.database.characters).toHaveLength(1)
     expect(persisted.database.characterOrder).toEqual(['fixture-char'])
-    expect(persisted.database.botPresets).toEqual([{ id: 'preset-a', name: 'Preset A' }])
+    expect(persisted.database.botPresets).toEqual([
+      {
+        id: 'preset-a',
+        name: 'Preset A',
+        localNetworkMode: false,
+        localNetworkTimeoutSec: 600,
+      },
+    ])
   })
 
   it('imports RISUSAVE block uploads and reports unsupported references', async () => {

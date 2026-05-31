@@ -275,7 +275,14 @@ describe('server .risu fixture harness', () => {
     expect(decoded.database.characters).toHaveLength(1)
     expect(decoded.database.characterOrder).toEqual(['fixture-char'])
     expect(decoded.database.currentChar).toBe(0)
-    expect(decoded.database.botPresets).toEqual([{ id: 'preset-a', name: 'Preset A' }])
+    expect(decoded.database.botPresets).toEqual([
+      {
+        id: 'preset-a',
+        name: 'Preset A',
+        localNetworkMode: false,
+        localNetworkTimeoutSec: 600,
+      },
+    ])
     expect(decoded.database.botPresetsId).toBe(0)
 
     const character = decoded.database.characters[0] as Record<string, unknown>
@@ -297,7 +304,14 @@ describe('server .risu fixture harness', () => {
     expect(decoded.unsupportedReferences).toEqual([])
     expect(decoded.database.version).toBe(1)
     expect(decoded.database.__directory).toBeUndefined()
-    expect(decoded.database.botPresets).toEqual([{ id: 'preset-a', name: 'Preset A' }])
+    expect(decoded.database.botPresets).toEqual([
+      {
+        id: 'preset-a',
+        name: 'Preset A',
+        localNetworkMode: false,
+        localNetworkTimeoutSec: 600,
+      },
+    ])
     expect(decoded.database.modules).toEqual([
       { id: 'module-a', name: 'Module A', description: '' },
     ])
@@ -428,7 +442,11 @@ describe('server .risu fixture harness', () => {
       assets: [{ id: assetId, ext: 'png', size: 12, contentType: 'image/png' }],
     })
 
-    const encoded = encodeRepositoryRisuSaveLegacyExport(openDatabase(dataDir), dataDir, 'legacy-raw')
+    const encoded = encodeRepositoryRisuSaveLegacyExport(
+      openDatabase(dataDir),
+      dataDir,
+      'legacy-raw',
+    )
     const decoded = decodeRisuSaveImportSnapshot(encoded)
 
     expect(decoded.envelope).toBe('legacy-raw')

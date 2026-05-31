@@ -62,6 +62,7 @@ import {
 } from './server/lorebookBridge.svelte'
 import { setActiveGenerationJobs, startActiveGenerationReattach } from './process/reattach'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
+import { isFastifyServer } from './platform'
 
 // Delay before re-subscribing to the command-event stream after it drops. On
 // reconnect we full-bootstrap to recover any events missed while disconnected.
@@ -75,10 +76,6 @@ let serverProjectionRefreshPending = false
 let serverProjectionSyncChain: Promise<void> = Promise.resolve()
 let serverProjectionEventsDesired = false
 let serverProjectionReconnectTimer: ReturnType<typeof setTimeout> | null = null
-// Set when the bootstrap projection arrives with a null database (a never-seeded
-// server). Consumed once by seedServerDatabaseIfEmpty after format defaults fill.
-let pendingServerDatabaseSeed = false
-
 /**
  * Loads the application data.
  */
@@ -92,11 +89,9 @@ export async function loadData() {
         await loadPlugins()
       } catch (error) {}
       LoadingStatusState.text = 'Checking For Format Update...'
-      await withTrustedServerProjectionWrite(() => checkNewFormat())
-      // A fresh server ships `database: null` and never seeds itself; persist the
-      // complete default we just built (after checkNewFormat) so server-owned
-      // commands and prompt assembly have a database to operate on.
-      await seedServerDatabaseIfEmpty()
+      if (!isFastifyServer) {
+        await withTrustedServerProjectionWrite(() => checkNewFormat())
+      }
       const db = getDatabase()
 
       LoadingStatusState.text = 'Updating States...'
@@ -128,7 +123,9 @@ export async function loadData() {
       loadedStore.set(true)
       selectedCharID.set(-1)
       startObserveDom()
-      withTrustedServerProjectionWrite(assignIds)
+      if (!isFastifyServer) {
+        withTrustedServerProjectionWrite(assignIds)
+      }
       registerModelDynamic()
       moduleUpdate()
       alertTOS().then((a) => {
@@ -157,23 +154,22 @@ export async function loadWebInitialDatabase() {
       bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
     )
   }
-  // A fresh server has never been seeded: it ships `database: null`. Remember
-  // that so `loadData` can push the built default back once the format defaults
-  // are filled in (see seedServerDatabaseIfEmpty).
-  pendingServerDatabaseSeed = bootstrap.projection.database == null
-  applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
-  // Record which characters arrive with a REAL (resident) globalLore before
-  // `checkNewFormat` defaults an absent (stubbed) value to []. The lorebook
-  // watcher only persists hydrated characters.
+  const projection =
+    bootstrap.projection.database == null
+      ? await initializeFreshServerDatabase()
+      : bootstrap.projection
+  applyServerProjectionDatabase(projection.database)
+  // Record which characters arrive with a REAL (resident) globalLore. The
+  // lorebook watcher only persists hydrated characters.
   resetLorebookHydration()
-  recordHydratedCharacterLorebooks(bootstrap.projection.database?.characters)
+  recordHydratedCharacterLorebooks(projection.database.characters)
   // Seed the surgical-sync baseline: subsequent command events are decided
   // against the revision this client has applied.
-  setCachedServerCommandRevision(bootstrap.projection.revision)
+  setCachedServerCommandRevision(projection.revision)
   setServerProjectionWriteGuardEnabled(true)
   // Surface any in-flight server generations so opening their chat re-attaches
   // to the live stream.
-  setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
+  setActiveGenerationJobs(projection.activeGenerationJobs ?? [])
   startActiveGenerationReattach()
   // Chats arrive as message-free stubs; hydrate the open chat's messages on
   // open (and re-hydrate after a re-stub).
@@ -183,30 +179,37 @@ export async function loadWebInitialDatabase() {
 }
 
 /**
- * One-time first-run seed. When the bootstrap projection arrived with a null
- * database, push the complete default we built in memory (after checkNewFormat
- * filled the format defaults) back to the server so server-owned commands and
- * prompt assembly have a real database object. The server guards the write
- * idempotently, so a stale flag can never clobber existing data. A failed seed
- * is fatal for this startup: the app should not enter the home screen while the
- * server still has no db.json-backed database.
+ * One-time first-run seed. When bootstrap returns `database: null`, ask the
+ * server to create its default database and then refetch the server-shaped
+ * projection. A failed seed is fatal for this startup: the app should not enter
+ * the home screen while the server still has no db.json-backed database.
  */
-async function seedServerDatabaseIfEmpty(): Promise<void> {
-  if (!pendingServerDatabaseSeed) return
-  pendingServerDatabaseSeed = false
+async function initializeFreshServerDatabase(): Promise<{
+  revision: number
+  database: Database
+  activeGenerationJobs?: Array<{ chatId: string; jobId: string }>
+}> {
   if (!canUseServerCommands()) {
     throw new Error('Initial server database seed failed: server commands unavailable')
   }
 
-  // A plain JSON snapshot strips the Svelte state proxy and matches exactly what
-  // the server persists (writePersisted stringifies the same shape).
-  const snapshot = JSON.parse(JSON.stringify(getDatabase())) as Database
-  const result = await initializeServerDatabase(snapshot)
+  const result = await initializeServerDatabase()
   if (result.status === 'ok') {
-    // Advance the command cursor to the seed revision so the echoed
-    // state.initialized event is recognised as our own and skipped.
     setCachedServerCommandRevision(result.revision)
-    return
+    const bootstrap = await fetchServerBootstrapProjectionReadOnly()
+    if (bootstrap.status !== 'ok') {
+      throw new Error(
+        bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
+      )
+    }
+    if (bootstrap.projection.database == null) {
+      throw new Error('Initial server database seed failed: server returned an empty projection')
+    }
+    return {
+      revision: bootstrap.projection.revision,
+      database: bootstrap.projection.database,
+      activeGenerationJobs: bootstrap.projection.activeGenerationJobs,
+    }
   }
 
   throw new Error(`Initial server database seed failed: ${serverCommandFailureMessage(result)}`)
@@ -360,7 +363,11 @@ async function fullBootstrapResync(): Promise<void> {
       serverProjectionRefreshPending = false
       const bootstrap = await fetchServerBootstrapProjectionReadOnly()
       if (bootstrap.status === 'ok') {
-        applyServerProjectionDatabase(bootstrap.projection.database ?? ({} as Database))
+        if (bootstrap.projection.database == null) {
+          console.warn('Server projection refresh returned an empty database')
+          continue
+        }
+        applyServerProjectionDatabase(bootstrap.projection.database)
         setCachedServerCommandRevision(bootstrap.projection.revision)
         setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
         // The full re-apply re-stubbed every chat; forget cached hydration and

@@ -132,6 +132,7 @@ const fixtureDatabase = {
   mainPrompt: 'MAIN',
   maxContext: 100_000,
   maxResponse: 50,
+  useServerPromptAssembly: false,
 }
 
 async function seedDatabase(
@@ -758,9 +759,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return res.json().alternates
   }
 
-  async function bootstrapChat(
-    assertion: string,
-  ): Promise<{
+  async function bootstrapChat(assertion: string): Promise<{
     message: Array<{ role: string; data: string }>
     scriptstate?: Record<string, unknown>
   }> {

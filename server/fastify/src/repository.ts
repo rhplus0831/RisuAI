@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
+import { createInitialDatabase } from './databaseDefaults.js'
 import { bumpRevision, getSchemaState } from './db.js'
 import {
   applyChatMessageDiff,
@@ -403,9 +404,11 @@ export function loadCharacterLorebookHydration(
 ): { globalLore: unknown[] } {
   const persisted = loadPersisted(dataDir)
   const characters =
-    (persisted.database as {
-      characters?: Array<{ chaId?: string; globalLore?: unknown } | null>
-    } | null)?.characters ?? []
+    (
+      persisted.database as {
+        characters?: Array<{ chaId?: string; globalLore?: unknown } | null>
+      } | null
+    )?.characters ?? []
   const character = characters.find((candidate) => candidate?.chaId === characterId)
   const globalLore =
     character && Array.isArray(character.globalLore) ? (character.globalLore as unknown[]) : []
@@ -449,7 +452,8 @@ export function applyImport(
 }
 
 /**
- * First-run seed: write `database` to db.json ONLY when no database exists yet.
+ * First-run seed: write the server-owned default database to db.json ONLY when
+ * no database exists yet.
  *
  * Idempotent and clobber-safe — if a database is already present (a non-null
  * object), this is a no-op that returns the current revision without writing or
@@ -457,23 +461,13 @@ export function applyImport(
  * transaction as the write, so two clients opening the same fresh server (a
  * second tab, a reload race) can never seed twice or overwrite real data.
  *
- * Mirrors `applyImport`'s split-messages-then-write-after-COMMIT ordering, so a
- * crash between the SQLite COMMIT and the db.json write leaves db.json behind
- * (re-applied next write), never paired with stale message rows.
+ * The initial database has no chats/messages, so it can be persisted directly
+ * after COMMIT without the import path's message extraction pass.
  */
-export function seedInitialDatabase(
+export function initializeDefaultDatabase(
   db: DatabaseSync,
   dataDir: string,
-  database: unknown,
 ): { revision: number; initialized: boolean } {
-  if (
-    database === null ||
-    database === undefined ||
-    typeof database !== 'object' ||
-    Array.isArray(database)
-  ) {
-    throw new ValidationError('database payload must be an object')
-  }
   let transactionOpen = false
   db.exec('BEGIN IMMEDIATE')
   transactionOpen = true
@@ -487,10 +481,10 @@ export function seedInitialDatabase(
       transactionOpen = false
       return { revision, initialized: false }
     }
-    const messageFree = splitChatMessagesIntoTable(db, {
+    const messageFree = {
       ...current,
-      database: structuredClone(database),
-    })
+      database: createInitialDatabase(),
+    }
     const revision = bumpRevision(db)
     db.exec('COMMIT')
     transactionOpen = false
@@ -733,10 +727,7 @@ export function listBackups(dataDir: string): BackupManifest[] {
   return manifests
 }
 
-function restoreSqliteFromBackup(
-  db: DatabaseSync,
-  backupDbPath: string,
-): void {
+function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string): void {
   // Use ATTACH + table-level swap so the existing `db` handle stays valid
   // (file-rename would orphan open file descriptors and break every other
   // active route holding the same handle). The transaction is atomic with
@@ -769,9 +760,7 @@ function restoreSqliteFromBackup(
         // Verify the table exists in the backup; older snapshots may predate
         // memory tables.
         const exists = db
-          .prepare(
-            `SELECT name FROM bak.sqlite_master WHERE type = 'table' AND name = ?`,
-          )
+          .prepare(`SELECT name FROM bak.sqlite_master WHERE type = 'table' AND name = ?`)
           .get(table)
         if (table === 'schema_version') {
           // Special-case: schema_version has the PK row (id=1). Update in

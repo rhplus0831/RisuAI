@@ -21,6 +21,7 @@ import { ensurePluginRecords } from '../commands/plugins.js'
 import { ensurePluginCustomStorage } from '../commands/pluginStorage.js'
 import { ensureGlobalLorebookCollection, ensureAllChildLorebooks } from '../commands/lorebooks.js'
 import { normalizeScriptDefinitionCollection } from '../commands/scriptDefinitions.js'
+import { normalizeDatabaseDefaults } from '../databaseDefaults.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -85,9 +86,7 @@ function decodeEnvelopeAsValidation<T>(decode: () => T): T {
     return decode()
   } catch (err) {
     if (err instanceof ValidationError) throw err
-    throw new ValidationError(
-      err instanceof Error ? err.message : 'Malformed .risu save envelope',
-    )
+    throw new ValidationError(err instanceof Error ? err.message : 'Malformed .risu save envelope')
   }
 }
 
@@ -200,7 +199,7 @@ function normalizeImportDatabase(database: unknown): JsonRecord {
   ensureAllChildLorebooks(target)
   normalizeScriptDefinitionCollection(target)
 
-  return target
+  return normalizeDatabaseDefaults(target, { providerDefaults: false })
 }
 
 function parseBlockJson(name: string, content: string): unknown {

@@ -192,6 +192,28 @@ import {
 } from './server/commands'
 import { DBState, LoadingStatusState, hypaV3ProgressStore, loadedStore } from './stores.svelte'
 
+function serverDefaultDatabase() {
+  return {
+    characters: [],
+    modules: [],
+    personas: [{ id: 'default-persona', name: 'User', personaPrompt: '', icon: '', note: '' }],
+    botPresets: [{ id: 'default-preset', name: 'Default' }],
+    colorScheme: { type: 'dark' },
+    customTextTheme: {},
+    language: 'en',
+    textTheme: 'standard',
+    font: 'default',
+    animationSpeed: 0.4,
+    heightMode: 'normal',
+    textAreaSize: 0,
+    sideBarSize: 0,
+    textAreaTextSize: 0,
+    formatversion: 5,
+    characterOrder: [],
+    useServerPromptAssembly: true,
+  }
+}
+
 beforeEach(() => {
   platformState.isFastifyServer = true
   serverBootstrapState.fetch.mockImplementation(async () => serverBootstrapState.response)
@@ -265,6 +287,7 @@ describe('web bootstrap startup source', () => {
 
     expect(DBState.db.language).toBe('en')
     expect(DBState.db.characters).toEqual([])
+    expect(DBState.db.apiType).toBeUndefined()
     expect(isServerProjectionWriteGuardEnabled()).toBe(true)
     expect(() => {
       DBState.db.language = 'ja'
@@ -545,15 +568,24 @@ describe('web bootstrap startup source', () => {
         database: null,
       },
     }
+    serverBootstrapState.fetchReadOnly.mockResolvedValueOnce({
+      status: 'ok',
+      projection: {
+        revision: 1,
+        database: serverDefaultDatabase(),
+      },
+    })
 
     await loadData()
 
     expect(serverCommandsState.initialize).toHaveBeenCalledTimes(1)
-    expect(serverCommandsState.initialize.mock.calls[0][0]).toMatchObject({
+    expect(serverCommandsState.initialize).toHaveBeenCalledWith()
+    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(DBState.db).toMatchObject({
       characters: [],
-      modules: [],
-      personas: [{ name: 'User', personaPrompt: '', icon: '', note: '', largePortrait: false }],
-      language: 'en',
+      botPresets: [{ id: 'default-preset', name: 'Default' }],
+      personas: [{ id: 'default-persona', name: 'User' }],
+      useServerPromptAssembly: true,
     })
     expect(peekCachedServerCommandRevision()).toBe(1)
     expect(get(loadedStore)).toBe(true)

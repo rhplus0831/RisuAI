@@ -1043,19 +1043,18 @@ export async function patchSettingsGroup(
 }
 
 /**
- * First-run seed: push the client's freshly-built default database to a fresh
- * server (whose persisted `database` is still `null`). Must run before any other
- * command, which all require an existing database object. The server guards this
+ * First-run seed: ask a fresh server (whose persisted `database` is still
+ * `null`) to create its default database. Must run before any other command,
+ * which all require an existing database object. The server guards this
  * idempotently — it only writes when no database exists yet, so calling it
  * against an already-initialized server is a harmless no-op (`initialized: false`).
  */
 export async function initializeServerDatabase(
-  database: unknown,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ initialized: boolean }>> {
   return requestCommandJson('/state/initialize', {
     method: 'POST',
-    body: { database },
+    body: {},
     signal,
   })
 }

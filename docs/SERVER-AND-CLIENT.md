@@ -28,9 +28,8 @@ plugin/runtime surfaces, MCP/local tool orchestration, and the non-Fastify/local
 compatibility stack.
 
 The main server-owned responsibilities that still leak through the client are
-first-run/default normalization seams, client-built provider payloads for server
-completion, browser-local inlay bytes, and the closeout path for local prompt
-assembly/provider dispatch.
+client-built provider payloads for server completion, browser-local inlay bytes,
+and the closeout path for local prompt assembly/provider dispatch.
 
 ## Current Client Responsibilities
 
@@ -94,24 +93,13 @@ assembly/provider dispatch.
   and legacy storage all have Fastify routes with browser adapters.
 - Unsafe direct resource writes from browser plugins are blocked in server mode
   unless a supported bridge command exists.
+- First-run/default initialization is server-owned: a fresh Fastify database is
+  initialized by `POST /api/v1/commands/state/initialize` without accepting a
+  browser-provided database payload, server import/default normalization fills the
+  durable default shape, and Fastify projections enter the browser without
+  `setDatabase()` default shaping.
 
 ## Server-Owned Items Still In The Client
-
-### P1: First-run/default normalization still has a client seam
-
-The browser can initialize an empty server database and `setDatabase()` still
-normalizes defaults/group filtering on the client projection. The server also has
-the `state/initialize` route. The architecture audit currently fails because
-`POST /api/v1/commands/state/initialize` calls `seedInitialDatabase()` and that
-path transitively reaches ID minting. That is a server-side invariant issue, but
-the ownership direction is the same: IDs/defaults should be accepted or rejected
-at the server validator/normalizer boundary, not depend on browser-side shaping.
-
-Evidence:
-
-- `src/ts/bootstrap.ts`
-- `src/ts/storage/database.svelte.ts:106`
-- `server/fastify/src/routes/commands.ts:1012`
 
 ### P2: Client still builds provider wire payloads for server completion
 
@@ -200,11 +188,10 @@ Evidence:
 
 ## Verification Notes
 
-- Ran `pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/browserLocalSurface.test.ts src/ts/process/__tests__/command.projectionGuard.test.ts`.
-- Ran `pnpm exec vitest run src/ts/server/commands.test.ts`.
-- Ran `CLIENT_THINNING_AUDIT_CHECK_IDS='A4R-devtool autopilot command-backed,A4R-devtool scriptstate command-backed' pnpm client-thinning:audit`.
+- Ran `pnpm exec vitest run src/ts/server/commands.test.ts src/ts/bootstrap.test.ts`.
+- Ran `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/projection.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/risuSaveCodec.test.ts`.
 - Ran `pnpm check`.
-- Ran `pnpm client-thinning:audit`. It failed on the existing server invariant:
-  `POST /api/v1/commands/state/initialize` calls `seedInitialDatabase()`, which
-  transitively reaches ID minting. This should be tracked separately from the
-  client/server ownership cleanup above.
+- Ran `pnpm client-thinning:audit`.
+- Ran `pnpm api:test`; all API tests passed except the existing large Realm charx
+  import test in `server/fastify/__tests__/realmImport.test.ts`, which timed out
+  at 30000 ms.
