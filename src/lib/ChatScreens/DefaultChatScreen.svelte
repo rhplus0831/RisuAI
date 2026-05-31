@@ -67,6 +67,7 @@
   import { processMultiCommand } from 'src/ts/process/command'
   import { postChatFile } from 'src/ts/process/files/multisend'
   import { getInlayAsset } from 'src/ts/process/files/inlays'
+  import { applySuccessfulSendChatEffects } from 'src/ts/process/sendChatCompletion'
   import { coldStorageHeader, preLoadChat } from 'src/ts/process/coldstorage.svelte'
   import Chats from './Chats.svelte'
   import Button from '../UI/GUI/Button.svelte'
@@ -281,6 +282,13 @@
     await unRerollNav()
   }
 
+  function playSendSoundIfEnabled() {
+    if (DBState.db.playMessage) {
+      const audio = new Audio(sendSound)
+      audio.play().catch(() => {})
+    }
+  }
+
   let abortController: null | AbortController = null
 
   async function sendChatMain(
@@ -294,22 +302,27 @@
     messageInput = ''
     abortController = new AbortController()
     try {
-      await sendChat(-1, {
+      const ok = await sendChat(-1, {
         signal: abortController.signal,
         continue: continued,
         regenerateMessageId,
       })
-      // Mirror the server's successful-generation boundary for reroll state.
-      if (confirmBoundary) clearRerollBuffer()
-      recordGeneratedReroll(previousLength)
+      if (
+        !applySuccessfulSendChatEffects(
+          { sendSucceeded: ok, previousLength, confirmBoundary },
+          {
+            clearRerollBuffer,
+            recordGeneratedReroll,
+            markRerollChar,
+            playSendSound: playSendSoundIfEnabled,
+          },
+        )
+      ) {
+        return
+      }
     } catch (error) {
       console.error(error)
       alertError(error)
-    }
-    markRerollChar()
-    if (DBState.db.playMessage) {
-      const audio = new Audio(sendSound)
-      audio.play().catch(() => {})
     }
   }
 

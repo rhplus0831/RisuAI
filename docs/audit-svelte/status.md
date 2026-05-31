@@ -5,7 +5,6 @@ Last updated: 2026-05-31.
 ## Remaining Items
 
 - Direct Transcript Writes During Send
-- Send Result Is Treated As Success
 - Durable Reattach Stop Handle Drift
 - First-Message Greeting Swipes Mutate Chat State
 - Auto-Suggestions Race The Selected Chat
@@ -49,6 +48,7 @@ Last updated: 2026-05-31.
 
 ## Completed Items
 
+- Send Result Is Treated As Success
 - Chat Format Settings Lack Client Command Mapping
 - One-Item Drop Lists Can Corrupt The List
 - Realm Upload Mode Buttons Toggle The Wrong State
