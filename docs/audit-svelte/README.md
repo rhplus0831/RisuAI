@@ -31,3 +31,9 @@ sections.
 - The absence of Svelte diagnostics does not clear the runtime risks below,
   because many of them happen through DOM APIs, manually mounted components,
   async callbacks, or server-projection proxy traps.
+
+## Note
+
+- The current `data` folder contains debug data. You may use it for testing if needed, without worrying about data loss.
+- `api:dev` is running on port `6002`; feel free to use it if necessary.
+- The password is set to `test`.
