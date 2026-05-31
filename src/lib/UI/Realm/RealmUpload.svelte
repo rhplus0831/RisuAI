@@ -28,7 +28,7 @@
   let nsfwMode = $state(false)
   let license = $state('')
   let creatorNotes: { [code: string]: string } = parseMultilangString(char.creatorNotes)
-  let update = false
+  let update = $state(Boolean(char.realmId))
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -155,16 +155,16 @@
         <div class="flex items-center flex-wrap mt-2">
           <button
             class="bg-bgcolor p-2 rounded-lg"
-            class:ring-1={!update}
+            class:ring-1={update}
             onclick={() => {
-              nsfwMode = false
+              update = true
             }}>🚀 Update</button
           >
           <button
             class="bg-bgcolor p-2 rounded-lg ml-2"
-            class:ring-1={update}
+            class:ring-1={!update}
             onclick={() => {
-              nsfwMode = true
+              update = false
             }}>⭐ Upload Newly</button
           >
         </div>

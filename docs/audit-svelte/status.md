@@ -42,7 +42,6 @@ Last updated: 2026-05-31.
 - LazyPortal Observes The Target Instead Of A Sentinel
 - Hypa V3 Memo Search Assumes Collapsed Refs Exist
 - Realm Detail Popup Closes On Inner Clicks
-- Realm Upload Mode Buttons Toggle The Wrong State
 - Realm Upload Validates Stale Creator Notes
 - RealmFrame Ping Loop Has No Cancellation
 - Plugin Alert Continue Action Is Hidden In Details
@@ -50,4 +49,5 @@ Last updated: 2026-05-31.
 - Chat Format Settings Lack Client Command Mapping
 
 ## Completed Items
+- Realm Upload Mode Buttons Toggle The Wrong State
 - Plugin Select Options Render Literal Text
