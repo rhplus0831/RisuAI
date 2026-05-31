@@ -69,6 +69,7 @@ describe('schema migrations', () => {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 0 })
       expect(listTables(db)).toEqual([
         'chat_hypa_v3',
+        'command_events',
         'memory_chunks',
         'memory_embeddings',
         'memory_jobs',
@@ -90,6 +91,7 @@ describe('schema migrations', () => {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 7 })
       expect(listTables(db)).toEqual([
         'chat_hypa_v3',
+        'command_events',
         'memory_chunks',
         'memory_embeddings',
         'memory_jobs',
@@ -144,6 +146,43 @@ describe('schema migrations', () => {
         .prepare('SELECT data, alternate FROM messages WHERE chat_id = ? AND seq = 0')
         .get('chat-1')
       expect(row).toEqual({ data: 'hi', alternate: 0 })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('adds the command event history table to a pre-v7 database', () => {
+    const dataDir = makeDataDir()
+    const seed = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      seed.exec(`
+        CREATE TABLE schema_version (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          version INTEGER NOT NULL,
+          revision INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO schema_version (id, version, revision) VALUES (1, 6, 11);
+      `)
+    } finally {
+      seed.close()
+    }
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 11 })
+      db.prepare(
+        `
+          INSERT INTO command_events (revision, type, resource)
+          VALUES (11, 'settings.updated', 'settings')
+        `,
+      ).run()
+      expect(
+        db.prepare('SELECT revision, type, resource FROM command_events WHERE revision = 11').get(),
+      ).toEqual({
+        revision: 11,
+        type: 'settings.updated',
+        resource: 'settings',
+      })
     } finally {
       db.close()
     }

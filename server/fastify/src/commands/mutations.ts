@@ -8,7 +8,12 @@ import {
   syncChatMessages,
   writePersisted,
 } from '../repository.js'
-import type { CommandEvent, CommandEventDraft, CommandEventSink } from './events.js'
+import {
+  persistCommandEvent,
+  type CommandEvent,
+  type CommandEventDraft,
+  type CommandEventSink,
+} from './events.js'
 import { emitProtocolMetric, protocolDurationMs, protocolNowMs } from '../protocolMetrics.js'
 
 export interface JsonCommandMutationResult<TExtra extends Record<string, unknown>> {
@@ -87,6 +92,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
 
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
+    persistCommandEvent(args.db, event)
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
 
     args.db.exec('COMMIT')

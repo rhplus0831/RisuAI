@@ -250,8 +250,7 @@ describe('Phase 2C assets', () => {
       revision: 1,
     })
     expect(harness.commandEvents.list()).toEqual([
-      { type: 'asset.created', resource: 'asset', revision: 1, id: PNG_SHA },
-      { type: 'asset.created', resource: 'asset', revision: 1, id: OTHER_PNG_SHA },
+      { type: 'asset.created', resource: 'asset', revision: 1 },
     ])
     expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(true)
     expect(existsSync(path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`))).toBe(true)

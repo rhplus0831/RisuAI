@@ -2,7 +2,11 @@ import type { FastifyInstance } from 'fastify'
 import type { FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
-import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
+import {
+  COMMAND_EVENT_CATALOG,
+  emitPersistedCommandEvent,
+  type CommandEventSink,
+} from '../commands/events.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import { ValidationError, applyImport } from '../repository.js'
@@ -50,7 +54,7 @@ export function registerSaveRoutes(
         const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req))
         const { revision, assetReport } = applyImportedDatabase(db, dataDir, snapshot.database)
         const event = { ...COMMAND_EVENT_CATALOG.stateImported, revision }
-        eventSink.emit(event)
+        emitPersistedCommandEvent(db, eventSink, event)
         return {
           revision,
           event,
@@ -67,7 +71,7 @@ export function registerSaveRoutes(
       const database = normalizeRisuSaveImportDatabase(body.database)
       const { revision, assetReport } = applyImportedDatabase(db, dataDir, database)
       const event = { ...COMMAND_EVENT_CATALOG.stateImported, revision }
-      eventSink.emit(event)
+      emitPersistedCommandEvent(db, eventSink, event)
       return { revision, event, assetReport }
     } catch (err) {
       if (err instanceof ValidationError) {

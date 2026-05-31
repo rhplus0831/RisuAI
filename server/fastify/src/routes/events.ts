@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import type { AuthState } from '../auth.js'
 import {
+  listPersistedCommandEventHistory,
   selectCommandEventReplay,
   type CommandEvent,
   type CommandEventSink,
@@ -43,7 +44,7 @@ export function registerEventsRoutes(
     }
 
     const currentRevision = getSchemaState(db).revision
-    const history = commandEvents.list()
+    const history = listPersistedCommandEventHistory(db)
     const replay =
       cursor.sinceRevision === null
         ? { status: 'ok' as const, events: [] as readonly CommandEvent[] }

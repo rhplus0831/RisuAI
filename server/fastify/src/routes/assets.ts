@@ -4,7 +4,11 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
-import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
+import {
+  COMMAND_EVENT_CATALOG,
+  emitPersistedCommandEvent,
+  type CommandEventSink,
+} from '../commands/events.js'
 import {
   ValidationError,
   addAsset,
@@ -49,12 +53,17 @@ function assetUploadResponse(result: AddAssetResult): {
   }
 }
 
-function emitCreatedAssetEvent(eventSink: CommandEventSink, result: AddAssetResult): void {
-  if (!result.created) return
-  eventSink.emit({
+function emitCreatedAssetEvents(
+  db: DatabaseSync,
+  eventSink: CommandEventSink,
+  results: readonly AddAssetResult[],
+): void {
+  const created = results.filter((result) => result.created)
+  if (created.length === 0) return
+  emitPersistedCommandEvent(db, eventSink, {
     ...COMMAND_EVENT_CATALOG.assetCreated,
-    revision: result.revision,
-    id: result.entry.id,
+    revision: created[0].revision,
+    ...(created.length === 1 ? { id: created[0].entry.id } : {}),
   })
 }
 
@@ -103,7 +112,7 @@ export function registerAssetsRoutes(
       // A new asset bumps the repository revision; emit so SSE subscribers
       // refresh and the uploading client can advance its cached revision,
       // avoiding a stale-revision 409 on the next command.
-      emitCreatedAssetEvent(eventSink, result)
+      emitCreatedAssetEvents(db, eventSink, [result])
       reply.code(result.created ? 201 : 200)
       return {
         assetId: result.entry.id,
@@ -125,9 +134,7 @@ export function registerAssetsRoutes(
     try {
       const uploads = readBulkAssets((req.body ?? {}) as BulkAssetsBody)
       const results = addAssets(db, dataDir, uploads)
-      for (const result of results) {
-        emitCreatedAssetEvent(eventSink, result)
-      }
+      emitCreatedAssetEvents(db, eventSink, results)
       reply.code(results.some((result) => result.created) ? 201 : 200)
       const revision = results.at(-1)?.revision ?? getSchemaState(db).revision
       return {

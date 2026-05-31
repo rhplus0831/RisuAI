@@ -1,7 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
-import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
+import {
+  COMMAND_EVENT_CATALOG,
+  emitPersistedCommandEvent,
+  type CommandEventSink,
+} from '../commands/events.js'
 import { requireAuth } from '../http.js'
 import {
   EntityNotFoundError,
@@ -48,7 +52,7 @@ export function registerBackupRoutes(
     try {
       const { revision } = restoreBackup(db, dataDir, req.params.id)
       const event = { ...COMMAND_EVENT_CATALOG.stateRestored, revision }
-      eventSink.emit(event)
+      emitPersistedCommandEvent(db, eventSink, event)
       return { revision, event }
     } catch (err) {
       if (err instanceof EntityNotFoundError) {

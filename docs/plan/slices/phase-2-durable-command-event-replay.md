@@ -3,7 +3,7 @@
 Back to original plan:
 [`server-client-protocol-stability-performance.md`](../server-client-protocol-stability-performance.md#phase-2-durable-command-event-replay)
 
-Status: planning slice.
+Status: completed on 2026-05-31.
 
 Goal: avoid full bootstrap after server restart or long disconnect when the
 revision gap is covered by stored command events.
@@ -17,8 +17,8 @@ revision gap is covered by stored command events.
 - Store event JSON payload columns matching `CommandEvent`.
 - Keep the schema aligned with the SQLite revision state.
 
-Done when committed command events have a durable replay source independent of
-process memory.
+Completed with schema v7 `command_events`, keyed by revision and retaining
+`type`, `resource`, `id`, and `parentId`.
 
 ### 2.2 Command Path Persistence
 
@@ -28,7 +28,11 @@ process memory.
 - If immediate-after-commit is chosen instead, document the recovery rule.
 - Preserve one command event for every revision-tracked projected mutation.
 
-Done when event persistence and revision commits cannot drift silently.
+Completed for normal JSON commands inside `applyJsonCommandMutation()` before
+`COMMIT`. Server-owned import/initialize/restore/asset paths persist immediately
+after their existing repository commit and before live fanout; a persistence
+failure is visible to the caller instead of silently emitting an unreplayable
+event.
 
 ### 2.3 Replay Source And Live Fanout
 
@@ -37,7 +41,8 @@ Done when event persistence and revision commits cannot drift silently.
 - Treat SQLite history as the replay source of truth.
 - Keep memory events live-only and out of this persisted history.
 
-Done when replay after restart no longer depends on the old in-memory sink.
+Completed: `/api/v1/events` selects replay from SQLite history, then resumes
+live fanout through the existing `CommandEventSink` and memory event bus.
 
 ### 2.4 Pruning And Cursor Edges
 
@@ -46,7 +51,8 @@ Done when replay after restart no longer depends on the old in-memory sink.
 - Continue returning `409 event_replay_unavailable` for too-old cursors.
 - Continue rejecting cursor-ahead cases.
 
-Done when retained history is bounded and cursor failure modes remain explicit.
+Completed with the existing 1000-revision retention limit enforced during event
+persistence.
 
 ### 2.5 Restart Coverage
 
@@ -56,7 +62,7 @@ Done when retained history is bounded and cursor failure modes remain explicit.
 - Confirm no startup rebuild is required because committed events live in
   SQLite.
 
-Done when process restart is covered by an automated replay test.
+Completed in `server/fastify/__tests__/events.test.ts`.
 
 ## Acceptance
 

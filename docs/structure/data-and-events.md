@@ -5,13 +5,13 @@ revision-checked commands when it needs persistence.
 
 ## Persistence Split
 
-| Store       | Path                                                     | Owner  | Contents                                                                                                                                          |
-| ----------- | -------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite      | `data/risu.db`                                           | Server | Schema version, global revision, chat messages plus reroll alternates, per-chat `hypaV3Data`, Hypa V3 memory chunks, summaries, embeddings, jobs. |
-| Domain JSON | `data/db.json`                                           | Server | The main Risu `Database` blob minus chat message arrays / per-chat `hypaV3Data`, plus the asset manifest.                                         |
-| Assets      | `data/assets/<sha256>.<ext>`                             | Server | Content-addressed images, audio, video, fonts, CSS, and other supported asset bytes.                                                              |
-| Backups     | `data/backups/<id>/`                                     | Server | Snapshot `db.json`, `assets/`, `risu.db`, `save/`, plus `manifest.json`.                                                                          |
-| Auth files  | `data/__password`, `data/__known_public_key_hashes.json` | Server | Single-user stored password value (normally client-digested via `/api/v1/auth/crypto`) and registered browser public key hashes.                  |
+| Store       | Path                                                     | Owner  | Contents                                                                                                                                                                        |
+| ----------- | -------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQLite      | `data/risu.db`                                           | Server | Schema version, global revision, command-event replay history, chat messages plus reroll alternates, per-chat `hypaV3Data`, Hypa V3 memory chunks, summaries, embeddings, jobs. |
+| Domain JSON | `data/db.json`                                           | Server | The main Risu `Database` blob minus chat message arrays / per-chat `hypaV3Data`, plus the asset manifest.                                                                       |
+| Assets      | `data/assets/<sha256>.<ext>`                             | Server | Content-addressed images, audio, video, fonts, CSS, and other supported asset bytes.                                                                                            |
+| Backups     | `data/backups/<id>/`                                     | Server | Snapshot `db.json`, `assets/`, `risu.db`, `save/`, plus `manifest.json`.                                                                                                        |
+| Auth files  | `data/__password`, `data/__known_public_key_hashes.json` | Server | Single-user stored password value (normally client-digested via `/api/v1/auth/crypto`) and registered browser public key hashes.                                                |
 
 `server/fastify/src/repository.ts` is the main file for `db.json`, assets, backups,
 the message-table join/split boundary, and the stub projection. `server/fastify/src/db.ts`
@@ -28,8 +28,9 @@ revision. Normal revision-tracked command mutations should:
 1. Read `baseRevision` from the request body.
 2. Load and mutate the domain JSON.
 3. Bump the SQLite revision exactly once.
-4. Emit exactly one command event.
-5. Return the new revision.
+4. Persist exactly one command event for that revision.
+5. Emit the command event to live subscribers.
+6. Return the new revision.
 
 Stale clients receive 409. On the browser side, command helpers cache the latest
 revision from bootstrap and command responses.
@@ -126,10 +127,10 @@ skipped, contiguous foreign events fetch a targeted projection slice through
 `GET /api/v1/projection/:resource`, and revision gaps fall back to a full bootstrap
 refresh. Command events are sent with SSE `id: <revision>`; reconnects send
 `sinceRevision` / `Last-Event-ID` so the server can replay retained command events
-from the in-memory history before resuming live fanout. If replay is unavailable
-(history truncated, process restarted, or cursor is ahead), the server returns
-`409 event_replay_unavailable` and the browser full-bootstraps before subscribing
-again. Memory events are live progress signals only and are not replayed.
+from SQLite-backed history before resuming live fanout. If replay is unavailable
+(history truncated or cursor is ahead), the server returns `409 event_replay_unavailable`
+and the browser full-bootstraps before subscribing again. Memory events are live
+progress signals only and are not replayed.
 `characters` slices are message-free, so the client resets chat hydration and
 rehydrates the open chat after a re-stub.
 

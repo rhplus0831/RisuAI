@@ -4,15 +4,20 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
+import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import {
   InMemoryCommandEventSink,
   createCommandEventSink,
+  listPersistedCommandEventHistory,
+  persistCommandEvent,
+  selectPersistedCommandEventReplay,
   type CommandEvent,
   type CommandEventListener,
   type CommandEventSink,
 } from '../src/commands/events.js'
+import { openDatabase } from '../src/db.js'
 import {
   createMemoryEventBus,
   type MemoryEvent,
@@ -51,11 +56,14 @@ interface Harness {
   app: FastifyInstance
   dataDir: string
   commandEvents: TrackingCommandEventSink
+  closed: boolean
 }
 
-async function startHarness(opts: { memoryEvents?: MemoryEventSink } = {}): Promise<Harness> {
+async function startHarness(
+  opts: { dataDir?: string; memoryEvents?: MemoryEventSink } = {},
+): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
-  const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-events-'))
+  const dataDir = opts.dataDir ?? mkdtempSync(path.join(tmpdir(), 'risu-fastify-events-'))
   const commandEvents = new TrackingCommandEventSink()
   const { app } = await buildApp({
     config: {
@@ -70,12 +78,17 @@ async function startHarness(opts: { memoryEvents?: MemoryEventSink } = {}): Prom
     memoryEvents: opts.memoryEvents,
     memoryWorker: false,
   })
-  return { app, dataDir, commandEvents }
+  return { app, dataDir, commandEvents, closed: false }
 }
 
-async function stopHarness(h: Harness): Promise<void> {
-  await h.app.close()
-  rmSync(h.dataDir, { recursive: true, force: true })
+async function stopHarness(h: Harness, removeDataDir = true): Promise<void> {
+  if (!h.closed) {
+    await h.app.close()
+    h.closed = true
+  }
+  if (removeDataDir) {
+    rmSync(h.dataDir, { recursive: true, force: true })
+  }
 }
 
 async function listen(app: FastifyInstance): Promise<string> {
@@ -143,6 +156,15 @@ async function importDatabase(
   return imported.json().revision as number
 }
 
+function clearPersistedCommandEvents(dataDir: string): void {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    db.exec('DELETE FROM command_events')
+  } finally {
+    db.close()
+  }
+}
+
 async function readUntil(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   predicate: (text: string) => boolean,
@@ -205,6 +227,34 @@ describe('Phase 9-5a command events stream', () => {
 
     sink.clear()
     expect(sink.list()).toEqual([])
+  })
+
+  it('bounds persisted command event history while preserving contiguous replay', () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-event-history-'))
+    const db = openDatabase(dataDir)
+    try {
+      persistCommandEvent(db, { type: 'settings.updated', revision: 1, resource: 'settings' }, 2)
+      persistCommandEvent(db, { type: 'preset.updated', revision: 2, resource: 'preset' }, 2)
+      persistCommandEvent(db, { type: 'chat.updated', revision: 3, resource: 'chat' }, 2)
+
+      expect(listPersistedCommandEventHistory(db)).toEqual([
+        { type: 'preset.updated', revision: 2, resource: 'preset' },
+        { type: 'chat.updated', revision: 3, resource: 'chat' },
+      ])
+      expect(selectPersistedCommandEventReplay(db, 2, 3)).toEqual({
+        status: 'ok',
+        events: [{ type: 'chat.updated', revision: 3, resource: 'chat' }],
+      })
+      expect(selectPersistedCommandEventReplay(db, 0, 3)).toEqual({
+        status: 'unavailable',
+        currentRevision: 3,
+        oldestRevision: 2,
+        latestRevision: 3,
+      })
+    } finally {
+      db.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
   })
 
   it('keeps memory event bus delivery best-effort across throwing subscribers', () => {
@@ -351,6 +401,50 @@ describe('Phase 9-5a command events stream', () => {
     }
   })
 
+  it('replays stored command events after app restart', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      streamGeminiThoughts: false,
+    })
+    const command = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { streamGeminiThoughts: true } },
+    })
+    expect(command.statusCode).toBe(200)
+    const nextRevision = command.json().revision as number
+
+    const dataDir = harness.dataDir
+    await stopHarness(harness, false)
+    harness = await startHarness({ dataDir })
+
+    const baseUrl = await listen(harness.app)
+    const abort = new AbortController()
+    const res = await fetch(`${baseUrl}/api/v1/events?sinceRevision=${revision}`, {
+      headers: { 'risu-auth': assertion },
+      signal: abort.signal,
+    })
+    const reader = res.body?.getReader()
+    expect(reader).toBeDefined()
+
+    try {
+      expect(res.status).toBe(200)
+      const text = await readUntil(reader!, (chunk) => chunk.includes('settings.updated'))
+      expect(text).toContain(`id: ${nextRevision}`)
+      const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+      expect(dataLine).toBeDefined()
+      expect(JSON.parse(dataLine!.slice('data: '.length))).toEqual({
+        type: 'settings.updated',
+        revision: nextRevision,
+        resource: 'settings',
+      })
+    } finally {
+      abort.abort()
+      reader?.releaseLock()
+    }
+  })
+
   it('accepts Last-Event-ID as a replay cursor', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -392,7 +486,7 @@ describe('Phase 9-5a command events stream', () => {
     const revision = await importDatabase(harness.app, assertion, {
       streamGeminiThoughts: false,
     })
-    harness.commandEvents.clear()
+    clearPersistedCommandEvents(harness.dataDir)
 
     const res = await harness.app.inject({
       method: 'GET',
@@ -405,6 +499,28 @@ describe('Phase 9-5a command events stream', () => {
       error: 'event_replay_unavailable',
       requestedRevision: 0,
       currentRevision: revision,
+    })
+  })
+
+  it('reports replay unavailable when the cursor is ahead of the server revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      streamGeminiThoughts: false,
+    })
+
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/events?sinceRevision=${revision + 1}`,
+      headers: { 'risu-auth': assertion },
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(res.json()).toEqual({
+      error: 'event_replay_unavailable',
+      requestedRevision: revision + 1,
+      currentRevision: revision,
+      oldestRevision: revision,
+      latestRevision: revision,
     })
   })
 

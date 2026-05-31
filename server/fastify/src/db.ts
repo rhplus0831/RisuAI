@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
 
-export const CURRENT_SCHEMA_VERSION = 6
+export const CURRENT_SCHEMA_VERSION = 7
 
 export interface MigrationStep {
   version: number
@@ -62,6 +62,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       }
     },
   },
+  {
+    version: 7,
+    name: 'command-event-history',
+    up: (db) => {
+      createCommandEventTable(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -96,6 +103,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
       createMemoryTables(db)
       createMessageTable(db)
       createChatBlobTable(db)
+      createCommandEventTable(db)
     }
     applyMigrations(db, schemaState.version)
   } catch (error) {
@@ -295,6 +303,22 @@ function createMemoryTables(db: DatabaseSync): void {
     'next_run_at',
     "ALTER TABLE memory_jobs ADD COLUMN next_run_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'",
   )
+}
+
+function createCommandEventTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS command_events (
+      revision INTEGER PRIMARY KEY CHECK (revision >= 0),
+      type TEXT NOT NULL,
+      resource TEXT NOT NULL,
+      id TEXT,
+      parent_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_command_events_created_at
+      ON command_events (created_at);
+  `)
 }
 
 function ensureColumn(

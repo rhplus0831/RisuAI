@@ -58,8 +58,9 @@ The server/client contract has four layers.
    `baseRevision` (`src/ts/server/commands.ts:2202`). The server applies normal
    JSON mutations through `applyJsonCommandMutation()`: open an immediate SQLite
    transaction, compare `baseRevision`, load and mutate the hydrated database,
-   sync changed chat messages, bump the revision, commit, write `db.json`, and
-   emit one command event (`server/fastify/src/commands/mutations.ts:48`).
+   sync changed chat messages, bump the revision, persist one command event,
+   commit, write `db.json`, and emit the event to live subscribers
+   (`server/fastify/src/commands/mutations.ts:54`).
 
 4. Generation and job streams.
    Server chat generation uses SSE frames from `POST /api/v1/generate/chat`.
@@ -150,16 +151,15 @@ trusted projection application paths can thaw it
 
 The route can replay retained command events before live fanout. The browser may
 send `?sinceRevision=<n>` or `Last-Event-ID: <n>`, meaning it has already applied
-all command events through revision `n`. The server checks the in-memory
-1000-event command history (`server/fastify/src/commands/events.ts:20`) against
-the current SQLite revision; if the history covers every revision from `n + 1`
-through the current revision, those command frames are written first and the
-stream then subscribes to live command/memory event buses. If the cursor cannot
-be covered (history truncation, process restart, or client cursor ahead), the
-route returns `409 event_replay_unavailable` and does not open SSE
-(`server/fastify/src/routes/events.ts:25`,
-`server/fastify/src/routes/events.ts:37`). Memory events remain live-only
-progress signals.
+all command events through revision `n`. The server checks the SQLite-backed
+1000-revision command history (`server/fastify/src/commands/events.ts:20`)
+against the current SQLite revision; if the history covers every revision from
+`n + 1` through the current revision, those command frames are written first and
+the stream then subscribes to live command/memory event buses. If the cursor
+cannot be covered (history truncation or client cursor ahead), the route returns
+`409 event_replay_unavailable` and does not open SSE
+(`server/fastify/src/routes/events.ts:34`, `server/fastify/src/routes/events.ts:46`).
+Memory events remain live-only progress signals.
 
 The browser reconciles events serially:
 
@@ -237,9 +237,9 @@ signals, not the durability source.
 - Command concurrency uses optimistic revisions and `BEGIN IMMEDIATE`, which
   serializes conflicting writers and returns `409 revision_conflict` instead of
   merging stale client state.
-- Command events are best-effort invalidators; subscriber failures are swallowed
-  after commit so a broken event stream cannot roll back a committed command
-  (`server/fastify/src/commands/events.ts:352`).
+- Command events are durable replay records plus best-effort live invalidators;
+  subscriber failures are swallowed after commit so a broken event stream cannot
+  roll back a committed command (`server/fastify/src/commands/events.ts:500`).
 - Event reconnects replay retained command history by revision cursor when
   possible; replay misses and revision gaps self-heal through full bootstrap.
 - Chat projection is protected from accidental browser mutation by the write
@@ -250,9 +250,9 @@ signals, not the durability source.
 
 ### Gaps And Residual Risks
 
-- `/api/v1/events` replay is process-memory only and bounded by the command
-  sink's 1000-entry history. Server restarts, long disconnects, or history
-  truncation still fall back to full bootstrap rather than historical replay.
+- `/api/v1/events` replay is bounded to the retained SQLite command-event
+  history. Long disconnects beyond that window still fall back to full
+  bootstrap.
 - Active-writer classification is manual path logic in
   `server/fastify/src/activeWriter.ts`; new server-owned mutations must update
   that file and the architecture audit.
@@ -297,9 +297,10 @@ signals, not the durability source.
   an event (`server/fastify/src/commands/mutations.ts:62`). This is simple and
   safe, but large databases make command latency sensitive to full-object size.
 - Full bootstrap is still the fallback for replay misses, revision gaps, unknown
-  resources, and projection errors. Normal SSE reconnects use command-event
-  replay, but long disconnects or server restarts can still move the full stub
-  projection over the wire (`src/ts/bootstrap.ts:351`).
+  resources, and projection errors. Normal SSE reconnects and covered server
+  restarts use command-event replay, but long disconnects beyond retained
+  history can still move the full stub projection over the wire
+  (`src/ts/bootstrap.ts:351`).
 - Bulk hydration uses unbounded `Promise.all()` across every chat or every
   character lorebook (`src/ts/server/chatMessageHydration.svelte.ts:149`,
   `src/ts/server/chatMessageHydration.svelte.ts:188`).
@@ -367,15 +368,13 @@ Important coverage exists in:
 These are not required fixes for the current protocol, but they are the most
 useful next hardening points:
 
-1. Persist command-event history if replay across server restart becomes worth
-   the added storage/cleanup surface.
-2. Add a bounded-concurrency helper for bulk chat and lorebook hydration.
-3. Expand protocol invariant audits to cover the durable-generation classifier,
+1. Add a bounded-concurrency helper for bulk chat and lorebook hydration.
+2. Expand protocol invariant audits to cover the durable-generation classifier,
    `activeGenerationJobs` reattach flow, and client/server chat SSE frame
    taxonomy.
-4. Make the active-writer mutation classifier table-driven from route metadata or
+3. Make the active-writer mutation classifier table-driven from route metadata or
    a shared route manifest instead of hand-maintained path checks.
-5. Decide whether generation result persistence needs a retryable durable queue,
+4. Decide whether generation result persistence needs a retryable durable queue,
    similar in spirit to memory jobs.
-6. Reconcile stale archive notes that still describe auto-reattach or
+5. Reconcile stale archive notes that still describe auto-reattach or
    generation persistence as incomplete.

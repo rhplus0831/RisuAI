@@ -10,7 +10,11 @@ import * as fflate from 'fflate'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { bumpRevision, getSchemaState } from '../db.js'
-import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
+import {
+  COMMAND_EVENT_CATALOG,
+  emitPersistedCommandEvent,
+  type CommandEventSink,
+} from '../commands/events.js'
 import {
   applyJsonCommandMutation,
   readBaseRevision,
@@ -731,13 +735,11 @@ function saveStagedCharxAssets(args: {
   if (createdAssets.length > 0) {
     writePersisted(args.dataDir, { ...persisted, assets: nextAssets })
     const revision = bumpRevision(args.db)
-    for (const entry of createdAssets) {
-      args.eventSink.emit({
-        ...COMMAND_EVENT_CATALOG.assetCreated,
-        revision,
-        id: entry.id,
-      })
-    }
+    emitPersistedCommandEvent(args.db, args.eventSink, {
+      ...COMMAND_EVENT_CATALOG.assetCreated,
+      revision,
+      ...(createdAssets.length === 1 ? { id: createdAssets[0].id } : {}),
+    })
   }
 
   return assetDict
@@ -778,7 +780,7 @@ async function saveFetchedAsset(args: {
   }
   const contentType = resolveAssetContentType(args.source)
   const result = addAsset(args.db, args.dataDir, { bytes, contentType })
-  emitAssetEvent(args.eventSink, result)
+  emitAssetEvent(args.db, args.eventSink, result)
   return result.entry.id
 }
 
@@ -790,9 +792,13 @@ async function fetchHubResource(hubUrl: string, id: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer())
 }
 
-function emitAssetEvent(eventSink: CommandEventSink, result: AddAssetResult): void {
+function emitAssetEvent(
+  db: DatabaseSync,
+  eventSink: CommandEventSink,
+  result: AddAssetResult,
+): void {
   if (!result.created) return
-  eventSink.emit({
+  emitPersistedCommandEvent(db, eventSink, {
     ...COMMAND_EVENT_CATALOG.assetCreated,
     revision: result.revision,
     id: result.entry.id,

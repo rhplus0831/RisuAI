@@ -1,3 +1,5 @@
+import type { DatabaseSync } from 'node:sqlite'
+
 export interface CommandEvent {
   type: string
   revision: number
@@ -76,6 +78,97 @@ export function selectCommandEventReplay(
   }
 
   return { status: 'ok', events }
+}
+
+export function persistCommandEvent(
+  db: DatabaseSync,
+  event: CommandEvent,
+  historyLimit = COMMAND_EVENT_HISTORY_LIMIT,
+): void {
+  validateCommandEventForPersistence(event)
+  db.prepare(
+    `
+      INSERT INTO command_events (revision, type, resource, id, parent_id)
+      VALUES (?, ?, ?, ?, ?)
+    `,
+  ).run(event.revision, event.type, event.resource, event.id ?? null, event.parentId ?? null)
+  pruneCommandEventHistory(db, historyLimit)
+}
+
+export function emitPersistedCommandEvent(
+  db: DatabaseSync,
+  eventSink: CommandEventSink,
+  event: CommandEvent,
+): void {
+  persistCommandEvent(db, event)
+  eventSink.emit(event)
+}
+
+export function listPersistedCommandEventHistory(db: DatabaseSync): readonly CommandEvent[] {
+  const rows = db
+    .prepare(
+      `
+        SELECT revision, type, resource, id, parent_id AS parentId
+        FROM command_events
+        ORDER BY revision ASC
+      `,
+    )
+    .all() as PersistedCommandEventRow[]
+  return rows.map(commandEventFromRow)
+}
+
+export function selectPersistedCommandEventReplay(
+  db: DatabaseSync,
+  sinceRevision: number,
+  currentRevision: number,
+): CommandEventReplaySelection {
+  return selectCommandEventReplay(
+    listPersistedCommandEventHistory(db),
+    sinceRevision,
+    currentRevision,
+  )
+}
+
+function pruneCommandEventHistory(db: DatabaseSync, historyLimit: number): void {
+  if (!Number.isSafeInteger(historyLimit) || historyLimit < 1) {
+    throw new RangeError('Command event history limit must be a positive safe integer')
+  }
+  const threshold = db
+    .prepare(
+      `
+        SELECT revision
+        FROM command_events
+        ORDER BY revision DESC
+        LIMIT 1 OFFSET ?
+      `,
+    )
+    .get(historyLimit - 1) as { revision: number } | undefined
+  if (!threshold) return
+  db.prepare('DELETE FROM command_events WHERE revision < ?').run(threshold.revision)
+}
+
+interface PersistedCommandEventRow {
+  revision: number
+  type: string
+  resource: string
+  id: string | null
+  parentId: string | null
+}
+
+function commandEventFromRow(row: PersistedCommandEventRow): CommandEvent {
+  return {
+    type: row.type,
+    revision: row.revision,
+    resource: row.resource,
+    ...(row.id !== null ? { id: row.id } : {}),
+    ...(row.parentId !== null ? { parentId: row.parentId } : {}),
+  }
+}
+
+function validateCommandEventForPersistence(event: CommandEvent): void {
+  if (!Number.isSafeInteger(event.revision) || event.revision < 0) {
+    throw new RangeError('Command event revision must be a non-negative safe integer')
+  }
 }
 
 export const COMMAND_EVENT_CATALOG = {

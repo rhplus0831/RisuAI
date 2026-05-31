@@ -651,12 +651,13 @@ function sqliteDbPath(dataDir: string): string {
 
 // Tables that must survive a backup/restore round-trip. Kept in sync with
 // `createMemoryTables`, the chat-history tables (`createMessageTable` /
-// `createChatBlobTable`), and `schema_version` in `db.ts`. `createBackup`
+// `createChatBlobTable`), command event replay history, and `schema_version` in `db.ts`. `createBackup`
 // file-copies all of risu.db, but `restoreBackup` swaps tables one-by-one via
 // ATTACH. A table absent here would not be restored, leaving live rows desynced
 // from the restored db.json.
 const SQLITE_BACKUP_TABLES = [
   'schema_version',
+  'command_events',
   'memory_chunks',
   'memory_summaries',
   'memory_embeddings',

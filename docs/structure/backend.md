@@ -35,8 +35,9 @@ memory event sinks, command event sinks, and asset-GC behavior.
 - Startup storage work: `backfillLegacyHypaV3MemoryRows()` runs before
   `ensureMessagesExtracted()`, so legacy embedded memory can be read before chat
   messages and per-chat `hypaV3Data` converge into SQLite.
-- Runtime registries: command events, memory events, proxy stream jobs, and
-  detached generation jobs are process-local.
+- Runtime registries: command-event live subscribers, memory events, proxy stream
+  jobs, and detached generation jobs are process-local. Command-event replay
+  history is persisted in SQLite.
 - Timers: proxy stream jobs and generation jobs share a GC tick; asset GC runs on
   its own interval unless tests disable it.
 - Hooks: the active-writer guard is a global `preHandler` registered after
