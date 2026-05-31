@@ -27,7 +27,6 @@
   let privateMode = $state(false)
   let nsfwMode = $state(false)
   let license = $state('')
-  let creatorNotes: { [code: string]: string } = parseMultilangString(char.creatorNotes)
   let update = $state(Boolean(char.realmId))
 </script>
 
@@ -177,13 +176,16 @@
       <Button
         onclick={async () => {
           await sleep(1) // wait for the input to be updated
-          const enNotes = creatorNotes.en
+          const creatorNotes = parseMultilangString(char.creatorNotes)
+          const enNotes = creatorNotes.en ?? ''
           const latin1 = /^[\x00-\xFF]*$/
           if (enNotes.length < 10) {
             alertError('English version of creator notes must be longer than 10 characters')
+            return
           }
           if (!latin1.test(enNotes)) {
             alertError('English version of creator notes must contain only Latin-1 characters')
+            return
           }
           shareRisuHub2($state.snapshot(char) as character, {
             anon: privateMode,

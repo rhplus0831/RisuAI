@@ -19,6 +19,7 @@
   const id = DBState.db?.account?.id
   let loadingStage = $state(0)
   let pongGot = false
+  let destroyed = false
 
   const pmfunc = (e: MessageEvent) => {
     if (e.data.type === 'filedata' && e.data.success) {
@@ -47,9 +48,10 @@
   }
 
   const waitPing = async () => {
+    const startedAt = Date.now()
     if (iframe) {
-      while (!pongGot) {
-        iframe.contentWindow.postMessage(
+      while (!pongGot && !destroyed && Date.now() - startedAt < 15000) {
+        iframe.contentWindow?.postMessage(
           {
             type: 'ping',
           },
@@ -58,6 +60,7 @@
         await sleep(300)
       }
     }
+    return pongGot && !destroyed
   }
 
   onMount(async () => {
@@ -95,9 +98,10 @@
     }
 
     if (iframe) {
-      await waitPing()
+      const ready = await waitPing()
+      if (!ready || destroyed) return
       loadingStage = 1
-      iframe.contentWindow.postMessage(
+      iframe.contentWindow?.postMessage(
         {
           type: 'filedata',
           buf: [data.data, data.name],
@@ -125,6 +129,7 @@
   }
 
   onDestroy(() => {
+    destroyed = true
     window.removeEventListener('message', pmfunc)
   })
 </script>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getAllContexts, mount, unmount } from 'svelte'
+  import { getAllContexts, mount, onDestroy, onMount, unmount } from 'svelte'
   import PortalConsumer from './PortalConsumer.svelte'
 
   interface Props {
@@ -7,16 +7,18 @@
     children: any
   }
 
-  const { target: target = document.body, children }: Props = $props()
+  let { target: target = document.body, children }: Props = $props()
 
   const context = getAllContexts()
 
   let instance
 
-  $effect(() => {
+  onMount(() => {
     instance = mount(PortalConsumer, { target, props: { children }, context })
+  })
 
-    return () => {
+  onDestroy(() => {
+    if (instance) {
       unmount(instance)
     }
   })

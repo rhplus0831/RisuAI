@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { character, Message } from 'src/ts/storage/database.svelte'
-  import { mount, onDestroy, unmount } from 'svelte'
   import Chat from './Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
   import {
@@ -43,30 +42,8 @@
   } = $props()
 
   let chatBody: HTMLDivElement
-  let hashes: Set<number> = new Set()
-  let mountInstances: Map<number, {}> = new Map()
 
-  //Non-cryptographic hash function to generate a unique hash for each message
-  function hashCode(str: string): number {
-    let hash = 0
-    for (let i = 0, len = str.length; i < len; i++) {
-      let chr = str.charCodeAt(i)
-      hash = (hash << 5) - hash + chr
-      hash |= 0 // Convert to 32bit integer
-    }
-    if (hash == 0) {
-      hash = 1 // Ensure hash is not zero
-    }
-    return hash
-  }
-
-  const updateChatBody = () => {
-    if (!chatBody) {
-      return
-    }
-
-    let nextHash = 0
-    let currentHashes: Set<number> = new Set()
+  const chatRows = $derived.by(() => {
     const charImage = getCharImage(currentCharacter.image, 'css')
     const userImage = getCharImage(userIcon, 'css')
     const simpleChar = createSimpleCharacter(currentCharacter)
@@ -79,6 +56,15 @@
     }
 
     const reloadPointerMap = get(ReloadChatPointer)
+    const rows: {
+      key: string
+      message: Message
+      idx: number
+      img: string | Promise<string>
+      largePortrait: boolean
+      name: string
+      character: ReturnType<typeof createSimpleCharacter>
+    }[] = []
 
     for (let i = loadStart; i >= loadEnd; i--) {
       if (i < 0) break // Prevent out of bounds
@@ -88,78 +74,18 @@
           ? (userIconPortrait ?? false)
           : ((currentCharacter as character).largePortrait ?? false)
       const reloadPointer = reloadPointerMap[i] ?? 0
-      let hashd =
-        message.data +
-        (message.chatId ?? '') +
-        i.toString() +
-        messageLargePortrait.toString() +
-        message.disabled?.toString() +
-        reloadPointer.toString()
-      const currentHash = hashCode(hashd)
-      currentHashes.add(currentHash)
-      if (!hashes.has(currentHash)) {
-        const b = document.createElement('div')
-        b.setAttribute('x-hashed', currentHash.toString())
-        b.classList.add('chat-message-container')
-        const inst = mount(Chat, {
-          target: b,
-          props: {
-            message: message.data,
-            isLastMemory: false,
-            idx: i,
-            totalLength: messages.length,
-            img: message.role === 'user' ? userImage : charImage,
-            onReroll: onReroll,
-            unReroll: unReroll,
-            rerollIcon: 'dynamic',
-            character: simpleChar,
-            largePortrait:
-              message.role === 'user'
-                ? (userIconPortrait ?? false)
-                : ((currentCharacter as character).largePortrait ?? false),
-            messageGenerationInfo: message.generationInfo,
-            role: message.role,
-            name: message.role === 'user' ? currentUsername : currentCharacter.name,
-            isComment: message.isComment ?? false,
-            disabled: message.disabled ?? false,
-          },
-        })
-        mountInstances.set(currentHash, inst)
-        const nextElement =
-          nextHash === 0 ? null : chatBody.querySelector(`[x-hashed="${nextHash}"]`)
-        if (nextElement) {
-          chatBody.insertBefore(b, nextElement?.nextSibling)
-        } else {
-          chatBody.prepend(b)
-        }
-      }
-      nextHash = currentHash
+      rows.push({
+        key: `${message.chatId ?? `message-${i}`}:${i}:${reloadPointer}`,
+        message,
+        idx: i,
+        img: message.role === 'user' ? userImage : charImage,
+        largePortrait: messageLargePortrait,
+        name: message.role === 'user' ? currentUsername : currentCharacter.name,
+        character: simpleChar,
+      })
     }
 
-    //@ts-expect-error Set<T> requires type arg, and Set.difference needs 'esnext' lib (polyfilled by Core-js)
-    const toRemove: Set = hashes.difference(currentHashes)
-    toRemove.forEach((hash) => {
-      const inst = mountInstances.get(hash)
-      if (inst) {
-        unmount(inst)
-        mountInstances.delete(hash)
-      }
-      const element = chatBody.querySelector(`[x-hashed="${hash}"]`)
-      if (element) {
-        chatBody.removeChild(element)
-      }
-    })
-
-    hashes = currentHashes
-  }
-
-  onDestroy(() => {
-    console.log('Unmounting Chats')
-    hashes.clear()
-    mountInstances.forEach((inst) => {
-      unmount(inst)
-    })
-    mountInstances.clear()
+    return rows
   })
 
   function checkIfAtBottom() {
@@ -183,13 +109,15 @@
 
   let previousLength = 0
   let previousChatRoomId: string | null = null
+  let wasAtBottomBeforeUpdate = true
+
+  $effect.pre(() => {
+    chatRows
+    wasAtBottomBeforeUpdate = checkIfAtBottom()
+  })
 
   $effect(() => {
-    console.log('Updating Chats')
-    void $ReloadChatPointer // Make $effect track ReloadChatPointer changes
-    const wasAtBottom = checkIfAtBottom()
-    updateChatBody()
-
+    chatRows
     const currentChatRoomId = getCurrentChatRoomId()
     const isSameChat = currentChatRoomId === previousChatRoomId
 
@@ -197,7 +125,7 @@
     if (isSameChat && messages.length > previousLength) {
       const lastMsg = messages[messages.length - 1]
       if (lastMsg && lastMsg.role === 'char' && DBState.db.autoScrollToNewMessage) {
-        if (wasAtBottom || DBState.db.alwaysScrollToNewMessage) {
+        if (wasAtBottomBeforeUpdate || DBState.db.alwaysScrollToNewMessage) {
           const element = chatBody.firstElementChild
           if (element) {
             setTimeout(() => {
@@ -214,4 +142,26 @@
   })
 </script>
 
-<div class="flex flex-col-reverse" bind:this={chatBody}></div>
+<div class="flex flex-col-reverse" bind:this={chatBody}>
+  {#each chatRows as row (row.key)}
+    <div class="chat-message-container">
+      <Chat
+        message={row.message.data}
+        isLastMemory={false}
+        idx={row.idx}
+        totalLength={messages.length}
+        img={row.img}
+        {onReroll}
+        {unReroll}
+        rerollIcon="dynamic"
+        character={row.character}
+        largePortrait={row.largePortrait}
+        messageGenerationInfo={row.message.generationInfo}
+        role={row.message.role}
+        name={row.name}
+        isComment={row.message.isComment ?? false}
+        disabled={row.message.disabled ?? false}
+      />
+    </div>
+  {/each}
+</div>

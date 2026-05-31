@@ -45,7 +45,6 @@
   // TODO: Review if highlight prop can change dynamically - if so, this needs to be reactive
   // svelte-ignore state_referenced_locally
   let highlightId = highlight ? getNewHighlightId() : 0
-  let inpa = $state(0)
   let highlightDom: HTMLDivElement = $state()
   let optiValue = $state(value)
   let autoCompleteDom: HTMLDivElement = $state()
@@ -53,35 +52,144 @@
   let inputDom: HTMLDivElement = $state()
   let highlightTimer: ReturnType<typeof setTimeout> | null = null
 
+  const getSelectionInInput = () => {
+    if (!inputDom) {
+      return null
+    }
+
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) {
+      return null
+    }
+
+    const range = sel.getRangeAt(0)
+    const commonAncestor = range.commonAncestorContainer
+    if (commonAncestor !== inputDom && !inputDom.contains(commonAncestor)) {
+      return null
+    }
+
+    return { sel, range }
+  }
+
+  const getRangeOffset = (range: Range, container: Node, offset: number) => {
+    if (!inputDom) {
+      return 0
+    }
+
+    const measuredRange = document.createRange()
+    measuredRange.selectNodeContents(inputDom)
+    measuredRange.setEnd(container, offset)
+    return measuredRange.toString().length
+  }
+
+  const ensureInputTextNode = () => {
+    if (!inputDom) {
+      return null
+    }
+
+    const currentText = inputDom.textContent ?? ''
+    if (!inputDom.firstChild || inputDom.firstChild.nodeType !== Node.TEXT_NODE) {
+      inputDom.textContent = currentText
+    }
+
+    if (!inputDom.firstChild) {
+      inputDom.appendChild(document.createTextNode(''))
+    }
+
+    return inputDom.firstChild as Text
+  }
+
+  const setCaretOffset = (offset: number) => {
+    const textNode = ensureInputTextNode()
+    if (!textNode) {
+      return
+    }
+
+    const nextOffset = Math.max(0, Math.min(offset, textNode.length))
+    const sel = window.getSelection()
+    if (!sel) {
+      return
+    }
+
+    const range = document.createRange()
+    range.setStart(textNode, nextOffset)
+    range.setEnd(textNode, nextOffset)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
+  const dispatchInputChange = () => {
+    if (!inputDom) {
+      return
+    }
+
+    inputDom.dispatchEvent(new Event('input', { bubbles: true }))
+    inputDom.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+
+  const replaceSelectionText = (
+    insertContent: string,
+    type: 'autoComplete' | 'paste' = 'paste',
+  ) => {
+    if (!inputDom) {
+      return false
+    }
+
+    const selection = getSelectionInInput()
+    const text = inputDom.textContent ?? ''
+    const start = selection
+      ? getRangeOffset(selection.range, selection.range.startContainer, selection.range.startOffset)
+      : text.length
+    const end = selection
+      ? getRangeOffset(selection.range, selection.range.endContainer, selection.range.endOffset)
+      : text.length
+
+    let contentStart = text.substring(0, Math.min(start, end))
+    const contentEnd = text.substring(Math.max(start, end))
+    if (type === 'autoComplete') {
+      contentStart = contentStart.substring(0, contentStart.lastIndexOf('{{'))
+      if (insertContent.endsWith(':')) {
+        insertContent = `{{${insertContent}:`
+      } else if (insertContent.startsWith('#')) {
+        insertContent = `{{${insertContent} `
+      } else {
+        insertContent = `{{${insertContent}}}`
+      }
+    }
+
+    inputDom.textContent = contentStart + insertContent + contentEnd
+    setCaretOffset(contentStart.length + insertContent.length)
+    dispatchInputChange()
+    return true
+  }
+
   const autoComplete = () => {
     if (isMobile) {
       return
     }
     //autocomplete
     selectingAutoComplete = 0
-    const sel = window.getSelection()
-    if (!sel) {
+    const selection = getSelectionInInput()
+    if (!selection || !highlightDom || !autoCompleteDom || !inputDom) {
       return
     }
 
-    const range = sel.getRangeAt(0)
-
-    if (range) {
-      const qValue = range.startContainer.textContent
-      const splited = qValue.substring(0, range.startOffset).split('{{')
-      if (splited.length === 1) {
-        hideAutoComplete()
-        return
-      }
-      const qText = splited.pop()
-      let filtered = AllCBS.filter((cb) => cb.startsWith(qText))
-      if (filtered.length === 0) {
-        hideAutoComplete()
-        return
-      }
-      filtered = filtered.slice(0, 10)
-      autocompleteContents = filtered
+    const { range } = selection
+    const caretOffset = getRangeOffset(range, range.startContainer, range.startOffset)
+    const qValue = inputDom.textContent ?? ''
+    const splited = qValue.substring(0, caretOffset).split('{{')
+    if (splited.length === 1) {
+      hideAutoComplete()
+      return
     }
+    const qText = splited.pop() ?? ''
+    let filtered = AllCBS.filter((cb) => cb.startsWith(qText))
+    if (filtered.length === 0) {
+      hideAutoComplete()
+      return
+    }
+    filtered = filtered.slice(0, 10)
+    autocompleteContents = filtered
 
     const hlRect = highlightDom.getBoundingClientRect()
     const rect = range.getBoundingClientRect()
@@ -101,41 +209,15 @@
     type: 'autoComplete' | 'paste' = 'autoComplete',
   ) => {
     console.log(insertContent)
-    const sel = window.getSelection()
-    if (sel) {
-      const range = sel.getRangeAt(0)
-      let content = range.startContainer.textContent
-      let contentStart = content.substring(0, range.startOffset)
-      let contentEnd = content.substring(range.startOffset)
-      if (type === 'autoComplete') {
-        contentStart = contentStart.substring(0, contentStart.lastIndexOf('{{'))
-        if (insertContent.endsWith(':')) {
-          insertContent = `{{${insertContent}:`
-        } else if (insertContent.startsWith('#')) {
-          insertContent = `{{${insertContent} `
-        } else {
-          insertContent = `{{${insertContent}}}`
-        }
-      }
-
-      const cons = contentStart + insertContent + contentEnd
-      range.startContainer.textContent = cons
+    if (replaceSelectionText(insertContent, type)) {
       hideAutoComplete()
-
-      try {
-        sel.collapse(range.startContainer, contentStart.length + insertContent.length)
-      } catch (error) {}
-      //invoke onInput
-
-      try {
-        inputDom.dispatchEvent(new Event('input'))
-        inputDom.dispatchEvent(new Event('change'))
-      } catch (error) {}
     }
   }
 
   const hideAutoComplete = () => {
-    autoCompleteDom.style.display = 'none'
+    if (autoCompleteDom) {
+      autoCompleteDom.style.display = 'none'
+    }
     selectingAutoComplete = 0
     autocompleteContents = []
   }
@@ -158,7 +240,9 @@
     if (highlightTimer) clearTimeout(highlightTimer)
     highlightTimer = setTimeout(() => {
       highlightTimer = null
-      highlighter(highlightDom, highlightId)
+      if (highlightDom) {
+        highlighter(highlightDom, highlightId)
+      }
     }, 50)
   }
 
@@ -196,23 +280,9 @@
   function insertTextAtSelection(txt: string) {
     txt = txt.replace(/\r/g, '')
 
-    let div = inputDom
-    let sel = window.getSelection()
-    let text = div.textContent
-    let before = Math.min(sel.focusOffset, sel.anchorOffset)
-    let after = Math.max(sel.focusOffset, sel.anchorOffset)
-    let afterStr = text.substring(after)
-    if (afterStr == '') afterStr = '\n'
-    div.textContent = text.substring(0, before) + txt + afterStr
-    sel.removeAllRanges()
-    let range = document.createRange()
-    range.setStart(div.childNodes[0], before + txt.length)
-    range.setEnd(div.childNodes[0], before + txt.length)
-    sel.addRange(range)
-    try {
-      inputDom.dispatchEvent(new Event('input'))
-      inputDom.dispatchEvent(new Event('change'))
-    } catch (error) {}
+    if (!replaceSelectionText(txt)) {
+      dispatchInputChange()
+    }
   }
 
   $effect.pre(() => {
@@ -275,11 +345,8 @@
       bind:value
       oninput={(e) => {
         if (optimaizedInput) {
-          if (inpa++ > 10) {
-            value = e.currentTarget.value
-            inpa = 0
-            onInput()
-          }
+          value = e.currentTarget.value
+          onInput()
         } else {
           value = e.currentTarget.value
           onInput()
@@ -341,11 +408,12 @@
       bind:textContent={value}
       onkeydown={(e) => {
         handleKeyDown(e)
-        onInput()
       }}
       role="textbox"
       tabindex="0"
       oninput={(e) => {
+        value = e.currentTarget.textContent ?? ''
+        onInput()
         autoComplete()
       }}
       onchange={(e) => {

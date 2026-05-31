@@ -40,6 +40,12 @@
 >
   <div
     class="p-6 max-w-full bg-darkbg rounded-md flex flex-col gap-4 w-2xl overflow-y-auto max-h-full"
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    onclick={(event) => {
+      event.stopPropagation()
+    }}
   >
     <div class="w-full flex flex-col">
       <h1 class="text-2xl font-bold max-w-full overflow-hidden whitespace-nowrap text-ellipsis">

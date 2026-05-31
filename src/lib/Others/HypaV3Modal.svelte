@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { ChevronUpIcon, ChevronDownIcon } from '@lucide/svelte'
   import { type SerializableSummary, summarize } from 'src/ts/process/memory/hypav3'
   import { alertNormalWait } from 'src/ts/alert'
@@ -174,7 +174,7 @@
     // Navigate to next/previous result
     const result = getNextSearchResult(backward)
     if (result) {
-      navigateToSearchResult(result)
+      void navigateToSearchResult(result)
     }
   }
 
@@ -481,13 +481,17 @@
     return searchState.results[nextIndex]
   }
 
-  function navigateToSearchResult(result: SearchResult) {
+  async function navigateToSearchResult(result: SearchResult) {
     searchState.isNavigating = true
 
     if (result.type === 'summary') {
       const summary = hypaV3Data.summaries[result.summaryIndex]
       const summaryItemState = summaryItemStateMap.get(summary)
-      const textarea = summaryItemState.originalRef
+      const textarea = summaryItemState?.originalRef
+      if (!textarea) {
+        searchState.isNavigating = false
+        return
+      }
 
       // Scroll to element
       textarea.scrollIntoView({
@@ -516,8 +520,18 @@
       }
     } else {
       const summary = hypaV3Data.summaries[result.summaryIndex]
+      if (uiState.collapsedSummaries.has(result.summaryIndex)) {
+        const expanded = new Set(uiState.collapsedSummaries)
+        expanded.delete(result.summaryIndex)
+        uiState.collapsedSummaries = expanded
+        await tick()
+      }
       const summaryItemState = summaryItemStateMap.get(summary)
-      const button = summaryItemState.chatMemoRefs[result.memoIndex]
+      const button = summaryItemState?.chatMemoRefs[result.memoIndex]
+      if (!button) {
+        searchState.isNavigating = false
+        return
+      }
 
       // Scroll to element
       button.scrollIntoView({

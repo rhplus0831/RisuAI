@@ -38,6 +38,7 @@
     ReloadChatPointer,
     CurrentTriggerIdStore,
     popupStore,
+    SizeStore,
   } from 'src/ts/stores.svelte'
   import { capitalize, getUserIcon, getUserName, sleep } from 'src/ts/util'
   import { onDestroy, onMount } from 'svelte'
@@ -402,6 +403,19 @@
     }
   }
 
+  function getRisuButtonAttributes(dom: HTMLElement) {
+    const attributes: Record<string, string> = {}
+
+    for (const attr of ['risu-trigger', 'risu-btn', 'risu-id']) {
+      const value = dom.getAttribute(attr)
+      if (value !== null) {
+        attributes[attr] = value
+      }
+    }
+
+    return attributes
+  }
+
   async function handleButtonTriggerWithin(event: UIEvent) {
     const currentChar = getCurrentCharacter()
     if (!currentChar) {
@@ -737,7 +751,7 @@
       <span class="text-xs">{statusMessage}</span>
       <div class="flex items-center ml-2 gap-2">
         {@render translationButton()}
-        {#if window.innerWidth >= 640}
+        {#if $SizeStore.w >= 640}
           {@render majorIconButtonsBody(false)}
           {#if DBState.db.characters[selIdState.selId]}
             <PopupButton>
@@ -1387,7 +1401,12 @@
 
 {#snippet renderGuiHtmlPart(dom: HTMLElement)}
   {#if dom.tagName === 'IMG'}
-    <img class={dom.getAttribute('class') ?? ''} alt="" style={dom.getAttribute('style') ?? ''} />
+    <img
+      class={dom.getAttribute('class') ?? ''}
+      src={dom.getAttribute('src') ?? ''}
+      alt={dom.getAttribute('alt') ?? ''}
+      style={dom.getAttribute('style') ?? ''}
+    />
   {:else if dom.tagName === 'A'}
     <a
       target="_blank"
@@ -1497,7 +1516,11 @@
       {@render renderChilds(dom)}
     </del>
   {:else if dom.tagName === 'BUTTON'}
-    <button class={dom.getAttribute('class') ?? ''} style={dom.getAttribute('style') ?? ''}>
+    <button
+      {...getRisuButtonAttributes(dom)}
+      class={dom.getAttribute('class') ?? ''}
+      style={dom.getAttribute('style') ?? ''}
+    >
       {@render renderChilds(dom)}
     </button>
   {:else if dom.tagName === 'RISUTEXTBOX'}

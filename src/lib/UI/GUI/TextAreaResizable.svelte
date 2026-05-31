@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
 
   import { DBState } from 'src/ts/stores.svelte'
   import { longpress } from 'src/ts/gui/longtouch'
 
-  let textarea: HTMLElement = $state()
+  let textarea: HTMLTextAreaElement = $state()
   let previousScrollHeight = 0
+  let resizeRequest = 0
   interface Props {
     value?: string
     handleLongPress?: any
@@ -14,11 +15,13 @@
   let { value = $bindable(''), handleLongPress = (e: MouseEvent) => {} }: Props = $props()
 
   function resize() {
+    if (!textarea) return
     textarea.style.height = '0px' // Reset the textarea height
     textarea.style.height = `calc(${textarea.scrollHeight}px + 1rem)` // Set the new height
   }
 
   function handleInput() {
+    if (!textarea) return
     if (textarea.scrollHeight !== previousScrollHeight) {
       previousScrollHeight = textarea.scrollHeight
       resize()
@@ -27,6 +30,17 @@
 
   onMount(() => {
     resize()
+  })
+
+  $effect(() => {
+    value
+    const request = ++resizeRequest
+
+    tick().then(() => {
+      if (request !== resizeRequest || !textarea) return
+      previousScrollHeight = textarea.scrollHeight
+      resize()
+    })
   })
 </script>
 

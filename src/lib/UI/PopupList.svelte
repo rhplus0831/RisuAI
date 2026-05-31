@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { popupStore } from 'src/ts/stores.svelte'
+  import { popupStore, SizeStore } from 'src/ts/stores.svelte'
   import { sleep } from 'src/ts/util'
   import { onDestroy, onMount } from 'svelte'
 
   let styleString = $derived.by(() => {
     let styleString = ''
-    const windowWidth = window.innerWidth
-    const windowHeight = window.innerHeight
+    const windowWidth = $SizeStore.w
+    const windowHeight = $SizeStore.h
     const mouseX = popupStore.mouseX
     const mouseY = popupStore.mouseY
 
