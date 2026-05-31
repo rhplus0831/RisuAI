@@ -827,9 +827,10 @@ async function streamAssembly(
 
 // Durable generation: decoupled lifecycle + server-owned result.
 //
-// For a `durable` send (browser `resolveDurableGeneration === 'durable'` →
-// `body.durable === true`, mode `send`), the generation runs as a detached
-// `JobRegistry` job whose lifecycle is **not** tied to the request connection:
+// For a durable generating mode (browser `resolveDurableGeneration === 'durable'` →
+// `body.durable === true`, mode `send`/`continue`/`regenerate`), the generation
+// runs as a detached `JobRegistry` job whose lifecycle is **not** tied to the
+// request connection:
 // dropping the connection detaches a viewer, the job keeps generating, buffers,
 // and is reattachable. At completion the server persists the derived assistant
 // message + scriptstate delta itself.
@@ -1397,10 +1398,11 @@ async function runGenerationJob(args: {
 }
 
 /**
- * Step 2: accept a durable send. Enforce one-running-job-per-chat (the active-writer
- * submission gate is already enforced by the global guard preHandler), create the
- * job + claim the submission lock + capture the writer identity, attach this
- * connection as the first viewer, then launch the detached runner.
+ * Step 2: accept a durable generating request. Enforce one-running-job-per-chat
+ * (the active-writer submission gate is already enforced by the global guard
+ * preHandler), create the job + claim the submission lock + capture the writer
+ * identity, attach this connection as the first viewer, then launch the detached
+ * runner.
  */
 function startDurableGeneration(args: {
   req: FastifyRequest

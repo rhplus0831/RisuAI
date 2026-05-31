@@ -2,7 +2,8 @@
 
 Date: 2026-05-31
 
-Status: verified planning document.
+Status: verified planning document; phases 0-3 are implemented as of
+2026-06-01, and phases 4-8 remain planning.
 
 Source audit:
 
@@ -10,7 +11,8 @@ Source audit:
 - Structure map: `STRUCTURE.md`, `docs/structure/backend.md`,
   `docs/structure/frontend.md`, and `docs/structure/data-and-events.md`.
 - Follow-up tracker: `docs/leftover.md`.
-- Source verification was done against the current tree on 2026-05-31.
+- Source verification was done against the current tree on 2026-05-31 and
+  refreshed for implemented phases on 2026-06-01.
 
 ## Scope
 
@@ -25,17 +27,17 @@ to prove whether later changes help.
 
 ## Verification Matrix
 
-| Recommendation                           | Current source check                                                                                                                                                                                                               | Result                                                                           |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Add protocol observability first         | There is no dedicated protocol telemetry around command latency, projection fallback reason, hydration fanout, replay misses, or generation persistence failure. `rg` only finds scattered ad hoc performance logs and tests.      | Valid. Add lightweight logs/counters before deeper performance work.             |
-| Bound bulk hydration concurrency         | `ensureAllCharacterLorebooksHydrated()` and `ensureAllChatsHydrated()` call unbounded `Promise.all(ids.map(...))` in `src/ts/server/chatMessageHydration.svelte.ts`.                                                               | Valid and low risk.                                                              |
-| Persist command-event replay history     | Command replay uses `InMemoryCommandEventSink` with `COMMAND_EVENT_HISTORY_LIMIT = 1000` in `server/fastify/src/commands/events.ts`; `/api/v1/events` returns `409 event_replay_unavailable` when history cannot cover the cursor. | Valid. Useful for restart and long-disconnect recovery.                          |
-| Reduce command mutation full-object cost | `applyJsonCommandMutation()` loads hydrated state, JSON-clones it, mutates, syncs chat rows, strips messages, writes `db.json`, and emits an event.                                                                                | Valid, but must be incremental because this path protects consistency.           |
-| Make active-writer coverage less manual  | `server/fastify/src/routeManifest.ts` now drives `activeWriter.ts`, route-protection tests, and the EC5 architecture audit.                                                                                                        | Completed by Phase 3.                                                            |
-| Narrow projection refreshes              | `RESOURCE_PROJECTION_FIELDS` maps `message` and `generation` to the full `characters` field, and the route loads a full stub projection before selecting fields.                                                                   | Valid. High impact for large character/chat sets.                                |
-| Harden durable generation persistence    | `GenerationJobRegistry` is explicitly in-memory only; durable generation handles browser disconnects but not server restarts. `docs/leftover.md` already records restart survival as Milestone 2.                                  | Valid, but lower priority unless restart survival becomes a product requirement. |
-| Reduce media/base64 memory pressure      | `resolveStoredAsset()` reads full asset bytes and base64-encodes them for chat generation; Realm staged assets are read fully before hashing/write.                                                                                | Valid, but secondary to replay/projection/hydration work.                        |
-| Make rate limits explicit                | `@fastify/rate-limit` is registered with `global: false`, so the configured max is not a default global throttle.                                                                                                                  | Valid. Route-level limits should avoid SSE/WebSocket routes.                     |
+| Recommendation                           | Current source check                                                                                                                                                                              | Result                                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Add protocol observability first         | Server protocol metrics now live behind `RISU_PROTOCOL_METRICS`; browser diagnostics live behind `localStorage.risu:protocol-debug`.                                                              | Completed by Phase 0.                                                            |
+| Bound bulk hydration concurrency         | `ensureAllCharacterLorebooksHydrated()` and `ensureAllChatsHydrated()` share `BULK_HYDRATION_CONCURRENCY = 4` in `src/ts/server/chatMessageHydration.svelte.ts`.                                  | Completed by Phase 1.                                                            |
+| Persist command-event replay history     | Command replay is persisted in SQLite and `/api/v1/events` can replay covered restart/long-disconnect gaps; too-old or cursor-ahead requests still fall back intentionally.                       | Completed by Phase 2.                                                            |
+| Reduce command mutation full-object cost | `applyJsonCommandMutation()` loads hydrated state, JSON-clones it, mutates, syncs chat rows, strips messages, writes `db.json`, and emits an event.                                               | Valid, but must be incremental because this path protects consistency.           |
+| Make active-writer coverage less manual  | `server/fastify/src/routeManifest.ts` now drives `activeWriter.ts`, route-protection tests, and the EC5 architecture audit.                                                                       | Completed by Phase 3.                                                            |
+| Narrow projection refreshes              | `RESOURCE_PROJECTION_FIELDS` maps `message` and `generation` to the full `characters` field, and the route loads a full stub projection before selecting fields.                                  | Valid. High impact for large character/chat sets.                                |
+| Harden durable generation persistence    | `GenerationJobRegistry` is explicitly in-memory only; durable generation handles browser disconnects but not server restarts. `docs/leftover.md` already records restart survival as Milestone 2. | Valid, but lower priority unless restart survival becomes a product requirement. |
+| Reduce media/base64 memory pressure      | `resolveStoredAsset()` reads full asset bytes and base64-encodes them for chat generation; Realm staged assets are read fully before hashing/write.                                               | Valid, but secondary to replay/projection/hydration work.                        |
+| Make rate limits explicit                | `@fastify/rate-limit` is registered with `global: false`, so the configured max is not a default global throttle.                                                                                 | Valid. Route-level limits should avoid SSE/WebSocket routes.                     |
 
 ## Invariants
 
@@ -76,6 +78,10 @@ Slice doc: [`slices/phase-0-protocol-measurement.md`](slices/phase-0-protocol-me
 
 Goal: make the existing pressure points visible before changing behavior.
 
+Status: implemented. Server metrics are opt-in through
+`RISU_PROTOCOL_METRICS`, and browser diagnostics are opt-in through
+`localStorage.risu:protocol-debug`.
+
 Implementation slices:
 
 - Server protocol timing and payload metrics.
@@ -88,6 +94,8 @@ Slice doc: [`slices/phase-1-bound-bulk-hydration.md`](slices/phase-1-bound-bulk-
 
 Goal: prevent export/tokenizer/cold-storage flows from opening an unbounded
 number of projection requests.
+
+Status: implemented with `BULK_HYDRATION_CONCURRENCY = 4`.
 
 Implementation slices:
 
@@ -103,6 +111,8 @@ Slice doc: [`slices/phase-2-durable-command-event-replay.md`](slices/phase-2-dur
 Goal: avoid full bootstrap after server restart or long disconnect when the
 revision gap is covered by stored command events.
 
+Status: implemented with SQLite-backed command event history.
+
 Implementation slices:
 
 - SQLite command-event history schema and repository.
@@ -116,6 +126,8 @@ Slice doc: [`slices/phase-3-route-and-protocol-coverage-manifest.md`](slices/pha
 
 Goal: reduce drift between route registration, active-writer classification,
 route-protection tests, and architecture audit rules.
+
+Status: implemented with `server/fastify/src/routeManifest.ts`.
 
 Implementation slices:
 

@@ -25,8 +25,8 @@ The current protocol is coherent and mostly well-defended:
   restart.
 - The largest performance risks are full-bootstrap fallback after replay misses
   or projection gaps, full database hydration/clone work inside command
-  mutations, unbounded bulk hydration on the client, and media/base64 payload
-  size in generation and import paths.
+  mutations, retained-history replay limits, and media/base64 payload size in
+  generation and import paths.
 - The largest protocol maintenance risks are command event resource projection
   fields and client/server SSE type mirrors. Route auth/ownership coverage now
   flows through the shared Fastify route manifest.
@@ -302,15 +302,16 @@ signals, not the durability source.
   restarts use command-event replay, but long disconnects beyond retained
   history can still move the full stub projection over the wire
   (`src/ts/bootstrap.ts:351`).
-- Bulk hydration uses unbounded `Promise.all()` across every chat or every
-  character lorebook (`src/ts/server/chatMessageHydration.svelte.ts:149`,
-  `src/ts/server/chatMessageHydration.svelte.ts:188`).
+- Bulk hydration is capped by `BULK_HYDRATION_CONCURRENCY = 4`, but export,
+  tokenizer, and cold-storage flows can still issue many projection requests
+  over time (`src/ts/server/chatMessageHydration.svelte.ts:21`).
 - Client bridge/watchers use snapshot comparison and JSON serialization in hot
   paths for settings, chat, and lorebook synchronization. Large projected
   structures can make those comparisons expensive.
-- Server chat sends browser inlay assets as base64 in the `/generate/chat`
-  request, and stored asset prompt resolution reads asset bytes into memory before
-  base64 encoding (`server/fastify/src/routes/generationChat.ts:233`).
+- Server chat uploads browser inlay bytes to server assets and sends id aliases
+  in `/generate/chat`; provider-facing prompt resolution still reads stored asset
+  bytes into memory before base64 encoding
+  (`server/fastify/src/routes/generationChat.ts:233`).
 - Realm `charx` import streams archive handling, but staged asset saves still
   read individual staged files fully into memory for hashing/write.
 - The rate-limit plugin is registered with `global: false`, so the configured

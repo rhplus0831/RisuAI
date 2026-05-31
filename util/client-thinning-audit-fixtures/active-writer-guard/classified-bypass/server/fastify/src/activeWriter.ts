@@ -1,5 +1,8 @@
 // Active-writer classifier needle carrier: every guarded route rule appears here.
+import { routeRequiresActiveWriter } from './routeManifest.js'
+
 export function requiresActiveWriter(method: string, path: string): boolean {
+  if (routeRequiresActiveWriter(method, path)) return true
   if (path.startsWith('/api/v1/commands/')) return true
   if (path === '/api/v1/import/risusave') return true
   if (path === '/api/v1/import/realm-character') return true

@@ -13,7 +13,12 @@ generated, local-only, historical, or intentionally no-port.
 | `data/`                                         | Local runtime state: SQLite, `db.json`, assets, backups, auth files. Useful for manual debugging, not source.            |
 | `scripts/`                                      | Ignored local scratch/tooling directory when present.                                                                    |
 | `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                              |
+| `public/assets/`                                | Bundled Bergamot/browser translator worker assets. Only touch when intentionally updating vendor assets.                 |
+| `public/plugin_start.7z`                        | Packaged starter plugin archive.                                                                                         |
 | `src/ts/rpack/`                                 | Vendored rpack implementation; also excluded from Prettier.                                                              |
+| `src/ts/process/__fixtures__/expected/`         | Prompt/generation golden fixtures; regenerate only with `UPDATE_FIXTURES=1`.                                             |
+| `src/ts/process/__fixtures__/upstream/`         | Upstream fixture corpus for request/provider tests.                                                                      |
+| `*.snap` under test fixture directories         | Vitest snapshots; update through the relevant test workflow.                                                             |
 
 `docs/archive/fastify/other/coverage/*.md` holds the test-coverage inventories;
 treat those files as source documentation.
@@ -24,7 +29,7 @@ treat those files as source documentation.
 copy. Edit `public/` when changing a static source asset; rebuild to refresh
 `dist/`.
 
-`public/functions/` is intentionally empty after removed public worker/OAuth
+`public/functions/` is currently absent after removed public worker/OAuth
 surfaces. Do not reintroduce old Google Drive public workers without a new
 explicit roadmap.
 
@@ -56,6 +61,14 @@ runtime, not legacy: **server prompt assembly** (`resolveServerPromptAssembly` +
 entrypoint is `src/main.ts`, and the live lite mode is `VITE_RISU_LITE` driving
 the mobile branch in `src/App.svelte`.
 
+`src/lib/UI/3DLoader.svelte` and `src/ts/3d/threeload.ts` are explicitly marked
+legacy and are not imported by the current app shell. `src/lib/UI/NewGUI/` and
+`src/ts/sync/` are empty/stale-looking directories; do not infer active UI or
+sync support from their presence.
+
+`src/lib/Others/WelcomeRisu.svelte` still exists, but `src/App.svelte` no longer
+imports it in the current shell.
+
 ## Legacy Names That Are Still Active
 
 Some files retain legacy names because they bridge current behavior:
@@ -85,3 +98,7 @@ These are removed or intentionally not ported:
 - Browser local persistence as the primary supported runtime.
 
 The maintained memory path is Hypa V3 on the Fastify server.
+
+Residual group-chat strings and comments remain in some non-archive source and
+bundled docs. They are known cleanup follow-ups tracked in
+[`../leftover.md`](../leftover.md), not evidence of live group-chat support.

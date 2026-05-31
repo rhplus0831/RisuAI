@@ -23,6 +23,8 @@ const h = vi.hoisted(() => {
     DBState: { db: {} as Record<string, unknown> },
     selectedCharID: makeStore(-1),
     doingChat: makeStore(false),
+    createActiveGenerationAbortController: vi.fn(() => new AbortController()),
+    clearActiveGenerationAbortController: vi.fn(),
     sendChat: vi.fn(async () => true),
   }
 })
@@ -35,6 +37,8 @@ vi.mock('../../stores.svelte', () => ({
 vi.mock('../index.svelte', () => ({
   sendChat: h.sendChat,
   doingChat: h.doingChat,
+  createActiveGenerationAbortController: h.createActiveGenerationAbortController,
+  clearActiveGenerationAbortController: h.clearActiveGenerationAbortController,
 }))
 
 import {
@@ -54,6 +58,8 @@ beforeEach(() => {
   h.DBState.db = { characters: [] }
   h.selectedCharID.set(-1)
   h.sendChat.mockClear()
+  h.createActiveGenerationAbortController.mockClear()
+  h.clearActiveGenerationAbortController.mockClear()
   h.doingChat.set(false)
   activeGenerationJobs.set([])
 })
@@ -65,7 +71,13 @@ describe('reattach open-chat generation (Phase 7)', () => {
 
     await maybeReattachOpenChatGeneration()
 
-    expect(h.sendChat).toHaveBeenCalledWith(-1, { reattachJobId: 'job-1' })
+    expect(h.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+        reattachJobId: 'job-1',
+      }),
+    )
     expect(get(activeGenerationJobs)).toEqual([])
   })
 
@@ -77,11 +89,15 @@ describe('reattach open-chat generation (Phase 7)', () => {
 
     await maybeReattachOpenChatGeneration()
 
-    expect(h.sendChat).toHaveBeenCalledWith(-1, {
-      reattachJobId: 'job-c',
-      continue: true,
-      regenerateMessageId: undefined,
-    })
+    expect(h.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+        reattachJobId: 'job-c',
+        continue: true,
+        regenerateMessageId: undefined,
+      }),
+    )
   })
 
   it('reattaches a regenerate job with its target id', async () => {
@@ -92,11 +108,15 @@ describe('reattach open-chat generation (Phase 7)', () => {
 
     await maybeReattachOpenChatGeneration()
 
-    expect(h.sendChat).toHaveBeenCalledWith(-1, {
-      reattachJobId: 'job-r',
-      continue: undefined,
-      regenerateMessageId: 'msg-1',
-    })
+    expect(h.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+        reattachJobId: 'job-r',
+        continue: undefined,
+        regenerateMessageId: 'msg-1',
+      }),
+    )
   })
 
   it('does nothing when no job matches the open chat', async () => {

@@ -17,7 +17,8 @@ the route surface consumed by the Svelte client.
   `RISU_API_HOST`, `RISU_API_PORT`, `RISU_API_DATA_DIR`,
   `RISU_API_BODY_LIMIT`, `TRUST_PROXY`, `RISU_API_STATIC_ROOT`, and
   `RISU_HUB_URL`, and `RISU_REALM_URL`. `LOG_LEVEL` is read directly in
-  `server/fastify/src/app.ts`.
+  `server/fastify/src/app.ts`; protocol metrics read `RISU_PROTOCOL_METRICS` in
+  `server/fastify/src/protocolMetrics.ts`.
 
 The app factory is test-friendly: many pieces are injectable through
 `BuildAppOptions`, including generation chat dispatch, memory worker behavior,
@@ -51,26 +52,26 @@ Route modules export `registerXRoutes(app, ...)` and register concrete
 `/api/v1/...` paths directly. The registration order is centralized in
 `server/fastify/src/app.ts`.
 
-| Family             | Registrar                  | Notes                                                                                                                                                  |
-| ------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Health             | `routes/health.ts`         | Public health and schema revision surface.                                                                                                             |
-| Auth               | `routes/auth.ts`           | Password setup, login, auth status.                                                                                                                    |
-| Bootstrap          | `routes/bootstrap.ts`      | Returns current projection and revision.                                                                                                               |
-| Projection         | `routes/projection.ts`     | Targeted projection refresh plus chat/global-lore hydration.                                                                                           |
-| Save/import/export | `routes/save.ts`           | `.risu` import/export and bundle export.                                                                                                               |
-| Realm import       | `routes/realmImport.ts`    | Server-side RisuRealm JSON/`charx` import, asset persistence, progress SSE, and character creation.                                                    |
-| Commands           | `routes/commands.ts`       | Large command registrar for settings and domain mutations.                                                                                             |
-| Events             | `routes/events.ts`         | SSE stream for command and memory events.                                                                                                              |
-| Assets             | `routes/assets.ts`         | Upload and read content-addressed assets.                                                                                                              |
-| Backups            | `routes/backups.ts`        | Create/list/restore/delete persisted snapshots.                                                                                                        |
-| Proxy              | `routes/proxy.ts`          | Authenticated generic fetch proxy with binary parser scope.                                                                                            |
-| Stream jobs        | `routes/streamJobs.ts`     | HTTP job creation plus WebSocket attachment.                                                                                                           |
-| Hub                | `routes/hub.ts`            | Retained hub passthrough, despite legacy naming elsewhere.                                                                                             |
-| Legacy storage     | `routes/legacyStorage.ts`  | Active `/api/v1/storage/*` bridge for client `NodeStorage`.                                                                                            |
-| Generation         | `routes/generation.ts`     | Completion route and provider request validation.                                                                                                      |
-| Chat generation    | `routes/generationChat.ts` | Prompt assembly SSE + provider dispatch + post-gen pass; preview-prompt, durable reattach (`GET .../:id/stream`) and cancel (`DELETE .../:id`) routes. |
-| Memory jobs        | `routes/memoryJobs.ts`     | Queue/cancel/list memory jobs.                                                                                                                         |
-| Memory reads       | `routes/memoryReads.ts`    | Read chunks and summaries.                                                                                                                             |
+| Family             | Registrar                  | Notes                                                                                                                                                                                                                             |
+| ------------------ | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Health             | `routes/health.ts`         | Public health and schema revision surface.                                                                                                                                                                                        |
+| Auth               | `routes/auth.ts`           | Password setup, login, auth status. The public `/api/v1/auth/crypto` compatibility hashing helper is registered from `routes/legacyStorage.ts`.                                                                                   |
+| Bootstrap          | `routes/bootstrap.ts`      | Returns current projection and revision.                                                                                                                                                                                          |
+| Projection         | `routes/projection.ts`     | Targeted projection refresh plus chat/global-lore hydration.                                                                                                                                                                      |
+| Save/import/export | `routes/save.ts`           | `.risu` import/export and bundle export.                                                                                                                                                                                          |
+| Realm import       | `routes/realmImport.ts`    | Server-side RisuRealm JSON/`charx` import, asset persistence, progress SSE, and character creation.                                                                                                                               |
+| Commands           | `routes/commands.ts`       | Large command registrar for state initialization, settings, presets, prompts, personas, translators, loadouts, characters/chats/messages, lorebooks, modules, plugins, plugin storage, scripts, triggers, and generation results. |
+| Events             | `routes/events.ts`         | SSE stream for command and memory events.                                                                                                                                                                                         |
+| Assets             | `routes/assets.ts`         | Single raw upload, JSON/base64 bulk upload, immutable `GET`/`HEAD` reads, and public existence probes for content-addressed assets.                                                                                               |
+| Backups            | `routes/backups.ts`        | Create/list/restore/delete persisted snapshots.                                                                                                                                                                                   |
+| Proxy              | `routes/proxy.ts`          | Authenticated POST-only binary fetch proxy with scoped parser behavior.                                                                                                                                                           |
+| Stream jobs        | `routes/streamJobs.ts`     | HTTP job creation/cancel plus WebSocket attachment.                                                                                                                                                                               |
+| Hub                | `routes/hub.ts`            | Retained hub passthrough for `GET`/`POST`/`PUT`/`DELETE`/`PATCH`/`OPTIONS`/`HEAD`; only `GET`/`HEAD`/`OPTIONS` without override are public.                                                                                       |
+| Legacy storage     | `routes/legacyStorage.ts`  | Active `/api/v1/storage/*` bridge for client `NodeStorage`.                                                                                                                                                                       |
+| Generation         | `routes/generation.ts`     | Completion route and provider request validation.                                                                                                                                                                                 |
+| Chat generation    | `routes/generationChat.ts` | Prompt assembly SSE + provider dispatch + post-gen pass; preview-prompt, durable reattach (`GET .../:id/stream`) and cancel (`DELETE .../:id`) routes.                                                                            |
+| Memory jobs        | `routes/memoryJobs.ts`     | Queue/cancel/list memory jobs.                                                                                                                                                                                                    |
+| Memory reads       | `routes/memoryReads.ts`    | Read chunks and summaries.                                                                                                                                                                                                        |
 
 Most route handlers call `requireAuth(authState, req, reply)` manually. There is
 no global auth middleware. Public routes are intentional and include health,
@@ -91,6 +92,10 @@ Common command rules:
 - Conflicts return 409 when the client revision is stale.
 - Successful command mutations bump the revision once and emit one command event.
 - Public command APIs should use stable ids, not array indexes.
+
+`POST /api/v1/commands/state/initialize` is the first-run exception: it creates
+the server-owned default database and intentionally does not accept a
+browser-provided database payload or `baseRevision`.
 
 Browser-side command wrappers live in `src/ts/server/commands.ts` plus narrower
 helpers such as `src/ts/characterCommands.ts`, `src/ts/chatCommands.ts`,
@@ -139,6 +144,37 @@ assembly helpers live in `server/fastify/src/prompt/` and cover history,
 lorebook, static/plain sections, modules, scripts, triggers, tokenizer config,
 memory adapters, provider transport, the server Lua VM, and budget finalization.
 
+### Provider Transport And Completion
+
+`POST /api/v1/generate/completion` is lower-level than `/generate/chat`.
+Server-intent completion requests send already-shaped messages and sampling
+intent; the server rejects provider-wire fields from the browser, resolves the
+provider/model/options/secrets from the database, and dispatches through the
+shared provider capability table. A legacy direct-provider envelope remains for
+compatibility tests and tools.
+
+The chat path can wrap non-streaming provider results into a single chat SSE
+result. The direct completion route has its own streaming/non-streaming shape
+and should not be treated as identical to chat generation support.
+
+Fastify prompt assembly hard-fails unsupported shapes instead of falling back to
+browser-local assembly. Major gates include group chat, non-text send tails that
+would require browser-only transforms, non-server-routable providers, non-vision
+image caption fallback, interactive Lua dialogs, and Plugin V2 edit/replacer
+hooks. See [`providers-and-models.md`](providers-and-models.md).
+
+Persistence and cancel behavior differs by path:
+
+| Path                      | Result policy                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Inline success            | Server persists the final text and scriptstate delta; browser suppresses its old generation-result command. |
+| Inline derivation failure | Server best-effort persists raw provider text and warns.                                                    |
+| Inline persist failure    | Error is swallowed after streaming; the browser keeps its optimistic UI and the next sync reconciles.       |
+| Durable success           | Detached job persists the derived result itself, idempotent on `generationId`.                              |
+| Durable persist failure   | Job emits terminal `error`; browser observation fails and projection later catches up if possible.          |
+| Streaming cancel          | Explicit cancel can persist streamed-so-far raw text.                                                       |
+| Non-streaming cancel      | No partial result is persisted.                                                                             |
+
 ### Durable Generation (survive client disconnect)
 
 A generating request the browser classifies durable (`resolveDurableGeneration === 'durable'` →
@@ -161,7 +197,9 @@ Instead the route hands off to a detached job so the generation survives the bro
   authed client). `DELETE /api/v1/generate/chat/:id` cancels (authorized by the current
   active writer; the browser stop button calls it — a bare disconnect does not cancel).
 - Bootstrap surfaces `activeGenerationJobs`; the browser consumes it and auto-reattaches
-  to an open chat's in-flight job after reload / reconnect.
+  to an open chat's in-flight job after reload / reconnect. Client reattach is
+  current-chat-only, skipped while another chat send is active, and consumes
+  active job entries one-shot.
 - In-memory only: jobs are lost on a server restart. Design records:
   [`../archive/durable-generation/`](../archive/durable-generation/README.md) and
   [`../archive/lazy-projection/`](../archive/lazy-projection/README.md).
@@ -203,6 +241,19 @@ clean orphaned prompt-memory rows, create planned chunks/jobs, and enqueue
 follow-up summarize/embed work. That is why generation and preview-prompt routes
 are treated as server-owned mutations by the active-writer guard.
 
+Prompt assembly does not run summarization or embedding provider calls inline on
+the hot path. It selects already-available chunks/summaries, plans missing work,
+and enqueues follow-up chunk/embed/summarize jobs for the worker. The real chat
+route currently enters selection without a generated query vector; embeddings
+are produced by queued jobs instead.
+
+Memory jobs are durable SQLite rows. The worker claims queued jobs, recovers
+stuck running jobs, retries with backoff, supports batch handlers for default
+embed/summarize work, and emits live memory progress events. The `chunk` job
+kind is a planning/no-op step compared with provider-backed embed/summarize
+jobs. Browser-local embedding models remain local compatibility helpers, not
+server worker providers.
+
 ## Saves, Assets, And Backups
 
 The route table surfaces the APIs, but most file-format and asset behavior lives
@@ -226,4 +277,5 @@ non-API GETs. It injects `globalThis.__FASTIFY__ = true` into `index.html` so
 the browser can switch into Fastify-backed mode.
 
 Set `RISU_API_STATIC_ROOT=off`, `none`, or an empty string to disable static SPA
-serving.
+serving. If the configured static root does not exist, static SPA serving is
+silently skipped and only API routes are registered.

@@ -8,10 +8,9 @@
 > the A2 post-generation pass and persists the derived result itself at completion
 > (idempotent on `generationId`); reattach over `GET …/:id/stream`; cancel over
 > `DELETE …/:id` (writer-gated); and a bootstrap `activeGenerationJobs` projection
-> surfaces running jobs. **EC-D1/D2/D4 are end-to-end; EC-D3's server half is done.**
-> Beyond M1: the **browser live auto-reattach UX** is a documented follow-up (not
-> implemented — no browser consumer of `activeGenerationJobs` yet), and **Milestone 2**
-> (survive a server *restart*) is deferred. Open items: [`../../leftover.md`](../../leftover.md).
+> surfaces running jobs. **EC-D1/D2/D4 are end-to-end; EC-D3's browser half was
+> completed later by lazy projection.** Beyond M1: **Milestone 2** (survive a
+> server _restart_) is deferred. Open items: [`../../leftover.md`](../../leftover.md).
 > These docs are kept as the design/decision record (the step specs retain their
 > original DRAFT framing).
 >
@@ -50,13 +49,11 @@ Milestone 1 (survive client disconnect, in-memory) is implemented:
 
 **EC-D1, EC-D2, EC-D4 are end-to-end** (server persists despite disconnect; a returning
 client reads the result via the normal projection/bootstrap refresh; zero browser persist
-POSTs). **EC-D3 server half is done** (the reattach `GET` endpoint + the bootstrap
-`activeGenerationJobs` projection, both tested). **Remaining follow-up:** the browser-side
-*live* auto-reattach UX — detecting a mid-generation disconnect / a fresh reload and
-re-driving the orchestrator off `GET …/:id/stream` discovered via
-`activeGenerationJobs`. The durability guarantee does not depend on it (the result is
-persisted server-side and surfaces on the next projection refresh); it is a live-display
-nicety.
+POSTs). This Milestone 1 closeout included the reattach `GET` endpoint and the
+bootstrap `activeGenerationJobs` projection; the browser-side live auto-reattach
+UX landed later in lazy projection. The durability guarantee does not depend on
+that live display path (the result is persisted server-side and surfaces on the
+next projection refresh).
 
 Original draft below (retained for the decision record).
 
@@ -68,7 +65,7 @@ client-thinning agent is not pointed at this folder; links are one-directional (
 client-thinning), so following client-thinning's docs never pulls an agent into this draft.
 
 **Scope decided 2026-05-29:** Milestone 1 = **survive client disconnect only.**
-Surviving a server *restart* mid-generation is a deferred Milestone 2 — that is the only
+Surviving a server _restart_ mid-generation is a deferred Milestone 2 — that is the only
 part that needs disk-persisted jobs.
 
 ## Decisions (2026-05-30)
@@ -84,10 +81,10 @@ Owner decisions refining this draft:
    output triggers and `editoutput` (the draft previously excluded them). This is now
    feasible because client-thinning **slice 4 (A2) landed**: the durable job runs the
    server post-gen pass (`runServerPostGeneration`) at completion and persists the
-   *derived* final text + scriptstate delta. Consequence: Step 1 drops its two
+   _derived_ final text + scriptstate delta. Consequence: Step 1 drops its two
    post-gen exclusions, and Step 3 now **depends on** slice 4 (landed) and runs the
    A2 pass server-side (it is no longer the "sidesteps A2" narrow case).
-3. **M1 stays disconnect-only (in-memory).** Surviving a server *restart* remains
+3. **M1 stays disconnect-only (in-memory).** Surviving a server _restart_ remains
    Milestone 2. Rationale: a single-user self-host server, and a chat generation is
    not a long-running job — the in-memory job window is short, so restart-survival is
    low-value for now.
@@ -99,7 +96,7 @@ Remaining open/ambiguous tasks live in [`../../leftover.md`](../../leftover.md).
 
 ## Goal
 
-The client only *sends a request*. From there the server owns the generation:
+The client only _sends a request_. From there the server owns the generation:
 
 1. **Survives client disconnect** — the server keeps generating and does not fail the
    request when the browser closes / the network drops.
@@ -110,8 +107,8 @@ The client only *sends a request*. From there the server owns the generation:
 
 ## Relationship to client-thinning (prerequisite, not the same goal)
 
-Client-thinning moves *authority over the correctness of state* server-side; this
-workstream moves *ownership of the generation lifecycle*. **Completing client-thinning
+Client-thinning moves _authority over the correctness of state_ server-side; this
+workstream moves _ownership of the generation lifecycle_. **Completing client-thinning
 (A1/A2/B) does not by itself reach this goal.** But A1 (server prompt assembly) and A2
 (server post-gen derivation) are **prerequisites** — "the client only sends a request"
 needs both. Reverse-direction marker: `docs/archive/client-thinning/plan.md` "Out Of Scope Here".
@@ -147,7 +144,7 @@ behavior is sufficient.
 
 Today the result is persisted by the **browser** replaying commands
 (`persistServerBackedGenerationResult` → `dispatchPersistGenerationResult`). Slice 2
-(C-A1, **landed** — `654db21a`) moves *assembly-time* scriptstate persistence into
+(C-A1, **landed** — `654db21a`) moves _assembly-time_ scriptstate persistence into
 `/generate/chat`.
 Durable generation extends that same move to the **result** (the assistant message), so
 it persists without the browser — the bridge to "read the completed chat later" with no
@@ -209,13 +206,13 @@ but not pluginV2-scripted chats or Lua hooks that call interactive APIs
   [`steps/step-1-subset-gate.md`](steps/step-1-subset-gate.md).
 - **Step 2 — decouple the lifecycle:** route `/generate/chat`'s provider stream through
   a generation `JobRegistry` instead of `req.raw.on('close') → abort`, for the subset.
-  Return a jobId; let the client attach/reattach over SSE. (EC-D3 + the *lifecycle*
+  Return a jobId; let the client attach/reattach over SSE. (EC-D3 + the _lifecycle_
   half of EC-D1; full persistence is Step 3.) Spec:
   [`steps/step-2-lifecycle-decoupling.md`](steps/step-2-lifecycle-decoupling.md).
 - **Step 3 — server-owned result persistence:** at job completion, run the A2 server
   post-gen pass (`runServerPostGeneration`, slice 4, landed) and extend C-A1's route
-  persistence from assembly-time scriptstate to the *derived* assistant result +
-  post-gen scriptstate delta. (The *persistence* half of EC-D1, plus EC-D2, EC-D4.)
+  persistence from assembly-time scriptstate to the _derived_ assistant result +
+  post-gen scriptstate delta. (The _persistence_ half of EC-D1, plus EC-D2, EC-D4.)
   Now depends on slice 4 (per decision #2). Spec:
   [`steps/step-3-server-owned-result-persistence.md`](steps/step-3-server-owned-result-persistence.md).
 
@@ -249,10 +246,11 @@ of scope until Milestone 1 lands.
   gotcha A). Today the guard also covers `/generate/preview-prompt`; durable M1 is
   send-only, so preview exemption is not part of the current implementation scope.
 - **Cancel policy:** generation runs until the user explicitly cancels (`DELETE`);
-  cancel is authorized by the *current* active writer (handles writer handoff) (Step 2).
+  cancel is authorized by the _current_ active writer (handles writer handoff) (Step 2).
 - **Resume after reload:** the transient `activeGenerationJobs` projection is surfaced
-  by bootstrap, so a returning client (even after a full reload) discovers +
-  reattaches; observing is open, starting/cancelling need the writer lease (Step 2).
+  by bootstrap. Lazy projection later added the browser consumer that discovers
+  running jobs and reattaches; observing is open, starting/cancelling need the
+  writer lease (Step 2).
 
 ## Still Open / Deferred (after Milestone 1)
 
@@ -260,13 +258,10 @@ of scope until Milestone 1 lands.
   `runServerPostGeneration` persists the **raw** provider text + emits a `warning`; a
   persist throw (chat gone / changed) records a job `error`. Implemented in
   `buildDurablePostGeneration` (`server/fastify/src/routes/generationChat.ts`).
-- **Browser live auto-reattach UX — follow-up (not implemented).** The server surfaces
-  `activeGenerationJobs` and the `GET …/:id/stream` reattach endpoint, but no browser
-  code consumes them to re-drive the orchestrator after a mid-generation disconnect /
-  reload. The durability guarantee does not depend on it (the result is server-persisted
-  and surfaces on the next projection/bootstrap refresh).
-- **Modes beyond `send`:** `continue` and `regenerate` remain out of M1 and need
-  their own idempotency/append semantics before widening.
+- **Browser live auto-reattach UX — resolved later.** Lazy projection added the
+  browser consumer of `activeGenerationJobs` and `GET …/:id/stream`.
+- **Modes beyond `send` — resolved later.** Lazy projection added durable
+  `continue` and `regenerate` with mode-aware append/replace semantics.
 - **Milestone 2 — survive server restart:** in-memory jobs only today; disk-persisting
   job state/result is deferred.
 - **Event patching / replay contract:** surgical projection patching remains outside

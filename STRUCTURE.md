@@ -1,6 +1,6 @@
 # Structure Notes
 
-Last explored: 2026-05-31.
+Last explored: 2026-06-01.
 
 This is the present-tense navigation map for the codebase. It is the companion
 to the focused notes in [`docs/structure/`](docs/structure/) and to the
@@ -15,16 +15,22 @@ and use [`docs/leftover.md`](docs/leftover.md) for still-open follow-ups.
    routes, generation, memory.
 3. [`docs/structure/frontend.md`](docs/structure/frontend.md) - Svelte
    entrypoints, UI directories, server projection flow.
-4. [`docs/structure/data-and-events.md`](docs/structure/data-and-events.md) -
+4. [`docs/structure/server-projection-and-bridges.md`](docs/structure/server-projection-and-bridges.md) -
+   browser projection, hydration, event reconcile, and bridge watchers.
+5. [`docs/structure/data-and-events.md`](docs/structure/data-and-events.md) -
    persistence split, auth, revisions, SSE.
-5. [`docs/structure/assets-and-saves.md`](docs/structure/assets-and-saves.md) -
+6. [`docs/structure/assets-and-saves.md`](docs/structure/assets-and-saves.md) -
    content-addressed assets, asset GC, `.risu` import/export, backups.
-6. [`docs/structure/domain-glossary.md`](docs/structure/domain-glossary.md) -
+7. [`docs/structure/plugins-and-mcp.md`](docs/structure/plugins-and-mcp.md) -
+   browser plugin runtime, plugin storage, MCP clients, and tool limits.
+8. [`docs/structure/providers-and-models.md`](docs/structure/providers-and-models.md) -
+   model registry, provider dispatch, capability routing, and secrets.
+9. [`docs/structure/domain-glossary.md`](docs/structure/domain-glossary.md) -
    common Risu domain terms and where they live.
-7. [`docs/structure/testing-and-operations.md`](docs/structure/testing-and-operations.md) -
-   scripts, test split, env, Docker.
-8. [`docs/structure/generated-and-legacy.md`](docs/structure/generated-and-legacy.md) -
-   generated files and removed/no-port surfaces.
+10. [`docs/structure/testing-and-operations.md`](docs/structure/testing-and-operations.md) -
+    scripts, test split, env, Docker.
+11. [`docs/structure/generated-and-legacy.md`](docs/structure/generated-and-legacy.md) -
+    generated files and removed/no-port surfaces.
 
 For workstream history and decision records, start with
 [`docs/archive/README.md`](docs/archive/README.md): the Fastify migration
@@ -40,47 +46,56 @@ phase scope docs, and design references.
 
 ## Top-Level Map
 
-| Path                                                            | Purpose                                                                                       |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`         | pnpm scripts, dependencies, install policy, and the locked dependency graph.                  |
-| `index.html`, `vite.config.ts`, `src/`                          | Svelte 5 browser app and Vite build/dev configuration.                                        |
-| `src/etc/`                                                      | Bundled app media, CBS docs, patch notes, and tokenizer seed data imported by the client.     |
-| `server/fastify/`                                               | Fastify API, persistence, prompt assembly, generation, memory, server tests, browser smoke.   |
-| `public/`                                                       | Static source assets copied by Vite; `public/token/` is vendor tokenizer data.                |
-| `resources/`                                                    | App/icon image resources.                                                                     |
-| `tsconfig*.json`, `vitest*.ts`, `playwright*.ts`                | TypeScript, Vitest, and Playwright configuration.                                             |
-| `.prettierrc.json`, `.prettierignore`                           | Prettier formatting policy.                                                                   |
-| `util/client-thinning-audit.ts`                                 | ts-morph architecture invariant audit.                                                        |
-| `util/client-thinning-audit-fixtures/`                          | Fixture corpus for the architecture audit; source-like test data, not runtime code.           |
-| `Dockerfile`, `docker-compose.yml`                              | Container build/run path.                                                                     |
-| `README.md`, `plugins.md`, `version.json`, `LICENSE`            | Project-facing docs, plugin notes, packaged version metadata, and license.                    |
-| `AGENTS.md`, `CLAUDE.md`, `HANDOVER.md`                         | Local agent/handoff instructions and context.                                                 |
-| `.github/`, `.vscode/`, `.npmrc`, `.gitignore`, `.dockerignore` | Repository automation, editor recommendations, install policy, and ignore rules.              |
-| `docs/structure/`                                               | Focused present-tense structure notes.                                                        |
-| `docs/leftover.md`                                              | Live tracker of intentionally-deferred items across the closed workstreams.                   |
-| `docs/archive/`                                                 | Closed workstream records: Fastify, client thinning, durable generation, and lazy projection. |
-| `dist/`, `data/`, `node_modules/`, `test-results/`, `scripts/`  | Generated, installed, ignored scratch, or local runtime output; do not hand-edit.             |
+| Path                                                                                 | Purpose                                                                                                          |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`                              | pnpm scripts, dependencies, install policy, and the locked dependency graph.                                     |
+| `index.html`, `vite.config.ts`, `src/`                                               | Svelte 5 browser app and Vite build/dev configuration.                                                           |
+| `src/etc/`                                                                           | Bundled app media, CBS docs, patch notes, and tokenizer seed data imported by the client.                        |
+| `server/fastify/`                                                                    | Fastify API, persistence, prompt assembly, generation, memory, server tests, browser smoke.                      |
+| `public/`                                                                            | Static source assets copied by Vite; `public/token/` is vendor tokenizer data.                                   |
+| `resources/`                                                                         | App icon and splash image resources.                                                                             |
+| `tsconfig*.json`, `vitest*.ts`, `playwright*.ts`                                     | TypeScript, Vitest, and Playwright configuration.                                                                |
+| `.prettierrc.json`, `.prettierignore`                                                | Prettier formatting policy.                                                                                      |
+| `util/client-thinning-audit.ts`, `util/client-thinning-audit.test.ts`                | ts-morph architecture invariant audit and its regression tests.                                                  |
+| `util/client-thinning-audit-fixtures/`                                               | Fixture corpus for the architecture audit; source-like test data, not runtime code.                              |
+| `util/risuUserscript.user.js`                                                        | Risu userscript bridge exposing `GM_fetch` for cross-origin browser requests.                                    |
+| `Dockerfile`, `docker-compose.yml`                                                   | Container build/run path.                                                                                        |
+| `README.md`, `plugins.md`, `version.json`, `LICENSE`                                 | Project-facing docs, plugin notes, packaged version metadata, and license.                                       |
+| `AGENTS.md`, `CLAUDE.md`, `HANDOVER.md`                                              | Local agent/handoff instructions and context.                                                                    |
+| `.github/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.dockerignore`    | Repository automation, editor recommendations, install policy, merge attributes, and ignore/container rules.     |
+| `docs/structure/`                                                                    | Focused present-tense structure notes.                                                                           |
+| `docs/FASTIFY-REPORT.md`, `docs/SERVER-AND-CLIENT*.md`                               | Dated Fastify ownership, responsibility, and protocol audit reports.                                             |
+| `docs/plan/`                                                                         | Server/client protocol stability and performance plan plus phase slices.                                         |
+| `docs/leftover.md`                                                                   | Live tracker of intentionally-deferred items across the closed workstreams.                                      |
+| `docs/archive/`                                                                      | Closed workstream records: Fastify, client thinning, durable generation, and lazy projection.                    |
+| `dist/`, `data/`, `node_modules/`, `test-results/`, `scripts/`, `.idea/`, `.claude/` | Generated, installed, ignored scratch, local runtime/test output, or local editor/agent state; do not hand-edit. |
 
 ## Runtime Entrypoints
 
-| Path                                   | Purpose                                                                                                                                                                      |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server/fastify/src/index.ts`          | API process entrypoint; builds the app and listens.                                                                                                                          |
-| `server/fastify/src/app.ts`            | Fastify app factory, plugin setup, lifecycle hooks, route registration, static SPA serving.                                                                                  |
-| `server/fastify/src/routes/`           | Server route registrars for `/api/v1/*`.                                                                                                                                     |
-| `server/fastify/src/commands/`         | Validators and mutation helpers for command-backed domain resources.                                                                                                         |
-| `server/fastify/src/generation/`       | Provider-specific completion adapters.                                                                                                                                       |
-| `server/fastify/src/prompt/`           | Server prompt assembly, tokenizer config, Lua VM, provider transport, post-generation pass.                                                                                  |
-| `server/fastify/src/risuSave/`         | `.risu` import/export codecs, bundle export, and asset-reference reporting.                                                                                                  |
-| `server/fastify/src/messageStore.ts`   | SQLite chat message, per-chat `hypaV3Data`, and reroll-alternate storage boundary.                                                                                           |
-| `server/fastify/src/generationJobs.ts` | Detached, reattachable chat-generation job registry.                                                                                                                         |
-| `server/fastify/src/memory*.ts`        | Hypa V3 memory tables, planning, selection/ranking, job handlers, events, and worker.                                                                                        |
-| `src/main.ts`                          | Browser SPA bootstrap.                                                                                                                                                       |
-| `src/App.svelte`                       | Main Svelte shell and top-level render switch.                                                                                                                               |
-| `src/lib/`                             | Svelte component directories.                                                                                                                                                |
-| `src/ts/server/`                       | Browser-side Fastify adapters for bootstrap, commands, projection/hydration, assets, events, backups, active-writer headers, Realm import, smoke hooks, and bridge watchers. |
-| `src/ts/process/`                      | `sendChat`, server/local request routing, local dispatch, MCP/files, prompt helpers, memory/PDF/embedding helpers, post-generation, reattach.                                |
-| `src/ts/storage/`                      | Client projection state, server-backed storage auth, `.risu` import/export helpers.                                                                                          |
+| Path                                    | Purpose                                                                                                                                                                      |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/fastify/src/index.ts`           | API process entrypoint; builds the app and listens.                                                                                                                          |
+| `server/fastify/src/app.ts`             | Fastify app factory, plugin setup, lifecycle hooks, route registration, static SPA serving.                                                                                  |
+| `server/fastify/src/routes/`            | Server route registrars for `/api/v1/*`.                                                                                                                                     |
+| `server/fastify/src/commands/`          | Validators and mutation helpers for command-backed domain resources.                                                                                                         |
+| `server/fastify/src/db.ts`              | SQLite schema/migrations, schema version, global revision, and command-event history table setup.                                                                            |
+| `server/fastify/src/repository.ts`      | `db.json` repository boundary, asset metadata, backups/imports/restores, and chat message join/split helpers.                                                                |
+| `server/fastify/src/routeManifest.ts`   | Route auth/protocol inventory used by active-writer guard, tests, and the architecture audit.                                                                                |
+| `server/fastify/src/activeWriter.ts`    | Server-side single-writer lease guard for server-owned mutations.                                                                                                            |
+| `server/fastify/src/protocolMetrics.ts` | Opt-in server protocol metrics behind `RISU_PROTOCOL_METRICS`.                                                                                                               |
+| `server/fastify/src/generation/`        | Provider-specific generation adapters and shared SSE/frame helpers used by chat and completion dispatch.                                                                     |
+| `server/fastify/src/prompt/`            | Server prompt assembly, tokenizer config, Lua VM, provider transport, post-generation pass.                                                                                  |
+| `server/fastify/src/risuSave/`          | `.risu` import/export codecs, bundle export, and asset-reference reporting.                                                                                                  |
+| `server/fastify/src/messageStore.ts`    | SQLite chat message, per-chat `hypaV3Data`, and reroll-alternate storage boundary.                                                                                           |
+| `server/fastify/src/generationJobs.ts`  | Detached, reattachable chat-generation job registry.                                                                                                                         |
+| `server/fastify/src/memory*.ts`         | Hypa V3 memory tables, planning, selection/ranking, job handlers, events, and worker.                                                                                        |
+| `src/main.ts`                           | Browser SPA bootstrap.                                                                                                                                                       |
+| `src/App.svelte`                        | Main Svelte shell and top-level render switch.                                                                                                                               |
+| `src/lib/`                              | Svelte component directories.                                                                                                                                                |
+| `src/ts/server/`                        | Browser-side Fastify adapters for bootstrap, commands, projection/hydration, assets, events, backups, active-writer headers, Realm import, smoke hooks, and bridge watchers. |
+| `src/ts/server/protocolDiagnostics.ts`  | Browser-side protocol, resync, and hydration diagnostics.                                                                                                                    |
+| `src/ts/process/`                       | `sendChat`, server/local request routing, local dispatch, MCP/files, prompt helpers, memory/PDF/embedding helpers, post-generation, reattach.                                |
+| `src/ts/storage/`                       | Client projection state, server-backed storage auth, `.risu` import/export helpers.                                                                                          |
 
 ## Standing Conventions
 

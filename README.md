@@ -24,7 +24,6 @@ Risuai, or Risu for short, is a Fastify-served AI chat web application with powe
 
 - **Multiple API Supports**: Supports OpenAI, Claude, Gemini, DeepInfra, Ooba, OpenRouter... and More!
 - **Emotion Images**: Display the image of the current character, according to his/her expressions!
-- **Group Chats**: Multiple characters in one chat.
 - **Plugins**: Add your features and providers, and simply share.
 - **Regex Script**: Modify model's output by regex, to make a custom GUI and others
 - **Powerful Translators**: Automatically translate the input/output, so you can roleplay without knowing model's language.
@@ -34,7 +33,7 @@ Risuai, or Risu for short, is a Fastify-served AI chat web application with powe
 - **Customizable, Friendly UI**: Great Accessibility and mobile friendly
 - **TTS**: Use TTS to make the output text into voice.
 - **Additional Assets**: Embed your images, audios and videos to bot, and make it display at chat or background!
-- **Long-term Memory**: Advanced memory systems including HypaMemoryV2/V3 memory compression, SupaMemory for context management to maintain long-term conversation context.
+- **Long-term Memory**: Server-backed Hypa V3 memory for maintaining long-term conversation context.
 - And More!
 
 You can get detailed information on https://github.com/kwaroran/Risuai/wiki (Work in Progress)
@@ -64,10 +63,10 @@ pnpm dev
 
 The Vite dev server proxies `/api/*` requests to the Fastify server at `http://localhost:6002`.
 
-To build the web client and serve it through Fastify:
+To build the web client with the self-host legal flag and serve it through Fastify:
 
 ```
-pnpm build
+pnpm buildsite
 pnpm api:start
 ```
 

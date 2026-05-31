@@ -1,7 +1,4 @@
-import {
-  resolveServerPromptAssembly,
-  type ServerPromptAssemblyInput,
-} from './serverPromptAssembly'
+import { resolveServerPromptAssembly, type ServerPromptAssemblyInput } from './serverPromptAssembly'
 
 /**
  * Two-arm verdict for durable generation. Unlike prompt/provider routing, a
@@ -11,11 +8,9 @@ import {
  * `reason` is for diagnostics / tests and a future "why can't this chat survive
  * disconnect?" hint — it never triggers a hard fail.
  *
- * See `docs/durable-generation/steps/step-1-subset-gate.md`.
+ * See `docs/archive/durable-generation/steps/step-1-subset-gate.md`.
  */
-export type DurableGenerationRoute =
-  | { type: 'durable' }
-  | { type: 'non-durable'; reason: string }
+export type DurableGenerationRoute = { type: 'durable' } | { type: 'non-durable'; reason: string }
 
 type DurableGenerationMode = 'send' | 'continue' | 'preview' | 'preview_prompt' | 'regenerate'
 
@@ -33,7 +28,7 @@ function deriveMode(input: ServerPromptAssemblyInput): DurableGenerationMode {
 }
 
 /**
- * Decide whether a send is **durable-generation-eligible**: the server owns the
+ * Decide whether a request is **durable-generation-eligible**: the server owns the
  * whole generation lifecycle, including reconnect and result persistence.
  *
  * Decision order:

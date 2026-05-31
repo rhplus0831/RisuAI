@@ -37,10 +37,11 @@ and returns the missing set so import and upload flows can avoid redundant bytes
 
 ## Asset Garbage Collection
 
-`runAssetGc()` walks the persisted database with the same asset-reference report
-used by `.risu` export, then removes unreferenced asset metadata and stray asset
-files. A grace window based on file mtime protects the upload-then-reference
-race where bytes are uploaded in one request and referenced by a later command.
+`runAssetGc()` walks the persisted database with the same known-field
+asset-reference report used by bundle export and import asset reports, then
+removes unreferenced asset metadata and stray asset files. A grace window based
+on file mtime protects the upload-then-reference race where bytes are uploaded
+in one request and referenced by a later command.
 
 `buildApp()` wires a periodic GC timer unless tests pass `assetGc: false`. The
 GC pass hydrates SQLite chat messages before walking references so inlay tokens
@@ -50,26 +51,44 @@ projected database no longer references.
 
 ## `.risu` Import And Export
 
-| Path                                                 | Purpose                                                          |
-| ---------------------------------------------------- | ---------------------------------------------------------------- |
-| `server/fastify/src/routes/save.ts`                  | Import/export route surface.                                     |
-| `server/fastify/src/risuSave/importSnapshot.ts`      | Multipart `.risu` decode and import normalization.               |
-| `server/fastify/src/risuSave/exportSnapshot.ts`      | Repository export into block or legacy envelopes.                |
-| `server/fastify/src/risuSave/bundleExport.ts`        | Zip bundle export with the `.risu` bytes plus asset files.       |
-| `server/fastify/src/risuSave/assetReferences.ts`     | Asset-reference walker and orphan/unsupported reference reports. |
-| `server/fastify/src/risuSave/blockCodec.ts`          | Current block-based `.risu` envelope codec.                      |
-| `server/fastify/src/risuSave/legacyEnvelopeCodec.ts` | Legacy raw/compressed/stream envelope compatibility.             |
-| `server/fastify/src/routes/realmImport.ts`           | Server-side RisuRealm character import with asset fetching.      |
+| Path                                                 | Purpose                                                                           |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `server/fastify/src/routes/save.ts`                  | Import/export route surface.                                                      |
+| `server/fastify/src/risuSave/importSnapshot.ts`      | Multipart `.risu` decode and import normalization.                                |
+| `server/fastify/src/risuSave/exportSnapshot.ts`      | Repository export into block or legacy envelopes.                                 |
+| `server/fastify/src/risuSave/bundleExport.ts`        | Zip bundle export with the `.risu` bytes plus asset files.                        |
+| `server/fastify/src/risuSave/assetReferences.ts`     | Known-field asset-reference walker for referenced, missing, and orphaned reports. |
+| `server/fastify/src/risuSave/blockCodec.ts`          | Current block-based `.risu` envelope codec.                                       |
+| `server/fastify/src/risuSave/legacyEnvelopeCodec.ts` | Legacy raw/compressed/stream envelope compatibility.                              |
+| `server/fastify/src/routes/realmImport.ts`           | Server-side RisuRealm character import with asset fetching.                       |
 
 `POST /api/v1/import/risusave` accepts multipart `.risu` uploads or a JSON
 `database` body. Multipart imports decode the file, normalize the imported
 database, apply it through `repository.applyImport()`, replace legacy Hypa V3
-memory rows, emit `state.imported`, and return an asset report.
+memory rows, emit `state.imported`, and return the envelope, an asset report,
+and an `importReport` for unsupported remote/cache-only block references. JSON
+imports return revision/event/assetReport only.
 
 `GET /api/v1/export/risusave` exports the current repository as a `.risu`.
-`GET /api/v1/export/bundle` wraps that `.risu` plus referenced asset bytes in a
-zip. The current default envelope is `risusave-blocks`; legacy raw, compressed,
-and stream envelopes remain available for compatibility.
+`GET /api/v1/export/bundle` creates a zip containing `database.risu`,
+`manifest.json`, and present asset files referenced by the known-field walker.
+The manifest reports missing references, missing files, and orphaned assets.
+The current default envelope is `risusave-blocks`; legacy raw, compressed, and
+stream envelopes remain available for compatibility.
+
+Block imports support root, character, preset, modules, plugins, loadouts,
+plugin storage, config, and non-reserved root components. Standalone `CHAT`
+blocks are rejected. Bundle export is one-way today: there is no bundle-import
+route that ingests `database.risu.zip` and registers included assets. Importing
+asset-bearing saves requires referenced asset bytes to already exist or to be
+uploaded separately; missing ids are reported by `assetReport`.
+
+Remote/cache-only `.risu` blocks are not resolved server-side. The Fastify
+browser decoder also avoids local cache/remote fallback in server-backed mode;
+unsupported references are skipped and reported.
+
+The Fastify save routes are API/test surfaces today. The browser settings UI
+exposes server backups, not full server `.risu` import/export/bundle controls.
 
 `POST /api/v1/import/realm-character` accepts a Realm id, fetches dynamic Realm
 JSON cards plus referenced hub resources server-side, and also handles Realm
@@ -88,6 +107,9 @@ for long downloads/imports.
 | `src/ts/server/backups.ts`             | Browser adapter for backup routes.                                 |
 
 Backups live under `data/backups/<id>/` and snapshot `db.json`, `assets/`,
-`risu.db`, `save/`, and `manifest.json`. Restore is a server-owned mutation
-guarded by auth and active-writer classification; it swaps the persisted files
-and SQLite tables, then emits `state.restored`.
+`risu.db`, `save/`, and `manifest.json`. Create, restore, and delete are
+authenticated and active-writer guarded; list is authenticated read-only. Restore
+swaps the persisted files and SQLite tables, then emits `state.restored`.
+
+Module `.risum` import remains unsupported in Fastify-backed browser mode. If it
+returns, it should be implemented as a server import/command route.

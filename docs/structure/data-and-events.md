@@ -5,13 +5,14 @@ revision-checked commands when it needs persistence.
 
 ## Persistence Split
 
-| Store       | Path                                                     | Owner  | Contents                                                                                                                                                                        |
-| ----------- | -------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite      | `data/risu.db`                                           | Server | Schema version, global revision, command-event replay history, chat messages plus reroll alternates, per-chat `hypaV3Data`, Hypa V3 memory chunks, summaries, embeddings, jobs. |
-| Domain JSON | `data/db.json`                                           | Server | The main Risu `Database` blob minus chat message arrays / per-chat `hypaV3Data`, plus the asset manifest.                                                                       |
-| Assets      | `data/assets/<sha256>.<ext>`                             | Server | Content-addressed images, audio, video, fonts, CSS, and other supported asset bytes.                                                                                            |
-| Backups     | `data/backups/<id>/`                                     | Server | Snapshot `db.json`, `assets/`, `risu.db`, `save/`, plus `manifest.json`.                                                                                                        |
-| Auth files  | `data/__password`, `data/__known_public_key_hashes.json` | Server | Single-user stored password value (normally client-digested via `/api/v1/auth/crypto`) and registered browser public key hashes.                                                |
+| Store          | Path                                                     | Owner  | Contents                                                                                                                                                                                   |
+| -------------- | -------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| SQLite         | `data/risu.db`                                           | Server | Schema version, global revision, command-event replay history, chat messages plus reroll alternates, per-chat `hypaV3Data`, Hypa V3 memory chunks, summaries, embeddings, jobs.            |
+| Domain JSON    | `data/db.json`                                           | Server | The main Risu `Database` blob minus chat message arrays / per-chat `hypaV3Data`, plus the asset manifest.                                                                                  |
+| Assets         | `data/assets/<sha256>.<ext>`                             | Server | Content-addressed images, audio, video, fonts, CSS, and other supported asset bytes.                                                                                                       |
+| Backups        | `data/backups/<id>/`                                     | Server | Snapshot `db.json`, `assets/`, `risu.db`, `save/`, plus `manifest.json`.                                                                                                                   |
+| Legacy storage | `data/save/<hex-key>`                                    | Server | Compatibility byte store used by active `/api/v1/storage/*` routes; read/list are authenticated, write/remove are active-writer guarded, and these writes do not bump the domain revision. |
+| Auth files     | `data/__password`, `data/__known_public_key_hashes.json` | Server | Single-user stored password value (normally client-digested via `/api/v1/auth/crypto`) and registered browser public key hashes.                                                           |
 
 `server/fastify/src/repository.ts` is the main file for `db.json`, assets, backups,
 the message-table join/split boundary, and the stub projection. `server/fastify/src/db.ts`
@@ -35,6 +36,13 @@ revision. Normal revision-tracked command mutations should:
 Stale clients receive 409. On the browser side, command helpers cache the latest
 revision from bootstrap and command responses.
 
+The split-store write path hydrates messages from SQLite, mutates a cloned
+database, synchronizes changed chat messages / `hypaV3Data` / reroll alternates
+back into SQLite, bumps the revision, persists the command event, commits, and
+then writes message-free `db.json`. Crash ordering can leave SQLite ahead of
+`db.json`, but `db.json` must not land ahead of message rows plus the revision
+bump.
+
 There are command-adjacent server-owned exceptions:
 
 - `/api/v1/commands/state/initialize` creates the server-owned default database
@@ -49,17 +57,25 @@ There are command-adjacent server-owned exceptions:
   decisions. Realm import validates `baseRevision` before upstream downloads;
   asset writes during import may bump revision before the final
   `character.created` event.
+- Active-writer guarded does not always mean revision-tracked. Memory job
+  create/cancel mutate durable SQLite memory-job state and emit memory events
+  without bumping the domain revision. Backup create/delete mutate backup
+  storage without a domain revision; backup restore replaces repository state
+  and emits `state.restored`.
 
 ## Auth Contract
 
 Auth is single-user and explicit per route.
 
 - `server/fastify/src/auth.ts` loads and stores the password and known browser
-  public keys in the data directory.
+  public keys in the data directory. Known public-key hashes are LRU-capped at
+  4096 entries.
 - `server/fastify/src/http.ts` exposes `requireAuth()`.
 - Route handlers call `requireAuth()` manually unless intentionally public.
 - The browser creates short-lived ES256 assertion tokens in
   `src/ts/storage/nodeStorage.ts` and sends them in the `risu-auth` header.
+- `/api/v1/auth/crypto` is a public compatibility hashing helper registered
+  from `routes/legacyStorage.ts`, not from `routes/auth.ts`.
 
 Because there is no global auth hook, check new routes carefully for an explicit
 auth decision.
@@ -69,7 +85,10 @@ auth decision.
 Fastify also has a global active-writer `preHandler` guard registered from
 `server/fastify/src/app.ts`. The browser registers writer ownership through the
 writer-intent bootstrap request and sends `risu-writer-session` on server-owned
-mutations. Stale writer sessions receive `423 active_writer_stale`.
+mutations. Read-only bootstrap intentionally omits the writer header for passive
+resync. If no writer has been latched yet, guarded mutations pass; after a newer
+session claims ownership, stale writer sessions receive `423 active_writer_stale`
+and the browser schedules an alert plus reload.
 
 `server/fastify/src/routeManifest.ts` is the route/protocol inventory for auth,
 active-writer decisions, streaming shape, and public exceptions. The active-writer
@@ -87,6 +106,10 @@ the tests/audit fail on unclassified routes.
 `/api/v1/bootstrap` returns the current revision, schema version, database
 projection, asset base URL, and `activeGenerationJobs`. Browser startup loads this
 projection before the app is marked ready.
+
+On a never-initialized server, bootstrap can return `database: null`; the
+browser seeds the default database through `commands/state/initialize` and then
+refetches bootstrap with the read-only helper.
 
 `activeGenerationJobs` is a **transient, server-memory-only** projection (shape
 `{ chatId, jobId, mode?, regenerateMessageId? }[]`, empty when none) sourced from
@@ -132,10 +155,16 @@ progress signals only and are not replayed.
 `characters` slices are message-free, so the client resets chat hydration and
 rehydrates the open chat after a re-stub.
 
+Replay covers persisted command events only. Live-only command-shaped events such
+as `state.exported` are emitted to current subscribers without revision bumps or
+SQLite event-history persistence; they are no-op projection notifications.
+
 ## Binary And Streaming Surfaces
 
-Most routes use Fastify's normal JSON parsing. Asset uploads use the supported
-asset content-type buffer parser registered in `buildApp()`. Binary passthrough
+Most routes use Fastify's normal JSON parsing. Single asset uploads use the
+supported asset content-type buffer parser registered in `buildApp()`, while
+bulk asset upload is JSON/base64. Multipart `.risu` import uses
+`@fastify/multipart`. Binary passthrough
 routes use a scoped parser setup with `removeAllContentTypeParsers()` and a
 buffer parser. Check `routes/assets.ts`, `routes/proxy.ts`, `routes/hub.ts`,
 and `routes/legacyStorage.ts` before changing body parser behavior.
@@ -155,4 +184,6 @@ Streaming surfaces write directly to raw replies or WebSockets:
   browser requests `text/event-stream`.
 - `routes/events.ts` hijacks the response for command/memory SSE.
 - `routes/streamJobs.ts` creates proxy stream jobs and attaches WebSockets
-  (the reusable `JobRegistry` that durable generation wraps).
+  (the reusable `JobRegistry` that durable generation wraps); it also exposes an
+  authenticated cancel route. Fastify auto-`HEAD` read companions in the route
+  manifest are not separate SSE/WebSocket client surfaces.

@@ -11,27 +11,33 @@ SSE application, display state, TTS playback, image previews, and plugin runtime
   `src/App.svelte`, calls `loadData()`, initializes hotkeys, installs the smoke
   hook when requested, and removes the preload DOM.
 - `src/App.svelte` is the main UI shell. It imports sidebar, chat screen,
-  settings, mobile, modal, welcome, and popup components. Its top-level render
-  switch chooses loading, legal/setup, settings, mobile UI, grid/catalog, or the
-  regular sidebar plus chat surface.
+  settings, mobile, modal, Realm, legal, and popup components. Its top-level
+  render switch chooses legal/setup, April Fools, loading, custom GUI settings,
+  settings, mobile UI, grid/catalog, or the regular sidebar plus chat surface,
+  then overlays alert, Realm, preset/persona, bookmark, Hypa V3, plugin, popup,
+  easy-panel, loadout, Iris, and custom-sidebar modals.
 - `src/LiteMain.svelte` exists, but it is not a current entrypoint. The live
   lite/mobile-ish path is `VITE_RISU_LITE` + `src/ts/lite.ts` driving
   `src/App.svelte`'s mobile branch.
+- There is no `src/routes/` SvelteKit-style router. Navigation is driven by
+  stores and render switches in `App.svelte`, `Sidebar`, settings pages, and the
+  chat screen.
 
 ## Directory Guide
 
-| Path                   | Purpose                                                                |
-| ---------------------- | ---------------------------------------------------------------------- |
-| `src/lib/ChatScreens/` | Chat rendering and chat interaction components.                        |
-| `src/lib/SideBars/`    | Sidebar, character config, lorebook, scripts, and navigation surfaces. |
-| `src/lib/Setting/`     | Settings pages and wrapper controls.                                   |
-| `src/lib/Mobile/`      | Mobile shell components.                                               |
-| `src/lib/LiteUI/`      | Lite UI components.                                                    |
-| `src/lib/Playground/`  | Playground/tooling UI surfaces.                                        |
-| `src/lib/UI/`          | Shared UI primitives, GUI, and Realm components.                       |
-| `src/lib/Others/`      | Modals, alerts, welcome, editor, loadout, misc UI pieces.              |
-| `src/lang/`            | Localization data.                                                     |
-| `src/ts/`              | Non-component client and domain logic.                                 |
+| Path                   | Purpose                                                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| `src/lib/ChatScreens/` | Chat rendering and chat interaction components.                                         |
+| `src/lib/SideBars/`    | Sidebar, character config, lorebook, scripts, and navigation surfaces.                  |
+| `src/lib/Setting/`     | Settings pages and wrapper controls.                                                    |
+| `src/lib/Mobile/`      | Mobile shell components.                                                                |
+| `src/lib/LiteUI/`      | Unwired `LiteMain.svelte` support components; current lite mode uses the mobile branch. |
+| `src/lib/Playground/`  | Playground/tooling UI surfaces.                                                         |
+| `src/lib/UI/`          | Shared UI primitives, GUI, and Realm components.                                        |
+| `src/lib/Others/`      | Modals, alerts, welcome, editor, loadout, misc UI pieces.                               |
+| `src/lang/`            | Localization data.                                                                      |
+| `src/ts/`              | Non-component client and domain logic.                                                  |
+| `src/styles.css`       | Global Tailwind v4 import, theme variables, and app-wide CSS.                           |
 
 Useful `src/ts` subdirectories:
 
@@ -42,6 +48,7 @@ Useful `src/ts` subdirectories:
 | `src/ts/process/`         | Request flow (`index.svelte.ts` = `sendChat`), prompt/client-side helpers, memory client adapters, post-generation.                                                                      |
 | `src/ts/process/request/` | Server-vs-local routing: `serverPromptAssembly.ts` + `durableGeneration.ts` classifiers, the `providerCapability.ts` table, and the `/chat` SSE adapter (`serverChat.ts`).               |
 | `src/ts/model/`           | Client model lists and provider-related browser logic.                                                                                                                                   |
+| `src/ts/horde/`           | Horde model catalog helper used by model-selection UI.                                                                                                                                   |
 | `src/ts/parser/`          | Chat/parser utilities and tests.                                                                                                                                                         |
 | `src/ts/plugins/`         | Plugin loading and browser-side plugin runtime.                                                                                                                                          |
 | `src/ts/media/`           | Image/media helpers and compression.                                                                                                                                                     |
@@ -50,6 +57,8 @@ Useful `src/ts` subdirectories:
 | `src/ts/translator/`      | Translator presets and browser-side translation helpers.                                                                                                                                 |
 | `src/ts/network/`         | Local-network and proxy-stream WebSocket helpers.                                                                                                                                        |
 | `src/ts/kei/`             | Risu-Kei backup integration.                                                                                                                                                             |
+| `src/ts/rpack/`           | Vendored rpack codec used by encrypted translator preset files; see generated/legacy notes.                                                                                              |
+| `src/ts/util/`            | Extracted utility helpers re-exported or consumed by older `src/ts/util.ts` code.                                                                                                        |
 
 Useful `src/ts/process` subdirectories:
 
@@ -58,8 +67,8 @@ Useful `src/ts/process` subdirectories:
 | `src/ts/process/request/`        | Server/local request routing, prompt-assembly provider preflight, server chat/completion/memory adapters, SSE parsing. |
 | `src/ts/process/dispatch/`       | Local provider dispatch helper used by `sendChat` when the Fastify server path is not selected.                        |
 | `src/ts/process/models/`         | Request-time model string and provider-specific prompt string helpers retained for local paths.                        |
-| `src/ts/process/embedding/`      | Additional-information embedding helpers retained for local Hypa flows.                                                |
-| `src/ts/process/dynamicutils/`   | Dynamic file utilities such as PDF-to-image/text extraction.                                                           |
+| `src/ts/process/embedding/`      | Additional-information semantic search helpers retained for local prompt assembly.                                     |
+| `src/ts/process/dynamicutils/`   | Dynamic file utilities such as PDF-to-image/text extraction, including filesystem MCP use.                             |
 | `src/ts/process/promptAssembly/` | Browser-side prompt assembly helpers retained for local/non-Fastify paths and parity tests.                            |
 | `src/ts/process/promptBudget/`   | Token-budget preflight/finalization helpers.                                                                           |
 | `src/ts/process/postGeneration/` | Browser-side post-generation helpers used by local paths and tests.                                                    |
@@ -70,23 +79,28 @@ Useful `src/ts/process` subdirectories:
 
 ## Server Projection Flow
 
-Startup is server-backed only when the SPA is served by Fastify and
-`globalThis.__FASTIFY__` is injected:
+See [`server-projection-and-bridges.md`](server-projection-and-bridges.md) for
+the focused map. Startup is server-backed only when the SPA is served by
+Fastify and `globalThis.__FASTIFY__` is injected.
 
 1. `src/main.ts` calls `loadData()`.
-2. `src/ts/bootstrap.ts` calls `fetchServerBootstrapProjection()`.
+2. `src/ts/bootstrap.ts` calls `fetchServerBootstrapProjection()` with
+   writer intent.
 3. `src/ts/server/bootstrap.ts` requests `/api/v1/bootstrap` with `risu-auth`.
-4. `src/ts/storage/database.svelte.ts` applies the projection into `DBState.db`.
-5. The projection write guard is enabled so normal browser code cannot mutate
+4. If bootstrap returns `database: null`, the browser calls
+   `initializeServerDatabase()` and refetches bootstrap through the read-only
+   helper before rendering.
+5. `src/ts/storage/database.svelte.ts` applies the projection into `DBState.db`.
+6. The projection write guard is enabled so normal browser code cannot mutate
    server-owned state directly.
-6. `src/ts/server/events.ts` subscribes to `/api/v1/events`, sending the cached
+7. `src/ts/server/events.ts` subscribes to `/api/v1/events`, sending the cached
    revision as `sinceRevision` / `Last-Event-ID` so retained command events can
    replay across the bootstrap-to-stream and reconnect windows.
-7. Command events enter a serial surgical-sync chain in `src/ts/bootstrap.ts`:
+8. Command events enter a serial surgical-sync chain in `src/ts/bootstrap.ts`:
    own echoes / already-applied revisions are skipped, contiguous foreign events
    fetch `GET /api/v1/projection/:resource`, and gaps, replay-unavailable
    responses, or projection errors fall back to a full bootstrap refresh.
-8. Memory events can update Hypa V3 progress UI directly.
+9. Memory events can update Hypa V3 progress UI directly.
 
 When debugging stale UI, check command success revision, the SSE event stream,
 targeted projection responses, and the full-bootstrap fallback before assuming a
@@ -98,6 +112,15 @@ per-chat `hypaV3Data` and persisted reroll alternates. If
 `enableLorebookStubs` is on, the open character's `globalLore` hydrates through
 `GET /api/v1/projection/characterLorebook?id=...`; this path is still guarded as
 experimental in the server repository comments.
+
+Bulk readers that need every chat or every character lorebook use
+`ensureAllChatsHydrated()` / `ensureAllCharacterLorebooksHydrated()`, both capped
+by `BULK_HYDRATION_CONCURRENCY = 4` and protected by stale-response drops.
+
+Bridge watchers for settings, character/chat metadata, lorebooks, scripts, and
+triggers live in `src/ts/server/*Bridge.svelte.ts`. They capture a snapshot,
+perform an optimistic trusted projection write, dispatch a server command, and
+restore the snapshot on failure.
 
 ## Server-Side Generation Flow
 
@@ -118,6 +141,12 @@ mode the **server owns prompt assembly and the provider call**:
    the browser suppresses its old generation-result command. Browser persistence remains
    only for the local assembler/dispatcher path.
 
+Lower-level already-assembled completion requests use
+`resolveServerCompletionRoute` and `src/ts/process/request/serverCompletion.ts`
+in Fastify mode. The browser sends provider-wire-free server intent and the
+server resolves model, provider options, endpoint, and secrets from the
+database.
+
 ### Durable generation (browser side)
 
 When `resolveDurableGeneration(...) === 'durable'` (a server-assembled `send`,
@@ -127,6 +156,9 @@ The stop button maps to `cancelServerChatGeneration` →
 `DELETE /api/v1/generate/chat/:id` (a bare disconnect no longer cancels). Bootstrap
 also surfaces `activeGenerationJobs`; `src/ts/process/reattach.ts` consumes it and
 re-drives `sendChat` against `GET /api/v1/generate/chat/:id/stream` for the open chat.
+Reattach is current-chat-only, skipped while `doingChat`, consumes active job
+entries one-shot, and treats observe failures as harmless because projection
+sync can catch up.
 
 ### Active-writer lease
 
@@ -163,7 +195,9 @@ Vite dev mode and production Fastify serving differ:
 
 - `pnpm dev` starts Vite on `0.0.0.0:5174` and proxies `/api` to
   `RISU_API_PROXY_TARGET` or `http://localhost:6002`, but it does not inject the
-  Fastify marker. `isFastifyServer` is false in this mode.
+  Fastify marker. `isFastifyServer` is false in this mode, so the app uses local
+  compatibility paths and server adapters report unavailable unless called by a
+  feature that explicitly targets `/api`.
 - Production/static serving uses `dist/` by default through
   `RISU_API_STATIC_ROOT`.
 - Fastify injects `globalThis.__FASTIFY__ = true` into served `index.html`.
@@ -182,3 +216,7 @@ character is committed.
 `src/ts/storage/nodeStorage.ts` still backs active `/api/v1/storage/*` endpoints.
 Despite the route filename `legacyStorage.ts`, this bridge is part of the current
 Fastify web runtime.
+
+`.risum` module import remains unsupported in Fastify-backed browser mode; adding
+it needs a server import/command route rather than reviving direct browser
+durable mutation.
