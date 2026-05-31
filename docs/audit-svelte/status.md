@@ -26,7 +26,6 @@ Last updated: 2026-05-31.
 - Chat Row Actions Bubble To Chat Selection
 - Plugin Row Controls Toggle Expansion
 - Expanded Plugin State Uses List Indexes
-- Plugin Select Options Render Literal Text
 - Streaming Auto-Toggle Predicate Is Asymmetric
 - WaveSpeed Reference Reset Appears Inverted
 - One-Item Drop Lists Can Corrupt The List
@@ -51,4 +50,4 @@ Last updated: 2026-05-31.
 - Chat Format Settings Lack Client Command Mapping
 
 ## Completed Items
-- Placeholder
+- Plugin Select Options Render Literal Text

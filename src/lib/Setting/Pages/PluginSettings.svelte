@@ -217,7 +217,7 @@
                 }
               >
                 {#each plugin.arguments[arg] as a}
-                  <OptionInput value={a}>a</OptionInput>
+                  <OptionInput value={a}>{a}</OptionInput>
                 {/each}
               </SelectInput>
             {:else if plugin.arguments[arg] === 'string'}
