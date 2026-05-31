@@ -1,6 +1,6 @@
 # Event Replay Subscribe Race
 
-Status: active priority.
+Status: implemented.
 
 ## Source Anchors
 
@@ -14,6 +14,19 @@ Fix the race where `/api/v1/events` can select replay history, write replay, and
 only then subscribe the live listener. A command committed between replay
 selection and live subscription can be missed until a later event creates a
 revision gap.
+
+## Implemented Scope
+
+- `server/fastify/src/routes/events.ts` subscribes to command events before
+  reading the replay snapshot.
+- Command events observed during setup are queued until retained replay has
+  been written, then drained without duplicating revisions already covered by
+  replay.
+- Replay-unavailable responses still return `409 event_replay_unavailable`
+  before opening the SSE stream.
+- Memory events remain live-only.
+- `server/fastify/__tests__/events.test.ts` covers a command committed during
+  event stream setup before the live listener is installed.
 
 ## Protocol Behavior
 

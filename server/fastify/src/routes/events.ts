@@ -43,6 +43,31 @@ export function registerEventsRoutes(
       return
     }
 
+    let liveCommandDelivery = false
+    const queuedCommandEvents: CommandEvent[] = []
+    const unsubscribeCommand = commandEvents.subscribe((event) => {
+      if (liveCommandDelivery) {
+        if (!reply.raw.writableEnded) {
+          writeCommandEvent(reply.raw, event)
+        }
+        return
+      }
+      queuedCommandEvents.push(event)
+    })
+    let heartbeat: NodeJS.Timeout | null = null
+    let unsubscribeMemory: (() => void) | null = null
+    let cleanedUp = false
+    const cleanup = (): void => {
+      if (cleanedUp) return
+      cleanedUp = true
+      if (heartbeat) {
+        clearInterval(heartbeat)
+      }
+      unsubscribeCommand()
+      unsubscribeMemory?.()
+    }
+    req.raw.once('close', cleanup)
+
     const currentRevision = getSchemaState(db).revision
     const history = listPersistedCommandEventHistory(db)
     const replay =
@@ -51,6 +76,7 @@ export function registerEventsRoutes(
         : selectCommandEventReplay(history, cursor.sinceRevision, currentRevision)
 
     if (replay.status === 'unavailable') {
+      cleanup()
       emitProtocolMetric(
         'event_replay',
         {
@@ -97,32 +123,29 @@ export function registerEventsRoutes(
         writeCommandEvent(reply.raw, event)
       }
     }
+    for (const event of queuedCommandEvents) {
+      if (
+        !reply.raw.writableEnded &&
+        (cursor.sinceRevision === null || event.revision > currentRevision)
+      ) {
+        writeCommandEvent(reply.raw, event)
+      }
+    }
+    queuedCommandEvents.length = 0
+    liveCommandDelivery = true
 
-    const heartbeat = setInterval(() => {
+    heartbeat = setInterval(() => {
       if (!reply.raw.writableEnded) {
         writeSseComment(reply.raw, 'heartbeat')
       }
     }, 25_000)
     heartbeat.unref()
 
-    const unsubscribeCommand = commandEvents.subscribe((event) => {
-      if (!reply.raw.writableEnded) {
-        writeCommandEvent(reply.raw, event)
-      }
-    })
-    const unsubscribeMemory = memoryEvents.subscribe((event) => {
+    unsubscribeMemory = memoryEvents.subscribe((event) => {
       if (!reply.raw.writableEnded) {
         writeMemoryEvent(reply.raw, event)
       }
     })
-
-    const cleanup = (): void => {
-      clearInterval(heartbeat)
-      unsubscribeCommand()
-      unsubscribeMemory()
-    }
-
-    req.raw.once('close', cleanup)
   })
 }
 

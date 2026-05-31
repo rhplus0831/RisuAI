@@ -17,7 +17,7 @@ import {
   type CommandEventListener,
   type CommandEventSink,
 } from '../src/commands/events.js'
-import { openDatabase } from '../src/db.js'
+import { bumpRevision, openDatabase } from '../src/db.js'
 import {
   createMemoryEventBus,
   type MemoryEvent,
@@ -29,6 +29,7 @@ const subtle = webcrypto.subtle
 class TrackingCommandEventSink implements CommandEventSink {
   private readonly inner = createCommandEventSink()
   activeListeners = 0
+  onBeforeSubscribe?: () => void
 
   emit(event: CommandEvent): void {
     this.inner.emit(event)
@@ -43,8 +44,9 @@ class TrackingCommandEventSink implements CommandEventSink {
   }
 
   subscribe(listener: CommandEventListener): () => void {
-    this.activeListeners++
+    this.onBeforeSubscribe?.()
     const unsubscribeInner = this.inner.subscribe(listener)
+    this.activeListeners++
     return () => {
       unsubscribeInner()
       this.activeListeners--
@@ -440,6 +442,54 @@ describe('Phase 9-5a command events stream', () => {
         resource: 'settings',
       })
     } finally {
+      abort.abort()
+      reader?.releaseLock()
+    }
+  })
+
+  it('replays a command committed during event stream setup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      streamGeminiThoughts: false,
+    })
+    const setupEvent: CommandEvent = {
+      type: 'settings.updated',
+      revision: revision + 1,
+      resource: 'settings',
+    }
+    let emittedDuringSetup = false
+    harness.commandEvents.onBeforeSubscribe = () => {
+      if (emittedDuringSetup) return
+      emittedDuringSetup = true
+      const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+      try {
+        expect(bumpRevision(db)).toBe(setupEvent.revision)
+        persistCommandEvent(db, setupEvent)
+      } finally {
+        db.close()
+      }
+      harness.commandEvents.emit(setupEvent)
+    }
+
+    const baseUrl = await listen(harness.app)
+    const abort = new AbortController()
+    const res = await fetch(`${baseUrl}/api/v1/events?sinceRevision=${revision}`, {
+      headers: { 'risu-auth': assertion },
+      signal: abort.signal,
+    })
+    const reader = res.body?.getReader()
+    expect(reader).toBeDefined()
+
+    try {
+      expect(res.status).toBe(200)
+      const text = await readUntil(reader!, (chunk) => chunk.includes('settings.updated'))
+      expect(text).toContain(`id: ${setupEvent.revision}`)
+      const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+      expect(dataLine).toBeDefined()
+      expect(JSON.parse(dataLine!.slice('data: '.length))).toEqual(setupEvent)
+      expect(emittedDuringSetup).toBe(true)
+    } finally {
+      harness.commandEvents.onBeforeSubscribe = undefined
       abort.abort()
       reader?.releaseLock()
     }

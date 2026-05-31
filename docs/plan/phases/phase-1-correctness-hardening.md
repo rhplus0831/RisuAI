@@ -1,6 +1,8 @@
 # Phase 1: Correctness Hardening
 
-Status: active priority.
+Status: active priority. Event replay/subscribe race implemented; remaining
+P1 slices are restore resync, durable generation frame replay, and direct
+projection write fixes.
 
 Goal: close the confirmed P1 correctness issues from `docs/AUDIT.md` before
 optimizing lower-severity costs.

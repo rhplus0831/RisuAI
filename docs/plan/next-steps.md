@@ -18,13 +18,11 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-1. Fix the event replay/subscribe race:
-   [`event-replay-subscribe-race.md`](phases/slices/phase-1-correctness-hardening/event-replay-subscribe-race.md).
-2. Make backup restore force a trusted resync or apply returned projection:
+1. Make backup restore force a trusted resync or apply returned projection:
    [`backup-restore-resync.md`](phases/slices/phase-1-correctness-hardening/backup-restore-resync.md).
-3. Make durable generation reattach replay required lifecycle frames:
+2. Make durable generation reattach replay required lifecycle frames:
    [`durable-generation-frame-replay.md`](phases/slices/phase-1-correctness-hardening/durable-generation-frame-replay.md).
-4. Remove direct guarded projection writes in the Hypa V3 and bookmark UI paths:
+3. Remove direct guarded projection writes in the Hypa V3 and bookmark UI paths:
    [`direct-projection-write-fixes.md`](phases/slices/phase-1-correctness-hardening/direct-projection-write-fixes.md).
 
 After those P1 slices, prefer measured P2 work:

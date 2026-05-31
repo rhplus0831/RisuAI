@@ -16,14 +16,14 @@ Completed foundations:
   `BULK_HYDRATION_CONCURRENCY = 4`.
 - Command-event history is persisted in SQLite and can replay retained command
   gaps.
+- `/api/v1/events` subscribes to command events before selecting replay, queues
+  setup-time command events, and drains events not already covered by replay.
 - `server/fastify/src/routeManifest.ts` drives route protocol ownership,
   active-writer classification, route-protection tests, and the architecture
   audit.
 
 Active correctness risks from [`../AUDIT.md`](../AUDIT.md):
 
-- `/api/v1/events` can miss a command between replay selection and live
-  subscription.
 - Backup restore can leave the active browser on stale pre-restore projection
   state.
 - Durable generation reattach can miss required `prompt` and `info` frames.
@@ -47,14 +47,14 @@ Active performance risks:
 - Use [`plan.md`](plan.md) for invariants and phase order.
 - Use [`phases/README.md`](phases/README.md) for all phase docs.
 - Use [`phases/slices/phase-1-correctness-hardening/`](phases/slices/phase-1-correctness-hardening/)
-  first unless a branch already addresses every P1 risk above.
+  first until every P1 risk above is addressed.
 
 ## Phase Router
 
 | Phase                                                     | Status                               | Open when working on...                                                                 |
 | --------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
 | [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, bounded hydration, durable event history, route manifest coverage.    |
-| [Phase 1](phases/phase-1-correctness-hardening.md)        | Active priority                      | Event race, restore resync, generation replay frames, direct projection writes.         |
+| [Phase 1](phases/phase-1-correctness-hardening.md)        | Active priority                      | Restore resync, generation replay frames, direct projection writes.                     |
 | [Phase 2](phases/phase-2-command-write-cost.md)           | Planned                              | Whole-corpus command mutation cost and narrow write paths.                              |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Planned                              | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Planned                              | SSE backpressure, generation reattach triggers, resend caps, finalization retry.        |

@@ -28,10 +28,11 @@ HTTP routes. It builds on `docs/SERVER-AND-CLIENT.md` and
   server command mutation path: even small JSON commands load the full persisted
   database, hydrate all chat messages, clone the whole database, scan all chats
   for diffs, write `db.json`, persist a command event, and emit to SSE clients.
-- Several correctness risks look like Fastify migration side effects: the event
-  subscribe/replay race can miss events, backup restore can leave the active
-  client on stale projection state, and durable generation reattach can fail to
-  replay prompt/info frames required by the browser.
+- Several correctness risks look like Fastify migration side effects: backup
+  restore can leave the active client on stale projection state, and durable
+  generation reattach can fail to replay prompt/info frames required by the
+  browser. The event subscribe/replay race has been closed by subscribing
+  before replay snapshot selection and draining setup-time command events.
 - Client-side direct writes to server-backed projection state are mostly
   blocked by the projection write guard, but two UI paths appear to mutate
   `DBState.db` directly before dispatching or without dispatching a server
@@ -117,23 +118,22 @@ and edits a projection.
 
 ## Confirmed Findings
 
-### P1: Event Replay/Subscribe Race Can Miss Command Events
+### Resolved P1: Event Replay/Subscribe Race
 
-`/api/v1/events` reads the current revision and persisted command event history,
-selects replay, sends replay, and only then subscribes the live listener
-(`server/fastify/src/routes/events.ts:46`,
-`server/fastify/src/routes/events.ts:51`,
-`server/fastify/src/routes/events.ts:87`,
-`server/fastify/src/routes/events.ts:108`). A command emitted between the replay
-snapshot and subscription is not in the replay set and is not delivered live.
-The command event sink only fans out to current listeners. The client will only
-notice after a later event creates a revision gap (`src/ts/bootstrap.ts:318`);
-if no later event arrives, the client can remain permanently stale.
+`/api/v1/events` previously read the current revision and persisted command
+event history, selected replay, sent replay, and only then subscribed the live
+listener. A command emitted between the replay snapshot and subscription was not
+in the replay set and was not delivered live. The client would only notice
+after a later event created a revision gap (`src/ts/bootstrap.ts:318`); if no
+later event arrived, the client could remain permanently stale.
 
-Recommendation: subscribe before selecting replay, or subscribe, re-read the
-current revision/history, replay to the latest revision, then start live
-delivery. Add a regression test that opens an event stream while a command
-lands between history selection and subscription.
+Resolution: the route now subscribes to command events before reading replay
+state (`server/fastify/src/routes/events.ts:48`,
+`server/fastify/src/routes/events.ts:71`), queues command events observed
+during stream setup, replays retained history through the covered revision, and
+drains setup-time command events that were not already covered by replay
+(`server/fastify/src/routes/events.ts:126`). A regression test opens an event
+stream while a command lands during setup.
 
 ### P1: Backup Restore Can Leave The Active Client On A Stale Projection
 
