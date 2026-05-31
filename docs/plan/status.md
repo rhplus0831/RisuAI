@@ -22,14 +22,14 @@ Completed foundations:
   browser reports success or advances past the restored projection.
 - Durable generation reattach replays required lifecycle frames through a
   durable-only job replay log, including `prompt` and latest `info`.
+- Hypa V3 modal and bookmark UI paths avoid direct guarded projection writes in
+  Fastify mode.
 - `server/fastify/src/routeManifest.ts` drives route protocol ownership,
   active-writer classification, route-protection tests, and the architecture
   audit.
 
-Active correctness risks from [`../AUDIT.md`](../AUDIT.md):
-
-- Hypa V3 modal and bookmark UI paths can still attempt direct guarded
-  projection writes.
+Active correctness risks from [`../AUDIT.md`](../AUDIT.md): none currently
+tracked at P1.
 
 Active performance risks:
 
@@ -47,15 +47,15 @@ Active performance risks:
 - Use [`next-steps.md`](next-steps.md) to choose the next task.
 - Use [`plan.md`](plan.md) for invariants and phase order.
 - Use [`phases/README.md`](phases/README.md) for all phase docs.
-- Use [`phases/slices/phase-1-correctness-hardening/`](phases/slices/phase-1-correctness-hardening/)
-  first until every P1 risk above is addressed.
+- With Phase 1 implemented, prefer measured P2 work from
+  [`next-steps.md`](next-steps.md).
 
 ## Phase Router
 
 | Phase                                                     | Status                               | Open when working on...                                                                 |
 | --------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
 | [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, bounded hydration, durable event history, route manifest coverage.    |
-| [Phase 1](phases/phase-1-correctness-hardening.md)        | Active priority                      | Direct projection writes.                                                               |
+| [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                        |
 | [Phase 2](phases/phase-2-command-write-cost.md)           | Planned                              | Whole-corpus command mutation cost and narrow write paths.                              |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Planned                              | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Planned                              | SSE backpressure, generation reattach triggers, resend caps, finalization retry.        |

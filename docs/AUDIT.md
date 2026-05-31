@@ -28,16 +28,14 @@ HTTP routes. It builds on `docs/SERVER-AND-CLIENT.md` and
   server command mutation path: even small JSON commands load the full persisted
   database, hydrate all chat messages, clone the whole database, scan all chats
   for diffs, write `db.json`, persist a command event, and emit to SSE clients.
-- Several correctness risks look like Fastify migration side effects: durable
-  generation reattach can fail to replay prompt/info frames required by the
-  browser, and some UI paths can still attempt direct projection writes. The
-  event subscribe/replay race and backup restore stale-projection risk have
-  both been closed.
-- Client-side direct writes to server-backed projection state are mostly
-  blocked by the projection write guard, but two UI paths appear to mutate
-  `DBState.db` directly before dispatching or without dispatching a server
-  command. There are also command-backed watcher paths that can echo server
-  projection refreshes or emit many settings commands.
+- The previously confirmed P1 correctness risks are closed: event
+  subscribe/replay, backup restore resync, durable generation frame replay, and
+  direct guarded projection writes in Hypa V3/bookmark UI now have regression
+  coverage.
+- Client-side direct writes to server-backed projection state are blocked by the
+  projection write guard and the audited Hypa V3/bookmark paths now avoid raw
+  guarded writes. There are still command-backed watcher paths that can echo
+  server projection refreshes or emit many settings commands.
 
 ## Severity Key
 
@@ -182,29 +180,26 @@ viewer after `prompt`/`info`, reattaches while the provider is still gated, and
 asserts that the reattached stream reaches `done` with the required lifecycle
 frames.
 
-### P1: Direct Client Writes To Server-Backed Projection State Still Exist
+### P1: Direct Client Writes To Server-Backed Projection State Are Closed
 
 The projection write guard freezes `DBState.db` after bootstrap and throws on
 raw writes outside trusted projection updates
 (`src/ts/server/projectionWriteGuard.svelte.ts:12`,
-`src/ts/server/projectionWriteGuard.svelte.ts:88`). Two UI paths appear to
-mutate the guarded projection directly:
+`src/ts/server/projectionWriteGuard.svelte.ts:88`). The audited UI paths now
+avoid direct guarded projection writes:
 
-- `HypaV3Modal.svelte` initializes `chat.hypaV3Data ??=` inside an effect even
-  when server memory mode is available (`src/lib/Others/HypaV3Modal.svelte:98`,
-  `src/lib/Others/HypaV3Modal.svelte:103`). In Fastify mode, that is a
-  browser-side write attempt to server-backed memory/chat state and should throw
-  rather than persist.
-- `BookmarkList.svelte` mutates `chat.bookmarkNames`, `chat.bookmarks`, and
-  deletes bookmark names before dispatching the intended update command
+- `HypaV3Modal.svelte` uses a local default Hypa V3 data view in server-backed
+  memory mode when a legacy `hypaV3Data` blob is absent, and only initializes
+  `chat.hypaV3Data` outside server-backed memory mode
+  (`src/lib/Others/HypaV3Modal.svelte:45`,
+  `src/lib/Others/HypaV3Modal.svelte:113`).
+- `BookmarkList.svelte` builds cloned bookmark patch objects and dispatches the
+  intended chat update command in Fastify mode without first mutating
+  `chat.bookmarks` or `chat.bookmarkNames`
   (`src/lib/Others/BookmarkList.svelte:111`,
-  `src/lib/Others/BookmarkList.svelte:123`,
-  `src/lib/Others/BookmarkList.svelte:126`). The command path is right, but the
-  direct mutation happens first.
+  `src/lib/Others/BookmarkList.svelte:140`).
 
-Recommendation: make these flows construct patched copies and dispatch commands
-without mutating guarded state first. Add projection guard tests for both UI
-paths.
+Regression coverage lives in `src/lib/Others/projectionGuard.test.ts`.
 
 ### P2: Every JSON Command Performs Whole-Corpus Work
 
@@ -566,19 +561,17 @@ suppression mechanism.
 
 ## Recommended Priority Order
 
-1. Fix the remaining P1 correctness issue: direct guarded projection writes in
-   Hypa V3/bookmark UI.
-2. Reduce the command mutation hot path by adding narrow persistence paths for
+1. Reduce the command mutation hot path by adding narrow persistence paths for
    settings, metadata, and message operations.
-3. Make targeted projection and asset metadata lookup avoid full `db.json`
+2. Make targeted projection and asset metadata lookup avoid full `db.json`
    reads for small or no-op resources.
-4. Replace memory job polling with SSE-driven refresh and overlap prevention.
-5. Add bulk read endpoints or server-side assembly for all-chat/lorebook export
+3. Replace memory job polling with SSE-driven refresh and overlap prevention.
+4. Add bulk read endpoints or server-side assembly for all-chat/lorebook export
    flows.
-6. Add backpressure/caps for all SSE/stream fanout.
-7. Add expanded-size limits and streaming/chunking for import/export/bundle
+5. Add backpressure/caps for all SSE/stream fanout.
+6. Add expanded-size limits and streaming/chunking for import/export/bundle
    routes.
-8. Add instrumentation tests for request counts, query counts, payload sizes,
+7. Add instrumentation tests for request counts, query counts, payload sizes,
    full-bootstrap fallback counts, and command mutation timing metrics.
 
 ## Existing Test Coverage And Gaps
@@ -590,8 +583,6 @@ and bounded hydration concurrency.
 
 Important gaps for this audit:
 
-- no tests for direct projection-guard violations in Hypa V3 modal and bookmark
-  list interactions;
 - no query-count or request-count assertions for projection, hydration, asset
   reads, or memory jobs polling;
 - no payload budget tests for bootstrap/projection/import/export/bundle routes;

@@ -1,6 +1,6 @@
 # Direct Projection Write Fixes
 
-Status: active priority.
+Status: implemented.
 
 ## Source Anchors
 
@@ -13,6 +13,20 @@ Status: active priority.
 
 Remove UI paths that mutate server-backed `DBState.db` directly before or
 without dispatching a server command.
+
+Implemented scope:
+
+- `src/lib/Others/HypaV3Modal.svelte` now uses a local default Hypa V3 data
+  view when server-backed memory has no hydrated legacy blob. It initializes
+  `chat.hypaV3Data` only outside server-backed memory mode.
+- Hypa V3 reset and bulk mutation handlers return early in server-backed memory
+  mode, matching the read-only UI state for server memory.
+- `src/lib/Others/BookmarkList.svelte` now builds cloned `bookmarks` and
+  `bookmarkNames` patches in Fastify command mode, then dispatches
+  `updateChat` without first mutating guarded chat fields.
+- Local non-command bookmark flows keep their local mutation behavior.
+- `src/lib/Others/projectionGuard.test.ts` covers Hypa V3 modal mount and
+  bookmark rename/remove interactions with the server projection guard enabled.
 
 ## Protocol Behavior
 
@@ -32,6 +46,6 @@ without dispatching a server command.
 
 ## Validation
 
-- Focused tests for changed UI or command helper behavior.
+- `pnpm test -- src/lib/Others/projectionGuard.test.ts`
 - `pnpm test -- src/ts/bootstrap.test.ts`
 - `pnpm client-thinning:audit`

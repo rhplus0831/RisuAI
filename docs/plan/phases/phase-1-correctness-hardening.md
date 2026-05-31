@@ -1,8 +1,7 @@
 # Phase 1: Correctness Hardening
 
-Status: active priority. Event replay/subscribe race, restore resync, and
-durable generation frame replay are implemented; the remaining P1 slice is
-direct projection write fixes.
+Status: implemented. Event replay/subscribe race, restore resync, durable
+generation frame replay, and direct projection write fixes are implemented.
 
 Goal: close the confirmed P1 correctness issues from `docs/AUDIT.md` before
 optimizing lower-severity costs.
@@ -24,7 +23,8 @@ optimizing lower-severity costs.
   implemented
 - [`durable-generation-frame-replay.md`](slices/phase-1-correctness-hardening/durable-generation-frame-replay.md) -
   implemented
-- [`direct-projection-write-fixes.md`](slices/phase-1-correctness-hardening/direct-projection-write-fixes.md)
+- [`direct-projection-write-fixes.md`](slices/phase-1-correctness-hardening/direct-projection-write-fixes.md) -
+  implemented
 
 ## Exit Criteria
 
@@ -41,4 +41,5 @@ optimizing lower-severity costs.
 - `pnpm api:test -- server/fastify/__tests__/events.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/backups.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/durableGeneration.test.ts`
+- `pnpm test -- src/lib/Others/projectionGuard.test.ts`
 - `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/backups.test.ts src/ts/server/bootstrap.test.ts`

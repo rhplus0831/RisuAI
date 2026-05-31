@@ -18,17 +18,14 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-1. Remove direct guarded projection writes in the Hypa V3 and bookmark UI paths:
-   [`direct-projection-write-fixes.md`](phases/slices/phase-1-correctness-hardening/direct-projection-write-fixes.md).
+Phase 1 P1 correctness hardening is implemented. Prefer measured P2 work next:
 
-After that P1 slice, prefer measured P2 work:
-
-- Select the first narrow command family from metrics:
-  [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).
-- Short-circuit empty or small targeted projection resources:
-  [`targeted-projection-loaders.md`](phases/slices/phase-3-read-projection-efficiency/targeted-projection-loaders.md).
-- Add an asset metadata index or cache:
-  [`asset-metadata-index.md`](phases/slices/phase-3-read-projection-efficiency/asset-metadata-index.md).
+1. Select the first narrow command family from metrics:
+   [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).
+2. Short-circuit empty or small targeted projection resources:
+   [`targeted-projection-loaders.md`](phases/slices/phase-3-read-projection-efficiency/targeted-projection-loaders.md).
+3. Add an asset metadata index or cache:
+   [`asset-metadata-index.md`](phases/slices/phase-3-read-projection-efficiency/asset-metadata-index.md).
 
 ## Not First
 
@@ -43,15 +40,14 @@ After that P1 slice, prefer measured P2 work:
 
 ## Selection Order
 
-1. P1 correctness slices in Phase 1.
-2. Measured whole-corpus command cost in Phase 2.
-3. Read-side projection and asset lookup reduction in Phase 3.
-4. Stream slow-consumer, reattach, resend, and finalization resilience in
+1. Measured whole-corpus command cost in Phase 2.
+2. Read-side projection and asset lookup reduction in Phase 3.
+3. Stream slow-consumer, reattach, resend, and finalization resilience in
    Phase 4.
-5. Import/export and asset memory/durability work in Phase 5.
-6. Client loop suppression and command write coalescing in Phase 6.
-7. Route operation safeguards and manifest coverage in Phase 7.
-8. Verification budgets and latest-check recording in Phase 8.
+4. Import/export and asset memory/durability work in Phase 5.
+5. Client loop suppression and command write coalescing in Phase 6.
+6. Route operation safeguards and manifest coverage in Phase 7.
+7. Verification budgets and latest-check recording in Phase 8.
 
 ## Proof Commands
 
@@ -61,6 +57,7 @@ touches shared protocol behavior.
 - `pnpm api:test -- server/fastify/__tests__/events.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/backups.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/durableGeneration.test.ts`
+- `pnpm test -- src/lib/Others/projectionGuard.test.ts`
 - `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/backups.test.ts src/ts/server/bootstrap.test.ts`
 - `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/chatMessageHydration.test.ts`
 - `pnpm client-thinning:audit`

@@ -1,7 +1,11 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte'
   import { ChevronUpIcon, ChevronDownIcon } from '@lucide/svelte'
-  import { type SerializableSummary, summarize } from 'src/ts/process/memory/hypav3'
+  import {
+    type SerializableHypaV3Data,
+    type SerializableSummary,
+    summarize,
+  } from 'src/ts/process/memory/hypav3'
   import { alertNormalWait } from 'src/ts/alert'
   import { DBState, selectedCharID, hypaV3ModalOpen } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
@@ -33,15 +37,21 @@
   import { shouldShowSummary, isGuidLike, parseSelectionInput } from './HypaV3Modal/utils'
   import type { OpenAIChat } from 'src/ts/process/index.svelte'
 
-  const hypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-      .hypaV3Data,
-  )
   const currentChat = $derived(
     DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage],
   )
   const serverBackedMemoryMode = $derived(canUseServerMemoryApi())
   const currentChatId = $derived(currentChat.id ?? '')
+  const defaultHypaV3Data = $derived(createInitialHypaV3Data())
+  const hypaV3Data = $derived(currentChat.hypaV3Data ?? defaultHypaV3Data)
+
+  function createInitialHypaV3Data(): SerializableHypaV3Data {
+    return {
+      summaries: [],
+      categories: [{ id: '', name: language.hypaV3Modal.unclassified }],
+      lastSelectedSummaries: [],
+    }
+  }
 
   let categories = $derived(
     (() => {
@@ -100,12 +110,8 @@
     filterSelected
 
     untrack(() => {
-      DBState.db.characters[$selectedCharID].chats[
-        DBState.db.characters[$selectedCharID].chatPage
-      ].hypaV3Data ??= {
-        summaries: [],
-        categories: [{ id: '', name: language.hypaV3Modal.unclassified }],
-        lastSelectedSummaries: [],
+      if (!serverBackedMemoryMode && !currentChat.hypaV3Data) {
+        currentChat.hypaV3Data = createInitialHypaV3Data()
       }
 
       expandedMessageState = null
@@ -259,6 +265,7 @@
   }
 
   async function applyBulkResummary() {
+    if (serverBackedMemoryMode) return
     if (!bulkResummaryState || !bulkResummaryState.result) return
 
     const sortedIndices = bulkResummaryState.selectedIndices
@@ -349,6 +356,7 @@
   }
 
   async function handleResetData() {
+    if (serverBackedMemoryMode) return
     if (
       await alertConfirmTwice(
         language.hypaV3Modal.resetConfirmMessage,
@@ -383,6 +391,7 @@
   }
 
   function handleBulkEditApplyCategory() {
+    if (serverBackedMemoryMode) return
     if (bulkEditState.selectedSummaries.size === 0) return
 
     for (const summaryIndex of bulkEditState.selectedSummaries) {
@@ -393,6 +402,7 @@
   }
 
   function handleBulkEditToggleImportant() {
+    if (serverBackedMemoryMode) return
     if (bulkEditState.selectedSummaries.size === 0) return
     const selectedIndices = Array.from(bulkEditState.selectedSummaries)
     const hasNonImportant = selectedIndices.some(
