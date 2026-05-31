@@ -25,6 +25,8 @@ import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 type GlobalLorebook = { id?: string; name: string; data: loreBook[] }
 
 export interface LorebookStateSnapshot {
+  scopeKey?: string
+  scopedValue?: unknown
   loreBook: GlobalLorebook[]
   loreBookPage: number
   characters: character[]
@@ -101,6 +103,11 @@ export function currentLorebookStateSnapshot(): LorebookStateSnapshot {
 }
 
 export function restoreLorebookState(snapshot: LorebookStateSnapshot): void {
+  if (snapshot.scopeKey) {
+    restoreScopedLorebookState(snapshot)
+    return
+  }
+
   withTrustedServerProjectionWrite(() => {
     DBState.db.loreBook = cloneJsonValue(snapshot.loreBook) as typeof DBState.db.loreBook
     DBState.db.loreBookPage = snapshot.loreBookPage
@@ -336,30 +343,32 @@ export function watchServerBackedLorebooks(
   if (!canUseServerCommands()) return () => {}
   const delayMs = options.delayMs ?? 300
   let initialized = false
+  let clientIdsInitialized = false
   let previousSnapshots = new Map<string, string>()
-  let previousState = currentLorebookStateSnapshot()
 
   const stop = $effect.root(() => {
     $effect(() => {
-      ensureAllClientLorebookIds()
-      const currentState = currentLorebookStateSnapshot()
+      if (!clientIdsInitialized) {
+        ensureAllClientLorebookIds()
+        clientIdsInitialized = true
+      }
       const currentSnapshots = collectLorebookCollectionSnapshots()
 
       if (suppressRollbackDispatch || !initialized) {
         initialized = true
         previousSnapshots = currentSnapshots
-        previousState = currentState
         return
       }
 
       for (const [key, snapshot] of currentSnapshots) {
-        if (!previousSnapshots.has(key)) continue
+        const previousSnapshot = previousSnapshots.get(key)
+        if (previousSnapshot === undefined) continue
         if (snapshot === previousSnapshots.get(key)) continue
+        const previousState = scopedLorebookStateSnapshot(key, previousSnapshot)
         untrack(() => dispatchWatchedReplacement(key, previousState, delayMs))
       }
 
       previousSnapshots = currentSnapshots
-      previousState = currentState
     })
   })
 
@@ -486,6 +495,87 @@ function findChat(chatId: string): Chat | null {
 function snapshotJson(value: unknown): string {
   const snapshot = JSON.stringify(value)
   return snapshot === undefined ? '__undefined__' : snapshot
+}
+
+function scopedLorebookStateSnapshot(key: string, previousSnapshot: string): LorebookStateSnapshot {
+  return {
+    scopeKey: key,
+    scopedValue: parseSnapshotJson(previousSnapshot),
+    loreBook: [],
+    loreBookPage: DBState.db.loreBookPage ?? 0,
+    characters: [],
+    modules: [],
+    selectedCharID: get(selectedCharID),
+  }
+}
+
+function restoreScopedLorebookState(snapshot: LorebookStateSnapshot): void {
+  const key = snapshot.scopeKey
+  if (!key) return
+
+  withTrustedServerProjectionWrite(() => {
+    if (key.startsWith('global:')) {
+      const lorebookId = key.slice('global:'.length)
+      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+        (candidate) => candidate.id === lorebookId,
+      )
+      if (lorebook && Array.isArray(snapshot.scopedValue)) {
+        lorebook.data = cloneJsonValue(snapshot.scopedValue) as loreBook[]
+      }
+      return
+    }
+
+    if (key.startsWith('globalMeta:')) {
+      const lorebookId = key.slice('globalMeta:'.length)
+      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+        (candidate) => candidate.id === lorebookId,
+      )
+      const value = snapshot.scopedValue
+      if (
+        lorebook &&
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        typeof (value as { name?: unknown }).name === 'string'
+      ) {
+        lorebook.name = (value as { name: string }).name
+      }
+      return
+    }
+
+    if (key.startsWith('character:')) {
+      const characterId = key.slice('character:'.length)
+      const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+      if (character && Array.isArray(snapshot.scopedValue)) {
+        character.globalLore = cloneJsonValue(snapshot.scopedValue) as typeof character.globalLore
+      }
+      return
+    }
+
+    if (key.startsWith('chat:')) {
+      const chatId = key.slice('chat:'.length)
+      const chat = findChat(chatId)
+      if (chat && Array.isArray(snapshot.scopedValue)) {
+        chat.localLore = cloneJsonValue(snapshot.scopedValue) as typeof chat.localLore
+      }
+      return
+    }
+
+    if (key.startsWith('module:')) {
+      const moduleId = key.slice('module:'.length)
+      const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
+        (candidate) => candidate.id === moduleId,
+      )
+      if (module && Array.isArray(snapshot.scopedValue)) {
+        module.lorebook = cloneJsonValue(snapshot.scopedValue) as typeof module.lorebook
+      }
+    }
+  })
+}
+
+function parseSnapshotJson(snapshot: string): unknown {
+  if (snapshot === '__undefined__') return undefined
+  return JSON.parse(snapshot)
 }
 
 function cloneJsonValue<T>(value: T): T {

@@ -30,6 +30,9 @@
   } from 'src/ts/server/lorebookBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
+  const tokenCountCache = new Map<string, number>()
+  const MAX_TOKEN_COUNT_CACHE = 500
+
   interface Props {
     value: loreBook
     onRemove?: () => void
@@ -67,16 +70,19 @@
   let suppressDraftDispatch = false
   let draftInitialized = false
   let previousValueSnapshot = snapshotJson(value)
+  let tokenPromise = $state<Promise<number> | null>(null)
 
   $effect(() => {
     const valueSnapshot = snapshotJson(value)
-    const draftSnapshot = snapshotJson(draft)
-    if (valueSnapshot !== previousValueSnapshot && valueSnapshot !== draftSnapshot) {
-      suppressDraftDispatch = true
-      draft = cloneJsonValue(value)
-      queueMicrotask(() => {
-        suppressDraftDispatch = false
-      })
+    if (valueSnapshot !== previousValueSnapshot) {
+      const draftSnapshot = snapshotJson(draft)
+      if (valueSnapshot !== draftSnapshot) {
+        suppressDraftDispatch = true
+        draft = cloneJsonValue(value)
+        queueMicrotask(() => {
+          suppressDraftDispatch = false
+        })
+      }
     }
     previousValueSnapshot = valueSnapshot
   })
@@ -90,6 +96,14 @@
     if (suppressDraftDispatch) return
     value = cloneJsonValue(draft)
     previousValueSnapshot = draftSnapshot
+  })
+
+  $effect(() => {
+    if (!open || draft.mode === 'folder') {
+      tokenPromise = null
+      return
+    }
+    tokenPromise = getTokens(draft.content ?? '', draft.id ?? `${idx}`)
   })
 
   function updateCollection(entries: loreBook[]): void {
@@ -106,11 +120,28 @@
     return JSON.parse(JSON.stringify(value)) as T
   }
 
-  async function getTokens(data: string) {
-    tokens = await tokenizeAccurate(data)
-    return tokens
+  async function getTokens(data: string, cacheId: string) {
+    const cacheKey = `${cacheId}:${data}`
+    const cached = tokenCountCache.get(cacheKey)
+    if (cached !== undefined) return cached
+
+    await delayExpensiveDetailWork()
+    const counted = await tokenizeAccurate(data)
+    tokenCountCache.set(cacheKey, counted)
+    if (tokenCountCache.size > MAX_TOKEN_COUNT_CACHE) {
+      const oldest = tokenCountCache.keys().next().value
+      if (oldest !== undefined) tokenCountCache.delete(oldest)
+    }
+    return counted
   }
-  let tokens = $state(0)
+
+  function delayExpensiveDetailWork(): Promise<void> {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        setTimeout(resolve, 0)
+      })
+    })
+  }
 
   function isLocallyActivated(book: loreBook) {
     return book.id ? getCurrentChat()?.localLore.some((e) => e.id === book.id) : false
@@ -185,7 +216,6 @@
       <button
         class="endflex valuer border-darkborderc flex items-center"
         onclick={() => {
-          draft.secondkey = draft.secondkey ?? ''
           if (!open) {
             open = true
             onOpen(draft.mode !== 'folder') // If not a folder, pass true
@@ -371,11 +401,13 @@
         {/if}
         <span class="text-textcolor mt-4 mb-2">{language.prompt}</span>
         <TextAreaInput highlight autocomplete="off" bind:value={draft.content} />
-        {#await getTokens(draft.content)}
-          <span class="text-textcolor2 mt-2 mb-2 text-sm">{tokens} {language.tokens}</span>
-        {:then e}
-          <span class="text-textcolor2 mt-2 mb-2 text-sm">{e} {language.tokens}</span>
-        {/await}
+        {#if tokenPromise}
+          {#await tokenPromise}
+            <span class="text-textcolor2 mt-2 mb-2 text-sm">... {language.tokens}</span>
+          {:then e}
+            <span class="text-textcolor2 mt-2 mb-2 text-sm">{e} {language.tokens}</span>
+          {/await}
+        {/if}
         <div class="flex items-center mt-4">
           <Check bind:check={draft.alwaysActive} name={language.alwaysActive} />
         </div>

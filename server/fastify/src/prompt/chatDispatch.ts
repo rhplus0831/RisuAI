@@ -503,7 +503,7 @@ export function resolveChatProviderRoute(
     return { routable: false, reason: info.unsupportedReason }
   }
   const verdict = resolveProviderCapability(buildChatCapabilityInput(db, info))
-  if (verdict.routable) return { routable: true, provider: verdict.provider }
+  if (verdict.routable === true) return { routable: true, provider: verdict.provider }
   return { routable: false, reason: chatProviderUnsupportedReason(verdict.reason, info) }
 }
 
@@ -681,7 +681,7 @@ export async function dispatchChatProvider(
   const { database: db, outputTokens, signal } = args
   const info = resolveModelInfo(db)
   const route = resolveChatProviderRoute(db, info)
-  if (!route.routable) {
+  if (route.routable === false) {
     throw new Error(route.reason)
   }
   const provider = route.provider

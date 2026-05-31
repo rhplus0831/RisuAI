@@ -51,6 +51,7 @@
   let autoCompleteDom: HTMLDivElement = $state()
   let autocompleteContents: string[] = $state([])
   let inputDom: HTMLDivElement = $state()
+  let highlightTimer: ReturnType<typeof setTimeout> | null = null
 
   const autoComplete = () => {
     if (isMobile) {
@@ -140,16 +141,25 @@
   }
 
   onMount(() => {
-    highlighter(highlightDom, highlightId)
+    scheduleHighlight()
   })
 
   onDestroy(() => {
+    if (highlightTimer) {
+      clearTimeout(highlightTimer)
+      highlightTimer = null
+    }
     removeHighlight(highlightId)
   })
 
-  const highlightChange = async (value: string, highlightId: number) => {
-    await sleep(1)
-    highlighter(highlightDom, highlightId)
+  const scheduleHighlight = (_nextValue = value) => {
+    void _nextValue
+    if (!highlight || highlightId === 0 || $disableHighlight) return
+    if (highlightTimer) clearTimeout(highlightTimer)
+    highlightTimer = setTimeout(() => {
+      highlightTimer = null
+      highlighter(highlightDom, highlightId)
+    }, 50)
   }
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -209,7 +219,7 @@
     optiValue = value
   })
   $effect.pre(() => {
-    highlightChange(value, highlightId)
+    scheduleHighlight(value)
   })
 </script>
 

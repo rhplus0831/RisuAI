@@ -20,18 +20,17 @@
   import LoreBookList from './LoreBookList.svelte'
   import Help from 'src/lib/Others/Help.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
-  import { watchServerBackedLorebooks } from 'src/ts/server/lorebookBridge.svelte'
+  import {
+    currentLorebookStateSnapshot,
+    dispatchReplaceCharacterLorebooks,
+    dispatchReplaceChatLorebooks,
+    watchServerBackedLorebooks,
+  } from 'src/ts/server/lorebookBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { createServerBackedCharacterDraft } from 'src/ts/server/characterBridge.svelte'
-  import type { loreBook } from 'src/ts/storage/database.svelte'
 
   let submenu = $state(0)
   const characterLoreSettingsDraft = createServerBackedCharacterDraft(['loreSettings', 'lorePlus'])
-  let characterLoreDraft = $state<loreBook[]>([])
-  let chatLoreDraft = $state<loreBook[]>([])
-  let loreDraftKey = ''
-  let loreDraftSnapshot = ''
-  let suppressLoreDraftDispatch = false
   interface Props {
     globalMode?: boolean
   }
@@ -43,94 +42,51 @@
     return () => stopLorebooks()
   })
 
-  $effect(() => {
-    const character = DBState.db.characters?.[$selectedCharID]
-    const chat = character?.chats?.[character.chatPage]
-    const key = `${character?.chaId ?? ''}:${chat?.id ?? ''}`
-    const snapshot = snapshotJson({
-      key,
-      characterLore: character?.globalLore ?? [],
-      chatLore: chat?.localLore ?? [],
-    })
-
-    if (key !== loreDraftKey || snapshot !== loreDraftSnapshot) {
-      suppressLoreDraftDispatch = true
-      loreDraftKey = key
-      characterLoreDraft = cloneJsonValue(character?.globalLore ?? [])
-      chatLoreDraft = cloneJsonValue(chat?.localLore ?? [])
-      loreDraftSnapshot = snapshot
-      queueMicrotask(() => {
-        suppressLoreDraftDispatch = false
-      })
-    }
-  })
-
-  $effect(() => {
-    const character = DBState.db.characters?.[$selectedCharID]
-    const chat = character?.chats?.[character.chatPage]
-    const key = `${character?.chaId ?? ''}:${chat?.id ?? ''}`
-    const snapshot = snapshotJson({
-      key,
-      characterLore: characterLoreDraft,
-      chatLore: chatLoreDraft,
-    })
-
-    if (suppressLoreDraftDispatch || !character || !chat || snapshot === loreDraftSnapshot) return
-
-    withTrustedServerProjectionWrite(() => {
-      // Captured references are read-only server-projection proxies in Fastify mode.
-      const liveCharacter = DBState.db.characters?.[$selectedCharID]
-      const liveChat = liveCharacter?.chats?.[liveCharacter.chatPage]
-      if (liveCharacter) liveCharacter.globalLore = cloneJsonValue(characterLoreDraft)
-      if (liveChat) liveChat.localLore = cloneJsonValue(chatLoreDraft)
-    })
-    loreDraftSnapshot = snapshot
-  })
-
-  function cloneJsonValue<T>(value: T): T {
-    if (value === undefined) return value
-    return JSON.parse(JSON.stringify(value)) as T
-  }
-
-  function snapshotJson(value: unknown): string {
-    const snapshot = JSON.stringify(value)
-    return snapshot === undefined ? '__undefined__' : snapshot
-  }
-
   function isAllCharacterLoreAlwaysActive() {
-    const globalLore = characterLoreDraft
+    const globalLore = DBState.db.characters?.[$selectedCharID]?.globalLore
     return globalLore && globalLore.every((book) => book.alwaysActive)
   }
 
   function isAllChatLoreAlwaysActive() {
-    const localLore = chatLoreDraft
+    const character = DBState.db.characters?.[$selectedCharID]
+    const localLore = character?.chats?.[character.chatPage]?.localLore
     return localLore && localLore.every((book) => book.alwaysActive)
   }
 
   function toggleCharacterLoreAlwaysActive() {
-    const globalLore = characterLoreDraft
+    const character = DBState.db.characters?.[$selectedCharID]
+    const globalLore = character?.globalLore
 
-    if (!globalLore) return
+    if (!character?.chaId || !globalLore) return
 
     const allActive = globalLore.every((book) => book.alwaysActive)
+    const nextLore = globalLore.map((book) => ({ ...book, alwaysActive: !allActive }))
+    const previous = currentLorebookStateSnapshot()
 
-    globalLore.forEach((book) => {
-      book.alwaysActive = !allActive
+    withTrustedServerProjectionWrite(() => {
+      const liveCharacter = DBState.db.characters?.[$selectedCharID]
+      if (liveCharacter) liveCharacter.globalLore = nextLore
     })
-    characterLoreDraft = [...globalLore]
+    dispatchReplaceCharacterLorebooks(character.chaId, nextLore, previous)
   }
 
   function toggleChatLoreAlwaysActive() {
-    const localLore = chatLoreDraft
+    const character = DBState.db.characters?.[$selectedCharID]
+    const chat = character?.chats?.[character.chatPage]
+    const localLore = chat?.localLore
 
-    if (!localLore) return
+    if (!chat?.id || !localLore) return
 
     const allActive = localLore.every((book) => book.alwaysActive)
+    const nextLore = localLore.map((book) => ({ ...book, alwaysActive: !allActive }))
+    const previous = currentLorebookStateSnapshot()
 
-    localLore.forEach((book) => {
-      book.alwaysActive = !allActive
+    withTrustedServerProjectionWrite(() => {
+      const liveCharacter = DBState.db.characters?.[$selectedCharID]
+      const liveChat = liveCharacter?.chats?.[liveCharacter.chatPage]
+      if (liveChat) liveChat.localLore = nextLore
     })
-    chatLoreDraft = [...localLore]
+    dispatchReplaceChatLorebooks(chat.id, nextLore, previous)
   }
 </script>
 
@@ -176,14 +132,12 @@
       {globalMode}
       {submenu}
       lorePlus={DBState.db.characters[$selectedCharID]?.lorePlus}
-      bind:externalLoreBooks={characterLoreDraft}
     />
   {:else if !globalMode && submenu === 1}
     <LoreBookList
       {globalMode}
       {submenu}
       lorePlus={DBState.db.characters[$selectedCharID]?.lorePlus}
-      bind:externalLoreBooks={chatLoreDraft}
     />
   {:else}
     <LoreBookList
