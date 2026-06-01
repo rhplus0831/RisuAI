@@ -27,10 +27,12 @@ Completed work:
 - Phase 3 read-side optimizations are in place: targeted projection field
   selectors for known resource families, an in-process asset metadata index,
   and authenticated bulk all-chat hydration.
-- Phase 4 has bounded slow-consumer behavior for `/api/v1/events`, inline and
-  durable chat-generation SSE, proxy WebSocket stream jobs, generation reattach
-  triggers for active-chat changes plus full resyncs, a per-root-action cap for
-  server-owned resend cycles, and a SQLite-backed finalization retry queue.
+- Phase 4 runtime resilience work is implemented: `/api/v1/events`, inline and
+  durable chat-generation SSE, and proxy WebSocket stream jobs have bounded
+  slow-consumer behavior; active-chat changes plus full resyncs can trigger
+  generation reattach; server-owned resend cycles have a per-root-action cap;
+  and finalization retries are SQLite-backed. A low-risk shared SSE taxonomy
+  check remains planned for future chat stream vocabulary changes.
 - Phase 5 has completed the revision-bump audit, server-owned event atomicity,
   expanded import limits, bundle export streaming, per-generation asset caching,
   and the asset mutation transaction protocol. Initialization,
@@ -76,7 +78,8 @@ Active performance risks:
 - Use [`plan.md`](plan.md) for invariants and phase order.
 - Use [`phases/README.md`](phases/README.md) for all phase docs.
 - Prefer measured P2/P3 work when a narrow slice exists; otherwise use
-  [`next-steps.md`](next-steps.md) to select remaining Phase 7-8 work.
+  [`next-steps.md`](next-steps.md) to select the remaining Phase 4 verification,
+  Phase 7 operations, or Phase 8 budget work.
 
 ## Phase Router
 
@@ -86,7 +89,7 @@ Active performance risks:
 | [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                       |
 | [Phase 2](phases/phase-2-command-write-cost.md)           | Hot command paths targeted           | Whole-corpus command mutation cost and narrow write paths.                             |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Read optimizations implemented       | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.   |
-| [Phase 4](phases/phase-4-stream-generation-resilience.md) | Implemented                          | Closed stream, generation reattach, resend, and finalization retry work.               |
+| [Phase 4](phases/phase-4-stream-generation-resilience.md) | Runtime implemented                  | Stream, generation reattach, resend, finalization retry, and SSE taxonomy checks.      |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Implemented                          | Closed import/export memory and asset mutation durability work.                        |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Implemented                          | Closed client loop suppression and watcher echo work.                                  |
 | [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | HEAD/body parser audit, schemas, route-limit maintenance, wildcard manifest coverage.  |

@@ -46,14 +46,15 @@ metrics, hydration bounds, SQLite-backed command-event replay, and the
 route/protocol manifest. Later commits closed Phase 1 correctness risks,
 narrowed hot Phase 2 command families (`settings`, plugin storage, chat
 metadata, message history, and generation persistence), reduced Phase 3 read
-costs, bounded Phase 4 stream/generation behavior, and landed Phase 5 revision
-audit, event atomicity, expanded import limits, bundle export streaming, and
-per-generation asset caching, and asset mutation durability.
+costs, implemented Phase 4 stream/generation runtime resilience, landed Phase 5
+revision/event/import/export/asset durability work, suppressed Phase 6 watcher
+echoes and no-op settings writes, and added Phase 7 route-local limits,
+wildcard manifest coverage, and read-only writer-header hygiene.
 
 Remaining work is concentrated in measured generation/prompt side-effect
 passes, full-bootstrap fallback budgets, optional lorebook bulk reads, ordinary
-`.risu` export materialization, route operation guards, and verification
-budgets.
+`.risu` export materialization, Phase 7 parser/schema guards, the optional SSE
+taxonomy check, and verification budgets.
 
 ## Invariants
 
@@ -92,8 +93,9 @@ budgets.
    side-effect slices.
 2. Use Phase 3 for optional lorebook bulk reads or full-resync budgets when
    measurement shows they matter.
-3. Add route limits, schemas, and coverage refinements in Phase 7.
-4. Promote proven measurement into Phase 8 budgets.
+3. Continue Phase 7 with HEAD/body parser review and hot envelope schemas.
+4. Add the Phase 4 SSE taxonomy fixture when chat stream vocabulary changes.
+5. Promote proven measurement into Phase 8 budgets.
 
 ## Not In This Plan
 

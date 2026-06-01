@@ -39,7 +39,7 @@ controls from echoing into repeated commands or overlapping requests.
 - Server projection application cannot be mistaken for a local edit by bridge
   watchers. Done.
 - High-frequency settings controls continue to coalesce and skip equality-noop
-  writes.
+  writes. Done.
 - Watcher behavior has tests for server-origin refreshes. Done.
 
 ## Validation

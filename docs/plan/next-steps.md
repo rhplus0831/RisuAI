@@ -8,8 +8,9 @@ not a broad cleanup pass.
 
 ## Start Point
 
-- Start with the active risks in [`status.md`](status.md) and the confirmed
-  findings in [`../AUDIT.md`](../AUDIT.md).
+- Start with the active risks in [`status.md`](status.md). Use
+  [`../AUDIT.md`](../AUDIT.md) as the original risk inventory, not as the
+  current status source.
 - If a branch already has runtime changes, run or inspect the focused tests
   listed in the relevant slice before selecting new scope.
 - Before editing runtime code, write a compact scope in the active slice:
@@ -18,23 +19,18 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-Phases 1 and 4 are implemented. Phase 2 narrowed the measured hot command
-families: settings/chat/plugin-storage commands use message-free mutation, and
-message history plus `generation.persisted` use targeted SQLite paths. Phase 3
-has targeted projection, asset metadata indexing, and bulk all-chat hydration.
-Phase 5 has completed revision/event atomicity, expanded import limits, bundle
-export streaming, per-generation asset caching, and explicit upload/bulk-upload
-rollback for staged asset files and metadata write failures.
-Phase 6 settings write coalescing now skips immediate equality no-ops and drops
-queued setting changes whose final value returns to the original baseline.
-Memory job UI refresh is SSE-driven, prevents overlapping list requests, and
-polls only while pending/running jobs remain visible.
-Server-origin projection applies now advance a shared watcher epoch so settings,
-chat, and script-definition watchers refresh baselines without echoing commands.
-Phase 7 explicit route-local rate limits now cover selected public auth helpers,
-proxy submit paths, import/upload routes, and generation submit/preview routes
-while leaving long-lived SSE/WebSocket attach routes outside ordinary request
-limits.
+Phase 1 is implemented. Phase 2 narrowed the measured hot command families:
+settings/chat/plugin-storage commands use message-free mutation, and message
+history plus `generation.persisted` use targeted SQLite paths. Phase 3 has
+targeted projection, asset metadata indexing, and bulk all-chat hydration.
+Phase 4 runtime resilience is implemented; only the shared SSE taxonomy check
+remains as a future verification slice. Phase 5 has completed revision/event
+atomicity, expanded import limits, bundle export streaming, per-generation asset
+caching, and asset rollback hardening. Phase 6 is implemented: settings
+coalesce and skip no-op writes, memory job refresh is SSE-driven, and projection
+applies advance a watcher epoch so settings, chat, and script-definition
+watchers do not echo server-origin updates. Phase 7 now has route-local rate
+limits, wildcard manifest coverage, and read-only writer-header hygiene.
 
 Prefer one of these next:
 
@@ -47,6 +43,9 @@ Prefer one of these next:
 3. Continue Phase 7 route operation safeguards if prioritizing operational
    coverage, with HEAD/body parser review or hot envelope schemas next:
    [`phase-7-route-operations-coverage.md`](phases/phase-7-route-operations-coverage.md).
+4. Add the Phase 4 SSE taxonomy fixture only when touching chat stream event
+   names or payload shapes:
+   [`sse-taxonomy-alignment.md`](phases/slices/phase-4-stream-generation-resilience/sse-taxonomy-alignment.md).
 
 The command-family evidence lives in
 [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).
@@ -65,8 +64,8 @@ and
   bootstrap, projection, command, revision, and event model.
 - Do not implement server-restart survival for in-flight provider streams
   without a separate durable stream contract.
-- Do not add a generic global rate limit before completing the route-specific
-  inventory, streaming exclusions, and body parser review.
+- Do not add a generic global rate limit while HEAD/body parser review remains
+  open.
 - Do not widen plugin, local tool, browser effect, or unsupported generation
   behavior as part of protocol performance work.
 
@@ -78,7 +77,8 @@ and
    makes them active.
 3. Remaining route operation safeguards in Phase 7: HEAD/body parser audit, then
    hot envelope schemas.
-4. Verification budgets and latest-check recording in Phase 8.
+4. SSE taxonomy verification when chat stream vocabulary changes.
+5. Verification budgets and latest-check recording in Phase 8.
 
 ## Proof Commands
 

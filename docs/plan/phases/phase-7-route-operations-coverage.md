@@ -10,6 +10,7 @@ protocol streams, and close route coverage gaps found by the audit.
 
 - [`../../AUDIT.md`](../../AUDIT.md)
 - `server/fastify/src/app.ts`
+- `server/fastify/src/routeRateLimits.ts`
 - `server/fastify/src/routeManifest.ts`
 - `server/fastify/src/activeWriter.ts`
 - `server/fastify/__tests__/routeProtection.test.ts`
@@ -28,9 +29,9 @@ protocol streams, and close route coverage gaps found by the audit.
 
 ## Exit Criteria
 
-- Abuse-prone buffered routes have explicit, tested limits.
+- Abuse-prone buffered routes have explicit, tested limits. Done.
 - SSE, WebSocket, and long-lived generation attach routes are intentionally
-  excluded from ordinary request-rate limits.
+  excluded from ordinary request-rate limits. Done.
 - HEAD and body parser behavior does not accidentally perform full work or
   buffer before intended auth decisions.
 - Wildcard routes remain visible to manifest coverage.
