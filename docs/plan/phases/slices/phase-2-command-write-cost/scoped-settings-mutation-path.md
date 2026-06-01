@@ -18,8 +18,8 @@ sync time for a scalar settings edit on a message-heavy save.
 
 Implemented by routing `PATCH /api/v1/commands/settings/:group` through a
 message-free command mutation helper. The generic hydrated command path remains
-in place for chat, message, generation, plugin storage, and other command
-families that still need full-database safety rules.
+in place for chat, message, generation, and other command families that still
+need full-database safety rules.
 
 ## Implementation Scope
 
@@ -49,8 +49,8 @@ families that still need full-database safety rules.
 
 - Selected settings commands avoid `loadPersistedWithMessages()`.
 - Revision conflict, event, and response shapes match the generic path.
-- Settings metrics report `mutationPath: "message-free"`; generic command
-  families report `mutationPath: "hydrated"`.
+- Settings metrics report `mutationPath: "message-free"`; still-unmigrated
+  generic command families report `mutationPath: "hydrated"`.
 
 ## Measurement
 
@@ -61,6 +61,9 @@ Local before/after harness on 2026-06-01:
 | before settings    | hydrated     |   8.01 |          4.11 |         3.44 |          0.75 |   17.97 |
 | after settings     | message-free |   0.43 |          0.27 |         0.17 |          0.71 |    3.17 |
 | after plugin store | hydrated     |   6.32 |          6.74 |         3.56 |          0.46 |   18.63 |
+
+Plugin storage later moved to its own message-free path in
+[`scoped-plugin-storage-mutation-path.md`](scoped-plugin-storage-mutation-path.md).
 
 ## Validation
 

@@ -18,24 +18,27 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-Phase 1 P1 correctness hardening is implemented, the first measured Phase 2
-settings migration is complete, and the Phase 3 targeted-projection, asset
-metadata, and bulk chat hydration optimizations are implemented. Empty, small,
-character-family, mixed broad, and plugin targeted projection resources now
-have field selectors, and all-chat hydration has a one-request path, so prefer
-the remaining read-side P2/P3 performance work next:
+Phase 1 P1 correctness hardening is implemented, the first two measured Phase 2
+message-free migrations are complete, and the Phase 3 targeted-projection,
+asset metadata, and bulk chat hydration optimizations are implemented. Empty,
+small, character-family, mixed broad, and plugin targeted projection resources
+now have field selectors, and all-chat hydration has a one-request path. Prefer
+one of these next:
 
 1. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become an active target:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-2. Select the next measured command family only after writing a narrow slice
+2. Select the next measured command family, likely from chat/message targeted
+   persistence or generation persistence, only after writing a narrow slice
    with explicit source area, durable mutation behavior, event behavior, and
    proof command.
 
 The first command-family measurement is complete in
 [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md);
-it selected `settings.updated`, which is now implemented in
+it first selected `settings.updated`, which is now implemented in
 [`scoped-settings-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-settings-mutation-path.md).
+The next measured non-message family, plugin storage, is implemented in
+[`scoped-plugin-storage-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-plugin-storage-mutation-path.md).
 
 ## Not First
 

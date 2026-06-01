@@ -3987,7 +3987,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginStorageCommandBody
       const baseRevision = readBaseRevision(body)
       const value = readPluginStorageValue(body.value)
-      const result = applyJsonCommandMutation<{ key: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ key: string }>({
         db,
         dataDir,
         baseRevision,
@@ -4020,7 +4020,7 @@ export function registerCommandRoutes(
       const key = readPluginStorageKey((req.params as { key?: unknown }).key)
       const body = (req.body ?? {}) as PluginStorageCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyJsonCommandMutation<{ key: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ key: string }>({
         db,
         dataDir,
         baseRevision,
@@ -4053,7 +4053,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginStorageCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readPluginStorageBulkPatch(body)
-      const result = applyJsonCommandMutation({
+      const result = applyMessageFreeJsonCommandMutation({
         db,
         dataDir,
         baseRevision,

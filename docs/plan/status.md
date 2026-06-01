@@ -28,7 +28,8 @@ Completed foundations:
   active-writer classification, route-protection tests, and the architecture
   audit.
 - Phase 2 command-family measurement now has a reproducible metrics harness;
-  `settings.updated` uses a message-free mutation path for settings writes.
+  `settings.updated` and plugin-storage put/delete/bulk commands use
+  message-free mutation paths.
 - Phase 3 targeted projection now short-circuits empty-field resources such as
   `asset`, so no-op projection refreshes advance the client revision cursor
   without loading `db.json` or full stub projection state.
@@ -83,7 +84,7 @@ Active performance risks:
 | --------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
 | [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, bounded hydration, durable event history, route manifest coverage.    |
 | [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                        |
-| [Phase 2](phases/phase-2-command-write-cost.md)           | First migration implemented          | Whole-corpus command mutation cost and narrow write paths.                              |
+| [Phase 2](phases/phase-2-command-write-cost.md)           | Two migrations implemented           | Whole-corpus command mutation cost and narrow write paths.                              |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Six optimizations implemented        | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Planned                              | SSE backpressure, generation reattach triggers, resend caps, finalization retry.        |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Planned                              | Import/export memory pressure, asset mutation durability, per-generation media caching. |

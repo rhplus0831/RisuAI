@@ -230,7 +230,7 @@ describe('command protocol metrics', () => {
       expect(metric.sqliteSyncMs).toBeGreaterThanOrEqual(0)
     }
     expect(settings.metric.mutationPath).toBe('message-free')
-    expect(pluginStorage.metric.mutationPath).toBe('hydrated')
+    expect(pluginStorage.metric.mutationPath).toBe('message-free')
     expect(chat.metric.mutationPath).toBe('hydrated')
     expect(message.metric.mutationPath).toBe('hydrated')
     expect(generation.metric.mutationPath).toBe('hydrated')
