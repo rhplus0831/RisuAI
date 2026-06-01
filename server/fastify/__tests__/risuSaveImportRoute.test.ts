@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
@@ -95,6 +96,21 @@ function expectExportRequiredShape(database: Record<string, unknown>): void {
   }
   expect(database.pluginCustomStorage).toEqual(expect.any(Object))
   expect(Array.isArray(database.pluginCustomStorage)).toBe(false)
+}
+
+function failCommandEventPersistence(dataDir: string): void {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    db.exec(`
+      CREATE TRIGGER fail_command_event_insert
+      BEFORE INSERT ON command_events
+      BEGIN
+        SELECT RAISE(FAIL, 'injected command event failure');
+      END;
+    `)
+  } finally {
+    db.close()
+  }
 }
 
 let harness: Harness
@@ -290,6 +306,22 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(bootstrap.json().revision).toBe(0)
     expect(bootstrap.json().database).toBeNull()
     expect(harness.commandEvents.list()).toEqual([])
+  })
+
+  it('does not write imported state when command event persistence fails', async () => {
+    failCommandEventPersistence(harness.dataDir)
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: { v: 1 } },
+    })
+
+    expect(imported.statusCode).toBe(500)
+    expect(harness.commandEvents.list()).toEqual([])
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.json().revision).toBe(0)
+    expect(bootstrap.json().database).toBeNull()
   })
 
   it('reports referenced, missing, and orphaned server assets after JSON imports', async () => {

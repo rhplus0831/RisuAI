@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
+import { bumpRevision } from '../db.js'
 
 export interface CommandEvent {
   type: string
@@ -95,13 +96,15 @@ export function persistCommandEvent(
   pruneCommandEventHistory(db, historyLimit)
 }
 
-export function emitPersistedCommandEvent(
+export function persistRevisionedCommandEvent(
   db: DatabaseSync,
-  eventSink: CommandEventSink,
-  event: CommandEvent,
-): void {
-  persistCommandEvent(db, event)
-  eventSink.emit(event)
+  event: CommandEventDraft,
+  historyLimit = COMMAND_EVENT_HISTORY_LIMIT,
+): CommandEvent {
+  const revision = bumpRevision(db)
+  const persisted: CommandEvent = { ...event, revision }
+  persistCommandEvent(db, persisted, historyLimit)
+  return persisted
 }
 
 export function listPersistedCommandEventHistory(db: DatabaseSync): readonly CommandEvent[] {

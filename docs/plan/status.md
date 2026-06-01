@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the server-owned
-revision bump audit slice.
+Current status reflects code and commit history through the server-owned event
+atomicity slice.
 
 ## Current Snapshot
 
@@ -31,10 +31,12 @@ Completed work:
   durable chat-generation SSE, proxy WebSocket stream jobs, generation reattach
   triggers for active-chat changes plus full resyncs, a per-root-action cap for
   server-owned resend cycles, and a SQLite-backed finalization retry queue.
-- Phase 5 has completed the server-owned revision bump audit. All non-helper
-  revision bumps have matching happy-path persisted/live command events or a
-  documented live-only exception. Event atomicity for server-owned paths remains
-  planned.
+- Phase 5 has completed the server-owned revision bump audit and event
+  atomicity slice. Initialization, `.risu` import, asset upload/bulk upload,
+  backup restore, Realm staged assets, and Realm fetched assets now persist the
+  revision bump and replayable command event in one SQLite transaction where
+  practical, or roll back file-backed metadata/bytes when event persistence
+  fails.
 - Phase 6 has existing settings debounce/coalescing and per-bridge watcher
   baselines; memory job SSE refresh, shared projection-apply suppression, and
   broader echo tests remain planned.
@@ -55,9 +57,6 @@ Active performance risks:
 - Optional lorebook hydration is still N requests when experimental
   `enableLorebookStubs` is enabled.
 - Import, export, and bundle paths can materialize large payloads.
-- Server-owned initialization, import, asset, restore, and Realm asset paths can
-  still commit a revision bump before the matching command event persistence
-  step succeeds.
 - Memory job polling, watcher echo, and remaining settings no-op paths need
   explicit suppression, caps, or retry handling.
 
@@ -78,7 +77,7 @@ Active performance risks:
 | [Phase 2](phases/phase-2-command-write-cost.md)           | Hot command paths targeted           | Whole-corpus command mutation cost and narrow write paths.                              |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Six optimizations implemented        | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Implemented                          | Closed stream, generation reattach, resend, and finalization retry work.                |
-| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Revision/event audit complete        | Import/export memory pressure, asset mutation durability, per-generation media caching. |
+| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Event atomicity complete             | Import/export memory pressure, asset mutation durability, per-generation media caching. |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Partly implemented                   | Memory job polling, server-origin watcher echo, settings write coalescing.              |
 | [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.     |
 | [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                     |

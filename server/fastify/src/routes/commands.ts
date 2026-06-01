@@ -1,11 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
-import {
-  COMMAND_EVENT_CATALOG,
-  emitPersistedCommandEvent,
-  type CommandEventSink,
-} from '../commands/events.js'
+import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import {
   applyJsonCommandMutation,
   applyMessageFreeJsonCommandMutation,
@@ -1039,9 +1035,11 @@ export function registerCommandRoutes(
         // its cursor; no write happened, so no event is emitted.
         return { revision: result.revision, initialized: false }
       }
-      const event = { ...COMMAND_EVENT_CATALOG.stateInitialized, revision: result.revision }
-      emitPersistedCommandEvent(db, eventSink, event)
-      return { revision: result.revision, initialized: true, event }
+      if (!result.event) {
+        throw new Error('state initialization did not produce a command event')
+      }
+      eventSink.emit(result.event)
+      return { revision: result.revision, initialized: true, event: result.event }
     } catch (err) {
       return sendCommandError(reply, err)
     }

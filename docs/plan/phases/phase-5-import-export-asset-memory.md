@@ -1,6 +1,7 @@
 # Phase 5: Import, Export, And Asset Memory
 
-Status: revision/event audit complete; implementation planned.
+Status: revision/event audit and event atomicity complete; import/export and
+asset durability work remains planned.
 
 Goal: reduce large-payload memory pressure and make asset mutation durability
 explicit.

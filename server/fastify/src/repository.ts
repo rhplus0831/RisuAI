@@ -3,7 +3,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { createInitialDatabase } from './databaseDefaults.js'
-import { bumpRevision, getSchemaState } from './db.js'
+import { getSchemaState } from './db.js'
+import {
+  COMMAND_EVENT_CATALOG,
+  persistRevisionedCommandEvent,
+  type CommandEvent,
+} from './commands/events.js'
 import {
   applyChatMessageDiff,
   deleteChatHypaV3,
@@ -565,7 +570,8 @@ export function applyImport(
   db: DatabaseSync,
   dataDir: string,
   database: unknown,
-): { revision: number } {
+  options: { beforeRevision?: (db: DatabaseSync) => void } = {},
+): { revision: number; event: CommandEvent } {
   if (database === null || database === undefined) {
     throw new ValidationError('database payload missing')
   }
@@ -584,11 +590,12 @@ export function applyImport(
       ...current,
       database: structuredClone(database),
     })
-    const revision = bumpRevision(db)
+    options.beforeRevision?.(db)
+    const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
     db.exec('COMMIT')
     transactionOpen = false
     writePersisted(dataDir, messageFree)
-    return { revision }
+    return { revision: event.revision, event }
   } catch (err) {
     if (transactionOpen) {
       db.exec('ROLLBACK')
@@ -613,7 +620,7 @@ export function applyImport(
 export function initializeDefaultDatabase(
   db: DatabaseSync,
   dataDir: string,
-): { revision: number; initialized: boolean } {
+): { revision: number; initialized: boolean; event?: CommandEvent } {
   let transactionOpen = false
   db.exec('BEGIN IMMEDIATE')
   transactionOpen = true
@@ -631,11 +638,11 @@ export function initializeDefaultDatabase(
       ...current,
       database: createInitialDatabase(),
     }
-    const revision = bumpRevision(db)
+    const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateInitialized)
     db.exec('COMMIT')
     transactionOpen = false
     writePersisted(dataDir, messageFree)
-    return { revision, initialized: true }
+    return { revision: event.revision, initialized: true, event }
   } catch (err) {
     if (transactionOpen) {
       db.exec('ROLLBACK')
@@ -661,6 +668,7 @@ export interface AddAssetResult {
   entry: PersistedAsset
   created: boolean
   revision: number
+  event?: CommandEvent
 }
 
 interface AddAssetInput {
@@ -689,6 +697,7 @@ export function addAssets(
   const createdResults: AddAssetResult[] = []
   const results: AddAssetResult[] = []
   const currentRevision = getSchemaState(db).revision
+  const createdFiles: Array<{ file: string; existedBefore: boolean }> = []
 
   for (const asset of assets) {
     const ext = CONTENT_TYPE_EXTENSIONS[asset.contentType]
@@ -706,7 +715,9 @@ export function addAssets(
 
     fs.mkdirSync(assetsDir(dataDir), { recursive: true })
     const file = path.join(assetsDir(dataDir), `${sha256}.${ext}`)
+    const existedBefore = fs.existsSync(file)
     fs.writeFileSync(file, asset.bytes)
+    createdFiles.push({ file, existedBefore })
     const entry: PersistedAsset = {
       id: sha256,
       ext,
@@ -725,8 +736,29 @@ export function addAssets(
   }
 
   writePersisted(dataDir, { ...persisted, assets: nextAssets })
-  const revision = bumpRevision(db)
-  return results.map((result) => ({ ...result, revision }))
+  let transactionOpen = false
+  db.exec('BEGIN IMMEDIATE')
+  transactionOpen = true
+  try {
+    const event = persistRevisionedCommandEvent(db, {
+      ...COMMAND_EVENT_CATALOG.assetCreated,
+      ...(createdResults.length === 1 ? { id: createdResults[0].entry.id } : {}),
+    })
+    db.exec('COMMIT')
+    transactionOpen = false
+    return results.map((result) => ({ ...result, revision: event.revision, event }))
+  } catch (err) {
+    if (transactionOpen) {
+      db.exec('ROLLBACK')
+    }
+    writePersisted(dataDir, persisted)
+    for (const { file, existedBefore } of createdFiles) {
+      if (!existedBefore) {
+        fs.rmSync(file, { force: true })
+      }
+    }
+    throw err
+  }
 }
 
 export function missingAssetIds(dataDir: string, ids: string[]): string[] {
@@ -872,7 +904,11 @@ export function listBackups(dataDir: string): BackupManifest[] {
   return manifests
 }
 
-function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string): void {
+function restoreSqliteFromBackup(
+  db: DatabaseSync,
+  backupDbPath: string,
+  beforeCommit?: () => void,
+): void {
   // Use ATTACH + table-level swap so the existing `db` handle stays valid
   // (file-rename would orphan open file descriptors and break every other
   // active route holding the same handle). The transaction is atomic with
@@ -886,6 +922,7 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string): void {
         if (table === 'schema_version') continue
         db.exec(`DELETE FROM ${table}`)
       }
+      beforeCommit?.()
       db.exec('COMMIT')
     } catch (err) {
       db.exec('ROLLBACK')
@@ -924,6 +961,7 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string): void {
           db.exec(`INSERT INTO main.${table} SELECT * FROM bak.${table}`)
         }
       }
+      beforeCommit?.()
       db.exec('COMMIT')
     } catch (err) {
       db.exec('ROLLBACK')
@@ -934,7 +972,11 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string): void {
   }
 }
 
-export function restoreBackup(db: DatabaseSync, dataDir: string, id: string): { revision: number } {
+export function restoreBackup(
+  db: DatabaseSync,
+  dataDir: string,
+  id: string,
+): { revision: number; event: CommandEvent } {
   if (!isValidBackupId(id)) {
     throw new EntityNotFoundError(`Backup not found: ${id}`)
   }
@@ -947,6 +989,7 @@ export function restoreBackup(db: DatabaseSync, dataDir: string, id: string): { 
   // them into place. The SQLite restore uses ATTACH to preserve `db`.
   const live = path.join(dataDir, 'db.json')
   const tmp = `${live}.tmp`
+  const old = `${live}.old`
   const liveAssets = assetsDir(dataDir)
   const backupAssets = path.join(backupDir(dataDir, id), 'assets')
   const tmpAssets = path.join(dataDir, `.assets-${id}.tmp`)
@@ -961,6 +1004,9 @@ export function restoreBackup(db: DatabaseSync, dataDir: string, id: string): { 
   rmDirectoryIfPresent(oldAssets)
   rmDirectoryIfPresent(tmpSave)
   rmDirectoryIfPresent(oldSave)
+  if (fs.existsSync(old)) {
+    fs.rmSync(old, { force: true })
+  }
 
   // Stage assets and save dirs as temp copies.
   if (fs.existsSync(backupAssets)) {
@@ -978,6 +1024,9 @@ export function restoreBackup(db: DatabaseSync, dataDir: string, id: string): { 
   fs.copyFileSync(snapshot, tmp)
 
   // Move live directories aside so the swap can roll back.
+  if (fs.existsSync(live)) {
+    fs.renameSync(live, old)
+  }
   if (fs.existsSync(liveAssets)) {
     fs.renameSync(liveAssets, oldAssets)
   }
@@ -985,14 +1034,18 @@ export function restoreBackup(db: DatabaseSync, dataDir: string, id: string): { 
     fs.renameSync(liveSave, oldSave)
   }
 
+  let event: CommandEvent | undefined
   try {
-    // SQLite: ATTACH-based table swap (no file rename — preserves db handle).
-    restoreSqliteFromBackup(db, backupSqlite)
-    // File swaps: assets, save, db.json.
-    fs.renameSync(tmpAssets, liveAssets)
-    fs.renameSync(tmpSave, liveSave)
-    fs.renameSync(tmp, live)
-    invalidateAssetMetadataIndex(dataDir)
+    // SQLite table restore, revision bump, command event persistence, and file
+    // swaps share one rollback boundary: if the command event or any swap fails,
+    // the SQLite transaction rolls back and the live directories are restored.
+    restoreSqliteFromBackup(db, backupSqlite, () => {
+      event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
+      fs.renameSync(tmpAssets, liveAssets)
+      fs.renameSync(tmpSave, liveSave)
+      fs.renameSync(tmp, live)
+      invalidateAssetMetadataIndex(dataDir)
+    })
   } catch (err) {
     rmDirectoryIfPresent(liveAssets)
     if (fs.existsSync(oldAssets)) {
@@ -1002,13 +1055,29 @@ export function restoreBackup(db: DatabaseSync, dataDir: string, id: string): { 
     if (fs.existsSync(oldSave)) {
       fs.renameSync(oldSave, liveSave)
     }
+    if (fs.existsSync(live)) {
+      fs.rmSync(live, { force: true })
+    }
+    if (fs.existsSync(old)) {
+      fs.renameSync(old, live)
+    }
+    rmDirectoryIfPresent(tmpAssets)
+    rmDirectoryIfPresent(tmpSave)
+    if (fs.existsSync(tmp)) {
+      fs.rmSync(tmp, { force: true })
+    }
     throw err
   }
 
   rmDirectoryIfPresent(oldAssets)
   rmDirectoryIfPresent(oldSave)
-  const revision = bumpRevision(db)
-  return { revision }
+  if (fs.existsSync(old)) {
+    fs.rmSync(old, { force: true })
+  }
+  if (!event) {
+    throw new Error('restore did not produce a command event')
+  }
+  return { revision: event.revision, event }
 }
 
 export function deleteBackup(dataDir: string, id: string): void {

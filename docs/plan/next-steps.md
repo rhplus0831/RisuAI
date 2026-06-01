@@ -26,7 +26,8 @@ hydration. Phase 4 has implemented bounded slow-consumer behavior for
 command/memory SSE, inline and durable chat generation SSE, proxy WebSocket
 stream jobs, generation reattach probes after active-chat projection changes
 and full resyncs, server-owned resend-cycle caps, and SQLite-backed
-finalization retry. Phase 5 has completed the server-owned revision bump audit.
+finalization retry. Phase 5 has completed the server-owned revision bump audit
+and event atomicity slice.
 
 Prefer one of these next:
 
@@ -36,13 +37,13 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. Continue Phase 5 with server-owned event atomicity if prioritizing protocol
-   correctness:
-   [`server-owned-event-atomicity.md`](phases/slices/phase-5-import-export-asset-memory/server-owned-event-atomicity.md).
-4. Continue Phase 5 with import/export memory pressure if prioritizing large
+3. Continue Phase 5 with import/export memory pressure if prioritizing large
    save performance:
    [`expanded-import-size-limits.md`](phases/slices/phase-5-import-export-asset-memory/expanded-import-size-limits.md) or
    [`bundle-export-streaming.md`](phases/slices/phase-5-import-export-asset-memory/bundle-export-streaming.md).
+4. Continue Phase 5 asset durability work if prioritizing file-backed recovery:
+   [`asset-mutation-transaction-protocol.md`](phases/slices/phase-5-import-export-asset-memory/asset-mutation-transaction-protocol.md) or
+   [`per-generation-asset-cache.md`](phases/slices/phase-5-import-export-asset-memory/per-generation-asset-cache.md).
 
 The command-family evidence lives in
 [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).

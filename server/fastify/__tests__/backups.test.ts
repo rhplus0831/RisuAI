@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
+import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { assetsDir } from '../src/repository.js'
@@ -15,6 +16,21 @@ const PNG_BYTES = Buffer.from(
   'hex',
 )
 const PNG_SHA = createHash('sha256').update(PNG_BYTES).digest('hex')
+
+function failCommandEventPersistence(dataDir: string): void {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    db.exec(`
+      CREATE TRIGGER fail_command_event_insert
+      BEFORE INSERT ON command_events
+      BEGIN
+        SELECT RAISE(FAIL, 'injected command event failure');
+      END;
+    `)
+  } finally {
+    db.close()
+  }
+}
 
 interface Harness {
   app: FastifyInstance
@@ -291,6 +307,46 @@ describe('Phase 2D backups', () => {
     expect(afterRestore.json().revision).toBe(revisionAfter)
   })
 
+  it('keeps pre-restore state when restore event persistence fails', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'A' })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'snapshot of A' },
+    })
+    expect(backup.statusCode).toBe(201)
+    const backupId = backup.json().id
+    await importDb(harness.app, assertion, { tag: 'B' })
+    harness.commandEvents.clear()
+    failCommandEventPersistence(harness.dataDir)
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+
+    expect(restored.statusCode).toBe(500)
+    expect(harness.commandEvents.list()).toEqual([])
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(2)
+    expect(bootstrap.json().database).toMatchObject({
+      tag: 'B',
+      characters: [],
+      botPresets: [],
+      modules: [],
+      loadouts: [],
+      plugins: [],
+      pluginCustomStorage: {},
+    })
+  })
+
   it('round-trips chat messages and per-chat hypaV3Data (SQLite tables) with backup/restore', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, {
@@ -526,9 +582,9 @@ describe('Phase 2D backups', () => {
     // The memory table must now match the snapshot.
     const verify = new DatabaseSync(liveDbPath)
     try {
-      const rows = verify
-        .prepare(`SELECT id FROM memory_chunks ORDER BY id ASC`)
-        .all() as { id: string }[]
+      const rows = verify.prepare(`SELECT id FROM memory_chunks ORDER BY id ASC`).all() as {
+        id: string
+      }[]
       expect(rows.map((r) => r.id)).toEqual(['chunk-pre'])
     } finally {
       verify.close()
@@ -564,9 +620,7 @@ describe('Phase 2D backups', () => {
     })
     expect(backup.statusCode).toBe(201)
     const backupId = backup.json().id
-    expect(
-      existsSync(path.join(harness.dataDir, 'backups', backupId, 'save', filePath)),
-    ).toBe(true)
+    expect(existsSync(path.join(harness.dataDir, 'backups', backupId, 'save', filePath))).toBe(true)
 
     // Overwrite and add a different file, then restore.
     writeFileSync(savedFile, 'tampered-bytes')

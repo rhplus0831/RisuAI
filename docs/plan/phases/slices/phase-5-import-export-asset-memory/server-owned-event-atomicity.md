@@ -1,6 +1,6 @@
 # Server-Owned Event Atomicity
 
-Status: planned.
+Status: completed.
 
 ## Source Anchors
 
@@ -16,6 +16,23 @@ Status: planned.
 
 Close or explicitly recover the gap where server-owned mutation paths can bump
 the SQLite revision before the matching command event is persisted.
+
+Implemented scope:
+
+- First-run initialization persists `state.initialized` in the same SQLite
+  transaction as its revision bump.
+- `.risu` import persists `state.imported` in the same transaction as message
+  extraction, legacy Hypa V3 memory replacement, and the revision bump; live
+  fanout happens after the durable event exists.
+- Asset upload and bulk upload persist `asset.created` in one revision/event
+  transaction after staging content-addressed bytes and metadata; event
+  persistence failure restores the previous asset manifest and removes newly
+  created bytes.
+- Backup restore persists `state.restored` inside the SQLite table-restore
+  transaction and swaps files before commit; event or file-swap failure rolls
+  SQLite back and restores the pre-restore asset/save directories.
+- Realm packaged asset staging and fetched asset saves use the same
+  persisted-event-before-live-fanout contract as normal asset uploads.
 
 ## Protocol Behavior
 
@@ -38,6 +55,10 @@ the SQLite revision before the matching command event is persisted.
 - Event replay either remains contiguous after successful revision bumps or
   intentionally forces a full-bootstrap recovery with documented diagnostics.
 
+Done. Failure-injection coverage now verifies rollback/no-live-fanout behavior
+for first-run initialization, JSON `.risu` import, asset upload, and backup
+restore when inserting into `command_events` fails.
+
 ## Validation
 
 - `pnpm api:test -- server/fastify/__tests__/events.test.ts`
@@ -45,3 +66,8 @@ the SQLite revision before the matching command event is persisted.
 - `pnpm api:test -- server/fastify/__tests__/backups.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/risuSaveImportRoute.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/realmImport.test.ts`
+
+Latest validation:
+
+- `pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__tests__/assets.test.ts server/fastify/__tests__/backups.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/realmImport.test.ts --runInBand`
+  - Passed: 82 test files, 1461 tests.

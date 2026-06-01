@@ -2,15 +2,11 @@ import type { FastifyInstance } from 'fastify'
 import type { FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
-import {
-  COMMAND_EVENT_CATALOG,
-  emitPersistedCommandEvent,
-  type CommandEventSink,
-} from '../commands/events.js'
+import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import { ValidationError, applyImport } from '../repository.js'
-import { replaceLegacyHypaV3MemoryRows } from '../memoryLegacyImport.js'
+import { replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
 import {
   decodeRisuSaveImportSnapshot,
   normalizeRisuSaveImportDatabase,
@@ -52,9 +48,12 @@ export function registerSaveRoutes(
     try {
       if (req.isMultipart()) {
         const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req))
-        const { revision, assetReport } = applyImportedDatabase(db, dataDir, snapshot.database)
-        const event = { ...COMMAND_EVENT_CATALOG.stateImported, revision }
-        emitPersistedCommandEvent(db, eventSink, event)
+        const { revision, event, assetReport } = applyImportedDatabase(
+          db,
+          dataDir,
+          snapshot.database,
+        )
+        eventSink.emit(event)
         return {
           revision,
           event,
@@ -69,9 +68,8 @@ export function registerSaveRoutes(
 
       const body = (req.body ?? {}) as ImportBody
       const database = normalizeRisuSaveImportDatabase(body.database)
-      const { revision, assetReport } = applyImportedDatabase(db, dataDir, database)
-      const event = { ...COMMAND_EVENT_CATALOG.stateImported, revision }
-      emitPersistedCommandEvent(db, eventSink, event)
+      const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, database)
+      eventSink.emit(event)
       return { revision, event, assetReport }
     } catch (err) {
       if (err instanceof ValidationError) {
@@ -190,9 +188,14 @@ function applyImportedDatabase(
   db: DatabaseSync,
   dataDir: string,
   database: unknown,
-): { revision: number; assetReport: ReturnType<typeof summarizeRisuSaveAssetReport> } {
-  const result = applyImport(db, dataDir, database)
-  replaceLegacyHypaV3MemoryRows(db, database)
+): {
+  revision: number
+  event: ReturnType<typeof applyImport>['event']
+  assetReport: ReturnType<typeof summarizeRisuSaveAssetReport>
+} {
+  const result = applyImport(db, dataDir, database, {
+    beforeRevision: () => replaceLegacyHypaV3MemoryRowsInTransaction(db, database),
+  })
   return {
     ...result,
     assetReport: summarizeRisuSaveAssetReport(buildRepositoryRisuSaveAssetReport(dataDir, db)),

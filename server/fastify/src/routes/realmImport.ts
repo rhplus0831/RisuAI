@@ -9,10 +9,10 @@ import { pipeline } from 'node:stream/promises'
 import * as fflate from 'fflate'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
-import { bumpRevision, getSchemaState } from '../db.js'
+import { getSchemaState } from '../db.js'
 import {
   COMMAND_EVENT_CATALOG,
-  emitPersistedCommandEvent,
+  persistRevisionedCommandEvent,
   type CommandEventSink,
 } from '../commands/events.js'
 import {
@@ -688,6 +688,7 @@ function saveStagedCharxAssets(args: {
   const nextAssets = [...persisted.assets]
   const assetById = new Map(nextAssets.map((asset) => [asset.id, asset]))
   const createdAssets: PersistedAsset[] = []
+  const createdFiles: Array<{ file: string; existedBefore: boolean }> = []
   const assetDict: Record<string, string> = {}
 
   fs.mkdirSync(assetsDir(args.dataDir), { recursive: true })
@@ -724,7 +725,10 @@ function saveStagedCharxAssets(args: {
       size: bytes.length,
       contentType,
     }
-    fs.writeFileSync(path.join(assetsDir(args.dataDir), `${id}.${ext}`), bytes)
+    const file = path.join(assetsDir(args.dataDir), `${id}.${ext}`)
+    const existedBefore = fs.existsSync(file)
+    fs.writeFileSync(file, bytes)
+    createdFiles.push({ file, existedBefore })
     nextAssets.push(entry)
     assetById.set(id, entry)
     createdAssets.push(entry)
@@ -734,12 +738,29 @@ function saveStagedCharxAssets(args: {
 
   if (createdAssets.length > 0) {
     writePersisted(args.dataDir, { ...persisted, assets: nextAssets })
-    const revision = bumpRevision(args.db)
-    emitPersistedCommandEvent(args.db, args.eventSink, {
-      ...COMMAND_EVENT_CATALOG.assetCreated,
-      revision,
-      ...(createdAssets.length === 1 ? { id: createdAssets[0].id } : {}),
-    })
+    let transactionOpen = false
+    args.db.exec('BEGIN IMMEDIATE')
+    transactionOpen = true
+    try {
+      const event = persistRevisionedCommandEvent(args.db, {
+        ...COMMAND_EVENT_CATALOG.assetCreated,
+        ...(createdAssets.length === 1 ? { id: createdAssets[0].id } : {}),
+      })
+      args.db.exec('COMMIT')
+      transactionOpen = false
+      args.eventSink.emit(event)
+    } catch (err) {
+      if (transactionOpen) {
+        args.db.exec('ROLLBACK')
+      }
+      writePersisted(args.dataDir, persisted)
+      for (const { file, existedBefore } of createdFiles) {
+        if (!existedBefore) {
+          fs.rmSync(file, { force: true })
+        }
+      }
+      throw err
+    }
   }
 
   return assetDict
@@ -780,7 +801,7 @@ async function saveFetchedAsset(args: {
   }
   const contentType = resolveAssetContentType(args.source)
   const result = addAsset(args.db, args.dataDir, { bytes, contentType })
-  emitAssetEvent(args.db, args.eventSink, result)
+  emitAssetEvent(args.eventSink, result)
   return result.entry.id
 }
 
@@ -792,17 +813,11 @@ async function fetchHubResource(hubUrl: string, id: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer())
 }
 
-function emitAssetEvent(
-  db: DatabaseSync,
-  eventSink: CommandEventSink,
-  result: AddAssetResult,
-): void {
+function emitAssetEvent(eventSink: CommandEventSink, result: AddAssetResult): void {
   if (!result.created) return
-  emitPersistedCommandEvent(db, eventSink, {
-    ...COMMAND_EVENT_CATALOG.assetCreated,
-    revision: result.revision,
-    id: result.entry.id,
-  })
+  if (result.event) {
+    eventSink.emit(result.event)
+  }
 }
 
 function resolveAssetContentType(source: RealmAssetSource): string {

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, unlinkSync } from 'node:
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
+import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import type { FastifyInstance } from 'fastify'
@@ -91,6 +92,21 @@ const PNG_BYTES = Buffer.from(
 const PNG_SHA = createHash('sha256').update(PNG_BYTES).digest('hex')
 const OTHER_PNG_BYTES = Buffer.from('other-png-bytes')
 const OTHER_PNG_SHA = createHash('sha256').update(OTHER_PNG_BYTES).digest('hex')
+
+function failCommandEventPersistence(dataDir: string): void {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    db.exec(`
+      CREATE TRIGGER fail_command_event_insert
+      BEFORE INSERT ON command_events
+      BEGIN
+        SELECT RAISE(FAIL, 'injected command event failure');
+      END;
+    `)
+  } finally {
+    db.close()
+  }
+}
 
 let harness: Harness
 
@@ -212,6 +228,30 @@ describe('Phase 2C assets', () => {
     })
     expect(second.statusCode).toBe(200)
     expect(harness.commandEvents.list()).toHaveLength(1)
+  })
+
+  it('rolls back asset metadata and revision when command event persistence fails', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    failCommandEventPersistence(harness.dataDir)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+
+    expect(res.statusCode).toBe(500)
+    expect(harness.commandEvents.list()).toEqual([])
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(0)
+    const persisted = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    expect(persisted.assets).toEqual([])
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(false)
   })
 
   it('bulk uploads assets with one revision and ordered results', async () => {

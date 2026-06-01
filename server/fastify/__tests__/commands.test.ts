@@ -23,6 +23,21 @@ interface Harness {
   commandEvents: CommandEventSink
 }
 
+function failCommandEventPersistence(dataDir: string): void {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    db.exec(`
+      CREATE TRIGGER fail_command_event_insert
+      BEFORE INSERT ON command_events
+      BEGIN
+        SELECT RAISE(FAIL, 'injected command event failure');
+      END;
+    `)
+  } finally {
+    db.close()
+  }
+}
+
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-commands-'))
@@ -466,6 +481,28 @@ describe('first-run database seed', () => {
     })
     expect(bootstrap.json().revision).toBe(2)
     expect(bootstrap.json().database).toMatchObject({ username: 'Test', temperature: 80 })
+  })
+
+  it('does not seed db.json or bump revision when initialization event persistence fails', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    failCommandEventPersistence(harness.dataDir)
+
+    const seeded = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/state/initialize',
+      headers: { 'risu-auth': assertion },
+      payload: {},
+    })
+
+    expect(seeded.statusCode).toBe(500)
+    expect(harness.commandEvents.list()).toEqual([])
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(db).revision).toBe(0)
+    } finally {
+      db.close()
+    }
+    expect(loadPersisted(harness.dataDir).database).toBeNull()
   })
 
   it('is an idempotent no-op that never clobbers an existing database', async () => {

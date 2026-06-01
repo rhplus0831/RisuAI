@@ -72,15 +72,20 @@ export function replaceLegacyHypaV3MemoryRows(
   db: DatabaseSync,
   database: unknown,
 ): LegacyHypaV3BackfillResult {
-  return withTransaction(db, () => {
-    db.exec(`
-      DELETE FROM memory_jobs;
-      DELETE FROM memory_embeddings;
-      DELETE FROM memory_summaries;
-      DELETE FROM memory_chunks;
-    `)
-    return backfillLegacyHypaV3MemoryRows(db, database)
-  })
+  return withTransaction(db, () => replaceLegacyHypaV3MemoryRowsInTransaction(db, database))
+}
+
+export function replaceLegacyHypaV3MemoryRowsInTransaction(
+  db: DatabaseSync,
+  database: unknown,
+): LegacyHypaV3BackfillResult {
+  db.exec(`
+    DELETE FROM memory_jobs;
+    DELETE FROM memory_embeddings;
+    DELETE FROM memory_summaries;
+    DELETE FROM memory_chunks;
+  `)
+  return backfillLegacyHypaV3MemoryRows(db, database)
 }
 
 export function backfillLegacyHypaV3MemoryRows(
@@ -179,7 +184,11 @@ function collectLegacySummaryPlans(database: unknown): LegacySummaryPlan[] {
   return plans
 }
 
-function buildChunkText(messages: LegacyMessage[], chatMemos: string[], summaryText: string): string {
+function buildChunkText(
+  messages: LegacyMessage[],
+  chatMemos: string[],
+  summaryText: string,
+): string {
   const memoSet = new Set(chatMemos)
   const rows = messages
     .filter((message) => typeof message.chatId === 'string' && memoSet.has(message.chatId))
