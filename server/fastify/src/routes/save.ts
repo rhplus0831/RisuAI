@@ -5,15 +5,19 @@ import type { AuthState } from '../auth.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
-import { ValidationError, applyImport } from '../repository.js'
+import { ValidationError, applyImport, loadPersistedWithMessages } from '../repository.js'
 import { replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
 import {
   decodeRisuSaveImportSnapshot,
   normalizeRisuSaveImportDatabase,
 } from '../risuSave/importSnapshot.js'
 import {
+  buildRisuSaveExportSnapshotFromPersisted,
+  encodeRisuSaveBlockExportSnapshot,
   encodeRepositoryRisuSaveBlockExport,
   encodeRepositoryRisuSaveLegacyExport,
+  encodeRisuSaveLegacyExportSnapshot,
+  type RisuSaveExportSnapshot,
 } from '../risuSave/exportSnapshot.js'
 import { buildRepositoryRisuSaveBundleExport } from '../risuSave/bundleExport.js'
 import {
@@ -108,10 +112,12 @@ export function registerSaveRoutes(
     if (!(await requireAuth(authState, req, reply))) return
     try {
       const options = parseExportQuery(req.query)
-      const risuBytes = encodeRepositoryRisuSaveExport(db, dataDir, options)
+      const persisted = loadPersistedWithMessages(db, dataDir)
+      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
+      const risuBytes = encodeRisuSaveExportSnapshot(snapshot, options)
       const bundle = buildRepositoryRisuSaveBundleExport({
-        db,
         dataDir,
+        persisted,
         risuBytes,
         envelope: options.envelope,
         compression: options.compression,
@@ -122,7 +128,7 @@ export function registerSaveRoutes(
       })
       reply.header('content-type', 'application/zip')
       reply.header('content-disposition', `attachment; filename="${BUNDLE_EXPORT_FILENAME}"`)
-      return reply.send(Buffer.from(bundle.bytes))
+      return reply.send(bundle.stream)
     } catch (err) {
       if (err instanceof ValidationError) {
         reply.code(400)
@@ -141,6 +147,15 @@ function encodeRepositoryRisuSaveExport(
   return options.envelope === 'risusave-blocks'
     ? encodeRepositoryRisuSaveBlockExport(db, dataDir, { compression: options.compression })
     : encodeRepositoryRisuSaveLegacyExport(db, dataDir, options.envelope)
+}
+
+function encodeRisuSaveExportSnapshot(
+  snapshot: RisuSaveExportSnapshot,
+  options: ReturnType<typeof parseExportQuery>,
+): Uint8Array {
+  return options.envelope === 'risusave-blocks'
+    ? encodeRisuSaveBlockExportSnapshot(snapshot, { compression: options.compression })
+    : encodeRisuSaveLegacyExportSnapshot(snapshot, options.envelope)
 }
 
 function parseExportQuery(query: ExportQuery): {

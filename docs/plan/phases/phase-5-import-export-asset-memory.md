@@ -1,7 +1,7 @@
 # Phase 5: Import, Export, And Asset Memory
 
-Status: revision/event audit, event atomicity, and expanded import limits
-complete; export memory and asset durability work remains planned.
+Status: revision/event audit, event atomicity, expanded import limits, and
+bundle export streaming complete; asset durability work remains planned.
 
 Goal: reduce large-payload memory pressure and make asset mutation durability
 explicit.
@@ -23,14 +23,17 @@ explicit.
 - [`expanded-import-size-limits.md`](slices/phase-5-import-export-asset-memory/expanded-import-size-limits.md) -
   implemented; `.risu` and Realm charx import paths reject oversized expanded
   payloads before durable writes.
-- [`bundle-export-streaming.md`](slices/phase-5-import-export-asset-memory/bundle-export-streaming.md)
+- [`bundle-export-streaming.md`](slices/phase-5-import-export-asset-memory/bundle-export-streaming.md) -
+  implemented; bundle export shares one hydrated snapshot and streams asset
+  entries into the zip.
 - [`asset-mutation-transaction-protocol.md`](slices/phase-5-import-export-asset-memory/asset-mutation-transaction-protocol.md)
 - [`per-generation-asset-cache.md`](slices/phase-5-import-export-asset-memory/per-generation-asset-cache.md)
 
 ## Exit Criteria
 
 - Import routes enforce expanded-size or post-inflate limits.
-- Bundle export avoids double hydration or documents why it cannot.
+- Bundle export avoids double hydration and does not collect all bundled asset
+  bytes in one in-memory zip input map.
 - Asset file writes, metadata writes, revision bumps, and events have explicit
   recovery behavior.
 - Repeated references to the same stored asset in one generation do not re-read
@@ -38,6 +41,6 @@ explicit.
 
 ## Validation
 
-- `pnpm api:test -- server/fastify/__tests__/save.test.ts`
+- `pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/assets.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/realmImport.test.ts`

@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the server-owned event
-atomicity slice.
+Current status reflects code and commit history through the bundle export
+streaming slice.
 
 ## Current Snapshot
 
@@ -32,12 +32,15 @@ Completed work:
   triggers for active-chat changes plus full resyncs, a per-root-action cap for
   server-owned resend cycles, and a SQLite-backed finalization retry queue.
 - Phase 5 has completed the server-owned revision bump audit, event atomicity,
-  and expanded import limit slices. Initialization, `.risu` import, asset
-  upload/bulk upload, backup restore, Realm staged assets, and Realm fetched
-  assets now persist the revision bump and replayable command event in one
-  SQLite transaction where practical, or roll back file-backed metadata/bytes
-  when event persistence fails. Multipart `.risu` and Realm charx imports now
-  reject oversized expanded payloads before durable import commits.
+  expanded import limit, and bundle export streaming slices. Initialization,
+  `.risu` import, asset upload/bulk upload, backup restore, Realm staged assets,
+  and Realm fetched assets now persist the revision bump and replayable command
+  event in one SQLite transaction where practical, or roll back file-backed
+  metadata/bytes when event persistence fails. Multipart `.risu` and Realm
+  charx imports now reject oversized expanded payloads before durable import
+  commits. Bundle export now shares one hydrated save snapshot between `.risu`
+  encoding and asset-reference planning, then streams asset file entries into
+  the zip.
 - Phase 6 has existing settings debounce/coalescing and per-bridge watcher
   baselines; memory job SSE refresh, shared projection-apply suppression, and
   broader echo tests remain planned.
@@ -57,7 +60,8 @@ Active performance risks:
   longer reparsed for every lookup.
 - Optional lorebook hydration is still N requests when experimental
   `enableLorebookStubs` is enabled.
-- Export and bundle paths can still materialize large payloads.
+- Export paths still materialize `.risu` payloads, although bundle export no
+  longer rehydrates the repository twice or preloads every asset byte buffer.
 - Memory job polling, watcher echo, and remaining settings no-op paths need
   explicit suppression, caps, or retry handling.
 
@@ -78,7 +82,7 @@ Active performance risks:
 | [Phase 2](phases/phase-2-command-write-cost.md)           | Hot command paths targeted           | Whole-corpus command mutation cost and narrow write paths.                             |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Six optimizations implemented        | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.   |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Implemented                          | Closed stream, generation reattach, resend, and finalization retry work.               |
-| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Import limits complete               | Export memory pressure, asset mutation durability, per-generation media caching.       |
+| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Import and bundle work complete      | Asset mutation durability and per-generation media caching.                            |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Partly implemented                   | Memory job polling, server-origin watcher echo, settings write coalescing.             |
 | [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.    |
 | [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                    |
