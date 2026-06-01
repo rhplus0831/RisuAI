@@ -41,11 +41,11 @@ import {
   type PostGenerationFrame,
   type PromptChatEvent,
   type PromptEvent,
-  writePromptChatEvent,
 } from '../prompt/sseEvents.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../activeWriter.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import type { JobClient, StreamJob } from '../streamJobs.js'
+import { getWritableBufferedBytes, writeBoundedRaw } from '../streamBackpressure.js'
 import { emitProtocolMetric, protocolDurationMs, protocolNowMs } from '../protocolMetrics.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
@@ -176,6 +176,7 @@ function validatePreview(body: ChatRequestBody): { ok: true } | { ok: false; err
 
 function attachAbort(req: FastifyRequest): {
   signal: AbortSignal
+  abort: () => void
   cleanup: () => void
 } {
   const controller = new AbortController()
@@ -183,6 +184,7 @@ function attachAbort(req: FastifyRequest): {
   req.raw.on('close', onClose)
   return {
     signal: controller.signal,
+    abort: () => controller.abort(),
     cleanup: () => req.raw.off('close', onClose),
   }
 }
@@ -659,7 +661,7 @@ async function streamAssembly(
   eventSink: CommandEventSink,
   options: GenerationChatRouteOptions = {},
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, abort, cleanup } = attachAbort(req)
   let terminalDoneEmitted = false
   try {
     reply.raw.writeHead(200, {
@@ -667,7 +669,9 @@ async function streamAssembly(
       'cache-control': 'no-store',
       connection: 'keep-alive',
     })
-    const emit = (event: PromptChatEvent): void => writePromptChatEvent(reply, event)
+    const emit = (event: PromptChatEvent): void => {
+      writeBoundedRaw(reply.raw, formatPromptChatFrame(event), { onOverflow: abort })
+    }
 
     emit({ type: 'stage', stage: 'validate', status: 'start' })
     emit({ type: 'stage', stage: 'validate', status: 'end' })
@@ -844,7 +848,7 @@ function readWriterSessionHeader(req: FastifyRequest): string | null {
 function makeSseJobClient(reply: FastifyReply): JobClient {
   return {
     send(text) {
-      if (!reply.raw.writableEnded) reply.raw.write(text)
+      writeBoundedRaw(reply.raw, text)
     },
     close() {
       try {
@@ -855,6 +859,9 @@ function makeSseJobClient(reply: FastifyReply): JobClient {
     },
     get open() {
       return !reply.raw.writableEnded
+    },
+    get bufferedBytes() {
+      return getWritableBufferedBytes(reply.raw)
     },
   }
 }

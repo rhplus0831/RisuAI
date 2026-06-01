@@ -11,17 +11,18 @@ import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import type { MemoryEvent, MemoryEventBus } from '../memoryEvents.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
+import { writeBoundedRaw } from '../streamBackpressure.js'
 
-function writeSseComment(raw: NodeJS.WritableStream, comment: string): void {
-  raw.write(`: ${comment}\n\n`)
+function formatSseComment(comment: string): string {
+  return `: ${comment}\n\n`
 }
 
-function writeCommandEvent(raw: NodeJS.WritableStream, event: CommandEvent): void {
-  raw.write(`id: ${event.revision}\nevent: command\ndata: ${JSON.stringify(event)}\n\n`)
+function formatCommandEvent(event: CommandEvent): string {
+  return `id: ${event.revision}\nevent: command\ndata: ${JSON.stringify(event)}\n\n`
 }
 
-function writeMemoryEvent(raw: NodeJS.WritableStream, event: MemoryEvent): void {
-  raw.write(`event: memory\ndata: ${JSON.stringify(event)}\n\n`)
+function formatMemoryEvent(event: MemoryEvent): string {
+  return `event: memory\ndata: ${JSON.stringify(event)}\n\n`
 }
 
 export function registerEventsRoutes(
@@ -45,16 +46,8 @@ export function registerEventsRoutes(
 
     let liveCommandDelivery = false
     const queuedCommandEvents: CommandEvent[] = []
-    const unsubscribeCommand = commandEvents.subscribe((event) => {
-      if (liveCommandDelivery) {
-        if (!reply.raw.writableEnded) {
-          writeCommandEvent(reply.raw, event)
-        }
-        return
-      }
-      queuedCommandEvents.push(event)
-    })
     let heartbeat: NodeJS.Timeout | null = null
+    let unsubscribeCommand: (() => void) | null = null
     let unsubscribeMemory: (() => void) | null = null
     let cleanedUp = false
     const cleanup = (): void => {
@@ -63,9 +56,20 @@ export function registerEventsRoutes(
       if (heartbeat) {
         clearInterval(heartbeat)
       }
-      unsubscribeCommand()
+      unsubscribeCommand?.()
       unsubscribeMemory?.()
     }
+    const sendFrame = (text: string): boolean =>
+      writeBoundedRaw(reply.raw, text, { onOverflow: cleanup })
+    unsubscribeCommand = commandEvents.subscribe((event) => {
+      if (liveCommandDelivery) {
+        if (!reply.raw.writableEnded) {
+          sendFrame(formatCommandEvent(event))
+        }
+        return
+      }
+      queuedCommandEvents.push(event)
+    })
     req.raw.once('close', cleanup)
 
     const currentRevision = getSchemaState(db).revision
@@ -117,10 +121,10 @@ export function registerEventsRoutes(
       connection: 'keep-alive',
       'x-accel-buffering': 'no',
     })
-    writeSseComment(reply.raw, 'connected')
+    sendFrame(formatSseComment('connected'))
     for (const event of replay.events) {
       if (!reply.raw.writableEnded) {
-        writeCommandEvent(reply.raw, event)
+        sendFrame(formatCommandEvent(event))
       }
     }
     for (const event of queuedCommandEvents) {
@@ -128,7 +132,7 @@ export function registerEventsRoutes(
         !reply.raw.writableEnded &&
         (cursor.sinceRevision === null || event.revision > currentRevision)
       ) {
-        writeCommandEvent(reply.raw, event)
+        sendFrame(formatCommandEvent(event))
       }
     }
     queuedCommandEvents.length = 0
@@ -136,14 +140,14 @@ export function registerEventsRoutes(
 
     heartbeat = setInterval(() => {
       if (!reply.raw.writableEnded) {
-        writeSseComment(reply.raw, 'heartbeat')
+        sendFrame(formatSseComment('heartbeat'))
       }
     }, 25_000)
     heartbeat.unref()
 
     unsubscribeMemory = memoryEvents.subscribe((event) => {
       if (!reply.raw.writableEnded) {
-        writeMemoryEvent(reply.raw, event)
+        sendFrame(formatMemoryEvent(event))
       }
     })
   })

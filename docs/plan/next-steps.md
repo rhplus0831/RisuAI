@@ -24,7 +24,9 @@ mutation paths, and moved `message.appended` to a targeted SQLite message append
 path. Message edit/delete/truncate/replace commands now use targeted SQLite
 message paths, and `generation.persisted` uses a targeted SQLite generation
 message path. Phase 3 has implemented the targeted-projection, asset metadata,
-and bulk all-chat hydration optimizations.
+and bulk all-chat hydration optimizations. Phase 4 has implemented bounded
+slow-consumer behavior for command/memory SSE, inline and durable chat
+generation SSE, and proxy WebSocket stream jobs.
 
 Prefer one of these next:
 
@@ -35,8 +37,9 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. If no command/read slice is active, start Phase 4 with SSE backpressure or
-   generation reattach trigger coverage.
+3. If no command/read slice is active, continue Phase 4 with generation reattach
+   trigger coverage:
+   [`generation-reattach-triggers.md`](phases/slices/phase-4-stream-generation-resilience/generation-reattach-triggers.md).
 
 The command-family evidence lives in
 [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).
@@ -66,8 +69,7 @@ and
    measured slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Stream slow-consumer, reattach, resend, and finalization resilience in
-   Phase 4.
+3. Stream generation reattach, resend, and finalization resilience in Phase 4.
 4. Import/export and asset memory/durability work in Phase 5.
 5. Client loop suppression and command write coalescing in Phase 6.
 6. Route operation safeguards and manifest coverage in Phase 7.

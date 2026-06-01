@@ -25,6 +25,8 @@ Completed work:
 - Phase 3 has six read-side optimizations: targeted projection field selectors
   for empty, small, character-family, mixed broad, and plugin resources; an
   in-process asset metadata index; and authenticated bulk all-chat hydration.
+- Phase 4 has bounded slow-consumer behavior for `/api/v1/events`, inline and
+  durable chat-generation SSE, and proxy WebSocket stream jobs.
 
 No P1 plan risks remain open after the Phase 1 commits.
 
@@ -41,7 +43,6 @@ Active performance risks:
 - Import, export, and bundle paths can materialize large payloads.
 - Memory job polling, settings writes, watcher echo, and generation resend
   loops need explicit suppression or caps.
-- SSE and stream fanout need bounded slow-consumer behavior.
 
 ## Start Here
 
@@ -59,7 +60,7 @@ Active performance risks:
 | [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                        |
 | [Phase 2](phases/phase-2-command-write-cost.md)           | Message history targeted             | Whole-corpus command mutation cost and narrow write paths.                              |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Six optimizations implemented        | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
-| [Phase 4](phases/phase-4-stream-generation-resilience.md) | Planned                              | SSE backpressure, generation reattach triggers, resend caps, finalization retry.        |
+| [Phase 4](phases/phase-4-stream-generation-resilience.md) | Backpressure implemented             | Generation reattach triggers, resend caps, finalization retry.                          |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Planned                              | Import/export memory pressure, asset mutation durability, per-generation media caching. |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Planned                              | Memory job polling, server-origin watcher echo, settings write coalescing.              |
 | [Phase 7](phases/phase-7-route-operations-coverage.md)    | Planned                              | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.     |

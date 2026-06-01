@@ -1,6 +1,6 @@
 # Phase 4: Stream And Generation Resilience
 
-Status: planned.
+Status: SSE backpressure implemented; remaining slices planned.
 
 Goal: make SSE, generation reattach, resend, and terminal persistence behavior
 bounded and observable.
@@ -26,12 +26,15 @@ bounded and observable.
 ## Exit Criteria
 
 - Slow SSE and stream consumers cannot create unbounded server memory pressure.
+  Implemented by
+  [`sse-backpressure-policy.md`](slices/phase-4-stream-generation-resilience/sse-backpressure-policy.md).
 - Active chat changes and full resyncs can trigger relevant generation reattach.
 - Server-owned resend loops have a per-root-action cap.
 - Final result persistence can be retried without duplicating assistant rows.
 
 ## Validation
 
+- Passed: `pnpm api:test`
 - `pnpm api:test -- server/fastify/__tests__/durableGeneration.test.ts`
 - `pnpm test -- src/ts/process/request/tests/durableGeneration.test.ts`
 - `pnpm test -- src/ts/bootstrap.test.ts`

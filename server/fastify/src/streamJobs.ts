@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import net from 'node:net'
 import { Readable } from 'node:stream'
 import { bufferToBodyInit, filterResponseHeaders, normalizeForwardHeaders } from './proxy.js'
+import { STREAM_CLIENT_MAX_BUFFERED_BYTES } from './streamBackpressure.js'
 
 export const PROXY_STREAM_DEFAULT_TIMEOUT_MS = 600_000
 export const PROXY_STREAM_MAX_TIMEOUT_MS = 3_600_000
@@ -31,6 +32,7 @@ export interface JobClient {
   send(text: string): void
   close(): void
   readonly open: boolean
+  readonly bufferedBytes?: number
 }
 
 export interface StreamJob {
@@ -184,6 +186,31 @@ function appendDurableReplayFrame(job: StreamJob, text: string): void {
   }
 }
 
+function closeJobClient(client: JobClient): void {
+  try {
+    client.close()
+  } catch {
+    // ignore
+  }
+}
+
+function sendBoundedJobClient(client: JobClient, text: string): boolean {
+  if (!client.open) return false
+  const bufferedBytes =
+    typeof client.bufferedBytes === 'number' ? Math.max(0, client.bufferedBytes) : 0
+  if (bufferedBytes + Buffer.byteLength(text) > STREAM_CLIENT_MAX_BUFFERED_BYTES) {
+    closeJobClient(client)
+    return false
+  }
+  try {
+    client.send(text)
+  } catch {
+    closeJobClient(client)
+    return false
+  }
+  return client.open
+}
+
 export class JobRegistry {
   private readonly jobs = new Map<string, StreamJob>()
 
@@ -255,8 +282,14 @@ export class JobRegistry {
       }
       return
     }
+    const staleClients: JobClient[] = []
     for (const client of job.clients) {
-      if (client.open) client.send(text)
+      if (!sendBoundedJobClient(client, text)) {
+        staleClients.push(client)
+      }
+    }
+    for (const client of staleClients) {
+      this.detach(job.id, client)
     }
   }
 
@@ -269,8 +302,16 @@ export class JobRegistry {
     if (!job) return null
     job.clients.add(client)
     const replayEvents = job.replayEvents ?? job.pendingEvents
+    let clientOpen = true
     for (const text of replayEvents) {
-      if (client.open) client.send(text)
+      if (!sendBoundedJobClient(client, text)) {
+        clientOpen = false
+        break
+      }
+    }
+    if (!clientOpen) {
+      this.detach(job.id, client)
+      return job
     }
     if (!job.replayEvents) {
       job.pendingEvents = []

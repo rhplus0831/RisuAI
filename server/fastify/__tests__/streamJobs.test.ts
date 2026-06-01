@@ -18,17 +18,21 @@ import {
   runStreamJob,
   sanitizeLocalTargetUrl,
 } from '../src/streamJobs.js'
+import { STREAM_CLIENT_MAX_BUFFERED_BYTES } from '../src/streamBackpressure.js'
 
 interface FakeClient extends JobClient {
   messages: string[]
   closed: boolean
 }
 
-function fakeClient(): FakeClient {
+function fakeClient(opts: { bufferedBytes?: number } = {}): FakeClient {
   const messages: string[] = []
   let openFlag = true
   return {
     messages,
+    get bufferedBytes() {
+      return opts.bufferedBytes ?? 0
+    },
     get open() {
       return openFlag
     },
@@ -211,6 +215,33 @@ describe('JobRegistry buffering and lifecycle', () => {
     expect(a.messages).toHaveLength(1)
     expect(b.messages).toHaveLength(1)
     expect(job.pendingEvents).toHaveLength(0)
+  })
+
+  it('detaches attached clients that exceed the fanout buffer cap', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    const slow = fakeClient({ bufferedBytes: STREAM_CLIENT_MAX_BUFFERED_BYTES })
+    reg.attach(job.id, slow)
+
+    reg.pushEvent(job, { type: 'chunk', dataBase64: 'AAAA' })
+
+    expect(slow.closed).toBe(true)
+    expect(job.clients.has(slow)).toBe(false)
+    expect(job.pendingEvents).toHaveLength(0)
+  })
+
+  it('keeps pending events when an attaching client exceeds the buffer cap', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    reg.pushEvent(job, { type: 'chunk', dataBase64: 'AAAA' })
+    const slow = fakeClient({ bufferedBytes: STREAM_CLIENT_MAX_BUFFERED_BYTES })
+
+    expect(reg.attach(job.id, slow)).toBe(job)
+
+    expect(slow.closed).toBe(true)
+    expect(job.clients.has(slow)).toBe(false)
+    expect(job.pendingEvents).toHaveLength(1)
+    expect(job.pendingBytes).toBeGreaterThan(0)
   })
 
   it('caps the pending buffer at MAX_PENDING_EVENTS', () => {

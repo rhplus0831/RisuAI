@@ -10,6 +10,7 @@ import {
   runStreamJob,
   sanitizeLocalTargetUrl,
 } from '../streamJobs.js'
+import { STREAM_CLIENT_MAX_BUFFERED_BYTES } from '../streamBackpressure.js'
 
 const ALLOWED_METHODS = new Set(['POST', 'GET', 'PUT', 'DELETE', 'PATCH'])
 
@@ -28,6 +29,29 @@ interface JobIdParams {
 
 interface WsQuerystring {
   'risu-auth'?: string
+}
+
+function wsBufferedBytes(socket: WebSocket): number {
+  return Math.max(0, socket.bufferedAmount)
+}
+
+function closeWs(socket: WebSocket): void {
+  try {
+    socket.close()
+  } catch {
+    // ignore
+  }
+}
+
+function sendBoundedWs(socket: WebSocket, text: string): void {
+  if (socket.readyState !== socket.OPEN) return
+  if (wsBufferedBytes(socket) + Buffer.byteLength(text) > STREAM_CLIENT_MAX_BUFFERED_BYTES) {
+    closeWs(socket)
+    return
+  }
+  socket.send(text, (err: unknown) => {
+    if (err) closeWs(socket)
+  })
 }
 
 async function checkProxyAuth(
@@ -80,19 +104,16 @@ async function checkProxyAuthWithQuery(
 function wsToJobClient(socket: WebSocket): JobClient {
   return {
     send(text) {
-      if (socket.readyState === socket.OPEN) {
-        socket.send(text)
-      }
+      sendBoundedWs(socket, text)
     },
     close() {
-      try {
-        socket.close()
-      } catch {
-        // ignore
-      }
+      closeWs(socket)
     },
     get open() {
       return socket.readyState === socket.OPEN
+    },
+    get bufferedBytes() {
+      return wsBufferedBytes(socket)
     },
   }
 }
@@ -189,7 +210,7 @@ export function registerStreamJobRoutes(
 
       const ping = setInterval(() => {
         if (socket.readyState === socket.OPEN) {
-          socket.send(JSON.stringify({ type: 'ping', ts: Date.now() }))
+          sendBoundedWs(socket, JSON.stringify({ type: 'ping', ts: Date.now() }))
         }
       }, job.heartbeatSec * 1000)
       ping.unref()
