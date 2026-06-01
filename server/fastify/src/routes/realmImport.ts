@@ -37,6 +37,7 @@ import {
   type AddAssetResult,
   type PersistedAsset,
 } from '../repository.js'
+import { importRateLimit } from '../routeRateLimits.js'
 import {
   LowLevelAccessImportError,
   convertRealmCharacterCard,
@@ -129,59 +130,63 @@ export function registerRealmImportRoutes(
   const hubUrl = options.hubUrl.replace(/\/+$/, '')
   const realmUrl = (options.realmUrl ?? 'https://realm.risuai.net').replace(/\/+$/, '')
 
-  app.post('/api/v1/import/realm-character', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
+  app.post(
+    '/api/v1/import/realm-character',
+    { config: { rateLimit: importRateLimit } },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
 
-    try {
-      const body = (req.body ?? {}) as RealmImportBody
-      if (acceptsProgressStream(req.headers.accept)) {
-        await streamRealmImport(reply, (reportProgress) =>
-          runRealmImport({
-            db,
-            dataDir,
-            eventSink,
-            body,
-            hubUrl,
-            realmUrl,
-            maxExpandedImportBytes: options.maxExpandedImportBytes,
-            reportProgress,
-          }),
-        )
-        return
+      try {
+        const body = (req.body ?? {}) as RealmImportBody
+        if (acceptsProgressStream(req.headers.accept)) {
+          await streamRealmImport(reply, (reportProgress) =>
+            runRealmImport({
+              db,
+              dataDir,
+              eventSink,
+              body,
+              hubUrl,
+              realmUrl,
+              maxExpandedImportBytes: options.maxExpandedImportBytes,
+              reportProgress,
+            }),
+          )
+          return
+        }
+        return await runRealmImport({
+          db,
+          dataDir,
+          eventSink,
+          body,
+          hubUrl,
+          realmUrl,
+          maxExpandedImportBytes: options.maxExpandedImportBytes,
+        })
+      } catch (err) {
+        if (err instanceof RevisionConflictError) {
+          reply.code(409)
+          return { error: err.message, currentRevision: err.currentRevision }
+        }
+        if (err instanceof LowLevelAccessImportError) {
+          reply.code(409)
+          return { error: err.message, code: 'low_level_access_confirmation_required' }
+        }
+        if (err instanceof UnsupportedRealmDownloadError) {
+          reply.code(415)
+          return { error: err.message, code: 'unsupported_realm_download' }
+        }
+        if (err instanceof ValidationError) {
+          reply.code(400)
+          return { error: err.message }
+        }
+        if (err instanceof UpstreamError) {
+          reply.code(err.statusCode)
+          return { error: err.message }
+        }
+        throw err
       }
-      return await runRealmImport({
-        db,
-        dataDir,
-        eventSink,
-        body,
-        hubUrl,
-        realmUrl,
-        maxExpandedImportBytes: options.maxExpandedImportBytes,
-      })
-    } catch (err) {
-      if (err instanceof RevisionConflictError) {
-        reply.code(409)
-        return { error: err.message, currentRevision: err.currentRevision }
-      }
-      if (err instanceof LowLevelAccessImportError) {
-        reply.code(409)
-        return { error: err.message, code: 'low_level_access_confirmation_required' }
-      }
-      if (err instanceof UnsupportedRealmDownloadError) {
-        reply.code(415)
-        return { error: err.message, code: 'unsupported_realm_download' }
-      }
-      if (err instanceof ValidationError) {
-        reply.code(400)
-        return { error: err.message }
-      }
-      if (err instanceof UpstreamError) {
-        reply.code(err.statusCode)
-        return { error: err.message }
-      }
-      throw err
-    }
-  })
+    },
+  )
 }
 
 async function runRealmImport(args: {

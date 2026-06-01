@@ -56,6 +56,7 @@ import {
   type GenerationFinalizationAttempt,
   type GenerationFinalizationMode,
 } from '../generationFinalizationRetry.js'
+import { generationSubmitRateLimit } from '../routeRateLimits.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
@@ -1621,26 +1622,39 @@ export function registerGenerationChatRoutes(
   generationJobs: GenerationJobRegistry,
   options: GenerationChatRouteOptions = {},
 ): void {
-  app.post('/api/v1/generate/chat', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
+  app.post(
+    '/api/v1/generate/chat',
+    { config: { rateLimit: generationSubmitRateLimit } },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
 
-    const body = (req.body ?? {}) as ChatRequestBody
-    const validation = validate(body)
-    if (validation.ok === false) {
-      return badRequest(reply, validation.error)
-    }
+      const body = (req.body ?? {}) as ChatRequestBody
+      const validation = validate(body)
+      if (validation.ok === false) {
+        return badRequest(reply, validation.error)
+      }
 
-    const input = toAssembleInput(body)
-    // Durable path for persisting generation modes. The active-writer submission
-    // gate ran in the global preHandler; here we add the one-job-per-chat rule
-    // and hand off to the detached runner.
-    if (body.durable === true && isPersistingMode(input.mode)) {
-      startDurableGeneration({ req, reply, db, input, dataDir, eventSink, options, generationJobs })
-      return
-    }
+      const input = toAssembleInput(body)
+      // Durable path for persisting generation modes. The active-writer submission
+      // gate ran in the global preHandler; here we add the one-job-per-chat rule
+      // and hand off to the detached runner.
+      if (body.durable === true && isPersistingMode(input.mode)) {
+        startDurableGeneration({
+          req,
+          reply,
+          db,
+          input,
+          dataDir,
+          eventSink,
+          options,
+          generationJobs,
+        })
+        return
+      }
 
-    await streamAssembly(req, reply, db, input, dataDir, eventSink, options)
-  })
+      await streamAssembly(req, reply, db, input, dataDir, eventSink, options)
+    },
+  )
 
   // Reattach to a running, or done-within-grace, durable generation over SSE.
   // Observe is open to any authenticated client; completed jobs are read back via
@@ -1675,28 +1689,32 @@ export function registerGenerationChatRoutes(
 
   // One-shot JSON preview. Unlike `/chat`, this never opens an SSE stream, so
   // scope errors surface as real HTTP status codes.
-  app.post('/api/v1/generate/preview-prompt', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
+  app.post(
+    '/api/v1/generate/preview-prompt',
+    { config: { rateLimit: generationSubmitRateLimit } },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
 
-    const body = (req.body ?? {}) as ChatRequestBody
-    const validation = validatePreview(body)
-    if (validation.ok === false) {
-      return badRequest(reply, validation.error)
-    }
+      const body = (req.body ?? {}) as ChatRequestBody
+      const validation = validatePreview(body)
+      if (validation.ok === false) {
+        return badRequest(reply, validation.error)
+      }
 
-    const input = toAssembleInput({ ...body, mode: 'preview_prompt' })
-    try {
-      const result = await assemblePrompt(input, loadDatabaseDeps(dataDir, db))
-      if (result.stopSending) {
-        return { stopSending: true, abortReason: result.abortReason }
+      const input = toAssembleInput({ ...body, mode: 'preview_prompt' })
+      try {
+        const result = await assemblePrompt(input, loadDatabaseDeps(dataDir, db))
+        if (result.stopSending) {
+          return { stopSending: true, abortReason: result.abortReason }
+        }
+        return result.prompt
+      } catch (err) {
+        if (err instanceof EntityNotFoundError) {
+          reply.code(404)
+          return { error: err.message }
+        }
+        throw err
       }
-      return result.prompt
-    } catch (err) {
-      if (err instanceof EntityNotFoundError) {
-        reply.code(404)
-        return { error: err.message }
-      }
-      throw err
-    }
-  })
+    },
+  )
 }

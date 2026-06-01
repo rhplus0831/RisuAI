@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
+import { authCryptoRateLimit } from '../routeRateLimits.js'
 
 const HEX_RE = /^[0-9a-fA-F]+$/
 
@@ -113,14 +114,18 @@ export function registerLegacyStorageRoutes(
     })
   })
 
-  app.post('/api/v1/auth/crypto', async (req, reply) => {
-    const body = (req.body ?? {}) as CryptoBody
-    if (typeof body.data !== 'string') {
-      reply.code(400)
-      return { error: 'data: string required' }
-    }
-    const hash = createHash('sha256')
-    hash.update(Buffer.from(body.data, 'utf-8'))
-    return hash.digest('hex')
-  })
+  app.post(
+    '/api/v1/auth/crypto',
+    { config: { rateLimit: authCryptoRateLimit } },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as CryptoBody
+      if (typeof body.data !== 'string') {
+        reply.code(400)
+        return { error: 'data: string required' }
+      }
+      const hash = createHash('sha256')
+      hash.update(Buffer.from(body.data, 'utf-8'))
+      return hash.digest('hex')
+    },
+  )
 }

@@ -15,6 +15,7 @@ import {
   missingAssetIds,
   type AddAssetResult,
 } from '../repository.js'
+import { assetBulkUploadRateLimit, assetUploadRateLimit } from '../routeRateLimits.js'
 
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable'
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
@@ -88,59 +89,67 @@ export function registerAssetsRoutes(
   dataDir: string,
   eventSink: CommandEventSink,
 ): void {
-  app.post('/api/v1/assets', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
-    const contentType = req.headers['content-type']
-    if (typeof contentType !== 'string') {
-      reply.code(400)
-      return { error: 'Content-Type header required' }
-    }
-    if (!Buffer.isBuffer(req.body)) {
-      reply.code(400)
-      return { error: 'Body must be raw bytes of a supported asset type' }
-    }
-    try {
-      const result = addAsset(db, dataDir, { bytes: req.body, contentType })
-      // A new asset bumps the repository revision; emit so SSE subscribers
-      // refresh and the uploading client can advance its cached revision,
-      // avoiding a stale-revision 409 on the next command.
-      emitCreatedAssetEvents(eventSink, [result])
-      reply.code(result.created ? 201 : 200)
-      return {
-        assetId: result.entry.id,
-        size: result.entry.size,
-        contentType: result.entry.contentType,
-        revision: result.revision,
-      }
-    } catch (err) {
-      if (err instanceof ValidationError) {
+  app.post(
+    '/api/v1/assets',
+    { config: { rateLimit: assetUploadRateLimit } },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      const contentType = req.headers['content-type']
+      if (typeof contentType !== 'string') {
         reply.code(400)
-        return { error: err.message }
+        return { error: 'Content-Type header required' }
       }
-      throw err
-    }
-  })
+      if (!Buffer.isBuffer(req.body)) {
+        reply.code(400)
+        return { error: 'Body must be raw bytes of a supported asset type' }
+      }
+      try {
+        const result = addAsset(db, dataDir, { bytes: req.body, contentType })
+        // A new asset bumps the repository revision; emit so SSE subscribers
+        // refresh and the uploading client can advance its cached revision,
+        // avoiding a stale-revision 409 on the next command.
+        emitCreatedAssetEvents(eventSink, [result])
+        reply.code(result.created ? 201 : 200)
+        return {
+          assetId: result.entry.id,
+          size: result.entry.size,
+          contentType: result.entry.contentType,
+          revision: result.revision,
+        }
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          reply.code(400)
+          return { error: err.message }
+        }
+        throw err
+      }
+    },
+  )
 
-  app.post('/api/v1/assets/bulk', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
-    try {
-      const uploads = readBulkAssets((req.body ?? {}) as BulkAssetsBody)
-      const results = addAssets(db, dataDir, uploads)
-      emitCreatedAssetEvents(eventSink, results)
-      reply.code(results.some((result) => result.created) ? 201 : 200)
-      const revision = results.at(-1)?.revision ?? getSchemaState(db).revision
-      return {
-        assets: results.map(assetUploadResponse),
-        revision,
+  app.post(
+    '/api/v1/assets/bulk',
+    { config: { rateLimit: assetBulkUploadRateLimit } },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      try {
+        const uploads = readBulkAssets((req.body ?? {}) as BulkAssetsBody)
+        const results = addAssets(db, dataDir, uploads)
+        emitCreatedAssetEvents(eventSink, results)
+        reply.code(results.some((result) => result.created) ? 201 : 200)
+        const revision = results.at(-1)?.revision ?? getSchemaState(db).revision
+        return {
+          assets: results.map(assetUploadResponse),
+          revision,
+        }
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          reply.code(400)
+          return { error: err.message }
+        }
+        throw err
       }
-    } catch (err) {
-      if (err instanceof ValidationError) {
-        reply.code(400)
-        return { error: err.message }
-      }
-      throw err
-    }
-  })
+    },
+  )
 
   app.get<{ Params: { id: string } }>(
     '/api/v1/assets/:id',

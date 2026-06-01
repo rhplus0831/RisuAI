@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
 import { findProtocolRouteDecision, isProtocolMutatingMethod } from '../src/routeManifest.js'
+import { authLoginRateLimit, generationSubmitRateLimit } from '../src/routeRateLimits.js'
 
 // Table-wide protection invariants for the Fastify port.
 //
@@ -279,5 +280,56 @@ describe('active-writer header validation', () => {
       payload: { database: { streamGeminiThoughts: false } },
     })
     expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('explicit route rate limits', () => {
+  it('limits auth login attempts with an explicit route limit', async () => {
+    const setup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: { password: 'hunter2' },
+    })
+    expect(setup.statusCode).toBe(200)
+
+    const publicKey = await subtle.exportKey(
+      'jwk',
+      (
+        (await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+          'sign',
+          'verify',
+        ])) as CryptoKeyPair
+      ).publicKey,
+    )
+    const allowedAttempts = Number(authLoginRateLimit.max)
+    for (let i = 0; i < allowedAttempts; i += 1) {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        payload: { password: 'wrong-password', publicKey },
+      })
+      expect(res.statusCode).toBe(400)
+    }
+
+    const limited = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { password: 'wrong-password', publicKey },
+    })
+    expect(limited.statusCode).toBe(429)
+  })
+
+  it('does not apply ordinary request limits to durable generation reattach streams', async () => {
+    const assertion = await setupPassword(harness.app)
+    const attempts = Number(generationSubmitRateLimit.max) + 1
+
+    for (let i = 0; i < attempts; i += 1) {
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/generate/chat/missing-job/stream',
+        headers: { 'risu-auth': assertion },
+      })
+      expect(res.statusCode).toBe(404)
+    }
   })
 })

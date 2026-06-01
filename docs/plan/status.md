@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the Phase 6 watcher
-baseline and projection-apply suppression slices.
+Current status reflects code and commit history through the Phase 7 explicit
+route-rate-limit slice.
 
 ## Current Snapshot
 
@@ -49,9 +49,10 @@ Completed work:
   shared watcher epoch so settings, chat, and script-definition watchers refresh
   baselines instead of echoing commands. Existing lorebook no-data-loss coverage
   remains in place.
-- Phase 7 already has route-manifest wildcard/prefix coverage and read-only
-  writer-header hygiene tests. Rate limits, parser/HEAD review, and hot
-  schemas remain planned.
+- Phase 7 already has explicit route-local rate limits for selected
+  abuse-prone endpoints, route-manifest wildcard/prefix coverage, and read-only
+  writer-header hygiene tests. Parser/HEAD review and hot schemas remain
+  planned.
 
 No P1 plan risks remain open after the Phase 1 commits.
 
@@ -88,7 +89,7 @@ Active performance risks:
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Implemented                          | Closed stream, generation reattach, resend, and finalization retry work.               |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Implemented                          | Closed import/export memory and asset mutation durability work.                        |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Implemented                          | Closed client loop suppression and watcher echo work.                                  |
-| [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.    |
+| [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | HEAD/body parser audit, schemas, route-limit maintenance, wildcard manifest coverage.  |
 | [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                    |
 
 ## Maintenance Rules

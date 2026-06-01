@@ -25,6 +25,7 @@ import {
   summarizeRisuSaveAssetReport,
 } from '../risuSave/assetReferences.js'
 import type { LegacyRisuSaveEnvelopeKind } from '../risuSave/legacyEnvelopeCodec.js'
+import { importRateLimit } from '../routeRateLimits.js'
 
 interface ImportBody {
   database?: unknown
@@ -48,44 +49,48 @@ export function registerSaveRoutes(
   eventSink: CommandEventSink,
   options: { maxExpandedImportBytes?: number } = {},
 ): void {
-  app.post('/api/v1/import/risusave', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
-    try {
-      if (req.isMultipart()) {
-        const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req), {
-          maxExpandedBytes: options.maxExpandedImportBytes,
-        })
-        const { revision, event, assetReport } = applyImportedDatabase(
-          db,
-          dataDir,
-          snapshot.database,
-        )
-        eventSink.emit(event)
-        return {
-          revision,
-          event,
-          envelope: snapshot.envelope,
-          importReport: {
-            unsupportedReferenceCount: snapshot.unsupportedReferences.length,
-            unsupportedReferences: snapshot.unsupportedReferences,
-          },
-          assetReport,
+  app.post(
+    '/api/v1/import/risusave',
+    { config: { rateLimit: importRateLimit } },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      try {
+        if (req.isMultipart()) {
+          const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req), {
+            maxExpandedBytes: options.maxExpandedImportBytes,
+          })
+          const { revision, event, assetReport } = applyImportedDatabase(
+            db,
+            dataDir,
+            snapshot.database,
+          )
+          eventSink.emit(event)
+          return {
+            revision,
+            event,
+            envelope: snapshot.envelope,
+            importReport: {
+              unsupportedReferenceCount: snapshot.unsupportedReferences.length,
+              unsupportedReferences: snapshot.unsupportedReferences,
+            },
+            assetReport,
+          }
         }
-      }
 
-      const body = (req.body ?? {}) as ImportBody
-      const database = normalizeRisuSaveImportDatabase(body.database)
-      const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, database)
-      eventSink.emit(event)
-      return { revision, event, assetReport }
-    } catch (err) {
-      if (err instanceof ValidationError) {
-        reply.code(400)
-        return { error: err.message }
+        const body = (req.body ?? {}) as ImportBody
+        const database = normalizeRisuSaveImportDatabase(body.database)
+        const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, database)
+        eventSink.emit(event)
+        return { revision, event, assetReport }
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          reply.code(400)
+          return { error: err.message }
+        }
+        throw err
       }
-      throw err
-    }
-  })
+    },
+  )
 
   app.get<{ Querystring: ExportQuery }>('/api/v1/export/risusave', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return

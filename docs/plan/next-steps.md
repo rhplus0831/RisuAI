@@ -31,6 +31,10 @@ Memory job UI refresh is SSE-driven, prevents overlapping list requests, and
 polls only while pending/running jobs remain visible.
 Server-origin projection applies now advance a shared watcher epoch so settings,
 chat, and script-definition watchers refresh baselines without echoing commands.
+Phase 7 explicit route-local rate limits now cover selected public auth helpers,
+proxy submit paths, import/upload routes, and generation submit/preview routes
+while leaving long-lived SSE/WebSocket attach routes outside ordinary request
+limits.
 
 Prefer one of these next:
 
@@ -41,7 +45,7 @@ Prefer one of these next:
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
 3. Continue Phase 7 route operation safeguards if prioritizing operational
-   coverage:
+   coverage, with HEAD/body parser review or hot envelope schemas next:
    [`phase-7-route-operations-coverage.md`](phases/phase-7-route-operations-coverage.md).
 
 The command-family evidence lives in
@@ -72,7 +76,8 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Route operation safeguards and manifest coverage in Phase 7.
+3. Remaining route operation safeguards in Phase 7: HEAD/body parser audit, then
+   hot envelope schemas.
 4. Verification budgets and latest-check recording in Phase 8.
 
 ## Proof Commands
