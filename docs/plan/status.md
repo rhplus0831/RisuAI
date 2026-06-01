@@ -8,62 +8,34 @@ for the next task.
 
 ## Current Snapshot
 
-Completed foundations:
+Completed work:
 
-- Protocol metrics exist behind `RISU_PROTOCOL_METRICS`, and client diagnostics
-  exist behind `localStorage.risu:protocol-debug`.
-- Bulk chat and lorebook hydration fanout is bounded by
-  `BULK_HYDRATION_CONCURRENCY = 4`.
-- Command-event history is persisted in SQLite and can replay retained command
-  gaps.
-- `/api/v1/events` subscribes to command events before selecting replay, queues
-  setup-time command events, and drains events not already covered by replay.
-- Backup restore now forces a trusted read-only bootstrap resync before the
-  browser reports success or advances past the restored projection.
-- Durable generation reattach replays required lifecycle frames through a
-  durable-only job replay log, including `prompt` and latest `info`.
-- Hypa V3 modal and bookmark UI paths avoid direct guarded projection writes in
-  Fastify mode.
-- `server/fastify/src/routeManifest.ts` drives route protocol ownership,
-  active-writer classification, route-protection tests, and the architecture
-  audit.
-- Phase 2 command-family measurement now has a reproducible metrics harness;
-  `settings.updated` and plugin-storage put/delete/bulk commands use
-  message-free mutation paths.
-- Phase 3 targeted projection now short-circuits empty-field resources such as
-  `asset`, so no-op projection refreshes advance the client revision cursor
-  without loading `db.json` or full stub projection state.
-- Phase 3 targeted projection now serves small non-empty resources such as
-  `preset`, `prompt`, `promptItem`, `persona`, `translatorPreset`, and
-  `loadout` from a field selector that avoids full stub projection work while
-  preserving provider secret masking.
-- Phase 3 targeted projection now serves character-family resources such as
-  `character`, `chat`, `chatFolder`, `message`, and `generation` from a
-  character field selector that preserves chat stubs, Hypa V3 removal, optional
-  lorebook stubs, and provider secret masking.
-- Phase 3 targeted projection now serves mixed broad resources such as
-  `scriptDefinition`, `triggerDefinition`, `lorebook`, `module`, and `plugin`
-  from field selectors that avoid full stub projection work while preserving
-  character stubs, provider secret masking, `module.deleted` reference cleanup,
-  and `loreBookPage` updates.
-- Phase 3 asset metadata lookup now uses an in-process index, so repeated asset
-  `GET`, `HEAD`, generation resolution, and existence probes avoid reparsing
-  `db.json` while metadata is unchanged.
-- Phase 3 bulk chat hydration now has authenticated read-only
-  `POST /api/v1/projection/chatMessages/bulk`, so all-chat workflows can hydrate
-  unhydrated chat histories with one request while preserving active-chat
-  single hydration.
+- Phase 0 foundations are in place: opt-in protocol metrics/diagnostics,
+  bounded or aggregated hydration, SQLite command-event replay, and route
+  manifest coverage.
+- Phase 1 P1 correctness issues are closed: event replay setup races, backup
+  restore resync, durable generation frame replay, and guarded UI projection
+  writes all have regression coverage.
+- Phase 2 has a reproducible command metrics harness. `settings.updated` and
+  plugin-storage put/delete/bulk commands use the message-free mutation path;
+  chat/message/generation families still use the hydrated path.
+- Phase 3 has six read-side optimizations: targeted projection field selectors
+  for empty, small, character-family, mixed broad, and plugin resources; an
+  in-process asset metadata index; and authenticated bulk all-chat hydration.
 
-Active correctness risks from [`../AUDIT.md`](../AUDIT.md): none currently
-tracked at P1.
+No P1 plan risks remain open after the Phase 1 commits.
 
 Active performance risks:
 
-- Unmigrated JSON commands still pay whole-corpus load, clone, diff, and write
+- Still-hydrated command families pay whole-corpus load, clone, diff, and write
   cost.
+- Generation and prompt assembly can still perform multiple whole-corpus
+  passes around side effects and final persistence.
 - Full-bootstrap fallbacks for sprawling resources such as `settings`, `state`,
   and `pluginStorage` remain expensive.
-- Optional bulk lorebook hydration is still N requests when experimental
+- Asset byte reads remain one request per asset, although metadata lookup is no
+  longer reparsed for every lookup.
+- Optional lorebook hydration is still N requests when experimental
   `enableLorebookStubs` is enabled.
 - Import, export, and bundle paths can materialize large payloads.
 - Memory job polling, settings writes, watcher echo, and generation resend
@@ -82,7 +54,7 @@ Active performance risks:
 
 | Phase                                                     | Status                               | Open when working on...                                                                 |
 | --------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
-| [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, bounded hydration, durable event history, route manifest coverage.    |
+| [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, hydration bounds/aggregation, durable event history, route manifest.  |
 | [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                        |
 | [Phase 2](phases/phase-2-command-write-cost.md)           | Two migrations implemented           | Whole-corpus command mutation cost and narrow write paths.                              |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Six optimizations implemented        | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |

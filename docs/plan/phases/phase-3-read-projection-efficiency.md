@@ -1,6 +1,7 @@
 # Phase 3: Read Projection Efficiency
 
-Status: six optimizations implemented.
+Status: six optimizations implemented; optional lorebook and full-resync budget
+work remain planned.
 
 Goal: reduce repeated REST reads and full-projection work for targeted
 projection, asset metadata, bulk hydration, and full resync fallbacks.
@@ -26,9 +27,9 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
 - Empty, small, and field-scoped targeted projection resources avoid full stub
   projection load.
 - Asset metadata lookup no longer parses `db.json` for every cold asset read.
-- Bulk all-chat or lorebook readers have a lower request count path or a
-  server-side assembly alternative.
-- Full resync reasons are counted and treated as protocol health signals.
+- Bulk all-chat readers have a lower request count path; optional lorebook
+  stubs need a separate measured batch before changing.
+- Full resync diagnostics remain visible and can graduate into budgets later.
 
 ## Current Progress
 

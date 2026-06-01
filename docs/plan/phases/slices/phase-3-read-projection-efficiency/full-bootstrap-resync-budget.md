@@ -1,6 +1,6 @@
 # Full Bootstrap Resync Budget
 
-Status: planned.
+Status: budget gate planned; diagnostic counters already exist.
 
 ## Source Anchors
 
@@ -11,16 +11,16 @@ Status: planned.
 
 ## Scope
 
-Treat full bootstrap fallback frequency as a protocol health signal. Full
-resync remains a necessary recovery path, but unexpected use should be visible
-and eventually budgeted.
+Treat full bootstrap fallback frequency as a protocol health signal. Phase 0
+diagnostics already count reasons through `recordFullBootstrapResync()`; this
+slice is for turning those counters into maintained expectations.
 
 ## Protocol Behavior
 
 - Keep existing full-bootstrap fallback for replay miss, revision gap,
   projection full mode, projection error, and no baseline.
-- Count and classify reasons in client diagnostics.
-- Add assertions only after expected baseline behavior is known.
+- Keep reason classification in client diagnostics.
+- Add assertions or budgets only after expected baseline behavior is known.
 
 ## Done When
 

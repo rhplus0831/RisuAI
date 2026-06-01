@@ -3,8 +3,9 @@
 Date: 2026-06-01
 
 This directory is the merged working plan for Fastify server/client protocol
-stability and performance. The codebase remains the source of truth, and
-`../AUDIT.md` is the current risk inventory for this workstream.
+stability and performance. The codebase remains the source of truth. Use
+`../AUDIT.md` for the original risk inventory and `status.md` for the current
+state after later implementation commits.
 
 ## Read Order
 
@@ -29,8 +30,7 @@ stability and performance. The codebase remains the source of truth, and
 
 ## Source Anchors
 
-- [`../AUDIT.md`](../AUDIT.md) - side-effect audit and current P1/P2/P3 risk
-  ordering.
+- [`../AUDIT.md`](../AUDIT.md) - side-effect audit that seeded this plan.
 - [`../SERVER-AND-CLIENT.md`](../SERVER-AND-CLIENT.md) - ownership split.
 - [`../SERVER-AND-CLIENT-PROTOCOL.md`](../SERVER-AND-CLIENT-PROTOCOL.md) -
   current protocol model and prior plan inputs.

@@ -21,8 +21,8 @@ End state:
 
 ## Boundary Sources
 
-- [`../AUDIT.md`](../AUDIT.md) owns the current risk inventory and priority
-  order for this plan.
+- [`../AUDIT.md`](../AUDIT.md) seeded the risk inventory and priority order for
+  this plan; [`status.md`](status.md) records which items have since closed.
 - [`../SERVER-AND-CLIENT.md`](../SERVER-AND-CLIENT.md) owns the server/client
   responsibility split.
 - [`../SERVER-AND-CLIENT-PROTOCOL.md`](../SERVER-AND-CLIENT-PROTOCOL.md) owns
@@ -41,10 +41,17 @@ heavy fields on demand, sends revision-checked commands, consumes SSE events,
 and falls back to full bootstrap when replay or targeted projection cannot
 prove continuity.
 
-The old single-page plan has already produced important foundations: opt-in
-protocol metrics, bounded bulk hydration, SQLite-backed command-event replay,
-and the route/protocol manifest. This merged plan keeps those as Phase 0
-foundations and adds the missing slice layer for the next concrete tasks.
+The old single-page plan produced the Phase 0 foundations: opt-in protocol
+metrics, hydration bounds, SQLite-backed command-event replay, and the
+route/protocol manifest. Follow-up commits closed the Phase 1 P1 correctness
+risks, moved `settings.updated` and plugin-storage commands to message-free
+mutation paths, narrowed known targeted projection resources, indexed asset
+metadata lookups, and added bulk all-chat hydration.
+
+Remaining work is concentrated in still-hydrated command families
+(`chat`, `message`, `generation`), full-bootstrap fallbacks for sprawling
+resources, optional lorebook bulk reads, import/export memory pressure, client
+watcher echo, and stream/backpressure edges.
 
 ## Invariants
 
@@ -65,28 +72,28 @@ foundations and adds the missing slice layer for the next concrete tasks.
 
 ## Phase Overview
 
-| Phase                                                                                 | Goal                                                                                                       |
-| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| [0. Baseline Foundations](phases/phase-0-baseline-foundations.md)                     | Preserve and document implemented measurement, bounded hydration, replay history, and route manifest work. |
-| [1. Correctness Hardening](phases/phase-1-correctness-hardening.md)                   | Close confirmed P1 risks before optimizing lower-severity costs.                                           |
-| [2. Command Write Cost](phases/phase-2-command-write-cost.md)                         | Reduce whole-corpus command mutation cost without weakening revision/event contracts.                      |
-| [3. Read Projection Efficiency](phases/phase-3-read-projection-efficiency.md)         | Reduce targeted projection, asset metadata, bulk hydration, and full resync read cost.                     |
-| [4. Stream And Generation Resilience](phases/phase-4-stream-generation-resilience.md) | Bound SSE fanout, improve reattach behavior, cap resend cycles, and make terminal persistence retryable.   |
-| [5. Import, Export, Asset Memory](phases/phase-5-import-export-asset-memory.md)       | Reduce large-payload memory pressure and make asset mutation durability explicit.                          |
-| [6. Client Loop Suppression](phases/phase-6-client-loop-suppression.md)               | Prevent server-origin refreshes, polling, and high-frequency controls from echoing into excess commands.   |
-| [7. Route Operations Coverage](phases/phase-7-route-operations-coverage.md)           | Add route-level operational safeguards and close route coverage gaps.                                      |
-| [8. Verification Budgets](phases/phase-8-verification-budgets.md)                     | Turn request counts, payload sizes, metrics, and latest verification into maintained gates.                |
+| Phase                                                                                 | Goal                                                                                                            |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| [0. Baseline Foundations](phases/phase-0-baseline-foundations.md)                     | Preserve and document implemented measurement, hydration bounds/aggregation, replay history, and manifest work. |
+| [1. Correctness Hardening](phases/phase-1-correctness-hardening.md)                   | Close confirmed P1 risks before optimizing lower-severity costs.                                                |
+| [2. Command Write Cost](phases/phase-2-command-write-cost.md)                         | Reduce whole-corpus command mutation cost without weakening revision/event contracts.                           |
+| [3. Read Projection Efficiency](phases/phase-3-read-projection-efficiency.md)         | Reduce targeted projection, asset metadata, bulk hydration, and full resync read cost.                          |
+| [4. Stream And Generation Resilience](phases/phase-4-stream-generation-resilience.md) | Bound SSE fanout, improve reattach behavior, cap resend cycles, and make terminal persistence retryable.        |
+| [5. Import, Export, Asset Memory](phases/phase-5-import-export-asset-memory.md)       | Reduce large-payload memory pressure and make asset mutation durability explicit.                               |
+| [6. Client Loop Suppression](phases/phase-6-client-loop-suppression.md)               | Prevent server-origin refreshes, polling, and high-frequency controls from echoing into excess commands.        |
+| [7. Route Operations Coverage](phases/phase-7-route-operations-coverage.md)           | Add route-level operational safeguards and close route coverage gaps.                                           |
+| [8. Verification Budgets](phases/phase-8-verification-budgets.md)                     | Turn request counts, payload sizes, metrics, and latest verification into maintained gates.                     |
 
 ## Suggested Execution Order
 
-1. Finish Phase 1 P1 correctness slices.
-2. Use Phase 0 metrics to choose Phase 2 command families.
-3. Reduce targeted projection and asset metadata read cost in Phase 3.
-4. Harden stream fanout and generation lifecycle edges in Phase 4.
-5. Address import/export and asset memory pressure in Phase 5.
-6. Suppress client loops and high-frequency command writes in Phase 6.
-7. Add route limits, schemas, and coverage refinements in Phase 7.
-8. Promote proven measurement into Phase 8 budgets.
+1. Continue Phase 2 only with measured, narrowly scoped command-family slices.
+2. Use Phase 3 for optional lorebook bulk reads or full-resync budgets when
+   measurement shows they matter.
+3. Harden stream fanout and generation lifecycle edges in Phase 4.
+4. Address import/export and asset memory pressure in Phase 5.
+5. Suppress client loops and high-frequency command writes in Phase 6.
+6. Add route limits, schemas, and coverage refinements in Phase 7.
+7. Promote proven measurement into Phase 8 budgets.
 
 ## Not In This Plan
 

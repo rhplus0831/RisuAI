@@ -73,9 +73,5 @@ Local command metrics harness on 2026-06-01:
 ## Validation
 
 - `pnpm api:test __tests__/commands.test.ts __tests__/commandMetrics.test.ts`
-  - passed on 2026-06-01; 2 files, 102 passed.
 - `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`
-  - passed on 2026-06-01; confirmed `pluginStorage.updated` reports
-    `mutationPath: "message-free"`.
 - `pnpm client-thinning:audit`
-  - passed on 2026-06-01.

@@ -1,142 +1,54 @@
 # Targeted Projection Loaders
 
-Status: fourth batch implemented.
+Status: implemented.
 
 ## Source Anchors
 
 - `server/fastify/src/routes/projection.ts`
 - `server/fastify/src/repository.ts`
-- `src/ts/server/projection.ts`
+- `server/fastify/__tests__/projection.test.ts`
 - `src/ts/bootstrap.ts`
+- `src/ts/bootstrap.test.ts`
 
 ## Scope
 
-Avoid loading a full stub projection for targeted resources that can be served
-from narrower loaders or that intentionally return no projected fields.
+Avoid `loadStubProjection()` for command-event resources that can be served by
+narrow field selectors or that intentionally have no projected fields.
 
-First implemented batch:
+## Current Behavior
 
-- Source files: `server/fastify/src/routes/projection.ts`,
-  `server/fastify/__tests__/projection.test.ts`, `src/ts/bootstrap.test.ts`.
-- Protocol surface: `GET /api/v1/projection/:resource` for command-event
-  resources whose field list is known to be empty.
-- Durable read path: keep `getSchemaState()` for the current revision, but do
-  not read or parse `db.json` for empty-field resources such as `asset`.
-- Revision/event behavior: preserve the existing `mode: "fields"` response and
-  let the client advance its command-event cursor without merging fields.
-- Rollback/resync behavior: unknown resources and broad resources still return
-  `mode: "full"` and trigger the existing client bootstrap fallback.
-- Proof commands passed:
-  `pnpm api:test -- server/fastify/__tests__/projection.test.ts` and
-  `pnpm test -- src/ts/bootstrap.test.ts`.
-
-Second implemented batch:
-
-- Source files: `server/fastify/src/routes/projection.ts`,
-  `server/fastify/src/repository.ts`,
-  `server/fastify/__tests__/projection.test.ts`.
-- Protocol surface: `GET /api/v1/projection/:resource` for non-empty small
-  resources whose fields do not require chat message stubbing or character
-  lorebook stubbing.
-- Durable read path: `preset`, `prompt`, `promptItem`, `persona`,
-  `translatorPreset`, and `loadout` now select the requested top-level fields
-  from the message-free persisted database and mask secrets on that narrowed
-  field object.
-- Revision/event behavior: preserve the existing `mode: "fields"` response,
-  current revision reporting, and client cursor advancement behavior.
-- Rollback/resync behavior: broad resources such as `character`, `chat`,
-  `message`, `generation`, `lorebook`, `module`, `scriptDefinition`,
-  `triggerDefinition`, and `plugin` keep the existing full stub projection
-  path until their masking and stub semantics are scoped separately.
-- Proof commands:
-  `pnpm api:test -- server/fastify/__tests__/projection.test.ts` and
-  `pnpm test -- src/ts/bootstrap.test.ts`.
-
-Third implemented batch:
-
-- Source files: `server/fastify/src/routes/projection.ts`,
-  `server/fastify/src/repository.ts`,
-  `server/fastify/__tests__/projection.test.ts`.
-- Protocol surface: `GET /api/v1/projection/:resource` for the character-only
-  broad resource family: `character`, `chat`, `chatFolder`, `message`, and
-  `generation`.
-- Durable read path: these resources now select only their owned persisted
-  top-level fields, then apply the same wire stubs as the full stub projection:
-  chat `message` arrays are empty, `hypaV3Data` is removed, optional
-  `enableLorebookStubs` strips character `globalLore`, and provider secrets are
-  masked on the narrowed field object.
-- Revision/event behavior: preserve the existing `mode: "fields"` response,
-  current revision reporting, and client cursor advancement behavior.
-- Rollback/resync behavior: mixed broad resources such as `lorebook`, `module`,
-  `scriptDefinition`, `triggerDefinition`, and `plugin` keep the existing full
-  stub projection path until their module/plugin/lorebook semantics are scoped
-  separately.
-- Proof commands:
-  `pnpm api:test -- server/fastify/__tests__/projection.test.ts` and
-  `pnpm test -- src/ts/bootstrap.test.ts`.
-
-Fourth implemented batch:
-
-- Source files: `server/fastify/src/routes/projection.ts`,
-  `server/fastify/src/repository.ts`,
-  `server/fastify/__tests__/projection.test.ts`.
-- Protocol surface: `GET /api/v1/projection/:resource` for the remaining
-  field-scoped broad resources: `scriptDefinition`, `triggerDefinition`,
-  `lorebook`, `module`, and `plugin`.
-- Durable read path: `plugin` now uses the persisted field selector. The mixed
-  character/module/lorebook resources use a shared stubbed field selector that
-  reads requested top-level fields from `db.json`, stubs chat `message` arrays,
-  removes `hypaV3Data`, honors optional `enableLorebookStubs`, and masks
-  provider secrets. `module` now includes `characters` because `module.deleted`
-  removes deleted module ids from character and chat links. `lorebook` now
-  includes `loreBookPage` because select, delete, and reorder commands mutate
-  the active global lorebook page.
-- Revision/event behavior: preserve the existing `mode: "fields"` response,
-  current revision reporting, and client cursor advancement behavior. Any
-  response containing `characters` still triggers client chat/lorebook
-  hydration reset and open-entity rehydration.
-- Rollback/resync behavior: sprawling resources such as `settings`, `state`,
-  `pluginStorage`, and unknown resources keep the existing full-bootstrap
+- Empty resources such as `asset` return `mode: "fields"` with `{}` and do not
+  read `db.json`; the client only advances its revision cursor.
+- Small resources (`preset`, `prompt`, `promptItem`, `persona`,
+  `translatorPreset`, `loadout`) read requested persisted fields and preserve
+  provider secret masking.
+- Character-family resources (`character`, `chat`, `chatFolder`, `message`,
+  `generation`) read requested persisted fields, then preserve chat message
+  stubs, Hypa V3 removal, optional lorebook stubs, and provider secret masking.
+- Mixed broad resources (`scriptDefinition`, `triggerDefinition`, `lorebook`,
+  `module`) use the same stubbed field selector. `module` includes
+  `characters` for `module.deleted` reference cleanup, and `lorebook` includes
+  `loreBookPage` for page/select/delete/reorder events.
+- `plugin` uses the persisted field selector with provider secret masking.
+- Unknown or sprawling resources such as `settings`, `state`, and
+  `pluginStorage` still return `mode: "full"` and use the existing bootstrap
   fallback.
-- Proof commands:
-  `pnpm api:test -- server/fastify/__tests__/projection.test.ts` and
-  `pnpm test -- src/ts/bootstrap.test.ts`.
 
 ## Protocol Behavior
 
-- Keep the existing projection response contract unless a phase explicitly
-  changes it.
-- Short-circuit empty resources such as asset invalidations before full
-  projection load.
-- Add field-specific loaders only when they can preserve secret masking and
-  message-light projection semantics.
+- Preserve the existing targeted projection response contract:
+  `{ revision, resource, mode: "fields", fields }` or `mode: "full"`.
+- Any narrowed response containing `characters` still triggers client hydration
+  reset and open chat/lorebook rehydration.
+- Add future field selectors only when they preserve masking, stubbing, and
+  revision-cursor behavior.
 
 ## Done When
 
-- Empty or small projection resources avoid full `loadStubProjection()` cost.
-- Unknown or sprawling resources still fall back to existing full behavior.
-- Tests cover narrow and fallback paths.
-
-Current result:
-
-- Empty-field resources such as `asset` return `mode: "fields"` with an empty
-  field map without loading `db.json`.
-- Small non-empty resources (`preset`, `prompt`, `promptItem`, `persona`,
-  `translatorPreset`, `loadout`) avoid the full stub projection path while
-  preserving provider secret masking.
-- Character-family resources (`character`, `chat`, `chatFolder`, `message`,
-  `generation`) avoid the full stub projection path while preserving chat
-  message stubs, Hypa V3 removal, optional character lorebook stubs, and
-  provider secret masking.
-- Mixed broad resources (`scriptDefinition`, `triggerDefinition`, `lorebook`,
-  `module`) avoid the full stub projection path while preserving character
-  stubs, module/lorebook fields, provider secret masking, `module.deleted`
-  reference cleanup, and `loreBookPage` updates.
-- `plugin` avoids the full stub projection path through the persisted field
-  selector while preserving provider secret masking.
-- Unknown resources still use the existing full-resync behavior.
-- Sprawling resources such as `settings`, `state`, and `pluginStorage` still use
-  the existing full-resync behavior.
+- Empty, small, character-family, mixed broad, and plugin resources avoid full
+  stub projection work.
+- Unknown and sprawling resources still self-heal through full bootstrap.
+- Tests cover narrow selectors and fallback paths.
 
 ## Validation
 

@@ -68,10 +68,6 @@ Plugin storage later moved to its own message-free path in
 ## Validation
 
 - `pnpm api:test __tests__/commands.test.ts __tests__/commandMetrics.test.ts`
-  - passed on 2026-06-01; 2 files, 102 passed.
 - `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`
-  - passed before and after implementation.
 - `pnpm api:test`
-  - passed on 2026-06-01; 80 files, 1436 passed, 1 skipped.
 - `pnpm client-thinning:audit`
-  - passed on 2026-06-01.

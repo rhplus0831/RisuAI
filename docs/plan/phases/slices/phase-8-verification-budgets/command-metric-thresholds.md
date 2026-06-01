@@ -10,8 +10,8 @@ Status: planned.
 
 ## Scope
 
-Turn command mutation metrics into thresholds or review gates for hot command
-families after Phase 2 establishes baseline and migrated paths.
+Turn the Phase 2 command metric harness into thresholds or review gates for hot
+command families.
 
 ## Protocol Behavior
 

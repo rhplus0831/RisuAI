@@ -1,6 +1,6 @@
 # Durable Command Event History
 
-Status: implemented foundation, with Phase 1 hardening still required.
+Status: implemented foundation; Phase 1 subscribe-race hardening is complete.
 
 ## Source Anchors
 
@@ -12,8 +12,8 @@ Status: implemented foundation, with Phase 1 hardening still required.
 ## Scope
 
 Preserve SQLite-backed command-event replay history and revision-cursor replay.
-This slice is the implemented foundation; the replay/live subscription race is
-tracked separately in Phase 1.
+The Phase 1 event route now subscribes before selecting replay, so this
+foundation no longer has a known P1 race attached to it.
 
 ## Done When
 

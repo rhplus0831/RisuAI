@@ -2,8 +2,8 @@
 
 Status: implemented foundation, maintain as code changes.
 
-Goal: preserve the completed measurement, bounded hydration, event replay
-history, and route manifest work that later phases depend on.
+Goal: preserve the completed measurement, hydration bounds/aggregation, event
+replay history, and route manifest work that later phases depend on.
 
 ## Source Anchors
 
@@ -24,7 +24,7 @@ history, and route manifest work that later phases depend on.
 ## Exit Criteria
 
 - Instrumentation remains opt-in and cheap when disabled.
-- Bulk hydration remains bounded and deduped.
+- Hydration remains bounded, deduped, or aggregated by a bulk route.
 - Command-event replay remains SQLite-backed and retained by revision.
 - New routes fail tests or audit when auth/writer decisions are missing.
 

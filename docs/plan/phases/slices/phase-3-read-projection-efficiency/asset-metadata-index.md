@@ -52,10 +52,4 @@ Implementation scope:
 
 ## Validation
 
-- `pnpm api:test -- server/fastify/__tests__/assets.test.ts`
-- Focused repository tests for metadata lookup.
-
-Proof run:
-
 - `pnpm api:test -- server/fastify/__tests__/assets.test.ts server/fastify/__tests__/assetMetadataIndex.test.ts`
-  - 81 test files passed; 1440 tests passed; 1 skipped.

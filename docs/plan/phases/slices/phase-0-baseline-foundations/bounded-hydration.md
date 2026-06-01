@@ -9,17 +9,19 @@ Status: implemented foundation.
 
 ## Scope
 
-Preserve bounded fanout for `ensureAllChatsHydrated()` and
-`ensureAllCharacterLorebooksHydrated()`. The audit confirms the old unbounded
-hydration concern is stale; the remaining risk is request count and per-request
-server cost, which belongs to Phase 3.
+Preserve bounded or aggregated hydration behavior. Active-chat and
+character-lorebook hydration keep per-id in-flight dedupe and stale-response
+drops; all-chat hydration now uses the Phase 3 bulk route instead of one
+request per chat. Optional lorebook bulk reduction remains a Phase 3 follow-up.
 
 ## Done When
 
-- `BULK_HYDRATION_CONCURRENCY` remains a fixed cap.
-- Per-id in-flight dedupe and stale-response drops remain in the single-id
+- `BULK_HYDRATION_CONCURRENCY` remains the cap for any remaining per-id fanout,
+  currently character lorebook hydration.
+- Per-id in-flight dedupe and stale-response drops remain in single-id
   hydration helpers.
-- Tests assert concurrency without depending on exact request ordering.
+- All-chat hydration continues to use the bulk endpoint for unhydrated,
+  non-in-flight chats.
 
 ## Validation
 

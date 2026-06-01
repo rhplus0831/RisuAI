@@ -18,7 +18,8 @@ optimizing lower-severity costs.
 
 ## Slices
 
-- [`event-replay-subscribe-race.md`](slices/phase-1-correctness-hardening/event-replay-subscribe-race.md)
+- [`event-replay-subscribe-race.md`](slices/phase-1-correctness-hardening/event-replay-subscribe-race.md) -
+  implemented
 - [`backup-restore-resync.md`](slices/phase-1-correctness-hardening/backup-restore-resync.md) -
   implemented
 - [`durable-generation-frame-replay.md`](slices/phase-1-correctness-hardening/durable-generation-frame-replay.md) -

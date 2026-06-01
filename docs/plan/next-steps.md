@@ -18,26 +18,27 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-Phase 1 P1 correctness hardening is implemented, the first two measured Phase 2
-message-free migrations are complete, and the Phase 3 targeted-projection,
-asset metadata, and bulk chat hydration optimizations are implemented. Empty,
-small, character-family, mixed broad, and plugin targeted projection resources
-now have field selectors, and all-chat hydration has a one-request path. Prefer
-one of these next:
+Phase 1 is implemented. Phase 2 has measured the hot command families and
+migrated `settings.updated` plus plugin-storage commands to message-free
+mutation paths. Phase 3 has implemented the targeted-projection, asset metadata,
+and bulk all-chat hydration optimizations.
 
-1. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
-   workflows become an active target:
+Prefer one of these next:
+
+1. Select the next measured command family, likely chat/message targeted
+   persistence or generation persistence, only after writing a narrow slice with
+   source files, durable mutation behavior, event behavior, and proof command.
+2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
+   workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-2. Select the next measured command family, likely from chat/message targeted
-   persistence or generation persistence, only after writing a narrow slice
-   with explicit source area, durable mutation behavior, event behavior, and
-   proof command.
+3. If no command/read slice is active, start Phase 4 with SSE backpressure or
+   generation reattach trigger coverage.
 
-The first command-family measurement is complete in
-[`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md);
-it first selected `settings.updated`, which is now implemented in
-[`scoped-settings-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-settings-mutation-path.md).
-The next measured non-message family, plugin storage, is implemented in
+The command-family evidence lives in
+[`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).
+The implemented Phase 2 migrations are
+[`scoped-settings-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-settings-mutation-path.md)
+and
 [`scoped-plugin-storage-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-plugin-storage-mutation-path.md).
 
 ## Not First
@@ -53,8 +54,9 @@ The next measured non-message family, plugin storage, is implemented in
 
 ## Selection Order
 
-1. Measured whole-corpus command cost in Phase 2.
-2. Read-side projection and asset lookup reduction in Phase 3.
+1. Next measured whole-corpus command-family reduction in Phase 2.
+2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
+   makes them active.
 3. Stream slow-consumer, reattach, resend, and finalization resilience in
    Phase 4.
 4. Import/export and asset memory/durability work in Phase 5.

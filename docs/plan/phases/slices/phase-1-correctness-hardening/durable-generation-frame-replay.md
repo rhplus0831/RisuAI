@@ -12,8 +12,8 @@ Status: implemented.
 ## Scope
 
 Make durable generation reattach replay required lifecycle frames independent of
-viewer count. The current buffer can omit `prompt` and `info` after an attached
-viewer saw them and disconnected.
+viewer count. Before this slice, the shared buffer could omit `prompt` and
+`info` after an attached viewer saw them and disconnected.
 
 ## Protocol Behavior
 

@@ -16,7 +16,8 @@ event, transaction, and projection contracts.
 ## Slices
 
 - [`command-family-measurement.md`](slices/phase-2-command-write-cost/command-family-measurement.md) -
-  completed; selected `settings.updated` with metric evidence.
+  completed; measured settings, plugin storage, chat, message, and generation
+  command families.
 - [`scoped-settings-mutation-path.md`](slices/phase-2-command-write-cost/scoped-settings-mutation-path.md) -
   implemented; `settings.updated` uses the message-free mutation path.
 - [`scoped-plugin-storage-mutation-path.md`](slices/phase-2-command-write-cost/scoped-plugin-storage-mutation-path.md) -
