@@ -5,6 +5,7 @@ import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
 import {
   loadCharacterLorebookHydration,
+  loadCharacterProjectionFields,
   loadChatHydration,
   loadChatHydrations,
   loadPersistedDatabaseFields,
@@ -63,6 +64,14 @@ const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
   'persona',
   'translatorPreset',
   'loadout',
+])
+
+const NARROW_CHARACTER_PROJECTION_RESOURCES = new Set([
+  'character',
+  'chat',
+  'chatFolder',
+  'message',
+  'generation',
 ])
 
 export function resourceProjectionFields(resource: string): string[] | null {
@@ -181,7 +190,9 @@ export function registerProjectionRoutes(
 
       const fields = NARROW_FIELD_PROJECTION_RESOURCES.has(resource)
         ? maskProviderSecrets(loadPersistedDatabaseFields(dataDir, fieldKeys))
-        : loadStubProjectionFields(db, dataDir, fieldKeys)
+        : NARROW_CHARACTER_PROJECTION_RESOURCES.has(resource)
+          ? maskProviderSecrets(loadCharacterProjectionFields(dataDir, fieldKeys))
+          : loadStubProjectionFields(db, dataDir, fieldKeys)
 
       const response = { revision, resource, mode: 'fields' as const, fields }
       emitProjectionMetric(req.log, resource, revision, response, {

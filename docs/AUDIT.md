@@ -265,13 +265,16 @@ whole-database command helper.
 resources such as `asset` now short-circuit before `db.json` is read, and small
 non-empty resources such as `preset`, `prompt`, `promptItem`, `persona`,
 `translatorPreset`, and `loadout` now select their requested fields before
-provider secret masking. Broad resources that carry chat, module, plugin, or
-lorebook-stub semantics still use `loadStubProjection()` before selecting
+provider secret masking. Character-family resources such as `character`,
+`chat`, `chatFolder`, `message`, and `generation` now select requested fields
+while preserving chat message stubs, Hypa V3 removal, optional lorebook stubs,
+and provider secret masking. Broad resources that carry module, plugin, or
+mixed lorebook-stub semantics still use `loadStubProjection()` before selecting
 fields, so they retain the full stub projection cost.
 
 Recommendation: keep the empty and narrow resource paths, and scope any broader
-field-specific loaders only after naming their message-stub, lorebook-stub,
-module/plugin, and secret-masking semantics.
+field-specific loaders only after naming their lorebook-stub, module/plugin,
+and secret-masking semantics.
 
 ### P2: Asset Reads Are Per-Asset Requests And Each Metadata Lookup Parses `db.json`
 

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../src/app.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
-import { loadPersistedDatabaseFields } from '../src/repository.js'
+import { loadCharacterProjectionFields, loadPersistedDatabaseFields } from '../src/repository.js'
 import { resourceProjectionFields } from '../src/routes/projection.js'
 import type { FastifyInstance } from 'fastify'
 import { setupAuthedClient } from './helpers/auth.js'
@@ -65,7 +65,20 @@ async function getProjection(resource: string) {
 describe('targeted projection route (lazy-projection Phase 2)', () => {
   it('returns the owned top-level fields for a structural resource', async () => {
     const revision = await importDatabase({
-      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          chats: [
+            {
+              id: 'chat-a',
+              message: [{ role: 'user', data: 'hello' }],
+              hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+            },
+          ],
+          oaiTTSConfig: { apiKey: 'tts-secret' },
+        },
+      ],
       botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
       language: 'en',
     })
@@ -79,8 +92,32 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     // Only the resource's owned keys are present.
     expect(Object.keys(body.fields).sort()).toEqual(['characterOrder', 'characters', 'currentChar'])
     expect(body.fields.characters[0]).toMatchObject({ chaId: 'char-a', name: 'Ada' })
+    expect(body.fields.characters[0].oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(body.fields.characters[0].chats[0].message).toEqual([])
+    expect(body.fields.characters[0].chats[0]).not.toHaveProperty('hypaV3Data')
     expect(body.fields).not.toHaveProperty('botPresets')
     expect(body.fields).not.toHaveProperty('language')
+  })
+
+  it('returns only character stubs for character-family resources', async () => {
+    await importDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hello' }] }],
+        },
+      ],
+      characterOrder: ['char-a'],
+      currentChar: 'char-a',
+      botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
+    })
+
+    const body = (await getProjection('message')).json()
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields)).toEqual(['characters'])
+    expect(body.fields.characters[0].chats[0].message).toEqual([])
+    expect(body.fields).not.toHaveProperty('characterOrder')
+    expect(body.fields).not.toHaveProperty('botPresets')
   })
 
   it('masks provider secrets in narrow returned fields', async () => {
@@ -232,6 +269,52 @@ describe('targeted projection field loader', () => {
     expect(loadPersistedDatabaseFields(harness.dataDir, ['botPresets', 'botPresetsId'])).toEqual({
       botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
       botPresetsId: 2,
+    })
+  })
+
+  it('selects character fields with chat and lorebook stubs', () => {
+    writeFileSync(
+      path.join(harness.dataDir, 'db.json'),
+      JSON.stringify({
+        _version: 1,
+        database: {
+          enableLorebookStubs: true,
+          characters: [
+            {
+              chaId: 'char-a',
+              globalLore: [{ key: 'k', content: 'secret lore' }],
+              chats: [
+                {
+                  id: 'chat-a',
+                  message: [{ data: 'hi' }],
+                  hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+                },
+              ],
+            },
+          ],
+          characterOrder: ['char-a'],
+          currentChar: 'char-a',
+          botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
+        },
+        assets: [],
+      }),
+    )
+
+    expect(
+      loadCharacterProjectionFields(harness.dataDir, [
+        'characters',
+        'characterOrder',
+        'currentChar',
+      ]),
+    ).toEqual({
+      characters: [
+        {
+          chaId: 'char-a',
+          chats: [{ id: 'chat-a', message: [] }],
+        },
+      ],
+      characterOrder: ['char-a'],
+      currentChar: 'char-a',
     })
   })
 })

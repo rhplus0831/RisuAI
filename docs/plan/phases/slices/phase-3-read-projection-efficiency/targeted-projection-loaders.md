@@ -1,6 +1,6 @@
 # Targeted Projection Loaders
 
-Status: second batch implemented.
+Status: third batch implemented.
 
 ## Source Anchors
 
@@ -52,6 +52,29 @@ Second implemented batch:
   `pnpm api:test -- server/fastify/__tests__/projection.test.ts` and
   `pnpm test -- src/ts/bootstrap.test.ts`.
 
+Third implemented batch:
+
+- Source files: `server/fastify/src/routes/projection.ts`,
+  `server/fastify/src/repository.ts`,
+  `server/fastify/__tests__/projection.test.ts`.
+- Protocol surface: `GET /api/v1/projection/:resource` for the character-only
+  broad resource family: `character`, `chat`, `chatFolder`, `message`, and
+  `generation`.
+- Durable read path: these resources now select only their owned persisted
+  top-level fields, then apply the same wire stubs as the full stub projection:
+  chat `message` arrays are empty, `hypaV3Data` is removed, optional
+  `enableLorebookStubs` strips character `globalLore`, and provider secrets are
+  masked on the narrowed field object.
+- Revision/event behavior: preserve the existing `mode: "fields"` response,
+  current revision reporting, and client cursor advancement behavior.
+- Rollback/resync behavior: mixed broad resources such as `lorebook`, `module`,
+  `scriptDefinition`, `triggerDefinition`, and `plugin` keep the existing full
+  stub projection path until their module/plugin/lorebook semantics are scoped
+  separately.
+- Proof commands:
+  `pnpm api:test -- server/fastify/__tests__/projection.test.ts` and
+  `pnpm test -- src/ts/bootstrap.test.ts`.
+
 ## Protocol Behavior
 
 - Keep the existing projection response contract unless a phase explicitly
@@ -74,8 +97,12 @@ Current result:
 - Small non-empty resources (`preset`, `prompt`, `promptItem`, `persona`,
   `translatorPreset`, `loadout`) avoid the full stub projection path while
   preserving provider secret masking.
+- Character-family resources (`character`, `chat`, `chatFolder`, `message`,
+  `generation`) avoid the full stub projection path while preserving chat
+  message stubs, Hypa V3 removal, optional character lorebook stubs, and
+  provider secret masking.
 - Unknown resources still use the existing full-resync behavior.
-- Broad non-empty resources that carry chat, module, plugin, or lorebook stub
+- Broad non-empty resources that carry module, plugin, or mixed lorebook stub
   semantics remain future Phase 3 work and should be scoped separately before
   implementation.
 

@@ -173,7 +173,32 @@ export function loadPersistedDatabaseFields(
   const persisted = loadPersisted(dataDir)
   const database = persisted.database
   if (!isRecord(database)) return {}
+  return selectDatabaseFields(database, fieldKeys)
+}
 
+export function loadCharacterProjectionFields(
+  dataDir: string,
+  fieldKeys: readonly string[],
+): Record<string, unknown> {
+  const persisted = loadPersisted(dataDir)
+  const database = persisted.database
+  if (!isRecord(database)) return {}
+
+  const fields = selectDatabaseFields(database, fieldKeys)
+  eachChat(fields, (chat) => {
+    chat.message = []
+    delete chat.hypaV3Data
+  })
+  if (database.enableLorebookStubs === true) {
+    stripCharacterGlobalLore(fields)
+  }
+  return fields
+}
+
+function selectDatabaseFields(
+  database: Record<string, unknown>,
+  fieldKeys: readonly string[],
+): Record<string, unknown> {
   const fields: Record<string, unknown> = {}
   for (const key of fieldKeys) {
     if (Object.prototype.hasOwnProperty.call(database, key)) {
@@ -429,13 +454,14 @@ export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted
  * it is.
  */
 function stubCharacterLorebooks(persisted: Persisted): void {
-  const database = persisted.database as {
-    enableLorebookStubs?: boolean
-    characters?: Array<{ globalLore?: unknown } | null>
-  } | null
-  if (!database || typeof database !== 'object') return
-  if (!database.enableLorebookStubs) return
-  for (const character of database.characters ?? []) {
+  if (!isRecord(persisted.database) || persisted.database.enableLorebookStubs !== true) return
+  stripCharacterGlobalLore(persisted.database)
+}
+
+function stripCharacterGlobalLore(database: unknown): void {
+  const characters =
+    isRecord(database) && Array.isArray(database.characters) ? database.characters : []
+  for (const character of characters) {
     if (character && typeof character === 'object') delete character.globalLore
   }
 }

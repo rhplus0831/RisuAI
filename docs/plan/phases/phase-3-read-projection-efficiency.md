@@ -1,6 +1,6 @@
 # Phase 3: Read Projection Efficiency
 
-Status: four optimizations implemented.
+Status: five optimizations implemented.
 
 Goal: reduce repeated REST reads and full-projection work for targeted
 projection, asset metadata, bulk hydration, and full resync fallbacks.
@@ -36,6 +36,10 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
 - Small non-empty targeted projection resources such as `preset`, `prompt`,
   `promptItem`, `persona`, `translatorPreset`, and `loadout` now use a narrow
   persisted-field selector with provider secret masking.
+- Character-family targeted projection resources such as `character`, `chat`,
+  `chatFolder`, `message`, and `generation` now use a narrow persisted-field
+  selector with chat message stubs, Hypa V3 removal, optional lorebook stubs,
+  and provider secret masking.
 - Asset metadata lookup now uses an in-process repository index with
   `db.json` stat-based refresh and explicit invalidation on repository writes.
 - Bulk chat-message hydration now uses authenticated read-only

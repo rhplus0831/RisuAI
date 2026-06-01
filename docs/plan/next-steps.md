@@ -21,12 +21,12 @@ not a broad cleanup pass.
 Phase 1 P1 correctness hardening is implemented, the first measured Phase 2
 settings migration is complete, and the first Phase 3 targeted-projection,
 asset metadata, and bulk chat hydration optimizations are implemented. Small
-non-empty targeted projection resources now have a narrow field selector, and
-all-chat hydration has a one-request path, so prefer the remaining read-side
-P2/P3 performance work next:
+non-empty and character-family targeted projection resources now have narrow
+field selectors, and all-chat hydration has a one-request path, so prefer the
+remaining read-side P2/P3 performance work next:
 
-1. Scope broader field-specific targeted projection loaders only after naming
-   their chat, module, plugin, lorebook-stub, and masking semantics:
+1. Scope the remaining broader field-specific targeted projection loaders only
+   after naming their module, plugin, lorebook-stub, and masking semantics:
    [`targeted-projection-loaders.md`](phases/slices/phase-3-read-projection-efficiency/targeted-projection-loaders.md).
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become an active target:
