@@ -20,12 +20,16 @@ not a broad cleanup pass.
 
 Phase 1 P1 correctness hardening is implemented. Prefer measured P2 work next:
 
-1. Select the first narrow command family from metrics:
-   [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).
+1. Implement the measured settings narrow path:
+   [`scoped-settings-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-settings-mutation-path.md).
 2. Short-circuit empty or small targeted projection resources:
    [`targeted-projection-loaders.md`](phases/slices/phase-3-read-projection-efficiency/targeted-projection-loaders.md).
 3. Add an asset metadata index or cache:
    [`asset-metadata-index.md`](phases/slices/phase-3-read-projection-efficiency/asset-metadata-index.md).
+
+The first command-family measurement is complete in
+[`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md);
+it selected `settings.updated` as the next Phase 2 migration candidate.
 
 ## Not First
 
@@ -60,5 +64,6 @@ touches shared protocol behavior.
 - `pnpm test -- src/lib/Others/projectionGuard.test.ts`
 - `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/backups.test.ts src/ts/server/bootstrap.test.ts`
 - `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/chatMessageHydration.test.ts`
+- `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`
 - `pnpm client-thinning:audit`
 - `pnpm api:test`

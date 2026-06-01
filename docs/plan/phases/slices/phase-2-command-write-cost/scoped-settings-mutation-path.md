@@ -1,6 +1,6 @@
 # Scoped Settings Mutation Path
 
-Status: planned.
+Status: selected next.
 
 ## Source Anchors
 
@@ -12,8 +12,25 @@ Status: planned.
 ## Scope
 
 Add a narrow command path for settings-like scalar updates that do not need
-hydrated chat messages. This is a likely first migration candidate if metrics
-confirm the cost.
+hydrated chat messages. The command-family measurement slice selected
+`settings.updated` first because it spent whole-corpus load, clone, and message
+sync time for a scalar settings edit on a message-heavy save.
+
+## Implementation Scope
+
+- Source files: `server/fastify/src/routes/commands.ts`,
+  `server/fastify/src/commands/mutations.ts`, and `server/fastify/src/repository.ts`.
+- Protocol surface: `PATCH /api/v1/commands/settings/:group`.
+- Durable path: mutate message-free `db.json` settings fields without calling
+  `loadPersistedWithMessages()` or `syncChatMessages()`.
+- Revision/event behavior: preserve `baseRevision` conflict checks, one
+  revision bump, one persisted `settings.updated` event, and one live event
+  emission.
+- Rollback/resync behavior: leave `db.json` untouched on validation,
+  conflict, or pre-commit failures; write `db.json` only after SQLite commit so
+  the next bootstrap/resync never observes JSON ahead of revision/event rows.
+- Non-scope: message, chat metadata, generation persistence, provider secret
+  placeholder semantics outside the existing settings patch validation.
 
 ## Protocol Behavior
 
@@ -32,5 +49,6 @@ confirm the cost.
 ## Validation
 
 - Focused server command tests for migrated settings groups.
+- `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`
 - `pnpm api:test`
 - `pnpm client-thinning:audit`
