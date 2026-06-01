@@ -24,7 +24,12 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
 
     instance.post(
       '/api/v1/proxy/fetch',
-      { config: { rateLimit: proxyFetchRateLimit } },
+      {
+        config: { rateLimit: proxyFetchRateLimit },
+        onRequest: async (req, reply) => {
+          await requireAuth(authState, req, reply)
+        },
+      },
       async (req, reply) => {
         if (!(await requireAuth(authState, req, reply))) return
 

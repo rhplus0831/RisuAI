@@ -92,56 +92,64 @@ export function registerSaveRoutes(
     },
   )
 
-  app.get<{ Querystring: ExportQuery }>('/api/v1/export/risusave', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
-    try {
-      const options = parseExportQuery(req.query)
-      const bytes = encodeRepositoryRisuSaveExport(db, dataDir, options)
-      eventSink.emit({
-        ...COMMAND_EVENT_CATALOG.stateExported,
-        revision: getSchemaState(db).revision,
-      })
-      reply.header('content-type', 'application/octet-stream')
-      reply.header('content-disposition', `attachment; filename="${EXPORT_FILENAME}"`)
-      return reply.send(Buffer.from(bytes))
-    } catch (err) {
-      if (err instanceof ValidationError) {
-        reply.code(400)
-        return { error: err.message }
+  app.get<{ Querystring: ExportQuery }>(
+    '/api/v1/export/risusave',
+    { exposeHeadRoute: false },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      try {
+        const options = parseExportQuery(req.query)
+        const bytes = encodeRepositoryRisuSaveExport(db, dataDir, options)
+        eventSink.emit({
+          ...COMMAND_EVENT_CATALOG.stateExported,
+          revision: getSchemaState(db).revision,
+        })
+        reply.header('content-type', 'application/octet-stream')
+        reply.header('content-disposition', `attachment; filename="${EXPORT_FILENAME}"`)
+        return reply.send(Buffer.from(bytes))
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          reply.code(400)
+          return { error: err.message }
+        }
+        throw err
       }
-      throw err
-    }
-  })
+    },
+  )
 
-  app.get<{ Querystring: ExportQuery }>('/api/v1/export/bundle', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
-    try {
-      const options = parseExportQuery(req.query)
-      const persisted = loadPersistedWithMessages(db, dataDir)
-      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
-      const risuBytes = encodeRisuSaveExportSnapshot(snapshot, options)
-      const bundle = buildRepositoryRisuSaveBundleExport({
-        dataDir,
-        persisted,
-        risuBytes,
-        envelope: options.envelope,
-        compression: options.compression,
-      })
-      eventSink.emit({
-        ...COMMAND_EVENT_CATALOG.stateExported,
-        revision: getSchemaState(db).revision,
-      })
-      reply.header('content-type', 'application/zip')
-      reply.header('content-disposition', `attachment; filename="${BUNDLE_EXPORT_FILENAME}"`)
-      return reply.send(bundle.stream)
-    } catch (err) {
-      if (err instanceof ValidationError) {
-        reply.code(400)
-        return { error: err.message }
+  app.get<{ Querystring: ExportQuery }>(
+    '/api/v1/export/bundle',
+    { exposeHeadRoute: false },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      try {
+        const options = parseExportQuery(req.query)
+        const persisted = loadPersistedWithMessages(db, dataDir)
+        const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
+        const risuBytes = encodeRisuSaveExportSnapshot(snapshot, options)
+        const bundle = buildRepositoryRisuSaveBundleExport({
+          dataDir,
+          persisted,
+          risuBytes,
+          envelope: options.envelope,
+          compression: options.compression,
+        })
+        eventSink.emit({
+          ...COMMAND_EVENT_CATALOG.stateExported,
+          revision: getSchemaState(db).revision,
+        })
+        reply.header('content-type', 'application/zip')
+        reply.header('content-disposition', `attachment; filename="${BUNDLE_EXPORT_FILENAME}"`)
+        return reply.send(bundle.stream)
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          reply.code(400)
+          return { error: err.message }
+        }
+        throw err
       }
-      throw err
-    }
-  })
+    },
+  )
 }
 
 function encodeRepositoryRisuSaveExport(

@@ -21,9 +21,18 @@ export function registerActiveWriterSession(state: ActiveWriterState, req: Fasti
 export function registerActiveWriterGuard(app: FastifyInstance, state: ActiveWriterState): void {
   app.addHook('preHandler', async (req, reply) => {
     if (!isServerOwnedMutation(req)) return
-    if (isActiveWriter(state, req)) return
-    sendStaleWriterReply(reply)
+    requireActiveWriter(state, req, reply)
   })
+}
+
+export function requireActiveWriter(
+  state: ActiveWriterState,
+  req: FastifyRequest,
+  reply: FastifyReply,
+): boolean {
+  if (isActiveWriter(state, req)) return true
+  sendStaleWriterReply(reply)
+  return false
 }
 
 function isActiveWriter(state: ActiveWriterState, req: FastifyRequest): boolean {

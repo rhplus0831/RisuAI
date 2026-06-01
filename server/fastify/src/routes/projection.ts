@@ -124,6 +124,7 @@ export function registerProjectionRoutes(
 
   app.get<{ Params: { resource: string }; Querystring: { id?: string } }>(
     '/api/v1/projection/:resource',
+    { exposeHeadRoute: false },
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
       const { resource } = req.params

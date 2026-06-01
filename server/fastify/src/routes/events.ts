@@ -32,7 +32,7 @@ export function registerEventsRoutes(
   commandEvents: CommandEventSink,
   memoryEvents: MemoryEventBus,
 ): void {
-  app.get('/api/v1/events', async (req, reply) => {
+  app.get('/api/v1/events', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
     const cursor = readReplayCursor(req.query, req.headers['last-event-id'])

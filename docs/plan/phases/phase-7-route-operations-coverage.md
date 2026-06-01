@@ -1,7 +1,8 @@
 # Phase 7: Route Operations Coverage
 
 Status: partly implemented; explicit route rate limits, route-manifest wildcard
-coverage, and read-only writer-header hygiene are in place.
+coverage, read-only writer-header hygiene, and HEAD/body-parser safeguards are
+in place.
 
 Goal: add route-level operational safeguards without breaking long-lived
 protocol streams, and close route coverage gaps found by the audit.
@@ -20,7 +21,8 @@ protocol streams, and close route coverage gaps found by the audit.
 
 - [`explicit-route-rate-limits.md`](slices/phase-7-route-operations-coverage/explicit-route-rate-limits.md) -
   implemented
-- [`head-route-and-body-parser-audit.md`](slices/phase-7-route-operations-coverage/head-route-and-body-parser-audit.md)
+- [`head-route-and-body-parser-audit.md`](slices/phase-7-route-operations-coverage/head-route-and-body-parser-audit.md) -
+  implemented
 - [`schema-hot-envelope-validation.md`](slices/phase-7-route-operations-coverage/schema-hot-envelope-validation.md)
 - [`route-manifest-wildcard-coverage.md`](slices/phase-7-route-operations-coverage/route-manifest-wildcard-coverage.md) -
   implemented
@@ -33,7 +35,7 @@ protocol streams, and close route coverage gaps found by the audit.
 - SSE, WebSocket, and long-lived generation attach routes are intentionally
   excluded from ordinary request-rate limits. Done.
 - HEAD and body parser behavior does not accidentally perform full work or
-  buffer before intended auth decisions.
+  buffer before intended auth decisions. Done.
 - Wildcard routes remain visible to manifest coverage.
 
 ## Validation

@@ -1659,15 +1659,19 @@ export function registerGenerationChatRoutes(
   // Reattach to a running, or done-within-grace, durable generation over SSE.
   // Observe is open to any authenticated client; completed jobs are read back via
   // the normal projection refresh.
-  app.get<{ Params: { id: string } }>('/api/v1/generate/chat/:id/stream', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
-    const job = generationJobs.registry.get(req.params.id)
-    if (!job) {
-      reply.code(404).send({ error: 'Job not found' })
-      return
-    }
-    attachGenerationViewer(req, reply, generationJobs, job)
-  })
+  app.get<{ Params: { id: string } }>(
+    '/api/v1/generate/chat/:id/stream',
+    { exposeHeadRoute: false },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      const job = generationJobs.registry.get(req.params.id)
+      if (!job) {
+        reply.code(404).send({ error: 'Job not found' })
+        return
+      }
+      attachGenerationViewer(req, reply, generationJobs, job)
+    },
+  )
 
   // Explicit cancel is authorized by the current active writer. It aborts provider
   // dispatch; the runner persists the streaming-so-far text and clears the

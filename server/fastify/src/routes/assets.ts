@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
+import { requireActiveWriter, type ActiveWriterState } from '../activeWriter.js'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
@@ -88,10 +89,19 @@ export function registerAssetsRoutes(
   authState: AuthState,
   dataDir: string,
   eventSink: CommandEventSink,
+  activeWriterState: ActiveWriterState,
 ): void {
+  const requireUploadAccess = async (
+    req: Parameters<typeof requireAuth>[1],
+    reply: FastifyReply,
+  ) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    requireActiveWriter(activeWriterState, req, reply)
+  }
+
   app.post(
     '/api/v1/assets',
-    { config: { rateLimit: assetUploadRateLimit } },
+    { config: { rateLimit: assetUploadRateLimit }, onRequest: requireUploadAccess },
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
       const contentType = req.headers['content-type']
@@ -128,7 +138,7 @@ export function registerAssetsRoutes(
 
   app.post(
     '/api/v1/assets/bulk',
-    { config: { rateLimit: assetBulkUploadRateLimit } },
+    { config: { rateLimit: assetBulkUploadRateLimit }, onRequest: requireUploadAccess },
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
       try {

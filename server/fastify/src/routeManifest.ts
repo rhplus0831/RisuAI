@@ -42,6 +42,7 @@ export interface ProtocolRouteManifestEntry {
 export const PROTOCOL_MUTATING_METHODS = ['POST', 'PATCH', 'PUT', 'DELETE'] as const
 
 const READ_METHODS = ['GET', 'HEAD'] as const
+const GET_ONLY = ['GET'] as const
 const HUB_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'] as const
 
 export const PROTOCOL_ROUTE_MANIFEST = [
@@ -122,7 +123,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
   },
   {
     id: 'bootstrap',
-    methods: READ_METHODS,
+    methods: GET_ONLY,
     path: '/api/v1/bootstrap',
     auth: {
       decision: 'required',
@@ -136,7 +137,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
   },
   {
     id: 'projection',
-    methods: READ_METHODS,
+    methods: GET_ONLY,
     path: '/api/v1/projection/:resource',
     match: 'pattern',
     auth: {
@@ -179,7 +180,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
   },
   {
     id: 'risusave-export',
-    methods: READ_METHODS,
+    methods: GET_ONLY,
     path: '/api/v1/export/risusave',
     auth: {
       decision: 'required',
@@ -193,7 +194,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
   },
   {
     id: 'risusave-bundle-export',
-    methods: READ_METHODS,
+    methods: GET_ONLY,
     path: '/api/v1/export/bundle',
     auth: {
       decision: 'required',
@@ -236,7 +237,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
   },
   {
     id: 'events',
-    methods: READ_METHODS,
+    methods: GET_ONLY,
     path: '/api/v1/events',
     auth: {
       decision: 'required',
@@ -498,7 +499,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
   },
   {
     id: 'generation-chat-reattach',
-    methods: READ_METHODS,
+    methods: GET_ONLY,
     path: '/api/v1/generate/chat/:id/stream',
     match: 'pattern',
     auth: {

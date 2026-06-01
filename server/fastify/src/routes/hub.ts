@@ -111,6 +111,11 @@ export function registerHubRoutes(
     instance.route({
       method: [...HUB_METHODS],
       url: '/api/v1/hub/*',
+      onRequest: async (req, reply) => {
+        if (requiresLocalAuth(req)) {
+          await requireAuth(authState, req, reply)
+        }
+      },
       handler: async (req, reply) => {
         if (requiresLocalAuth(req) && !(await requireAuth(authState, req, reply))) return
 

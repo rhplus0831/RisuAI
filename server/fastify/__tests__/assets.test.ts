@@ -5,6 +5,7 @@ import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
+import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { loadPersisted } from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
@@ -111,15 +112,13 @@ function failCommandEventPersistence(dataDir: string): void {
 
 function failWriteFileSyncWhen(predicate: (file: string) => boolean): void {
   const originalWriteFileSync = fs.writeFileSync.bind(fs) as typeof fs.writeFileSync
-  vi.spyOn(fs, 'writeFileSync').mockImplementation(
-    ((file, data, options) => {
-      const filePath = typeof file === 'string' ? file : file.toString()
-      if (predicate(filePath)) {
-        throw new Error(`injected write failure: ${filePath}`)
-      }
-      return originalWriteFileSync(file as never, data as never, options as never)
-    }) as typeof fs.writeFileSync,
-  )
+  vi.spyOn(fs, 'writeFileSync').mockImplementation(((file, data, options) => {
+    const filePath = typeof file === 'string' ? file : file.toString()
+    if (predicate(filePath)) {
+      throw new Error(`injected write failure: ${filePath}`)
+    }
+    return originalWriteFileSync(file as never, data as never, options as never)
+  }) as typeof fs.writeFileSync)
 }
 
 let harness: Harness
@@ -147,6 +146,46 @@ describe('Phase 2C assets', () => {
       payload: PNG_BYTES,
     })
     expect(res.statusCode).toBe(401)
+  })
+
+  it('rejects oversized raw upload without auth before body parsing', async () => {
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: { password: 'hunter2' },
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png' },
+      payload: Buffer.alloc(1024 * 1024 + 1),
+    })
+
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('rejects stale-writer raw upload before body parsing', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: {
+        'content-type': 'image/png',
+        'risu-auth': assertion,
+        [ACTIVE_WRITER_SESSION_HEADER]: 'session-b',
+      },
+      payload: Buffer.alloc(1024 * 1024 + 1),
+    })
+
+    expect(res.statusCode).toBe(423)
+    expect(res.json()).toMatchObject({ error: 'active_writer_stale' })
   })
 
   it('uploads a PNG, computes sha256, writes file, returns metadata', async () => {
@@ -295,8 +334,8 @@ describe('Phase 2C assets', () => {
 
   it('removes previously staged bulk asset bytes when a later file write fails', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    failWriteFileSyncWhen((file) =>
-      file === path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`),
+    failWriteFileSyncWhen(
+      (file) => file === path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`),
     )
 
     const res = await harness.app.inject({

@@ -20,7 +20,7 @@ export function registerBootstrapRoutes(
   activeWriterState?: ActiveWriterState,
   generationJobs?: GenerationJobRegistry,
 ): void {
-  app.get('/api/v1/bootstrap', async (req, reply) => {
+  app.get('/api/v1/bootstrap', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     if (activeWriterState) {
       registerActiveWriterSession(activeWriterState, req)

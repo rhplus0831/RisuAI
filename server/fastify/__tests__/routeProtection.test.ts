@@ -222,6 +222,47 @@ describe('route protection (table-wide auth enforcement)', () => {
     })
     expect(cancel.statusCode).toBe(401)
   })
+
+  it('rejects accidental HEAD requests on expensive GET routes', async () => {
+    const assertion = await setupPassword(harness.app)
+    const urls = [
+      '/api/v1/bootstrap',
+      '/api/v1/projection/chatMessages?id=chat-a',
+      '/api/v1/export/risusave',
+      '/api/v1/export/bundle',
+      '/api/v1/events',
+      '/api/v1/generate/chat/missing-job/stream',
+    ]
+
+    for (const url of urls) {
+      const res = await harness.app.inject({
+        method: 'HEAD',
+        url,
+        headers: { 'risu-auth': assertion },
+      })
+      expect(res.statusCode, url).toBe(404)
+    }
+  })
+
+  it('authenticates raw buffered proxy bodies before body parsing', async () => {
+    await setupPassword(harness.app)
+    const payload = Buffer.alloc(1024 * 1024 + 1)
+
+    for (const url of ['/api/v1/proxy/fetch', '/api/v1/hub/upload']) {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url,
+        headers: {
+          'content-type': 'application/octet-stream',
+          ...(url.includes('/proxy/')
+            ? { 'risu-url': encodeURIComponent('https://example.com/') }
+            : {}),
+        },
+        payload,
+      })
+      expect(res.statusCode, url).toBe(401)
+    }
+  })
 })
 
 describe('active-writer header validation', () => {

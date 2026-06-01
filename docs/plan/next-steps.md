@@ -30,7 +30,8 @@ caching, and asset rollback hardening. Phase 6 is implemented: settings
 coalesce and skip no-op writes, memory job refresh is SSE-driven, and projection
 applies advance a watcher epoch so settings, chat, and script-definition
 watchers do not echo server-origin updates. Phase 7 now has route-local rate
-limits, wildcard manifest coverage, and read-only writer-header hygiene.
+limits, wildcard manifest coverage, read-only writer-header hygiene, and
+HEAD/body-parser safeguards.
 
 Prefer one of these next:
 
@@ -41,7 +42,7 @@ Prefer one of these next:
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
 3. Continue Phase 7 route operation safeguards if prioritizing operational
-   coverage, with HEAD/body parser review or hot envelope schemas next:
+   coverage, with hot envelope schemas next:
    [`phase-7-route-operations-coverage.md`](phases/phase-7-route-operations-coverage.md).
 4. Add the Phase 4 SSE taxonomy fixture only when touching chat stream event
    names or payload shapes:
@@ -75,8 +76,7 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Remaining route operation safeguards in Phase 7: HEAD/body parser audit, then
-   hot envelope schemas.
+3. Remaining route operation safeguards in Phase 7: hot envelope schemas.
 4. SSE taxonomy verification when chat stream vocabulary changes.
 5. Verification budgets and latest-check recording in Phase 8.
 
