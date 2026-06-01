@@ -26,6 +26,7 @@ import {
   resetChatHydration,
 } from './chatMessageHydration.svelte'
 import { isCharacterLorebookHydrated, resetLorebookHydration } from './lorebookBridge.svelte'
+import { getProtocolDiagnosticsSnapshot } from './protocolDiagnostics'
 
 function okResult(chatId: string, message: Array<Record<string, unknown>>) {
   return { status: 'ok' as const, revision: 1, chatId, message, alternates: [] }
@@ -169,6 +170,27 @@ describe('chat message hydration bridge', () => {
     expect(projectionState.fetchBulkChat.mock.calls[0][0]).toHaveLength(
       BULK_HYDRATION_CONCURRENCY * 3,
     )
+    expect(projectionState.fetchChat).not.toHaveBeenCalled()
+  })
+
+  it('keeps all-chat hydration within the request-count budget', async () => {
+    seedManyStubChats(BULK_HYDRATION_CONCURRENCY * 3)
+    const before = getProtocolDiagnosticsSnapshot().hydration.chat
+
+    await ensureAllChatsHydrated()
+
+    const afterBulk = getProtocolDiagnosticsSnapshot().hydration.chat
+    expect(afterBulk.requestsStarted - before.requestsStarted).toBe(1)
+    expect(afterBulk.bulkRuns - before.bulkRuns).toBe(1)
+    expect(afterBulk.bulkIds - before.bulkIds).toBe(BULK_HYDRATION_CONCURRENCY * 3)
+    expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(1)
+    expect(projectionState.fetchChat).not.toHaveBeenCalled()
+
+    await ensureAllChatsHydrated()
+
+    const afterCached = getProtocolDiagnosticsSnapshot().hydration.chat
+    expect(afterCached.requestsStarted).toBe(afterBulk.requestsStarted)
+    expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(1)
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
   })
 

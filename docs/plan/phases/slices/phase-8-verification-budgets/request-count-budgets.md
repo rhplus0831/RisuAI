@@ -1,18 +1,28 @@
 # Request Count Budgets
 
-Status: planned.
+Status: implemented.
 
 ## Source Anchors
 
 - `src/ts/server/chatMessageHydration.svelte.ts`
 - `src/ts/server/protocolDiagnostics.ts`
 - `src/ts/bootstrap.ts`
-- `server/fastify/__tests__/`
+- `src/ts/server/chatMessageHydration.test.ts`
 
 ## Scope
 
 Add tests or diagnostics that catch request-count regressions in hot workflows
 such as bulk hydration, targeted projection, memory jobs, and asset-heavy views.
+
+Implemented scope:
+
+- Added a hydration `requestsStarted` diagnostic counter so request starts can
+  be compared separately from bulk workflow attempts.
+- Added a maintained all-chat hydration guard: many stubbed chats hydrate
+  through one bulk request, no per-chat requests, and a repeated already-hydrated
+  call does not start another request.
+- Kept optional lorebook stub hydration as an active risk because it still uses
+  bounded N-request hydration when `enableLorebookStubs` is on.
 
 ## Protocol Behavior
 
@@ -20,6 +30,9 @@ such as bulk hydration, targeted projection, memory jobs, and asset-heavy views.
   brittle.
 - Promote stable workflows to tests once expected counts are known.
 - Record intentional exceptions in the relevant phase or slice.
+- The implemented chat guard treats user-triggered all-history hydration as one
+  intentional bulk request and cached follow-up/render-loop calls as zero new
+  requests.
 
 ## Done When
 
@@ -27,7 +40,9 @@ such as bulk hydration, targeted projection, memory jobs, and asset-heavy views.
 - The guard distinguishes user-triggered all-history workflows from render-loop
   regressions.
 
+Done.
+
 ## Validation
 
 - Budget tests introduced by this slice.
-- `pnpm test`
+- `pnpm test -- src/ts/server/chatMessageHydration.test.ts`

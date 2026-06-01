@@ -3,6 +3,7 @@ type HydrationKind = 'chat' | 'characterLorebook'
 interface HydrationDiagnostics {
   bulkRuns: number
   bulkIds: number
+  requestsStarted: number
   activeRequests: number
   maxConcurrentRequests: number
   staleResponseDrops: number
@@ -25,6 +26,7 @@ function emptyHydrationDiagnostics(): HydrationDiagnostics {
   return {
     bulkRuns: 0,
     bulkIds: 0,
+    requestsStarted: 0,
     activeRequests: 0,
     maxConcurrentRequests: 0,
     staleResponseDrops: 0,
@@ -45,10 +47,12 @@ export function recordBulkHydration(kind: HydrationKind, idCount: number): void 
 
 export function beginHydrationRequest(kind: HydrationKind): () => void {
   const target = diagnostics.hydration[kind]
+  target.requestsStarted += 1
   target.activeRequests += 1
   target.maxConcurrentRequests = Math.max(target.maxConcurrentRequests, target.activeRequests)
   debugProtocol('hydration-start', {
     kind,
+    requestsStarted: target.requestsStarted,
     activeRequests: target.activeRequests,
     maxConcurrentRequests: target.maxConcurrentRequests,
   })
