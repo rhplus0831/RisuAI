@@ -4,6 +4,7 @@ import {
   classifyRisuSaveEnvelope,
   concatBytes,
 } from './legacyEnvelopeCodec.js'
+import { assertExpandedSizeWithinLimit, type ExpandedSizeLimitOptions } from './importLimits.js'
 
 export enum RisuSaveBlockType {
   CONFIG = 0,
@@ -75,7 +76,10 @@ export function encodeRisuSaveBlockEnvelope(blocks: EncodableRisuSaveBlock[]): U
   return concatBytes([RISUSAVE_BLOCK_HEADER, ...blocks.map((block) => encodeRisuSaveBlock(block))])
 }
 
-export function decodeRisuSaveBlockEnvelope(data: Uint8Array): RisuSaveBlockDecodeResult {
+export function decodeRisuSaveBlockEnvelope(
+  data: Uint8Array,
+  options: ExpandedSizeLimitOptions = {},
+): RisuSaveBlockDecodeResult {
   if (classifyRisuSaveEnvelope(data) !== 'risusave-blocks') {
     throw new Error('Unsupported RISUSAVE block envelope')
   }
@@ -83,6 +87,7 @@ export function decodeRisuSaveBlockEnvelope(data: Uint8Array): RisuSaveBlockDeco
   const blocks: DecodedRisuSaveBlock[] = []
   const loadedNames = new Set<string>()
   let offset = RISUSAVE_BLOCK_HEADER.length
+  let expandedBytes = 0
 
   while (offset < data.length) {
     if (offset + 7 > data.length) {
@@ -110,6 +115,8 @@ export function decodeRisuSaveBlockEnvelope(data: Uint8Array): RisuSaveBlockDeco
     const rawBlockData = data.subarray(offset, offset + byteLength)
     offset += byteLength
     const contentBytes = compression ? fflate.gunzipSync(rawBlockData) : rawBlockData
+    expandedBytes += contentBytes.byteLength
+    assertExpandedSizeWithinLimit(expandedBytes, options)
 
     loadedNames.add(name)
     blocks.push({

@@ -124,7 +124,7 @@ export function registerRealmImportRoutes(
   authState: AuthState,
   dataDir: string,
   eventSink: CommandEventSink,
-  options: { hubUrl: string; realmUrl?: string },
+  options: { hubUrl: string; realmUrl?: string; maxExpandedImportBytes?: number },
 ): void {
   const hubUrl = options.hubUrl.replace(/\/+$/, '')
   const realmUrl = (options.realmUrl ?? 'https://realm.risuai.net').replace(/\/+$/, '')
@@ -143,12 +143,21 @@ export function registerRealmImportRoutes(
             body,
             hubUrl,
             realmUrl,
+            maxExpandedImportBytes: options.maxExpandedImportBytes,
             reportProgress,
           }),
         )
         return
       }
-      return await runRealmImport({ db, dataDir, eventSink, body, hubUrl, realmUrl })
+      return await runRealmImport({
+        db,
+        dataDir,
+        eventSink,
+        body,
+        hubUrl,
+        realmUrl,
+        maxExpandedImportBytes: options.maxExpandedImportBytes,
+      })
     } catch (err) {
       if (err instanceof RevisionConflictError) {
         reply.code(409)
@@ -182,6 +191,7 @@ async function runRealmImport(args: {
   body: RealmImportBody
   hubUrl: string
   realmUrl: string
+  maxExpandedImportBytes?: number
   reportProgress?: RealmImportProgressReporter
 }): Promise<{ revision: number; event: unknown; characterId: string }> {
   const reportProgress = createMonotonicProgressReporter(args.reportProgress)
@@ -228,6 +238,7 @@ async function runRealmImport(args: {
         filePath: dynamic.filePath,
         tempDir: dynamic.tempDir,
         allowLowLevelAccess: args.body.allowLowLevelAccess === true,
+        maxExpandedImportBytes: args.maxExpandedImportBytes,
         reportProgress,
       })
 
@@ -440,10 +451,11 @@ async function importRealmCharx(args: {
   filePath: string
   tempDir: string
   allowLowLevelAccess: boolean
+  maxExpandedImportBytes?: number
   reportProgress?: RealmImportProgressReporter
 }): Promise<JsonCommandMutationResult<{ characterId: string }>> {
   args.reportProgress?.({ phase: 'extract', message: 'Reading character card', percent: 32 })
-  const cardBytes = await readCharxCard(args.filePath)
+  const cardBytes = await readCharxCard(args.filePath, args.maxExpandedImportBytes)
   const card = parseJsonBytes(cardBytes, 'card.json')
   const data = readRecord(readRecord(card, 'card').data, 'card.data')
   const extensions = readOptionalRecord(data.extensions)
@@ -463,6 +475,8 @@ async function importRealmCharx(args: {
     end: 62,
   })
   const stagedAssets = await stageCharxAssets(args.filePath, path.join(args.tempDir, 'assets'), {
+    initialExpandedBytes: cardBytes.byteLength,
+    maxExpandedBytes: args.maxExpandedImportBytes,
     onAssetStaged: extractProgress,
   })
   emitProtocolMetric('realm_import_staged_assets', {
@@ -538,7 +552,10 @@ function appendRealmCharacter(args: {
   })
 }
 
-async function readCharxCard(filePath: string): Promise<Uint8Array> {
+async function readCharxCard(
+  filePath: string,
+  maxExpandedBytes: number | undefined,
+): Promise<Uint8Array> {
   let cardBytes: Uint8Array | null = null
 
   await streamCharxFile(filePath, (file, setError) => {
@@ -553,6 +570,10 @@ async function readCharxCard(filePath: string): Promise<Uint8Array> {
       }
       if (shouldCollect && data.byteLength > 0) {
         totalBytes += data.byteLength
+        if (exceedsFiniteLimit(totalBytes, maxExpandedBytes)) {
+          setError(new ValidationError('Realm charx expanded payload exceeds size limit'))
+          return
+        }
         chunks.push(data)
       }
       if (shouldCollect && final) {
@@ -571,11 +592,16 @@ async function readCharxCard(filePath: string): Promise<Uint8Array> {
 async function stageCharxAssets(
   filePath: string,
   stageDir: string,
-  options: { onAssetStaged?: () => void } = {},
+  options: {
+    initialExpandedBytes?: number
+    maxExpandedBytes?: number
+    onAssetStaged?: () => void
+  } = {},
 ): Promise<StagedCharxAsset[]> {
   await fs.promises.mkdir(stageDir, { recursive: true })
   const stagedAssets: StagedCharxAsset[] = []
   let nextAssetIndex = 0
+  let totalExpandedBytes = options.initialExpandedBytes ?? 0
 
   await streamCharxFile(filePath, (file, setError) => {
     const shouldStage =
@@ -597,6 +623,18 @@ async function stageCharxAssets(
         setError(err)
         return
       }
+
+      if (data.byteLength > 0 && file.name !== 'card.json') {
+        totalExpandedBytes += data.byteLength
+        if (exceedsFiniteLimit(totalExpandedBytes, options.maxExpandedBytes)) {
+          failed = true
+          closeStageFile()
+          if (stagedPath) fs.rmSync(stagedPath, { force: true })
+          setError(new ValidationError('Realm charx expanded payload exceeds size limit'))
+          return
+        }
+      }
+
       if (!shouldStage) return
 
       if (fd === null && !failed) {
@@ -630,6 +668,10 @@ async function stageCharxAssets(
   })
 
   return stagedAssets
+}
+
+function exceedsFiniteLimit(byteLength: number, limit: number | undefined): boolean {
+  return limit !== undefined && Number.isFinite(limit) && byteLength > limit
 }
 
 async function streamCharxFile(

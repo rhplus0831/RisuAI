@@ -26,8 +26,8 @@ hydration. Phase 4 has implemented bounded slow-consumer behavior for
 command/memory SSE, inline and durable chat generation SSE, proxy WebSocket
 stream jobs, generation reattach probes after active-chat projection changes
 and full resyncs, server-owned resend-cycle caps, and SQLite-backed
-finalization retry. Phase 5 has completed the server-owned revision bump audit
-and event atomicity slice.
+finalization retry. Phase 5 has completed the server-owned revision bump audit,
+event atomicity, and expanded import size limit slices.
 
 Prefer one of these next:
 
@@ -37,9 +37,8 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. Continue Phase 5 with import/export memory pressure if prioritizing large
-   save performance:
-   [`expanded-import-size-limits.md`](phases/slices/phase-5-import-export-asset-memory/expanded-import-size-limits.md) or
+3. Continue Phase 5 with export memory pressure if prioritizing large save
+   performance:
    [`bundle-export-streaming.md`](phases/slices/phase-5-import-export-asset-memory/bundle-export-streaming.md).
 4. Continue Phase 5 asset durability work if prioritizing file-backed recovery:
    [`asset-mutation-transaction-protocol.md`](phases/slices/phase-5-import-export-asset-memory/asset-mutation-transaction-protocol.md) or
@@ -73,8 +72,7 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Server-owned event atomicity, import/export, and asset memory/durability work
-   in Phase 5.
+3. Export memory pressure and asset memory/durability work in Phase 5.
 4. Client loop suppression and command write coalescing in Phase 6.
 5. Route operation safeguards and manifest coverage in Phase 7.
 6. Verification budgets and latest-check recording in Phase 8.

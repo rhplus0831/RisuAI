@@ -225,6 +225,37 @@ function realmCharx(): Uint8Array {
   )
 }
 
+function oversizedExpandedRealmCharx(): Uint8Array {
+  const card = {
+    spec: 'chara_card_v3',
+    spec_version: '3.0',
+    data: {
+      name: 'Realm Oversized',
+      description: 'packed character with oversized expanded assets',
+      personality: '',
+      scenario: '',
+      first_mes: 'hello from oversized',
+      mes_example: '',
+      creator_notes: '',
+      system_prompt: '',
+      post_history_instructions: '',
+      alternate_greetings: [],
+      tags: [],
+      creator: '',
+      character_version: '1',
+      extensions: { risuai: {} },
+      assets: [{ type: 'icon', uri: 'embeded://assets/main.png', name: 'main', ext: 'png' }],
+    },
+  }
+  return fflate.zipSync(
+    {
+      'card.json': new TextEncoder().encode(JSON.stringify(card)),
+      'assets/main.png': new Uint8Array(1024 * 1024 + 1),
+    },
+    { level: 9 },
+  )
+}
+
 function jpegPrefixedRealmCharx(): Uint8Array {
   const prefix = Buffer.alloc(128, 0x20)
   prefix.set(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]))
@@ -591,6 +622,34 @@ describe('Realm character import route', () => {
     ])
   })
 
+  it('rejects Realm charx packages whose expanded payload exceeds the import limit', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/charx' })
+        res.end(Buffer.from(oversizedExpandedRealmCharx()))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'Realm charx expanded payload exceeds size limit' })
+    const persisted = loadPersisted(harness.dataDir)
+    expect(persisted.assets).toHaveLength(0)
+    expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
+  })
+
   it('imports JPEG-prefixed Realm charx packages', async () => {
     echo.setResponder((req, res) => {
       if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
@@ -621,33 +680,37 @@ describe('Realm character import route', () => {
     expect(persisted.assets).toHaveLength(3)
   })
 
-  directOnlyIt('imports Realm charx packages with thousands of display assets', async () => {
-    echo.setResponder((req, res) => {
-      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
-        res.writeHead(200, { 'content-type': 'application/charx' })
-        res.end(Buffer.from(manyDisplayAssetRealmCharx(7000)))
-        return
-      }
-      res.writeHead(404)
-      res.end()
-    })
+  directOnlyIt(
+    'imports Realm charx packages with thousands of display assets',
+    async () => {
+      echo.setResponder((req, res) => {
+        if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+          res.writeHead(200, { 'content-type': 'application/charx' })
+          res.end(Buffer.from(manyDisplayAssetRealmCharx(7000)))
+          return
+        }
+        res.writeHead(404)
+        res.end()
+      })
 
-    const { assertion } = await setupAuthedClient(harness.app)
-    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+      const { assertion } = await setupAuthedClient(harness.app)
+      const baseRevision = await importEmptyDatabase(harness.app, assertion)
 
-    const res = await harness.app.inject({
-      method: 'POST',
-      url: '/api/v1/import/realm-character',
-      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
-      payload: { id: 'realm-id', baseRevision },
-    })
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+        payload: { id: 'realm-id', baseRevision },
+      })
 
-    expect(res.statusCode).toBe(200)
-    const persisted = loadPersisted(harness.dataDir)
-    expect(persisted.assets).toHaveLength(7001)
-    const character = (persisted.database as { characters: Array<Record<string, unknown>> })
-      .characters[0]
-    expect(character.name).toBe('Realm Many Assets')
-    expect(character.additionalAssets).toHaveLength(7000)
-  }, 60000)
+      expect(res.statusCode).toBe(200)
+      const persisted = loadPersisted(harness.dataDir)
+      expect(persisted.assets).toHaveLength(7001)
+      const character = (persisted.database as { characters: Array<Record<string, unknown>> })
+        .characters[0]
+      expect(character.name).toBe('Realm Many Assets')
+      expect(character.additionalAssets).toHaveLength(7000)
+    },
+    60000,
+  )
 })

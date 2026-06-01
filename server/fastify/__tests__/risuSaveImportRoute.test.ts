@@ -8,6 +8,7 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
+import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
 import { writePersisted } from '../src/repository.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
@@ -415,6 +416,30 @@ describe('Phase 9-8a multipart .risu import route', () => {
     ])
   })
 
+  it('rejects legacy uploads whose expanded payload exceeds the import limit', async () => {
+    const upload = multipartRisuSave(
+      encodeLegacyRisuSaveEnvelope(
+        { version: 1, oversized: 'x'.repeat(1024 * 1024 + 1) },
+        'legacy-compressed',
+      ),
+    )
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect(imported.json()).toEqual({ error: 'Expanded .risu payload exceeds size limit' })
+
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.json().revision).toBe(0)
+    expect(bootstrap.json().database).toBeNull()
+    expect(harness.commandEvents.list()).toEqual([])
+  })
+
   it('imports RISUSAVE block uploads and reports unsupported references', async () => {
     const upload = multipartRisuSave(fixtureBytes('risusave-remote-reference'))
 
@@ -446,6 +471,34 @@ describe('Phase 9-8a multipart .risu import route', () => {
     const persisted = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
     expect(persisted.database.version).toBe(1)
     expect(persisted.database.__directory).toBeUndefined()
+  })
+
+  it('rejects block uploads whose expanded payload exceeds the import limit', async () => {
+    const upload = multipartRisuSave(
+      encodeRisuSaveBlockEnvelope([
+        {
+          name: 'root',
+          type: RisuSaveBlockType.ROOT,
+          data: JSON.stringify({ version: 1, oversized: 'x'.repeat(1024 * 1024 + 1) }),
+          compression: true,
+        },
+      ]),
+    )
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect(imported.json()).toEqual({ error: 'Expanded .risu payload exceeds size limit' })
+
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.json().revision).toBe(0)
+    expect(bootstrap.json().database).toBeNull()
+    expect(harness.commandEvents.list()).toEqual([])
   })
 
   it('imports non-reserved RISUSAVE root-component fields', async () => {

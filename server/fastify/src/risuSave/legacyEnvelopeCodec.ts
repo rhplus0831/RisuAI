@@ -1,5 +1,6 @@
 import * as fflate from 'fflate'
 import { Unpackr } from 'msgpackr/index-no-eval'
+import { assertExpandedSizeWithinLimit, type ExpandedSizeLimitOptions } from './importLimits.js'
 
 export type RisuSaveEnvelopeKind =
   | 'legacy-raw'
@@ -60,16 +61,25 @@ export function encodeLegacyRisuSaveEnvelope(
   return concatBytes([LEGACY_STREAM_HEADER, fflate.gzipSync(encoded)])
 }
 
-export function decodeLegacyRisuSaveEnvelope(data: Uint8Array): unknown {
+export function decodeLegacyRisuSaveEnvelope(
+  data: Uint8Array,
+  options: ExpandedSizeLimitOptions = {},
+): unknown {
   const kind = classifyRisuSaveEnvelope(data)
   if (kind === 'legacy-raw') {
-    return unpackr.decode(data.subarray(LEGACY_RAW_HEADER.length))
+    const payload = data.subarray(LEGACY_RAW_HEADER.length)
+    assertExpandedSizeWithinLimit(payload.byteLength, options)
+    return unpackr.decode(payload)
   }
   if (kind === 'legacy-compressed') {
-    return unpackr.decode(fflate.decompressSync(data.subarray(LEGACY_COMPRESSED_HEADER.length)))
+    const payload = fflate.decompressSync(data.subarray(LEGACY_COMPRESSED_HEADER.length))
+    assertExpandedSizeWithinLimit(payload.byteLength, options)
+    return unpackr.decode(payload)
   }
   if (kind === 'legacy-stream') {
-    return unpackr.decode(fflate.gunzipSync(data.subarray(LEGACY_STREAM_HEADER.length)))
+    const payload = fflate.gunzipSync(data.subarray(LEGACY_STREAM_HEADER.length))
+    assertExpandedSizeWithinLimit(payload.byteLength, options)
+    return unpackr.decode(payload)
   }
   throw new Error(`Unsupported legacy .risu envelope: ${kind}`)
 }

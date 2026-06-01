@@ -209,10 +209,13 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   )
   registerActiveWriterGuard(app, activeWriterState)
   registerProjectionRoutes(app, db, authState, config.dataDir)
-  registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink)
+  registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink, {
+    maxExpandedImportBytes: config.bodyLimit,
+  })
   registerRealmImportRoutes(app, db, authState, config.dataDir, commandEventSink, {
     hubUrl: config.hubUrl,
     realmUrl: config.realmUrl,
+    maxExpandedImportBytes: config.bodyLimit,
   })
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus)

@@ -42,12 +42,15 @@ export function registerSaveRoutes(
   authState: AuthState,
   dataDir: string,
   eventSink: CommandEventSink,
+  options: { maxExpandedImportBytes?: number } = {},
 ): void {
   app.post('/api/v1/import/risusave', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     try {
       if (req.isMultipart()) {
-        const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req))
+        const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req), {
+          maxExpandedBytes: options.maxExpandedImportBytes,
+        })
         const { revision, event, assetReport } = applyImportedDatabase(
           db,
           dataDir,

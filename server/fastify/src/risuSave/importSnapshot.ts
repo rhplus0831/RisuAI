@@ -8,6 +8,7 @@ import {
   classifyRisuSaveEnvelope,
   decodeLegacyRisuSaveEnvelope,
 } from './legacyEnvelopeCodec.js'
+import type { ExpandedSizeLimitOptions } from './importLimits.js'
 import { ValidationError } from '../repository.js'
 import { normalizePresetCollection } from '../commands/presets.js'
 import { normalizePromptTemplateCollection } from '../commands/prompts.js'
@@ -47,7 +48,10 @@ export interface RisuSaveImportSnapshot {
   unsupportedReferences: RisuSaveImportUnsupportedReference[]
 }
 
-export function decodeRisuSaveImportSnapshot(data: Uint8Array): RisuSaveImportSnapshot {
+export function decodeRisuSaveImportSnapshot(
+  data: Uint8Array,
+  options: ExpandedSizeLimitOptions = {},
+): RisuSaveImportSnapshot {
   const envelope = classifyRisuSaveEnvelope(data)
   if (
     envelope === 'legacy-raw' ||
@@ -57,7 +61,7 @@ export function decodeRisuSaveImportSnapshot(data: Uint8Array): RisuSaveImportSn
     return {
       envelope,
       database: normalizeImportDatabase(
-        decodeEnvelopeAsValidation(() => decodeLegacyRisuSaveEnvelope(data)),
+        decodeEnvelopeAsValidation(() => decodeLegacyRisuSaveEnvelope(data, options)),
       ),
       unsupportedReferences: [],
     }
@@ -67,7 +71,7 @@ export function decodeRisuSaveImportSnapshot(data: Uint8Array): RisuSaveImportSn
     throw new ValidationError(`Unsupported .risu envelope: ${envelope}`)
   }
 
-  const decoded = decodeEnvelopeAsValidation(() => decodeRisuSaveBlockEnvelope(data))
+  const decoded = decodeEnvelopeAsValidation(() => decodeRisuSaveBlockEnvelope(data, options))
   return {
     envelope,
     database: normalizeImportDatabase(assembleBlockDatabase(decoded.blocks)),
