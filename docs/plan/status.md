@@ -24,9 +24,9 @@ Completed work:
   message-free mutation path. `message.appended`, message
   edit/delete/truncate/replace commands, and `generation.persisted` use
   targeted SQLite paths. Generation prompt assembly and assembly-time
-  side-effect persistence now emit opt-in protocol metrics. Representative
-  metric review identifies assembly-time chat scriptstate and transcript-rewrite
-  persistence as the remaining hydrated generation mutation path.
+  side-effect persistence now emit opt-in protocol metrics. Assembly-time chat
+  scriptstate and transcript-rewrite persistence use the targeted assembly
+  mutation path instead of the hydrated command path.
 - Phase 3 read-side optimizations are in place: targeted projection field
   selectors for known resource families, an in-process asset metadata index,
   and authenticated bulk all-chat hydration.
@@ -67,8 +67,8 @@ No P1 plan risks remain open after the Phase 1 commits.
 Active performance risks:
 
 - Generation and prompt assembly can still perform whole-corpus passes for
-  prompt construction; assembly-time projected side effects are now measured
-  and selected for the next narrow-path candidate.
+  prompt construction; currently selected assembly-time projected side effects
+  have been narrowed.
 - Full-bootstrap fallbacks for sprawling resources such as `settings`, `state`,
   and `pluginStorage` remain expensive.
 - General asset byte reads remain one request per asset, although metadata

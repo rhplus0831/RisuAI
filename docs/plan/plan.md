@@ -47,8 +47,8 @@ route/protocol manifest. Later commits closed Phase 1 correctness risks,
 narrowed hot Phase 2 command families (`settings`, plugin storage, chat
 metadata, message history, and generation persistence), added focused Phase 2
 generation/prompt side-effect metrics and reviewed them to select assembly
-side-effect persistence as the next narrow-path candidate, reduced Phase 3 read
-costs, implemented Phase 4 stream/generation runtime resilience, landed Phase 5
+side-effect persistence, narrowed that path, reduced Phase 3 read costs,
+implemented Phase 4 stream/generation runtime resilience, landed Phase 5
 revision/event/import/export/asset durability work, suppressed Phase 6 watcher
 echoes and no-op settings writes, and added Phase 7 route-local limits,
 wildcard manifest coverage, read-only writer-header hygiene, HEAD/body-parser
@@ -91,8 +91,8 @@ passes, full-bootstrap fallback budgets, optional lorebook bulk reads, ordinary
 
 ## Suggested Execution Order
 
-1. Continue Phase 2 with the measured assembly side-effect narrow-path
-   candidate.
+1. Continue Phase 2 only when fresh metrics identify another narrow source area
+   with explicit protocol behavior.
 2. Use Phase 3 for optional lorebook bulk reads or full-resync budgets when
    measurement shows they matter.
 3. Refresh Phase 8 gates and [`latest-verification.md`](latest-verification.md)

@@ -1,6 +1,6 @@
 # Generation Assembly Side-Effect Narrow Path
 
-Status: planned.
+Status: implemented on 2026-06-01.
 
 ## Source Anchors
 
@@ -16,16 +16,18 @@ Reduce the hydrated command mutation cost for eligible prompt-assembly
 side-effect persistence selected by
 [`generation-prompt-metric-review.md`](generation-prompt-metric-review.md).
 
-Candidate runtime batch:
+Implemented runtime batch:
 
-- Add a narrow assembly side-effect persistence path used by
+- Added a narrow assembly side-effect persistence path used by
   `persistAssemblyMutations()` when the assembly delta is limited to:
   chat `scriptstate` writes/deletes, post-`editinput` transcript replacement,
   or both.
-- Avoid loading and cloning every hydrated chat in the generic
+- Avoided loading and cloning every hydrated chat in the generic
   `applyJsonCommandMutation` path for those eligible deltas.
-- Keep unsupported or widened assembly deltas on the existing hydrated command
-  path until a later slice proves a safe narrower contract.
+- Preserved the existing "nothing to persist" skip behavior for plain sends and
+  kept preview/preview-prompt paths read-only.
+- Repaired route-owned transcript rows that arrive without `chatId` before
+  validation, preserving the old hydrated sync behavior for Lua-added messages.
 
 ## Durable Mutation Behavior
 
@@ -58,11 +60,26 @@ Candidate runtime batch:
 - Clients continue to reconcile through the existing command-event stream or
   full-bootstrap fallback on gaps.
 
+## Implemented Result
+
+- Eligible assembly side effects now use `applyTargetedCommandMutation` with
+  `mutationPath: "targeted-assembly"`.
+- Chat-var-only deltas write message-free `db.json` after the SQLite commit and
+  emit unchanged `chat.scriptstate.updated` events.
+- Transcript rewrites replace only the target chat's active SQLite messages and
+  emit unchanged `messages.replaced` events.
+- Combined transcript-plus-chat-var deltas perform both target writes in one
+  transaction and write message-free `db.json` after commit.
+- Plain sends and durable sends with no assembly side effect still skip assembly
+  persistence.
+
 ## Proof Commands
 
-- `RISU_PROTOCOL_METRICS=1 pnpm api:test -- server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/durableGeneration.test.ts`
-- `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`
-- `pnpm client-thinning:audit`
+- Passed:
+  `RISU_PROTOCOL_METRICS=1 pnpm api:test -- server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/durableGeneration.test.ts`
+- Passed:
+  `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`
+- Passed: `pnpm client-thinning:audit`
 
 ## Done When
 

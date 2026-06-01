@@ -1,7 +1,7 @@
 # Phase 2: Command Write Cost
 
-Status: hot command paths targeted; remaining work is measured
-generation/prompt side-effect cost.
+Status: hot command paths targeted; generation assembly side-effect writes
+narrowed.
 
 Goal: reduce whole-corpus command mutation work while preserving revision,
 event, transaction, and projection contracts.
@@ -39,8 +39,8 @@ event, transaction, and projection contracts.
   implemented; representative generation/prompt metric samples identify
   assembly-time side effects as the remaining hydrated mutation path.
 - [`generation-assembly-side-effect-narrow-path.md`](slices/phase-2-command-write-cost/generation-assembly-side-effect-narrow-path.md) -
-  planned; move eligible assembly-time scriptstate and transcript-rewrite
-  persistence off the hydrated command mutation path.
+  implemented; eligible assembly-time scriptstate and transcript-rewrite
+  persistence use the `targeted-assembly` mutation path.
 
 ## Exit Criteria
 

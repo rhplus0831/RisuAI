@@ -715,7 +715,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       })
       expect(chatVar.find((entry) => entry.metric === 'command_mutation')).toMatchObject({
         type: 'chat.scriptstate.updated',
-        mutationPath: 'hydrated',
+        mutationPath: 'targeted-assembly',
       })
 
       await seedDatabase(
@@ -744,7 +744,36 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       })
       expect(transcriptRewrite.find((entry) => entry.metric === 'command_mutation')).toMatchObject({
         type: 'messages.replaced',
-        mutationPath: 'hydrated',
+        mutationPath: 'targeted-assembly',
+      })
+
+      await seedDatabase(
+        harness.app,
+        auth.assertion,
+        dbWithSubmitLua(`
+          function onInput(triggerId)
+            addChat(triggerId, 'char', 'INPUT-LUA-ROW')
+            setState(triggerId, 'inputseen', 1)
+          end
+        `),
+      )
+      before = metrics.length
+      await postChat(auth.assertion, basePayload)
+      const combinedSideEffects = collect('input-trigger-transcript-and-chat-var', before)
+      expect(
+        combinedSideEffects.find((entry) => entry.metric === 'generation_assembly_persistence'),
+      ).toMatchObject({
+        status: 'ok',
+        mode: 'send',
+        eventType: 'messages.replaced',
+        persistMessages: true,
+        hasVarWrite: true,
+      })
+      expect(
+        combinedSideEffects.find((entry) => entry.metric === 'command_mutation'),
+      ).toMatchObject({
+        type: 'messages.replaced',
+        mutationPath: 'targeted-assembly',
       })
 
       await seedDatabase(harness.app, auth.assertion, fixtureDatabase)

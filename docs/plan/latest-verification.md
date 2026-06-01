@@ -9,10 +9,11 @@ runs here.
 
 ## Latest Run
 
-- Runtime/code commit under test: this generation prompt metric review slice.
-- Scope: Phase 2 generation/prompt metric review, selected assembly
-  side-effect narrow-path candidate, existing command metric review gates, and
-  client-thinning architecture audit.
+- Runtime/code commit under test: this generation assembly side-effect narrow
+  path slice.
+- Scope: Phase 2 targeted assembly side-effect persistence, generation/prompt
+  metric review, existing command metric review gates, and client-thinning
+  architecture audit.
 - Result: passed.
 
 | Command                                                                                                                                        | Result                                                              |
@@ -27,8 +28,8 @@ runs here.
   only the named files.
 - Generation/prompt measurement is opt-in through `RISU_PROTOCOL_METRICS`; the
   runtime protocol behavior and SSE frame contract are unchanged.
-- The focused metric review proves assembly-time chat-var and transcript
-  rewrite side effects still report `mutationPath: "hydrated"`; durable final
+- The focused metric review now proves assembly-time chat-var and transcript
+  rewrite side effects report `mutationPath: "targeted-assembly"`; durable final
   generation persistence remains `targeted-generation` with `dbJsonWriteMs: 0`.
 - Command metric timings are review readouts; the maintained hard checks are
   metric shape, known review gates, retained mutation paths, and

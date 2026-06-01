@@ -27,12 +27,14 @@ import {
 } from '../prompt/assemble.js'
 import type { ResolveStoredAsset, StoredAssetPurpose } from '../prompt/assetLookup.js'
 import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
-import { createMessageRecord } from '../commands/messages.js'
+import { createMessageRecord, validateUniqueMessageIds } from '../commands/messages.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
-import { applyJsonCommandMutation, applyTargetedCommandMutation } from '../commands/mutations.js'
+import { applyTargetedCommandMutation } from '../commands/mutations.js'
 import {
   addAlternateMessage,
+  activeMessageIdExistsOutsideChat,
   clearAlternateMessages,
+  replaceActiveChatMessages,
   writeGenerationChatMessage,
 } from '../messageStore.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
@@ -422,14 +424,25 @@ function isPersistingMode(mode: AssembleInput['mode']): boolean {
   return mode === 'send' || mode === 'continue' || mode === 'regenerate'
 }
 
+function createAssemblyTranscriptMessage(input: unknown, index: number) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return createMessageRecord(input, `submitMessages[${index}]`)
+  }
+  const draft = structuredClone(input) as Record<string, unknown>
+  if (typeof draft.chatId !== 'string' || draft.chatId.trim().length === 0) {
+    draft.chatId = randomUUID()
+  }
+  return createMessageRecord(draft, `submitMessages[${index}]`)
+}
+
 /**
  * Persist the assembly-time chat-var delta the assembler computed
  * (`mutations.chatVarMutations`) and, when a submit-time
  * input trigger / `editinput` rewrote the transcript — the post-`editinput`
- * submit transcript (`submitMessages`), through the same JSON command machinery
- * the scriptstate command uses (`applyJsonCommandMutation`): one revision bump,
- * one event, rollback on failure. The route owns these writes and returns the new
- * revision over SSE so the browser can reconcile its cached command revision.
+ * submit transcript (`submitMessages`), through a targeted command mutation:
+ * one revision bump, one event, rollback on failure. The route owns these writes
+ * and returns the new revision over SSE so the browser can reconcile its cached
+ * command revision.
  *
  * The transcript is persisted **only** when `submitTranscriptChanged` is set, so a
  * plain send (no input trigger / editinput) leaves the user-message write to the
@@ -475,19 +488,24 @@ function persistAssemblyMutations(args: {
   const persistStartedAt = protocolNowMs()
   let eventType = ''
   try {
-    const result = applyJsonCommandMutation<{ chatId: string }>({
+    const replacement = persistMessages
+      ? args.submitMessages!.map((message, index) =>
+          createAssemblyTranscriptMessage(message, index),
+        )
+      : undefined
+    if (replacement) {
+      validateUniqueMessageIds(replacement)
+    }
+    const result = applyTargetedCommandMutation<{ chatId: string }>({
       db: args.db,
       dataDir: args.dataDir,
       baseRevision,
       eventSink: args.eventSink,
-      mutate(database) {
+      mutationPath: 'targeted-assembly',
+      writeDatabase: hasVarWrite,
+      mutate(database, targetDb) {
         const characters = normalizeAllCharacterChats(database)
         const { character, chat } = requireChatLocation(characters, args.input.chatId)
-        if (persistMessages) {
-          // Route-owned write of the submit transcript (server is authoritative for
-          // the input trigger + editinput rewrite; the browser sent the raw text).
-          ;(chat as { message: Message[] }).message = structuredClone(args.submitMessages!)
-        }
         if (hasVarWrite) {
           chat.scriptstate ??= {}
           for (const key of deleteKeys) {
@@ -497,6 +515,14 @@ function persistAssemblyMutations(args: {
           if (Object.keys(chat.scriptstate).length === 0) {
             delete chat.scriptstate
           }
+        }
+        if (replacement) {
+          for (const message of replacement) {
+            if (activeMessageIdExistsOutsideChat(targetDb, message.chatId, args.input.chatId)) {
+              throw new ValidationError(`Duplicate message id: ${message.chatId}`)
+            }
+          }
+          replaceActiveChatMessages(targetDb, args.input.chatId, replacement)
         }
         const eventTemplate = persistMessages
           ? COMMAND_EVENT_CATALOG.messagesReplaced
