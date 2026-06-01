@@ -349,6 +349,34 @@ describe('web bootstrap startup source', () => {
     expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
   })
 
+  it('advances empty targeted projection events without full bootstrap or hydration reset', async () => {
+    await loadWebInitialDatabase()
+    expect(peekCachedServerCommandRevision()).toBe(5)
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'fields' as const,
+      fields: {},
+    }))
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({ type: 'asset.created', revision: 6, resource: 'asset' })
+
+    await vi.waitFor(() => {
+      expect(peekCachedServerCommandRevision()).toBe(6)
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('asset', {
+      id: undefined,
+      parentId: undefined,
+    })
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+    expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
+    expect(hydrationSpies.hydrateActiveChat).not.toHaveBeenCalled()
+  })
+
   it('full-bootstraps when the server cannot narrow the resource', async () => {
     await loadWebInitialDatabase()
     serverBootstrapState.response = {

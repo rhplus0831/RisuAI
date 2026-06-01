@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../src/app.js'
@@ -113,6 +113,16 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
   it('returns empty fields for the asset resource (no projected change)', async () => {
     await importDatabase({ characters: [] })
     const res = await getProjection('asset')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(body.fields).toEqual({})
+  })
+
+  it('does not load db.json for the empty asset projection resource', async () => {
+    writeFileSync(path.join(harness.dataDir, 'db.json'), '{not valid json')
+
+    const res = await getProjection('asset')
+    expect(res.statusCode).toBe(200)
     const body = res.json()
     expect(body.mode).toBe('fields')
     expect(body.fields).toEqual({})

@@ -128,6 +128,15 @@ export function registerProjectionRoutes(
         return response
       }
 
+      if (fieldKeys.length === 0) {
+        const response = { revision, resource, mode: 'fields' as const, fields: {} }
+        emitProjectionMetric(req.log, resource, revision, response, {
+          fieldCount: 0,
+          fieldKeys,
+        })
+        return response
+      }
+
       // Ship chat stubs (message-free) here too; the client re-hydrates the open
       // chat after merging a `characters` projection (see bootstrap.ts hydration).
       const persisted = loadStubProjection(db, dataDir)
