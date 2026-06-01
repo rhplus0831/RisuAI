@@ -167,6 +167,7 @@ interface ProtocolMetric {
   promptMs?: number
   databaseLoadCount?: number
   databaseLoadMs?: number
+  stageTimingsMs?: Record<string, number>
   chatVarMutationCount?: number
   persistMessages?: boolean
   hasVarWrite?: boolean
@@ -174,6 +175,24 @@ interface ProtocolMetric {
   mutationPath?: string
   dbJsonWriteMs?: number
   totalMs?: number
+}
+
+const EXPECTED_PROMPT_ASSEMBLY_STAGES = [
+  'scope_resolution',
+  'submit_transforms',
+  'static_plain_slots',
+  'lorebook_preflight',
+  'history_bias',
+  'memory_bridge',
+  'final_render',
+  'budget',
+] as const
+
+function expectPromptAssemblyStageTimings(metric: ProtocolMetric | undefined): void {
+  expect(metric?.stageTimingsMs).toBeDefined()
+  for (const stage of EXPECTED_PROMPT_ASSEMBLY_STAGES) {
+    expect(metric?.stageTimingsMs?.[stage]).toBeGreaterThanOrEqual(0)
+  }
 }
 
 /** Parse an `event:`/`data:` SSE body into ordered events. */
@@ -226,6 +245,7 @@ function metricSummary(metric: ProtocolMetric | undefined): Record<string, unkno
       ? { databaseLoadCount: metric.databaseLoadCount }
       : {}),
     ...(typeof metric.databaseLoadMs === 'number' ? { databaseLoadMs: metric.databaseLoadMs } : {}),
+    ...(metric.stageTimingsMs ? { stageTimingsMs: metric.stageTimingsMs } : {}),
     ...(typeof metric.chatVarMutationCount === 'number'
       ? { chatVarMutationCount: metric.chatVarMutationCount }
       : {}),
@@ -632,6 +652,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(assembly?.durationMs).toBeGreaterThanOrEqual(0)
       expect(assembly?.promptMs).toBeGreaterThanOrEqual(0)
       expect(assembly?.databaseLoadMs).toBeGreaterThanOrEqual(0)
+      expectPromptAssemblyStageTimings(assembly)
 
       const persistence = metrics.find(
         (entry) => entry.metric === 'generation_assembly_persistence',
@@ -674,11 +695,13 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       let before = metrics.length
       await postChat(auth.assertion, basePayload)
       const plain = collect('plain-send', before)
-      expect(plain.find((entry) => entry.metric === 'generation_prompt_assembly')).toMatchObject({
+      const plainAssembly = plain.find((entry) => entry.metric === 'generation_prompt_assembly')
+      expect(plainAssembly).toMatchObject({
         status: 'ok',
         mode: 'send',
         databaseLoadCount: 1,
       })
+      expectPromptAssemblyStageTimings(plainAssembly)
       expect(
         plain.find((entry) => entry.metric === 'generation_assembly_persistence'),
       ).toMatchObject({
@@ -704,6 +727,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       before = metrics.length
       await postChat(auth.assertion, basePayload)
       const chatVar = collect('chat-var-side-effect', before)
+      expectPromptAssemblyStageTimings(
+        chatVar.find((entry) => entry.metric === 'generation_prompt_assembly'),
+      )
       expect(
         chatVar.find((entry) => entry.metric === 'generation_assembly_persistence'),
       ).toMatchObject({
@@ -733,6 +759,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       before = metrics.length
       await postChat(auth.assertion, basePayload)
       const transcriptRewrite = collect('editinput-transcript-rewrite', before)
+      expectPromptAssemblyStageTimings(
+        transcriptRewrite.find((entry) => entry.metric === 'generation_prompt_assembly'),
+      )
       expect(
         transcriptRewrite.find((entry) => entry.metric === 'generation_assembly_persistence'),
       ).toMatchObject({
@@ -760,6 +789,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       before = metrics.length
       await postChat(auth.assertion, basePayload)
       const combinedSideEffects = collect('input-trigger-transcript-and-chat-var', before)
+      expectPromptAssemblyStageTimings(
+        combinedSideEffects.find((entry) => entry.metric === 'generation_prompt_assembly'),
+      )
       expect(
         combinedSideEffects.find((entry) => entry.metric === 'generation_assembly_persistence'),
       ).toMatchObject({
@@ -786,13 +818,15 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       })
       expect(preview.statusCode).toBe(200)
       const previewMetrics = collect('preview-prompt', before)
-      expect(
-        previewMetrics.find((entry) => entry.metric === 'generation_prompt_assembly'),
-      ).toMatchObject({
+      const previewAssembly = previewMetrics.find(
+        (entry) => entry.metric === 'generation_prompt_assembly',
+      )
+      expect(previewAssembly).toMatchObject({
         status: 'ok',
         mode: 'preview_prompt',
         databaseLoadCount: 1,
       })
+      expectPromptAssemblyStageTimings(previewAssembly)
       expect(
         previewMetrics.some((entry) => entry.metric === 'generation_assembly_persistence'),
       ).toBe(false)
@@ -811,11 +845,13 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       before = metrics.length
       await postChat(auth.assertion, { ...basePayload, durable: true })
       const durable = collect('durable-generation', before)
-      expect(durable.find((entry) => entry.metric === 'generation_prompt_assembly')).toMatchObject({
+      const durableAssembly = durable.find((entry) => entry.metric === 'generation_prompt_assembly')
+      expect(durableAssembly).toMatchObject({
         status: 'ok',
         mode: 'send',
         databaseLoadCount: 1,
       })
+      expectPromptAssemblyStageTimings(durableAssembly)
       expect(
         durable.find((entry) => entry.metric === 'generation_assembly_persistence'),
       ).toMatchObject({

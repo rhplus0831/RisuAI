@@ -1,6 +1,6 @@
 # Generation Prompt Construction Pass Measurement
 
-Status: candidate; analysis only, not implemented.
+Status: implemented measurement; no runtime narrowing yet.
 
 ## Source Anchors
 
@@ -38,6 +38,26 @@ Measurement-only first pass:
   target a narrower prompt-state loader, a cached read model, or no runtime
   change.
 
+## Implemented Scope
+
+The measurement pass extends the existing opt-in `generation_prompt_assembly`
+metric with `stageTimingsMs`. The current stage keys are:
+
+- `scope_resolution`
+- `submit_transforms`
+- `static_plain_slots`
+- `lorebook_preflight`
+- `history_bias`
+- `memory_bridge`
+- `final_render`
+- `budget`
+
+The existing `databaseLoadCount` and `databaseLoadMs` fields continue to report
+the hydrated persisted database load through `loadPersistedWithMessages()`.
+Stage timings are recorded through an optional assembler dependency callback, so
+the assembler stays storage-global-free and the extra timing work is only wired
+when `RISU_PROTOCOL_METRICS` is enabled.
+
 ## Protocol Behavior
 
 - No route, event, revision, SSE, provider payload, or storage contract changes
@@ -55,9 +75,14 @@ generation error frames, and command-event reconciliation.
 
 - Focused metrics identify whether the remaining cost is dominated by database
   hydration, lorebook/history construction, memory, render/budget, or another
-  named stage.
-- The next implementation slice, if any, names one durable read or construction
-  area and its proof command.
+  named stage. The 2026-06-02 focused fixture run found plain, preview, and
+  durable sends at roughly 2ms with database load around 0.34-0.38ms. The
+  largest fixture costs were Lua/input-transform scenarios, where
+  `submit_transforms` and `final_render` dominated.
+- The next implementation slice, if any, must name one durable read or
+  construction area and its proof command. No runtime narrowing is justified
+  from the focused fixture run alone; use the metric on lorebook-heavy,
+  asset-heavy, memory-enabled, or real user corpora before changing load shape.
 - The measurement stays opt-in and cheap when protocol metrics are disabled.
 
 ## Proof Commands

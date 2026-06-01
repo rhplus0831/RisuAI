@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
+import { performance } from 'node:perf_hooks'
 import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
@@ -95,6 +96,7 @@ export interface AssembleDeps {
   loadMemoryDatabase?(): DatabaseSync | null
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
+  recordAssemblyStageTiming?: (stage: PromptAssemblyStage, durationMs: number) => void
   /**
    * Resolve a stored-asset reference (sha256 id or `assets/<id>.<ext>` path) to
    * prompt multimodal bytes. The route binds this to the on-disk assets store;
@@ -102,6 +104,16 @@ export interface AssembleDeps {
    */
   resolveStoredAsset?: ResolveStoredAsset
 }
+
+export type PromptAssemblyStage =
+  | 'scope_resolution'
+  | 'submit_transforms'
+  | 'static_plain_slots'
+  | 'lorebook_preflight'
+  | 'history_bias'
+  | 'memory_bridge'
+  | 'final_render'
+  | 'budget'
 
 export interface PromptMemoryChunkPlanningDiagnostics {
   attempted: boolean
@@ -314,6 +326,7 @@ export interface AssemblyState {
   promptMemorySelectionDiagnostics?: PromptMemoryAdapterDiagnostics
   promptMemoryRowAssemblyDiagnostics?: PromptMemoryRowAssemblyDiagnostics
   promptMemoryFollowUpDiagnostics?: PromptMemoryFollowUpDiagnostics
+  recordAssemblyStageTiming?: (stage: PromptAssemblyStage, durationMs: number) => void
   promptMemoryRows?: OpenAIChat[]
   // --- Final render + budget (set by `renderAndBudget`) ---
   /** The budgeted flat prompt for dispatch. */
@@ -1294,18 +1307,20 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
   const db = state.database
 
   const lua = buildLuaEditRequest(state)
-  const render = await renderFinalPrompt({
-    ctx,
-    currentChar,
-    unformated,
-    promptTemplate: state.promptTemplate,
-    usingPromptTemplate: state.usingPromptTemplate,
-    formatOrder: state.formatOrder,
-    memories: state.memories,
-    positionParser: state.positionParser,
-    isContinue: state.isContinue,
-    editRequest: lua.editRequest,
-  })
+  const render = await measureAssemblyStageAsync(state, 'final_render', () =>
+    renderFinalPrompt({
+      ctx,
+      currentChar,
+      unformated,
+      promptTemplate: state.promptTemplate,
+      usingPromptTemplate: state.usingPromptTemplate,
+      formatOrder: state.formatOrder,
+      memories: state.memories,
+      positionParser: state.positionParser,
+      isContinue: state.isContinue,
+      editRequest: lua.editRequest,
+    }),
+  )
   state.promptText = render.promptText
   // A Lua `editRequest` hook may have written chat vars; fold its writes into
   // the assembly state so the route persists them (the var engine already wrote
@@ -1315,12 +1330,14 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
     syncWorkingScriptstate(state)
   }
 
-  const budget = finalizeRequestBudget({
-    db,
-    formated: render.formated,
-    maxContextTokens: db.maxContext ?? 0,
-    maxResponse: db.maxResponse ?? 0,
-  })
+  const budget = measureAssemblyStage(state, 'budget', () =>
+    finalizeRequestBudget({
+      db,
+      formated: render.formated,
+      maxContextTokens: db.maxContext ?? 0,
+      maxResponse: db.maxResponse ?? 0,
+    }),
+  )
   if (!budget.ok) {
     state.stopSending = true
     state.abortReason = 'overflow'
@@ -1333,6 +1350,50 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
   state.outputTokens = budget.outputTokens
 }
 
+function nowMs(): number {
+  return performance.now()
+}
+
+function roundedDurationMs(startMs: number): number {
+  return Math.round((performance.now() - startMs) * 100) / 100
+}
+
+function recordAssemblyStageTiming(
+  state: Pick<AssemblyState, 'recordAssemblyStageTiming'>,
+  stage: PromptAssemblyStage,
+  startMs: number,
+): void {
+  state.recordAssemblyStageTiming?.(stage, roundedDurationMs(startMs))
+}
+
+function measureAssemblyStage<T>(
+  state: Pick<AssemblyState, 'recordAssemblyStageTiming'>,
+  stage: PromptAssemblyStage,
+  run: () => T,
+): T {
+  if (!state.recordAssemblyStageTiming) return run()
+  const startedAt = nowMs()
+  try {
+    return run()
+  } finally {
+    recordAssemblyStageTiming(state, stage, startedAt)
+  }
+}
+
+async function measureAssemblyStageAsync<T>(
+  state: Pick<AssemblyState, 'recordAssemblyStageTiming'>,
+  stage: PromptAssemblyStage,
+  run: () => Promise<T>,
+): Promise<T> {
+  if (!state.recordAssemblyStageTiming) return run()
+  const startedAt = nowMs()
+  try {
+    return await run()
+  } finally {
+    recordAssemblyStageTiming(state, stage, startedAt)
+  }
+}
+
 /**
  * Assemble the full prompt payload. Bad request IDs throw `EntityNotFoundError`;
  * a start trigger or budget overflow returns `{ stopSending: true }` rather
@@ -1342,20 +1403,27 @@ export async function assemblePrompt(
   input: AssembleInput,
   deps: AssembleDeps,
 ): Promise<AssembleResult> {
-  const state = beginAssembly(input, deps)
-  prepareRegenerateTranscript(state)
-  // The submit-time input trigger runs before the user message is appended;
-  // `editinput` then rewrites that user row. This mirrors the browser
-  // chat-screen submit handler while the server receives the raw user text.
-  await runInputTrigger(state)
-  appendUserMessageRow(state)
-  await applyEditInput(state)
-  captureSubmitTranscript(state)
-  applyCurrentChatRunVars(state)
-  fillStaticSlots(state)
-  fillLorebookSlots(state)
-  await fillHistoryAndBias(state)
-  fillMemoryAndPostHistory(state)
+  const state = measureAssemblyStage(
+    { recordAssemblyStageTiming: deps.recordAssemblyStageTiming },
+    'scope_resolution',
+    () => beginAssembly(input, deps),
+  )
+  state.recordAssemblyStageTiming = deps.recordAssemblyStageTiming
+  await measureAssemblyStageAsync(state, 'submit_transforms', async () => {
+    prepareRegenerateTranscript(state)
+    // The submit-time input trigger runs before the user message is appended;
+    // `editinput` then rewrites that user row. This mirrors the browser
+    // chat-screen submit handler while the server receives the raw user text.
+    await runInputTrigger(state)
+    appendUserMessageRow(state)
+    await applyEditInput(state)
+    captureSubmitTranscript(state)
+    applyCurrentChatRunVars(state)
+  })
+  measureAssemblyStage(state, 'static_plain_slots', () => fillStaticSlots(state))
+  measureAssemblyStage(state, 'lorebook_preflight', () => fillLorebookSlots(state))
+  await measureAssemblyStageAsync(state, 'history_bias', () => fillHistoryAndBias(state))
+  measureAssemblyStage(state, 'memory_bridge', () => fillMemoryAndPostHistory(state))
   await renderAndBudget(state)
 
   if (state.stopSending) {

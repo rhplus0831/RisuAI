@@ -19,7 +19,8 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-All original numbered-phase implementation slices are implemented. The
+All original numbered-phase implementation slices are implemented. The Phase 2
+prompt-construction measurement is now implemented for focused review runs. The
 2026-06-02 active-risk analysis added candidate measurement slices for the
 remaining performance risks; use
 [`active-risk-analysis.md`](active-risk-analysis.md) for the evidence and
@@ -28,10 +29,11 @@ maintained verification.
 
 Prefer one of these next:
 
-1. Run the Phase 2 candidate
+1. Run the Phase 2
    [`generation-prompt-construction-pass-measurement.md`](phases/slices/phase-2-command-write-cost/generation-prompt-construction-pass-measurement.md)
-   to split prompt assembly timing by load/construction phase before changing
-   runtime behavior.
+   metric summary against lorebook-heavy, asset-heavy, memory-enabled, or real
+   user corpora before changing runtime behavior. A follow-up implementation
+   slice should name the single stage that dominates.
 2. Run a Phase 3 candidate only after diagnostics show a concrete expensive
    fallback or fanout workflow:
    [`sprawling-resource-full-bootstrap-measurement.md`](phases/slices/phase-3-read-projection-efficiency/sprawling-resource-full-bootstrap-measurement.md)
@@ -57,7 +59,7 @@ Prefer one of these next:
 
 ## Selection Order
 
-1. Phase 2 prompt-construction measurement.
+1. Phase 2 prompt-construction measurement on representative data.
 2. Measured narrow Phase 3 or Phase 5 work with a candidate slice.
 3. Additional route schemas only when touching a stable route envelope.
 4. Refresh [`latest-verification.md`](latest-verification.md) after the next

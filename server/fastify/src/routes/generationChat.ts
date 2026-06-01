@@ -24,6 +24,7 @@ import {
   type AssembleMutationPayload,
   type AssembleResult,
   type AssemblyState,
+  type PromptAssemblyStage,
 } from '../prompt/assemble.js'
 import type { ResolveStoredAsset, StoredAssetPurpose } from '../prompt/assetLookup.js'
 import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
@@ -49,7 +50,12 @@ import { ACTIVE_WRITER_SESSION_HEADER } from '../activeWriter.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import type { JobClient, StreamJob } from '../streamJobs.js'
 import { getWritableBufferedBytes, writeBoundedRaw } from '../streamBackpressure.js'
-import { emitProtocolMetric, protocolDurationMs, protocolNowMs } from '../protocolMetrics.js'
+import {
+  emitProtocolMetric,
+  protocolDurationMs,
+  protocolMetricsEnabled,
+  protocolNowMs,
+} from '../protocolMetrics.js'
 import {
   deleteGenerationFinalizationRetry,
   enqueueGenerationFinalizationRetry,
@@ -240,6 +246,16 @@ interface RouteAssembleDeps extends AssembleDeps {
 interface PromptAssemblyMeasurement {
   databaseLoadCount: number
   databaseLoadMs: number
+  stageTimingsMs: Partial<Record<PromptAssemblyStage, number>>
+}
+
+function addMeasurementMs(
+  measurement: PromptAssemblyMeasurement,
+  key: PromptAssemblyStage,
+  durationMs: number,
+): void {
+  measurement.stageTimingsMs[key] =
+    Math.round(((measurement.stageTimingsMs[key] ?? 0) + durationMs) * 100) / 100
 }
 
 const LOCAL_ASSET_PATH_RE = /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i
@@ -329,7 +345,7 @@ function loadDatabaseDeps(
   const resolveStoredAsset = createRequestScopedStoredAssetResolver(dataDir)
   return {
     loadDatabase: () => {
-      const startedAt = protocolNowMs()
+      const startedAt = measurement ? protocolNowMs() : 0
       database = loadPersistedWithMessages(db, dataDir).database as Database | null
       if (measurement) {
         measurement.databaseLoadCount += 1
@@ -341,6 +357,9 @@ function loadDatabaseDeps(
     loadPromptMemoryQueryVectors: () => [],
     getDatabase: () => database,
     resolveStoredAsset,
+    recordAssemblyStageTiming: measurement
+      ? (stage, durationMs) => addMeasurementMs(measurement, stage, durationMs)
+      : undefined,
   }
 }
 
@@ -349,8 +368,10 @@ async function assemblePromptWithMetrics(
   dataDir: string,
   db: DatabaseSync,
 ): Promise<{ result: AssembleResult; deps: RouteAssembleDeps; promptMs: number }> {
-  const measurement: PromptAssemblyMeasurement = { databaseLoadCount: 0, databaseLoadMs: 0 }
-  const metricStartedAt = protocolNowMs()
+  const measurement: PromptAssemblyMeasurement | undefined = protocolMetricsEnabled()
+    ? { databaseLoadCount: 0, databaseLoadMs: 0, stageTimingsMs: {} }
+    : undefined
+  const metricStartedAt = measurement ? protocolNowMs() : 0
   const startedAt = Date.now()
   const deps = loadDatabaseDeps(dataDir, db, measurement)
   try {
@@ -362,8 +383,9 @@ async function assemblePromptWithMetrics(
       mode: input.mode,
       durationMs: protocolDurationMs(metricStartedAt),
       promptMs,
-      databaseLoadCount: measurement.databaseLoadCount,
-      databaseLoadMs: Math.round(measurement.databaseLoadMs * 100) / 100,
+      databaseLoadCount: measurement?.databaseLoadCount ?? 0,
+      databaseLoadMs: Math.round((measurement?.databaseLoadMs ?? 0) * 100) / 100,
+      stageTimingsMs: measurement?.stageTimingsMs ?? {},
       ...(result.stopSending ? { stopReason: result.abortReason ?? 'unknown' } : {}),
     })
     return { result, deps, promptMs }
@@ -374,8 +396,9 @@ async function assemblePromptWithMetrics(
       mode: input.mode,
       durationMs: protocolDurationMs(metricStartedAt),
       promptMs: Date.now() - startedAt,
-      databaseLoadCount: measurement.databaseLoadCount,
-      databaseLoadMs: Math.round(measurement.databaseLoadMs * 100) / 100,
+      databaseLoadCount: measurement?.databaseLoadCount ?? 0,
+      databaseLoadMs: Math.round((measurement?.databaseLoadMs ?? 0) * 100) / 100,
+      stageTimingsMs: measurement?.stageTimingsMs ?? {},
       error: errorMessage(err, 'prompt assembly failed'),
     })
     throw err

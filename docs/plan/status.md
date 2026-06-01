@@ -8,7 +8,8 @@ for the next task.
 
 Current status reflects the current codebase through the 2026-06-02 bulk
 character-lorebook hydration, full-bootstrap resync diagnostics, generation
-assembly narrowing, and chat SSE taxonomy work.
+assembly narrowing, chat SSE taxonomy work, and prompt-construction stage
+measurement.
 The active performance risks were re-analyzed on 2026-06-02 and routed through
 candidate measurement slices in
 [`active-risk-analysis.md`](active-risk-analysis.md).
@@ -28,9 +29,12 @@ Completed work:
   message-free mutation path. `message.appended`, message
   edit/delete/truncate/replace commands, and `generation.persisted` use
   targeted SQLite paths. Generation prompt assembly and assembly-time
-  side-effect persistence now emit opt-in protocol metrics. Assembly-time chat
-  scriptstate and transcript-rewrite persistence use the targeted assembly
-  mutation path instead of the hydrated command path.
+  side-effect persistence now emit opt-in protocol metrics. Prompt assembly
+  metrics split database load from scope resolution, submit transforms,
+  static/plain slots, lorebook/preflight, history/bias, memory bridge, final
+  render, and budget stages. Assembly-time chat scriptstate and
+  transcript-rewrite persistence use the targeted assembly mutation path
+  instead of the hydrated command path.
 - Phase 3 read-side optimizations are in place: targeted projection field
   selectors for known resource families, an in-process asset metadata index,
   authenticated bulk all-chat/all-character-lorebook hydration, and
@@ -76,7 +80,9 @@ Active performance risks:
 
 - Generation and prompt assembly can still perform whole-corpus passes for
   prompt construction; currently selected assembly-time projected side effects
-  have been narrowed. Route the next pass through
+  have been narrowed, and opt-in stage timings now identify which construction
+  phase dominates a scenario. Route any runtime narrowing through measured
+  evidence from
   [`generation-prompt-construction-pass-measurement.md`](phases/slices/phase-2-command-write-cost/generation-prompt-construction-pass-measurement.md).
 - Full-bootstrap fallbacks for sprawling resources such as `settings`, `state`,
   and `pluginStorage` remain expensive, but expected fallback reasons now have
@@ -104,9 +110,10 @@ maintained full or focused verification result.
   remaining performance risks are routed to candidate slices.
 - Use [`plan.md`](plan.md) for invariants and phase order.
 - Use [`phases/README.md`](phases/README.md) for all phase docs.
-- Prefer the candidate Phase 2 prompt-construction measurement first, then
-  measured Phase 3 or Phase 5 work only when diagnostics identify a concrete
-  source area.
+- Use the Phase 2 prompt-construction measurement on representative
+  lorebook-heavy, asset-heavy, memory-enabled, or real user corpora before any
+  prompt-construction runtime narrowing; otherwise prefer measured Phase 3 or
+  Phase 5 work only when diagnostics identify a concrete source area.
 
 ## Phase Router
 
@@ -114,7 +121,7 @@ maintained full or focused verification result.
 | --------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current                   | Existing metrics, hydration bounds/aggregation, durable event history, route manifest.                 |
 | [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                                            | Closed P1 correctness hardening.                                                                       |
-| [Phase 2](phases/phase-2-command-write-cost.md)           | Hot command paths targeted; candidate measurement      | Whole-corpus command mutation cost, narrow write paths, prompt-construction measurement.               |
+| [Phase 2](phases/phase-2-command-write-cost.md)           | Hot command paths targeted; measurement implemented    | Whole-corpus command mutation cost, narrow write paths, prompt-construction measurement.               |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Read optimizations implemented; candidate measurements | Targeted projection, asset metadata reads, bulk read endpoints, full resync diagnostics, asset fanout. |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Runtime implemented                                    | Stream, generation reattach, resend, finalization retry, and SSE taxonomy checks.                      |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Implemented; candidate export measurement              | Closed import/export memory and asset mutation durability work; ordinary export materialization.       |
