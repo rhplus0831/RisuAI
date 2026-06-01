@@ -31,7 +31,8 @@ coalesce and skip no-op writes, memory job refresh is SSE-driven, and projection
 applies advance a watcher epoch so settings, chat, and script-definition
 watchers do not echo server-origin updates. Phase 7 now has route-local rate
 limits, wildcard manifest coverage, read-only writer-header hygiene, and
-HEAD/body-parser safeguards.
+HEAD/body-parser safeguards. The initial hot-envelope schema slice is also
+implemented for stable read-only POST envelopes.
 
 Prefer one of these next:
 
@@ -41,9 +42,9 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. Continue Phase 7 route operation safeguards if prioritizing operational
-   coverage, with hot envelope schemas next:
-   [`phase-7-route-operations-coverage.md`](phases/phase-7-route-operations-coverage.md).
+3. Move to Phase 8 verification budgets when prioritizing maintained protocol
+   guardrails:
+   [`phase-8-verification-budgets.md`](phases/phase-8-verification-budgets.md).
 4. Add the Phase 4 SSE taxonomy fixture only when touching chat stream event
    names or payload shapes:
    [`sse-taxonomy-alignment.md`](phases/slices/phase-4-stream-generation-resilience/sse-taxonomy-alignment.md).
@@ -65,8 +66,8 @@ and
   bootstrap, projection, command, revision, and event model.
 - Do not implement server-restart survival for in-flight provider streams
   without a separate durable stream contract.
-- Do not add a generic global rate limit while HEAD/body parser review remains
-  open.
+- Do not add a generic global rate limit as a substitute for route-local
+  operational decisions.
 - Do not widen plugin, local tool, browser effect, or unsupported generation
   behavior as part of protocol performance work.
 
@@ -76,9 +77,9 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Remaining route operation safeguards in Phase 7: hot envelope schemas.
+3. Verification budgets and latest-check recording in Phase 8.
 4. SSE taxonomy verification when chat stream vocabulary changes.
-5. Verification budgets and latest-check recording in Phase 8.
+5. Additional route schemas only when touching a stable route envelope.
 
 ## Proof Commands
 

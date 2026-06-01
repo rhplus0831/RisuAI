@@ -347,6 +347,25 @@ describe('bulk chat message hydration route', () => {
     expect(res.statusCode).toBe(400)
     expect(res.json().error).toBe('invalid_chat_ids')
   })
+
+  it('rejects malformed bulk chat envelope with the route error shape', async () => {
+    await importDatabase({ characters: [] })
+
+    for (const payload of [{}, { ids: 'chat-a' }, { ids: [123] }]) {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/projection/chatMessages/bulk',
+        headers: { 'risu-auth': assertion },
+        payload,
+      })
+
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toEqual({
+        error: 'invalid_chat_ids',
+        reason: 'Expected body.ids to be an array of non-empty chat ids.',
+      })
+    }
+  })
 })
 
 describe('targeted projection field loader', () => {

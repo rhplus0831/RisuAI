@@ -29,6 +29,28 @@ interface BulkAssetsBody {
   assets?: unknown
 }
 
+interface FastifyValidationError {
+  validation?: Array<{
+    dataPath?: string
+    instancePath?: string
+    keyword?: string
+  }>
+}
+
+const existsBodySchema = {
+  body: {
+    type: 'object',
+    required: ['ids'],
+    additionalProperties: true,
+    properties: {
+      ids: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+    },
+  },
+} as const
+
 function applyAssetHeaders(reply: FastifyReply, contentType: string, size: number): void {
   reply.header('content-type', contentType)
   reply.header('cache-control', IMMUTABLE_CACHE)
@@ -58,6 +80,29 @@ function emitCreatedAssetEvents(
   const event = results.find((result) => result.event)?.event
   if (event) {
     eventSink.emit(event)
+  }
+}
+
+function readAttachedValidationError(req: { validationError?: unknown }): unknown {
+  return req.validationError
+}
+
+function assetExistsValidationErrorMessage(error: unknown): string {
+  const validation = (error as FastifyValidationError | undefined)?.validation ?? []
+  const hasInvalidItem = validation.some((entry) => {
+    const path = entry.instancePath ?? entry.dataPath ?? ''
+    return entry.keyword === 'type' && /^\/ids\/\d+$/.test(path)
+  })
+  return hasInvalidItem ? 'ids must be sha256 hex strings' : 'ids: string[] required'
+}
+
+async function validateAssetExistsEnvelope(
+  req: { body?: unknown },
+  reply: FastifyReply,
+): Promise<void> {
+  const body = (req.body ?? {}) as ExistsBody
+  if (!Array.isArray(body.ids)) {
+    reply.code(400).send({ error: 'ids: string[] required' })
   }
 }
 
@@ -195,20 +240,33 @@ export function registerAssetsRoutes(
     reply.code(200).send()
   })
 
-  app.post('/api/v1/assets/exists', async (req, reply) => {
-    const body = (req.body ?? {}) as ExistsBody
-    if (!Array.isArray(body.ids)) {
-      reply.code(400)
-      return { error: 'ids: string[] required' }
-    }
-    const validIds: string[] = []
-    for (const id of body.ids) {
-      if (typeof id !== 'string' || !isValidAssetId(id)) {
+  app.post(
+    '/api/v1/assets/exists',
+    {
+      attachValidation: true,
+      preValidation: validateAssetExistsEnvelope,
+      schema: existsBodySchema,
+    },
+    async (req, reply) => {
+      const validationError = readAttachedValidationError(req)
+      if (validationError) {
         reply.code(400)
-        return { error: 'ids must be sha256 hex strings' }
+        return { error: assetExistsValidationErrorMessage(validationError) }
       }
-      validIds.push(id)
-    }
-    return { missing: missingAssetIds(dataDir, validIds) }
-  })
+      const body = (req.body ?? {}) as ExistsBody
+      if (!Array.isArray(body.ids)) {
+        reply.code(400)
+        return { error: 'ids: string[] required' }
+      }
+      const validIds: string[] = []
+      for (const id of body.ids) {
+        if (typeof id !== 'string' || !isValidAssetId(id)) {
+          reply.code(400)
+          return { error: 'ids must be sha256 hex strings' }
+        }
+        validIds.push(id)
+      }
+      return { missing: missingAssetIds(dataDir, validIds) }
+    },
+  )
 }

@@ -7,7 +7,7 @@ performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
 Current status reflects code and commit history through the Phase 7
-HEAD/body-parser audit slice.
+schema hot-envelope slice.
 
 ## Current Snapshot
 
@@ -51,10 +51,10 @@ Completed work:
   shared watcher epoch so settings, chat, and script-definition watchers refresh
   baselines instead of echoing commands. Existing lorebook no-data-loss coverage
   remains in place.
-- Phase 7 already has explicit route-local rate limits for selected
-  abuse-prone endpoints, route-manifest wildcard/prefix coverage, read-only
-  writer-header hygiene tests, and HEAD/body-parser safeguards. Hot schemas
-  remain planned.
+- Phase 7 is implemented: selected abuse-prone endpoints have explicit
+  route-local rate limits, route-manifest wildcard/prefix coverage is in place,
+  read-only writer-header hygiene is tested, HEAD/body-parser safeguards are in
+  place, and stable read-only POST envelopes now have initial schema coverage.
 
 No P1 plan risks remain open after the Phase 1 commits.
 
@@ -78,8 +78,8 @@ Active performance risks:
 - Use [`plan.md`](plan.md) for invariants and phase order.
 - Use [`phases/README.md`](phases/README.md) for all phase docs.
 - Prefer measured P2/P3 work when a narrow slice exists; otherwise use
-  [`next-steps.md`](next-steps.md) to select the remaining Phase 4 verification,
-  Phase 7 operations, or Phase 8 budget work.
+  [`next-steps.md`](next-steps.md) to select the remaining Phase 4 verification
+  or Phase 8 budget work.
 
 ## Phase Router
 
@@ -92,7 +92,7 @@ Active performance risks:
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Runtime implemented                  | Stream, generation reattach, resend, finalization retry, and SSE taxonomy checks.      |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Implemented                          | Closed import/export memory and asset mutation durability work.                        |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Implemented                          | Closed client loop suppression and watcher echo work.                                  |
-| [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | Hot route schemas, route-limit maintenance, wildcard manifest coverage.                |
+| [Phase 7](phases/phase-7-route-operations-coverage.md)    | Implemented                          | Route operational safeguards, route-limit maintenance, manifest coverage.              |
 | [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                    |
 
 ## Maintenance Rules

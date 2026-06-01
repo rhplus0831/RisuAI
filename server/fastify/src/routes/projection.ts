@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
@@ -79,6 +79,20 @@ const NARROW_STUBBED_PROJECTION_RESOURCES = new Set([
   'module',
 ])
 
+const bulkChatMessagesBodySchema = {
+  body: {
+    type: 'object',
+    required: ['ids'],
+    additionalProperties: true,
+    properties: {
+      ids: {
+        type: 'array',
+        items: { type: 'string', minLength: 1 },
+      },
+    },
+  },
+} as const
+
 export function resourceProjectionFields(resource: string): string[] | null {
   return Object.prototype.hasOwnProperty.call(RESOURCE_PROJECTION_FIELDS, resource)
     ? RESOURCE_PROJECTION_FIELDS[resource]
@@ -91,16 +105,31 @@ export function registerProjectionRoutes(
   authState: AuthState,
   dataDir: string,
 ): void {
+  const requireProjectionAuth = async (
+    req: Parameters<typeof requireAuth>[1],
+    reply: FastifyReply,
+  ) => {
+    await requireAuth(authState, req, reply)
+  }
+
   app.post<{ Body: { ids?: unknown } }>(
     '/api/v1/projection/chatMessages/bulk',
+    {
+      attachValidation: true,
+      onRequest: requireProjectionAuth,
+      preValidation: validateBulkChatIdsEnvelope,
+      schema: bulkChatMessagesBodySchema,
+    },
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
+      if ((req as { validationError?: unknown }).validationError) {
+        invalidBulkChatIdsReply(reply)
+        return
+      }
       const chatIds = readBulkChatIds(req.body)
       if (!chatIds) {
-        return reply.code(400).send({
-          error: 'invalid_chat_ids',
-          reason: 'Expected body.ids to be an array of non-empty chat ids.',
-        })
+        invalidBulkChatIdsReply(reply)
+        return
       }
 
       const { revision } = getSchemaState(db)
@@ -208,6 +237,22 @@ export function registerProjectionRoutes(
       return response
     },
   )
+}
+
+function invalidBulkChatIdsReply(reply: FastifyReply): void {
+  reply.code(400).send({
+    error: 'invalid_chat_ids',
+    reason: 'Expected body.ids to be an array of non-empty chat ids.',
+  })
+}
+
+async function validateBulkChatIdsEnvelope(
+  req: { body?: unknown },
+  reply: FastifyReply,
+): Promise<void> {
+  if (!readBulkChatIds(req.body as { ids?: unknown } | undefined)) {
+    invalidBulkChatIdsReply(reply)
+  }
 }
 
 function readBulkChatIds(body: { ids?: unknown } | undefined): string[] | null {

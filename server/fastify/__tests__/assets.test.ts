@@ -599,6 +599,27 @@ describe('Phase 2C assets', () => {
       payload: { ids: 'not-an-array' },
     })
     expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'ids: string[] required' })
+  })
+
+  it('POST /assets/exists rejects missing ids with the route error shape', async () => {
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/exists',
+      payload: {},
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'ids: string[] required' })
+  })
+
+  it('POST /assets/exists rejects non-string ids with the sha error shape', async () => {
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/exists',
+      payload: { ids: [123] },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'ids must be sha256 hex strings' })
   })
 
   it('POST /assets/exists rejects ids that are not sha256 hex', async () => {
@@ -608,6 +629,7 @@ describe('Phase 2C assets', () => {
       payload: { ids: ['not-a-sha'] },
     })
     expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'ids must be sha256 hex strings' })
   })
 
   it('POST /assets/bulk rejects malformed asset payloads', async () => {
