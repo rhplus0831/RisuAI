@@ -1,7 +1,8 @@
 # Phase 2: Command Write Cost
 
 Status: hot command paths targeted; generation assembly side-effect writes
-narrowed.
+narrowed. A candidate measurement slice exists for prompt-construction
+whole-corpus read/construction cost.
 
 Goal: reduce whole-corpus command mutation work while preserving revision,
 event, transaction, and projection contracts.
@@ -41,6 +42,9 @@ event, transaction, and projection contracts.
 - [`generation-assembly-side-effect-narrow-path.md`](slices/phase-2-command-write-cost/generation-assembly-side-effect-narrow-path.md) -
   implemented; eligible assembly-time scriptstate and transcript-rewrite
   persistence use the `targeted-assembly` mutation path.
+- [`generation-prompt-construction-pass-measurement.md`](slices/phase-2-command-write-cost/generation-prompt-construction-pass-measurement.md) -
+  candidate; measure prompt assembly load/construction phases before any
+  further runtime narrowing.
 
 ## Exit Criteria
 

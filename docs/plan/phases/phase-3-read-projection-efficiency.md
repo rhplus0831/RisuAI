@@ -1,6 +1,8 @@
 # Phase 3: Read Projection Efficiency
 
 Status: read optimizations implemented; full-resync reason budget implemented.
+Candidate measurement slices exist for sprawling-resource full-bootstrap
+fallbacks and general asset-byte fanout.
 
 Goal: reduce repeated REST reads and full-projection work for targeted
 projection, asset metadata, bulk hydration, and full resync fallbacks.
@@ -20,6 +22,10 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
 - [`asset-metadata-index.md`](slices/phase-3-read-projection-efficiency/asset-metadata-index.md)
 - [`bulk-chat-lorebook-reads.md`](slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md)
 - [`full-bootstrap-resync-budget.md`](slices/phase-3-read-projection-efficiency/full-bootstrap-resync-budget.md)
+- [`sprawling-resource-full-bootstrap-measurement.md`](slices/phase-3-read-projection-efficiency/sprawling-resource-full-bootstrap-measurement.md) -
+  candidate
+- [`asset-byte-fanout-measurement.md`](slices/phase-3-read-projection-efficiency/asset-byte-fanout-measurement.md) -
+  candidate
 
 ## Exit Criteria
 

@@ -10,18 +10,19 @@ Status: implemented foundation.
 ## Scope
 
 Preserve bounded or aggregated hydration behavior. Active-chat and
-character-lorebook hydration keep per-id in-flight dedupe and stale-response
-drops; all-chat hydration now uses the Phase 3 bulk route instead of one
-request per chat. Optional lorebook bulk reduction remains a Phase 3 follow-up.
+active-character-lorebook hydration keep per-id in-flight dedupe and
+stale-response drops; all-chat and all-character-lorebook workflows use the
+Phase 3 bulk routes instead of one request per record.
 
 ## Done When
 
-- `BULK_HYDRATION_CONCURRENCY` remains the cap for any remaining per-id fanout,
-  currently character lorebook hydration.
 - Per-id in-flight dedupe and stale-response drops remain in single-id
   hydration helpers.
 - All-chat hydration continues to use the bulk endpoint for unhydrated,
   non-in-flight chats.
+- All-character-lorebook hydration continues to use the bulk endpoint for
+  unhydrated, non-in-flight character lorebooks when `enableLorebookStubs` is
+  on.
 
 ## Validation
 

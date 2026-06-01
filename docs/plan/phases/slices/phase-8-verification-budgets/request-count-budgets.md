@@ -6,6 +6,7 @@ Status: implemented.
 
 - `src/ts/server/chatMessageHydration.svelte.ts`
 - `src/ts/server/protocolDiagnostics.ts`
+- `src/ts/server/projection.ts`
 - `src/ts/bootstrap.ts`
 - `src/ts/server/chatMessageHydration.test.ts`
 
@@ -21,8 +22,9 @@ Implemented scope:
 - Added a maintained all-chat hydration guard: many stubbed chats hydrate
   through one bulk request, no per-chat requests, and a repeated already-hydrated
   call does not start another request.
-- Kept optional lorebook stub hydration as an active risk because it still uses
-  bounded N-request hydration when `enableLorebookStubs` is on.
+- Added the matching all-character-lorebook guard for `enableLorebookStubs`:
+  many stubbed character lorebooks hydrate through one bulk request, no
+  per-character requests, and cached follow-up calls start no new requests.
 
 ## Protocol Behavior
 
@@ -30,9 +32,9 @@ Implemented scope:
   brittle.
 - Promote stable workflows to tests once expected counts are known.
 - Record intentional exceptions in the relevant phase or slice.
-- The implemented chat guard treats user-triggered all-history hydration as one
-  intentional bulk request and cached follow-up/render-loop calls as zero new
-  requests.
+- The implemented chat and character-lorebook guards treat user-triggered
+  all-history hydration as one intentional bulk request and cached
+  follow-up/render-loop calls as zero new requests.
 
 ## Done When
 

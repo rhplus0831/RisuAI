@@ -1,6 +1,6 @@
 # Server/Client Protocol Stability And Performance Plan
 
-Date: 2026-06-01
+Date: 2026-06-02
 
 ## Goal
 
@@ -48,15 +48,19 @@ narrowed hot Phase 2 command families (`settings`, plugin storage, chat
 metadata, message history, and generation persistence), added focused Phase 2
 generation/prompt side-effect metrics and reviewed them to select assembly
 side-effect persistence, narrowed that path, reduced Phase 3 read costs,
-implemented Phase 4 stream/generation runtime resilience, landed Phase 5
-revision/event/import/export/asset durability work, suppressed Phase 6 watcher
-echoes and no-op settings writes, and added Phase 7 route-local limits,
-wildcard manifest coverage, read-only writer-header hygiene, HEAD/body-parser
-safeguards, and initial stable-envelope schemas.
+implemented Phase 4 stream/generation runtime resilience with shared SSE
+taxonomy checks, landed Phase 5 revision/event/import/export/asset durability
+work, suppressed Phase 6 watcher echoes and no-op settings writes, added Phase
+7 route-local limits, wildcard manifest coverage, read-only writer-header
+hygiene, HEAD/body-parser safeguards, and initial stable-envelope schemas, and
+turned request, payload, command-metric, and verification logs into Phase 8
+gates.
 
-Remaining work is concentrated in measured generation/prompt side-effect
-passes, full-bootstrap fallback budgets, optional lorebook bulk reads, ordinary
-`.risu` export materialization, and the optional SSE taxonomy check.
+Remaining work is opportunistic and measurement-driven: additional
+generation/prompt whole-corpus passes only when metrics isolate a narrow source,
+expected full-bootstrap fallback families, general asset byte fanout, ordinary
+`.risu` export materialization, and schema or stream-taxonomy maintenance when
+routes or event vocabularies change.
 
 ## Invariants
 
@@ -93,11 +97,11 @@ passes, full-bootstrap fallback budgets, optional lorebook bulk reads, ordinary
 
 1. Continue Phase 2 only when fresh metrics identify another narrow source area
    with explicit protocol behavior.
-2. Use Phase 3 for optional lorebook bulk reads or full-resync budgets when
-   measurement shows they matter.
+2. Add Phase 3 or Phase 5 work only when diagnostics identify a concrete
+   remaining read/materialization cost.
 3. Refresh Phase 8 gates and [`latest-verification.md`](latest-verification.md)
    when measurement output or verification scope changes.
-4. Add the Phase 4 SSE taxonomy fixture when chat stream vocabulary changes.
+4. Update the Phase 4 SSE taxonomy fixture when chat stream vocabulary changes.
 5. Add additional route schemas only when touching stable route envelopes.
 
 ## Not In This Plan

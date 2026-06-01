@@ -2,7 +2,8 @@
 
 Status: implemented. Revision/event audit, event atomicity, expanded import
 limits, bundle export streaming, per-generation asset caching, and asset
-mutation durability are complete.
+mutation durability are complete. A candidate measurement slice exists for
+ordinary `.risu` export materialization.
 
 Goal: reduce large-payload memory pressure and make asset mutation durability
 explicit.
@@ -34,6 +35,9 @@ explicit.
 - [`per-generation-asset-cache.md`](slices/phase-5-import-export-asset-memory/per-generation-asset-cache.md) -
   implemented; repeated stored-asset references in one prompt assembly share a
   request-scoped read/base64 cache.
+- [`ordinary-risu-export-materialization.md`](slices/phase-5-import-export-asset-memory/ordinary-risu-export-materialization.md) -
+  candidate; measure ordinary `.risu` export peak materialization before
+  changing the envelope encoder.
 
 ## Exit Criteria
 

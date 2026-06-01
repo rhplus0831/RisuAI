@@ -43,5 +43,6 @@ bounded and observable.
 
 - Passed: `pnpm api:test`
 - Passed: `pnpm api:test -- server/fastify/__tests__/durableGeneration.test.ts`
+- Passed: `pnpm test -- src/ts/process/request/tests/serverChat.test.ts`
 - `pnpm test -- src/ts/process/request/tests/durableGeneration.test.ts`
 - `pnpm test -- src/ts/bootstrap.test.ts`

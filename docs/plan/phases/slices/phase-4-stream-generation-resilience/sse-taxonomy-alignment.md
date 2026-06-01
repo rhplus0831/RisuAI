@@ -47,5 +47,5 @@ Current reality:
 
 ## Validation
 
-- `pnpm test -- src/ts/process/request/tests/durableGeneration.test.ts`
+- `pnpm test -- src/ts/process/request/tests/serverChat.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/durableGeneration.test.ts`

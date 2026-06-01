@@ -28,7 +28,7 @@ latest-verification gates.
 ## Exit Criteria
 
 - Tests or diagnostics can catch request-count regressions in hot workflows.
-  All-chat hydration is covered.
+  All-chat and all-character-lorebook hydration are covered.
 - Bootstrap/projection/import/export payload sizes have documented budgets.
   Bootstrap and targeted projection are covered; import/export are documented as
   large-payload flows.

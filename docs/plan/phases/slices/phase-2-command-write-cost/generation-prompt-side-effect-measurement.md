@@ -32,11 +32,11 @@ Selected batch:
 
 ## Protocol Behavior
 
-- No route shape, SSE frame, provider dispatch, prompt semantics, or persistence
-  behavior changes.
-- Durable mutation behavior remains unchanged: assembly side effects still use
-  the JSON command mutation contract, while final generation messages still use
-  the targeted generation persistence path.
+- This measurement slice did not change route shape, SSE frames, provider
+  dispatch, prompt semantics, or persistence behavior.
+- Current durable mutation behavior after the follow-up narrow-path slice:
+  eligible assembly side effects use `mutationPath: "targeted-assembly"`, while
+  final generation messages use the targeted generation persistence path.
 - Event behavior remains unchanged: committed projected mutations still bump one
   revision and persist one replayable command event.
 - Rollback and resync behavior remain unchanged: failed assembly side-effect
@@ -50,8 +50,8 @@ Selected batch:
   `durationMs`, `promptMs`, `databaseLoadCount`, `databaseLoadMs`, and
   stop/error context when applicable.
 - `generation_assembly_persistence` includes `status`, `chatId`, `mode`,
-  `revision` for committed writes, `eventType`, chat-var and transcript-write
-  flags, and duration.
+  `revision` for committed writes, `eventType`, `mutationPath`, chat-var and
+  transcript-write flags, and duration.
 - Regression coverage asserts the prompt assembly and assembly-persistence
   metrics are emitted separately for a chat-var side-effecting send.
 

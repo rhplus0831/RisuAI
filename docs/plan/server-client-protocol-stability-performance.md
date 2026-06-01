@@ -1,6 +1,6 @@
 # Server/Client Protocol Stability And Performance Plan
 
-Date: 2026-06-01
+Date: 2026-06-02
 
 This compatibility entry has been merged into the new plan structure under
 [`docs/plan`](./).
