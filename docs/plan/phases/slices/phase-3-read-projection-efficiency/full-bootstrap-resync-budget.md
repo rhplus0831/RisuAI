@@ -26,7 +26,8 @@ slice is for turning those counters into maintained expectations.
 
 - Development diagnostics can distinguish expected from unexpected full resyncs.
 - Tests cover each fallback reason without requiring network timing flakiness.
-- Later Phase 8 budgets can use the same counters.
+- Future frequency budgets can use the same counters; Phase 8 already covers
+  payload, request-count, command-metric, and latest-verification gates.
 
 ## Validation
 

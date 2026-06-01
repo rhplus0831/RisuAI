@@ -19,23 +19,13 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-Phase 1 is implemented. Phase 2 narrowed the measured hot command families:
-settings/chat/plugin-storage commands use message-free mutation, and message
-history plus `generation.persisted` use targeted SQLite paths. Phase 3 has
-targeted projection, asset metadata indexing, and bulk all-chat hydration.
-Phase 4 runtime resilience is implemented; only the shared SSE taxonomy check
-remains as a future verification slice. Phase 5 has completed revision/event
-atomicity, expanded import limits, bundle export streaming, per-generation asset
-caching, and asset rollback hardening. Phase 6 is implemented: settings
-coalesce and skip no-op writes, memory job refresh is SSE-driven, and projection
-applies advance a watcher epoch so settings, chat, and script-definition
-watchers do not echo server-origin updates. Phase 7 now has route-local rate
-limits, wildcard manifest coverage, read-only writer-header hygiene, and
-HEAD/body-parser safeguards. The initial hot-envelope schema slice is also
-implemented for stable read-only POST envelopes. Phase 8 is implemented with
-bootstrap and targeted projection payload metric/readout guards, plus an
-all-chat hydration request-count guard, command metric review gates, and a
-single latest-verification record.
+Phase 0 foundations and Phases 1, 5, 6, 7, and 8 are implemented. Phase 2
+narrowed the measured hot command families: settings/chat/plugin-storage
+commands use message-free mutation, and message history plus
+`generation.persisted` use targeted SQLite paths. Phase 3 has targeted
+projection, asset metadata indexing, and bulk all-chat hydration. Phase 4
+runtime resilience is implemented; its remaining SSE taxonomy slice is only
+needed when chat stream vocabulary changes.
 
 Prefer one of these next:
 
@@ -78,8 +68,8 @@ and
 
 1. Narrow generation/prompt side-effect work in Phase 2 only when a measured
    slice is available.
-2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
-   makes them active.
+2. Optional Phase 3 lorebook bulk reads or full-resync frequency budgets if
+   measurement makes them active.
 3. SSE taxonomy verification when chat stream vocabulary changes.
 4. Additional route schemas only when touching a stable route envelope.
 5. Refresh [`latest-verification.md`](latest-verification.md) after the next

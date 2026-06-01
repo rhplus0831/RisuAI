@@ -54,8 +54,7 @@ safeguards, and initial stable-envelope schemas.
 
 Remaining work is concentrated in measured generation/prompt side-effect
 passes, full-bootstrap fallback budgets, optional lorebook bulk reads, ordinary
-`.risu` export materialization, the optional SSE taxonomy check, and
-verification budgets.
+`.risu` export materialization, and the optional SSE taxonomy check.
 
 ## Invariants
 
@@ -94,7 +93,8 @@ verification budgets.
    side-effect slices.
 2. Use Phase 3 for optional lorebook bulk reads or full-resync budgets when
    measurement shows they matter.
-3. Promote proven measurement into Phase 8 budgets.
+3. Refresh Phase 8 gates and [`latest-verification.md`](latest-verification.md)
+   when measurement output or verification scope changes.
 4. Add the Phase 4 SSE taxonomy fixture when chat stream vocabulary changes.
 5. Add additional route schemas only when touching stable route envelopes.
 

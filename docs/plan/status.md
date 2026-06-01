@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the Phase 8 latest
-verification log slice.
+Current status reflects the current codebase after the Phase 8
+verification-budget work and later docs-only plan updates.
 
 ## Current Snapshot
 
@@ -33,18 +33,12 @@ Completed work:
   generation reattach; server-owned resend cycles have a per-root-action cap;
   and finalization retries are SQLite-backed. A low-risk shared SSE taxonomy
   check remains planned for future chat stream vocabulary changes.
-- Phase 5 has completed the revision-bump audit, server-owned event atomicity,
-  expanded import limits, bundle export streaming, per-generation asset caching,
-  and the asset mutation transaction protocol. Initialization,
-  `.risu` import, asset upload/bulk upload, backup restore, Realm staged assets,
-  and Realm fetched assets now persist replayable events with their revision
-  bumps or roll back file-backed metadata/bytes when command-event persistence
-  fails. Asset upload and bulk upload also remove staged bytes when file staging
-  or `db.json` metadata persistence fails before a revisioned event can commit.
-  Multipart `.risu` and Realm charx imports reject oversized expanded payloads
-  before durable import commits. Bundle export shares one hydrated save snapshot,
-  then streams asset file entries into the zip. Prompt assembly now reuses
-  repeated stored-asset reads and base64 encodes within one generation request.
+- Phase 5 is implemented: revision/event atomicity, expanded import limits,
+  bundle export streaming, per-generation asset caching, and asset mutation
+  rollback are in place. Import, restore, initialization, asset upload/bulk
+  upload, and Realm asset paths now persist replayable events with revision
+  bumps or roll back staged file/metadata changes; oversized multipart `.risu`
+  and Realm charx imports are rejected before durable commits.
 - Phase 6 is implemented: settings debounce/coalescing and equality-noop
   suppression are in place, memory job refresh is SSE-driven with
   non-overlapping list requests, and server-origin projection applies advance a
@@ -92,8 +86,8 @@ maintained full or focused verification result.
 - Use [`plan.md`](plan.md) for invariants and phase order.
 - Use [`phases/README.md`](phases/README.md) for all phase docs.
 - Prefer measured P2/P3 work when a narrow slice exists; otherwise use
-  [`next-steps.md`](next-steps.md) to select the remaining Phase 4 verification
-  or Phase 8 budget work.
+  [`next-steps.md`](next-steps.md) to select optional lorebook/full-resync
+  work, SSE taxonomy verification, or verification-log maintenance.
 
 ## Phase Router
 

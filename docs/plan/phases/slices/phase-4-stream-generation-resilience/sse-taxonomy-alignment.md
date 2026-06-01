@@ -18,10 +18,11 @@ Current reality:
 - `server/fastify/src/prompt/sseEvents.ts` defines the server taxonomy,
   including durable-only `job_accepted`.
 - `src/ts/process/request/serverChat.ts` parses `job_accepted`, prompt/info,
-  token, side-effect, error, and done frames, with reattach tests covering the
-  replay path.
-- `src/ts/process/request/serverChatEvents.ts` mirrors most shapes, but this
-  slice should still add a cheap shared fixture or type-level check so future
+  token, side-effect, warning, error, and done frames, with reattach tests
+  covering the replay path.
+- `src/ts/process/request/serverChatEvents.ts` mirrors the non-durable client
+  shapes but does not include durable-only `job_accepted` in its public union;
+  this slice should add a cheap shared fixture or type-level check so future
   server event additions cannot silently miss client coverage.
 
 ## Protocol Behavior

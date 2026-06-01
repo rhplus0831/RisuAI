@@ -9,8 +9,8 @@ runs here.
 
 ## Latest Run
 
-- Commit under test: `10d1ffc2` (runtime/code state before this documentation-only
-  verification-log update)
+- Runtime/code commit under test: `10d1ffc2` (later commits through
+  `35441587` are documentation-only plan updates)
 - Scope: Phase 8 verification budgets after payload-size, request-count, and
   command metric review-gate slices.
 - Result: passed.
