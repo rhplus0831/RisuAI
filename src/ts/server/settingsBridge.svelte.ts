@@ -102,7 +102,9 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
     const target = DBState.db as unknown as Record<string, unknown>
     for (const [key, value] of Object.entries(patch)) {
       if (!settingsGroupForKey(key) || value === undefined) continue
-      previous[key] = cloneJsonValue(target[key])
+      const currentValue = target[key]
+      if (snapshotJson(currentValue) === snapshotJson(value)) continue
+      previous[key] = cloneJsonValue(currentValue)
       attempted[key] = cloneJsonValue(value)
       commandPatch[key] = cloneJsonValue(value)
       target[key] = cloneJsonValue(value)
@@ -172,11 +174,21 @@ function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay
     if (!(key in pendingSettingsPatch.previous)) {
       pendingSettingsPatch.previous[key] = previous[key]
     }
+    if (snapshotJson(value) === snapshotJson(pendingSettingsPatch.previous[key])) {
+      delete pendingSettingsPatch.patch[key]
+      delete pendingSettingsPatch.previous[key]
+      delete pendingSettingsPatch.attempted[key]
+      continue
+    }
     pendingSettingsPatch.patch[key] = value
     pendingSettingsPatch.attempted[key] = value
   }
 
   if (pendingSettingsPatch.timer) clearTimeout(pendingSettingsPatch.timer)
+  if (Object.keys(pendingSettingsPatch.patch).length === 0) {
+    pendingSettingsPatch.timer = null
+    return
+  }
   pendingSettingsPatch.timer = setTimeout(() => {
     pendingSettingsPatch.timer = null
     const commandPatch = pendingSettingsPatch.patch
@@ -185,6 +197,8 @@ function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay
     pendingSettingsPatch.patch = {}
     pendingSettingsPatch.previous = {}
     pendingSettingsPatch.attempted = {}
+
+    if (Object.keys(commandPatch).length === 0) return
 
     void patchServerBackedSettings({
       patch: commandPatch,

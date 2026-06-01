@@ -1,7 +1,6 @@
 # Settings Write Coalescing
 
-Status: partially implemented; debounce/coalescing exists, equality-noop and
-coverage gaps remain.
+Status: implemented.
 
 ## Source Anchors
 
@@ -16,8 +15,9 @@ close remaining no-op write gaps.
 
 Current behavior: `watchServerBackedSettings()` and
 `createServerBackedSettingDraft()` queue settings patches with a short debounce.
-`applyServerBackedSettingsPatch()` still sends immediate patches and does not
-skip values that are already equal to the projection.
+`applyServerBackedSettingsPatch()` skips values that are already equal to the
+projection. Queued watcher patches keep the first baseline value and drop a key
+when the final debounced value returns to that baseline.
 
 ## Protocol Behavior
 
@@ -27,11 +27,11 @@ skip values that are already equal to the projection.
 
 ## Done When
 
-- Debounced settings flows keep coalescing command writes.
-- Immediate patch helpers skip equality no-ops.
-- Tests prove unchanged final setting value with fewer command sends.
+- Debounced settings flows keep coalescing command writes. Done.
+- Immediate patch helpers skip equality no-ops. Done.
+- Tests prove unchanged final setting value with fewer command sends. Done.
 
 ## Validation
 
-- Focused settings bridge tests.
+- `pnpm test -- src/ts/server/settingsBridge.svelte.test.ts`
 - `pnpm test -- src/ts/server`

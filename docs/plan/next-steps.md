@@ -25,6 +25,8 @@ has targeted projection, asset metadata indexing, and bulk all-chat hydration.
 Phase 5 has completed revision/event atomicity, expanded import limits, bundle
 export streaming, per-generation asset caching, and explicit upload/bulk-upload
 rollback for staged asset files and metadata write failures.
+Phase 6 settings write coalescing now skips immediate equality no-ops and drops
+queued setting changes whose final value returns to the original baseline.
 
 Prefer one of these next:
 
@@ -34,8 +36,8 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. Continue Phase 6 client loop suppression if prioritizing remaining command
-   echo/polling work:
+3. Continue Phase 6 client loop suppression if prioritizing remaining memory
+   polling or watcher echo work:
    [`phase-6-client-loop-suppression.md`](phases/phase-6-client-loop-suppression.md).
 
 The command-family evidence lives in
@@ -66,7 +68,7 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Client loop suppression and command write coalescing in Phase 6.
+3. Client loop suppression for memory polling and watcher echo in Phase 6.
 4. Route operation safeguards and manifest coverage in Phase 7.
 5. Verification budgets and latest-check recording in Phase 8.
 

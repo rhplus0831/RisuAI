@@ -86,7 +86,7 @@ server projection refresh erase in-progress edits.
 
 | File                                             | Role                                                                                                                  |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/server/settingsBridge.svelte.ts`         | Debounced settings groups and rollback-aware server patches.                                                          |
+| `src/ts/server/settingsBridge.svelte.ts`         | Debounced settings groups, equality-noop suppression, and rollback-aware server patches.                              |
 | `src/ts/server/characterBridge.svelte.ts`        | Character profile fields and compatible character updates.                                                            |
 | `src/ts/server/chatBridge.svelte.ts`             | Chat metadata and selected-chat command bridging.                                                                     |
 | `src/ts/server/lorebookBridge.svelte.ts`         | Character/module/global lorebook replacement, hydrated-lorebook guards, and no-data-loss behavior when stubs refresh. |

@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the asset mutation
-transaction protocol slice.
+Current status reflects code and commit history through the settings write
+coalescing slice.
 
 ## Current Snapshot
 
@@ -43,9 +43,9 @@ Completed work:
   before durable import commits. Bundle export shares one hydrated save snapshot,
   then streams asset file entries into the zip. Prompt assembly now reuses
   repeated stored-asset reads and base64 encodes within one generation request.
-- Phase 6 has existing settings debounce/coalescing and per-bridge watcher
-  baselines; memory job SSE refresh, shared projection-apply suppression, and
-  broader echo tests remain planned.
+- Phase 6 has settings debounce/coalescing, settings equality-noop suppression,
+  and per-bridge watcher baselines; memory job SSE refresh, shared
+  projection-apply suppression, and broader echo tests remain planned.
 - Phase 7 already has route-manifest wildcard/prefix coverage and read-only
   writer-header hygiene tests. Rate limits, parser/HEAD review, and hot
   schemas remain planned.
@@ -65,8 +65,8 @@ Active performance risks:
   `enableLorebookStubs` is enabled.
 - Export paths still materialize `.risu` payloads, although bundle export no
   longer rehydrates the repository twice or preloads every asset byte buffer.
-- Memory job polling, watcher echo, and remaining settings no-op paths need
-  explicit suppression, caps, or retry handling.
+- Memory job polling and watcher echo need explicit suppression, caps, or retry
+  handling.
 
 ## Start Here
 
@@ -86,7 +86,7 @@ Active performance risks:
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Read optimizations implemented       | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.   |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Implemented                          | Closed stream, generation reattach, resend, and finalization retry work.               |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Implemented                          | Closed import/export memory and asset mutation durability work.                        |
-| [Phase 6](phases/phase-6-client-loop-suppression.md)      | Partly implemented                   | Memory job polling, server-origin watcher echo, settings write coalescing.             |
+| [Phase 6](phases/phase-6-client-loop-suppression.md)      | Partly implemented                   | Memory job polling and server-origin watcher echo.                                     |
 | [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.    |
 | [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                    |
 
