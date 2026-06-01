@@ -52,6 +52,21 @@ export interface MessageFreeJsonCommandMutationArgs<TExtra extends Record<string
   }
 }
 
+export interface TargetedCommandMutationArgs<TExtra extends Record<string, unknown>> {
+  db: DatabaseSync
+  dataDir: string
+  baseRevision: number
+  eventSink: CommandEventSink
+  mutationPath: string
+  mutate: (
+    database: unknown,
+    db: DatabaseSync,
+  ) => {
+    event: CommandEventDraft
+    extra?: TExtra
+  }
+}
+
 export function readBaseRevision(body: unknown): number {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new ValidationError('request body must be an object')
@@ -61,6 +76,83 @@ export function readBaseRevision(body: unknown): number {
     throw new ValidationError('baseRevision must be a non-negative integer')
   }
   return baseRevision as number
+}
+
+export function applyTargetedCommandMutation<TExtra extends Record<string, unknown> = {}>(
+  args: TargetedCommandMutationArgs<TExtra>,
+): JsonCommandMutationResult<TExtra> {
+  let transactionOpen = false
+  const totalStartedAt = protocolNowMs()
+  let loadMs = 0
+  let cloneMutateMs = 0
+  let sqliteSyncMs = 0
+  let dbJsonWriteMs = 0
+  let eventEmitMs = 0
+
+  args.db.exec('BEGIN IMMEDIATE')
+  transactionOpen = true
+
+  try {
+    const { revision: currentRevision } = getSchemaState(args.db)
+    if (args.baseRevision !== currentRevision) {
+      throw new RevisionMismatchError(currentRevision)
+    }
+
+    const loadStartedAt = protocolNowMs()
+    const persisted = loadPersisted(args.dataDir)
+    loadMs = protocolDurationMs(loadStartedAt)
+
+    const cloneMutateStartedAt = protocolNowMs()
+    const mutation = args.mutate(persisted.database, args.db)
+    cloneMutateMs = protocolDurationMs(cloneMutateStartedAt)
+
+    const sqliteSyncStartedAt = protocolNowMs()
+    const revision = bumpRevision(args.db)
+    const event: CommandEvent = { ...mutation.event, revision }
+    persistCommandEvent(args.db, event)
+    sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
+
+    args.db.exec('COMMIT')
+    transactionOpen = false
+    const eventEmitStartedAt = protocolNowMs()
+    args.eventSink.emit(event)
+    eventEmitMs = protocolDurationMs(eventEmitStartedAt)
+    emitProtocolMetric('command_mutation', {
+      type: event.type,
+      resource: event.resource,
+      revision,
+      loadMs,
+      cloneMutateMs,
+      sqliteSyncMs,
+      dbJsonWriteMs,
+      eventEmitMs,
+      totalMs: protocolDurationMs(totalStartedAt),
+      status: 'ok',
+      mutationPath: args.mutationPath,
+    })
+
+    return {
+      revision,
+      event,
+      extra: (mutation.extra ?? {}) as TExtra,
+    }
+  } catch (err) {
+    if (transactionOpen) {
+      args.db.exec('ROLLBACK')
+    }
+    emitProtocolMetric('command_mutation', {
+      loadMs,
+      cloneMutateMs,
+      sqliteSyncMs,
+      dbJsonWriteMs,
+      eventEmitMs,
+      totalMs: protocolDurationMs(totalStartedAt),
+      status: 'error',
+      error: err instanceof Error ? err.message : String(err),
+      mutationPath: args.mutationPath,
+    })
+    throw err
+  }
 }
 
 export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string, unknown> = {}>(

@@ -190,6 +190,25 @@ export function replaceChatMessages(
   insertChatMessages(db, chatId, messages)
 }
 
+export function activeMessageIdExists(db: DatabaseSync, messageId: string): boolean {
+  const row = db
+    .prepare('SELECT 1 AS found FROM messages WHERE uid = ? AND alternate = 0 LIMIT 1')
+    .get(messageId) as { found: number } | undefined
+  return !!row
+}
+
+export function appendChatMessage(db: DatabaseSync, chatId: string, raw: unknown): void {
+  const message = readMessageObject(raw)
+  const row = toRow(message)
+  const tail = db
+    .prepare('SELECT MAX(seq) AS maxSeq FROM messages WHERE chat_id = ? AND alternate = 0')
+    .get(chatId) as { maxSeq: number | null } | undefined
+  const seq = (tail?.maxSeq ?? -1) + 1
+  db.prepare(
+    'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
+  ).run(chatId, seq, row.uid, row.role, row.data, row.disabled, row.json)
+}
+
 function insertChatMessages(db: DatabaseSync, chatId: string, messages: readonly unknown[]): void {
   if (messages.length === 0) return
   const insert = db.prepare(

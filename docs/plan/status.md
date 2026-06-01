@@ -17,8 +17,10 @@ Completed work:
   restore resync, durable generation frame replay, and guarded UI projection
   writes all have regression coverage.
 - Phase 2 has a reproducible command metrics harness. `settings.updated` and
-  plugin-storage put/delete/bulk commands use the message-free mutation path;
-  chat/message/generation families still use the hydrated path.
+  plugin-storage put/delete/bulk commands use the message-free mutation path,
+  and `message.appended` uses a targeted SQLite message append path. Chat
+  metadata, message edit/delete/replace, and generation persistence still use
+  the hydrated path.
 - Phase 3 has six read-side optimizations: targeted projection field selectors
   for empty, small, character-family, mixed broad, and plugin resources; an
   in-process asset metadata index; and authenticated bulk all-chat hydration.
@@ -27,8 +29,8 @@ No P1 plan risks remain open after the Phase 1 commits.
 
 Active performance risks:
 
-- Still-hydrated command families pay whole-corpus load, clone, diff, and write
-  cost.
+- Still-hydrated chat metadata, message edit/delete/replace, and generation
+  command families pay whole-corpus load, clone, diff, and write cost.
 - Generation and prompt assembly can still perform multiple whole-corpus
   passes around side effects and final persistence.
 - Full-bootstrap fallbacks for sprawling resources such as `settings`, `state`,
@@ -56,7 +58,7 @@ Active performance risks:
 | --------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
 | [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, hydration bounds/aggregation, durable event history, route manifest.  |
 | [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                        |
-| [Phase 2](phases/phase-2-command-write-cost.md)           | Two migrations implemented           | Whole-corpus command mutation cost and narrow write paths.                              |
+| [Phase 2](phases/phase-2-command-write-cost.md)           | Three migrations implemented         | Whole-corpus command mutation cost and narrow write paths.                              |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Six optimizations implemented        | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Planned                              | SSE backpressure, generation reattach triggers, resend caps, finalization retry.        |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Planned                              | Import/export memory pressure, asset mutation durability, per-generation media caching. |

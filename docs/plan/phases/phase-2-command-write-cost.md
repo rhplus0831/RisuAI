@@ -1,6 +1,6 @@
 # Phase 2: Command Write Cost
 
-Status: two migrations implemented.
+Status: three migrations implemented.
 
 Goal: reduce whole-corpus command mutation work while preserving revision,
 event, transaction, and projection contracts.
@@ -23,7 +23,9 @@ event, transaction, and projection contracts.
 - [`scoped-plugin-storage-mutation-path.md`](slices/phase-2-command-write-cost/scoped-plugin-storage-mutation-path.md) -
   implemented; plugin-storage put/delete/bulk commands use the message-free
   mutation path.
-- [`message-chat-targeted-persistence.md`](slices/phase-2-command-write-cost/message-chat-targeted-persistence.md)
+- [`message-chat-targeted-persistence.md`](slices/phase-2-command-write-cost/message-chat-targeted-persistence.md) -
+  partially implemented; `message.appended` uses a targeted SQLite message
+  append path.
 - [`generation-persistence-narrow-path.md`](slices/phase-2-command-write-cost/generation-persistence-narrow-path.md)
 
 ## Exit Criteria

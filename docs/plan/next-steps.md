@@ -18,16 +18,18 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-Phase 1 is implemented. Phase 2 has measured the hot command families and
-migrated `settings.updated` plus plugin-storage commands to message-free
-mutation paths. Phase 3 has implemented the targeted-projection, asset metadata,
-and bulk all-chat hydration optimizations.
+Phase 1 is implemented. Phase 2 has measured the hot command families, migrated
+`settings.updated` plus plugin-storage commands to message-free mutation paths,
+and moved `message.appended` to a targeted SQLite message append path. Phase 3
+has implemented the targeted-projection, asset metadata, and bulk all-chat
+hydration optimizations.
 
 Prefer one of these next:
 
-1. Select the next measured command family, likely chat/message targeted
-   persistence or generation persistence, only after writing a narrow slice with
-   source files, durable mutation behavior, event behavior, and proof command.
+1. Select the next measured command family, likely generation persistence or a
+   second chat/message targeted path such as chat metadata or message
+   edit/delete/replace, only after writing a narrow slice with source files,
+   durable mutation behavior, event behavior, and proof command.
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
@@ -36,10 +38,11 @@ Prefer one of these next:
 
 The command-family evidence lives in
 [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).
-The implemented Phase 2 migrations are
-[`scoped-settings-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-settings-mutation-path.md)
-and
-[`scoped-plugin-storage-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-plugin-storage-mutation-path.md).
+The implemented Phase 2 migrations are:
+[`scoped-settings-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-settings-mutation-path.md),
+[`scoped-plugin-storage-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-plugin-storage-mutation-path.md),
+and the `message.appended` batch in
+[`message-chat-targeted-persistence.md`](phases/slices/phase-2-command-write-cost/message-chat-targeted-persistence.md).
 
 ## Not First
 

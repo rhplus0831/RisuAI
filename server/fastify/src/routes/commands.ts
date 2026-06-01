@@ -9,6 +9,7 @@ import {
 import {
   applyJsonCommandMutation,
   applyMessageFreeJsonCommandMutation,
+  applyTargetedCommandMutation,
   readBaseRevision,
 } from '../commands/mutations.js'
 import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
@@ -189,6 +190,7 @@ import {
 } from '../commands/pluginStorage.js'
 import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
+import { activeMessageIdExists, appendChatMessage } from '../messageStore.js'
 import {
   EntityNotFoundError,
   initializeDefaultDatabase,
@@ -3007,18 +3009,19 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
       const message = createMessageRecord(body.message)
-      const result = applyJsonCommandMutation<{ chatId: string; messageId: string }>({
+      const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
         db,
         dataDir,
         baseRevision,
         eventSink,
-        mutate(database) {
-          const characters = normalizeAllChatMessages(database)
-          const { messages } = requireChatMessages(characters, chatId)
-          if (messageIdExists(characters, message.chatId)) {
+        mutationPath: 'targeted-message',
+        mutate(database, targetDb) {
+          const characters = normalizeAllCharacterChats(database)
+          requireChatLocation(characters, chatId)
+          if (activeMessageIdExists(targetDb, message.chatId)) {
             throw new ValidationError(`Duplicate message id: ${message.chatId}`)
           }
-          messages.push(message)
+          appendChatMessage(targetDb, chatId, message)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.messageAppended,
