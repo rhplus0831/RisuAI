@@ -29,8 +29,9 @@ Completed work:
   mutation path instead of the hydrated command path.
 - Phase 3 read-side optimizations are in place: targeted projection field
   selectors for known resource families, an in-process asset metadata index,
-  authenticated bulk all-chat hydration, and full-bootstrap resync reason
-  diagnostics with expected/unexpected classification coverage.
+  authenticated bulk all-chat/all-character-lorebook hydration, and
+  full-bootstrap resync reason diagnostics with expected/unexpected
+  classification coverage.
 - Phase 4 runtime resilience work is implemented: `/api/v1/events`, inline and
   durable chat-generation SSE, and proxy WebSocket stream jobs have bounded
   slow-consumer behavior; active-chat changes plus full resyncs can trigger
@@ -76,8 +77,6 @@ Active performance risks:
 - General asset byte reads remain one request per asset, although metadata
   lookup is no longer reparsed for every lookup and repeated prompt-assembly
   asset references are cached within a generation request.
-- Optional lorebook hydration is still N requests when experimental
-  `enableLorebookStubs` is enabled.
 - Export paths still materialize `.risu` payloads, although bundle export no
   longer rehydrates the repository twice or preloads every asset byte buffer.
 
@@ -92,8 +91,8 @@ maintained full or focused verification result.
 - Use [`plan.md`](plan.md) for invariants and phase order.
 - Use [`phases/README.md`](phases/README.md) for all phase docs.
 - Prefer measured P2/P3 work when a narrow slice exists; otherwise use
-  [`next-steps.md`](next-steps.md) to select optional lorebook/full-resync
-  work, SSE taxonomy verification, or verification-log maintenance.
+  [`next-steps.md`](next-steps.md) to select SSE taxonomy verification or
+  verification-log maintenance.
 
 ## Phase Router
 

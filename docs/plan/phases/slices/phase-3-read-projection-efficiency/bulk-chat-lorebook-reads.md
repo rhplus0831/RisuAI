@@ -1,6 +1,6 @@
 # Bulk Chat And Lorebook Reads
 
-Status: chat batch implemented; lorebook batch planned only if measured.
+Status: implemented on 2026-06-02.
 
 ## Source Anchors
 
@@ -14,8 +14,8 @@ Status: chat batch implemented; lorebook batch planned only if measured.
 ## Scope
 
 Reduce the request count for workflows that need many hydrated entities. Chat
-hydration now has a bulk path; optional character lorebook hydration remains
-bounded N-request fanout when `enableLorebookStubs` is enabled.
+hydration and optional character lorebook hydration both have bulk paths for
+all-history/all-lore workflows.
 
 ## Current Behavior
 
@@ -30,13 +30,23 @@ bounded N-request fanout when `enableLorebookStubs` is enabled.
 - The server reads message, Hypa V3, and alternate rows from SQLite for the
   requested ids, with one message-free `db.json` pass for known-chat detection
   and defensive embedded-message fallback.
+- `POST /api/v1/projection/characterLorebooks/bulk` is authenticated and
+  read-only; the route manifest classifies it as `read-only-post`.
+- `ensureAllCharacterLorebooksHydrated()` sends one bulk request for unhydrated,
+  non-in-flight character ids when experimental `enableLorebookStubs` is on.
+  Active-character hydration still uses
+  `GET /api/v1/projection/characterLorebook?id=...`.
+- The bulk lorebook response carries one revision, per-character `globalLore`,
+  and a `missing` list. The client drops stale responses before marking any
+  character lorebook hydrated.
+- The server reads the full un-stubbed repository once for requested character
+  ids, returns `globalLore: []` for known lore-less characters, and reports
+  unknown character ids as missing.
 
 ## Remaining Work
 
-- Add a bulk character-lorebook path only if experimental
-  `enableLorebookStubs` workflows become active enough to justify it.
 - Consider server-side export or branch-tree assembly if all-history workflows
-  still dominate after bulk chat hydration.
+  still dominate after bulk chat and lorebook hydration.
 
 ## Validation
 

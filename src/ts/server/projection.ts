@@ -254,6 +254,19 @@ export type ServerCharacterLorebookResult =
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
+export type ServerBulkCharacterLorebookResult =
+  | {
+      status: 'ok'
+      revision: number
+      characters: Array<{
+        characterId: string
+        globalLore: unknown[]
+      }>
+      missing: string[]
+    }
+  | { status: 'error'; error: string }
+  | { status: 'unavailable' }
+
 /**
  * Per-character `globalLore` hydration. When `enableLorebookStubs` is on, the
  * projection ships a character's globalLore as a stub; this fetches the full
@@ -306,6 +319,78 @@ export async function fetchServerCharacterLorebook(
     revision: revision as number,
     characterId: typeof record.characterId === 'string' ? record.characterId : characterId,
     globalLore: record.globalLore as unknown[],
+  }
+}
+
+/**
+ * Bulk character `globalLore` hydration for workflows that need every
+ * character lorebook. The open character still uses the single-character path.
+ */
+export async function fetchServerBulkCharacterLorebooks(
+  characterIds: readonly string[],
+  options: { signal?: AbortSignal | null } = {},
+): Promise<ServerBulkCharacterLorebookResult> {
+  if (!canUseServerProjection()) return { status: 'unavailable' }
+
+  const auth = await getNodeServerProxyAuth()
+  let response: Response
+  try {
+    response = await fetch(`${PROJECTION_ENDPOINT}/characterLorebooks/bulk`, {
+      method: 'POST',
+      signal: options.signal ?? undefined,
+      headers: { 'content-type': 'application/json', 'risu-auth': auth },
+      body: JSON.stringify({ ids: characterIds }),
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { status: 'error', error: `Network error: ${message}` }
+  }
+
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    // Reported via HTTP status below.
+  }
+
+  if (!response.ok) {
+    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
+  }
+  if (!body || typeof body !== 'object') {
+    return { status: 'error', error: 'Invalid bulk character-lorebook response' }
+  }
+
+  const record = body as Record<string, unknown>
+  const revision = record.revision
+  if (!Number.isInteger(revision) || (revision as number) < 0) {
+    return { status: 'error', error: 'Invalid projection revision' }
+  }
+  if (record.mode !== 'character-lorebooks-bulk' || !Array.isArray(record.characters)) {
+    return { status: 'error', error: 'Invalid bulk character-lorebook response' }
+  }
+
+  const characters: Extract<ServerBulkCharacterLorebookResult, { status: 'ok' }>['characters'] = []
+  for (const raw of record.characters) {
+    if (!raw || typeof raw !== 'object') {
+      return { status: 'error', error: 'Invalid bulk character-lorebook entry' }
+    }
+    const character = raw as Record<string, unknown>
+    if (typeof character.characterId !== 'string' || !Array.isArray(character.globalLore)) {
+      return { status: 'error', error: 'Invalid bulk character-lorebook entry' }
+    }
+    characters.push({
+      characterId: character.characterId,
+      globalLore: character.globalLore as unknown[],
+    })
+  }
+
+  return {
+    status: 'ok',
+    revision: revision as number,
+    characters,
+    missing: Array.isArray(record.missing)
+      ? record.missing.filter((value): value is string => typeof value === 'string')
+      : [],
   }
 }
 

@@ -9,6 +9,7 @@ import { markCharacterLorebookHydrated } from './lorebookBridge.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import {
   canUseServerProjection,
+  fetchServerBulkCharacterLorebooks,
   fetchServerBulkChatMessages,
   fetchServerCharacterLorebook,
   fetchServerChatMessages,
@@ -180,6 +181,36 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
   return request
 }
 
+async function hydrateCharacterLorebooksBulk(characterIds: readonly string[]): Promise<void> {
+  if (!canUseServerProjection() || !DBState.db?.enableLorebookStubs || characterIds.length === 0) {
+    return
+  }
+
+  const generation = charLorebookHydrationGeneration
+  const endRequest = beginHydrationRequest('characterLorebook')
+  const result = await fetchServerBulkCharacterLorebooks(characterIds).finally(endRequest)
+  if (result.status !== 'ok') return
+  if (generation !== charLorebookHydrationGeneration) {
+    recordHydrationStaleDrop('characterLorebook', 'generation-reset')
+    return
+  }
+  if (isOlderThanAppliedRevision(result.revision)) {
+    recordHydrationStaleDrop('characterLorebook', 'older-than-applied-revision')
+    return
+  }
+
+  const missing = new Set(result.missing)
+  for (const characterId of characterIds) {
+    if (missing.has(characterId)) continue
+    const hydration = result.characters.find((character) => character.characterId === characterId)
+    if (!hydration) continue
+    const applied = hydrateServerCharacterLorebook(characterId, hydration.globalLore)
+    if (!applied) continue
+    markCharacterLorebookHydrated(characterId)
+    hydratedCharLorebookIds.add(characterId)
+  }
+}
+
 /** Hydrate the open character's `globalLore` (no-op if already hydrated / stubs off). */
 export async function hydrateActiveCharacterLorebook(
   options: { force?: boolean } = {},
@@ -195,17 +226,24 @@ export async function hydrateActiveCharacterLorebook(
 export async function ensureAllCharacterLorebooksHydrated(): Promise<void> {
   if (!canUseServerProjection() || !DBState.db?.enableLorebookStubs) return
   const ids: string[] = []
+  const pendingRequests: Promise<void>[] = []
   for (const character of DBState.db?.characters ?? []) {
     if (
-      typeof character.chaId === 'string' &&
-      character.chaId &&
-      !hydratedCharLorebookIds.has(character.chaId)
+      typeof character.chaId !== 'string' ||
+      !character.chaId ||
+      hydratedCharLorebookIds.has(character.chaId)
     ) {
-      ids.push(character.chaId)
+      continue
     }
+    const pending = charLorebookInFlight.get(character.chaId)
+    if (pending) {
+      pendingRequests.push(pending)
+      continue
+    }
+    ids.push(character.chaId)
   }
   recordBulkHydration('characterLorebook', ids.length)
-  await runBounded(ids, BULK_HYDRATION_CONCURRENCY, (id) => hydrateCharacterLorebook(id, false))
+  await Promise.all([hydrateCharacterLorebooksBulk(ids), ...pendingRequests])
 }
 
 /**
@@ -251,26 +289,6 @@ export async function ensureAllChatsHydrated(): Promise<void> {
   }
   recordBulkHydration('chat', ids.length)
   await Promise.all([hydrateChatsBulk(ids), ...pendingRequests])
-}
-
-async function runBounded<T>(
-  items: readonly T[],
-  concurrency: number,
-  worker: (item: T) => Promise<void>,
-): Promise<void> {
-  if (items.length === 0) return
-  let nextIndex = 0
-  const workerCount = Math.min(Math.max(1, concurrency), items.length)
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (true) {
-        const index = nextIndex
-        nextIndex += 1
-        if (index >= items.length) return
-        await worker(items[index])
-      }
-    }),
-  )
 }
 
 let wired = false

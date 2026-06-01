@@ -85,6 +85,16 @@ export interface BulkChatHydrationPayload {
   missing: string[]
 }
 
+export interface CharacterLorebookHydrationPayload {
+  characterId: string
+  globalLore: unknown[]
+}
+
+export interface BulkCharacterLorebookHydrationPayload {
+  characters: CharacterLorebookHydrationPayload[]
+  missing: string[]
+}
+
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message)
@@ -569,6 +579,47 @@ export function loadCharacterLorebookHydration(
   const globalLore =
     character && Array.isArray(character.globalLore) ? (character.globalLore as unknown[]) : []
   return { globalLore }
+}
+
+export function loadCharacterLorebookHydrations(
+  dataDir: string,
+  characterIds: readonly string[],
+): BulkCharacterLorebookHydrationPayload {
+  const requestedCharacterIds = new Set(characterIds)
+  const knownCharacterIds = new Set<string>()
+  const globalLoreById = new Map<string, unknown[]>()
+  const persisted = loadPersisted(dataDir)
+  const characters =
+    (
+      persisted.database as {
+        characters?: Array<{ chaId?: string; globalLore?: unknown } | null>
+      } | null
+    )?.characters ?? []
+
+  for (const character of characters) {
+    if (typeof character?.chaId !== 'string') continue
+    knownCharacterIds.add(character.chaId)
+    if (!requestedCharacterIds.has(character.chaId)) continue
+    globalLoreById.set(
+      character.chaId,
+      Array.isArray(character.globalLore) ? (character.globalLore as unknown[]) : [],
+    )
+  }
+
+  const hydrated: CharacterLorebookHydrationPayload[] = []
+  const missing: string[] = []
+  for (const characterId of characterIds) {
+    if (!knownCharacterIds.has(characterId)) {
+      missing.push(characterId)
+      continue
+    }
+    hydrated.push({
+      characterId,
+      globalLore: globalLoreById.get(characterId) ?? [],
+    })
+  }
+
+  return { characters: hydrated, missing }
 }
 
 export function applyImport(

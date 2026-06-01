@@ -474,6 +474,67 @@ describe('Phase 5 lorebook stubs (enableLorebookStubs)', () => {
     expect(body.globalLore[0].content).toBe('secret lore')
   })
 
+  it('serves requested character lorebooks in one read-only response', async () => {
+    const revision = await importDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          globalLore: [{ key: 'a', content: 'lore a' }],
+        },
+        {
+          chaId: 'char-b',
+          name: 'Babbage',
+          globalLore: [{ key: 'b', content: 'lore b' }],
+        },
+        {
+          chaId: 'char-empty',
+          name: 'Empty',
+        },
+      ],
+      enableLorebookStubs: true,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/projection/characterLorebooks/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: { ids: ['char-a', 'missing-char', 'char-empty', 'char-a'] },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body).toMatchObject({
+      revision,
+      resource: 'characterLorebooks',
+      mode: 'character-lorebooks-bulk',
+      missing: ['missing-char'],
+    })
+    expect(body.characters).toHaveLength(2)
+    expect(body.characters[0].characterId).toBe('char-a')
+    expect(body.characters[0].globalLore[0]).toMatchObject({ key: 'a', content: 'lore a' })
+    expect(body.characters[1]).toEqual({
+      characterId: 'char-empty',
+      globalLore: [],
+    })
+  })
+
+  it('rejects malformed bulk character lorebook ids', async () => {
+    await importDatabase(characterWithLore())
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/projection/characterLorebooks/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: { ids: ['char-a', ''] },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({
+      error: 'invalid_character_lorebook_ids',
+      reason: 'Expected body.ids to be an array of non-empty character ids.',
+    })
+  })
+
   it('returns mode:full for a missing characterLorebook id', async () => {
     await importDatabase(characterWithLore())
     const res = await harness.app.inject({

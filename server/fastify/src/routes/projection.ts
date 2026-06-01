@@ -5,6 +5,7 @@ import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
 import {
   loadCharacterLorebookHydration,
+  loadCharacterLorebookHydrations,
   loadChatHydration,
   loadChatHydrations,
   loadPersistedDatabaseFields,
@@ -93,6 +94,8 @@ const bulkChatMessagesBodySchema = {
   },
 } as const
 
+const bulkCharacterLorebooksBodySchema = bulkChatMessagesBodySchema
+
 export function resourceProjectionFields(resource: string): string[] | null {
   return Object.prototype.hasOwnProperty.call(RESOURCE_PROJECTION_FIELDS, resource)
     ? RESOURCE_PROJECTION_FIELDS[resource]
@@ -126,7 +129,7 @@ export function registerProjectionRoutes(
         invalidBulkChatIdsReply(reply)
         return
       }
-      const chatIds = readBulkChatIds(req.body)
+      const chatIds = readBulkIds(req.body)
       if (!chatIds) {
         invalidBulkChatIdsReply(reply)
         return
@@ -145,6 +148,45 @@ export function registerProjectionRoutes(
         bulk: true,
         idCount: chatIds.length,
         returnedCount: hydration.chats.length,
+        missingCount: hydration.missing.length,
+      })
+      return response
+    },
+  )
+
+  app.post<{ Body: { ids?: unknown } }>(
+    '/api/v1/projection/characterLorebooks/bulk',
+    {
+      attachValidation: true,
+      onRequest: requireProjectionAuth,
+      preValidation: validateBulkCharacterLorebookIdsEnvelope,
+      schema: bulkCharacterLorebooksBodySchema,
+    },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      if ((req as { validationError?: unknown }).validationError) {
+        invalidBulkCharacterLorebookIdsReply(reply)
+        return
+      }
+      const characterIds = readBulkIds(req.body)
+      if (!characterIds) {
+        invalidBulkCharacterLorebookIdsReply(reply)
+        return
+      }
+
+      const { revision } = getSchemaState(db)
+      const hydration = loadCharacterLorebookHydrations(dataDir, characterIds)
+      const response = {
+        revision,
+        resource: 'characterLorebooks',
+        mode: 'character-lorebooks-bulk' as const,
+        characters: hydration.characters,
+        missing: hydration.missing,
+      }
+      emitProjectionMetric(req.log, 'characterLorebooks', revision, response, {
+        bulk: true,
+        idCount: characterIds.length,
+        returnedCount: hydration.characters.length,
         missingCount: hydration.missing.length,
       })
       return response
@@ -250,12 +292,28 @@ async function validateBulkChatIdsEnvelope(
   req: { body?: unknown },
   reply: FastifyReply,
 ): Promise<void> {
-  if (!readBulkChatIds(req.body as { ids?: unknown } | undefined)) {
+  if (!readBulkIds(req.body as { ids?: unknown } | undefined)) {
     invalidBulkChatIdsReply(reply)
   }
 }
 
-function readBulkChatIds(body: { ids?: unknown } | undefined): string[] | null {
+function invalidBulkCharacterLorebookIdsReply(reply: FastifyReply): void {
+  reply.code(400).send({
+    error: 'invalid_character_lorebook_ids',
+    reason: 'Expected body.ids to be an array of non-empty character ids.',
+  })
+}
+
+async function validateBulkCharacterLorebookIdsEnvelope(
+  req: { body?: unknown },
+  reply: FastifyReply,
+): Promise<void> {
+  if (!readBulkIds(req.body as { ids?: unknown } | undefined)) {
+    invalidBulkCharacterLorebookIdsReply(reply)
+  }
+}
+
+function readBulkIds(body: { ids?: unknown } | undefined): string[] | null {
   if (!body || !Array.isArray(body.ids)) return null
 
   const ids: string[] = []

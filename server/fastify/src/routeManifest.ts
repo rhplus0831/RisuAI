@@ -165,6 +165,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'projection-character-lorebooks-bulk',
+    methods: ['POST'],
+    path: '/api/v1/projection/characterLorebooks/bulk',
+    auth: {
+      decision: 'required',
+      reason:
+        'Bulk lorebook hydration returns user character lorebooks for requested character ids.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Bulk lorebook hydration is read-only; POST carries a potentially large id list.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'risusave-import',
     methods: ['POST'],
     path: '/api/v1/import/risusave',

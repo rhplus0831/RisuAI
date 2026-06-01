@@ -34,6 +34,7 @@ export function registerRoutes(app: RouteApp): void {
   // Read-only POST + runtime routes (explicitly exempt classifications).
   app.post('/api/v1/assets/exists', noop)
   app.post('/api/v1/projection/chatMessages/bulk', noop)
+  app.post('/api/v1/projection/characterLorebooks/bulk', noop)
   app.post('/api/v1/generate/completion', noop)
   app.post('/api/v1/proxy/fetch', noop)
   app.post('/api/v1/proxy/stream-jobs', noop)

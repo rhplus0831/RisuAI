@@ -5,10 +5,12 @@ const projectionState = vi.hoisted(() => ({
   fetchChat: vi.fn(),
   fetchBulkChat: vi.fn(),
   fetchCharLore: vi.fn(),
+  fetchBulkCharLore: vi.fn(),
 }))
 
 vi.mock('./projection', () => ({
   canUseServerProjection: projectionState.canUse,
+  fetchServerBulkCharacterLorebooks: projectionState.fetchBulkCharLore,
   fetchServerBulkChatMessages: projectionState.fetchBulkChat,
   fetchServerChatMessages: projectionState.fetchChat,
   fetchServerCharacterLorebook: projectionState.fetchCharLore,
@@ -40,6 +42,18 @@ function okBulkResult(chatIds: string[]) {
       chatId,
       message: [{ role: 'user', data: chatId, chatId: `m-${chatId}` }],
       alternates: [],
+    })),
+    missing: [],
+  }
+}
+
+function okBulkLorebookResult(characterIds: string[]) {
+  return {
+    status: 'ok' as const,
+    revision: 1,
+    characters: characterIds.map((characterId) => ({
+      characterId,
+      globalLore: [{ key: characterId, content: 'lore' }],
     })),
     missing: [],
   }
@@ -96,8 +110,12 @@ beforeEach(() => {
   projectionState.fetchChat.mockReset()
   projectionState.fetchBulkChat.mockReset()
   projectionState.fetchCharLore.mockReset()
+  projectionState.fetchBulkCharLore.mockReset()
   projectionState.fetchBulkChat.mockImplementation(async (chatIds: string[]) =>
     okBulkResult(chatIds),
+  )
+  projectionState.fetchBulkCharLore.mockImplementation(async (characterIds: string[]) =>
+    okBulkLorebookResult(characterIds),
   )
   clearCachedServerCommandRevision()
   resetChatHydration()
@@ -332,32 +350,99 @@ describe('character globalLore hydration (Phase 5)', () => {
     expect(projectionState.fetchCharLore).toHaveBeenCalledTimes(1)
   })
 
-  it('bounds bulk character lorebook hydration concurrency', async () => {
+  it('hydrates many character lorebooks with one bulk request', async () => {
     seedManyLorebookStubCharacters(BULK_HYDRATION_CONCURRENCY * 3)
-    let activeRequests = 0
-    let maxActiveRequests = 0
-    projectionState.fetchCharLore.mockImplementation(async (characterId: string) => {
-      activeRequests += 1
-      maxActiveRequests = Math.max(maxActiveRequests, activeRequests)
-      await new Promise<void>((resolve) => setTimeout(resolve, 0))
-      activeRequests -= 1
-      return {
-        status: 'ok',
-        revision: 1,
-        characterId,
-        globalLore: [{ key: characterId, content: 'lore' }],
-      }
+
+    await ensureAllCharacterLorebooksHydrated()
+
+    expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(1)
+    expect(projectionState.fetchBulkCharLore.mock.calls[0][0]).toHaveLength(
+      BULK_HYDRATION_CONCURRENCY * 3,
+    )
+    expect(projectionState.fetchCharLore).not.toHaveBeenCalled()
+    expect((DBState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([
+      { key: 'char-1', content: 'lore' },
+    ])
+    expect(isCharacterLorebookHydrated('char-1')).toBe(true)
+  })
+
+  it('keeps all-character lorebook hydration within the request-count budget', async () => {
+    seedManyLorebookStubCharacters(BULK_HYDRATION_CONCURRENCY * 3)
+    const before = getProtocolDiagnosticsSnapshot().hydration.characterLorebook
+
+    await ensureAllCharacterLorebooksHydrated()
+
+    const afterBulk = getProtocolDiagnosticsSnapshot().hydration.characterLorebook
+    expect(afterBulk.requestsStarted - before.requestsStarted).toBe(1)
+    expect(afterBulk.bulkRuns - before.bulkRuns).toBe(1)
+    expect(afterBulk.bulkIds - before.bulkIds).toBe(BULK_HYDRATION_CONCURRENCY * 3)
+    expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(1)
+    expect(projectionState.fetchCharLore).not.toHaveBeenCalled()
+
+    await ensureAllCharacterLorebooksHydrated()
+
+    const afterCached = getProtocolDiagnosticsSnapshot().hydration.characterLorebook
+    expect(afterCached.requestsStarted).toBe(afterBulk.requestsStarted)
+    expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(1)
+    expect(projectionState.fetchCharLore).not.toHaveBeenCalled()
+  })
+
+  it('skips missing bulk character lorebook entries without marking them hydrated', async () => {
+    seedManyLorebookStubCharacters(2)
+    projectionState.fetchBulkCharLore.mockResolvedValueOnce({
+      status: 'ok',
+      revision: 1,
+      characters: [
+        {
+          characterId: 'char-1',
+          globalLore: [{ key: 'char-1', content: 'lore' }],
+        },
+      ],
+      missing: ['char-2'],
     })
 
     await ensureAllCharacterLorebooksHydrated()
 
-    expect(projectionState.fetchCharLore).toHaveBeenCalledTimes(BULK_HYDRATION_CONCURRENCY * 3)
-    expect(maxActiveRequests).toBeLessThanOrEqual(BULK_HYDRATION_CONCURRENCY)
+    expect((DBState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([
+      { key: 'char-1', content: 'lore' },
+    ])
+    expect((DBState.db.characters[1] as { globalLore?: unknown[] }).globalLore).toEqual([])
+    expect(isCharacterLorebookHydrated('char-1')).toBe(true)
+    expect(isCharacterLorebookHydrated('char-2')).toBe(false)
+
+    projectionState.fetchBulkCharLore.mockClear()
+    await ensureAllCharacterLorebooksHydrated()
+    expect(projectionState.fetchBulkCharLore).toHaveBeenCalledWith(['char-2'])
+  })
+
+  it('drops a stale bulk character lorebook hydration response', async () => {
+    seedManyLorebookStubCharacters(2)
+    setCachedServerCommandRevision(2)
+    projectionState.fetchBulkCharLore.mockResolvedValueOnce({
+      status: 'ok',
+      revision: 1,
+      characters: [
+        {
+          characterId: 'char-1',
+          globalLore: [{ key: 'char-1', content: 'old lore' }],
+        },
+      ],
+      missing: [],
+    })
+
+    await ensureAllCharacterLorebooksHydrated()
+
+    expect((DBState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([])
+    expect(isCharacterLorebookHydrated('char-1')).toBe(false)
+    projectionState.fetchBulkCharLore.mockClear()
+    await ensureAllCharacterLorebooksHydrated()
+    expect(projectionState.fetchBulkCharLore).toHaveBeenCalledWith(['char-1', 'char-2'])
   })
 
   it('is a no-op when stubs are off (globalLore stays resident, no fetch)', async () => {
     await hydrateActiveCharacterLorebook()
     expect(projectionState.fetchCharLore).not.toHaveBeenCalled()
+    expect(projectionState.fetchBulkCharLore).not.toHaveBeenCalled()
     expect(isCharacterLorebookHydrated('char-1')).toBe(false)
   })
 })

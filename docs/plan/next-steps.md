@@ -23,9 +23,10 @@ Phase 0 foundations and Phases 1, 5, 6, 7, and 8 are implemented. Phase 2
 narrowed the measured hot command families: settings/chat/plugin-storage
 commands use message-free mutation, and message history plus
 `generation.persisted` use targeted SQLite paths. Phase 3 has targeted
-projection, asset metadata indexing, bulk all-chat hydration, and full-bootstrap
-resync reason-budget coverage. Phase 4 runtime resilience is implemented; its
-remaining SSE taxonomy slice is only needed when chat stream vocabulary changes.
+projection, asset metadata indexing, bulk all-chat/all-character-lorebook
+hydration, and full-bootstrap resync reason-budget coverage. Phase 4 runtime
+resilience is implemented; its remaining SSE taxonomy slice is only needed when
+chat stream vocabulary changes.
 
 Prefer one of these next:
 
@@ -33,10 +34,7 @@ Prefer one of these next:
    area can be named with explicit durable mutation, event, rollback, and proof
    behavior. The measured assembly side-effect candidate is implemented:
    [`generation-assembly-side-effect-narrow-path.md`](phases/slices/phase-2-command-write-cost/generation-assembly-side-effect-narrow-path.md).
-2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
-   workflows become active:
-   [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. Add the Phase 4 SSE taxonomy fixture only when touching chat stream event
+2. Add the Phase 4 SSE taxonomy fixture only when touching chat stream event
    names or payload shapes:
    [`sse-taxonomy-alignment.md`](phases/slices/phase-4-stream-generation-resilience/sse-taxonomy-alignment.md).
 
@@ -75,10 +73,9 @@ The selected runtime candidate is implemented:
 
 1. Continue Phase 2 only when fresh metrics identify another narrow source area
    with clear protocol behavior.
-2. Optional Phase 3 lorebook bulk reads if measurement makes them active.
-3. SSE taxonomy verification when chat stream vocabulary changes.
-4. Additional route schemas only when touching a stable route envelope.
-5. Refresh [`latest-verification.md`](latest-verification.md) after the next
+2. SSE taxonomy verification when chat stream vocabulary changes.
+3. Additional route schemas only when touching a stable route envelope.
+4. Refresh [`latest-verification.md`](latest-verification.md) after the next
    full or focused verification run.
 
 ## Proof Commands
