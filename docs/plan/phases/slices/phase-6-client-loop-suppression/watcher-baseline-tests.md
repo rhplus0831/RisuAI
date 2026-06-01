@@ -1,6 +1,7 @@
 # Watcher Baseline Tests
 
-Status: planned.
+Status: planned; lorebook no-data-loss coverage exists, broader server-origin
+echo tests remain.
 
 ## Source Anchors
 
@@ -14,6 +15,10 @@ Status: planned.
 
 Add regression tests for watcher behavior during server-origin projection
 refreshes, local edits, rollback, and conflict handling.
+
+Current coverage: `src/ts/server/lorebookBridge.svelte.test.ts` protects the
+hydrated-lorebook no-data-loss invariant. It does not cover settings/chat/script
+watchers or generic server-origin projection echo.
 
 ## Protocol Behavior
 

@@ -1,7 +1,8 @@
 # Message And Chat Targeted Persistence
 
-Status: partially implemented; `chat.updated`, `message.appended`, and the
-message edit/delete/truncate/replace targeted slice completed on 2026-06-01.
+Status: implemented on 2026-06-01 for `chat.updated`, `message.appended`,
+`message.updated`, `message.deleted`, `message.truncated`, and
+`messages.replaced`.
 
 ## Source Anchors
 
@@ -12,66 +13,35 @@ message edit/delete/truncate/replace targeted slice completed on 2026-06-01.
 
 ## Scope
 
-Evaluate targeted helpers for message append/edit and chat metadata updates so
-they can update message rows or message-free `db.json` without scanning every
-chat.
+Narrow chat metadata and one-chat message history commands so they no longer
+scan every chat or hydrate every message.
 
-Implemented batch:
+Implemented routes:
 
-- `PATCH /api/v1/commands/chats/:chatId` now uses a `message-free` mutation
-  path for chat metadata updates.
-- `POST /api/v1/commands/chats/:chatId/messages` now uses a
-  `targeted-message` mutation path.
-- Source files changed:
-  - `server/fastify/src/commands/mutations.ts`
-  - `server/fastify/src/messageStore.ts`
-  - `server/fastify/src/routes/commands.ts`
-  - `server/fastify/__tests__/commandMetrics.test.ts`
-  - `server/fastify/__tests__/commands.test.ts`
-- Durable mutation behavior: the command reads the message-free `db.json` only
-  to validate the target chat, checks the SQLite active-message uid index for
-  duplicate ids, appends one active `messages` row at the next sequence, then
-  bumps the revision and persists one command event in the same transaction.
-- Durable mutation behavior for `chat.updated`: the command reads and writes
-  message-free `db.json`, preserves SQLite message rows, strips any normalized
-  chat message payloads before writing `db.json`, then bumps the revision and
-  persists one command event in the same transaction.
-- Event behavior: unchanged `chat.updated` and `message.appended` event shapes
-  with parent ids; one command still emits one event for one revision bump.
-- Rollback behavior: stale revisions, missing chats, duplicate ids, or thrown
-  validation errors roll back the SQLite append, revision bump, and event row
-  before any event emission. The targeted-message append path does not write
-  `db.json`; the message-free chat update writes `db.json` only after SQLite
-  commit.
-
-2026-06-01 targeted-message history slice:
-
-- `PATCH /api/v1/commands/messages/:messageId`,
-  `DELETE /api/v1/commands/messages/:messageId`,
+- `PATCH /api/v1/commands/chats/:chatId` uses `message-free` mutation for chat
+  metadata.
+- `POST /api/v1/commands/chats/:chatId/messages` uses `targeted-message` append.
+- `PATCH`/`DELETE /api/v1/commands/messages/:messageId`,
   `POST /api/v1/commands/chats/:chatId/messages/truncate`, and
-  `PUT /api/v1/commands/chats/:chatId/messages` move from the hydrated command
-  mutation path to `targeted-message`.
-- Source files:
-  - `server/fastify/src/messageStore.ts`
-  - `server/fastify/src/routes/commands.ts`
-  - `server/fastify/__tests__/commandMetrics.test.ts`
-  - `server/fastify/__tests__/commands.test.ts`
-- Durable mutation behavior: each command reads message-free `db.json` only to
-  validate chat ownership, reads or rewrites active SQLite `messages` rows for
-  one target chat, preserves reroll alternate rows, then bumps the revision and
-  persists one command event in the same transaction.
-- Event behavior: existing `message.updated`, `message.deleted`,
-  `message.truncated`, and `messages.replaced` event shapes are unchanged; one
-  command still emits one event for one revision bump.
-- Rollback behavior: stale revisions, missing chats/messages, duplicate
-  replacement ids, or validation errors roll back SQLite row writes, revision
-  bumps, and event rows before live event emission. These targeted-message paths
-  do not write `db.json`.
+  `PUT /api/v1/commands/chats/:chatId/messages` use `targeted-message` for
+  edit/delete/truncate/replace.
 
-Remaining scope:
+Current behavior:
 
-- Broader generation and prompt-assembly whole-corpus passes remain separate
-  Phase 2/4 work.
+- Chat metadata updates read and write message-free `db.json`, keep SQLite
+  message rows intact, and write `db.json` only after SQLite revision/event
+  commit.
+- Message commands read message-free `db.json` only to validate chat ownership,
+  then update active SQLite `messages` rows for one chat in the same transaction
+  as the revision bump and command event.
+- Reroll alternate rows and `hypaV3Data` split-store semantics are preserved.
+- Existing event shapes and one-event-per-revision behavior are unchanged.
+- Stale revisions, missing chats/messages, duplicate ids, and validation
+  failures roll back row writes, revision bumps, and event rows before live
+  event emission.
+
+Remaining Phase 2 scope is broader generation/prompt side-effect cost, not this
+chat/message slice.
 
 ## Protocol Behavior
 
@@ -82,20 +52,11 @@ Remaining scope:
 
 ## Done When
 
-- `message.appended` selected with explicit active-row ownership in the
-  `messages` table. Completed.
-- `chat.updated` selected with explicit message-free `db.json` ownership and no
-  SQLite message-row ownership. Completed.
-- Tests prove unchanged conflict and projection refresh behavior for the
-  selected path. Completed for append through the command suite and hydration
-  assertions; completed for chat metadata with rowid stability and message-free
-  `db.json` assertions; completed for edit/delete/truncate/replace with
-  target-chat row ownership assertions.
-- Metrics show the path avoids full chat diff scans. Completed:
-  `message.appended` moved from `hydrated` to `targeted-message` and recorded
-  `dbJsonWriteMs: 0`; `chat.updated` moved from `hydrated` to `message-free`
-  with the command harness recording `totalMs: 3.53`; message
-  edit/delete/truncate/replace commands now report `targeted-message`.
+- `chat.updated` reports `message-free`.
+- Message append/edit/delete/truncate/replace report `targeted-message` and
+  avoid `db.json` writes.
+- Focused command tests cover conflicts, rollback, projection refresh behavior,
+  row ownership, and reroll alternate preservation.
 
 ## Validation
 

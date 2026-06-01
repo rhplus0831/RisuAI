@@ -1,6 +1,7 @@
 # Projection Apply Suppression Token
 
-Status: planned.
+Status: planned; several bridges already keep local baselines, but there is no
+shared server-projection apply token.
 
 ## Source Anchors
 
@@ -14,6 +15,11 @@ Status: planned.
 
 Prevent trusted server projection application from being interpreted as a local
 edit by command-backed bridge watchers.
+
+Current behavior: settings, chat, lorebook, and script-definition bridges keep
+their own snapshots/baselines and rollback suppression. This slice is only for
+the remaining echo cases or for replacing duplicated baseline rules with a
+shared projection-apply signal.
 
 ## Protocol Behavior
 

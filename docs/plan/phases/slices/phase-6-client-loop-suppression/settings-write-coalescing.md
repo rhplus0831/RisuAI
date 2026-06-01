@@ -1,6 +1,7 @@
 # Settings Write Coalescing
 
-Status: planned.
+Status: partially implemented; debounce/coalescing exists, equality-noop and
+coverage gaps remain.
 
 ## Source Anchors
 
@@ -10,8 +11,13 @@ Status: planned.
 
 ## Scope
 
-Debounce high-frequency settings inputs and skip equality-noop writes so
-interactive controls do not emit command-per-drag updates.
+Keep high-frequency settings inputs from emitting command-per-drag updates and
+close remaining no-op write gaps.
+
+Current behavior: `watchServerBackedSettings()` and
+`createServerBackedSettingDraft()` queue settings patches with a short debounce.
+`applyServerBackedSettingsPatch()` still sends immediate patches and does not
+skip values that are already equal to the projection.
 
 ## Protocol Behavior
 
@@ -21,8 +27,8 @@ interactive controls do not emit command-per-drag updates.
 
 ## Done When
 
-- Color or slider-like inputs coalesce command writes.
-- NanoGPT or dashboard-style read persistence avoids no-op commands.
+- Debounced settings flows keep coalescing command writes.
+- Immediate patch helpers skip equality no-ops.
 - Tests prove unchanged final setting value with fewer command sends.
 
 ## Validation

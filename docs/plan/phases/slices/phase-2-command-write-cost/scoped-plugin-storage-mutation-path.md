@@ -46,8 +46,9 @@ Implemented routes:
 - Preserve response shapes and event types:
   `pluginStorage.updated`, `pluginStorage.deleted`, and
   `pluginStorage.bulkUpdated`.
-- Keep chat, message, generation, and plugin definition commands on their
-  existing paths until their ownership and persistence rules are explicit.
+- Keep unrelated command families on their current paths until their ownership
+  and persistence rules are explicit. Later commits used this same rule to
+  narrow chat metadata, message history, and generation persistence.
 
 ## Done When
 
@@ -61,14 +62,14 @@ Implemented routes:
 
 Local command metrics harness on 2026-06-01:
 
-| Command type              | mutationPath | loadMs | cloneMutateMs | sqliteSyncMs | dbJsonWriteMs | totalMs |
-| ------------------------- | ------------ | -----: | ------------: | -----------: | ------------: | ------: |
-| before plugin storage     | hydrated     |   6.32 |          6.74 |         3.56 |          0.46 |   18.63 |
-| after plugin storage      | message-free |   0.44 |          0.26 |         0.12 |          0.42 |    2.77 |
-| after settings            | message-free |   0.51 |          0.35 |         0.19 |          0.70 |    3.37 |
-| still hydrated chat       | hydrated     |   6.44 |         10.55 |         3.08 |          0.54 |   22.16 |
-| still hydrated message    | hydrated     |   5.85 |         15.39 |         2.89 |          0.56 |   26.17 |
-| still hydrated generation | hydrated     |   6.57 |         17.47 |         3.30 |          0.59 |   29.48 |
+| Command type             | mutationPath | loadMs | cloneMutateMs | sqliteSyncMs | dbJsonWriteMs | totalMs |
+| ------------------------ | ------------ | -----: | ------------: | -----------: | ------------: | ------: |
+| before plugin storage    | hydrated     |   6.32 |          6.74 |         3.56 |          0.46 |   18.63 |
+| after plugin storage     | message-free |   0.44 |          0.26 |         0.12 |          0.42 |    2.77 |
+| after settings           | message-free |   0.51 |          0.35 |         0.19 |          0.70 |    3.37 |
+| then-hydrated chat       | hydrated     |   6.44 |         10.55 |         3.08 |          0.54 |   22.16 |
+| then-hydrated message    | hydrated     |   5.85 |         15.39 |         2.89 |          0.56 |   26.17 |
+| then-hydrated generation | hydrated     |   6.57 |         17.47 |         3.30 |          0.59 |   29.48 |
 
 ## Validation
 

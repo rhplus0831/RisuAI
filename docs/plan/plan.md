@@ -44,14 +44,15 @@ prove continuity.
 The old single-page plan produced the Phase 0 foundations: opt-in protocol
 metrics, hydration bounds, SQLite-backed command-event replay, and the
 route/protocol manifest. Follow-up commits closed the Phase 1 P1 correctness
-risks, moved `settings.updated` and plugin-storage commands to message-free
-mutation paths, narrowed known targeted projection resources, indexed asset
-metadata lookups, and added bulk all-chat hydration.
+risks, narrowed the hot Phase 2 command families (`settings`, plugin storage,
+chat metadata, message history, and generation persistence), narrowed known
+targeted projection resources, indexed asset metadata lookups, added bulk
+all-chat hydration, and bounded slow SSE/stream consumers.
 
-Remaining work is concentrated in still-hydrated command families
-(`chat`, `message`, `generation`), full-bootstrap fallbacks for sprawling
-resources, optional lorebook bulk reads, import/export memory pressure, client
-watcher echo, and stream/backpressure edges.
+Remaining work is concentrated in generation/prompt side-effect passes,
+full-bootstrap fallbacks for sprawling resources, optional lorebook bulk reads,
+import/export memory pressure, client watcher echo, route operation guards, and
+verification budgets.
 
 ## Invariants
 
@@ -86,10 +87,11 @@ watcher echo, and stream/backpressure edges.
 
 ## Suggested Execution Order
 
-1. Continue Phase 2 only with measured, narrowly scoped command-family slices.
+1. Continue Phase 2 only with measured, narrowly scoped generation/prompt
+   side-effect slices.
 2. Use Phase 3 for optional lorebook bulk reads or full-resync budgets when
    measurement shows they matter.
-3. Harden stream fanout and generation lifecycle edges in Phase 4.
+3. Harden remaining generation lifecycle edges in Phase 4.
 4. Address import/export and asset memory pressure in Phase 5.
 5. Suppress client loops and high-frequency command writes in Phase 6.
 6. Add route limits, schemas, and coverage refinements in Phase 7.

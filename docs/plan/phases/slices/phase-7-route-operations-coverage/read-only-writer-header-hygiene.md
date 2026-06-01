@@ -1,6 +1,6 @@
 # Read-Only Writer Header Hygiene
 
-Status: planned.
+Status: implemented.
 
 ## Source Anchors
 
@@ -15,6 +15,18 @@ Status: planned.
 Keep passive resync and read-only observe paths from claiming active-writer
 ownership or sending writer-intent headers accidentally.
 
+Implemented behavior:
+
+- `fetchServerBootstrapProjection()` sends the active-writer session header for
+  writer-intent startup.
+- `fetchServerBootstrapProjectionReadOnly()` omits the writer header and can
+  skip revision caching during trusted resync.
+- `forceServerProjectionResync()` uses the read-only bootstrap path for backup
+  restore and full-bootstrap recovery.
+- Active-writer tests prove passive bootstrap reads do not reclaim ownership
+  and observe routes such as event streams, durable reattach, and public asset
+  reads stay outside the writer gate.
+
 ## Protocol Behavior
 
 - Read-only bootstrap for full resync should not steal writer ownership.
@@ -25,9 +37,9 @@ ownership or sending writer-intent headers accidentally.
 ## Done When
 
 - Tests prove read-only bootstrap does not latch a new active writer.
-- Tests or route manifest checks cover observe routes that should not be
+- Tests and route manifest checks cover observe routes that should not be
   writer-gated.
-- Client helper names make writer-intent versus read-only behavior obvious.
+- Client helper names distinguish writer-intent and read-only behavior.
 
 ## Validation
 

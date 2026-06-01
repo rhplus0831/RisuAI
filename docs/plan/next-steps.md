@@ -18,22 +18,19 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-Phase 1 is implemented. Phase 2 has measured the hot command families, migrated
-`settings.updated`, `chat.updated`, and plugin-storage commands to message-free
-mutation paths, and moved `message.appended` to a targeted SQLite message append
-path. Message edit/delete/truncate/replace commands now use targeted SQLite
-message paths, and `generation.persisted` uses a targeted SQLite generation
-message path. Phase 3 has implemented the targeted-projection, asset metadata,
-and bulk all-chat hydration optimizations. Phase 4 has implemented bounded
-slow-consumer behavior for command/memory SSE, inline and durable chat
-generation SSE, and proxy WebSocket stream jobs.
+Phase 1 is implemented. Phase 2 has measured and narrowed the hot command
+families: settings/chat/plugin-storage commands use message-free mutation, and
+message history plus `generation.persisted` use targeted SQLite paths. Phase 3
+has implemented targeted projection, asset metadata indexing, and bulk all-chat
+hydration. Phase 4 has implemented bounded slow-consumer behavior for
+command/memory SSE, inline and durable chat generation SSE, and proxy WebSocket
+stream jobs.
 
 Prefer one of these next:
 
-1. Measure and scope the remaining generation/prompt-assembly whole-corpus
-   passes only if a narrow side-effect or persistence batch can name source
-   files, durable mutation behavior, event behavior, rollback behavior, and
-   proof command.
+1. Measure and scope remaining generation/prompt-assembly whole-corpus passes
+   only if a narrow side-effect batch can name source files, durable mutation
+   behavior, event behavior, rollback behavior, and proof command.
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
@@ -65,8 +62,8 @@ and
 
 ## Selection Order
 
-1. Narrow generation/prompt side-effect persistence work in Phase 2, if a
-   measured slice is available.
+1. Narrow generation/prompt side-effect work in Phase 2 only when a measured
+   slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
 3. Stream generation reattach, resend, and finalization resilience in Phase 4.

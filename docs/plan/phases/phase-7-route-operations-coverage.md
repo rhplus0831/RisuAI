@@ -1,6 +1,7 @@
 # Phase 7: Route Operations Coverage
 
-Status: planned.
+Status: partly implemented; route-manifest wildcard coverage and read-only
+writer-header hygiene are in place.
 
 Goal: add route-level operational safeguards without breaking long-lived
 protocol streams, and close route coverage gaps found by the audit.
@@ -19,8 +20,10 @@ protocol streams, and close route coverage gaps found by the audit.
 - [`explicit-route-rate-limits.md`](slices/phase-7-route-operations-coverage/explicit-route-rate-limits.md)
 - [`head-route-and-body-parser-audit.md`](slices/phase-7-route-operations-coverage/head-route-and-body-parser-audit.md)
 - [`schema-hot-envelope-validation.md`](slices/phase-7-route-operations-coverage/schema-hot-envelope-validation.md)
-- [`route-manifest-wildcard-coverage.md`](slices/phase-7-route-operations-coverage/route-manifest-wildcard-coverage.md)
-- [`read-only-writer-header-hygiene.md`](slices/phase-7-route-operations-coverage/read-only-writer-header-hygiene.md)
+- [`route-manifest-wildcard-coverage.md`](slices/phase-7-route-operations-coverage/route-manifest-wildcard-coverage.md) -
+  implemented
+- [`read-only-writer-header-hygiene.md`](slices/phase-7-route-operations-coverage/read-only-writer-header-hygiene.md) -
+  implemented
 
 ## Exit Criteria
 

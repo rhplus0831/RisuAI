@@ -6,6 +6,9 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
+Current status reflects code and commit history through
+`fd1249af fix: bound slow stream consumers`.
+
 ## Current Snapshot
 
 Completed work:
@@ -18,22 +21,27 @@ Completed work:
   writes all have regression coverage.
 - Phase 2 has a reproducible command metrics harness. `settings.updated`,
   `chat.updated`, and plugin-storage put/delete/bulk commands use the
-  message-free mutation path. `message.appended` uses a targeted SQLite message
-  append path. Message edit/delete/truncate/replace commands use targeted
-  SQLite message paths, and `generation.persisted` uses a targeted SQLite
-  generation message path.
+  message-free mutation path. `message.appended`, message
+  edit/delete/truncate/replace commands, and `generation.persisted` use
+  targeted SQLite paths.
 - Phase 3 has six read-side optimizations: targeted projection field selectors
-  for empty, small, character-family, mixed broad, and plugin resources; an
+  for empty, small, character-family, and mixed broad/plugin resources; an
   in-process asset metadata index; and authenticated bulk all-chat hydration.
 - Phase 4 has bounded slow-consumer behavior for `/api/v1/events`, inline and
   durable chat-generation SSE, and proxy WebSocket stream jobs.
+- Phase 6 has existing settings debounce/coalescing and per-bridge watcher
+  baselines; memory job SSE refresh, shared projection-apply suppression, and
+  broader echo tests remain planned.
+- Phase 7 already has route-manifest wildcard/prefix coverage and read-only
+  writer-header hygiene tests. Rate limits, parser/HEAD review, and hot
+  schemas remain planned.
 
 No P1 plan risks remain open after the Phase 1 commits.
 
 Active performance risks:
 
-- Generation and prompt assembly can still perform multiple whole-corpus
-  passes around side effects before final targeted persistence.
+- Generation and prompt assembly can still perform whole-corpus passes for
+  assembly-time side effects and prompt construction.
 - Full-bootstrap fallbacks for sprawling resources such as `settings`, `state`,
   and `pluginStorage` remain expensive.
 - Asset byte reads remain one request per asset, although metadata lookup is no
@@ -41,8 +49,8 @@ Active performance risks:
 - Optional lorebook hydration is still N requests when experimental
   `enableLorebookStubs` is enabled.
 - Import, export, and bundle paths can materialize large payloads.
-- Memory job polling, settings writes, watcher echo, and generation resend
-  loops need explicit suppression or caps.
+- Memory job polling, watcher echo, remaining settings no-op paths, and
+  generation resend loops need explicit suppression or caps.
 
 ## Start Here
 
@@ -58,12 +66,12 @@ Active performance risks:
 | --------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
 | [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, hydration bounds/aggregation, durable event history, route manifest.  |
 | [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                        |
-| [Phase 2](phases/phase-2-command-write-cost.md)           | Message history targeted             | Whole-corpus command mutation cost and narrow write paths.                              |
+| [Phase 2](phases/phase-2-command-write-cost.md)           | Hot command paths targeted           | Whole-corpus command mutation cost and narrow write paths.                              |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Six optimizations implemented        | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Backpressure implemented             | Generation reattach triggers, resend caps, finalization retry.                          |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Planned                              | Import/export memory pressure, asset mutation durability, per-generation media caching. |
-| [Phase 6](phases/phase-6-client-loop-suppression.md)      | Planned                              | Memory job polling, server-origin watcher echo, settings write coalescing.              |
-| [Phase 7](phases/phase-7-route-operations-coverage.md)    | Planned                              | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.     |
+| [Phase 6](phases/phase-6-client-loop-suppression.md)      | Partly implemented                   | Memory job polling, server-origin watcher echo, settings write coalescing.              |
+| [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.     |
 | [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                     |
 
 ## Maintenance Rules

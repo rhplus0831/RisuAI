@@ -1,6 +1,6 @@
 # Route Manifest Wildcard Coverage
 
-Status: planned.
+Status: implemented.
 
 ## Source Anchors
 
@@ -13,6 +13,16 @@ Status: planned.
 
 Ensure wildcard routes and Fastify route-printing edge cases remain visible to
 manifest coverage and architecture audit rules.
+
+Implemented behavior:
+
+- `routeManifest.ts` supports exact, prefix, and pattern matching, including
+  `*` wildcards such as `/api/v1/hub/*`.
+- `routeProtection.test.ts` derives live API routes from
+  `app.printRoutes({ commonPrefix: false })` and fails when a route lacks a
+  manifest decision.
+- `util/client-thinning-audit.ts` also reads the manifest and checks for stale
+  or missing route decisions.
 
 ## Protocol Behavior
 

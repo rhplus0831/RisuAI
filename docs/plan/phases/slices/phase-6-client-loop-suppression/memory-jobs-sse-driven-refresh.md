@@ -1,6 +1,7 @@
 # Memory Jobs SSE Driven Refresh
 
-Status: planned.
+Status: planned; stale responses are dropped today, but overlapping requests
+and timer polling still remain.
 
 ## Source Anchors
 
@@ -13,6 +14,10 @@ Status: planned.
 
 Reduce memory job modal polling and prevent overlapping list requests by using
 memory SSE progress events as the main refresh trigger where possible.
+
+Current behavior: `server-memory-jobs.svelte` refreshes on chat change and every
+5 seconds. A request serial drops stale responses, but the component does not
+skip or abort a new list request while one is already in flight.
 
 ## Protocol Behavior
 

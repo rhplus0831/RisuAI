@@ -1,6 +1,6 @@
 # SSE Taxonomy Alignment
 
-Status: planned.
+Status: partially covered; final shared taxonomy check planned.
 
 ## Source Anchors
 
@@ -11,9 +11,18 @@ Status: planned.
 
 ## Scope
 
-Keep server-emitted chat SSE events and client parser/types aligned. The route
-emits `job_accepted`; the client must understand every event needed for durable
-generation lifecycle and reattach behavior.
+Keep server-emitted chat SSE events and client parser/types aligned.
+
+Current reality:
+
+- `server/fastify/src/prompt/sseEvents.ts` defines the server taxonomy,
+  including durable-only `job_accepted`.
+- `src/ts/process/request/serverChat.ts` parses `job_accepted`, prompt/info,
+  token, side-effect, error, and done frames, with reattach tests covering the
+  replay path.
+- `src/ts/process/request/serverChatEvents.ts` mirrors most shapes, but this
+  slice should still add a cheap shared fixture or type-level check so future
+  server event additions cannot silently miss client coverage.
 
 ## Protocol Behavior
 

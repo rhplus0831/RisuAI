@@ -1,6 +1,7 @@
 # Phase 6: Client Loop Suppression
 
-Status: planned.
+Status: partly implemented; memory job SSE refresh and watcher echo coverage
+remain planned.
 
 Goal: prevent server-origin refreshes, polling loops, and high-frequency UI
 controls from echoing into repeated commands or overlapping requests.
@@ -28,7 +29,8 @@ controls from echoing into repeated commands or overlapping requests.
   possible.
 - Server projection application cannot be mistaken for a local edit by bridge
   watchers.
-- High-frequency settings controls coalesce and skip equality-noop writes.
+- High-frequency settings controls continue to coalesce and skip remaining
+  equality-noop writes.
 - Watcher behavior has tests for server-origin refreshes.
 
 ## Validation

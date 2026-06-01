@@ -17,9 +17,10 @@ hydrated chat messages. The command-family measurement slice selected
 sync time for a scalar settings edit on a message-heavy save.
 
 Implemented by routing `PATCH /api/v1/commands/settings/:group` through a
-message-free command mutation helper. The generic hydrated command path remains
-in place for chat, message, generation, and other command families that still
-need full-database safety rules.
+message-free command mutation helper. Later Phase 2 commits applied the same
+measurement-first rule to plugin storage, chat metadata, message history, and
+generation persistence; the generic hydrated command path remains for
+unmigrated complex commands.
 
 ## Implementation Scope
 
@@ -49,8 +50,7 @@ need full-database safety rules.
 
 - Selected settings commands avoid `loadPersistedWithMessages()`.
 - Revision conflict, event, and response shapes match the generic path.
-- Settings metrics report `mutationPath: "message-free"`; still-unmigrated
-  generic command families report `mutationPath: "hydrated"`.
+- Settings metrics report `mutationPath: "message-free"`.
 
 ## Measurement
 

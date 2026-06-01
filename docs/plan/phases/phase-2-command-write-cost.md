@@ -1,6 +1,7 @@
 # Phase 2: Command Write Cost
 
-Status: message history targeted.
+Status: hot command paths targeted; remaining work is measured
+generation/prompt side-effect cost.
 
 Goal: reduce whole-corpus command mutation work while preserving revision,
 event, transaction, and projection contracts.
@@ -24,9 +25,8 @@ event, transaction, and projection contracts.
   implemented; plugin-storage put/delete/bulk commands use the message-free
   mutation path.
 - [`message-chat-targeted-persistence.md`](slices/phase-2-command-write-cost/message-chat-targeted-persistence.md) -
-  partially implemented; `chat.updated` uses the message-free mutation path and
-  `message.appended`, `message.updated`, `message.deleted`,
-  `message.truncated`, and `messages.replaced` use targeted SQLite message
+  implemented; `chat.updated` uses the message-free mutation path and
+  message append/edit/delete/truncate/replace use targeted SQLite message
   paths.
 - [`generation-persistence-narrow-path.md`](slices/phase-2-command-write-cost/generation-persistence-narrow-path.md) -
   implemented; `generation.persisted` uses a targeted SQLite generation
@@ -34,7 +34,7 @@ event, transaction, and projection contracts.
 
 ## Exit Criteria
 
-- Migrated command families avoid unnecessary full message hydration.
+- Migrated hot command families avoid unnecessary full message hydration.
 - `baseRevision`, one revision bump, and one command event semantics are
   unchanged.
 - `db.json` never lands ahead of the durable SQLite rows it depends on.

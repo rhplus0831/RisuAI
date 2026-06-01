@@ -1,6 +1,7 @@
 # Phase 4: Stream And Generation Resilience
 
-Status: SSE backpressure implemented; remaining slices planned.
+Status: SSE backpressure implemented; taxonomy partly covered; remaining
+slices planned.
 
 Goal: make SSE, generation reattach, resend, and terminal persistence behavior
 bounded and observable.
