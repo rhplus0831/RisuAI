@@ -206,6 +206,10 @@ import {
   peekCachedServerCommandRevision,
   setCachedServerCommandRevision,
 } from './server/commands'
+import {
+  getProtocolDiagnosticsSnapshot,
+  type FullBootstrapResyncReason,
+} from './server/protocolDiagnostics'
 import { DBState, LoadingStatusState, hypaV3ProgressStore, loadedStore } from './stores.svelte'
 
 function serverDefaultDatabase() {
@@ -298,6 +302,28 @@ async function flushServerProjectionSync(): Promise<void> {
   for (let i = 0; i < 50; i += 1) {
     await Promise.resolve()
   }
+}
+
+type ProtocolDiagnosticsSnapshot = ReturnType<typeof getProtocolDiagnosticsSnapshot>
+
+function fullBootstrapReasonCount(snapshot: ProtocolDiagnosticsSnapshot, reason: string): number {
+  return snapshot.fullBootstrapResync[reason] ?? 0
+}
+
+function unexpectedFullBootstrapCount(snapshot: ProtocolDiagnosticsSnapshot): number {
+  return Object.values(snapshot.unexpectedFullBootstrapResync).reduce(
+    (total, count) => total + count,
+    0,
+  )
+}
+
+function expectFullBootstrapResyncDelta(
+  before: ProtocolDiagnosticsSnapshot,
+  reason: FullBootstrapResyncReason,
+): void {
+  const after = getProtocolDiagnosticsSnapshot()
+  expect(fullBootstrapReasonCount(after, reason) - fullBootstrapReasonCount(before, reason)).toBe(1)
+  expect(unexpectedFullBootstrapCount(after) - unexpectedFullBootstrapCount(before)).toBe(0)
 }
 
 describe('web bootstrap startup source', () => {
@@ -407,6 +433,7 @@ describe('web bootstrap startup source', () => {
 
     const subscription = serverEventsState.subscriptions[0]
     // The default projection mock returns mode 'full' for this resource.
+    const diagnosticsBefore = getProtocolDiagnosticsSnapshot()
     subscription.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
 
     await vi.waitFor(() => {
@@ -418,6 +445,7 @@ describe('web bootstrap startup source', () => {
     })
     expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
     expect(peekCachedServerCommandRevision()).toBe(6)
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-full-mode')
   })
 
   it('full-bootstraps restored state events so the active projection changes', async () => {
@@ -453,6 +481,60 @@ describe('web bootstrap startup source', () => {
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
   })
 
+  it('full-bootstraps when a contiguous targeted projection fetch fails', async () => {
+    await loadWebInitialDatabase()
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'error' as const,
+      error: 'projection failed',
+    }))
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 6,
+        database: { characters: [], modules: [], personas: [], language: 'ko' },
+      },
+    }
+
+    const subscription = serverEventsState.subscriptions[0]
+    const diagnosticsBefore = getProtocolDiagnosticsSnapshot()
+    subscription.onCommandEvent({ type: 'chat.updated', revision: 6, resource: 'chat' })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.language).toBe('ko')
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('chat', {
+      id: undefined,
+      parentId: undefined,
+    })
+    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(peekCachedServerCommandRevision()).toBe(6)
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-error')
+  })
+
+  it('full-bootstraps when an event arrives without a cached baseline', async () => {
+    await loadWebInitialDatabase()
+    clearCachedServerCommandRevision()
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 6,
+        database: { characters: [], modules: [], personas: [], language: 'ko' },
+      },
+    }
+
+    const subscription = serverEventsState.subscriptions[0]
+    const diagnosticsBefore = getProtocolDiagnosticsSnapshot()
+    subscription.onCommandEvent({ type: 'chat.updated', revision: 6, resource: 'chat' })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.language).toBe('ko')
+    })
+    expect(serverProjectionState.fetchResource).not.toHaveBeenCalled()
+    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(peekCachedServerCommandRevision()).toBe(6)
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'no-baseline')
+  })
+
   it('full-bootstraps on a revision gap, without a targeted fetch', async () => {
     await loadWebInitialDatabase()
     serverBootstrapState.response = {
@@ -465,6 +547,7 @@ describe('web bootstrap startup source', () => {
 
     const subscription = serverEventsState.subscriptions[0]
     // revision 9 is a gap over the applied baseline of 5.
+    const diagnosticsBefore = getProtocolDiagnosticsSnapshot()
     subscription.onCommandEvent({ type: 'chat.updated', revision: 9, resource: 'chat' })
 
     await vi.waitFor(() => {
@@ -473,6 +556,7 @@ describe('web bootstrap startup source', () => {
     expect(serverProjectionState.fetchResource).not.toHaveBeenCalled()
     expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
     expect(peekCachedServerCommandRevision()).toBe(9)
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'revision-gap')
   })
 
   it('re-subscribes with a replay cursor after the event stream drops', async () => {
@@ -519,6 +603,7 @@ describe('web bootstrap startup source', () => {
       }
 
       const subscription = serverEventsState.subscriptions[0]
+      const diagnosticsBefore = getProtocolDiagnosticsSnapshot()
       subscription.onClose?.()
 
       await vi.advanceTimersByTimeAsync(1000)
@@ -529,6 +614,7 @@ describe('web bootstrap startup source', () => {
       expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
       expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
       expect(peekCachedServerCommandRevision()).toBe(6)
+      expectFullBootstrapResyncDelta(diagnosticsBefore, 'event-replay-unavailable')
     } finally {
       vi.useRealTimers()
     }

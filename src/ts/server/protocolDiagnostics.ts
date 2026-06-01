@@ -1,5 +1,15 @@
 type HydrationKind = 'chat' | 'characterLorebook'
 
+export const EXPECTED_FULL_BOOTSTRAP_RESYNC_REASONS = [
+  'event-replay-unavailable',
+  'no-baseline',
+  'projection-error',
+  'projection-full-mode',
+  'revision-gap',
+] as const
+
+export type FullBootstrapResyncReason = (typeof EXPECTED_FULL_BOOTSTRAP_RESYNC_REASONS)[number]
+
 interface HydrationDiagnostics {
   bulkRuns: number
   bulkIds: number
@@ -11,16 +21,20 @@ interface HydrationDiagnostics {
 
 interface ProtocolDiagnostics {
   fullBootstrapResync: Record<string, number>
+  unexpectedFullBootstrapResync: Record<string, number>
   hydration: Record<HydrationKind, HydrationDiagnostics>
 }
 
 const diagnostics: ProtocolDiagnostics = {
   fullBootstrapResync: {},
+  unexpectedFullBootstrapResync: {},
   hydration: {
     chat: emptyHydrationDiagnostics(),
     characterLorebook: emptyHydrationDiagnostics(),
   },
 }
+
+const expectedFullBootstrapResyncReasons = new Set<string>(EXPECTED_FULL_BOOTSTRAP_RESYNC_REASONS)
 
 function emptyHydrationDiagnostics(): HydrationDiagnostics {
   return {
@@ -35,7 +49,18 @@ function emptyHydrationDiagnostics(): HydrationDiagnostics {
 
 export function recordFullBootstrapResync(reason: string): void {
   diagnostics.fullBootstrapResync[reason] = (diagnostics.fullBootstrapResync[reason] ?? 0) + 1
-  debugProtocol('full-bootstrap-resync', { reason })
+  const expected = isExpectedFullBootstrapResyncReason(reason)
+  if (!expected) {
+    diagnostics.unexpectedFullBootstrapResync[reason] =
+      (diagnostics.unexpectedFullBootstrapResync[reason] ?? 0) + 1
+  }
+  debugProtocol('full-bootstrap-resync', { reason, expected })
+}
+
+export function isExpectedFullBootstrapResyncReason(
+  reason: string,
+): reason is FullBootstrapResyncReason {
+  return expectedFullBootstrapResyncReasons.has(reason)
 }
 
 export function recordBulkHydration(kind: HydrationKind, idCount: number): void {

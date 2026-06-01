@@ -1,6 +1,6 @@
 # Full Bootstrap Resync Budget
 
-Status: budget gate planned; diagnostic counters already exist.
+Status: implemented on 2026-06-02.
 
 ## Source Anchors
 
@@ -12,15 +12,27 @@ Status: budget gate planned; diagnostic counters already exist.
 ## Scope
 
 Treat full bootstrap fallback frequency as a protocol health signal. Phase 0
-diagnostics already count reasons through `recordFullBootstrapResync()`; this
-slice is for turning those counters into maintained expectations.
+diagnostics count reasons through `recordFullBootstrapResync()`; this slice
+turns those counters into maintained expectations for the expected fallback
+reasons.
+
+## Current Behavior
+
+- `recordFullBootstrapResync()` records every full-resync reason and separates
+  unexpected reason strings into `unexpectedFullBootstrapResync`.
+- The expected reason vocabulary is:
+  `event-replay-unavailable`, `no-baseline`, `projection-error`,
+  `projection-full-mode`, and `revision-gap`.
+- Bootstrap regression tests assert that each expected fallback path increments
+  the matching reason without increasing the unexpected counter.
 
 ## Protocol Behavior
 
-- Keep existing full-bootstrap fallback for replay miss, revision gap,
+- Existing full-bootstrap fallback remains in place for replay miss, revision gap,
   projection full mode, projection error, and no baseline.
-- Keep reason classification in client diagnostics.
-- Add assertions or budgets only after expected baseline behavior is known.
+- Reason classification is explicit in client diagnostics.
+- The current budget is reason-shape coverage, not a strict runtime frequency
+  threshold; future frequency budgets can build on the same counters.
 
 ## Done When
 
@@ -31,4 +43,5 @@ slice is for turning those counters into maintained expectations.
 
 ## Validation
 
-- `pnpm test -- src/ts/bootstrap.test.ts`
+- 2026-06-02: `pnpm test -- src/ts/bootstrap.test.ts` passed. The configured
+  client Vitest run reported 99 files, 940 passed tests, and 4 skipped tests.

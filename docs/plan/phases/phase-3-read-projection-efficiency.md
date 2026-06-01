@@ -1,7 +1,7 @@
 # Phase 3: Read Projection Efficiency
 
-Status: read optimizations implemented; optional lorebook and full-resync
-budget work remain planned.
+Status: read optimizations implemented; full-resync reason budget implemented;
+optional lorebook work remains planned only if measured.
 
 Goal: reduce repeated REST reads and full-projection work for targeted
 projection, asset metadata, bulk hydration, and full resync fallbacks.
@@ -29,7 +29,8 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
 - Asset metadata lookup no longer parses `db.json` for every cold asset read.
 - Bulk all-chat readers have a lower request count path; optional lorebook
   stubs need a separate measured batch before changing.
-- Full resync diagnostics remain visible and can graduate into budgets later.
+- Full resync diagnostics distinguish expected from unexpected reasons and have
+  fallback-path regression coverage.
 
 ## Current Progress
 
@@ -53,6 +54,10 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
   `POST /api/v1/projection/chatMessages/bulk` for all-chat workflows, replacing
   one-request-per-chat fanout while keeping active-chat hydration on the
   single-chat GET path.
+- Full bootstrap resync diagnostics now expose the expected reason vocabulary
+  plus an unexpected-reason counter, and bootstrap tests cover replay
+  unavailable, no baseline, projection error, projection full mode, and revision
+  gap fallbacks.
 
 ## Validation
 

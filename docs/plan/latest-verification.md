@@ -1,6 +1,6 @@
 # Latest Verification
 
-Date: 2026-06-01
+Date: 2026-06-02
 
 This file records the latest maintained verification result for the
 server/client protocol stability and performance workstream. Replace this
@@ -9,28 +9,21 @@ runs here.
 
 ## Latest Run
 
-- Runtime/code commit under test: this generation assembly side-effect narrow
-  path slice.
-- Scope: Phase 2 targeted assembly side-effect persistence, generation/prompt
-  metric review, existing command metric review gates, and client-thinning
-  architecture audit.
+- Runtime/code commit under test: this full-bootstrap resync budget slice.
+- Scope: Phase 3 full-bootstrap resync reason diagnostics and bootstrap
+  fallback-path regression coverage.
 - Result: passed.
 
-| Command                                                                                                                                        | Result                                                              |
-| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `RISU_PROTOCOL_METRICS=1 pnpm api:test -- server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/durableGeneration.test.ts` | Passed: server API suite, 83 files, 1479 tests, 1 skipped.          |
-| `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`                                              | Passed: 1 file, 1 test; command metric review-gate summary emitted. |
-| `pnpm client-thinning:audit`                                                                                                                   | Passed: client-thinning audit passed.                               |
+| Command                                 | Result                                                                |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| `pnpm test -- src/ts/bootstrap.test.ts` | Passed: configured client Vitest run, 99 files, 940 tests, 4 skipped. |
 
 ## Notes
 
-- The server Vitest generation command ran the configured server API suite, not
-  only the named files.
-- Generation/prompt measurement is opt-in through `RISU_PROTOCOL_METRICS`; the
-  runtime protocol behavior and SSE frame contract are unchanged.
-- The focused metric review now proves assembly-time chat-var and transcript
-  rewrite side effects report `mutationPath: "targeted-assembly"`; durable final
-  generation persistence remains `targeted-generation` with `dbJsonWriteMs: 0`.
-- Command metric timings are review readouts; the maintained hard checks are
-  metric shape, known review gates, retained mutation paths, and
-  `dbJsonWriteMs: 0` on targeted paths.
+- The client Vitest command ran the configured client suite, not only the named
+  bootstrap file.
+- Full-bootstrap resync diagnostics now distinguish expected reasons from
+  unexpected reason strings.
+- Bootstrap tests cover the expected fallback reasons:
+  `event-replay-unavailable`, `no-baseline`, `projection-error`,
+  `projection-full-mode`, and `revision-gap`.
