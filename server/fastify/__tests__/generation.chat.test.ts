@@ -7,7 +7,10 @@ import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
-import type { GenerationChatRouteOptions } from '../src/routes/generationChat.js'
+import {
+  createRequestScopedStoredAssetResolver,
+  type GenerationChatRouteOptions,
+} from '../src/routes/generationChat.js'
 import { LLMFormat } from '../../../src/ts/model/types'
 
 const subtle = webcrypto.subtle
@@ -166,6 +169,49 @@ function parseEvents(body: string): ParsedEvent[] {
       }
     })
 }
+
+describe('per-generation stored asset cache', () => {
+  it('caches stored asset reads by normalized asset id and purpose', () => {
+    const assetId = 'a'.repeat(64)
+    const reads: string[] = []
+    const resolver = createRequestScopedStoredAssetResolver('/data', (_dataDir, id, purpose) => {
+      reads.push(`${purpose}:${id}`)
+      return {
+        type: purpose === 'inlay' ? 'audio' : 'image',
+        base64: `data:${purpose}:${id}`,
+      }
+    })
+
+    const first = resolver(assetId, 'asset_prompt')
+    const second = resolver(`assets/${assetId}.png`, 'asset_prompt')
+    expect(second).toEqual(first)
+    expect(second).not.toBe(first)
+    expect(resolver(assetId, 'inlay')).toEqual({
+      type: 'audio',
+      base64: `data:inlay:${assetId}`,
+    })
+    expect(reads).toEqual([`asset_prompt:${assetId}`, `inlay:${assetId}`])
+  })
+
+  it('caches missing assets only for one request-scoped resolver', () => {
+    const assetId = 'b'.repeat(64)
+    const reads: string[] = []
+    const makeResolver = () =>
+      createRequestScopedStoredAssetResolver('/data', (_dataDir, id, purpose) => {
+        reads.push(`${purpose}:${id}`)
+        return undefined
+      })
+
+    const firstResolver = makeResolver()
+    expect(firstResolver(assetId, 'asset_prompt')).toBeUndefined()
+    expect(firstResolver(`assets/${assetId}.webp`, 'asset_prompt')).toBeUndefined()
+
+    const secondResolver = makeResolver()
+    expect(secondResolver(assetId, 'asset_prompt')).toBeUndefined()
+
+    expect(reads).toEqual([`asset_prompt:${assetId}`, `asset_prompt:${assetId}`])
+  })
+})
 
 describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   it('returns 401 without auth once a password is set', async () => {

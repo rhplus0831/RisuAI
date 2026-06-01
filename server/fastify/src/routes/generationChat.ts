@@ -25,6 +25,7 @@ import {
   type AssembleResult,
   type AssemblyState,
 } from '../prompt/assemble.js'
+import type { ResolveStoredAsset, StoredAssetPurpose } from '../prompt/assetLookup.js'
 import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
 import { createMessageRecord } from '../commands/messages.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
@@ -262,13 +263,21 @@ function multimodalTypeFromContentType(contentType: string): MultiModal['type'] 
   return null
 }
 
-function resolveStoredAsset(
+type StoredAssetReader = (
   dataDir: string,
-  reference: string,
-  purpose: 'asset_prompt' | 'inlay',
+  id: string,
+  purpose: StoredAssetPurpose,
+) => MultiModal | undefined
+
+function cloneStoredAssetResult(result: MultiModal | undefined): MultiModal | undefined {
+  return result ? { ...result } : undefined
+}
+
+function readStoredAsset(
+  dataDir: string,
+  id: string,
+  purpose: StoredAssetPurpose,
 ): MultiModal | undefined {
-  const id = assetIdFromReference(reference)
-  if (!id) return undefined
   const entry = assetById(dataDir, id)
   if (!entry) return undefined
   const file = assetPath(dataDir, entry)
@@ -285,8 +294,27 @@ function resolveStoredAsset(
   return { type, base64: `data:${entry.contentType};base64,${bytes.toString('base64')}` }
 }
 
+export function createRequestScopedStoredAssetResolver(
+  dataDir: string,
+  read: StoredAssetReader = readStoredAsset,
+): ResolveStoredAsset {
+  const cache = new Map<string, MultiModal | undefined>()
+  return (reference, purpose) => {
+    const id = assetIdFromReference(reference)
+    if (!id) return undefined
+    const cacheKey = `${purpose}:${id}`
+    if (cache.has(cacheKey)) {
+      return cloneStoredAssetResult(cache.get(cacheKey))
+    }
+    const resolved = read(dataDir, id, purpose)
+    cache.set(cacheKey, resolved)
+    return cloneStoredAssetResult(resolved)
+  }
+}
+
 function loadDatabaseDeps(dataDir: string, db: DatabaseSync): RouteAssembleDeps {
   let database: Database | null = null
+  const resolveStoredAsset = createRequestScopedStoredAssetResolver(dataDir)
   return {
     loadDatabase: () => {
       database = loadPersistedWithMessages(db, dataDir).database as Database | null
@@ -295,7 +323,7 @@ function loadDatabaseDeps(dataDir: string, db: DatabaseSync): RouteAssembleDeps 
     loadMemoryDatabase: () => db,
     loadPromptMemoryQueryVectors: () => [],
     getDatabase: () => database,
-    resolveStoredAsset: (reference, purpose) => resolveStoredAsset(dataDir, reference, purpose),
+    resolveStoredAsset,
   }
 }
 

@@ -1,8 +1,8 @@
 # Phase 5: Import, Export, And Asset Memory
 
 Status: revision/event audit, event atomicity, expanded import limits, and
-bundle export streaming complete; broader asset-file durability and
-per-generation asset caching remain planned.
+bundle export streaming complete; per-generation asset caching implemented;
+broader asset-file durability remains planned.
 
 Goal: reduce large-payload memory pressure and make asset mutation durability
 explicit.
@@ -28,7 +28,9 @@ explicit.
   implemented; bundle export shares one hydrated snapshot and streams asset
   entries into the zip.
 - [`asset-mutation-transaction-protocol.md`](slices/phase-5-import-export-asset-memory/asset-mutation-transaction-protocol.md)
-- [`per-generation-asset-cache.md`](slices/phase-5-import-export-asset-memory/per-generation-asset-cache.md)
+- [`per-generation-asset-cache.md`](slices/phase-5-import-export-asset-memory/per-generation-asset-cache.md) -
+  implemented; repeated stored-asset references in one prompt assembly share a
+  request-scoped read/base64 cache.
 
 ## Exit Criteria
 

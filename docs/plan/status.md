@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the bundle export
-streaming slice.
+Current status reflects code and commit history through the per-generation asset
+cache slice.
 
 ## Current Snapshot
 
@@ -32,13 +32,16 @@ Completed work:
   triggers for active-chat changes plus full resyncs, a per-root-action cap for
   server-owned resend cycles, and a SQLite-backed finalization retry queue.
 - Phase 5 has completed the revision-bump audit, server-owned event atomicity,
-  expanded import limits, and bundle export streaming. Initialization,
+  expanded import limits, bundle export streaming, and per-generation asset
+  caching. Initialization,
   `.risu` import, asset upload/bulk upload, backup restore, Realm staged assets,
   and Realm fetched assets now persist replayable events with their revision
   bumps or roll back file-backed metadata/bytes when command-event persistence
   fails. Multipart `.risu` and Realm charx imports reject oversized expanded
   payloads before durable import commits. Bundle export shares one hydrated save
-  snapshot, then streams asset file entries into the zip.
+  snapshot, then streams asset file entries into the zip. Prompt assembly now
+  reuses repeated stored-asset reads and base64 encodes within one generation
+  request.
 - Phase 6 has existing settings debounce/coalescing and per-bridge watcher
   baselines; memory job SSE refresh, shared projection-apply suppression, and
   broader echo tests remain planned.
@@ -54,8 +57,9 @@ Active performance risks:
   assembly-time side effects and prompt construction.
 - Full-bootstrap fallbacks for sprawling resources such as `settings`, `state`,
   and `pluginStorage` remain expensive.
-- Asset byte reads remain one request per asset, although metadata lookup is no
-  longer reparsed for every lookup.
+- General asset byte reads remain one request per asset, although metadata
+  lookup is no longer reparsed for every lookup and repeated prompt-assembly
+  asset references are cached within a generation request.
 - Optional lorebook hydration is still N requests when experimental
   `enableLorebookStubs` is enabled.
 - Export paths still materialize `.risu` payloads, although bundle export no

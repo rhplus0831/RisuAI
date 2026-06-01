@@ -23,8 +23,8 @@ families: settings/chat/plugin-storage commands use message-free mutation, and
 message history plus `generation.persisted` use targeted SQLite paths. Phase 3
 has targeted projection, asset metadata indexing, and bulk all-chat hydration.
 Phase 5 has completed revision/event atomicity, expanded import limits, and
-bundle export streaming; remaining Phase 5 work is broader asset-file
-durability and per-generation asset caching.
+bundle export streaming, plus per-generation asset caching; remaining Phase 5
+work is broader asset-file durability.
 
 Prefer one of these next:
 
@@ -34,10 +34,8 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. Continue Phase 5 asset work if prioritizing file-backed recovery or
-   repeated generation asset reads:
-   [`asset-mutation-transaction-protocol.md`](phases/slices/phase-5-import-export-asset-memory/asset-mutation-transaction-protocol.md) or
-   [`per-generation-asset-cache.md`](phases/slices/phase-5-import-export-asset-memory/per-generation-asset-cache.md).
+3. Continue Phase 5 asset work if prioritizing file-backed recovery:
+   [`asset-mutation-transaction-protocol.md`](phases/slices/phase-5-import-export-asset-memory/asset-mutation-transaction-protocol.md).
 
 The command-family evidence lives in
 [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).
@@ -67,7 +65,7 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Remaining asset durability or per-generation asset-cache work in Phase 5.
+3. Remaining asset durability work in Phase 5.
 4. Client loop suppression and command write coalescing in Phase 6.
 5. Route operation safeguards and manifest coverage in Phase 7.
 6. Verification budgets and latest-check recording in Phase 8.
