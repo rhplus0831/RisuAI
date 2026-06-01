@@ -29,11 +29,10 @@ needed when chat stream vocabulary changes.
 
 Prefer one of these next:
 
-1. Review the new generation/prompt metrics from
-   [`generation-prompt-side-effect-measurement.md`](phases/slices/phase-2-command-write-cost/generation-prompt-side-effect-measurement.md)
-   and select one narrow optimization only if the metric output identifies a
-   concrete source area, durable mutation behavior, event behavior, rollback
-   behavior, and proof command.
+1. Implement the measured Phase 2 assembly side-effect narrow path:
+   [`generation-assembly-side-effect-narrow-path.md`](phases/slices/phase-2-command-write-cost/generation-assembly-side-effect-narrow-path.md).
+   The metric review shows eligible chat scriptstate and transcript-rewrite
+   side effects still use `mutationPath: "hydrated"`.
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
@@ -56,6 +55,10 @@ and
 [`generation-persistence-narrow-path.md`](phases/slices/phase-2-command-write-cost/generation-persistence-narrow-path.md).
 Generation/prompt side-effect measurement lives in
 [`generation-prompt-side-effect-measurement.md`](phases/slices/phase-2-command-write-cost/generation-prompt-side-effect-measurement.md).
+Generation/prompt metric review lives in
+[`generation-prompt-metric-review.md`](phases/slices/phase-2-command-write-cost/generation-prompt-metric-review.md).
+The selected next runtime candidate is
+[`generation-assembly-side-effect-narrow-path.md`](phases/slices/phase-2-command-write-cost/generation-assembly-side-effect-narrow-path.md).
 
 ## Not First
 
@@ -70,8 +73,8 @@ Generation/prompt side-effect measurement lives in
 
 ## Selection Order
 
-1. Use the generation/prompt metrics to choose one Phase 2 side-effect
-   optimization only when the source area and protocol behavior are clear.
+1. Implement the Phase 2 assembly side-effect narrow path, preserving the
+   current revision/event and SSE revision behavior.
 2. Optional Phase 3 lorebook bulk reads or full-resync frequency budgets if
    measurement makes them active.
 3. SSE taxonomy verification when chat stream vocabulary changes.

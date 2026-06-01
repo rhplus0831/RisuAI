@@ -158,6 +158,7 @@ interface ParsedEvent {
 
 interface ProtocolMetric {
   metric: string
+  type?: string
   status?: string
   chatId?: string
   mode?: string
@@ -170,6 +171,9 @@ interface ProtocolMetric {
   persistMessages?: boolean
   hasVarWrite?: boolean
   eventType?: string
+  mutationPath?: string
+  dbJsonWriteMs?: number
+  totalMs?: number
 }
 
 /** Parse an `event:`/`data:` SSE body into ordered events. */
@@ -203,6 +207,34 @@ async function withProtocolMetrics<T>(run: (metrics: ProtocolMetric[]) => Promis
     } else {
       process.env.RISU_PROTOCOL_METRICS = previous
     }
+  }
+}
+
+function metricSummary(metric: ProtocolMetric | undefined): Record<string, unknown> | undefined {
+  if (!metric) return undefined
+  return {
+    metric: metric.metric,
+    ...(metric.type ? { type: metric.type } : {}),
+    ...(metric.status ? { status: metric.status } : {}),
+    ...(metric.mode ? { mode: metric.mode } : {}),
+    ...(metric.eventType ? { eventType: metric.eventType } : {}),
+    ...(metric.mutationPath ? { mutationPath: metric.mutationPath } : {}),
+    ...(typeof metric.revision === 'number' ? { revision: metric.revision } : {}),
+    ...(typeof metric.durationMs === 'number' ? { durationMs: metric.durationMs } : {}),
+    ...(typeof metric.promptMs === 'number' ? { promptMs: metric.promptMs } : {}),
+    ...(typeof metric.databaseLoadCount === 'number'
+      ? { databaseLoadCount: metric.databaseLoadCount }
+      : {}),
+    ...(typeof metric.databaseLoadMs === 'number' ? { databaseLoadMs: metric.databaseLoadMs } : {}),
+    ...(typeof metric.chatVarMutationCount === 'number'
+      ? { chatVarMutationCount: metric.chatVarMutationCount }
+      : {}),
+    ...(typeof metric.persistMessages === 'boolean'
+      ? { persistMessages: metric.persistMessages }
+      : {}),
+    ...(typeof metric.hasVarWrite === 'boolean' ? { hasVarWrite: metric.hasVarWrite } : {}),
+    ...(typeof metric.dbJsonWriteMs === 'number' ? { dbJsonWriteMs: metric.dbJsonWriteMs } : {}),
+    ...(typeof metric.totalMs === 'number' ? { totalMs: metric.totalMs } : {}),
   }
 }
 
@@ -615,6 +647,187 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         hasVarWrite: true,
       })
       expect(persistence?.durationMs).toBeGreaterThanOrEqual(0)
+    })
+  })
+
+  it('reviews representative generation prompt metric families for next-slice selection', async () => {
+    await withProtocolMetrics(async (metrics) => {
+      const samples: Array<{ label: string; metrics: ProtocolMetric[] }> = []
+      const collect = (label: string, from: number): ProtocolMetric[] => {
+        const slice = metrics.slice(from)
+        samples.push({ label, metrics: slice })
+        return slice
+      }
+      const postChat = async (assertion: string, payload: Record<string, unknown>) => {
+        const res = await harness.app.inject({
+          method: 'POST',
+          url: '/api/v1/generate/chat',
+          headers: { 'risu-auth': assertion },
+          payload,
+        })
+        expect(res.statusCode).toBe(200)
+        return res
+      }
+
+      let auth = await setupAuthedClient(harness.app)
+      await seedDatabase(harness.app, auth.assertion, fixtureDatabase)
+      let before = metrics.length
+      await postChat(auth.assertion, basePayload)
+      const plain = collect('plain-send', before)
+      expect(plain.find((entry) => entry.metric === 'generation_prompt_assembly')).toMatchObject({
+        status: 'ok',
+        mode: 'send',
+        databaseLoadCount: 1,
+      })
+      expect(
+        plain.find((entry) => entry.metric === 'generation_assembly_persistence'),
+      ).toMatchObject({
+        status: 'skipped',
+        mode: 'send',
+        persistMessages: false,
+        hasVarWrite: false,
+      })
+      expect(plain.some((entry) => entry.metric === 'command_mutation')).toBe(false)
+
+      const chatVarDb = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+        characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
+      }
+      chatVarDb.characters[0].triggerscript = [
+        {
+          comment: '',
+          type: 'start',
+          conditions: [],
+          effect: [{ type: 'setvar', operator: '=', var: 'score', value: '9' }],
+        },
+      ]
+      await seedDatabase(harness.app, auth.assertion, chatVarDb)
+      before = metrics.length
+      await postChat(auth.assertion, basePayload)
+      const chatVar = collect('chat-var-side-effect', before)
+      expect(
+        chatVar.find((entry) => entry.metric === 'generation_assembly_persistence'),
+      ).toMatchObject({
+        status: 'ok',
+        mode: 'send',
+        eventType: 'chat.scriptstate.updated',
+        persistMessages: false,
+        hasVarWrite: true,
+      })
+      expect(chatVar.find((entry) => entry.metric === 'command_mutation')).toMatchObject({
+        type: 'chat.scriptstate.updated',
+        mutationPath: 'hydrated',
+      })
+
+      await seedDatabase(
+        harness.app,
+        auth.assertion,
+        dbWithSubmitLua(
+          `
+            listenEdit('editInput', function(id, data, meta)
+              return data .. ' [EDITINPUT]'
+            end)
+          `,
+          ['main', 'description', 'chats', 'lastChat'],
+        ),
+      )
+      before = metrics.length
+      await postChat(auth.assertion, basePayload)
+      const transcriptRewrite = collect('editinput-transcript-rewrite', before)
+      expect(
+        transcriptRewrite.find((entry) => entry.metric === 'generation_assembly_persistence'),
+      ).toMatchObject({
+        status: 'ok',
+        mode: 'send',
+        eventType: 'messages.replaced',
+        persistMessages: true,
+        hasVarWrite: false,
+      })
+      expect(transcriptRewrite.find((entry) => entry.metric === 'command_mutation')).toMatchObject({
+        type: 'messages.replaced',
+        mutationPath: 'hydrated',
+      })
+
+      await seedDatabase(harness.app, auth.assertion, fixtureDatabase)
+      before = metrics.length
+      const preview = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/preview-prompt',
+        headers: { 'risu-auth': auth.assertion },
+        payload: { chatId: 'chat-1', characterId: 'char-1' },
+      })
+      expect(preview.statusCode).toBe(200)
+      const previewMetrics = collect('preview-prompt', before)
+      expect(
+        previewMetrics.find((entry) => entry.metric === 'generation_prompt_assembly'),
+      ).toMatchObject({
+        status: 'ok',
+        mode: 'preview_prompt',
+        databaseLoadCount: 1,
+      })
+      expect(
+        previewMetrics.some((entry) => entry.metric === 'generation_assembly_persistence'),
+      ).toBe(false)
+
+      await restartHarness({
+        dispatchProvider: () => {
+          async function* source(): AsyncGenerator<CompletionStreamFrame> {
+            yield { kind: 'token', content: 'Durable hello' }
+            yield { kind: 'done', finishReason: 'stop' }
+          }
+          return source()
+        },
+      })
+      auth = await setupAuthedClient(harness.app)
+      await seedDatabase(harness.app, auth.assertion, fixtureDatabase)
+      before = metrics.length
+      await postChat(auth.assertion, { ...basePayload, durable: true })
+      const durable = collect('durable-generation', before)
+      expect(durable.find((entry) => entry.metric === 'generation_prompt_assembly')).toMatchObject({
+        status: 'ok',
+        mode: 'send',
+        databaseLoadCount: 1,
+      })
+      expect(
+        durable.find((entry) => entry.metric === 'generation_assembly_persistence'),
+      ).toMatchObject({
+        status: 'skipped',
+        mode: 'send',
+      })
+      expect(durable.find((entry) => entry.metric === 'generation_persistence')).toMatchObject({
+        status: 'ok',
+      })
+      expect(
+        durable.find(
+          (entry) => entry.metric === 'command_mutation' && entry.type === 'generation.persisted',
+        ),
+      ).toMatchObject({
+        mutationPath: 'targeted-generation',
+        dbJsonWriteMs: 0,
+      })
+
+      if (process.env.RISU_GENERATION_METRIC_SUMMARY === '1') {
+        console.log(
+          JSON.stringify(
+            samples.map(({ label, metrics: slice }) => ({
+              label,
+              promptAssembly: metricSummary(
+                slice.find((entry) => entry.metric === 'generation_prompt_assembly'),
+              ),
+              assemblyPersistence: metricSummary(
+                slice.find((entry) => entry.metric === 'generation_assembly_persistence'),
+              ),
+              generationPersistence: metricSummary(
+                slice.find((entry) => entry.metric === 'generation_persistence'),
+              ),
+              commandMutation: metricSummary(
+                slice.find((entry) => entry.metric === 'command_mutation'),
+              ),
+            })),
+            null,
+            2,
+          ),
+        )
+      }
     })
   })
 
