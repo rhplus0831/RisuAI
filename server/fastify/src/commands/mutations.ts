@@ -3,6 +3,7 @@ import { bumpRevision, getSchemaState } from '../db.js'
 import {
   RevisionMismatchError,
   ValidationError,
+  loadPersisted,
   loadPersistedWithMessages,
   stripChatMessages,
   syncChatMessages,
@@ -40,6 +41,17 @@ export interface JsonCommandMutationArgs<TExtra extends Record<string, unknown>>
   }
 }
 
+export interface MessageFreeJsonCommandMutationArgs<TExtra extends Record<string, unknown>> {
+  db: DatabaseSync
+  dataDir: string
+  baseRevision: number
+  eventSink: CommandEventSink
+  mutate: (database: unknown) => {
+    event: CommandEventDraft
+    extra?: TExtra
+  }
+}
+
 export function readBaseRevision(body: unknown): number {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new ValidationError('request body must be an object')
@@ -49,6 +61,88 @@ export function readBaseRevision(body: unknown): number {
     throw new ValidationError('baseRevision must be a non-negative integer')
   }
   return baseRevision as number
+}
+
+export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string, unknown> = {}>(
+  args: MessageFreeJsonCommandMutationArgs<TExtra>,
+): JsonCommandMutationResult<TExtra> {
+  let transactionOpen = false
+  const totalStartedAt = protocolNowMs()
+  let loadMs = 0
+  let cloneMutateMs = 0
+  let sqliteSyncMs = 0
+  let dbJsonWriteMs = 0
+  let eventEmitMs = 0
+
+  args.db.exec('BEGIN IMMEDIATE')
+  transactionOpen = true
+
+  try {
+    const { revision: currentRevision } = getSchemaState(args.db)
+    if (args.baseRevision !== currentRevision) {
+      throw new RevisionMismatchError(currentRevision)
+    }
+
+    // Only use this path for commands that never inspect or mutate chat
+    // messages; it intentionally reads the message-free db.json blob.
+    const loadStartedAt = protocolNowMs()
+    const persisted = loadPersisted(args.dataDir)
+    loadMs = protocolDurationMs(loadStartedAt)
+
+    const cloneMutateStartedAt = protocolNowMs()
+    const mutation = args.mutate(persisted.database)
+    cloneMutateMs = protocolDurationMs(cloneMutateStartedAt)
+
+    const sqliteSyncStartedAt = protocolNowMs()
+    const revision = bumpRevision(args.db)
+    const event: CommandEvent = { ...mutation.event, revision }
+    persistCommandEvent(args.db, event)
+    sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
+
+    args.db.exec('COMMIT')
+    transactionOpen = false
+    const dbJsonWriteStartedAt = protocolNowMs()
+    writePersisted(args.dataDir, persisted)
+    dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
+    const eventEmitStartedAt = protocolNowMs()
+    args.eventSink.emit(event)
+    eventEmitMs = protocolDurationMs(eventEmitStartedAt)
+    emitProtocolMetric('command_mutation', {
+      type: event.type,
+      resource: event.resource,
+      revision,
+      loadMs,
+      cloneMutateMs,
+      sqliteSyncMs,
+      dbJsonWriteMs,
+      eventEmitMs,
+      totalMs: protocolDurationMs(totalStartedAt),
+      status: 'ok',
+      mutationPath: 'message-free',
+    })
+
+    return {
+      revision,
+      event,
+      extra: (mutation.extra ?? {}) as TExtra,
+    }
+  } catch (err) {
+    if (transactionOpen) {
+      args.db.exec('ROLLBACK')
+    }
+    emitProtocolMetric('command_mutation', {
+      loadMs,
+      cloneMutateMs,
+      sqliteSyncMs,
+      dbJsonWriteMs,
+      eventEmitMs,
+      totalMs: protocolDurationMs(totalStartedAt),
+      status: 'error',
+      error: err instanceof Error ? err.message : String(err),
+      mutationPath: 'message-free',
+    })
+    throw err
+  }
 }
 
 export function applyJsonCommandMutation<TExtra extends Record<string, unknown> = {}>(
@@ -117,6 +211,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
       eventEmitMs,
       totalMs: protocolDurationMs(totalStartedAt),
       status: 'ok',
+      mutationPath: 'hydrated',
     })
 
     return {
@@ -137,6 +232,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
       totalMs: protocolDurationMs(totalStartedAt),
       status: 'error',
       error: err instanceof Error ? err.message : String(err),
+      mutationPath: 'hydrated',
     })
     throw err
   }

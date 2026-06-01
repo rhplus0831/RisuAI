@@ -1,6 +1,6 @@
 # Phase 2: Command Write Cost
 
-Status: measurement complete; first migration selected.
+Status: first migration implemented.
 
 Goal: reduce whole-corpus command mutation work while preserving revision,
 event, transaction, and projection contracts.
@@ -18,7 +18,7 @@ event, transaction, and projection contracts.
 - [`command-family-measurement.md`](slices/phase-2-command-write-cost/command-family-measurement.md) -
   completed; selected `settings.updated` with metric evidence.
 - [`scoped-settings-mutation-path.md`](slices/phase-2-command-write-cost/scoped-settings-mutation-path.md) -
-  selected next.
+  implemented; `settings.updated` uses the message-free mutation path.
 - [`message-chat-targeted-persistence.md`](slices/phase-2-command-write-cost/message-chat-targeted-persistence.md)
 - [`generation-persistence-narrow-path.md`](slices/phase-2-command-write-cost/generation-persistence-narrow-path.md)
 

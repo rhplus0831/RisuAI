@@ -28,14 +28,15 @@ Completed foundations:
   active-writer classification, route-protection tests, and the architecture
   audit.
 - Phase 2 command-family measurement now has a reproducible metrics harness;
-  `settings.updated` is selected as the first narrow persistence candidate.
+  `settings.updated` uses a message-free mutation path for settings writes.
 
 Active correctness risks from [`../AUDIT.md`](../AUDIT.md): none currently
 tracked at P1.
 
 Active performance risks:
 
-- JSON commands still pay whole-corpus load, clone, diff, and write cost.
+- Unmigrated JSON commands still pay whole-corpus load, clone, diff, and write
+  cost.
 - Targeted projection can load the full stub projection before selecting small
   resources.
 - Asset metadata reads can parse `db.json` per asset lookup.
@@ -54,17 +55,17 @@ Active performance risks:
 
 ## Phase Router
 
-| Phase                                                     | Status                                    | Open when working on...                                                                 |
-| --------------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------- |
-| [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current      | Existing metrics, bounded hydration, durable event history, route manifest coverage.    |
-| [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                               | Closed P1 correctness hardening.                                                        |
-| [Phase 2](phases/phase-2-command-write-cost.md)           | Measurement complete; next slice selected | Whole-corpus command mutation cost and narrow write paths.                              |
-| [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Planned                                   | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
-| [Phase 4](phases/phase-4-stream-generation-resilience.md) | Planned                                   | SSE backpressure, generation reattach triggers, resend caps, finalization retry.        |
-| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Planned                                   | Import/export memory pressure, asset mutation durability, per-generation media caching. |
-| [Phase 6](phases/phase-6-client-loop-suppression.md)      | Planned                                   | Memory job polling, server-origin watcher echo, settings write coalescing.              |
-| [Phase 7](phases/phase-7-route-operations-coverage.md)    | Planned                                   | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.     |
-| [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                                   | Request, payload, metric, and verification budgets.                                     |
+| Phase                                                     | Status                               | Open when working on...                                                                 |
+| --------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
+| [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, bounded hydration, durable event history, route manifest coverage.    |
+| [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                        |
+| [Phase 2](phases/phase-2-command-write-cost.md)           | First migration implemented          | Whole-corpus command mutation cost and narrow write paths.                              |
+| [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Planned                              | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
+| [Phase 4](phases/phase-4-stream-generation-resilience.md) | Planned                              | SSE backpressure, generation reattach triggers, resend caps, finalization retry.        |
+| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Planned                              | Import/export memory pressure, asset mutation durability, per-generation media caching. |
+| [Phase 6](phases/phase-6-client-loop-suppression.md)      | Planned                              | Memory job polling, server-origin watcher echo, settings write coalescing.              |
+| [Phase 7](phases/phase-7-route-operations-coverage.md)    | Planned                              | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.     |
+| [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                     |
 
 ## Maintenance Rules
 

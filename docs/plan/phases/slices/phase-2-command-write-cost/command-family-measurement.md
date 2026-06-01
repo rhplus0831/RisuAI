@@ -69,6 +69,19 @@ Before/after measurement plan for the settings slice:
 - Confirm unrelated `chat`, `message`, and `generation` command metrics remain
   on the generic path.
 
+Follow-up result on 2026-06-01:
+
+| Command type            | mutationPath | loadMs | cloneMutateMs | sqliteSyncMs | dbJsonWriteMs | totalMs |
+| ----------------------- | ------------ | -----: | ------------: | -----------: | ------------: | ------: |
+| `settings.updated`      | message-free |   0.43 |          0.27 |         0.17 |          0.71 |    3.17 |
+| `pluginStorage.updated` | hydrated     |   6.32 |          6.74 |         3.56 |          0.46 |   18.63 |
+| `chat.updated`          | hydrated     |   5.94 |         10.14 |         2.56 |          0.53 |   20.68 |
+| `message.appended`      | hydrated     |   6.06 |         16.25 |         3.33 |          0.60 |   27.79 |
+| `generation.persisted`  | hydrated     |   7.69 |         18.75 |         3.38 |          0.57 |   32.00 |
+
+`settings.updated` now uses the message-free settings mutation path. The other
+measured families intentionally remain on the hydrated generic path.
+
 ## Done When
 
 - The first candidate family is named with metric evidence.

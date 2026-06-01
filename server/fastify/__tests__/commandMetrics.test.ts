@@ -22,6 +22,7 @@ interface ProtocolMetric {
   sqliteSyncMs?: number
   dbJsonWriteMs?: number
   totalMs?: number
+  mutationPath?: string
 }
 
 interface CommandRequest {
@@ -228,6 +229,11 @@ describe('command protocol metrics', () => {
     for (const metric of noMessageFamilies) {
       expect(metric.sqliteSyncMs).toBeGreaterThanOrEqual(0)
     }
+    expect(settings.metric.mutationPath).toBe('message-free')
+    expect(pluginStorage.metric.mutationPath).toBe('hydrated')
+    expect(chat.metric.mutationPath).toBe('hydrated')
+    expect(message.metric.mutationPath).toBe('hydrated')
+    expect(generation.metric.mutationPath).toBe('hydrated')
 
     if (process.env.RISU_COMMAND_METRIC_SUMMARY === '1') {
       console.log(
@@ -235,6 +241,7 @@ describe('command protocol metrics', () => {
           measured.map((metric) => ({
             type: metric.type,
             resource: metric.resource,
+            mutationPath: metric.mutationPath,
             loadMs: metric.loadMs,
             cloneMutateMs: metric.cloneMutateMs,
             sqliteSyncMs: metric.sqliteSyncMs,

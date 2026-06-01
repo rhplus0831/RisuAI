@@ -18,18 +18,21 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-Phase 1 P1 correctness hardening is implemented. Prefer measured P2 work next:
+Phase 1 P1 correctness hardening is implemented, and the first measured Phase 2
+settings migration is complete. Prefer read-side P2/P3 performance work next:
 
-1. Implement the measured settings narrow path:
-   [`scoped-settings-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-settings-mutation-path.md).
-2. Short-circuit empty or small targeted projection resources:
+1. Short-circuit empty or small targeted projection resources:
    [`targeted-projection-loaders.md`](phases/slices/phase-3-read-projection-efficiency/targeted-projection-loaders.md).
-3. Add an asset metadata index or cache:
+2. Add an asset metadata index or cache:
    [`asset-metadata-index.md`](phases/slices/phase-3-read-projection-efficiency/asset-metadata-index.md).
+3. Select the next measured command family only after writing a narrow slice
+   with explicit source area, durable mutation behavior, event behavior, and
+   proof command.
 
 The first command-family measurement is complete in
 [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md);
-it selected `settings.updated` as the next Phase 2 migration candidate.
+it selected `settings.updated`, which is now implemented in
+[`scoped-settings-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-settings-mutation-path.md).
 
 ## Not First
 

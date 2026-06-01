@@ -6,7 +6,11 @@ import {
   emitPersistedCommandEvent,
   type CommandEventSink,
 } from '../commands/events.js'
-import { applyJsonCommandMutation, readBaseRevision } from '../commands/mutations.js'
+import {
+  applyJsonCommandMutation,
+  applyMessageFreeJsonCommandMutation,
+  readBaseRevision,
+} from '../commands/mutations.js'
 import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   createPromptItemRecord,
@@ -1041,7 +1045,7 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const patch = readSettingsGroupPatch(group, body.patch)
       validateSettingsAssetRefs(dataDir, patch)
-      const result = applyJsonCommandMutation({
+      const result = applyMessageFreeJsonCommandMutation({
         db,
         dataDir,
         baseRevision,

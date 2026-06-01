@@ -7,7 +7,10 @@ import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
-import { applyJsonCommandMutation } from '../src/commands/mutations.js'
+import {
+  applyJsonCommandMutation,
+  applyMessageFreeJsonCommandMutation,
+} from '../src/commands/mutations.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersisted } from '../src/repository.js'
@@ -328,6 +331,40 @@ describe('Phase 9-1 command foundation', () => {
     try {
       expect(() =>
         applyJsonCommandMutation({
+          db,
+          dataDir,
+          baseRevision: 0,
+          eventSink: commandEvents,
+          mutate(database) {
+            const target = database as Record<string, unknown>
+            target.streamGeminiThoughts = true
+            throw new Error('boom')
+          },
+        }),
+      ).toThrow('boom')
+
+      expect(getSchemaState(db).revision).toBe(0)
+      expect(loadPersisted(dataDir).database).toEqual({ streamGeminiThoughts: false })
+      expect(commandEvents.list()).toEqual([])
+    } finally {
+      db.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rolls back a thrown message-free JSON command mutation before writing db.json', () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-message-free-command-helper-'))
+    const db = openDatabase(dataDir)
+    const commandEvents = createCommandEventSink()
+    writePersisted(dataDir, {
+      _version: 1,
+      database: { streamGeminiThoughts: false },
+      assets: [],
+    })
+
+    try {
+      expect(() =>
+        applyMessageFreeJsonCommandMutation({
           db,
           dataDir,
           baseRevision: 0,
