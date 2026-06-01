@@ -80,6 +80,9 @@ const activeGenerationReattachSpies = vi.hoisted(() => ({
   startActiveGenerationReattach: vi.fn(),
   triggerOpenChatGenerationReattach: vi.fn(),
 }))
+const memoryJobEventSpies = vi.hoisted(() => ({
+  publishServerMemoryJobEvent: vi.fn(),
+}))
 const forageSpies = vi.hoisted(() => ({
   Init: vi.fn(async () => undefined),
   getItem: vi.fn(async () => undefined),
@@ -108,6 +111,8 @@ vi.mock('./server/bootstrap', () => ({
 vi.mock('./server/events', () => ({
   subscribeServerCommandEvents: serverEventsState.subscribe,
 }))
+
+vi.mock('./server/memoryJobEvents', () => memoryJobEventSpies)
 
 vi.mock('./server/projection', () => ({
   fetchServerProjectionResource: serverProjectionState.fetchResource,
@@ -263,6 +268,7 @@ beforeEach(() => {
   activeGenerationReattachSpies.setActiveGenerationJobs.mockClear()
   activeGenerationReattachSpies.startActiveGenerationReattach.mockClear()
   activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
+  memoryJobEventSpies.publishServerMemoryJobEvent.mockClear()
   clearCachedServerCommandRevision()
   forageSpies.Init.mockClear()
   forageSpies.getItem.mockClear()
@@ -552,6 +558,20 @@ describe('web bootstrap startup source', () => {
       miniMsg: '2',
       msg: '[Hypa V3] Summarizing...',
       subMsg: '2 queued',
+    })
+    expect(memoryJobEventSpies.publishServerMemoryJobEvent).toHaveBeenCalledWith({
+      type: 'memory.job',
+      sideEffect: {
+        kind: 'hypav3_progress',
+        payload: {
+          open: true,
+          miniMsg: '2',
+          msg: '[Hypa V3] Summarizing...',
+          subMsg: '2 queued',
+          status: 'running',
+          queuedCount: 2,
+        },
+      },
     })
     expect(serverBootstrapState.fetch).toHaveBeenCalledTimes(1)
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()

@@ -1,7 +1,7 @@
 # Phase 6: Client Loop Suppression
 
-Status: partly implemented; settings write coalescing is implemented, while
-memory job SSE refresh and watcher echo coverage remain planned.
+Status: partly implemented; settings write coalescing and memory job SSE refresh
+are implemented, while watcher echo coverage remains planned.
 
 Goal: prevent server-origin refreshes, polling loops, and high-frequency UI
 controls from echoing into repeated commands or overlapping requests.
@@ -18,7 +18,9 @@ controls from echoing into repeated commands or overlapping requests.
 
 ## Slices
 
-- [`memory-jobs-sse-driven-refresh.md`](slices/phase-6-client-loop-suppression/memory-jobs-sse-driven-refresh.md)
+- [`memory-jobs-sse-driven-refresh.md`](slices/phase-6-client-loop-suppression/memory-jobs-sse-driven-refresh.md) -
+  implemented; the modal subscribes to memory SSE events, prevents overlapping
+  list requests, and polls only while pending/running jobs are present.
 - [`projection-apply-suppression-token.md`](slices/phase-6-client-loop-suppression/projection-apply-suppression-token.md)
 - [`settings-write-coalescing.md`](slices/phase-6-client-loop-suppression/settings-write-coalescing.md) -
   implemented; immediate settings patches skip equality no-ops, debounced
@@ -29,7 +31,7 @@ controls from echoing into repeated commands or overlapping requests.
 ## Exit Criteria
 
 - Memory job UI avoids overlapping list requests and relies on SSE where
-  possible.
+  possible. Done.
 - Server projection application cannot be mistaken for a local edit by bridge
   watchers.
 - High-frequency settings controls continue to coalesce and skip equality-noop

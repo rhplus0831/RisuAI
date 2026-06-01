@@ -1,7 +1,6 @@
 # Memory Jobs SSE Driven Refresh
 
-Status: planned; stale responses are dropped today, but overlapping requests
-and timer polling still remain.
+Status: implemented.
 
 ## Source Anchors
 
@@ -15,24 +14,28 @@ and timer polling still remain.
 Reduce memory job modal polling and prevent overlapping list requests by using
 memory SSE progress events as the main refresh trigger where possible.
 
-Current behavior: `server-memory-jobs.svelte` refreshes on chat change and every
-5 seconds. A request serial drops stale responses, but the component does not
-skip or abort a new list request while one is already in flight.
+Current behavior: `server-memory-jobs.svelte` refreshes on modal open/chat
+change and subscribes to parsed `memory.job` SSE events. Matching chat events
+trigger a refresh through a controller that prevents overlapping list requests.
+Timer polling runs only while the visible job list contains pending or running
+jobs.
 
 ## Protocol Behavior
 
 - Keep initial list fetch on modal open or chat change.
-- Skip or abort refresh when a previous request is in flight.
+- Skip or queue refresh when a previous request is in flight.
 - Pause periodic polling when no pending or running jobs exist.
 - Use memory events to refresh affected job state.
 
 ## Done When
 
-- The modal cannot overlap repeated job-list requests.
-- Polling backs off or stops when SSE is sufficient.
-- Large job histories have pagination, counts, or a documented cap.
+- The modal cannot overlap repeated job-list requests. Done.
+- Polling backs off or stops when SSE is sufficient. Done.
+- Large job histories have pagination, counts, or a documented cap. Current
+  list route still returns pending/running jobs by default; no wire shape change
+  was needed for this slice.
 
 ## Validation
 
-- Focused component or adapter tests for refresh scheduling.
-- Server tests if list pagination or count shape changes.
+- `pnpm test -- src/ts/server/memoryJobEvents.test.ts src/ts/server/memoryJobRefresh.test.ts src/ts/bootstrap.test.ts`
+- `pnpm test -- src/ts/server`

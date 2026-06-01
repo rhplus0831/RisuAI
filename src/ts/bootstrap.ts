@@ -41,7 +41,8 @@ import {
   fetchServerBootstrapProjection,
   fetchServerBootstrapProjectionReadOnly,
 } from './server/bootstrap'
-import { subscribeServerCommandEvents } from './server/events'
+import { subscribeServerCommandEvents, type ServerMemoryEvent } from './server/events'
+import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
 import {
   canUseServerCommands,
   initializeServerDatabase,
@@ -281,10 +282,11 @@ function scheduleServerProjectionReconnect() {
   }, SERVER_PROJECTION_RECONNECT_DELAY_MS)
 }
 
-function applyServerMemoryEvent(event: { sideEffect?: { kind: string; payload: unknown } }) {
+function applyServerMemoryEvent(event: ServerMemoryEvent) {
   if (event.sideEffect?.kind === 'hypav3_progress') {
     applyServerHypaV3Progress(event.sideEffect.payload)
   }
+  publishServerMemoryJobEvent(event)
 }
 
 /**

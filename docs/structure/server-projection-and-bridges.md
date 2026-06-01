@@ -40,6 +40,9 @@ command events serially:
 Server replay is backed by SQLite command-event history and is retained for
 `COMMAND_EVENT_HISTORY_LIMIT` revisions. Live-only command-shaped events such as
 `state.exported` are not replayable and do not require a projection refresh.
+Memory events are live progress notifications. Bootstrap applies their Hypa V3
+progress side effect and republishes parsed `memory.job` events to browser UI
+subscribers so memory-job panels can refresh without polling continuously.
 
 ## Hydration
 

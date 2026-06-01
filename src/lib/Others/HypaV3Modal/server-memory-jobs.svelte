@@ -6,6 +6,11 @@
     listServerMemoryJobs,
     type ServerMemoryJob,
   } from 'src/ts/process/request/serverMemory'
+  import { subscribeServerMemoryJobEvents } from 'src/ts/server/memoryJobEvents'
+  import {
+    createMemoryJobRefreshController,
+    type MemoryJobRefreshController,
+  } from 'src/ts/server/memoryJobRefresh'
 
   interface Props {
     chatId: string
@@ -18,8 +23,8 @@
   let error = $state<string | null>(null)
   let cancellingJobIds = $state(new Set<string>())
   let lastLoadedAt = $state<string | null>(null)
-  let refreshTimer: number | null = null
-  let requestSerial = 0
+  let refreshController: MemoryJobRefreshController | null = null
+  let unsubscribeMemoryEvents: (() => void) | null = null
 
   const activeJobs = $derived(
     jobs.filter((job) => job.status === 'pending' || job.status === 'running'),
@@ -58,30 +63,8 @@
     cancellingJobIds = next
   }
 
-  async function refreshJobs(): Promise<void> {
-    if (!chatId) {
-      jobs = []
-      error = null
-      lastLoadedAt = null
-      return
-    }
-
-    const serial = ++requestSerial
-    loading = true
-    const result = await listServerMemoryJobs({ chatId })
-    if (serial !== requestSerial) return
-
-    loading = false
-    if (result.status === 'ok') {
-      jobs = result.jobs
-      error = null
-      lastLoadedAt = new Date().toISOString()
-      return
-    }
-
-    jobs = []
-    error =
-      result.status === 'unavailable' ? 'Server memory jobs are unavailable.' : result.error
+  function refreshJobs(): Promise<void> {
+    return refreshController?.refresh() ?? Promise.resolve()
   }
 
   async function cancelJob(jobId: string): Promise<void> {
@@ -102,18 +85,45 @@
   }
 
   $effect(() => {
-    chatId
-    void refreshJobs()
+    refreshController?.setChatId(chatId)
   })
 
   onMount(() => {
-    refreshTimer = window.setInterval(() => {
-      void refreshJobs()
-    }, 5000)
+    refreshController = createMemoryJobRefreshController({
+      chatId,
+      listJobs: (currentChatId, signal) =>
+        listServerMemoryJobs({ chatId: currentChatId }, signal),
+      onJobs: (nextJobs, loadedAt) => {
+        jobs = nextJobs
+        error = null
+        lastLoadedAt = loadedAt
+      },
+      onError: (message) => {
+        jobs = []
+        error = message
+      },
+      onClear: () => {
+        jobs = []
+        error = null
+        lastLoadedAt = null
+      },
+      onLoading: (nextLoading) => {
+        loading = nextLoading
+      },
+    })
+    unsubscribeMemoryEvents = subscribeServerMemoryJobEvents((event) => {
+      if (event.chatId === chatId) {
+        void refreshJobs()
+      }
+    })
+    void refreshJobs()
   })
 
   onDestroy(() => {
-    if (refreshTimer) window.clearInterval(refreshTimer)
+    unsubscribeMemoryEvents?.()
+    unsubscribeMemoryEvents = null
+    refreshController?.dispose()
+    refreshController = null
   })
 </script>
 
