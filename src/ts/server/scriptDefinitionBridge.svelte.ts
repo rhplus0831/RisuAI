@@ -14,7 +14,10 @@ import {
   type ServerCommandResult,
   type TriggerDefinitionSnapshot,
 } from './commands'
-import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import {
+  getServerProjectionApplyEpoch,
+  withTrustedServerProjectionWrite,
+} from './projectionWriteGuard.svelte'
 
 export interface ScriptDefinitionStateSnapshot {
   characters: character[]
@@ -216,15 +219,22 @@ export function watchServerBackedScriptDefinitions(
   let initialized = false
   let previousSnapshots = new Map<string, string>()
   let previousState = currentScriptDefinitionStateSnapshot()
+  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
   const stop = $effect.root(() => {
     $effect(() => {
+      const projectionApplyEpoch = getServerProjectionApplyEpoch()
       ensureAllClientScriptDefinitionIds()
       const currentState = currentScriptDefinitionStateSnapshot()
       const currentSnapshots = collectScriptDefinitionCollectionSnapshots()
 
-      if (suppressRollbackDispatch || !initialized) {
+      if (
+        suppressRollbackDispatch ||
+        !initialized ||
+        projectionApplyEpoch !== previousProjectionApplyEpoch
+      ) {
         initialized = true
+        previousProjectionApplyEpoch = projectionApplyEpoch
         previousSnapshots = currentSnapshots
         previousState = currentState
         return

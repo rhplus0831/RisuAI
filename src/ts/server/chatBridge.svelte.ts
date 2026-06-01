@@ -12,6 +12,7 @@ import {
 import { canUseServerCommands, type ChatFolderSnapshot, type ChatSnapshot } from './commands'
 import { DBState, selectedCharID } from '../stores.svelte'
 import type { ChatFolder } from '../storage/database.svelte'
+import { getServerProjectionApplyEpoch } from './projectionWriteGuard.svelte'
 
 interface PendingChatPatch {
   chatId: string
@@ -58,9 +59,11 @@ export function watchServerBackedChatMetadata(
   let previousChats = new Map<string, ChatSnapshot>()
   let previousFolders = new Map<string, ChatFolderSnapshot>()
   let previousState = currentChatStateSnapshot()
+  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
   activeStop = $effect.root(() => {
     $effect(() => {
+      const projectionApplyEpoch = getServerProjectionApplyEpoch()
       const character = DBState.db.characters?.[get(selectedCharID)]
       const currentState = currentChatStateSnapshot()
       const currentChats = new Map(
@@ -74,8 +77,13 @@ export function watchServerBackedChatMetadata(
           .map((folder) => [folder.id, scalarChatFolderMetadata(folder as unknown as ChatFolder)]),
       )
 
-      if (suppressRollbackDispatch || !initialized) {
+      if (
+        suppressRollbackDispatch ||
+        !initialized ||
+        projectionApplyEpoch !== previousProjectionApplyEpoch
+      ) {
         initialized = true
+        previousProjectionApplyEpoch = projectionApplyEpoch
         previousChats = currentChats
         previousFolders = currentFolders
         previousState = currentState

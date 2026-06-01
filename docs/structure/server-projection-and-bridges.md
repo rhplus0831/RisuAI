@@ -82,6 +82,10 @@ Trusted write scopes are reserved for:
 A projection guard error usually means a browser feature still needs a
 command-backed write path.
 
+Server projection application also advances a shared watcher epoch. Bridge
+watchers use that epoch to refresh their server-applied baselines without
+echoing a passive projection refresh back as a command.
+
 ## Bridge Watchers
 
 The bridge layer converts UI-local edits into server commands without letting a

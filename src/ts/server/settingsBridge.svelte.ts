@@ -6,7 +6,10 @@ import {
   settingsGroupForKey,
   type SettingsPatch,
 } from './commands'
-import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import {
+  getServerProjectionApplyEpoch,
+  withTrustedServerProjectionWrite,
+} from './projectionWriteGuard.svelte'
 
 interface PendingSettingsPatch {
   patch: SettingsPatch
@@ -136,9 +139,11 @@ export function watchServerBackedSettings(
   const previousSnapshots = new Map<string, string>()
   const previousValues = new Map<string, unknown>()
   let initialized = false
+  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
   const stop = $effect.root(() => {
     $effect(() => {
+      const projectionApplyEpoch = getServerProjectionApplyEpoch()
       const changed: SettingsPatch = {}
       const before: SettingsPatch = {}
 
@@ -156,8 +161,9 @@ export function watchServerBackedSettings(
         previousValues.set(key, cloneJsonValue(value))
       }
 
-      if (!initialized) {
+      if (!initialized || projectionApplyEpoch !== previousProjectionApplyEpoch) {
         initialized = true
+        previousProjectionApplyEpoch = projectionApplyEpoch
         return
       }
       if (suppressRollbackDispatch || Object.keys(changed).length === 0) return

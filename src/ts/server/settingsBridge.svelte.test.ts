@@ -4,6 +4,7 @@ import { flushSync } from 'svelte'
 const recorded = vi.hoisted(() => ({
   patches: [] as Array<{ patch: Record<string, unknown>; rollback?: () => void }>,
 }))
+const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
@@ -18,6 +19,7 @@ vi.mock('./commands', () => ({
 }))
 
 vi.mock('./projectionWriteGuard.svelte', () => ({
+  getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
   withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
 }))
 
@@ -36,6 +38,7 @@ function setupSettings(settings: Record<string, unknown>): void {
 beforeEach(() => {
   vi.useFakeTimers()
   recorded.patches.length = 0
+  projectionGuardState.epoch = 0
 })
 
 afterEach(() => {
@@ -118,6 +121,24 @@ describe('settingsBridge coalescing', () => {
     await vi.advanceTimersByTimeAsync(DELAY)
 
     expect(recorded.patches).toHaveLength(0)
+    stop()
+  })
+
+  it('refreshes watcher baselines for server projection updates before local edits', async () => {
+    setupSettings({ notification: false })
+    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
+    flushSync()
+
+    projectionGuardState.epoch += 1
+    DBState.db.notification = true
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches).toHaveLength(0)
+
+    DBState.db.notification = false
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false }])
     stop()
   })
 })

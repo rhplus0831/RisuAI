@@ -1,7 +1,6 @@
 # Watcher Baseline Tests
 
-Status: planned; lorebook no-data-loss coverage exists, broader server-origin
-echo tests remain.
+Status: implemented.
 
 ## Source Anchors
 
@@ -17,22 +16,25 @@ Add regression tests for watcher behavior during server-origin projection
 refreshes, local edits, rollback, and conflict handling.
 
 Current coverage: `src/ts/server/lorebookBridge.svelte.test.ts` protects the
-hydrated-lorebook no-data-loss invariant. It does not cover settings/chat/script
-watchers or generic server-origin projection echo.
+hydrated-lorebook no-data-loss invariant. Settings, chat, and script-definition
+tests now cover server-origin projection refreshes, local edits after refresh,
+and rollback suppression.
 
 ## Protocol Behavior
 
 - Server-origin projection updates should refresh baselines without dispatching
-  redundant commands.
+  redundant commands. Done.
 - Local edits after refresh should still dispatch exactly one intended command.
-- Rollback should restore the correct pre-command snapshot.
+  Done.
+- Rollback should restore the correct pre-command snapshot. Done.
 
 ## Done When
 
-- At least one test catches echo-on-projection behavior.
-- Tests cover local edit after server refresh.
-- Bridge-specific edge cases are documented in test names.
+- At least one test catches echo-on-projection behavior. Done.
+- Tests cover local edit after server refresh. Done.
+- Bridge-specific edge cases are documented in test names. Done.
 
 ## Validation
 
-- Focused bridge tests under `src/ts/server`.
+- `pnpm test -- src/ts/server/settingsBridge.svelte.test.ts src/ts/server/chatBridge.svelte.test.ts src/ts/server/scriptDefinitionBridge.svelte.test.ts`
+- `pnpm test -- src/ts/server`

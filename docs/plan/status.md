@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the memory jobs SSE
-driven refresh slice.
+Current status reflects code and commit history through the Phase 6 watcher
+baseline and projection-apply suppression slices.
 
 ## Current Snapshot
 
@@ -43,10 +43,12 @@ Completed work:
   before durable import commits. Bundle export shares one hydrated save snapshot,
   then streams asset file entries into the zip. Prompt assembly now reuses
   repeated stored-asset reads and base64 encodes within one generation request.
-- Phase 6 has settings debounce/coalescing, settings equality-noop suppression,
-  memory job SSE-driven refresh with non-overlapping list requests, and
-  per-bridge watcher baselines; shared projection-apply suppression and broader
-  echo tests remain planned.
+- Phase 6 is implemented: settings debounce/coalescing and equality-noop
+  suppression are in place, memory job refresh is SSE-driven with
+  non-overlapping list requests, and server-origin projection applies advance a
+  shared watcher epoch so settings, chat, and script-definition watchers refresh
+  baselines instead of echoing commands. Existing lorebook no-data-loss coverage
+  remains in place.
 - Phase 7 already has route-manifest wildcard/prefix coverage and read-only
   writer-header hygiene tests. Rate limits, parser/HEAD review, and hot
   schemas remain planned.
@@ -66,7 +68,6 @@ Active performance risks:
   `enableLorebookStubs` is enabled.
 - Export paths still materialize `.risu` payloads, although bundle export no
   longer rehydrates the repository twice or preloads every asset byte buffer.
-- Watcher echo still needs explicit suppression or coverage.
 
 ## Start Here
 
@@ -74,7 +75,7 @@ Active performance risks:
 - Use [`plan.md`](plan.md) for invariants and phase order.
 - Use [`phases/README.md`](phases/README.md) for all phase docs.
 - Prefer measured P2/P3 work when a narrow slice exists; otherwise use
-  [`next-steps.md`](next-steps.md) to select remaining Phase 6-8 work.
+  [`next-steps.md`](next-steps.md) to select remaining Phase 7-8 work.
 
 ## Phase Router
 
@@ -86,7 +87,7 @@ Active performance risks:
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Read optimizations implemented       | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.   |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Implemented                          | Closed stream, generation reattach, resend, and finalization retry work.               |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Implemented                          | Closed import/export memory and asset mutation durability work.                        |
-| [Phase 6](phases/phase-6-client-loop-suppression.md)      | Partly implemented                   | Server-origin watcher echo and projection-apply suppression.                           |
+| [Phase 6](phases/phase-6-client-loop-suppression.md)      | Implemented                          | Closed client loop suppression and watcher echo work.                                  |
 | [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.    |
 | [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                    |
 

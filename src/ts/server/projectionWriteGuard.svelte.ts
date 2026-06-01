@@ -6,6 +6,7 @@ let serverProjectionWriteGuardEnabled = false
 const readOnlyServerProjectionTargets = new WeakMap<object, object>()
 const readOnlyServerProjectionSources = new WeakMap<object, object>()
 let trustedServerProjectionWriteDepth = 0
+let serverProjectionApplyEpoch = $state(0)
 let readOnlyServerProjection = $state.raw<Database>({} as Database)
 const readOnlyServerProjectionPrototype = {}
 
@@ -54,6 +55,21 @@ export function withTrustedServerProjectionWrite<T>(callback: () => T): T {
     refreeze()
     throw error
   }
+}
+
+export function withServerProjectionApply<T>(callback: () => T): T {
+  const result = withTrustedServerProjectionWrite(callback)
+  if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+    return Promise.resolve(result).finally(() => {
+      serverProjectionApplyEpoch += 1
+    }) as T
+  }
+  serverProjectionApplyEpoch += 1
+  return result
+}
+
+export function getServerProjectionApplyEpoch(): number {
+  return serverProjectionApplyEpoch
 }
 
 export function createReadOnlyServerProjection<T extends object>(target: T): T {

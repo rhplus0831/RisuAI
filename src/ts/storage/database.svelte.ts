@@ -41,6 +41,7 @@ import {
   createReadOnlyServerProjection,
   isServerProjectionWriteGuardEnabled,
   setServerProjectionWriteGuardEnabled,
+  withServerProjectionApply,
   withTrustedServerProjectionWrite,
 } from '../server/projectionWriteGuard.svelte'
 
@@ -791,7 +792,7 @@ export function setDatabase(data: Database) {
 }
 
 export function applyServerProjectionDatabase(data: Database) {
-  return withTrustedServerProjectionWrite(() => {
+  return withServerProjectionApply(() => {
     changeLanguage(data.language)
     setDatabaseLite(data)
   })
@@ -805,7 +806,7 @@ export function applyServerProjectionDatabase(data: Database) {
  * locally-hydrated entities outside the named keys.
  */
 export function mergeServerProjectionFields(fields: Partial<Database>) {
-  return withTrustedServerProjectionWrite(() => {
+  return withServerProjectionApply(() => {
     const db = DBState.db as unknown as Record<string, unknown>
     for (const [key, value] of Object.entries(fields)) {
       db[key] = value

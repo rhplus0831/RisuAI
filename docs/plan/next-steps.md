@@ -29,6 +29,8 @@ Phase 6 settings write coalescing now skips immediate equality no-ops and drops
 queued setting changes whose final value returns to the original baseline.
 Memory job UI refresh is SSE-driven, prevents overlapping list requests, and
 polls only while pending/running jobs remain visible.
+Server-origin projection applies now advance a shared watcher epoch so settings,
+chat, and script-definition watchers refresh baselines without echoing commands.
 
 Prefer one of these next:
 
@@ -38,9 +40,9 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. Continue Phase 6 client loop suppression if prioritizing remaining watcher
-   echo/projection-apply work:
-   [`phase-6-client-loop-suppression.md`](phases/phase-6-client-loop-suppression.md).
+3. Continue Phase 7 route operation safeguards if prioritizing operational
+   coverage:
+   [`phase-7-route-operations-coverage.md`](phases/phase-7-route-operations-coverage.md).
 
 The command-family evidence lives in
 [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).
@@ -70,9 +72,8 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Client loop suppression for watcher echo in Phase 6.
-4. Route operation safeguards and manifest coverage in Phase 7.
-5. Verification budgets and latest-check recording in Phase 8.
+3. Route operation safeguards and manifest coverage in Phase 7.
+4. Verification budgets and latest-check recording in Phase 8.
 
 ## Proof Commands
 

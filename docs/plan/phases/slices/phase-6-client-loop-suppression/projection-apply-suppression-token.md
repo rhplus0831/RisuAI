@@ -1,7 +1,6 @@
 # Projection Apply Suppression Token
 
-Status: planned; several bridges already keep local baselines, but there is no
-shared server-projection apply token.
+Status: implemented.
 
 ## Source Anchors
 
@@ -18,27 +17,29 @@ Prevent trusted server projection application from being interpreted as a local
 edit by command-backed bridge watchers.
 
 Current behavior: `projectionWriteGuard.svelte.ts` provides the shared trusted
-write guard for server-backed projection mutations. Settings, chat, lorebook,
-and script-definition bridges still keep their own watcher baselines and
-rollback suppression. This slice is only for remaining echo cases or for
-replacing duplicated baseline rules with a shared projection-apply signal.
+write guard for server-backed projection mutations and a shared
+server-projection apply epoch. Full and targeted server projection application
+advance that epoch; settings, chat, and script-definition watchers read it and
+refresh their baselines without dispatching commands. Lorebook still keeps its
+hydrated-lorebook guard for no-data-loss behavior.
 
 ## Protocol Behavior
 
 - Introduce a shared "applying server projection" token or equivalent baseline
-  mechanism.
+  mechanism. Done.
 - Watchers should suppress command dispatch for server-origin projection writes.
+  Done.
 - Local UI drafts should continue to dispatch commands after projection apply
-  completes.
+  completes. Done.
 
 ## Done When
 
 - A passive client receiving a foreign projection update does not echo the same
-  value back as a command.
-- Watchers compare against the correct server-applied baseline.
-- Tests cover at least settings and one non-settings bridge.
+  value back as a command. Done.
+- Watchers compare against the correct server-applied baseline. Done.
+- Tests cover at least settings and one non-settings bridge. Done.
 
 ## Validation
 
-- Focused bridge tests.
-- `pnpm test -- src/ts/bootstrap.test.ts`
+- `pnpm test -- src/ts/server/settingsBridge.svelte.test.ts src/ts/server/chatBridge.svelte.test.ts src/ts/server/scriptDefinitionBridge.svelte.test.ts`
+- `pnpm test -- src/ts/server src/ts/bootstrap.test.ts`

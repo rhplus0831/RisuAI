@@ -1,7 +1,6 @@
 # Phase 6: Client Loop Suppression
 
-Status: partly implemented; settings write coalescing and memory job SSE refresh
-are implemented, while watcher echo coverage remains planned.
+Status: implemented.
 
 Goal: prevent server-origin refreshes, polling loops, and high-frequency UI
 controls from echoing into repeated commands or overlapping requests.
@@ -21,22 +20,27 @@ controls from echoing into repeated commands or overlapping requests.
 - [`memory-jobs-sse-driven-refresh.md`](slices/phase-6-client-loop-suppression/memory-jobs-sse-driven-refresh.md) -
   implemented; the modal subscribes to memory SSE events, prevents overlapping
   list requests, and polls only while pending/running jobs are present.
-- [`projection-apply-suppression-token.md`](slices/phase-6-client-loop-suppression/projection-apply-suppression-token.md)
+- [`projection-apply-suppression-token.md`](slices/phase-6-client-loop-suppression/projection-apply-suppression-token.md) -
+  implemented; server projection applies advance a shared watcher epoch so
+  command-backed watchers refresh their baselines.
 - [`settings-write-coalescing.md`](slices/phase-6-client-loop-suppression/settings-write-coalescing.md) -
   implemented; immediate settings patches skip equality no-ops, debounced
   watcher patches still coalesce, and queued patches are dropped when the final
   value returns to the original baseline.
-- [`watcher-baseline-tests.md`](slices/phase-6-client-loop-suppression/watcher-baseline-tests.md)
+- [`watcher-baseline-tests.md`](slices/phase-6-client-loop-suppression/watcher-baseline-tests.md) -
+  implemented; settings, chat, script-definition, and existing lorebook tests
+  cover server-origin refreshes, local edits after refresh, and rollback
+  suppression.
 
 ## Exit Criteria
 
 - Memory job UI avoids overlapping list requests and relies on SSE where
   possible. Done.
 - Server projection application cannot be mistaken for a local edit by bridge
-  watchers.
+  watchers. Done.
 - High-frequency settings controls continue to coalesce and skip equality-noop
   writes.
-- Watcher behavior has tests for server-origin refreshes.
+- Watcher behavior has tests for server-origin refreshes. Done.
 
 ## Validation
 
