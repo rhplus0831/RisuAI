@@ -219,8 +219,13 @@ export function writePersisted(dataDir: string, next: Persisted): void {
   fs.mkdirSync(dataDir, { recursive: true })
   const file = dbJsonPath(dataDir)
   const tmp = `${file}.tmp`
-  fs.writeFileSync(tmp, JSON.stringify(next))
-  fs.renameSync(tmp, file)
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(next))
+    fs.renameSync(tmp, file)
+  } catch (err) {
+    fs.rmSync(tmp, { force: true })
+    throw err
+  }
   invalidateAssetMetadataIndex(dataDir)
 }
 
@@ -698,48 +703,50 @@ export function addAssets(
   const results: AddAssetResult[] = []
   const currentRevision = getSchemaState(db).revision
   const createdFiles: Array<{ file: string; existedBefore: boolean }> = []
-
-  for (const asset of assets) {
-    const ext = CONTENT_TYPE_EXTENSIONS[asset.contentType]
-    const sha256 = createHash('sha256').update(asset.bytes).digest('hex')
-    const existing = assetById.get(sha256)
-    if (existing) {
-      const file = assetPath(dataDir, existing)
-      if (!fs.existsSync(file)) {
-        fs.mkdirSync(assetsDir(dataDir), { recursive: true })
-        fs.writeFileSync(file, asset.bytes)
-      }
-      results.push({ entry: existing, created: false, revision: currentRevision })
-      continue
-    }
-
-    fs.mkdirSync(assetsDir(dataDir), { recursive: true })
-    const file = path.join(assetsDir(dataDir), `${sha256}.${ext}`)
-    const existedBefore = fs.existsSync(file)
-    fs.writeFileSync(file, asset.bytes)
-    createdFiles.push({ file, existedBefore })
-    const entry: PersistedAsset = {
-      id: sha256,
-      ext,
-      size: asset.bytes.length,
-      contentType: asset.contentType,
-    }
-    nextAssets.push(entry)
-    assetById.set(entry.id, entry)
-    const result = { entry, created: true, revision: currentRevision }
-    createdResults.push(result)
-    results.push(result)
-  }
-
-  if (createdResults.length === 0) {
-    return results
-  }
-
-  writePersisted(dataDir, { ...persisted, assets: nextAssets })
   let transactionOpen = false
-  db.exec('BEGIN IMMEDIATE')
-  transactionOpen = true
+  let metadataWritten = false
   try {
+    for (const asset of assets) {
+      const ext = CONTENT_TYPE_EXTENSIONS[asset.contentType]
+      const sha256 = createHash('sha256').update(asset.bytes).digest('hex')
+      const existing = assetById.get(sha256)
+      if (existing) {
+        const file = assetPath(dataDir, existing)
+        if (!fs.existsSync(file)) {
+          fs.mkdirSync(assetsDir(dataDir), { recursive: true })
+          fs.writeFileSync(file, asset.bytes)
+        }
+        results.push({ entry: existing, created: false, revision: currentRevision })
+        continue
+      }
+
+      fs.mkdirSync(assetsDir(dataDir), { recursive: true })
+      const file = path.join(assetsDir(dataDir), `${sha256}.${ext}`)
+      const existedBefore = fs.existsSync(file)
+      createdFiles.push({ file, existedBefore })
+      fs.writeFileSync(file, asset.bytes)
+      const entry: PersistedAsset = {
+        id: sha256,
+        ext,
+        size: asset.bytes.length,
+        contentType: asset.contentType,
+      }
+      nextAssets.push(entry)
+      assetById.set(entry.id, entry)
+      const result = { entry, created: true, revision: currentRevision }
+      createdResults.push(result)
+      results.push(result)
+    }
+
+    if (createdResults.length === 0) {
+      return results
+    }
+
+    writePersisted(dataDir, { ...persisted, assets: nextAssets })
+    metadataWritten = true
+
+    db.exec('BEGIN IMMEDIATE')
+    transactionOpen = true
     const event = persistRevisionedCommandEvent(db, {
       ...COMMAND_EVENT_CATALOG.assetCreated,
       ...(createdResults.length === 1 ? { id: createdResults[0].entry.id } : {}),
@@ -751,11 +758,21 @@ export function addAssets(
     if (transactionOpen) {
       db.exec('ROLLBACK')
     }
-    writePersisted(dataDir, persisted)
+    let restoreError: unknown
+    try {
+      if (metadataWritten) {
+        writePersisted(dataDir, persisted)
+      }
+    } catch (rollbackErr) {
+      restoreError = rollbackErr
+    }
     for (const { file, existedBefore } of createdFiles) {
       if (!existedBefore) {
         fs.rmSync(file, { force: true })
       }
+    }
+    if (restoreError) {
+      throw restoreError
     }
     throw err
   }

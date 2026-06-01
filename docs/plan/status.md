@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the per-generation asset
-cache slice.
+Current status reflects code and commit history through the asset mutation
+transaction protocol slice.
 
 ## Current Snapshot
 
@@ -32,16 +32,17 @@ Completed work:
   triggers for active-chat changes plus full resyncs, a per-root-action cap for
   server-owned resend cycles, and a SQLite-backed finalization retry queue.
 - Phase 5 has completed the revision-bump audit, server-owned event atomicity,
-  expanded import limits, bundle export streaming, and per-generation asset
-  caching. Initialization,
+  expanded import limits, bundle export streaming, per-generation asset caching,
+  and the asset mutation transaction protocol. Initialization,
   `.risu` import, asset upload/bulk upload, backup restore, Realm staged assets,
   and Realm fetched assets now persist replayable events with their revision
   bumps or roll back file-backed metadata/bytes when command-event persistence
-  fails. Multipart `.risu` and Realm charx imports reject oversized expanded
-  payloads before durable import commits. Bundle export shares one hydrated save
-  snapshot, then streams asset file entries into the zip. Prompt assembly now
-  reuses repeated stored-asset reads and base64 encodes within one generation
-  request.
+  fails. Asset upload and bulk upload also remove staged bytes when file staging
+  or `db.json` metadata persistence fails before a revisioned event can commit.
+  Multipart `.risu` and Realm charx imports reject oversized expanded payloads
+  before durable import commits. Bundle export shares one hydrated save snapshot,
+  then streams asset file entries into the zip. Prompt assembly now reuses
+  repeated stored-asset reads and base64 encodes within one generation request.
 - Phase 6 has existing settings debounce/coalescing and per-bridge watcher
   baselines; memory job SSE refresh, shared projection-apply suppression, and
   broader echo tests remain planned.
@@ -73,7 +74,7 @@ Active performance risks:
 - Use [`plan.md`](plan.md) for invariants and phase order.
 - Use [`phases/README.md`](phases/README.md) for all phase docs.
 - Prefer measured P2/P3 work when a narrow slice exists; otherwise use
-  [`next-steps.md`](next-steps.md) to select remaining Phase 5-8 work.
+  [`next-steps.md`](next-steps.md) to select remaining Phase 6-8 work.
 
 ## Phase Router
 
@@ -84,7 +85,7 @@ Active performance risks:
 | [Phase 2](phases/phase-2-command-write-cost.md)           | Hot command paths targeted           | Whole-corpus command mutation cost and narrow write paths.                             |
 | [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Read optimizations implemented       | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.   |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Implemented                          | Closed stream, generation reattach, resend, and finalization retry work.               |
-| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Event/import/bundle work complete    | Asset file durability and per-generation media caching.                                |
+| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Implemented                          | Closed import/export memory and asset mutation durability work.                        |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Partly implemented                   | Memory job polling, server-origin watcher echo, settings write coalescing.             |
 | [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.    |
 | [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                    |

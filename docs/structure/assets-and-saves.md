@@ -31,6 +31,14 @@ bulk batch) bumps the repository revision and emits `asset.created` so clients
 can advance their revision cursor; uploading bytes that already exist returns
 the existing id without creating a duplicate.
 
+Upload and bulk upload stage content-addressed files before updating `db.json`
+metadata and committing the revisioned `asset.created` event. Newly staged files
+are removed if a later file write, metadata write, or command-event persistence
+step fails before commit, so failed uploads do not leave metadata or bytes that
+were never paired with a replayable revision. Re-uploading an id already present
+in metadata remains idempotent and may heal a missing immutable file without a
+new revision.
+
 `GET` and `HEAD /api/v1/assets/:id` are public immutable reads. They serve only
 ids present in metadata and on disk. `POST /api/v1/assets/exists` validates ids
 and returns the missing set so import and upload flows can avoid redundant bytes.

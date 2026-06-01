@@ -1,8 +1,8 @@
 # Phase 5: Import, Export, And Asset Memory
 
-Status: revision/event audit, event atomicity, expanded import limits, and
-bundle export streaming complete; per-generation asset caching implemented;
-broader asset-file durability remains planned.
+Status: implemented. Revision/event audit, event atomicity, expanded import
+limits, bundle export streaming, per-generation asset caching, and asset
+mutation durability are complete.
 
 Goal: reduce large-payload memory pressure and make asset mutation durability
 explicit.
@@ -27,7 +27,10 @@ explicit.
 - [`bundle-export-streaming.md`](slices/phase-5-import-export-asset-memory/bundle-export-streaming.md) -
   implemented; bundle export shares one hydrated snapshot and streams asset
   entries into the zip.
-- [`asset-mutation-transaction-protocol.md`](slices/phase-5-import-export-asset-memory/asset-mutation-transaction-protocol.md)
+- [`asset-mutation-transaction-protocol.md`](slices/phase-5-import-export-asset-memory/asset-mutation-transaction-protocol.md) -
+  implemented; upload and bulk upload now roll back newly staged asset files
+  when file staging, metadata persistence, or command-event persistence fails
+  before a revisioned `asset.created` event commits.
 - [`per-generation-asset-cache.md`](slices/phase-5-import-export-asset-memory/per-generation-asset-cache.md) -
   implemented; repeated stored-asset references in one prompt assembly share a
   request-scoped read/base64 cache.
@@ -38,7 +41,7 @@ explicit.
 - Bundle export avoids double hydration and does not collect all bundled asset
   bytes in one in-memory zip input map.
 - Asset file writes, metadata writes, revision bumps, and events have explicit
-  recovery behavior beyond the completed command-event failure rollback paths.
+  recovery behavior.
 - Repeated references to the same stored asset in one generation do not re-read
   and re-encode bytes.
 

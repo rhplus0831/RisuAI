@@ -1,11 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, existsSync, readFileSync, unlinkSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import fs, { mkdtempSync, rmSync, existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
+import { loadPersisted } from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
 
 const subtle = webcrypto.subtle
@@ -108,6 +109,19 @@ function failCommandEventPersistence(dataDir: string): void {
   }
 }
 
+function failWriteFileSyncWhen(predicate: (file: string) => boolean): void {
+  const originalWriteFileSync = fs.writeFileSync.bind(fs) as typeof fs.writeFileSync
+  vi.spyOn(fs, 'writeFileSync').mockImplementation(
+    ((file, data, options) => {
+      const filePath = typeof file === 'string' ? file : file.toString()
+      if (predicate(filePath)) {
+        throw new Error(`injected write failure: ${filePath}`)
+      }
+      return originalWriteFileSync(file as never, data as never, options as never)
+    }) as typeof fs.writeFileSync,
+  )
+}
+
 let harness: Harness
 
 beforeEach(async () => {
@@ -115,6 +129,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await stopHarness(harness)
 })
 
@@ -252,6 +267,61 @@ describe('Phase 2C assets', () => {
     const persisted = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
     expect(persisted.assets).toEqual([])
     expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(false)
+  })
+
+  it('removes staged asset bytes when metadata persistence fails', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    failWriteFileSyncWhen((file) => file === path.join(harness.dataDir, 'db.json.tmp'))
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+
+    expect(res.statusCode).toBe(500)
+    expect(harness.commandEvents.list()).toEqual([])
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(0)
+    expect(loadPersisted(harness.dataDir).assets).toEqual([])
+    expect(existsSync(path.join(harness.dataDir, 'db.json.tmp'))).toBe(false)
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(false)
+  })
+
+  it('removes previously staged bulk asset bytes when a later file write fails', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    failWriteFileSyncWhen((file) =>
+      file === path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        assets: [
+          { contentType: 'image/png', data: PNG_BYTES.toString('base64') },
+          { contentType: 'image/png', data: OTHER_PNG_BYTES.toString('base64') },
+        ],
+      },
+    })
+
+    expect(res.statusCode).toBe(500)
+    expect(harness.commandEvents.list()).toEqual([])
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(0)
+    expect(loadPersisted(harness.dataDir).assets).toEqual([])
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(false)
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`))).toBe(false)
   })
 
   it('bulk uploads assets with one revision and ordered results', async () => {

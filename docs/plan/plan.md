@@ -48,12 +48,12 @@ narrowed hot Phase 2 command families (`settings`, plugin storage, chat
 metadata, message history, and generation persistence), reduced Phase 3 read
 costs, bounded Phase 4 stream/generation behavior, and landed Phase 5 revision
 audit, event atomicity, expanded import limits, bundle export streaming, and
-per-generation asset caching.
+per-generation asset caching, and asset mutation durability.
 
 Remaining work is concentrated in measured generation/prompt side-effect
 passes, full-bootstrap fallback budgets, optional lorebook bulk reads, ordinary
-`.risu` export materialization, broader asset durability, client watcher echo,
-route operation guards, and verification budgets.
+`.risu` export materialization, client watcher echo, route operation guards, and
+verification budgets.
 
 ## Invariants
 
@@ -92,10 +92,9 @@ route operation guards, and verification budgets.
    side-effect slices.
 2. Use Phase 3 for optional lorebook bulk reads or full-resync budgets when
    measurement shows they matter.
-3. Address remaining asset durability in Phase 5.
-4. Suppress client loops and high-frequency command writes in Phase 6.
-5. Add route limits, schemas, and coverage refinements in Phase 7.
-6. Promote proven measurement into Phase 8 budgets.
+3. Suppress client loops and high-frequency command writes in Phase 6.
+4. Add route limits, schemas, and coverage refinements in Phase 7.
+5. Promote proven measurement into Phase 8 budgets.
 
 ## Not In This Plan
 
