@@ -6,6 +6,7 @@ import { getSchemaState } from '../db.js'
 import {
   loadCharacterLorebookHydration,
   loadChatHydration,
+  loadChatHydrations,
   loadPersistedDatabaseFields,
   loadStubProjection,
 } from '../repository.js'
@@ -76,6 +77,37 @@ export function registerProjectionRoutes(
   authState: AuthState,
   dataDir: string,
 ): void {
+  app.post<{ Body: { ids?: unknown } }>(
+    '/api/v1/projection/chatMessages/bulk',
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      const chatIds = readBulkChatIds(req.body)
+      if (!chatIds) {
+        return reply.code(400).send({
+          error: 'invalid_chat_ids',
+          reason: 'Expected body.ids to be an array of non-empty chat ids.',
+        })
+      }
+
+      const { revision } = getSchemaState(db)
+      const hydration = loadChatHydrations(db, dataDir, chatIds)
+      const response = {
+        revision,
+        resource: 'chatMessages',
+        mode: 'chat-messages-bulk' as const,
+        chats: hydration.chats,
+        missing: hydration.missing,
+      }
+      emitProjectionMetric(req.log, 'chatMessages', revision, response, {
+        bulk: true,
+        idCount: chatIds.length,
+        returnedCount: hydration.chats.length,
+        missingCount: hydration.missing.length,
+      })
+      return response
+    },
+  )
+
   app.get<{ Params: { resource: string }; Querystring: { id?: string } }>(
     '/api/v1/projection/:resource',
     async (req, reply) => {
@@ -159,6 +191,22 @@ export function registerProjectionRoutes(
       return response
     },
   )
+}
+
+function readBulkChatIds(body: { ids?: unknown } | undefined): string[] | null {
+  if (!body || !Array.isArray(body.ids)) return null
+
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const raw of body.ids) {
+    if (typeof raw !== 'string') return null
+    const id = raw.trim()
+    if (!id) return null
+    if (seen.has(id)) continue
+    ids.push(id)
+    seen.add(id)
+  }
+  return ids
 }
 
 function loadStubProjectionFields(

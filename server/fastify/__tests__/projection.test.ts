@@ -148,6 +148,71 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
   })
 })
 
+describe('bulk chat message hydration route', () => {
+  it('serves requested chat histories in one read-only response', async () => {
+    const revision = await importDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chats: [
+            {
+              id: 'chat-a',
+              message: [{ role: 'user', data: 'hello', chatId: 'm1' }],
+              hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+            },
+            {
+              id: 'chat-b',
+              message: [{ role: 'char', data: 'hi', chatId: 'm2' }],
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/projection/chatMessages/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: { ids: ['chat-a', 'missing-chat', 'chat-b', 'chat-a'] },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body).toMatchObject({
+      revision,
+      resource: 'chatMessages',
+      mode: 'chat-messages-bulk',
+      missing: ['missing-chat'],
+    })
+    expect(body.chats).toHaveLength(2)
+    expect(body.chats[0]).toMatchObject({
+      chatId: 'chat-a',
+      message: [{ role: 'user', data: 'hello', chatId: 'm1' }],
+      hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+      alternates: [],
+    })
+    expect(body.chats[1]).toMatchObject({
+      chatId: 'chat-b',
+      message: [{ role: 'char', data: 'hi', chatId: 'm2' }],
+      alternates: [],
+    })
+    expect(body.chats[1]).not.toHaveProperty('hypaV3Data')
+  })
+
+  it('rejects malformed bulk chat ids', async () => {
+    await importDatabase({ characters: [] })
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/projection/chatMessages/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: { ids: ['chat-a', ''] },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('invalid_chat_ids')
+  })
+})
+
 describe('targeted projection field loader', () => {
   it('selects only requested persisted database fields', () => {
     writeFileSync(

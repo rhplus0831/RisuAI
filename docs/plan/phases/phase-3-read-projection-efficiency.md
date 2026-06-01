@@ -1,6 +1,6 @@
 # Phase 3: Read Projection Efficiency
 
-Status: three optimizations implemented.
+Status: four optimizations implemented.
 
 Goal: reduce repeated REST reads and full-projection work for targeted
 projection, asset metadata, bulk hydration, and full resync fallbacks.
@@ -38,6 +38,10 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
   persisted-field selector with provider secret masking.
 - Asset metadata lookup now uses an in-process repository index with
   `db.json` stat-based refresh and explicit invalidation on repository writes.
+- Bulk chat-message hydration now uses authenticated read-only
+  `POST /api/v1/projection/chatMessages/bulk` for all-chat workflows, replacing
+  one-request-per-chat fanout while keeping active-chat hydration on the
+  single-chat GET path.
 
 ## Validation
 

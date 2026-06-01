@@ -9,6 +9,7 @@ import { markCharacterLorebookHydrated } from './lorebookBridge.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import {
   canUseServerProjection,
+  fetchServerBulkChatMessages,
   fetchServerCharacterLorebook,
   fetchServerChatMessages,
 } from './projection'
@@ -86,6 +87,36 @@ async function hydrateChat(chatId: string, force: boolean): Promise<void> {
   })()
   inFlight.set(chatId, request)
   return request
+}
+
+async function hydrateChatsBulk(chatIds: readonly string[]): Promise<void> {
+  if (!canUseServerProjection() || chatIds.length === 0) return
+
+  const generation = chatHydrationGeneration
+  const endRequest = beginHydrationRequest('chat')
+  const result = await fetchServerBulkChatMessages(chatIds).finally(endRequest)
+  if (result.status !== 'ok') return
+  if (generation !== chatHydrationGeneration) {
+    recordHydrationStaleDrop('chat', 'generation-reset')
+    return
+  }
+  if (isOlderThanAppliedRevision(result.revision)) {
+    recordHydrationStaleDrop('chat', 'older-than-applied-revision')
+    return
+  }
+
+  const missing = new Set(result.missing)
+  for (const chatId of chatIds) {
+    if (missing.has(chatId)) continue
+    const hydration = result.chats.find((chat) => chat.chatId === chatId)
+    if (!hydration) continue
+    const applied = hydrateServerChatMessages(chatId, hydration.message, hydration.hypaV3Data)
+    if (!applied) continue
+    hydratedChatIds.add(chatId)
+    if (activeChatId() === chatId) {
+      seedRerollBufferFromAlternates(hydration.message, hydration.alternates)
+    }
+  }
 }
 
 /** Hydrate the currently-open chat's messages (no-op if already hydrated). */
@@ -174,9 +205,7 @@ export async function ensureAllCharacterLorebooksHydrated(): Promise<void> {
     }
   }
   recordBulkHydration('characterLorebook', ids.length)
-  await runBounded(ids, BULK_HYDRATION_CONCURRENCY, (id) =>
-    hydrateCharacterLorebook(id, false),
-  )
+  await runBounded(ids, BULK_HYDRATION_CONCURRENCY, (id) => hydrateCharacterLorebook(id, false))
 }
 
 /**
@@ -206,15 +235,22 @@ function isOlderThanAppliedRevision(revision: number): boolean {
 export async function ensureAllChatsHydrated(): Promise<void> {
   if (!canUseServerProjection()) return
   const ids: string[] = []
+  const pendingRequests: Promise<void>[] = []
   for (const character of DBState.db?.characters ?? []) {
     for (const chat of character.chats ?? []) {
-      if (typeof chat.id === 'string' && chat.id && !hydratedChatIds.has(chat.id)) {
-        ids.push(chat.id)
+      if (typeof chat.id !== 'string' || !chat.id || hydratedChatIds.has(chat.id)) {
+        continue
       }
+      const pending = inFlight.get(chat.id)
+      if (pending) {
+        pendingRequests.push(pending)
+        continue
+      }
+      ids.push(chat.id)
     }
   }
   recordBulkHydration('chat', ids.length)
-  await runBounded(ids, BULK_HYDRATION_CONCURRENCY, (id) => hydrateChat(id, false))
+  await Promise.all([hydrateChatsBulk(ids), ...pendingRequests])
 }
 
 async function runBounded<T>(

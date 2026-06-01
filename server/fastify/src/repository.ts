@@ -8,11 +8,14 @@ import {
   applyChatMessageDiff,
   deleteChatHypaV3,
   deleteChatMessages,
+  getAlternateMessagesGroupedByIds,
   getAllChatHypaV3Grouped,
   getAllChatMessagesGrouped,
   getAlternateMessages,
   getChatHypaV3,
+  getChatHypaV3GroupedByIds,
   getChatMessages,
+  getChatMessagesGroupedByIds,
   replaceAllChatHypaV3,
   replaceAllChatMessages,
   setChatHypaV3,
@@ -63,6 +66,18 @@ export interface Persisted {
   _version: number
   database: unknown | null
   assets: PersistedAsset[]
+}
+
+export interface ChatHydrationPayload {
+  chatId: string
+  message: unknown[]
+  hypaV3Data: unknown
+  alternates: unknown[]
+}
+
+export interface BulkChatHydrationPayload {
+  chats: ChatHydrationPayload[]
+  missing: string[]
 }
 
 export class ValidationError extends Error {
@@ -450,6 +465,51 @@ export function loadChatHydration(
     if (hypaV3Data === undefined && chat.hypaV3Data !== undefined) hypaV3Data = chat.hypaV3Data
   })
   return { message, hypaV3Data, alternates }
+}
+
+export function loadChatHydrations(
+  db: DatabaseSync,
+  dataDir: string,
+  chatIds: readonly string[],
+): BulkChatHydrationPayload {
+  const messages = getChatMessagesGroupedByIds(db, chatIds)
+  const hypaV3ById = getChatHypaV3GroupedByIds(db, chatIds)
+  const alternatesById = getAlternateMessagesGroupedByIds(db, chatIds)
+  const fallbackById = new Map<string, { message?: unknown[]; hypaV3Data?: unknown }>()
+  const knownChatIds = new Set<string>()
+  const requestedChatIds = new Set(chatIds)
+  const persisted = loadPersisted(dataDir)
+
+  eachChat(persisted.database, (chat) => {
+    if (typeof chat.id !== 'string') return
+    knownChatIds.add(chat.id)
+    if (!requestedChatIds.has(chat.id)) return
+    fallbackById.set(chat.id, {
+      message: Array.isArray(chat.message) ? chat.message : undefined,
+      hypaV3Data: chat.hypaV3Data,
+    })
+  })
+
+  const chats: ChatHydrationPayload[] = []
+  const missing: string[] = []
+  for (const chatId of chatIds) {
+    if (!knownChatIds.has(chatId)) {
+      missing.push(chatId)
+      continue
+    }
+
+    const fallback = fallbackById.get(chatId)
+    const messageRows = messages.get(chatId)
+    const message = messageRows && messageRows.length > 0 ? messageRows : (fallback?.message ?? [])
+    chats.push({
+      chatId,
+      message,
+      hypaV3Data: hypaV3ById.has(chatId) ? hypaV3ById.get(chatId) : fallback?.hypaV3Data,
+      alternates: alternatesById.get(chatId) ?? [],
+    })
+  }
+
+  return { chats, missing }
 }
 
 /**

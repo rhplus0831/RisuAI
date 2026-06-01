@@ -150,6 +150,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'projection-chat-messages-bulk',
+    methods: ['POST'],
+    path: '/api/v1/projection/chatMessages/bulk',
+    auth: {
+      decision: 'required',
+      reason: 'Bulk chat hydration returns user chat histories for requested chat ids.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Bulk chat hydration is read-only; POST carries a potentially large id list.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'risusave-import',
     methods: ['POST'],
     path: '/api/v1/import/risusave',

@@ -108,6 +108,22 @@ export function getAllChatHypaV3Grouped(db: DatabaseSync): Map<string, unknown> 
   return grouped
 }
 
+export function getChatHypaV3GroupedByIds(
+  db: DatabaseSync,
+  chatIds: readonly string[],
+): Map<string, unknown> {
+  const grouped = new Map<string, unknown>()
+  for (const ids of idChunks(chatIds)) {
+    const rows = db
+      .prepare(
+        `SELECT chat_id, json FROM chat_hypa_v3 WHERE chat_id IN (${placeholders(ids.length)})`,
+      )
+      .all(...ids) as { chat_id: string; json: string }[]
+    for (const row of rows) grouped.set(row.chat_id, JSON.parse(row.json) as unknown)
+  }
+  return grouped
+}
+
 /** Chat ids that currently have a hypaV3Data row. */
 export function getAllChatIdsWithHypaV3(db: DatabaseSync): string[] {
   const rows = db.prepare('SELECT chat_id FROM chat_hypa_v3').all() as { chat_id: string }[]
@@ -174,11 +190,7 @@ export function replaceChatMessages(
   insertChatMessages(db, chatId, messages)
 }
 
-function insertChatMessages(
-  db: DatabaseSync,
-  chatId: string,
-  messages: readonly unknown[],
-): void {
+function insertChatMessages(db: DatabaseSync, chatId: string, messages: readonly unknown[]): void {
   if (messages.length === 0) return
   const insert = db.prepare(
     'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
@@ -282,11 +294,34 @@ export function getAllChatMessagesGrouped(db: DatabaseSync): Map<string, JsonRec
   return grouped
 }
 
+export function getChatMessagesGroupedByIds(
+  db: DatabaseSync,
+  chatIds: readonly string[],
+): Map<string, JsonRecord[]> {
+  const grouped = new Map<string, JsonRecord[]>()
+  for (const ids of idChunks(chatIds)) {
+    const rows = db
+      .prepare(
+        `SELECT chat_id, json FROM messages WHERE alternate = 0 AND chat_id IN (${placeholders(ids.length)}) ORDER BY chat_id, seq`,
+      )
+      .all(...ids) as { chat_id: string; json: string }[]
+    for (const row of rows) {
+      let list = grouped.get(row.chat_id)
+      if (!list) {
+        list = []
+        grouped.set(row.chat_id, list)
+      }
+      list.push(JSON.parse(row.json) as JsonRecord)
+    }
+  }
+  return grouped
+}
+
 /** Chat ids that currently have at least one ACTIVE message row. */
 export function getAllChatIdsWithMessages(db: DatabaseSync): string[] {
-  const rows = db
-    .prepare('SELECT DISTINCT chat_id FROM messages WHERE alternate = 0')
-    .all() as { chat_id: string }[]
+  const rows = db.prepare('SELECT DISTINCT chat_id FROM messages WHERE alternate = 0').all() as {
+    chat_id: string
+  }[]
   return rows.map((row) => row.chat_id)
 }
 
@@ -334,6 +369,29 @@ export function getAlternateMessages(db: DatabaseSync, chatId: string): JsonReco
   return rows.map((row) => JSON.parse(row.json) as JsonRecord)
 }
 
+export function getAlternateMessagesGroupedByIds(
+  db: DatabaseSync,
+  chatIds: readonly string[],
+): Map<string, JsonRecord[]> {
+  const grouped = new Map<string, JsonRecord[]>()
+  for (const ids of idChunks(chatIds)) {
+    const rows = db
+      .prepare(
+        `SELECT chat_id, json FROM messages WHERE alternate = 1 AND chat_id IN (${placeholders(ids.length)}) ORDER BY chat_id, seq ASC`,
+      )
+      .all(...ids) as { chat_id: string; json: string }[]
+    for (const row of rows) {
+      let list = grouped.get(row.chat_id)
+      if (!list) {
+        list = []
+        grouped.set(row.chat_id, list)
+      }
+      list.push(JSON.parse(row.json) as JsonRecord)
+    }
+  }
+  return grouped
+}
+
 /** Drop a chat's reroll buffer (the confirm boundary: send / continue). */
 export function clearAlternateMessages(db: DatabaseSync, chatId: string): void {
   db.prepare('DELETE FROM messages WHERE chat_id = ? AND alternate = 1').run(chatId)
@@ -345,4 +403,17 @@ export function countAlternateMessages(db: DatabaseSync, chatId: string): number
     .prepare('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND alternate = 1')
     .get(chatId) as { count: number } | undefined
   return row?.count ?? 0
+}
+
+function placeholders(count: number): string {
+  return Array.from({ length: count }, () => '?').join(',')
+}
+
+function idChunks(chatIds: readonly string[]): string[][] {
+  const chunkSize = 500
+  const chunks: string[][] = []
+  for (let index = 0; index < chatIds.length; index += chunkSize) {
+    chunks.push(chatIds.slice(index, index + chunkSize))
+  }
+  return chunks
 }

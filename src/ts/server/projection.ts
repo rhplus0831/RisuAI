@@ -104,6 +104,21 @@ export type ServerChatMessagesResult =
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
+export type ServerBulkChatMessagesResult =
+  | {
+      status: 'ok'
+      revision: number
+      chats: Array<{
+        chatId: string
+        message: unknown[]
+        hypaV3Data?: unknown
+        alternates: unknown[]
+      }>
+      missing: string[]
+    }
+  | { status: 'error'; error: string }
+  | { status: 'unavailable' }
+
 /**
  * Per-chat message hydration. The bootstrap ships chat stubs (empty `message[]`);
  * this fetches one chat's messages on open.
@@ -157,6 +172,80 @@ export async function fetchServerChatMessages(
     message: record.message as unknown[],
     hypaV3Data: record.hypaV3Data,
     alternates: Array.isArray(record.alternates) ? (record.alternates as unknown[]) : [],
+  }
+}
+
+/**
+ * Bulk chat message hydration for workflows that need every chat history. The
+ * open chat still uses the single-chat path to keep active-chat dedupe narrow.
+ */
+export async function fetchServerBulkChatMessages(
+  chatIds: readonly string[],
+  options: { signal?: AbortSignal | null } = {},
+): Promise<ServerBulkChatMessagesResult> {
+  if (!canUseServerProjection()) return { status: 'unavailable' }
+
+  const auth = await getNodeServerProxyAuth()
+  let response: Response
+  try {
+    response = await fetch(`${PROJECTION_ENDPOINT}/chatMessages/bulk`, {
+      method: 'POST',
+      signal: options.signal ?? undefined,
+      headers: { 'content-type': 'application/json', 'risu-auth': auth },
+      body: JSON.stringify({ ids: chatIds }),
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { status: 'error', error: `Network error: ${message}` }
+  }
+
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    // Reported via HTTP status below.
+  }
+
+  if (!response.ok) {
+    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
+  }
+  if (!body || typeof body !== 'object') {
+    return { status: 'error', error: 'Invalid bulk chat-messages response' }
+  }
+
+  const record = body as Record<string, unknown>
+  const revision = record.revision
+  if (!Number.isInteger(revision) || (revision as number) < 0) {
+    return { status: 'error', error: 'Invalid projection revision' }
+  }
+  if (record.mode !== 'chat-messages-bulk' || !Array.isArray(record.chats)) {
+    return { status: 'error', error: 'Invalid bulk chat-messages response' }
+  }
+
+  const chats: Extract<ServerBulkChatMessagesResult, { status: 'ok' }>['chats'] = []
+  for (const raw of record.chats) {
+    if (!raw || typeof raw !== 'object') {
+      return { status: 'error', error: 'Invalid bulk chat-messages entry' }
+    }
+    const chat = raw as Record<string, unknown>
+    if (typeof chat.chatId !== 'string' || !Array.isArray(chat.message)) {
+      return { status: 'error', error: 'Invalid bulk chat-messages entry' }
+    }
+    chats.push({
+      chatId: chat.chatId,
+      message: chat.message as unknown[],
+      hypaV3Data: chat.hypaV3Data,
+      alternates: Array.isArray(chat.alternates) ? (chat.alternates as unknown[]) : [],
+    })
+  }
+
+  return {
+    status: 'ok',
+    revision: revision as number,
+    chats,
+    missing: Array.isArray(record.missing)
+      ? record.missing.filter((value): value is string => typeof value === 'string')
+      : [],
   }
 }
 
