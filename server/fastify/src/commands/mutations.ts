@@ -194,6 +194,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     args.db.exec('COMMIT')
     transactionOpen = false
     const dbJsonWriteStartedAt = protocolNowMs()
+    stripChatMessages(persisted)
     writePersisted(args.dataDir, persisted)
     dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     const eventEmitStartedAt = protocolNowMs()

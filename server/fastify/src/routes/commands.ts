@@ -2543,7 +2543,10 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const selectUpdated = readChatOptionalBoolean(body.select, 'select') ?? false
       const patch = readChatPatch(body.patch, { allowEmpty: selectUpdated })
-      const result = applyJsonCommandMutation<{ chatId: string; selectedChatId: string | null }>({
+      const result = applyMessageFreeJsonCommandMutation<{
+        chatId: string
+        selectedChatId: string | null
+      }>({
         db,
         dataDir,
         baseRevision,

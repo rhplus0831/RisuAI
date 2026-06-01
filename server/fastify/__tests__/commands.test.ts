@@ -121,6 +121,17 @@ async function persistedChatMessages(
   return res.json().message as Array<Record<string, unknown>>
 }
 
+function activeMessageRowids(dataDir: string, chatId: string): { seq: number; rowid: number }[] {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    return db
+      .prepare('SELECT rowid, seq FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq')
+      .all(chatId) as { seq: number; rowid: number }[]
+  } finally {
+    db.close()
+  }
+}
+
 async function uploadAsset(
   app: FastifyInstance,
   assertion: string,
@@ -3768,6 +3779,79 @@ describe('Phase 9-3b chat record and folder commands', () => {
       bookmarks: ['msg-a'],
       bookmarkNames: { 'msg-a': 'Pinned' },
     })
+  })
+
+  it('updates chat metadata without rewriting message rows or db.json message payloads', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [
+                { role: 'user', data: 'hello', chatId: 'msg-a' },
+                { role: 'char', data: 'hi', chatId: 'msg-b' },
+              ],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const beforeRows = activeMessageRowids(harness.dataDir, 'chat-a')
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          name: 'A renamed',
+          note: 'metadata only',
+          bookmarks: ['msg-a'],
+          bookmarkNames: { 'msg-a': 'Pinned' },
+        },
+      },
+    })
+
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toMatchObject({
+      revision: 2,
+      event: {
+        type: 'chat.updated',
+        resource: 'chat',
+        id: 'chat-a',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-a',
+      selectedChatId: 'chat-a',
+    })
+    expect(activeMessageRowids(harness.dataDir, 'chat-a')).toEqual(beforeRows)
+    await expect(persistedChatMessages(harness.app, assertion, 'chat-a')).resolves.toEqual([
+      { role: 'user', data: 'hello', chatId: 'msg-a' },
+      { role: 'char', data: 'hi', chatId: 'msg-b' },
+    ])
+
+    const raw = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8')) as {
+      database: { characters: Array<{ chats: Array<Record<string, unknown>> }> }
+    }
+    expect(raw.database.characters[0].chats[0]).toMatchObject({
+      id: 'chat-a',
+      name: 'A renamed',
+      note: 'metadata only',
+      bookmarks: ['msg-a'],
+      bookmarkNames: { 'msg-a': 'Pinned' },
+    })
+    expect(raw.database.characters[0].chats[0]).not.toHaveProperty('message')
   })
 
   it('rejects chat fork commands without client-supplied fork ids without bumping revision', async () => {

@@ -231,7 +231,7 @@ describe('command protocol metrics', () => {
     }
     expect(settings.metric.mutationPath).toBe('message-free')
     expect(pluginStorage.metric.mutationPath).toBe('message-free')
-    expect(chat.metric.mutationPath).toBe('hydrated')
+    expect(chat.metric.mutationPath).toBe('message-free')
     expect(message.metric.mutationPath).toBe('targeted-message')
     expect(generation.metric.mutationPath).toBe('hydrated')
 
