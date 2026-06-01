@@ -233,7 +233,7 @@ describe('command protocol metrics', () => {
     expect(pluginStorage.metric.mutationPath).toBe('message-free')
     expect(chat.metric.mutationPath).toBe('message-free')
     expect(message.metric.mutationPath).toBe('targeted-message')
-    expect(generation.metric.mutationPath).toBe('hydrated')
+    expect(generation.metric.mutationPath).toBe('targeted-generation')
 
     if (process.env.RISU_COMMAND_METRIC_SUMMARY === '1') {
       console.log(

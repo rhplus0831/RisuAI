@@ -5068,12 +5068,34 @@ describe('Phase 9-3d generation persistence command', () => {
       messageId: 'gen-1',
     })
 
-    const replaced = await harness.app.inject({
+    const repeated = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/chats/chat-a/generation-result',
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: appended.json().revision,
+        generationResult: {
+          message: {
+            role: 'char',
+            data: 'fresh answer replay',
+            chatId: 'gen-1',
+            promptInfo: { promptName: 'Preset' },
+            generationInfo: { generationId: 'gen-1', model: 'echo_model' },
+          },
+        },
+      },
+    })
+    expect(repeated.statusCode).toBe(200)
+    expect(
+      (await persistedChatMessages(harness.app, assertion, 'chat-a')).map((m) => m.chatId),
+    ).toEqual(['msg-a', 'msg-old', 'gen-1'])
+
+    const replaced = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: repeated.json().revision,
         generationResult: {
           targetMessageId: 'msg-old',
           message: {
@@ -5092,7 +5114,7 @@ describe('Phase 9-3d generation persistence command', () => {
     })
     expect(replaced.statusCode).toBe(200)
     expect(replaced.json()).toMatchObject({
-      revision: 3,
+      revision: 4,
       event: {
         type: 'generation.persisted',
         resource: 'generation',
@@ -5118,7 +5140,7 @@ describe('Phase 9-3d generation persistence command', () => {
       },
       {
         role: 'char',
-        data: 'fresh answer',
+        data: 'fresh answer replay',
         chatId: 'gen-1',
         promptInfo: { promptName: 'Preset' },
         generationInfo: { generationId: 'gen-1', model: 'echo_model' },
@@ -5126,7 +5148,7 @@ describe('Phase 9-3d generation persistence command', () => {
     ])
     expect(harness.commandEvents.list().at(-1)).toMatchObject({
       type: 'generation.persisted',
-      revision: 3,
+      revision: 4,
       resource: 'generation',
       id: 'gen-2',
       parentId: 'chat-a',

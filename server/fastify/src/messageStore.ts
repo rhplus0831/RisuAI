@@ -209,6 +209,54 @@ export function appendChatMessage(db: DatabaseSync, chatId: string, raw: unknown
   ).run(chatId, seq, row.uid, row.role, row.data, row.disabled, row.json)
 }
 
+export type GenerationMessageWriteResult =
+  | { ok: true; messageId: string; displaced?: JsonRecord }
+  | { ok: false; reason: 'missing-target'; targetMessageId: string }
+  | { ok: false; reason: 'duplicate'; messageId: string }
+
+export function writeGenerationChatMessage(
+  db: DatabaseSync,
+  chatId: string,
+  raw: unknown,
+  targetMessageId?: string,
+): GenerationMessageWriteResult {
+  const message = readMessageObject(raw)
+  const row = toRow(message)
+  const lookupMessageId = targetMessageId ?? row.uid
+  const existing = db
+    .prepare(
+      'SELECT seq, json FROM messages WHERE chat_id = ? AND uid = ? AND alternate = 0 LIMIT 1',
+    )
+    .get(chatId, lookupMessageId) as { seq: number; json: string } | undefined
+
+  if (!existing && targetMessageId) {
+    return { ok: false, reason: 'missing-target', targetMessageId }
+  }
+
+  const duplicate = existing
+    ? (db
+        .prepare(
+          'SELECT 1 AS found FROM messages WHERE uid = ? AND alternate = 0 AND NOT (chat_id = ? AND seq = ?) LIMIT 1',
+        )
+        .get(row.uid, chatId, existing.seq) as { found: number } | undefined)
+    : (db
+        .prepare('SELECT 1 AS found FROM messages WHERE uid = ? AND alternate = 0 LIMIT 1')
+        .get(row.uid) as { found: number } | undefined)
+  if (duplicate) {
+    return { ok: false, reason: 'duplicate', messageId: row.uid }
+  }
+
+  if (!existing) {
+    appendChatMessage(db, chatId, message)
+    return { ok: true, messageId: row.uid }
+  }
+
+  db.prepare(
+    'UPDATE messages SET uid = ?, role = ?, data = ?, disabled = ?, json = ? WHERE chat_id = ? AND seq = ? AND alternate = 0',
+  ).run(row.uid, row.role, row.data, row.disabled, row.json, chatId, existing.seq)
+  return { ok: true, messageId: row.uid, displaced: JSON.parse(existing.json) as JsonRecord }
+}
+
 function insertChatMessages(db: DatabaseSync, chatId: string, messages: readonly unknown[]): void {
   if (messages.length === 0) return
   const insert = db.prepare(

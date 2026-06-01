@@ -33,20 +33,19 @@ RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --r
 The harness first showed that `settings.updated`, `pluginStorage.updated`, and
 `chat.updated` had non-message mutation shapes but still paid whole-corpus
 load/clone/chat-diff cost. They now use message-free mutation paths. It also
-showed `message.appended` was a hot message-table-only write; that command now
-uses a targeted SQLite append path:
+showed `message.appended` and `generation.persisted` were hot message-row
+writes; those commands now use targeted SQLite paths:
 
-| Command type            | mutationPath     | loadMs | cloneMutateMs | sqliteSyncMs | dbJsonWriteMs | totalMs |
-| ----------------------- | ---------------- | -----: | ------------: | -----------: | ------------: | ------: |
-| `settings.updated`      | message-free     |   0.38 |          0.22 |         0.14 |          0.51 |    2.87 |
-| `pluginStorage.updated` | message-free     |   0.38 |          0.23 |         0.12 |          0.53 |    2.84 |
-| `chat.updated`          | message-free     |   0.33 |          1.10 |         0.15 |          0.55 |    3.53 |
-| `message.appended`      | targeted-message |   0.38 |          1.13 |         0.08 |          0.00 |    3.06 |
-| `generation.persisted`  | hydrated         |   7.16 |         18.34 |         3.75 |          0.63 |   31.31 |
+| Command type            | mutationPath        | loadMs | cloneMutateMs | sqliteSyncMs | dbJsonWriteMs | totalMs |
+| ----------------------- | ------------------- | -----: | ------------: | -----------: | ------------: | ------: |
+| `settings.updated`      | message-free        |   0.56 |          0.30 |         0.22 |          0.82 |    3.58 |
+| `pluginStorage.updated` | message-free        |   0.34 |          0.22 |         0.10 |          0.48 |    2.60 |
+| `chat.updated`          | message-free        |   0.34 |          1.25 |         0.14 |          0.50 |    3.63 |
+| `message.appended`      | targeted-message    |   0.32 |          0.99 |         0.08 |          0.00 |    2.92 |
+| `generation.persisted`  | targeted-generation |   0.38 |          1.06 |         0.07 |          0.00 |    3.06 |
 
-Message edit/delete/replace and `generation.persisted` intentionally remain on
-the hydrated generic path until their targeted persistence rules are scoped in
-separate slices.
+Message edit/delete/replace intentionally remain on the hydrated generic path
+until their targeted persistence rules are scoped in separate slices.
 
 ## Follow-Up Slices
 
@@ -57,7 +56,7 @@ separate slices.
 - [`message-chat-targeted-persistence.md`](message-chat-targeted-persistence.md) -
   partially implemented for `message.appended`.
 - [`generation-persistence-narrow-path.md`](generation-persistence-narrow-path.md) -
-  planned.
+  implemented.
 
 ## Validation
 

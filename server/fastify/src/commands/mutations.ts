@@ -58,6 +58,7 @@ export interface TargetedCommandMutationArgs<TExtra extends Record<string, unkno
   baseRevision: number
   eventSink: CommandEventSink
   mutationPath: string
+  writeDatabase?: boolean
   mutate: (
     database: unknown,
     db: DatabaseSync,
@@ -114,6 +115,12 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
 
     args.db.exec('COMMIT')
     transactionOpen = false
+    if (args.writeDatabase) {
+      const dbJsonWriteStartedAt = protocolNowMs()
+      stripChatMessages(persisted)
+      writePersisted(args.dataDir, persisted)
+      dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
+    }
     const eventEmitStartedAt = protocolNowMs()
     args.eventSink.emit(event)
     eventEmitMs = protocolDurationMs(eventEmitStartedAt)

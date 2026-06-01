@@ -190,7 +190,13 @@ import {
 } from '../commands/pluginStorage.js'
 import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
-import { activeMessageIdExists, appendChatMessage } from '../messageStore.js'
+import {
+  activeMessageIdExists,
+  addAlternateMessage,
+  appendChatMessage,
+  clearAlternateMessages,
+  writeGenerationChatMessage,
+} from '../messageStore.js'
 import {
   EntityNotFoundError,
   initializeDefaultDatabase,
@@ -3212,39 +3218,42 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
       const generationResult = readGenerationResult(body.generationResult)
-      const result = applyJsonCommandMutation<{ chatId: string; messageId: string }>({
+      const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
         db,
         dataDir,
         baseRevision,
         eventSink,
-        mutate(database) {
-          const characters = normalizeAllChatMessages(database)
-          const { messages } = requireChatMessages(characters, chatId)
-          const messageId = generationResult.message.chatId
-          const lookupMessageId = generationResult.targetMessageId ?? messageId
-          const existingIndex = messages.findIndex((message) => message.chatId === lookupMessageId)
-          const existingMessage = existingIndex === -1 ? undefined : messages[existingIndex]
-          if (messageIdExists(characters, messageId, { excludeMessage: existingMessage })) {
-            throw new ValidationError(`Duplicate message id: ${messageId}`)
-          }
-          if (existingIndex === -1) {
-            if (generationResult.targetMessageId) {
+        mutationPath: 'targeted-generation',
+        mutate(database, targetDb) {
+          const characters = normalizeAllCharacterChats(database)
+          requireChatLocation(characters, chatId)
+          const write = writeGenerationChatMessage(
+            targetDb,
+            chatId,
+            generationResult.message,
+            generationResult.targetMessageId,
+          )
+          if (!write.ok) {
+            if (write.reason === 'missing-target') {
               throw new EntityNotFoundError(
-                `Message not found for chat ${chatId}: ${generationResult.targetMessageId}`,
+                `Message not found for chat ${chatId}: ${write.targetMessageId}`,
               )
             }
-            messages.push(generationResult.message)
-          } else {
-            messages[existingIndex] = generationResult.message
+            throw new ValidationError(`Duplicate message id: ${write.messageId}`)
           }
-          validateUniqueMessageIds(messages)
+          if (generationResult.targetMessageId) {
+            if (write.displaced) addAlternateMessage(targetDb, chatId, write.displaced)
+            addAlternateMessage(targetDb, chatId, generationResult.message)
+          } else {
+            clearAlternateMessages(targetDb, chatId)
+          }
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.generationPersisted,
-              id: messageId,
+              id: write.messageId,
               parentId: chatId,
             },
-            extra: { chatId, messageId },
+            extra: { chatId, messageId: write.messageId },
           }
         },
       })

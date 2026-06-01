@@ -21,15 +21,16 @@ not a broad cleanup pass.
 Phase 1 is implemented. Phase 2 has measured the hot command families, migrated
 `settings.updated`, `chat.updated`, and plugin-storage commands to message-free
 mutation paths, and moved `message.appended` to a targeted SQLite message append
+path. `generation.persisted` now uses a targeted SQLite generation message
 path. Phase 3 has implemented the targeted-projection, asset metadata, and bulk
 all-chat hydration optimizations.
 
 Prefer one of these next:
 
-1. Select the next measured command family, likely generation persistence or a
-   remaining chat/message targeted path such as message edit/delete/replace,
-   only after writing a narrow slice with source files, durable mutation
-   behavior, event behavior, and proof command.
+1. Select the next measured command family, likely a remaining chat/message
+   targeted path such as message edit/delete/replace, only after writing a
+   narrow slice with source files, durable mutation behavior, event behavior,
+   and proof command.
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
@@ -42,7 +43,9 @@ The implemented Phase 2 migrations are:
 [`scoped-settings-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-settings-mutation-path.md),
 [`scoped-plugin-storage-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-plugin-storage-mutation-path.md),
 the `chat.updated` and `message.appended` batches in
-[`message-chat-targeted-persistence.md`](phases/slices/phase-2-command-write-cost/message-chat-targeted-persistence.md).
+[`message-chat-targeted-persistence.md`](phases/slices/phase-2-command-write-cost/message-chat-targeted-persistence.md),
+and
+[`generation-persistence-narrow-path.md`](phases/slices/phase-2-command-write-cost/generation-persistence-narrow-path.md).
 
 ## Not First
 

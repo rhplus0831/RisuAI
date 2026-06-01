@@ -26,16 +26,14 @@ import {
   type AssemblyState,
 } from '../prompt/assemble.js'
 import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
-import {
-  createMessageRecord,
-  messageIdExists,
-  normalizeAllChatMessages,
-  requireChatMessages,
-  validateUniqueMessageIds,
-} from '../commands/messages.js'
+import { createMessageRecord } from '../commands/messages.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
-import { applyJsonCommandMutation } from '../commands/mutations.js'
-import { addAlternateMessage, clearAlternateMessages } from '../messageStore.js'
+import { applyJsonCommandMutation, applyTargetedCommandMutation } from '../commands/mutations.js'
+import {
+  addAlternateMessage,
+  clearAlternateMessages,
+  writeGenerationChatMessage,
+} from '../messageStore.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
 import { emitProviderChunks } from '../prompt/providerTransport.js'
 import {
@@ -941,11 +939,12 @@ function extractAssistantMessage(
 
 /**
  * Step 3 (A2 / EC-D1 persistence half): write the durable generation result. In a
- * single `applyJsonCommandMutation` (one revision bump, one event, rollback on
+ * single targeted command mutation (one revision bump, one event, rollback on
  * failure) against the **freshly read current chat** (gotcha C — composes with any
  * intervening edits): apply the post-gen scriptstate delta, then append/replace the
- * assistant message. The message write is **idempotent on `generationId`** (gotcha B):
- * an existing row with the same `chatId` is replaced in place, never appended twice.
+ * assistant message row. The message write is **idempotent on `generationId`**
+ * (gotcha B): an existing row with the same `chatId` is replaced in place, never
+ * appended twice.
  * Matches the shape + `generation.persisted` event the browser command path
  * (`dispatchPersistGenerationResult` → the `/generation-result` route) produces, so
  * the result is byte-identical whether server- or (legacy) browser-written.
@@ -976,15 +975,18 @@ function persistServerGenerationResult(args: {
     }
   }
   const { revision: baseRevision } = getSchemaState(args.db)
-  const result = applyJsonCommandMutation<{ chatId: string; messageId: string }>({
+  const hasScriptstateWrite = Object.keys(patch).length > 0 || deleteKeys.length > 0
+  const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
     db: args.db,
     dataDir: args.dataDir,
     baseRevision,
     eventSink: args.eventSink,
-    mutate(database) {
-      const characters = normalizeAllChatMessages(database)
-      const { character, chat, messages } = requireChatMessages(characters, args.chatId)
-      if (Object.keys(patch).length > 0 || deleteKeys.length > 0) {
+    mutationPath: 'targeted-generation',
+    writeDatabase: hasScriptstateWrite,
+    mutate(database, targetDb) {
+      const characters = normalizeAllCharacterChats(database)
+      const { chat } = requireChatLocation(characters, args.chatId)
+      if (hasScriptstateWrite) {
         chat.scriptstate ??= {}
         for (const key of deleteKeys) {
           delete chat.scriptstate[key]
@@ -995,24 +997,15 @@ function persistServerGenerationResult(args: {
         }
       }
       const record = createMessageRecord(structuredClone(args.message), 'generationResult.message')
-      const messageId = record.chatId
-      const lookupMessageId = args.targetMessageId ?? messageId
-      const existingIndex = messages.findIndex((message) => message.chatId === lookupMessageId)
-      const existing = existingIndex === -1 ? undefined : messages[existingIndex]
-      if (messageIdExists(characters, messageId, { excludeMessage: existing })) {
-        throw new ValidationError(`Duplicate message id: ${messageId}`)
-      }
-      if (existingIndex === -1) {
-        if (args.targetMessageId) {
+      const write = writeGenerationChatMessage(targetDb, args.chatId, record, args.targetMessageId)
+      if (!write.ok) {
+        if (write.reason === 'missing-target') {
           throw new EntityNotFoundError(
-            `Message not found for chat ${args.chatId}: ${args.targetMessageId}`,
+            `Message not found for chat ${args.chatId}: ${write.targetMessageId}`,
           )
         }
-        messages.push(record)
-      } else {
-        messages[existingIndex] = record
+        throw new ValidationError(`Duplicate message id: ${write.messageId}`)
       }
-      validateUniqueMessageIds(messages)
       // Reroll buffer ("don't lose a rerolled result"):
       //  - regenerate (`targetMessageId` set) REPLACES a candidate; preserve BOTH the
       //    one it displaces AND the new one it produces as alternate rows, so the
@@ -1024,25 +1017,19 @@ function persistServerGenerationResult(args: {
       //    replay-idempotent and free of duplicates as candidates accumulate.
       //  - send / continue is the confirm boundary — drop the chat's reroll buffer.
       // Both run inside this mutation's transaction (atomic with the message write).
-      const displaced =
-        args.targetMessageId && existing ? (structuredClone(existing) as Message) : undefined
-      const preserved = args.targetMessageId ? (structuredClone(record) as Message) : undefined
-      const sqlite = (db: DatabaseSync): void => {
-        if (args.targetMessageId) {
-          if (displaced) addAlternateMessage(db, args.chatId, displaced)
-          if (preserved) addAlternateMessage(db, args.chatId, preserved)
-        } else {
-          clearAlternateMessages(db, args.chatId)
-        }
+      if (args.targetMessageId) {
+        if (write.displaced) addAlternateMessage(targetDb, args.chatId, write.displaced)
+        addAlternateMessage(targetDb, args.chatId, record)
+      } else {
+        clearAlternateMessages(targetDb, args.chatId)
       }
       return {
         event: {
           ...COMMAND_EVENT_CATALOG.generationPersisted,
-          id: messageId,
+          id: write.messageId,
           parentId: args.chatId,
         },
-        extra: { chatId: args.chatId, messageId },
-        sqlite,
+        extra: { chatId: args.chatId, messageId: write.messageId },
       }
     },
   })
