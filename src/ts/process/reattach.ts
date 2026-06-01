@@ -24,6 +24,21 @@ function openChatId(): string | undefined {
 }
 
 let reattaching = false
+let reattachQueued = false
+
+/**
+ * Request a near-future reattach probe after projection state has settled. This
+ * coalesces bursts from selected-character changes, active-chat projection
+ * updates, and full resyncs into one guarded `maybeReattachOpenChatGeneration`.
+ */
+export function triggerOpenChatGenerationReattach(): void {
+  if (reattachQueued) return
+  reattachQueued = true
+  queueMicrotask(() => {
+    reattachQueued = false
+    void maybeReattachOpenChatGeneration()
+  })
+}
 
 /**
  * If the currently-open chat has a live server generation, re-attach to it and
@@ -82,6 +97,6 @@ export function startActiveGenerationReattach(): void {
   if (wired) return
   wired = true
   selectedCharID.subscribe(() => {
-    void maybeReattachOpenChatGeneration()
+    triggerOpenChatGenerationReattach()
   })
 }

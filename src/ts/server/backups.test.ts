@@ -8,6 +8,7 @@ const projectionResyncSpies = vi.hoisted(() => ({
   resetChatHydration: vi.fn(),
   resetLorebookHydration: vi.fn(),
   setActiveGenerationJobs: vi.fn(),
+  triggerOpenChatGenerationReattach: vi.fn(),
 }))
 
 vi.mock('../platform', async (importActual) => {
@@ -37,6 +38,7 @@ vi.mock('./lorebookBridge.svelte', () => ({
 
 vi.mock('../process/reattach', () => ({
   setActiveGenerationJobs: projectionResyncSpies.setActiveGenerationJobs,
+  triggerOpenChatGenerationReattach: projectionResyncSpies.triggerOpenChatGenerationReattach,
 }))
 
 vi.mock('../process/modules', () => ({
@@ -114,6 +116,7 @@ beforeEach(() => {
   projectionResyncSpies.resetChatHydration.mockClear()
   projectionResyncSpies.resetLorebookHydration.mockClear()
   projectionResyncSpies.setActiveGenerationJobs.mockClear()
+  projectionResyncSpies.triggerOpenChatGenerationReattach.mockClear()
 })
 
 afterEach(() => {
@@ -202,6 +205,7 @@ describe('server backup helpers', () => {
     expect(projectionResyncSpies.setActiveGenerationJobs).toHaveBeenCalledWith([
       { chatId: 'chat-a', jobId: 'job-a' },
     ])
+    expect(projectionResyncSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
     expect(projectionResyncSpies.resetChatHydration).toHaveBeenCalled()
     expect(projectionResyncSpies.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
     expect(backupFetch.calls).toHaveLength(2)

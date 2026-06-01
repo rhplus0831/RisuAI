@@ -45,6 +45,7 @@ import {
   activeGenerationJobs,
   maybeReattachOpenChatGeneration,
   setActiveGenerationJobs,
+  triggerOpenChatGenerationReattach,
 } from '../reattach'
 
 function openChat(chatId: string): void {
@@ -64,7 +65,7 @@ beforeEach(() => {
   activeGenerationJobs.set([])
 })
 
-describe('reattach open-chat generation (Phase 7)', () => {
+describe('reattach open-chat generation (Phase 4)', () => {
   it('reattaches the open chat and consumes the job', async () => {
     openChat('chat-1')
     setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-1' }])
@@ -146,5 +147,36 @@ describe('reattach open-chat generation (Phase 7)', () => {
     await maybeReattachOpenChatGeneration()
 
     expect(h.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('reattaches after a queued trigger observes a same-character chat switch', async () => {
+    h.DBState.db = {
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [
+            { id: 'chat-1', message: [] },
+            { id: 'chat-2', message: [] },
+          ],
+        },
+      ],
+    }
+    h.selectedCharID.set(0)
+    setActiveGenerationJobs([{ chatId: 'chat-2', jobId: 'job-2' }])
+    ;(h.DBState.db.characters as Array<{ chatPage: number }>)[0].chatPage = 1
+
+    triggerOpenChatGenerationReattach()
+
+    await vi.waitFor(() => {
+      expect(h.sendChat).toHaveBeenCalledWith(
+        -1,
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+          reattachJobId: 'job-2',
+        }),
+      )
+    })
+    expect(get(activeGenerationJobs)).toEqual([])
   })
 })

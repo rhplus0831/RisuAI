@@ -75,6 +75,11 @@ const serverProjectionState = vi.hoisted(() => ({
 const serverCommandsState = vi.hoisted(() => ({
   initialize: vi.fn(),
 }))
+const activeGenerationReattachSpies = vi.hoisted(() => ({
+  setActiveGenerationJobs: vi.fn(),
+  startActiveGenerationReattach: vi.fn(),
+  triggerOpenChatGenerationReattach: vi.fn(),
+}))
 const forageSpies = vi.hoisted(() => ({
   Init: vi.fn(async () => undefined),
   getItem: vi.fn(async () => undefined),
@@ -117,6 +122,8 @@ vi.mock('./server/commands', async (importActual) => {
     initializeServerDatabase: serverCommandsState.initialize,
   }
 })
+
+vi.mock('./process/reattach', () => activeGenerationReattachSpies)
 
 // Chat-message hydration is exercised in its own tests; stub it here so the
 // surgical-sync assertions (fetch counts) are unaffected by hydration calls.
@@ -253,6 +260,9 @@ beforeEach(() => {
     initialized: true,
     event: { type: 'state.initialized', revision: 1, resource: 'state' },
   })
+  activeGenerationReattachSpies.setActiveGenerationJobs.mockClear()
+  activeGenerationReattachSpies.startActiveGenerationReattach.mockClear()
+  activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
   clearCachedServerCommandRevision()
   forageSpies.Init.mockClear()
   forageSpies.getItem.mockClear()
@@ -347,6 +357,7 @@ describe('web bootstrap startup source', () => {
     // and the open chat re-hydrated.
     expect(hydrationSpies.resetChatHydration).toHaveBeenCalled()
     expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
   })
 
   it('advances empty targeted projection events without full bootstrap or hydration reset', async () => {
@@ -379,6 +390,7 @@ describe('web bootstrap startup source', () => {
 
   it('full-bootstraps when the server cannot narrow the resource', async () => {
     await loadWebInitialDatabase()
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
     serverBootstrapState.response = {
       status: 'ok',
       projection: {
@@ -432,6 +444,7 @@ describe('web bootstrap startup source', () => {
     })
     expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
     expect(peekCachedServerCommandRevision()).toBe(6)
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
   })
 
   it('full-bootstraps on a revision gap, without a targeted fetch', async () => {

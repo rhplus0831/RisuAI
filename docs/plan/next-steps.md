@@ -24,7 +24,8 @@ message history plus `generation.persisted` use targeted SQLite paths. Phase 3
 has implemented targeted projection, asset metadata indexing, and bulk all-chat
 hydration. Phase 4 has implemented bounded slow-consumer behavior for
 command/memory SSE, inline and durable chat generation SSE, and proxy WebSocket
-stream jobs.
+stream jobs. Generation reattach now also probes after active-chat projection
+changes and full resyncs.
 
 Prefer one of these next:
 
@@ -34,9 +35,8 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. If no command/read slice is active, continue Phase 4 with generation reattach
-   trigger coverage:
-   [`generation-reattach-triggers.md`](phases/slices/phase-4-stream-generation-resilience/generation-reattach-triggers.md).
+3. If no command/read slice is active, continue Phase 4 with resend-cycle caps:
+   [`resend-cycle-cap.md`](phases/slices/phase-4-stream-generation-resilience/resend-cycle-cap.md).
 
 The command-family evidence lives in
 [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).

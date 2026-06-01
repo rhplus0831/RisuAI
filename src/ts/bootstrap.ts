@@ -61,7 +61,11 @@ import {
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
 } from './server/lorebookBridge.svelte'
-import { setActiveGenerationJobs, startActiveGenerationReattach } from './process/reattach'
+import {
+  setActiveGenerationJobs,
+  startActiveGenerationReattach,
+  triggerOpenChatGenerationReattach,
+} from './process/reattach'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 import { isFastifyServer } from './platform'
 
@@ -335,6 +339,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
         resetLorebookHydration()
         recordHydratedCharacterLorebooks(result.fields.characters)
         void hydrateActiveCharacterLorebook({ force: true })
+        triggerOpenChatGenerationReattach()
       }
       // Advance by exactly one event; the fetch returns the resource as of the
       // server's *current* revision, but later events for other resources must

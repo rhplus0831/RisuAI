@@ -1,7 +1,7 @@
 # Phase 4: Stream And Generation Resilience
 
-Status: SSE backpressure implemented; taxonomy partly covered; remaining
-slices planned.
+Status: SSE backpressure and generation reattach triggers implemented; taxonomy
+partly covered; remaining slices planned.
 
 Goal: make SSE, generation reattach, resend, and terminal persistence behavior
 bounded and observable.
@@ -30,6 +30,8 @@ bounded and observable.
   Implemented by
   [`sse-backpressure-policy.md`](slices/phase-4-stream-generation-resilience/sse-backpressure-policy.md).
 - Active chat changes and full resyncs can trigger relevant generation reattach.
+  Implemented by
+  [`generation-reattach-triggers.md`](slices/phase-4-stream-generation-resilience/generation-reattach-triggers.md).
 - Server-owned resend loops have a per-root-action cap.
 - Final result persistence can be retried without duplicating assistant rows.
 

@@ -1,6 +1,6 @@
 import type { Database } from '../storage/database.svelte'
 import { applyServerProjectionDatabase } from '../storage/database.svelte'
-import { setActiveGenerationJobs } from '../process/reattach'
+import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
 import { fetchServerBootstrapProjectionReadOnly } from './bootstrap'
 import { setCachedServerCommandRevision } from './commands'
 import {
@@ -60,6 +60,7 @@ async function runServerProjectionResync(): Promise<ServerProjectionResyncResult
       applyServerProjectionDatabase(bootstrap.projection.database)
       setCachedServerCommandRevision(bootstrap.projection.revision)
       setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
+      triggerOpenChatGenerationReattach()
       // The full re-apply re-stubbed every chat; forget cached hydration and
       // re-hydrate the open chat.
       resetChatHydration()
