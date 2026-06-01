@@ -1,6 +1,7 @@
 # Asset Mutation Transaction Protocol
 
-Status: planned.
+Status: partially covered by server-owned event atomicity; broader asset
+file/metadata ordering remains planned.
 
 ## Source Anchors
 
@@ -11,8 +12,15 @@ Status: planned.
 
 ## Scope
 
-Make asset mutation durability explicit across file write, metadata write,
-SQLite revision bump, command-event persistence, and live fanout.
+Make asset mutation durability explicit across file writes, metadata writes,
+SQLite revision bumps, command-event persistence, and live fanout.
+
+Current behavior: asset upload, bulk upload, Realm staged assets, and Realm
+fetched assets now persist the revision bump and `asset.created` command event
+together, then fan out live. If command-event persistence fails after new bytes
+or metadata are staged, the implementation restores the prior manifest and
+removes newly created files. This slice remains open for broader recovery rules
+around file or `db.json` write failures outside that command-event window.
 
 ## Protocol Behavior
 

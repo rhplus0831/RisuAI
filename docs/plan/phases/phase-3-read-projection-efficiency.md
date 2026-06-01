@@ -1,7 +1,7 @@
 # Phase 3: Read Projection Efficiency
 
-Status: six optimizations implemented; optional lorebook and full-resync budget
-work remain planned.
+Status: read optimizations implemented; optional lorebook and full-resync
+budget work remain planned.
 
 Goal: reduce repeated REST reads and full-projection work for targeted
 projection, asset metadata, bulk hydration, and full resync fallbacks.

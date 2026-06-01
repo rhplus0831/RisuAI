@@ -34,6 +34,10 @@ Implemented scope:
 - Realm packaged asset staging and fetched asset saves use the same
   persisted-event-before-live-fanout contract as normal asset uploads.
 
+This slice closes revision/event atomicity. Broader file and `db.json` write
+ordering questions remain tracked by
+[`asset-mutation-transaction-protocol.md`](asset-mutation-transaction-protocol.md).
+
 ## Protocol Behavior
 
 - Preserve one replayable command event for every revision-tracked projected
@@ -66,8 +70,3 @@ restore when inserting into `command_events` fails.
 - `pnpm api:test -- server/fastify/__tests__/backups.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/risuSaveImportRoute.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/realmImport.test.ts`
-
-Latest validation:
-
-- `pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__tests__/assets.test.ts server/fastify/__tests__/backups.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/realmImport.test.ts --runInBand`
-  - Passed: 82 test files, 1461 tests.

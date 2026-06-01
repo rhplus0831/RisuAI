@@ -53,9 +53,3 @@ Implemented scope:
 ## Validation
 
 - `pnpm api:test -- server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveCodec.test.ts server/fastify/__tests__/realmImport.test.ts`
-
-Latest proof:
-
-- 2026-06-01:
-  `pnpm api:test -- server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveCodec.test.ts server/fastify/__tests__/realmImport.test.ts`
-  passed; Vitest reported 82 API test files and 1464 tests passed.

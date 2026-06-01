@@ -24,23 +24,21 @@ Completed work:
   message-free mutation path. `message.appended`, message
   edit/delete/truncate/replace commands, and `generation.persisted` use
   targeted SQLite paths.
-- Phase 3 has six read-side optimizations: targeted projection field selectors
-  for empty, small, character-family, and mixed broad/plugin resources; an
-  in-process asset metadata index; and authenticated bulk all-chat hydration.
+- Phase 3 read-side optimizations are in place: targeted projection field
+  selectors for known resource families, an in-process asset metadata index,
+  and authenticated bulk all-chat hydration.
 - Phase 4 has bounded slow-consumer behavior for `/api/v1/events`, inline and
   durable chat-generation SSE, proxy WebSocket stream jobs, generation reattach
   triggers for active-chat changes plus full resyncs, a per-root-action cap for
   server-owned resend cycles, and a SQLite-backed finalization retry queue.
-- Phase 5 has completed the server-owned revision bump audit, event atomicity,
-  expanded import limit, and bundle export streaming slices. Initialization,
+- Phase 5 has completed the revision-bump audit, server-owned event atomicity,
+  expanded import limits, and bundle export streaming. Initialization,
   `.risu` import, asset upload/bulk upload, backup restore, Realm staged assets,
-  and Realm fetched assets now persist the revision bump and replayable command
-  event in one SQLite transaction where practical, or roll back file-backed
-  metadata/bytes when event persistence fails. Multipart `.risu` and Realm
-  charx imports now reject oversized expanded payloads before durable import
-  commits. Bundle export now shares one hydrated save snapshot between `.risu`
-  encoding and asset-reference planning, then streams asset file entries into
-  the zip.
+  and Realm fetched assets now persist replayable events with their revision
+  bumps or roll back file-backed metadata/bytes when command-event persistence
+  fails. Multipart `.risu` and Realm charx imports reject oversized expanded
+  payloads before durable import commits. Bundle export shares one hydrated save
+  snapshot, then streams asset file entries into the zip.
 - Phase 6 has existing settings debounce/coalescing and per-bridge watcher
   baselines; memory job SSE refresh, shared projection-apply suppression, and
   broader echo tests remain planned.
@@ -71,7 +69,7 @@ Active performance risks:
 - Use [`plan.md`](plan.md) for invariants and phase order.
 - Use [`phases/README.md`](phases/README.md) for all phase docs.
 - Prefer measured P2/P3 work when a narrow slice exists; otherwise use
-  [`next-steps.md`](next-steps.md) to enter Phase 5.
+  [`next-steps.md`](next-steps.md) to select remaining Phase 5-8 work.
 
 ## Phase Router
 
@@ -80,9 +78,9 @@ Active performance risks:
 | [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, hydration bounds/aggregation, durable event history, route manifest. |
 | [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                       |
 | [Phase 2](phases/phase-2-command-write-cost.md)           | Hot command paths targeted           | Whole-corpus command mutation cost and narrow write paths.                             |
-| [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Six optimizations implemented        | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.   |
+| [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Read optimizations implemented       | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.   |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Implemented                          | Closed stream, generation reattach, resend, and finalization retry work.               |
-| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Import and bundle work complete      | Asset mutation durability and per-generation media caching.                            |
+| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Event/import/bundle work complete    | Asset file durability and per-generation media caching.                                |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Partly implemented                   | Memory job polling, server-origin watcher echo, settings write coalescing.             |
 | [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.    |
 | [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                    |

@@ -18,17 +18,13 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-Phase 1 is implemented. Phase 2 has measured and narrowed the hot command
+Phases 1 and 4 are implemented. Phase 2 narrowed the measured hot command
 families: settings/chat/plugin-storage commands use message-free mutation, and
 message history plus `generation.persisted` use targeted SQLite paths. Phase 3
-has implemented targeted projection, asset metadata indexing, and bulk all-chat
-hydration. Phase 4 has implemented bounded slow-consumer behavior for
-command/memory SSE, inline and durable chat generation SSE, proxy WebSocket
-stream jobs, generation reattach probes after active-chat projection changes
-and full resyncs, server-owned resend-cycle caps, and SQLite-backed
-finalization retry. Phase 5 has completed the server-owned revision bump audit,
-event atomicity, expanded import size limit, and bundle export streaming
-slices.
+has targeted projection, asset metadata indexing, and bulk all-chat hydration.
+Phase 5 has completed revision/event atomicity, expanded import limits, and
+bundle export streaming; remaining Phase 5 work is broader asset-file
+durability and per-generation asset caching.
 
 Prefer one of these next:
 
@@ -38,7 +34,8 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. Continue Phase 5 asset durability work if prioritizing file-backed recovery:
+3. Continue Phase 5 asset work if prioritizing file-backed recovery or
+   repeated generation asset reads:
    [`asset-mutation-transaction-protocol.md`](phases/slices/phase-5-import-export-asset-memory/asset-mutation-transaction-protocol.md) or
    [`per-generation-asset-cache.md`](phases/slices/phase-5-import-export-asset-memory/per-generation-asset-cache.md).
 
@@ -70,7 +67,7 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Asset memory/durability work in Phase 5.
+3. Remaining asset durability or per-generation asset-cache work in Phase 5.
 4. Client loop suppression and command write coalescing in Phase 6.
 5. Route operation safeguards and manifest coverage in Phase 7.
 6. Verification budgets and latest-check recording in Phase 8.

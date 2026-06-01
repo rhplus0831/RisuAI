@@ -6,6 +6,7 @@ shared server-projection apply token.
 ## Source Anchors
 
 - `src/ts/storage/database.svelte.ts`
+- `src/ts/server/projectionWriteGuard.svelte.ts`
 - `src/ts/server/settingsBridge.svelte.ts`
 - `src/ts/server/chatBridge.svelte.ts`
 - `src/ts/server/lorebookBridge.svelte.ts`
@@ -16,10 +17,11 @@ shared server-projection apply token.
 Prevent trusted server projection application from being interpreted as a local
 edit by command-backed bridge watchers.
 
-Current behavior: settings, chat, lorebook, and script-definition bridges keep
-their own snapshots/baselines and rollback suppression. This slice is only for
-the remaining echo cases or for replacing duplicated baseline rules with a
-shared projection-apply signal.
+Current behavior: `projectionWriteGuard.svelte.ts` provides the shared trusted
+write guard for server-backed projection mutations. Settings, chat, lorebook,
+and script-definition bridges still keep their own watcher baselines and
+rollback suppression. This slice is only for remaining echo cases or for
+replacing duplicated baseline rules with a shared projection-apply signal.
 
 ## Protocol Behavior
 

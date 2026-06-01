@@ -1,7 +1,8 @@
 # Phase 5: Import, Export, And Asset Memory
 
 Status: revision/event audit, event atomicity, expanded import limits, and
-bundle export streaming complete; asset durability work remains planned.
+bundle export streaming complete; broader asset-file durability and
+per-generation asset caching remain planned.
 
 Goal: reduce large-payload memory pressure and make asset mutation durability
 explicit.
@@ -35,7 +36,7 @@ explicit.
 - Bundle export avoids double hydration and does not collect all bundled asset
   bytes in one in-memory zip input map.
 - Asset file writes, metadata writes, revision bumps, and events have explicit
-  recovery behavior.
+  recovery behavior beyond the completed command-event failure rollback paths.
 - Repeated references to the same stored asset in one generation do not re-read
   and re-encode bytes.
 
