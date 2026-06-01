@@ -32,6 +32,9 @@ Completed foundations:
 - Phase 3 targeted projection now short-circuits empty-field resources such as
   `asset`, so no-op projection refreshes advance the client revision cursor
   without loading `db.json` or full stub projection state.
+- Phase 3 asset metadata lookup now uses an in-process index, so repeated asset
+  `GET`, `HEAD`, generation resolution, and existence probes avoid reparsing
+  `db.json` while metadata is unchanged.
 
 Active correctness risks from [`../AUDIT.md`](../AUDIT.md): none currently
 tracked at P1.
@@ -42,7 +45,6 @@ Active performance risks:
   cost.
 - Non-empty targeted projection resources can still load the full stub
   projection before selecting small fields.
-- Asset metadata reads can parse `db.json` per asset lookup.
 - Import, export, and bundle paths can materialize large payloads.
 - Memory job polling, settings writes, watcher echo, and generation resend
   loops need explicit suppression or caps.
@@ -63,7 +65,7 @@ Active performance risks:
 | [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, bounded hydration, durable event history, route manifest coverage.    |
 | [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                        |
 | [Phase 2](phases/phase-2-command-write-cost.md)           | First migration implemented          | Whole-corpus command mutation cost and narrow write paths.                              |
-| [Phase 3](phases/phase-3-read-projection-efficiency.md)   | First optimization implemented       | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
+| [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Two optimizations implemented        | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Planned                              | SSE backpressure, generation reattach triggers, resend caps, finalization retry.        |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Planned                              | Import/export memory pressure, asset mutation durability, per-generation media caching. |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Planned                              | Memory job polling, server-origin watcher echo, settings write coalescing.              |

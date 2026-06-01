@@ -19,15 +19,16 @@ not a broad cleanup pass.
 ## Current Best Targets
 
 Phase 1 P1 correctness hardening is implemented, the first measured Phase 2
-settings migration is complete, and the first Phase 3 targeted-projection
-optimization is implemented. Prefer the remaining read-side P2/P3 performance
-work next:
+settings migration is complete, and the first Phase 3 targeted-projection and
+asset metadata optimizations are implemented. Prefer the remaining read-side
+P2/P3 performance work next:
 
-1. Add an asset metadata index or cache:
-   [`asset-metadata-index.md`](phases/slices/phase-3-read-projection-efficiency/asset-metadata-index.md).
-2. Scope field-specific loaders for non-empty small targeted projection
+1. Scope field-specific loaders for non-empty small targeted projection
    resources only after naming their masking and message-stub semantics:
    [`targeted-projection-loaders.md`](phases/slices/phase-3-read-projection-efficiency/targeted-projection-loaders.md).
+2. Add bulk chat or lorebook read reduction after identifying the request-count
+   target:
+   [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
 3. Select the next measured command family only after writing a narrow slice
    with explicit source area, durable mutation behavior, event behavior, and
    proof command.

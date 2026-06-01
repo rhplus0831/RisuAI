@@ -92,6 +92,43 @@ function dbJsonPath(dataDir: string): string {
   return path.join(dataDir, 'db.json')
 }
 
+interface AssetMetadataIndex {
+  signature: string
+  byId: Map<string, PersistedAsset>
+}
+
+const assetMetadataIndexes = new Map<string, AssetMetadataIndex>()
+
+function dbJsonSignature(dataDir: string): string {
+  try {
+    const stat = fs.statSync(dbJsonPath(dataDir), { bigint: true })
+    return `${stat.mtimeNs}:${stat.size}`
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return 'missing'
+    }
+    throw err
+  }
+}
+
+function invalidateAssetMetadataIndex(dataDir: string): void {
+  assetMetadataIndexes.delete(dataDir)
+}
+
+function getAssetMetadataIndex(dataDir: string): AssetMetadataIndex {
+  const signature = dbJsonSignature(dataDir)
+  const cached = assetMetadataIndexes.get(dataDir)
+  if (cached?.signature === signature) return cached
+
+  const persisted = loadPersisted(dataDir)
+  const next: AssetMetadataIndex = {
+    signature,
+    byId: new Map(persisted.assets.map((asset) => [asset.id, asset])),
+  }
+  assetMetadataIndexes.set(dataDir, next)
+  return next
+}
+
 export function emptyPersisted(): Persisted {
   return { _version: PERSISTED_VERSION, database: null, assets: [] }
 }
@@ -120,6 +157,7 @@ export function writePersisted(dataDir: string, next: Persisted): void {
   const tmp = `${file}.tmp`
   fs.writeFileSync(tmp, JSON.stringify(next))
   fs.renameSync(tmp, file)
+  invalidateAssetMetadataIndex(dataDir)
 }
 
 // Chat messages live in SQLite, not in db.json.
@@ -511,8 +549,7 @@ export function assetPath(dataDir: string, entry: PersistedAsset): string {
 
 export function assetById(dataDir: string, id: string): PersistedAsset | null {
   if (!isValidAssetId(id)) return null
-  const persisted = loadPersisted(dataDir)
-  return persisted.assets.find((a) => a.id === id) ?? null
+  return getAssetMetadataIndex(dataDir).byId.get(id) ?? null
 }
 
 export interface AddAssetResult {
@@ -588,9 +625,8 @@ export function addAssets(
 }
 
 export function missingAssetIds(dataDir: string, ids: string[]): string[] {
-  const persisted = loadPersisted(dataDir)
-  const present = new Set(persisted.assets.map((a) => a.id))
-  return ids.filter((id) => !present.has(id))
+  const index = getAssetMetadataIndex(dataDir)
+  return ids.filter((id) => !index.byId.has(id))
 }
 
 export const BACKUP_MANIFEST_VERSION = 1
@@ -851,6 +887,7 @@ export function restoreBackup(db: DatabaseSync, dataDir: string, id: string): { 
     fs.renameSync(tmpAssets, liveAssets)
     fs.renameSync(tmpSave, liveSave)
     fs.renameSync(tmp, live)
+    invalidateAssetMetadataIndex(dataDir)
   } catch (err) {
     rmDirectoryIfPresent(liveAssets)
     if (fs.existsSync(oldAssets)) {
