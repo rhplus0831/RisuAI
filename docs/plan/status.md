@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the Phase 8
-request-count budget slice.
+Current status reflects code and commit history through the Phase 8 command
+metric review-gate slice.
 
 ## Current Snapshot
 
@@ -60,7 +60,9 @@ Completed work:
   compared against explicit chat-message hydration for message-heavy histories,
   and all-chat hydration has a request-count guard proving many stubbed chats
   hydrate through one bulk request with cached follow-up calls starting no new
-  requests.
+  requests. Command mutation metrics now have review gates for the
+  `message-free`, `targeted-message`, and `targeted-generation` hot paths,
+  while targeted paths keep hard `dbJsonWriteMs: 0` checks.
 
 No P1 plan risks remain open after the Phase 1 commits.
 
@@ -99,7 +101,7 @@ Active performance risks:
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Implemented                          | Closed import/export memory and asset mutation durability work.                        |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Implemented                          | Closed client loop suppression and watcher echo work.                                  |
 | [Phase 7](phases/phase-7-route-operations-coverage.md)    | Implemented                          | Route operational safeguards, route-limit maintenance, manifest coverage.              |
-| [Phase 8](phases/phase-8-verification-budgets.md)         | Partly implemented                   | Remaining command metric thresholds and latest verification log.                       |
+| [Phase 8](phases/phase-8-verification-budgets.md)         | Partly implemented                   | Remaining latest verification log.                                                     |
 
 ## Maintenance Rules
 

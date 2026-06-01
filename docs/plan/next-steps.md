@@ -34,7 +34,7 @@ limits, wildcard manifest coverage, read-only writer-header hygiene, and
 HEAD/body-parser safeguards. The initial hot-envelope schema slice is also
 implemented for stable read-only POST envelopes. Phase 8 has started with
 bootstrap and targeted projection payload metric/readout guards, plus an
-all-chat hydration request-count guard.
+all-chat hydration request-count guard and command metric review gates.
 
 Prefer one of these next:
 
@@ -45,7 +45,7 @@ Prefer one of these next:
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
 3. Continue Phase 8 verification budgets when prioritizing maintained protocol
-   guardrails; command metric thresholds or the latest verification log remain:
+   guardrails; the latest verification log remains:
    [`phase-8-verification-budgets.md`](phases/phase-8-verification-budgets.md).
 4. Add the Phase 4 SSE taxonomy fixture only when touching chat stream event
    names or payload shapes:
@@ -79,7 +79,7 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Remaining Phase 8 command metric thresholds or latest-check recording.
+3. Remaining Phase 8 latest-check recording.
 4. SSE taxonomy verification when chat stream vocabulary changes.
 5. Additional route schemas only when touching a stable route envelope.
 

@@ -25,6 +25,40 @@ interface ProtocolMetric {
   mutationPath?: string
 }
 
+const COMMAND_METRIC_SECTIONS = [
+  'loadMs',
+  'cloneMutateMs',
+  'sqliteSyncMs',
+  'dbJsonWriteMs',
+  'totalMs',
+] as const
+
+type CommandMetricSection = (typeof COMMAND_METRIC_SECTIONS)[number]
+
+const COMMAND_METRIC_REVIEW_GATES = {
+  'message-free': {
+    reviewGate: 'message-free commands should avoid message history synchronization work',
+    sections: COMMAND_METRIC_SECTIONS,
+  },
+  'targeted-message': {
+    reviewGate: 'targeted message commands should not rewrite db.json',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+  },
+  'targeted-generation': {
+    reviewGate: 'targeted generation persistence should not rewrite db.json',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+  },
+} satisfies Record<
+  string,
+  {
+    reviewGate: string
+    sections: readonly CommandMetricSection[]
+    dbJsonWriteMs?: number
+  }
+>
+
 interface CommandRequest {
   method: 'DELETE' | 'PATCH' | 'POST' | 'PUT'
   url: string
@@ -156,6 +190,14 @@ function makeLargeCommandDatabase(): Record<string, unknown> {
   }
 }
 
+function commandMetricReviewGate(metric: ProtocolMetric) {
+  const mutationPath = metric.mutationPath
+  expect(mutationPath, `missing mutationPath for ${metric.type}`).toBeTruthy()
+  const gate = COMMAND_METRIC_REVIEW_GATES[mutationPath as keyof typeof COMMAND_METRIC_REVIEW_GATES]
+  expect(gate, `missing command metric review gate for ${mutationPath}`).toBeTruthy()
+  return gate
+}
+
 describe('command protocol metrics', () => {
   it('records comparable command-family timings on a message-heavy save', async () => {
     let revision = await importDatabase(makeLargeCommandDatabase())
@@ -257,11 +299,13 @@ describe('command protocol metrics', () => {
     for (const metric of measured) {
       expect(metric.resource).toBeTruthy()
       expect(metric.revision).toBeGreaterThan(1)
-      expect(metric.loadMs).toBeGreaterThanOrEqual(0)
-      expect(metric.cloneMutateMs).toBeGreaterThanOrEqual(0)
-      expect(metric.sqliteSyncMs).toBeGreaterThanOrEqual(0)
-      expect(metric.dbJsonWriteMs).toBeGreaterThanOrEqual(0)
-      expect(metric.totalMs).toBeGreaterThanOrEqual(0)
+      const gate = commandMetricReviewGate(metric)
+      for (const section of gate.sections) {
+        expect(metric[section], `${metric.type}.${section}`).toBeGreaterThanOrEqual(0)
+      }
+      if (typeof gate.dbJsonWriteMs === 'number') {
+        expect(metric.dbJsonWriteMs).toBe(gate.dbJsonWriteMs)
+      }
     }
 
     const noMessageFamilies = measured.filter(
@@ -293,6 +337,7 @@ describe('command protocol metrics', () => {
             type: metric.type,
             resource: metric.resource,
             mutationPath: metric.mutationPath,
+            reviewGate: commandMetricReviewGate(metric).reviewGate,
             loadMs: metric.loadMs,
             cloneMutateMs: metric.cloneMutateMs,
             sqliteSyncMs: metric.sqliteSyncMs,
