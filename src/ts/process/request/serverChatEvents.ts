@@ -23,6 +23,15 @@ export interface StageEvent {
   status: 'start' | 'end'
 }
 
+/**
+ * First durable-generation frame, carrying the server-side job id so the
+ * browser can cancel or reattach even if the stream drops before dispatch.
+ */
+export interface JobAcceptedEvent {
+  type: 'job_accepted'
+  jobId: string
+}
+
 export interface PromptEvent {
   type: 'prompt'
   messages: Array<{ role: string; content: unknown }>
@@ -170,6 +179,7 @@ export interface DoneEvent {
 
 export type PromptChatEvent =
   | StageEvent
+  | JobAcceptedEvent
   | PromptEvent
   | InfoEvent
   | TokenEvent
@@ -178,3 +188,18 @@ export type PromptChatEvent =
   | WarningEvent
   | ErrorEvent
   | DoneEvent
+
+export type PromptChatEventType = PromptChatEvent['type']
+
+export const CLIENT_PROMPT_CHAT_EVENT_TYPES = [
+  'stage',
+  'job_accepted',
+  'prompt',
+  'info',
+  'token',
+  'message_patch',
+  'side_effect',
+  'warning',
+  'error',
+  'done',
+] as const satisfies readonly PromptChatEventType[]

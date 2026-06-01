@@ -151,6 +151,21 @@ export type PromptChatEvent =
   | ErrorEvent
   | DoneEvent
 
+export type PromptChatEventType = PromptChatEvent['type']
+
+export const PROMPT_CHAT_EVENT_TYPES = [
+  'stage',
+  'job_accepted',
+  'prompt',
+  'info',
+  'token',
+  'message_patch',
+  'side_effect',
+  'warning',
+  'error',
+  'done',
+] as const satisfies readonly PromptChatEventType[]
+
 /**
  * Serialize a chat event to its named-event SSE frame. Extracted from
  * {@link writePromptChatEvent} so the durable-generation runner can buffer the

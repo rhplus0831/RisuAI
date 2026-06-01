@@ -36,8 +36,9 @@ Completed work:
   durable chat-generation SSE, and proxy WebSocket stream jobs have bounded
   slow-consumer behavior; active-chat changes plus full resyncs can trigger
   generation reattach; server-owned resend cycles have a per-root-action cap;
-  and finalization retries are SQLite-backed. A low-risk shared SSE taxonomy
-  check remains planned for future chat stream vocabulary changes.
+  finalization retries are SQLite-backed; and server/client chat SSE taxonomy
+  checks cover event-name alignment, durable `job_accepted`, and unknown-event
+  tolerance.
 - Phase 5 is implemented: revision/event atomicity, expanded import limits,
   bundle export streaming, per-generation asset caching, and asset mutation
   rollback are in place. Import, restore, initialization, asset upload/bulk
@@ -91,8 +92,8 @@ maintained full or focused verification result.
 - Use [`plan.md`](plan.md) for invariants and phase order.
 - Use [`phases/README.md`](phases/README.md) for all phase docs.
 - Prefer measured P2/P3 work when a narrow slice exists; otherwise use
-  [`next-steps.md`](next-steps.md) to select SSE taxonomy verification or
-  verification-log maintenance.
+  [`next-steps.md`](next-steps.md) to select verification-log maintenance or a
+  new measured slice.
 
 ## Phase Router
 

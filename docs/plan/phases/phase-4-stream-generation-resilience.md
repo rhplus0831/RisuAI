@@ -1,6 +1,6 @@
 # Phase 4: Stream And Generation Resilience
 
-Status: runtime resilience implemented; shared SSE taxonomy check planned.
+Status: runtime resilience implemented; shared SSE taxonomy check implemented.
 
 Goal: make SSE, generation reattach, resend, and terminal persistence behavior
 bounded and observable.
@@ -17,8 +17,7 @@ bounded and observable.
 
 ## Slices
 
-- [`sse-taxonomy-alignment.md`](slices/phase-4-stream-generation-resilience/sse-taxonomy-alignment.md) -
-  planned verification check
+- [`sse-taxonomy-alignment.md`](slices/phase-4-stream-generation-resilience/sse-taxonomy-alignment.md)
 - [`sse-backpressure-policy.md`](slices/phase-4-stream-generation-resilience/sse-backpressure-policy.md)
 - [`generation-reattach-triggers.md`](slices/phase-4-stream-generation-resilience/generation-reattach-triggers.md)
 - [`resend-cycle-cap.md`](slices/phase-4-stream-generation-resilience/resend-cycle-cap.md)
@@ -37,8 +36,8 @@ bounded and observable.
 - Final result persistence can be retried without duplicating assistant rows.
   Implemented by
   [`finalization-retry-queue.md`](slices/phase-4-stream-generation-resilience/finalization-retry-queue.md).
-- Chat SSE event names and payload shapes get a shared fixture/type check before
-  future stream vocabulary changes.
+- Chat SSE event names and payload shapes have shared server/client taxonomy
+  checks before future stream vocabulary changes.
 
 ## Validation
 
