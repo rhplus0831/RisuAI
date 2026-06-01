@@ -32,7 +32,8 @@ applies advance a watcher epoch so settings, chat, and script-definition
 watchers do not echo server-origin updates. Phase 7 now has route-local rate
 limits, wildcard manifest coverage, read-only writer-header hygiene, and
 HEAD/body-parser safeguards. The initial hot-envelope schema slice is also
-implemented for stable read-only POST envelopes.
+implemented for stable read-only POST envelopes. Phase 8 has started with
+bootstrap and targeted projection payload metric/readout guards.
 
 Prefer one of these next:
 
@@ -42,8 +43,9 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. Move to Phase 8 verification budgets when prioritizing maintained protocol
-   guardrails:
+3. Continue Phase 8 verification budgets when prioritizing maintained protocol
+   guardrails; request-count budgets, command metric thresholds, or the latest
+   verification log remain:
    [`phase-8-verification-budgets.md`](phases/phase-8-verification-budgets.md).
 4. Add the Phase 4 SSE taxonomy fixture only when touching chat stream event
    names or payload shapes:
@@ -77,7 +79,8 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Verification budgets and latest-check recording in Phase 8.
+3. Remaining Phase 8 request-count budgets, command metric thresholds, or
+   latest-check recording.
 4. SSE taxonomy verification when chat stream vocabulary changes.
 5. Additional route schemas only when touching a stable route envelope.
 

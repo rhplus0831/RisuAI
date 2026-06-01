@@ -1,6 +1,6 @@
 # Phase 8: Verification Budgets
 
-Status: planned.
+Status: partly implemented; payload-size metric/readout guards are in place.
 
 Goal: turn protocol measurements into maintained request, payload, timing, and
 latest-verification gates.
@@ -17,7 +17,8 @@ latest-verification gates.
 ## Slices
 
 - [`request-count-budgets.md`](slices/phase-8-verification-budgets/request-count-budgets.md)
-- [`payload-size-budgets.md`](slices/phase-8-verification-budgets/payload-size-budgets.md)
+- [`payload-size-budgets.md`](slices/phase-8-verification-budgets/payload-size-budgets.md) -
+  implemented
 - [`command-metric-thresholds.md`](slices/phase-8-verification-budgets/command-metric-thresholds.md)
 - [`latest-verification-log.md`](slices/phase-8-verification-budgets/latest-verification-log.md)
 
@@ -25,6 +26,8 @@ latest-verification gates.
 
 - Tests or diagnostics can catch request-count regressions in hot workflows.
 - Bootstrap/projection/import/export payload sizes have documented budgets.
+  Bootstrap and targeted projection are covered; import/export are documented as
+  large-payload flows.
 - Command mutation metrics have thresholds or review gates for hot families.
 - The latest verification result is recorded in one maintained location.
 

@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the Phase 7
-schema hot-envelope slice.
+Current status reflects code and commit history through the Phase 8
+payload-size budget slice.
 
 ## Current Snapshot
 
@@ -55,6 +55,9 @@ Completed work:
   route-local rate limits, route-manifest wildcard/prefix coverage is in place,
   read-only writer-header hygiene is tested, HEAD/body-parser safeguards are in
   place, and stable read-only POST envelopes now have initial schema coverage.
+- Phase 8 has started: bootstrap and targeted projection payload metrics have
+  regression coverage, and message-light bootstrap/projection responses are
+  compared against explicit chat-message hydration for message-heavy histories.
 
 No P1 plan risks remain open after the Phase 1 commits.
 
@@ -93,7 +96,7 @@ Active performance risks:
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Implemented                          | Closed import/export memory and asset mutation durability work.                        |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Implemented                          | Closed client loop suppression and watcher echo work.                                  |
 | [Phase 7](phases/phase-7-route-operations-coverage.md)    | Implemented                          | Route operational safeguards, route-limit maintenance, manifest coverage.              |
-| [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                    |
+| [Phase 8](phases/phase-8-verification-budgets.md)         | Partly implemented                   | Request-count budgets, command metric thresholds, latest verification log.             |
 
 ## Maintenance Rules
 
