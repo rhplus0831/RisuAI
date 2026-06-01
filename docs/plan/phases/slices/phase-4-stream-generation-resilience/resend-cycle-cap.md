@@ -1,6 +1,6 @@
 # Resend Cycle Cap
 
-Status: planned.
+Status: implemented.
 
 ## Source Anchors
 
@@ -12,6 +12,12 @@ Status: planned.
 
 Prevent repeated server-owned `postGeneration.resendChat` results from creating
 an unbounded request cycle.
+
+Implemented by carrying an internal server-resend depth through the recursive
+`sendChat` handoff. A root user action may honor one server-requested resend;
+a second consecutive server-owned resend surfaces an error and stops before a
+third generation request. The resend handoff re-enters as `continue` so a
+legitimate single resend can run after the first assistant reply.
 
 ## Protocol Behavior
 
@@ -28,4 +34,7 @@ an unbounded request cycle.
 ## Validation
 
 - Focused generation or client request tests for resend behavior.
-- `pnpm test -- src/ts/process`
+- Passed: `pnpm test -- src/ts/process/__tests__/sendChat.serverPreview.test.ts`
+  (Vitest project selection ran 94 client test files: 921 passed, 4 skipped).
+- Passed: `pnpm test -- src/ts/process` (94 client test files: 921 passed, 4
+  skipped).

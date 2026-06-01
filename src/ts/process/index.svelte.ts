@@ -53,6 +53,9 @@ export let previewFormated: OpenAIChat[] = []
 export let previewBody: string = ''
 
 let activeGenerationAbortController: AbortController | null = null
+const MAX_SERVER_RESEND_DEPTH = 1
+const SERVER_RESEND_CAP_ERROR =
+  'Server-requested resend limit reached. Stopping to avoid a repeated generation loop.'
 
 export function createActiveGenerationAbortController(): AbortController {
   const controller = new AbortController()
@@ -81,6 +84,8 @@ export async function sendChat(
     preview?: boolean
     previewPrompt?: boolean
     regenerateMessageId?: string
+    /** Internal circuit-breaker depth for server-owned postGeneration resends. */
+    serverResendDepth?: number
     /**
      * Re-attach to this live durable generation (server job id) instead of
      * starting a fresh send. Skips assembly + the provider POST; the server
@@ -400,6 +405,7 @@ export async function sendChat(
     // (`done.postGeneration.resendChat`); orchestrate no longer derives it.
     let resendChat = orchestrate.resendChat
 
+    let serverRequestedResend = false
     if (serverTerminal) {
       const terminal = await serverTerminal
       const terminalResult = await applyServerBackedTerminal({
@@ -416,6 +422,11 @@ export async function sendChat(
         return false
       }
       if (terminalResult.resendChat) {
+        serverRequestedResend = true
+        if ((arg.serverResendDepth ?? 0) >= MAX_SERVER_RESEND_DEPTH) {
+          throwError(SERVER_RESEND_CAP_ERROR)
+          return false
+        }
         resendChat = true
       }
     }
@@ -440,6 +451,8 @@ export async function sendChat(
       iOwnDoingChat = false
       return await sendChat(chatProcessIndex, {
         signal: abortSignal,
+        continue: serverRequestedResend ? true : undefined,
+        serverResendDepth: serverRequestedResend ? (arg.serverResendDepth ?? 0) + 1 : 0,
       })
     }
     // The server is the sole author of generation results on every

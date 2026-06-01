@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the generation reattach
-trigger slice.
+Current status reflects code and commit history through the resend-cycle cap
+slice.
 
 ## Current Snapshot
 
@@ -28,8 +28,9 @@ Completed work:
   for empty, small, character-family, and mixed broad/plugin resources; an
   in-process asset metadata index; and authenticated bulk all-chat hydration.
 - Phase 4 has bounded slow-consumer behavior for `/api/v1/events`, inline and
-  durable chat-generation SSE, proxy WebSocket stream jobs, and generation
-  reattach triggers for active-chat changes plus full resyncs.
+  durable chat-generation SSE, proxy WebSocket stream jobs, generation reattach
+  triggers for active-chat changes plus full resyncs, and a per-root-action cap
+  for server-owned resend cycles.
 - Phase 6 has existing settings debounce/coalescing and per-bridge watcher
   baselines; memory job SSE refresh, shared projection-apply suppression, and
   broader echo tests remain planned.
@@ -50,9 +51,9 @@ Active performance risks:
 - Optional lorebook hydration is still N requests when experimental
   `enableLorebookStubs` is enabled.
 - Import, export, and bundle paths can materialize large payloads.
-- Memory job polling, watcher echo, remaining settings no-op paths, generation
-  resend loops, and finalization retry behavior need explicit suppression,
-  caps, or retry handling.
+- Memory job polling, watcher echo, remaining settings no-op paths, and
+  finalization retry behavior need explicit suppression, caps, or retry
+  handling.
 
 ## Start Here
 
@@ -64,17 +65,17 @@ Active performance risks:
 
 ## Phase Router
 
-| Phase                                                     | Status                               | Open when working on...                                                                 |
-| --------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
-| [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, hydration bounds/aggregation, durable event history, route manifest.  |
-| [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                        |
-| [Phase 2](phases/phase-2-command-write-cost.md)           | Hot command paths targeted           | Whole-corpus command mutation cost and narrow write paths.                              |
-| [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Six optimizations implemented        | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
-| [Phase 4](phases/phase-4-stream-generation-resilience.md) | Backpressure + reattach implemented  | Resend caps and finalization retry.                                                     |
-| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Planned                              | Import/export memory pressure, asset mutation durability, per-generation media caching. |
-| [Phase 6](phases/phase-6-client-loop-suppression.md)      | Partly implemented                   | Memory job polling, server-origin watcher echo, settings write coalescing.              |
-| [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                   | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.     |
-| [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                              | Request, payload, metric, and verification budgets.                                     |
+| Phase                                                     | Status                                           | Open when working on...                                                                 |
+| --------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current             | Existing metrics, hydration bounds/aggregation, durable event history, route manifest.  |
+| [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                                      | Closed P1 correctness hardening.                                                        |
+| [Phase 2](phases/phase-2-command-write-cost.md)           | Hot command paths targeted                       | Whole-corpus command mutation cost and narrow write paths.                              |
+| [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Six optimizations implemented                    | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
+| [Phase 4](phases/phase-4-stream-generation-resilience.md) | Backpressure + reattach + resend cap implemented | Finalization retry.                                                                     |
+| [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Planned                                          | Import/export memory pressure, asset mutation durability, per-generation media caching. |
+| [Phase 6](phases/phase-6-client-loop-suppression.md)      | Partly implemented                               | Memory job polling, server-origin watcher echo, settings write coalescing.              |
+| [Phase 7](phases/phase-7-route-operations-coverage.md)    | Partly implemented                               | Explicit route limits, HEAD/body parser audit, schemas, wildcard manifest coverage.     |
+| [Phase 8](phases/phase-8-verification-budgets.md)         | Planned                                          | Request, payload, metric, and verification budgets.                                     |
 
 ## Maintenance Rules
 

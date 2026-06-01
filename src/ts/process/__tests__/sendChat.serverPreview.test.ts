@@ -78,6 +78,7 @@ import {
   setServerChatDispatchResult,
   setServerChatError,
   setServerChatMessagePatch,
+  setServerChatPostGenerationQueue,
   setServerChatPrompt,
 } from '../__fixtures__/mocks/serverChatFetch'
 import {
@@ -246,6 +247,56 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       inputTokens: 7,
       outputTokens: 50,
     })
+  })
+
+  it('allows one server-requested resend for a root send', async () => {
+    await seedEcho()
+    setServerChatPrompt(
+      [{ role: 'user', content: 'server-only prompt' }],
+      { promptText: 'SERVER PROMPT', inputTokens: 11, outputTokens: 22 },
+      { formated: [{ role: 'user', content: 'server-only prompt' }] },
+    )
+    setServerChatDispatchResult('fixture echo reply', {
+      model: 'echo_model',
+      generationId: 'uuid-0',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+      stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+    })
+    setServerChatPostGenerationQueue([{ resendChat: true }, {}])
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const ok = await chatModule.sendChat(-1)
+
+    expect(ok).toBe(true)
+    expect(getServerChatCalls()).toHaveLength(2)
+    expect(getServerCompletionCalls()).toEqual([])
+  })
+
+  it('caps repeated server-requested resend cycles for a root send', async () => {
+    await seedEcho()
+    setServerChatPrompt(
+      [{ role: 'user', content: 'server-only prompt' }],
+      { promptText: 'SERVER PROMPT', inputTokens: 11, outputTokens: 22 },
+      { formated: [{ role: 'user', content: 'server-only prompt' }] },
+    )
+    setServerChatDispatchResult('fixture echo reply', {
+      model: 'echo_model',
+      generationId: 'uuid-0',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+      stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+    })
+    setServerChatPostGenerationQueue([{ resendChat: true }, { resendChat: true }])
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const ok = await chatModule.sendChat(-1)
+
+    expect(ok).toBe(false)
+    expect(getServerChatCalls()).toHaveLength(2)
+    expect(getServerCompletionCalls()).toEqual([])
   })
 
   it('applies stop-trigger patches before surfacing the server assembly error', async () => {

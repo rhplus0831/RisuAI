@@ -9,6 +9,7 @@
 import { isTokenizerUrl, serveTokenizerFetch } from './tokenizerFetch'
 import type {
   ServerChatMessagePatch,
+  ServerChatPostGeneration,
   ServerChatRestoration,
   ServerChatSideEffect,
 } from '../../request/serverChatEvents'
@@ -56,6 +57,8 @@ interface State {
   restoration: ServerChatRestoration | null
   generationId: string
   generationInfo: Record<string, unknown> | null
+  postGeneration: ServerChatPostGeneration | null
+  postGenerationQueue: ServerChatPostGeneration[]
   /** When set, the stream emits a terminal `error` instead of `prompt`. */
   errorMessage: string | null
 }
@@ -81,6 +84,8 @@ function defaultState(): Omit<State, 'calls'> {
     restoration: null,
     generationId: 'uuid-0',
     generationInfo: null,
+    postGeneration: null,
+    postGenerationQueue: [],
     errorMessage: null,
   }
 }
@@ -129,13 +134,19 @@ export function setServerChatDispatchResult(
   result: string,
   generationInfo: Record<string, unknown>,
   generationId = 'uuid-0',
-  opts: { emitTtsSideEffect?: boolean } = {},
+  opts: { emitTtsSideEffect?: boolean; postGeneration?: ServerChatPostGeneration } = {},
 ): void {
   state.dispatchResult = result
   state.dispatchError = null
   state.generationId = generationId
   state.generationInfo = { ...generationInfo, generationId }
   state.emitTtsSideEffect = !!opts.emitTtsSideEffect
+  state.postGeneration = opts.postGeneration ?? null
+  state.postGenerationQueue = []
+}
+
+export function setServerChatPostGenerationQueue(frames: ServerChatPostGeneration[]): void {
+  state.postGenerationQueue = frames.map((frame) => ({ ...frame }))
 }
 
 export function setServerChatDispatchError(
@@ -161,6 +172,8 @@ function frame(event: string, data: unknown): string {
 
 function sseChatResponse(): Response {
   const enc = new TextEncoder()
+  const postGeneration =
+    state.postGenerationQueue.length > 0 ? state.postGenerationQueue.shift() : state.postGeneration
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const push = (event: string, data: unknown): void =>
@@ -217,6 +230,7 @@ function sseChatResponse(): Response {
           result: state.dispatchResult,
           generationId: state.generationId,
           generationInfo: state.generationInfo,
+          postGeneration: postGeneration ?? undefined,
         })
       } else if (state.dispatchError !== null) {
         push('token', { content: 'partial' })
