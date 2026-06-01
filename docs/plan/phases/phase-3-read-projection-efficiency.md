@@ -1,6 +1,6 @@
 # Phase 3: Read Projection Efficiency
 
-Status: five optimizations implemented.
+Status: six optimizations implemented.
 
 Goal: reduce repeated REST reads and full-projection work for targeted
 projection, asset metadata, bulk hydration, and full resync fallbacks.
@@ -23,7 +23,8 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
 
 ## Exit Criteria
 
-- Empty or small targeted projection resources avoid full stub projection load.
+- Empty, small, and field-scoped targeted projection resources avoid full stub
+  projection load.
 - Asset metadata lookup no longer parses `db.json` for every cold asset read.
 - Bulk all-chat or lorebook readers have a lower request count path or a
   server-side assembly alternative.
@@ -40,6 +41,11 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
   `chatFolder`, `message`, and `generation` now use a narrow persisted-field
   selector with chat message stubs, Hypa V3 removal, optional lorebook stubs,
   and provider secret masking.
+- Mixed broad targeted projection resources such as `scriptDefinition`,
+  `triggerDefinition`, `lorebook`, `module`, and `plugin` now use field
+  selectors that avoid the full stub projection path while preserving character
+  stubs, provider secret masking, `module.deleted` reference cleanup, and
+  `loreBookPage` updates.
 - Asset metadata lookup now uses an in-process repository index with
   `db.json` stat-based refresh and explicit invalidation on repository writes.
 - Bulk chat-message hydration now uses authenticated read-only

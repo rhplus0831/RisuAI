@@ -1,6 +1,6 @@
 # Targeted Projection Loaders
 
-Status: third batch implemented.
+Status: fourth batch implemented.
 
 ## Source Anchors
 
@@ -75,6 +75,33 @@ Third implemented batch:
   `pnpm api:test -- server/fastify/__tests__/projection.test.ts` and
   `pnpm test -- src/ts/bootstrap.test.ts`.
 
+Fourth implemented batch:
+
+- Source files: `server/fastify/src/routes/projection.ts`,
+  `server/fastify/src/repository.ts`,
+  `server/fastify/__tests__/projection.test.ts`.
+- Protocol surface: `GET /api/v1/projection/:resource` for the remaining
+  field-scoped broad resources: `scriptDefinition`, `triggerDefinition`,
+  `lorebook`, `module`, and `plugin`.
+- Durable read path: `plugin` now uses the persisted field selector. The mixed
+  character/module/lorebook resources use a shared stubbed field selector that
+  reads requested top-level fields from `db.json`, stubs chat `message` arrays,
+  removes `hypaV3Data`, honors optional `enableLorebookStubs`, and masks
+  provider secrets. `module` now includes `characters` because `module.deleted`
+  removes deleted module ids from character and chat links. `lorebook` now
+  includes `loreBookPage` because select, delete, and reorder commands mutate
+  the active global lorebook page.
+- Revision/event behavior: preserve the existing `mode: "fields"` response,
+  current revision reporting, and client cursor advancement behavior. Any
+  response containing `characters` still triggers client chat/lorebook
+  hydration reset and open-entity rehydration.
+- Rollback/resync behavior: sprawling resources such as `settings`, `state`,
+  `pluginStorage`, and unknown resources keep the existing full-bootstrap
+  fallback.
+- Proof commands:
+  `pnpm api:test -- server/fastify/__tests__/projection.test.ts` and
+  `pnpm test -- src/ts/bootstrap.test.ts`.
+
 ## Protocol Behavior
 
 - Keep the existing projection response contract unless a phase explicitly
@@ -87,7 +114,7 @@ Third implemented batch:
 ## Done When
 
 - Empty or small projection resources avoid full `loadStubProjection()` cost.
-- Unknown or broad resources still fall back to existing full behavior.
+- Unknown or sprawling resources still fall back to existing full behavior.
 - Tests cover narrow and fallback paths.
 
 Current result:
@@ -101,10 +128,15 @@ Current result:
   `generation`) avoid the full stub projection path while preserving chat
   message stubs, Hypa V3 removal, optional character lorebook stubs, and
   provider secret masking.
+- Mixed broad resources (`scriptDefinition`, `triggerDefinition`, `lorebook`,
+  `module`) avoid the full stub projection path while preserving character
+  stubs, module/lorebook fields, provider secret masking, `module.deleted`
+  reference cleanup, and `loreBookPage` updates.
+- `plugin` avoids the full stub projection path through the persisted field
+  selector while preserving provider secret masking.
 - Unknown resources still use the existing full-resync behavior.
-- Broad non-empty resources that carry module, plugin, or mixed lorebook stub
-  semantics remain future Phase 3 work and should be scoped separately before
-  implementation.
+- Sprawling resources such as `settings`, `state`, and `pluginStorage` still use
+  the existing full-resync behavior.
 
 ## Validation
 

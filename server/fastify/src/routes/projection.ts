@@ -5,11 +5,11 @@ import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
 import {
   loadCharacterLorebookHydration,
-  loadCharacterProjectionFields,
   loadChatHydration,
   loadChatHydrations,
   loadPersistedDatabaseFields,
   loadStubProjection,
+  loadStubbedProjectionFields,
 } from '../repository.js'
 import { maskProviderSecrets } from '../providerSecrets.js'
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
@@ -37,12 +37,12 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   generation: ['characters'],
   scriptDefinition: ['characters', 'modules'],
   triggerDefinition: ['characters', 'modules'],
-  lorebook: ['characters', 'modules', 'loreBook'],
+  lorebook: ['characters', 'modules', 'loreBook', 'loreBookPage'],
   preset: ['botPresets', 'botPresetsId'],
   prompt: ['botPresets'],
   promptItem: ['botPresets'],
   persona: ['personas', 'selectedPersona'],
-  module: ['modules', 'enabledModules', 'loadouts'],
+  module: ['modules', 'enabledModules', 'loadouts', 'characters'],
   plugin: ['plugins', 'currentPluginProvider'],
   loadout: ['loadouts'],
   translatorPreset: [
@@ -64,14 +64,19 @@ const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
   'persona',
   'translatorPreset',
   'loadout',
+  'plugin',
 ])
 
-const NARROW_CHARACTER_PROJECTION_RESOURCES = new Set([
+const NARROW_STUBBED_PROJECTION_RESOURCES = new Set([
   'character',
   'chat',
   'chatFolder',
   'message',
   'generation',
+  'scriptDefinition',
+  'triggerDefinition',
+  'lorebook',
+  'module',
 ])
 
 export function resourceProjectionFields(resource: string): string[] | null {
@@ -190,8 +195,8 @@ export function registerProjectionRoutes(
 
       const fields = NARROW_FIELD_PROJECTION_RESOURCES.has(resource)
         ? maskProviderSecrets(loadPersistedDatabaseFields(dataDir, fieldKeys))
-        : NARROW_CHARACTER_PROJECTION_RESOURCES.has(resource)
-          ? maskProviderSecrets(loadCharacterProjectionFields(dataDir, fieldKeys))
+        : NARROW_STUBBED_PROJECTION_RESOURCES.has(resource)
+          ? maskProviderSecrets(loadStubbedProjectionFields(dataDir, fieldKeys))
           : loadStubProjectionFields(db, dataDir, fieldKeys)
 
       const response = { revision, resource, mode: 'fields' as const, fields }

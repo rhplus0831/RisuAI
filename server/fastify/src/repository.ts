@@ -176,7 +176,7 @@ export function loadPersistedDatabaseFields(
   return selectDatabaseFields(database, fieldKeys)
 }
 
-export function loadCharacterProjectionFields(
+export function loadStubbedProjectionFields(
   dataDir: string,
   fieldKeys: readonly string[],
 ): Record<string, unknown> {
@@ -185,6 +185,8 @@ export function loadCharacterProjectionFields(
   if (!isRecord(database)) return {}
 
   const fields = selectDatabaseFields(database, fieldKeys)
+  // Preserve the wire projection contract for any targeted resource that ships
+  // characters: chat payloads and optional character lorebooks stay lazy.
   eachChat(fields, (chat) => {
     chat.message = []
     delete chat.hypaV3Data

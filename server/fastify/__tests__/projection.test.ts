@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../src/app.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
-import { loadCharacterProjectionFields, loadPersistedDatabaseFields } from '../src/repository.js'
+import { loadPersistedDatabaseFields, loadStubbedProjectionFields } from '../src/repository.js'
 import { resourceProjectionFields } from '../src/routes/projection.js'
 import type { FastifyInstance } from 'fastify'
 import { setupAuthedClient } from './helpers/auth.js'
@@ -179,9 +179,108 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       'currentChar',
     ])
     expect(resourceProjectionFields('generation')).toEqual(['characters'])
+    expect(resourceProjectionFields('module')).toEqual([
+      'modules',
+      'enabledModules',
+      'loadouts',
+      'characters',
+    ])
+    expect(resourceProjectionFields('lorebook')).toEqual([
+      'characters',
+      'modules',
+      'loreBook',
+      'loreBookPage',
+    ])
     expect(resourceProjectionFields('asset')).toEqual([])
     expect(resourceProjectionFields('settings')).toBeNull()
     expect(resourceProjectionFields('state')).toBeNull()
+  })
+
+  it('returns module deletion cross-writes with character stubs', async () => {
+    const revision = await importDatabase({
+      enabledModules: ['mod-a', 'mod-b'],
+      loadouts: [{ id: 'load-a', modules: ['mod-a', 'mod-b'] }],
+      modules: [
+        { id: 'mod-a', name: 'Module A', description: '' },
+        { id: 'mod-b', name: 'Module B', description: '' },
+      ],
+      characters: [
+        {
+          chaId: 'char-a',
+          modules: ['mod-a', 'mod-b'],
+          chats: [
+            {
+              id: 'chat-a',
+              modules: ['mod-a', 'mod-b'],
+              message: [{ role: 'user', data: 'hello' }],
+              hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+            },
+          ],
+        },
+      ],
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/modules/mod-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+    expect(deleted.statusCode).toBe(200)
+
+    const res = await getProjection('module')
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.revision).toBe(revision + 1)
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields).sort()).toEqual([
+      'characters',
+      'enabledModules',
+      'loadouts',
+      'modules',
+    ])
+    expect(body.fields.modules.map((module: { id: string }) => module.id)).toEqual(['mod-a'])
+    expect(body.fields.enabledModules).toEqual(['mod-a'])
+    expect(body.fields.loadouts[0].modules).toEqual(['mod-a'])
+    expect(body.fields.characters[0].modules).toEqual(['mod-a'])
+    expect(body.fields.characters[0].chats[0].modules).toEqual(['mod-a'])
+    expect(body.fields.characters[0].chats[0].message).toEqual([])
+    expect(body.fields.characters[0].chats[0]).not.toHaveProperty('hypaV3Data')
+  })
+
+  it('returns lorebook page and mixed lorebook fields with stubs', async () => {
+    await importDatabase({
+      enableLorebookStubs: true,
+      loreBook: [
+        { id: 'lore-a', name: 'A', data: [] },
+        { id: 'lore-b', name: 'B', data: [] },
+      ],
+      loreBookPage: 1,
+      modules: [{ id: 'mod-a', name: 'Module A', description: '', lorebook: [] }],
+      characters: [
+        {
+          chaId: 'char-a',
+          globalLore: [{ key: 'secret', content: 'lore' }],
+          chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hello' }] }],
+        },
+      ],
+    })
+
+    const body = (await getProjection('lorebook')).json()
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields).sort()).toEqual([
+      'characters',
+      'loreBook',
+      'loreBookPage',
+      'modules',
+    ])
+    expect(body.fields.loreBookPage).toBe(1)
+    expect(body.fields.loreBook.map((lorebook: { id: string }) => lorebook.id)).toEqual([
+      'lore-a',
+      'lore-b',
+    ])
+    expect(body.fields.characters[0]).not.toHaveProperty('globalLore')
+    expect(body.fields.characters[0].chats[0].message).toEqual([])
   })
 })
 
@@ -301,11 +400,7 @@ describe('targeted projection field loader', () => {
     )
 
     expect(
-      loadCharacterProjectionFields(harness.dataDir, [
-        'characters',
-        'characterOrder',
-        'currentChar',
-      ]),
+      loadStubbedProjectionFields(harness.dataDir, ['characters', 'characterOrder', 'currentChar']),
     ).toEqual({
       characters: [
         {

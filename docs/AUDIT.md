@@ -28,6 +28,10 @@ HTTP routes. It builds on `docs/SERVER-AND-CLIENT.md` and
   server command mutation path: even small JSON commands load the full persisted
   database, hydrate all chat messages, clone the whole database, scan all chats
   for diffs, write `db.json`, persist a command event, and emit to SSE clients.
+- Event-driven targeted projection no longer pays full stub-projection work for
+  known field-scoped resources. Empty, small, character-family, module/script,
+  lorebook, and plugin resources all use field selectors; sprawling resources
+  such as settings/state/pluginStorage still full-bootstrap.
 - The previously confirmed P1 correctness risks are closed: event
   subscribe/replay, backup restore resync, durable generation frame replay, and
   direct guarded projection writes in Hypa V3/bookmark UI now have regression
@@ -259,7 +263,7 @@ latency, and consider a narrow append/result persistence path for durable
 generation instead of routing every persistence step through the generic
 whole-database command helper.
 
-### P2: Broad Targeted Projection Still Reads The Full Stub Projection
+### Resolved P2: Broad Targeted Projection Avoids Full Stub Projection
 
 `/api/v1/projection/:resource` maps many resources to top-level fields. Empty
 resources such as `asset` now short-circuit before `db.json` is read, and small
@@ -268,13 +272,15 @@ non-empty resources such as `preset`, `prompt`, `promptItem`, `persona`,
 provider secret masking. Character-family resources such as `character`,
 `chat`, `chatFolder`, `message`, and `generation` now select requested fields
 while preserving chat message stubs, Hypa V3 removal, optional lorebook stubs,
-and provider secret masking. Broad resources that carry module, plugin, or
-mixed lorebook-stub semantics still use `loadStubProjection()` before selecting
-fields, so they retain the full stub projection cost.
+and provider secret masking. Mixed broad resources such as `scriptDefinition`,
+`triggerDefinition`, `lorebook`, `module`, and `plugin` now use field selectors
+as well. `module` includes `characters` so `module.deleted` refreshes stripped
+character/chat module references, and `lorebook` includes `loreBookPage` so
+select/delete/reorder events refresh the active global lorebook page.
 
-Recommendation: keep the empty and narrow resource paths, and scope any broader
-field-specific loaders only after naming their lorebook-stub, module/plugin,
-and secret-masking semantics.
+Remaining fallback behavior is intentional for sprawling resources such as
+`settings`, `state`, `pluginStorage`, and unknown resources, which still return
+`mode: "full"` and let the client full-bootstrap.
 
 ### P2: Asset Reads Are Per-Asset Requests And Each Metadata Lookup Parses `db.json`
 
@@ -520,9 +526,9 @@ mostly read-side, export-side, or modal-side.
 ### Did The Fastify Migration Introduce Performance Regressions?
 
 Likely yes. The strongest evidence is whole-corpus command mutation work on
-every JSON command. Other likely regressions are remaining broad targeted
-projection full-stub work, import/export buffering and decompression, and
-multiple full persistence passes during generation.
+every JSON command. Other likely regressions are import/export buffering and
+decompression, full-bootstrap fallback costs for sprawling resources or gaps,
+and multiple full persistence passes during generation.
 
 ### Did The Migration Introduce Repeated Loops Or Excessive Request Cycles?
 
@@ -564,7 +570,7 @@ suppression mechanism.
 1. Reduce the command mutation hot path by adding narrow persistence paths for
    settings, metadata, and message operations.
 2. Continue read-side reduction with bulk chat/lorebook hydration endpoints or
-   server-side assembly, then scope broader targeted projection loaders.
+   server-side assembly.
 3. Replace memory job polling with SSE-driven refresh and overlap prevention.
 4. Add bulk read endpoints or server-side assembly for all-chat/lorebook export
    flows.
