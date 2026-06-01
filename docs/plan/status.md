@@ -23,7 +23,9 @@ Completed work:
   `chat.updated`, and plugin-storage put/delete/bulk commands use the
   message-free mutation path. `message.appended`, message
   edit/delete/truncate/replace commands, and `generation.persisted` use
-  targeted SQLite paths.
+  targeted SQLite paths. Generation prompt assembly and assembly-time
+  side-effect persistence now emit opt-in protocol metrics to measure the
+  remaining whole-corpus generation costs before selecting another narrow path.
 - Phase 3 read-side optimizations are in place: targeted projection field
   selectors for known resource families, an in-process asset metadata index,
   and authenticated bulk all-chat hydration.
@@ -64,7 +66,8 @@ No P1 plan risks remain open after the Phase 1 commits.
 Active performance risks:
 
 - Generation and prompt assembly can still perform whole-corpus passes for
-  assembly-time side effects and prompt construction.
+  assembly-time side effects and prompt construction; these paths now have
+  focused opt-in metrics for the next narrow optimization decision.
 - Full-bootstrap fallbacks for sprawling resources such as `settings`, `state`,
   and `pluginStorage` remain expensive.
 - General asset byte reads remain one request per asset, although metadata

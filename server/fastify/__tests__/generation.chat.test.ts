@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -156,6 +156,22 @@ interface ParsedEvent {
   data: Record<string, unknown>
 }
 
+interface ProtocolMetric {
+  metric: string
+  status?: string
+  chatId?: string
+  mode?: string
+  revision?: number
+  durationMs?: number
+  promptMs?: number
+  databaseLoadCount?: number
+  databaseLoadMs?: number
+  chatVarMutationCount?: number
+  persistMessages?: boolean
+  hasVarWrite?: boolean
+  eventType?: string
+}
+
 /** Parse an `event:`/`data:` SSE body into ordered events. */
 function parseEvents(body: string): ParsedEvent[] {
   return body
@@ -168,6 +184,26 @@ function parseEvents(body: string): ParsedEvent[] {
         data: JSON.parse(dataLine.replace('data: ', '')) as Record<string, unknown>,
       }
     })
+}
+
+async function withProtocolMetrics<T>(run: (metrics: ProtocolMetric[]) => Promise<T>): Promise<T> {
+  const previous = process.env.RISU_PROTOCOL_METRICS
+  const metrics: ProtocolMetric[] = []
+  process.env.RISU_PROTOCOL_METRICS = '1'
+  const infoSpy = vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
+    if (typeof message !== 'string' || !message.startsWith('[protocol-metric] ')) return
+    metrics.push(JSON.parse(message.slice('[protocol-metric] '.length)) as ProtocolMetric)
+  })
+  try {
+    return await run(metrics)
+  } finally {
+    infoSpy.mockRestore()
+    if (previous === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = previous
+    }
+  }
 }
 
 describe('per-generation stored asset cache', () => {
@@ -528,6 +564,58 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(2)
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
+  })
+
+  it('records prompt assembly and assembly-persistence protocol metrics separately', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
+    }
+    db.characters[0].triggerscript = [
+      {
+        comment: '',
+        type: 'start',
+        conditions: [],
+        effect: [{ type: 'setvar', operator: '=', var: 'score', value: '9' }],
+      },
+    ]
+    await seedDatabase(harness.app, assertion, db)
+
+    await withProtocolMetrics(async (metrics) => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      expect(res.statusCode).toBe(200)
+
+      const assembly = metrics.find((entry) => entry.metric === 'generation_prompt_assembly')
+      expect(assembly).toMatchObject({
+        status: 'ok',
+        chatId: 'chat-1',
+        mode: 'send',
+        databaseLoadCount: 1,
+      })
+      expect(assembly?.durationMs).toBeGreaterThanOrEqual(0)
+      expect(assembly?.promptMs).toBeGreaterThanOrEqual(0)
+      expect(assembly?.databaseLoadMs).toBeGreaterThanOrEqual(0)
+
+      const persistence = metrics.find(
+        (entry) => entry.metric === 'generation_assembly_persistence',
+      )
+      expect(persistence).toMatchObject({
+        status: 'ok',
+        chatId: 'chat-1',
+        mode: 'send',
+        revision: 2,
+        eventType: 'chat.scriptstate.updated',
+        chatVarMutationCount: 1,
+        persistMessages: false,
+        hasVarWrite: true,
+      })
+      expect(persistence?.durationMs).toBeGreaterThanOrEqual(0)
+    })
   })
 
   // The server Lua VM runs the `editRequest` hook during assembly, mirroring the

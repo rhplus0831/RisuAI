@@ -29,9 +29,11 @@ needed when chat stream vocabulary changes.
 
 Prefer one of these next:
 
-1. Measure and scope remaining generation/prompt-assembly whole-corpus passes
-   only if a narrow side-effect batch can name source files, durable mutation
-   behavior, event behavior, rollback behavior, and proof command.
+1. Review the new generation/prompt metrics from
+   [`generation-prompt-side-effect-measurement.md`](phases/slices/phase-2-command-write-cost/generation-prompt-side-effect-measurement.md)
+   and select one narrow optimization only if the metric output identifies a
+   concrete source area, durable mutation behavior, event behavior, rollback
+   behavior, and proof command.
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
@@ -52,6 +54,8 @@ batches in
 [`message-chat-targeted-persistence.md`](phases/slices/phase-2-command-write-cost/message-chat-targeted-persistence.md),
 and
 [`generation-persistence-narrow-path.md`](phases/slices/phase-2-command-write-cost/generation-persistence-narrow-path.md).
+Generation/prompt side-effect measurement lives in
+[`generation-prompt-side-effect-measurement.md`](phases/slices/phase-2-command-write-cost/generation-prompt-side-effect-measurement.md).
 
 ## Not First
 
@@ -66,8 +70,8 @@ and
 
 ## Selection Order
 
-1. Narrow generation/prompt side-effect work in Phase 2 only when a measured
-   slice is available.
+1. Use the generation/prompt metrics to choose one Phase 2 side-effect
+   optimization only when the source area and protocol behavior are clear.
 2. Optional Phase 3 lorebook bulk reads or full-resync frequency budgets if
    measurement makes them active.
 3. SSE taxonomy verification when chat stream vocabulary changes.
@@ -89,6 +93,7 @@ touches shared protocol behavior.
 - `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/chatMessageHydration.test.ts`
 - `pnpm test -- src/ts/server/chatMessageHydration.test.ts`
 - `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`
+- `RISU_PROTOCOL_METRICS=1 pnpm api:test -- server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/durableGeneration.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts`
 - `pnpm client-thinning:audit`
 - `pnpm api:test`

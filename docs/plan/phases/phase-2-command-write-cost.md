@@ -31,6 +31,10 @@ event, transaction, and projection contracts.
 - [`generation-persistence-narrow-path.md`](slices/phase-2-command-write-cost/generation-persistence-narrow-path.md) -
   implemented; `generation.persisted` uses a targeted SQLite generation
   message path.
+- [`generation-prompt-side-effect-measurement.md`](slices/phase-2-command-write-cost/generation-prompt-side-effect-measurement.md) -
+  implemented; prompt assembly, database load/hydration, and assembly-time
+  side-effect persistence emit opt-in protocol metrics for the remaining
+  generation whole-corpus risk.
 
 ## Exit Criteria
 

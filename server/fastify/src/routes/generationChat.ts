@@ -235,6 +235,11 @@ interface RouteAssembleDeps extends AssembleDeps {
   getDatabase(): Database | null
 }
 
+interface PromptAssemblyMeasurement {
+  databaseLoadCount: number
+  databaseLoadMs: number
+}
+
 const LOCAL_ASSET_PATH_RE = /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i
 
 /**
@@ -313,18 +318,65 @@ export function createRequestScopedStoredAssetResolver(
   }
 }
 
-function loadDatabaseDeps(dataDir: string, db: DatabaseSync): RouteAssembleDeps {
+function loadDatabaseDeps(
+  dataDir: string,
+  db: DatabaseSync,
+  measurement?: PromptAssemblyMeasurement,
+): RouteAssembleDeps {
   let database: Database | null = null
   const resolveStoredAsset = createRequestScopedStoredAssetResolver(dataDir)
   return {
     loadDatabase: () => {
+      const startedAt = protocolNowMs()
       database = loadPersistedWithMessages(db, dataDir).database as Database | null
+      if (measurement) {
+        measurement.databaseLoadCount += 1
+        measurement.databaseLoadMs += protocolDurationMs(startedAt)
+      }
       return database
     },
     loadMemoryDatabase: () => db,
     loadPromptMemoryQueryVectors: () => [],
     getDatabase: () => database,
     resolveStoredAsset,
+  }
+}
+
+async function assemblePromptWithMetrics(
+  input: AssembleInput,
+  dataDir: string,
+  db: DatabaseSync,
+): Promise<{ result: AssembleResult; deps: RouteAssembleDeps; promptMs: number }> {
+  const measurement: PromptAssemblyMeasurement = { databaseLoadCount: 0, databaseLoadMs: 0 }
+  const metricStartedAt = protocolNowMs()
+  const startedAt = Date.now()
+  const deps = loadDatabaseDeps(dataDir, db, measurement)
+  try {
+    const result = await assemblePrompt(input, deps)
+    const promptMs = Date.now() - startedAt
+    emitProtocolMetric('generation_prompt_assembly', {
+      status: result.stopSending ? 'stopped' : 'ok',
+      chatId: input.chatId,
+      mode: input.mode,
+      durationMs: protocolDurationMs(metricStartedAt),
+      promptMs,
+      databaseLoadCount: measurement.databaseLoadCount,
+      databaseLoadMs: Math.round(measurement.databaseLoadMs * 100) / 100,
+      ...(result.stopSending ? { stopReason: result.abortReason ?? 'unknown' } : {}),
+    })
+    return { result, deps, promptMs }
+  } catch (err) {
+    emitProtocolMetric('generation_prompt_assembly', {
+      status: 'error',
+      chatId: input.chatId,
+      mode: input.mode,
+      durationMs: protocolDurationMs(metricStartedAt),
+      promptMs: Date.now() - startedAt,
+      databaseLoadCount: measurement.databaseLoadCount,
+      databaseLoadMs: Math.round(measurement.databaseLoadMs * 100) / 100,
+      error: errorMessage(err, 'prompt assembly failed'),
+    })
+    throw err
   }
 }
 
@@ -406,46 +458,86 @@ function persistAssemblyMutations(args: {
   }
   const hasVarWrite = Object.keys(patch).length > 0 || deleteKeys.length > 0
   const persistMessages = !!args.submitTranscriptChanged && Array.isArray(args.submitMessages)
-  if (!hasVarWrite && !persistMessages) return undefined
+  if (!hasVarWrite && !persistMessages) {
+    emitProtocolMetric('generation_assembly_persistence', {
+      status: 'skipped',
+      chatId: args.input.chatId,
+      mode: args.input.mode,
+      chatVarMutationCount: args.mutations.chatVarMutations.length,
+      persistMessages,
+      hasVarWrite,
+      durationMs: 0,
+    })
+    return undefined
+  }
 
   const { revision: baseRevision } = getSchemaState(args.db)
-  const result = applyJsonCommandMutation<{ chatId: string }>({
-    db: args.db,
-    dataDir: args.dataDir,
-    baseRevision,
-    eventSink: args.eventSink,
-    mutate(database) {
-      const characters = normalizeAllCharacterChats(database)
-      const { character, chat } = requireChatLocation(characters, args.input.chatId)
-      if (persistMessages) {
-        // Route-owned write of the submit transcript (server is authoritative for
-        // the input trigger + editinput rewrite; the browser sent the raw text).
-        ;(chat as { message: Message[] }).message = structuredClone(args.submitMessages!)
-      }
-      if (hasVarWrite) {
-        chat.scriptstate ??= {}
-        for (const key of deleteKeys) {
-          delete chat.scriptstate[key]
+  const persistStartedAt = protocolNowMs()
+  let eventType = ''
+  try {
+    const result = applyJsonCommandMutation<{ chatId: string }>({
+      db: args.db,
+      dataDir: args.dataDir,
+      baseRevision,
+      eventSink: args.eventSink,
+      mutate(database) {
+        const characters = normalizeAllCharacterChats(database)
+        const { character, chat } = requireChatLocation(characters, args.input.chatId)
+        if (persistMessages) {
+          // Route-owned write of the submit transcript (server is authoritative for
+          // the input trigger + editinput rewrite; the browser sent the raw text).
+          ;(chat as { message: Message[] }).message = structuredClone(args.submitMessages!)
         }
-        Object.assign(chat.scriptstate, patch)
-        if (Object.keys(chat.scriptstate).length === 0) {
-          delete chat.scriptstate
+        if (hasVarWrite) {
+          chat.scriptstate ??= {}
+          for (const key of deleteKeys) {
+            delete chat.scriptstate[key]
+          }
+          Object.assign(chat.scriptstate, patch)
+          if (Object.keys(chat.scriptstate).length === 0) {
+            delete chat.scriptstate
+          }
         }
-      }
-      const eventTemplate = persistMessages
-        ? COMMAND_EVENT_CATALOG.messagesReplaced
-        : COMMAND_EVENT_CATALOG.chatScriptstateUpdated
-      return {
-        event: {
-          ...eventTemplate,
-          id: args.input.chatId,
-          parentId: character.chaId,
-        },
-        extra: { chatId: args.input.chatId },
-      }
-    },
-  })
-  return result.revision
+        const eventTemplate = persistMessages
+          ? COMMAND_EVENT_CATALOG.messagesReplaced
+          : COMMAND_EVENT_CATALOG.chatScriptstateUpdated
+        eventType = eventTemplate.type
+        return {
+          event: {
+            ...eventTemplate,
+            id: args.input.chatId,
+            parentId: character.chaId,
+          },
+          extra: { chatId: args.input.chatId },
+        }
+      },
+    })
+    emitProtocolMetric('generation_assembly_persistence', {
+      status: 'ok',
+      chatId: args.input.chatId,
+      mode: args.input.mode,
+      revision: result.revision,
+      eventType,
+      chatVarMutationCount: args.mutations.chatVarMutations.length,
+      persistMessages,
+      hasVarWrite,
+      durationMs: protocolDurationMs(persistStartedAt),
+    })
+    return result.revision
+  } catch (err) {
+    emitProtocolMetric('generation_assembly_persistence', {
+      status: 'error',
+      chatId: args.input.chatId,
+      mode: args.input.mode,
+      eventType,
+      chatVarMutationCount: args.mutations.chatVarMutations.length,
+      persistMessages,
+      hasVarWrite,
+      durationMs: protocolDurationMs(persistStartedAt),
+      error: errorMessage(err, 'failed to persist assembly mutations'),
+    })
+    throw err
+  }
 }
 
 /**
@@ -721,11 +813,8 @@ async function streamAssembly(
     emit({ type: 'stage', stage: 'prompt', status: 'start' })
 
     try {
-      const startedAt = Date.now()
-      const deps = loadDatabaseDeps(dataDir, db)
-      const result = await assemblePrompt(input, deps)
+      const { result, deps, promptMs } = await assemblePromptWithMetrics(input, dataDir, db)
       const database = deps.getDatabase()
-      const promptMs = Date.now() - startedAt
       // The route owns assembly-time chat-var writes and post-`editinput`
       // submit-transcript writes for persisting modes. This runs for both success
       // and `stopSending` so aborted sends do not lose the assembly mutations.
@@ -1383,11 +1472,8 @@ async function runGenerationJob(args: {
     emit({ type: 'stage', stage: 'prompt', status: 'start' })
 
     try {
-      const startedAt = Date.now()
-      const deps = loadDatabaseDeps(dataDir, db)
-      const result = await assemblePrompt(input, deps)
+      const { result, deps, promptMs } = await assemblePromptWithMetrics(input, dataDir, db)
       const database = deps.getDatabase()
-      const promptMs = Date.now() - startedAt
       const persistedRevision =
         isPersistingMode(input.mode) && result.mutations
           ? persistAssemblyMutations({
@@ -1707,7 +1793,7 @@ export function registerGenerationChatRoutes(
 
       const input = toAssembleInput({ ...body, mode: 'preview_prompt' })
       try {
-        const result = await assemblePrompt(input, loadDatabaseDeps(dataDir, db))
+        const { result } = await assemblePromptWithMetrics(input, dataDir, db)
         if (result.stopSending) {
           return { stopSending: true, abortReason: result.abortReason }
         }

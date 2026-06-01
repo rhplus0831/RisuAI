@@ -9,22 +9,24 @@ runs here.
 
 ## Latest Run
 
-- Runtime/code commit under test: `10d1ffc2` (later commits through
-  `35441587` are documentation-only plan updates)
-- Scope: Phase 8 verification budgets after payload-size, request-count, and
-  command metric review-gate slices.
+- Runtime/code commit under test: this generation prompt side-effect metrics
+  slice.
+- Scope: Phase 2 generation/prompt side-effect measurement plus existing
+  command metric review gates and client-thinning architecture audit.
 - Result: passed.
 
-| Command                                                                                           | Result                                                              |
-| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `pnpm test -- src/ts/server/chatMessageHydration.test.ts`                                         | Passed: 99 files, 938 tests, 4 skipped.                             |
-| `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose` | Passed: 1 file, 1 test; command metric review-gate summary emitted. |
-| `pnpm client-thinning:audit`                                                                      | Passed: client-thinning audit passed.                               |
+| Command                                                                                                                                        | Result                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `RISU_PROTOCOL_METRICS=1 pnpm api:test -- server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/durableGeneration.test.ts` | Passed: server API suite, 83 files, 1478 tests, 1 skipped.          |
+| `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`                                              | Passed: 1 file, 1 test; command metric review-gate summary emitted. |
+| `pnpm client-thinning:audit`                                                                                                                   | Passed: client-thinning audit passed.                               |
 
 ## Notes
 
-- The client Vitest command ran the configured client test set, not only the
-  named file.
+- The server Vitest generation command ran the configured server API suite, not
+  only the named files.
+- Generation/prompt measurement is opt-in through `RISU_PROTOCOL_METRICS`; the
+  runtime protocol behavior and SSE frame contract are unchanged.
 - Command metric timings are review readouts; the maintained hard checks are
   metric shape, known review gates, retained mutation paths, and
   `dbJsonWriteMs: 0` on targeted paths.
