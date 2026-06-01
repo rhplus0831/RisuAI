@@ -1,6 +1,6 @@
 # Phase 5: Import, Export, And Asset Memory
 
-Status: planned.
+Status: revision/event audit complete; implementation planned.
 
 Goal: reduce large-payload memory pressure and make asset mutation durability
 explicit.
@@ -18,6 +18,7 @@ explicit.
 ## Slices
 
 - [`server-owned-revision-bump-audit.md`](slices/phase-5-import-export-asset-memory/server-owned-revision-bump-audit.md)
+- [`server-owned-event-atomicity.md`](slices/phase-5-import-export-asset-memory/server-owned-event-atomicity.md)
 - [`expanded-import-size-limits.md`](slices/phase-5-import-export-asset-memory/expanded-import-size-limits.md)
 - [`bundle-export-streaming.md`](slices/phase-5-import-export-asset-memory/bundle-export-streaming.md)
 - [`asset-mutation-transaction-protocol.md`](slices/phase-5-import-export-asset-memory/asset-mutation-transaction-protocol.md)

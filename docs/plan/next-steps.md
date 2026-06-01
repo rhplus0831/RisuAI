@@ -26,7 +26,7 @@ hydration. Phase 4 has implemented bounded slow-consumer behavior for
 command/memory SSE, inline and durable chat generation SSE, proxy WebSocket
 stream jobs, generation reattach probes after active-chat projection changes
 and full resyncs, server-owned resend-cycle caps, and SQLite-backed
-finalization retry.
+finalization retry. Phase 5 has completed the server-owned revision bump audit.
 
 Prefer one of these next:
 
@@ -36,9 +36,13 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. If no command/read slice is active, start Phase 5 with the revision/event
-   inventory that feeds the asset/import durability slices:
-   [`server-owned-revision-bump-audit.md`](phases/slices/phase-5-import-export-asset-memory/server-owned-revision-bump-audit.md).
+3. Continue Phase 5 with server-owned event atomicity if prioritizing protocol
+   correctness:
+   [`server-owned-event-atomicity.md`](phases/slices/phase-5-import-export-asset-memory/server-owned-event-atomicity.md).
+4. Continue Phase 5 with import/export memory pressure if prioritizing large
+   save performance:
+   [`expanded-import-size-limits.md`](phases/slices/phase-5-import-export-asset-memory/expanded-import-size-limits.md) or
+   [`bundle-export-streaming.md`](phases/slices/phase-5-import-export-asset-memory/bundle-export-streaming.md).
 
 The command-family evidence lives in
 [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).
@@ -68,7 +72,8 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Import/export and asset memory/durability work in Phase 5.
+3. Server-owned event atomicity, import/export, and asset memory/durability work
+   in Phase 5.
 4. Client loop suppression and command write coalescing in Phase 6.
 5. Route operation safeguards and manifest coverage in Phase 7.
 6. Verification budgets and latest-check recording in Phase 8.
