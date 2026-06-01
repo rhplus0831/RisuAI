@@ -1,6 +1,6 @@
 # Latest Verification Log
 
-Status: planned.
+Status: implemented.
 
 ## Source Anchors
 
@@ -12,6 +12,13 @@ Status: planned.
 
 Add a single maintained latest-verification record for this workstream if
 verification history starts to sprawl across phase docs or task notes.
+
+Implemented scope:
+
+- Added `docs/plan/latest-verification.md` as the single maintained latest
+  verification record.
+- Recorded the latest focused Phase 8 verification command set and results.
+- Linked the latest verification record from `status.md` and `next-steps.md`.
 
 ## Protocol Behavior
 
@@ -25,6 +32,11 @@ verification history starts to sprawl across phase docs or task notes.
 - Agents know where to check the most recent full or focused verification.
 - Stale verification text is not duplicated across many phase docs.
 
+Done.
+
 ## Validation
 
 - Documentation review.
+- `pnpm test -- src/ts/server/chatMessageHydration.test.ts`
+- `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`
+- `pnpm client-thinning:audit`

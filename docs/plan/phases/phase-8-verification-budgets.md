@@ -1,7 +1,6 @@
 # Phase 8: Verification Budgets
 
-Status: partly implemented; payload-size, request-count, and command metric
-review guards are in place.
+Status: implemented.
 
 Goal: turn protocol measurements into maintained request, payload, timing, and
 latest-verification gates.
@@ -23,7 +22,8 @@ latest-verification gates.
   implemented
 - [`command-metric-thresholds.md`](slices/phase-8-verification-budgets/command-metric-thresholds.md) -
   implemented
-- [`latest-verification-log.md`](slices/phase-8-verification-budgets/latest-verification-log.md)
+- [`latest-verification-log.md`](slices/phase-8-verification-budgets/latest-verification-log.md) -
+  implemented
 
 ## Exit Criteria
 
@@ -33,7 +33,8 @@ latest-verification gates.
   Bootstrap and targeted projection are covered; import/export are documented as
   large-payload flows.
 - Command mutation metrics have review gates for hot families.
-- The latest verification result is recorded in one maintained location.
+- The latest verification result is recorded in one maintained location:
+  [`../latest-verification.md`](../latest-verification.md).
 
 ## Validation
 

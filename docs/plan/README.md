@@ -20,6 +20,8 @@ state after later implementation commits.
 
 - Current status, active risks, and phase routing live in
   [`status.md`](status.md).
+- The latest maintained full or focused verification result lives in
+  [`latest-verification.md`](latest-verification.md).
 - Next task selection, non-goals, and proof commands live in
   [`next-steps.md`](next-steps.md).
 - Phase-level scope and exit criteria live in [`phases/`](phases/).

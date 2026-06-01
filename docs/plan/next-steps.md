@@ -32,9 +32,10 @@ applies advance a watcher epoch so settings, chat, and script-definition
 watchers do not echo server-origin updates. Phase 7 now has route-local rate
 limits, wildcard manifest coverage, read-only writer-header hygiene, and
 HEAD/body-parser safeguards. The initial hot-envelope schema slice is also
-implemented for stable read-only POST envelopes. Phase 8 has started with
+implemented for stable read-only POST envelopes. Phase 8 is implemented with
 bootstrap and targeted projection payload metric/readout guards, plus an
-all-chat hydration request-count guard and command metric review gates.
+all-chat hydration request-count guard, command metric review gates, and a
+single latest-verification record.
 
 Prefer one of these next:
 
@@ -44,12 +45,12 @@ Prefer one of these next:
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
-3. Continue Phase 8 verification budgets when prioritizing maintained protocol
-   guardrails; the latest verification log remains:
-   [`phase-8-verification-budgets.md`](phases/phase-8-verification-budgets.md).
-4. Add the Phase 4 SSE taxonomy fixture only when touching chat stream event
+3. Add the Phase 4 SSE taxonomy fixture only when touching chat stream event
    names or payload shapes:
    [`sse-taxonomy-alignment.md`](phases/slices/phase-4-stream-generation-resilience/sse-taxonomy-alignment.md).
+
+Latest maintained verification is recorded in
+[`latest-verification.md`](latest-verification.md).
 
 The command-family evidence lives in
 [`command-family-measurement.md`](phases/slices/phase-2-command-write-cost/command-family-measurement.md).
@@ -79,9 +80,10 @@ and
    slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
-3. Remaining Phase 8 latest-check recording.
-4. SSE taxonomy verification when chat stream vocabulary changes.
-5. Additional route schemas only when touching a stable route envelope.
+3. SSE taxonomy verification when chat stream vocabulary changes.
+4. Additional route schemas only when touching a stable route envelope.
+5. Refresh [`latest-verification.md`](latest-verification.md) after the next
+   full or focused verification run.
 
 ## Proof Commands
 

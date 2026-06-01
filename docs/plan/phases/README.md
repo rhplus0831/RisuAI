@@ -16,7 +16,7 @@ slice routing. Concrete slice definitions live under
 | 5     | Implemented             | [`phase-5-import-export-asset-memory.md`](phase-5-import-export-asset-memory.md)     | [`slices/phase-5-import-export-asset-memory/`](slices/phase-5-import-export-asset-memory/)     |
 | 6     | Implemented             | [`phase-6-client-loop-suppression.md`](phase-6-client-loop-suppression.md)           | [`slices/phase-6-client-loop-suppression/`](slices/phase-6-client-loop-suppression/)           |
 | 7     | Implemented             | [`phase-7-route-operations-coverage.md`](phase-7-route-operations-coverage.md)       | [`slices/phase-7-route-operations-coverage/`](slices/phase-7-route-operations-coverage/)       |
-| 8     | Partly implemented      | [`phase-8-verification-budgets.md`](phase-8-verification-budgets.md)                 | [`slices/phase-8-verification-budgets/`](slices/phase-8-verification-budgets/)                 |
+| 8     | Implemented             | [`phase-8-verification-budgets.md`](phase-8-verification-budgets.md)                 | [`slices/phase-8-verification-budgets/`](slices/phase-8-verification-budgets/)                 |
 
 ## Slice Rules
 

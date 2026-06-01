@@ -6,8 +6,8 @@ This is the status router for the Fastify server/client protocol stability and
 performance workstream. Use it first, then open only the phase or slice needed
 for the next task.
 
-Current status reflects code and commit history through the Phase 8 command
-metric review-gate slice.
+Current status reflects code and commit history through the Phase 8 latest
+verification log slice.
 
 ## Current Snapshot
 
@@ -55,14 +55,15 @@ Completed work:
   route-local rate limits, route-manifest wildcard/prefix coverage is in place,
   read-only writer-header hygiene is tested, HEAD/body-parser safeguards are in
   place, and stable read-only POST envelopes now have initial schema coverage.
-- Phase 8 has started: bootstrap and targeted projection payload metrics have
+- Phase 8 is implemented: bootstrap and targeted projection payload metrics have
   regression coverage, message-light bootstrap/projection responses are
   compared against explicit chat-message hydration for message-heavy histories,
   and all-chat hydration has a request-count guard proving many stubbed chats
   hydrate through one bulk request with cached follow-up calls starting no new
   requests. Command mutation metrics now have review gates for the
   `message-free`, `targeted-message`, and `targeted-generation` hot paths,
-  while targeted paths keep hard `dbJsonWriteMs: 0` checks.
+  while targeted paths keep hard `dbJsonWriteMs: 0` checks. The latest focused
+  verification result is recorded in [`latest-verification.md`](latest-verification.md).
 
 No P1 plan risks remain open after the Phase 1 commits.
 
@@ -79,6 +80,11 @@ Active performance risks:
   `enableLorebookStubs` is enabled.
 - Export paths still materialize `.risu` payloads, although bundle export no
   longer rehydrates the repository twice or preloads every asset byte buffer.
+
+## Latest Verification
+
+See [`latest-verification.md`](latest-verification.md) for the latest
+maintained full or focused verification result.
 
 ## Start Here
 
@@ -101,7 +107,7 @@ Active performance risks:
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Implemented                          | Closed import/export memory and asset mutation durability work.                        |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Implemented                          | Closed client loop suppression and watcher echo work.                                  |
 | [Phase 7](phases/phase-7-route-operations-coverage.md)    | Implemented                          | Route operational safeguards, route-limit maintenance, manifest coverage.              |
-| [Phase 8](phases/phase-8-verification-budgets.md)         | Partly implemented                   | Remaining latest verification log.                                                     |
+| [Phase 8](phases/phase-8-verification-budgets.md)         | Implemented                          | Verification budgets and latest verification log.                                      |
 
 ## Maintenance Rules
 
