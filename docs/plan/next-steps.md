@@ -21,16 +21,17 @@ not a broad cleanup pass.
 Phase 1 is implemented. Phase 2 has measured the hot command families, migrated
 `settings.updated`, `chat.updated`, and plugin-storage commands to message-free
 mutation paths, and moved `message.appended` to a targeted SQLite message append
-path. `generation.persisted` now uses a targeted SQLite generation message
-path. Phase 3 has implemented the targeted-projection, asset metadata, and bulk
-all-chat hydration optimizations.
+path. Message edit/delete/truncate/replace commands now use targeted SQLite
+message paths, and `generation.persisted` uses a targeted SQLite generation
+message path. Phase 3 has implemented the targeted-projection, asset metadata,
+and bulk all-chat hydration optimizations.
 
 Prefer one of these next:
 
-1. Select the next measured command family, likely a remaining chat/message
-   targeted path such as message edit/delete/replace, only after writing a
-   narrow slice with source files, durable mutation behavior, event behavior,
-   and proof command.
+1. Measure and scope the remaining generation/prompt-assembly whole-corpus
+   passes only if a narrow side-effect or persistence batch can name source
+   files, durable mutation behavior, event behavior, rollback behavior, and
+   proof command.
 2. Add optional bulk lorebook read reduction only if `enableLorebookStubs`
    workflows become active:
    [`bulk-chat-lorebook-reads.md`](phases/slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md).
@@ -42,7 +43,8 @@ The command-family evidence lives in
 The implemented Phase 2 migrations are:
 [`scoped-settings-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-settings-mutation-path.md),
 [`scoped-plugin-storage-mutation-path.md`](phases/slices/phase-2-command-write-cost/scoped-plugin-storage-mutation-path.md),
-the `chat.updated` and `message.appended` batches in
+the `chat.updated`, `message.appended`, and message edit/delete/truncate/replace
+batches in
 [`message-chat-targeted-persistence.md`](phases/slices/phase-2-command-write-cost/message-chat-targeted-persistence.md),
 and
 [`generation-persistence-narrow-path.md`](phases/slices/phase-2-command-write-cost/generation-persistence-narrow-path.md).
@@ -60,7 +62,8 @@ and
 
 ## Selection Order
 
-1. Next measured whole-corpus command-family reduction in Phase 2.
+1. Narrow generation/prompt side-effect persistence work in Phase 2, if a
+   measured slice is available.
 2. Optional Phase 3 lorebook bulk reads or full-resync budgets if measurement
    makes them active.
 3. Stream slow-consumer, reattach, resend, and finalization resilience in

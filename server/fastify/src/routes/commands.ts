@@ -117,14 +117,11 @@ import {
 import {
   createMessageRecord,
   messageIdExists,
-  normalizeAllChatMessages,
   readGenerationResult,
   readMessageId,
   readMessagePatch,
   readReplacementMessages,
   readTruncateAfterMessageId,
-  requireChatMessages,
-  requireMessageLocation,
   validateUniqueMessageIds,
 } from '../commands/messages.js'
 import {
@@ -191,10 +188,16 @@ import {
 import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
 import {
+  activeMessageIdExistsOutsideChat,
   activeMessageIdExists,
   addAlternateMessage,
   appendChatMessage,
   clearAlternateMessages,
+  deleteActiveMessageById,
+  getActiveMessageLocationById,
+  replaceActiveChatMessages,
+  truncateActiveChatMessages,
+  updateActiveMessageById,
   writeGenerationChatMessage,
 } from '../messageStore.js'
 import {
@@ -3060,23 +3063,30 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readMessagePatch(body.patch)
-      const result = applyJsonCommandMutation<{ chatId: string; messageId: string }>({
+      const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
         db,
         dataDir,
         baseRevision,
         eventSink,
-        mutate(database) {
-          const characters = normalizeAllChatMessages(database)
-          const { chat, messageIndex } = requireMessageLocation(characters, messageId)
-          const messages = chat.message as Record<string, unknown>[]
-          messages[messageIndex] = {
-            ...messages[messageIndex],
-            ...patch,
-            chatId: messageId,
+        mutationPath: 'targeted-message',
+        mutate(database, targetDb) {
+          const characters = normalizeAllCharacterChats(database)
+          const location = getActiveMessageLocationById(targetDb, messageId)
+          if (!location) {
+            throw new EntityNotFoundError(`Message not found: ${messageId}`)
+          }
+          requireChatLocation(characters, location.chatId)
+          const updated = updateActiveMessageById(targetDb, messageId, patch)
+          if (!updated.ok) {
+            throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
           return {
-            event: { ...COMMAND_EVENT_CATALOG.messageUpdated, id: messageId, parentId: chat.id },
-            extra: { chatId: chat.id, messageId },
+            event: {
+              ...COMMAND_EVENT_CATALOG.messageUpdated,
+              id: messageId,
+              parentId: updated.chatId,
+            },
+            extra: { chatId: updated.chatId, messageId },
           }
         },
       })
@@ -3098,18 +3108,30 @@ export function registerCommandRoutes(
       const messageId = readMessageId((req.params as { messageId?: unknown }).messageId)
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyJsonCommandMutation<{ chatId: string; messageId: string }>({
+      const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
         db,
         dataDir,
         baseRevision,
         eventSink,
-        mutate(database) {
-          const characters = normalizeAllChatMessages(database)
-          const { chat, messageIndex } = requireMessageLocation(characters, messageId)
-          chat.message.splice(messageIndex, 1)
+        mutationPath: 'targeted-message',
+        mutate(database, targetDb) {
+          const characters = normalizeAllCharacterChats(database)
+          const location = getActiveMessageLocationById(targetDb, messageId)
+          if (!location) {
+            throw new EntityNotFoundError(`Message not found: ${messageId}`)
+          }
+          requireChatLocation(characters, location.chatId)
+          const deleted = deleteActiveMessageById(targetDb, messageId)
+          if (!deleted.ok) {
+            throw new EntityNotFoundError(`Message not found: ${messageId}`)
+          }
           return {
-            event: { ...COMMAND_EVENT_CATALOG.messageDeleted, id: messageId, parentId: chat.id },
-            extra: { chatId: chat.id, messageId },
+            event: {
+              ...COMMAND_EVENT_CATALOG.messageDeleted,
+              id: messageId,
+              parentId: deleted.chatId,
+            },
+            extra: { chatId: deleted.chatId, messageId },
           }
         },
       })
@@ -3132,7 +3154,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
       const afterMessageId = readTruncateAfterMessageId(body.afterMessageId)
-      const result = applyJsonCommandMutation<{
+      const result = applyTargetedCommandMutation<{
         chatId: string
         afterMessageId: string | null
         removedCount: number
@@ -3141,21 +3163,19 @@ export function registerCommandRoutes(
         dataDir,
         baseRevision,
         eventSink,
-        mutate(database) {
-          const characters = normalizeAllChatMessages(database)
-          const { messages } = requireChatMessages(characters, chatId)
-          const keepCount =
-            afterMessageId === null
-              ? 0
-              : messages.findIndex((message) => message.chatId === afterMessageId) + 1
-          if (afterMessageId !== null && keepCount === 0) {
-            throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${afterMessageId}`)
+        mutationPath: 'targeted-message',
+        mutate(database, targetDb) {
+          const characters = normalizeAllCharacterChats(database)
+          requireChatLocation(characters, chatId)
+          const truncated = truncateActiveChatMessages(targetDb, chatId, afterMessageId)
+          if (!truncated.ok) {
+            throw new EntityNotFoundError(
+              `Message not found for chat ${chatId}: ${truncated.afterMessageId}`,
+            )
           }
-          const removedCount = messages.length - keepCount
-          messages.splice(keepCount)
           return {
             event: { ...COMMAND_EVENT_CATALOG.messageTruncated, parentId: chatId },
-            extra: { chatId, afterMessageId, removedCount },
+            extra: { chatId, afterMessageId, removedCount: truncated.removedCount },
           }
         },
       })
@@ -3178,21 +3198,22 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
       const replacement = readReplacementMessages(body.messages)
-      const result = applyJsonCommandMutation<{ chatId: string }>({
+      const result = applyTargetedCommandMutation<{ chatId: string }>({
         db,
         dataDir,
         baseRevision,
         eventSink,
-        mutate(database) {
-          const characters = normalizeAllChatMessages(database)
-          const { chat } = requireChatMessages(characters, chatId)
+        mutationPath: 'targeted-message',
+        mutate(database, targetDb) {
+          const characters = normalizeAllCharacterChats(database)
+          requireChatLocation(characters, chatId)
           validateUniqueMessageIds(replacement)
           for (const message of replacement) {
-            if (messageIdExists(characters, message.chatId, { excludeChat: chat })) {
+            if (activeMessageIdExistsOutsideChat(targetDb, message.chatId, chatId)) {
               throw new ValidationError(`Duplicate message id: ${message.chatId}`)
             }
           }
-          chat.message = replacement
+          replaceActiveChatMessages(targetDb, chatId, replacement)
           return {
             event: { ...COMMAND_EVENT_CATALOG.messagesReplaced, parentId: chatId },
             extra: { chatId },

@@ -197,6 +197,40 @@ export function activeMessageIdExists(db: DatabaseSync, messageId: string): bool
   return !!row
 }
 
+export function activeMessageIdExistsOutsideChat(
+  db: DatabaseSync,
+  messageId: string,
+  chatId: string,
+): boolean {
+  const row = db
+    .prepare(
+      'SELECT 1 AS found FROM messages WHERE uid = ? AND chat_id != ? AND alternate = 0 LIMIT 1',
+    )
+    .get(messageId, chatId) as { found: number } | undefined
+  return !!row
+}
+
+export interface ActiveMessageLocation {
+  chatId: string
+  seq: number
+  message: JsonRecord
+}
+
+export function getActiveMessageLocationById(
+  db: DatabaseSync,
+  messageId: string,
+): ActiveMessageLocation | undefined {
+  const row = db
+    .prepare('SELECT chat_id, seq, json FROM messages WHERE uid = ? AND alternate = 0 LIMIT 1')
+    .get(messageId) as { chat_id: string; seq: number; json: string } | undefined
+  if (!row) return undefined
+  return {
+    chatId: row.chat_id,
+    seq: row.seq,
+    message: JSON.parse(row.json) as JsonRecord,
+  }
+}
+
 export function appendChatMessage(db: DatabaseSync, chatId: string, raw: unknown): void {
   const message = readMessageObject(raw)
   const row = toRow(message)
@@ -207,6 +241,63 @@ export function appendChatMessage(db: DatabaseSync, chatId: string, raw: unknown
   db.prepare(
     'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
   ).run(chatId, seq, row.uid, row.role, row.data, row.disabled, row.json)
+}
+
+export function updateActiveMessageById(
+  db: DatabaseSync,
+  messageId: string,
+  patch: JsonRecord,
+): { ok: true; chatId: string } | { ok: false; reason: 'missing' } {
+  const location = getActiveMessageLocationById(db, messageId)
+  if (!location) return { ok: false, reason: 'missing' }
+
+  const next = { ...location.message, ...patch, chatId: messageId }
+  const row = toRow(next)
+  db.prepare(
+    'UPDATE messages SET uid = ?, role = ?, data = ?, disabled = ?, json = ? WHERE chat_id = ? AND seq = ? AND alternate = 0',
+  ).run(row.uid, row.role, row.data, row.disabled, row.json, location.chatId, location.seq)
+  return { ok: true, chatId: location.chatId }
+}
+
+export function deleteActiveMessageById(
+  db: DatabaseSync,
+  messageId: string,
+): { ok: true; chatId: string } | { ok: false; reason: 'missing' } {
+  const location = getActiveMessageLocationById(db, messageId)
+  if (!location) return { ok: false, reason: 'missing' }
+
+  const base = getChatMessages(db, location.chatId)
+  const next = base.slice()
+  next.splice(location.seq, 1)
+  applyChatMessageDiff(db, location.chatId, base, next)
+  return { ok: true, chatId: location.chatId }
+}
+
+export function truncateActiveChatMessages(
+  db: DatabaseSync,
+  chatId: string,
+  afterMessageId: string | null,
+):
+  | { ok: true; removedCount: number }
+  | { ok: false; reason: 'missing-after'; afterMessageId: string } {
+  const base = getChatMessages(db, chatId)
+  const keepCount =
+    afterMessageId === null ? 0 : base.findIndex((message) => message.chatId === afterMessageId) + 1
+  if (afterMessageId !== null && keepCount === 0) {
+    return { ok: false, reason: 'missing-after', afterMessageId }
+  }
+
+  const next = base.slice(0, keepCount)
+  applyChatMessageDiff(db, chatId, base, next)
+  return { ok: true, removedCount: base.length - keepCount }
+}
+
+export function replaceActiveChatMessages(
+  db: DatabaseSync,
+  chatId: string,
+  messages: readonly unknown[],
+): void {
+  applyChatMessageDiff(db, chatId, getChatMessages(db, chatId), messages)
 }
 
 export type GenerationMessageWriteResult =

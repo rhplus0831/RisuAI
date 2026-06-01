@@ -26,7 +26,7 @@ interface ProtocolMetric {
 }
 
 interface CommandRequest {
-  method: 'PATCH' | 'POST' | 'PUT'
+  method: 'DELETE' | 'PATCH' | 'POST' | 'PUT'
   url: string
   headers?: Record<string, string>
   payload?: unknown
@@ -182,7 +182,7 @@ describe('command protocol metrics', () => {
     })
     revision = chat.revision
 
-    const message = await commandMetric('message.appended', {
+    const messageAppend = await commandMetric('message.appended', {
       method: 'POST',
       url: '/api/v1/commands/chats/chat-0-0/messages',
       payload: {
@@ -190,7 +190,41 @@ describe('command protocol metrics', () => {
         message: { role: 'user', data: 'Measured append', chatId: 'msg-measured-append' },
       },
     })
-    revision = message.revision
+    revision = messageAppend.revision
+
+    const messageUpdate = await commandMetric('message.updated', {
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/msg-measured-append',
+      payload: { baseRevision: revision, patch: { data: 'Measured update' } },
+    })
+    revision = messageUpdate.revision
+
+    const messageDelete = await commandMetric('message.deleted', {
+      method: 'DELETE',
+      url: '/api/v1/commands/messages/msg-measured-append',
+      payload: { baseRevision: revision },
+    })
+    revision = messageDelete.revision
+
+    const messageTruncate = await commandMetric('message.truncated', {
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-0-0/messages/truncate',
+      payload: { baseRevision: revision, afterMessageId: 'msg-0-0-10' },
+    })
+    revision = messageTruncate.revision
+
+    const messageReplace = await commandMetric('messages.replaced', {
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-0-0/messages',
+      payload: {
+        baseRevision: revision,
+        messages: [
+          { role: 'user', data: 'Measured replacement 1', chatId: 'msg-measured-replace-1' },
+          { role: 'char', data: 'Measured replacement 2', chatId: 'msg-measured-replace-2' },
+        ],
+      },
+    })
+    revision = messageReplace.revision
 
     const generation = await commandMetric('generation.persisted', {
       method: 'POST',
@@ -209,9 +243,17 @@ describe('command protocol metrics', () => {
       },
     })
 
-    const measured = [settings, pluginStorage, chat, message, generation].map(
-      ({ metric }) => metric,
-    )
+    const measured = [
+      settings,
+      pluginStorage,
+      chat,
+      messageAppend,
+      messageUpdate,
+      messageDelete,
+      messageTruncate,
+      messageReplace,
+      generation,
+    ].map(({ metric }) => metric)
     for (const metric of measured) {
       expect(metric.resource).toBeTruthy()
       expect(metric.revision).toBeGreaterThan(1)
@@ -232,7 +274,16 @@ describe('command protocol metrics', () => {
     expect(settings.metric.mutationPath).toBe('message-free')
     expect(pluginStorage.metric.mutationPath).toBe('message-free')
     expect(chat.metric.mutationPath).toBe('message-free')
-    expect(message.metric.mutationPath).toBe('targeted-message')
+    for (const metric of [
+      messageAppend.metric,
+      messageUpdate.metric,
+      messageDelete.metric,
+      messageTruncate.metric,
+      messageReplace.metric,
+    ]) {
+      expect(metric.mutationPath).toBe('targeted-message')
+      expect(metric.dbJsonWriteMs).toBe(0)
+    }
     expect(generation.metric.mutationPath).toBe('targeted-generation')
 
     if (process.env.RISU_COMMAND_METRIC_SUMMARY === '1') {

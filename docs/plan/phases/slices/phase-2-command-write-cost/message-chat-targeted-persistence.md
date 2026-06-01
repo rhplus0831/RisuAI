@@ -1,7 +1,7 @@
 # Message And Chat Targeted Persistence
 
-Status: partially implemented; `chat.updated` and `message.appended` completed
-on 2026-06-01.
+Status: partially implemented; `chat.updated`, `message.appended`, and the
+message edit/delete/truncate/replace targeted slice completed on 2026-06-01.
 
 ## Source Anchors
 
@@ -44,9 +44,34 @@ Implemented batch:
   `db.json`; the message-free chat update writes `db.json` only after SQLite
   commit.
 
+2026-06-01 targeted-message history slice:
+
+- `PATCH /api/v1/commands/messages/:messageId`,
+  `DELETE /api/v1/commands/messages/:messageId`,
+  `POST /api/v1/commands/chats/:chatId/messages/truncate`, and
+  `PUT /api/v1/commands/chats/:chatId/messages` move from the hydrated command
+  mutation path to `targeted-message`.
+- Source files:
+  - `server/fastify/src/messageStore.ts`
+  - `server/fastify/src/routes/commands.ts`
+  - `server/fastify/__tests__/commandMetrics.test.ts`
+  - `server/fastify/__tests__/commands.test.ts`
+- Durable mutation behavior: each command reads message-free `db.json` only to
+  validate chat ownership, reads or rewrites active SQLite `messages` rows for
+  one target chat, preserves reroll alternate rows, then bumps the revision and
+  persists one command event in the same transaction.
+- Event behavior: existing `message.updated`, `message.deleted`,
+  `message.truncated`, and `messages.replaced` event shapes are unchanged; one
+  command still emits one event for one revision bump.
+- Rollback behavior: stale revisions, missing chats/messages, duplicate
+  replacement ids, or validation errors roll back SQLite row writes, revision
+  bumps, and event rows before live event emission. These targeted-message paths
+  do not write `db.json`.
+
 Remaining scope:
 
-- Message update/delete/truncate/replace commands still use the hydrated path.
+- Broader generation and prompt-assembly whole-corpus passes remain separate
+  Phase 2/4 work.
 
 ## Protocol Behavior
 
@@ -64,12 +89,13 @@ Remaining scope:
 - Tests prove unchanged conflict and projection refresh behavior for the
   selected path. Completed for append through the command suite and hydration
   assertions; completed for chat metadata with rowid stability and message-free
-  `db.json` assertions.
+  `db.json` assertions; completed for edit/delete/truncate/replace with
+  target-chat row ownership assertions.
 - Metrics show the path avoids full chat diff scans. Completed:
   `message.appended` moved from `hydrated` to `targeted-message` and recorded
   `dbJsonWriteMs: 0`; `chat.updated` moved from `hydrated` to `message-free`
-  with the command harness recording `totalMs: 3.53`.
-- Select the next chat/message family before expanding this slice further.
+  with the command harness recording `totalMs: 3.53`; message
+  edit/delete/truncate/replace commands now report `targeted-message`.
 
 ## Validation
 
