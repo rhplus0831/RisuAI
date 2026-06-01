@@ -47,6 +47,14 @@ import type { GenerationJobRegistry } from '../generationJobs.js'
 import type { JobClient, StreamJob } from '../streamJobs.js'
 import { getWritableBufferedBytes, writeBoundedRaw } from '../streamBackpressure.js'
 import { emitProtocolMetric, protocolDurationMs, protocolNowMs } from '../protocolMetrics.js'
+import {
+  deleteGenerationFinalizationRetry,
+  enqueueGenerationFinalizationRetry,
+  listPendingGenerationFinalizationRetries,
+  markGenerationFinalizationRetryFailure,
+  type GenerationFinalizationAttempt,
+  type GenerationFinalizationMode,
+} from '../generationFinalizationRetry.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
@@ -91,6 +99,12 @@ export type ChatProviderDispatcher = (
 
 export interface GenerationChatRouteOptions {
   dispatchProvider?: ChatProviderDispatcher
+  finalizationRetry?: false | { intervalMs?: number; maxPerSweep?: number }
+}
+
+export interface GenerationFinalizationRetryLogger {
+  warn(obj: Record<string, unknown>, msg: string): void
+  error(obj: Record<string, unknown>, msg: string): void
 }
 
 function badRequest(reply: FastifyReply, error: string): void {
@@ -1043,6 +1057,131 @@ function persistServerGenerationResult(args: {
   return result.revision
 }
 
+function finalizationModeFromInput(input: AssembleInput): GenerationFinalizationMode {
+  return input.mode === 'continue' || input.mode === 'regenerate' ? input.mode : 'send'
+}
+
+function isTerminalGenerationFinalizationError(err: unknown): boolean {
+  return err instanceof EntityNotFoundError || err instanceof ValidationError
+}
+
+function persistGenerationFinalizationAttempt(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  attempt: GenerationFinalizationAttempt
+}): number {
+  return persistServerGenerationResult({
+    db: args.db,
+    dataDir: args.dataDir,
+    eventSink: args.eventSink,
+    chatId: args.attempt.chatId,
+    message: args.attempt.message,
+    chatVarMutations: args.attempt.chatVarMutations,
+    targetMessageId: args.attempt.targetMessageId,
+  })
+}
+
+function markQueuedGenerationFinalizationFailure(args: {
+  db: DatabaseSync
+  attempt: GenerationFinalizationAttempt
+  err: unknown
+}): void {
+  markGenerationFinalizationRetryFailure(
+    args.db,
+    args.attempt.generationId,
+    errorMessage(args.err, 'failed to persist the generation result'),
+    isTerminalGenerationFinalizationError(args.err),
+  )
+}
+
+function queueAndPersistGenerationFinalization(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  attempt: GenerationFinalizationAttempt
+}): number {
+  enqueueGenerationFinalizationRetry(args.db, args.attempt)
+  try {
+    const revision = persistGenerationFinalizationAttempt(args)
+    deleteGenerationFinalizationRetry(args.db, args.attempt.generationId)
+    return revision
+  } catch (err) {
+    markQueuedGenerationFinalizationFailure({ db: args.db, attempt: args.attempt, err })
+    throw err
+  }
+}
+
+export function retryQueuedGenerationFinalizations(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  logger?: GenerationFinalizationRetryLogger
+  maxPerSweep?: number
+}): { attempted: number; persisted: number; terminal: number; retryable: number } {
+  const attempts = listPendingGenerationFinalizationRetries(args.db, args.maxPerSweep ?? 25)
+  let persisted = 0
+  let terminal = 0
+  let retryable = 0
+  for (const attempt of attempts) {
+    const startedAt = protocolNowMs()
+    try {
+      const revision = persistGenerationFinalizationAttempt({
+        db: args.db,
+        dataDir: args.dataDir,
+        eventSink: args.eventSink,
+        attempt,
+      })
+      deleteGenerationFinalizationRetry(args.db, attempt.generationId)
+      persisted += 1
+      emitProtocolMetric('generation_persistence_retry', {
+        status: 'ok',
+        generationId: attempt.generationId,
+        chatId: attempt.chatId,
+        revision,
+        durationMs: protocolDurationMs(startedAt),
+      })
+    } catch (err) {
+      const isTerminal = isTerminalGenerationFinalizationError(err)
+      markGenerationFinalizationRetryFailure(
+        args.db,
+        attempt.generationId,
+        errorMessage(err, 'failed to persist the generation result'),
+        isTerminal,
+      )
+      if (isTerminal) {
+        terminal += 1
+        args.logger?.warn(
+          {
+            err,
+            generationId: attempt.generationId,
+            chatId: attempt.chatId,
+          },
+          'generation finalization retry reached a terminal failure',
+        )
+      } else {
+        retryable += 1
+        args.logger?.warn(
+          {
+            err,
+            generationId: attempt.generationId,
+            chatId: attempt.chatId,
+          },
+          'generation finalization retry failed; it remains queued',
+        )
+      }
+      emitProtocolMetric('generation_persistence_retry', {
+        status: isTerminal ? 'terminal_error' : 'retryable_error',
+        generationId: attempt.generationId,
+        chatId: attempt.chatId,
+        durationMs: protocolDurationMs(startedAt),
+        error: errorMessage(err, 'failed to persist the generation result'),
+      })
+    }
+  }
+  return { attempted: attempts.length, persisted, terminal, retryable }
+}
+
 /**
  * Durable-job post-generation pass. Runs server derivation, then persists the
  * **derived** assistant message + post-gen scriptstate delta server-side
@@ -1084,18 +1223,22 @@ async function buildDurablePostGeneration(args: {
   let revision: number
   const persistStartedAt = protocolNowMs()
   try {
-    revision = persistServerGenerationResult({
+    revision = queueAndPersistGenerationFinalization({
       db: args.db,
       dataDir: args.dataDir,
       eventSink: args.eventSink,
-      chatId: args.input.chatId,
-      message,
-      chatVarMutations,
-      targetMessageId,
+      attempt: {
+        generationId: args.generationId,
+        chatId: args.input.chatId,
+        mode: finalizationModeFromInput(args.input),
+        message,
+        chatVarMutations,
+        ...(targetMessageId ? { targetMessageId } : {}),
+      },
     })
   } catch (err) {
     emitProtocolMetric('generation_persistence', {
-      status: 'terminal_error',
+      status: isTerminalGenerationFinalizationError(err) ? 'terminal_error' : 'retry_queued',
       generationId: args.generationId,
       chatId: args.input.chatId,
       durationMs: protocolDurationMs(persistStartedAt),
@@ -1163,14 +1306,18 @@ function persistRawCancelledResult(args: {
     promptInfo: args.promptInfo,
   })
   try {
-    persistServerGenerationResult({
+    queueAndPersistGenerationFinalization({
       db: args.db,
       dataDir: args.dataDir,
       eventSink: args.eventSink,
-      chatId: args.input.chatId,
-      message: raw.message,
-      chatVarMutations: [],
-      targetMessageId: raw.targetMessageId,
+      attempt: {
+        generationId: args.generationId,
+        chatId: args.input.chatId,
+        mode: finalizationModeFromInput(args.input),
+        message: raw.message,
+        chatVarMutations: [],
+        ...(raw.targetMessageId ? { targetMessageId: raw.targetMessageId } : {}),
+      },
     })
   } catch {
     // Chat gone / changed during a cancel: nothing to do (job aborted, no client).

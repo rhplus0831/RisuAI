@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
+import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
+import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import type { ChatProviderDispatcher } from '../src/routes/generationChat.js'
 import { setupAuthedClient } from './helpers/auth.js'
@@ -27,6 +29,7 @@ let providerImpl: ChatProviderDispatcher = () => {
   }
   return g()
 }
+let failNextGenerationPersistEvent = false
 
 const openControllers = new Set<AbortController>()
 
@@ -39,6 +42,7 @@ function newController(): AbortController {
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-durable-'))
+  const commandEvents = createRetryTestCommandSink()
   const { app } = await buildApp({
     config: {
       host: '127.0.0.1',
@@ -48,11 +52,31 @@ async function startHarness(): Promise<Harness> {
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },
-    generationChat: { dispatchProvider: (ctx) => providerImpl(ctx) },
+    generationChat: {
+      dispatchProvider: (ctx) => providerImpl(ctx),
+      finalizationRetry: { intervalMs: 10 },
+    },
+    commandEvents,
   })
   await app.listen({ port: 0, host: '127.0.0.1' })
   const addr = app.server.address() as AddressInfo
   return { app, dataDir, baseUrl: `http://127.0.0.1:${addr.port}` }
+}
+
+function createRetryTestCommandSink(): CommandEventSink {
+  const inner = createCommandEventSink()
+  return {
+    emit(event) {
+      if (event.type === 'generation.persisted' && failNextGenerationPersistEvent) {
+        failNextGenerationPersistEvent = false
+        throw new Error('transient generation event delivery failure')
+      }
+      inner.emit(event)
+    },
+    list: () => inner.list(),
+    clear: () => inner.clear(),
+    subscribe: (listener) => inner.subscribe(listener),
+  }
 }
 
 const fixtureDatabase = {
@@ -86,6 +110,7 @@ let harness: Harness
 let assertion: string
 
 beforeEach(async () => {
+  failNextGenerationPersistEvent = false
   providerImpl = () => {
     async function* g(): AsyncGenerator<CompletionStreamFrame> {
       yield { kind: 'done', finishReason: 'stop' }
@@ -235,7 +260,14 @@ async function bootstrap(): Promise<{
     mode?: 'send' | 'continue' | 'regenerate'
     regenerateMessageId?: string
   }>
-  database: { characters: Array<{ chats: Array<{ message: Array<Record<string, unknown>>; scriptstate?: Record<string, unknown> }> }> }
+  database: {
+    characters: Array<{
+      chats: Array<{
+        message: Array<Record<string, unknown>>
+        scriptstate?: Record<string, unknown>
+      }>
+    }>
+  }
   revision: number
 }> {
   const res = await fetch(`${harness.baseUrl}/api/v1/bootstrap`, { headers: authHeaders() })
@@ -296,6 +328,37 @@ async function cancelJob(jobId: string): Promise<void> {
   expect(del.status).toBe(200)
 }
 
+function generationFinalizationRetryRows(): Array<{
+  generation_id: string
+  chat_id: string
+  status: string
+  failure_count: number
+  last_error: string | null
+  terminal_error: string | null
+}> {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+  try {
+    return db
+      .prepare(
+        `
+          SELECT generation_id, chat_id, status, failure_count, last_error, terminal_error
+          FROM generation_finalization_retries
+          ORDER BY generation_id ASC
+        `,
+      )
+      .all() as Array<{
+      generation_id: string
+      chat_id: string
+      status: string
+      failure_count: number
+      last_error: string | null
+      terminal_error: string | null
+    }>
+  } finally {
+    db.close()
+  }
+}
+
 describe('Durable generation (Milestone 1)', () => {
   // The generation survives the client drop and persists with no client present.
   it('keeps generating after the client drops mid-stream and persists the result (EC-D1)', async () => {
@@ -322,6 +385,32 @@ describe('Durable generation (Milestone 1)', () => {
     // Persisted exactly once; generationId makes the write idempotent.
     const boot = await bootstrap()
     expect((await chatMessages(boot)).filter((m) => m.role === 'char')).toHaveLength(1)
+  })
+
+  it('retries a transient finalization failure without duplicating the assistant row', async () => {
+    failNextGenerationPersistEvent = true
+    providerImpl = () => {
+      async function* g(): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'retry me' }
+        yield { kind: 'done', finishReason: 'stop' }
+      }
+      return g()
+    }
+
+    const controller = newController()
+    const res = await postDurable({}, { signal: controller.signal })
+    const events = await readSse(res, (ev) => ev.type === 'error' || ev.type === 'done')
+    expect(events.some((e) => e.type === 'error')).toBe(true)
+
+    await waitFor(async () => {
+      const rows = generationFinalizationRetryRows()
+      return rows.length === 0 ? true : undefined
+    })
+    const messages = await chatMessages(await bootstrap())
+    const assistantMessages = messages.filter((m) => m.role === 'char')
+    expect(assistantMessages).toHaveLength(1)
+    expect(assistantMessages[0].data).toBe('retry me')
+    controller.abort()
   })
 
   // Drop the initial connection after it received prompt/info, reattach to the
@@ -457,10 +546,13 @@ describe('Durable generation (Milestone 1)', () => {
     )
     const obsEventsPromise = readSse(obs, (ev) => ev.type === 'done')
 
-    const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
-      method: 'DELETE',
-      headers: authHeaders(),
-    })
+    const del = await fetch(
+      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`,
+      {
+        method: 'DELETE',
+        headers: authHeaders(),
+      },
+    )
     expect(del.status).toBe(200)
 
     const obsEvents = await obsEventsPromise
@@ -516,10 +608,13 @@ describe('Durable generation (Milestone 1)', () => {
       return ev.type === 'token'
     })
 
-    const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
-      method: 'DELETE',
-      headers: authHeaders(),
-    })
+    const del = await fetch(
+      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`,
+      {
+        method: 'DELETE',
+        headers: authHeaders(),
+      },
+    )
     expect(del.status).toBe(200)
     expect((await del.json()).success).toBe(true)
 
@@ -548,10 +643,13 @@ describe('Durable generation (Milestone 1)', () => {
     await fetch(`${harness.baseUrl}/api/v1/bootstrap`, {
       headers: authHeaders({ 'risu-writer-session': 'writer-b' }),
     })
-    const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
-      method: 'DELETE',
-      headers: authHeaders({ 'risu-writer-session': 'writer-b' }),
-    })
+    const del = await fetch(
+      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`,
+      {
+        method: 'DELETE',
+        headers: authHeaders({ 'risu-writer-session': 'writer-b' }),
+      },
+    )
     expect(del.status).toBe(200)
 
     // After cancel the chat accepts a new generation (the slot is free).
@@ -838,6 +936,12 @@ describe('Durable generation (Milestone 1)', () => {
     // No bad write: the imported db has no chat-1 to receive a message.
     const boot = await bootstrap()
     expect(boot.database.characters[0].chats).toEqual([])
+    const terminalRow = await waitFor(async () => {
+      const row = generationFinalizationRetryRows()[0]
+      return row?.status === 'terminal' ? row : undefined
+    })
+    expect(terminalRow.failure_count).toBeGreaterThan(0)
+    expect(terminalRow.terminal_error).toContain('Chat not found')
     controller.abort()
   })
 

@@ -20,6 +20,7 @@ import { registerEventsRoutes } from './routes/events.js'
 import { registerGenerationRoutes } from './routes/generation.js'
 import {
   registerGenerationChatRoutes,
+  retryQueuedGenerationFinalizations,
   type GenerationChatRouteOptions,
 } from './routes/generationChat.js'
 import { bootPromptVariables } from './prompt/promptVariablesBoot.js'
@@ -180,11 +181,13 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
           }
         }, assetGcOptions.intervalMs ?? ASSET_GC_INTERVAL_MS)
   assetGcTimer?.unref()
+  let generationFinalizationRetryTimer: ReturnType<typeof setInterval> | null = null
 
   app.addHook('onClose', async () => {
     await memoryWorker?.stop()
     clearInterval(gcTimer)
     if (assetGcTimer) clearInterval(assetGcTimer)
+    if (generationFinalizationRetryTimer) clearInterval(generationFinalizationRetryTimer)
     for (const job of streamJobRegistry.list()) {
       streamJobRegistry.deleteJob(job.id)
     }
@@ -229,6 +232,34 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     generationJobRegistry,
     opts.generationChat,
   )
+  const finalizationRetryOptions = opts.generationChat?.finalizationRetry ?? {}
+  const runGenerationFinalizationRetrySweep = (): void => {
+    try {
+      retryQueuedGenerationFinalizations({
+        db,
+        dataDir: config.dataDir,
+        eventSink: commandEventSink,
+        logger: app.log,
+        maxPerSweep:
+          finalizationRetryOptions && finalizationRetryOptions !== false
+            ? finalizationRetryOptions.maxPerSweep
+            : undefined,
+      })
+    } catch (err) {
+      app.log.error({ err }, 'generation finalization retry sweep failed')
+    }
+  }
+  if (finalizationRetryOptions !== false) {
+    runGenerationFinalizationRetrySweep()
+  }
+  generationFinalizationRetryTimer =
+    finalizationRetryOptions === false
+      ? null
+      : setInterval(
+          runGenerationFinalizationRetrySweep,
+          finalizationRetryOptions.intervalMs ?? 5000,
+        )
+  generationFinalizationRetryTimer?.unref()
   registerMemoryJobRoutes(app, db, authState, { onEvent: emitMemoryEvent })
   registerMemoryReadRoutes(app, db, authState)
   bootPromptVariables()

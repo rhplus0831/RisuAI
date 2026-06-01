@@ -70,6 +70,7 @@ describe('schema migrations', () => {
       expect(listTables(db)).toEqual([
         'chat_hypa_v3',
         'command_events',
+        'generation_finalization_retries',
         'memory_chunks',
         'memory_embeddings',
         'memory_jobs',
@@ -92,6 +93,7 @@ describe('schema migrations', () => {
       expect(listTables(db)).toEqual([
         'chat_hypa_v3',
         'command_events',
+        'generation_finalization_retries',
         'memory_chunks',
         'memory_embeddings',
         'memory_jobs',

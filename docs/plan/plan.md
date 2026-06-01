@@ -47,7 +47,8 @@ route/protocol manifest. Follow-up commits closed the Phase 1 P1 correctness
 risks, narrowed the hot Phase 2 command families (`settings`, plugin storage,
 chat metadata, message history, and generation persistence), narrowed known
 targeted projection resources, indexed asset metadata lookups, added bulk
-all-chat hydration, and bounded slow SSE/stream consumers.
+all-chat hydration, bounded slow SSE/stream consumers, and added retryable
+durable generation finalization.
 
 Remaining work is concentrated in generation/prompt side-effect passes,
 full-bootstrap fallbacks for sprawling resources, optional lorebook bulk reads,
@@ -91,11 +92,10 @@ verification budgets.
    side-effect slices.
 2. Use Phase 3 for optional lorebook bulk reads or full-resync budgets when
    measurement shows they matter.
-3. Harden remaining generation lifecycle edges in Phase 4.
-4. Address import/export and asset memory pressure in Phase 5.
-5. Suppress client loops and high-frequency command writes in Phase 6.
-6. Add route limits, schemas, and coverage refinements in Phase 7.
-7. Promote proven measurement into Phase 8 budgets.
+3. Address import/export and asset memory pressure in Phase 5.
+4. Suppress client loops and high-frequency command writes in Phase 6.
+5. Add route limits, schemas, and coverage refinements in Phase 7.
+6. Promote proven measurement into Phase 8 budgets.
 
 ## Not In This Plan
 

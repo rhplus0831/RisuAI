@@ -2,8 +2,9 @@ import { DatabaseSync } from 'node:sqlite'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
+import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
 
-export const CURRENT_SCHEMA_VERSION = 7
+export const CURRENT_SCHEMA_VERSION = 8
 
 export interface MigrationStep {
   version: number
@@ -69,6 +70,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createCommandEventTable(db)
     },
   },
+  {
+    version: 8,
+    name: 'generation-finalization-retry-queue',
+    up: (db) => {
+      createGenerationFinalizationRetryTable(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -104,6 +112,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
       createMessageTable(db)
       createChatBlobTable(db)
       createCommandEventTable(db)
+      createGenerationFinalizationRetryTable(db)
     }
     applyMigrations(db, schemaState.version)
   } catch (error) {

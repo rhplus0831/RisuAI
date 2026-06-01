@@ -1,7 +1,6 @@
 # Phase 4: Stream And Generation Resilience
 
-Status: SSE backpressure, generation reattach triggers, and resend-cycle caps
-implemented; taxonomy partly covered; finalization retry remains planned.
+Status: implemented; taxonomy partly covered.
 
 Goal: make SSE, generation reattach, resend, and terminal persistence behavior
 bounded and observable.
@@ -35,10 +34,12 @@ bounded and observable.
 - Server-owned resend loops have a per-root-action cap. Implemented by
   [`resend-cycle-cap.md`](slices/phase-4-stream-generation-resilience/resend-cycle-cap.md).
 - Final result persistence can be retried without duplicating assistant rows.
+  Implemented by
+  [`finalization-retry-queue.md`](slices/phase-4-stream-generation-resilience/finalization-retry-queue.md).
 
 ## Validation
 
 - Passed: `pnpm api:test`
-- `pnpm api:test -- server/fastify/__tests__/durableGeneration.test.ts`
+- Passed: `pnpm api:test -- server/fastify/__tests__/durableGeneration.test.ts`
 - `pnpm test -- src/ts/process/request/tests/durableGeneration.test.ts`
 - `pnpm test -- src/ts/bootstrap.test.ts`
