@@ -151,6 +151,23 @@ export function loadPersisted(dataDir: string): Persisted {
   }
 }
 
+export function loadPersistedDatabaseFields(
+  dataDir: string,
+  fieldKeys: readonly string[],
+): Record<string, unknown> {
+  const persisted = loadPersisted(dataDir)
+  const database = persisted.database
+  if (!isRecord(database)) return {}
+
+  const fields: Record<string, unknown> = {}
+  for (const key of fieldKeys) {
+    if (Object.prototype.hasOwnProperty.call(database, key)) {
+      fields[key] = database[key]
+    }
+  }
+  return fields
+}
+
 export function writePersisted(dataDir: string, next: Persisted): void {
   fs.mkdirSync(dataDir, { recursive: true })
   const file = dbJsonPath(dataDir)

@@ -1,6 +1,6 @@
 # Phase 3: Read Projection Efficiency
 
-Status: two optimizations implemented.
+Status: three optimizations implemented.
 
 Goal: reduce repeated REST reads and full-projection work for targeted
 projection, asset metadata, bulk hydration, and full resync fallbacks.
@@ -33,6 +33,9 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
 
 - Empty-field targeted projection resources such as `asset` now skip full stub
   projection loading while preserving the existing response contract.
+- Small non-empty targeted projection resources such as `preset`, `prompt`,
+  `promptItem`, `persona`, `translatorPreset`, and `loadout` now use a narrow
+  persisted-field selector with provider secret masking.
 - Asset metadata lookup now uses an in-process repository index with
   `db.json` stat-based refresh and explicit invalidation on repository writes.
 

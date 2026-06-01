@@ -259,21 +259,19 @@ latency, and consider a narrow append/result persistence path for durable
 generation instead of routing every persistence step through the generic
 whole-database command helper.
 
-### P2: Targeted Projection Reduces Wire Size But Still Reads The Full Projection
+### P2: Broad Targeted Projection Still Reads The Full Stub Projection
 
-`/api/v1/projection/:resource` maps many resources to top-level fields, but
-known field resources still call `loadStubProjection()` and
-`maskProviderSecrets()` before selecting fields
-(`server/fastify/src/routes/projection.ts:122`,
-`server/fastify/src/routes/projection.ts:133`,
-`server/fastify/src/routes/projection.ts:134`). Even the `asset` resource maps
-to an empty field list because assets do not live in projected `database`, yet
-the route still pays the full projection load before returning `{ fields: {} }`
-(`server/fastify/src/routes/projection.ts:51`,
-`server/fastify/src/routes/projection.ts:146`).
+`/api/v1/projection/:resource` maps many resources to top-level fields. Empty
+resources such as `asset` now short-circuit before `db.json` is read, and small
+non-empty resources such as `preset`, `prompt`, `promptItem`, `persona`,
+`translatorPreset`, and `loadout` now select their requested fields before
+provider secret masking. Broad resources that carry chat, module, plugin, or
+lorebook-stub semantics still use `loadStubProjection()` before selecting
+fields, so they retain the full stub projection cost.
 
-Recommendation: short-circuit empty field resources before loading projection,
-and consider field-specific projection loaders for high-frequency resources.
+Recommendation: keep the empty and narrow resource paths, and scope any broader
+field-specific loaders only after naming their message-stub, lorebook-stub,
+module/plugin, and secret-masking semantics.
 
 ### P2: Asset Reads Are Per-Asset Requests And Each Metadata Lookup Parses `db.json`
 
@@ -519,10 +517,9 @@ mostly read-side, export-side, or modal-side.
 ### Did The Fastify Migration Introduce Performance Regressions?
 
 Likely yes. The strongest evidence is whole-corpus command mutation work on
-every JSON command. Other likely regressions are full-projection work for
-targeted projection, repeated `db.json` parses for asset metadata, import/export
-buffering and decompression, and multiple full persistence passes during
-generation.
+every JSON command. Other likely regressions are remaining broad targeted
+projection full-stub work, import/export buffering and decompression, and
+multiple full persistence passes during generation.
 
 ### Did The Migration Introduce Repeated Loops Or Excessive Request Cycles?
 
@@ -563,8 +560,8 @@ suppression mechanism.
 
 1. Reduce the command mutation hot path by adding narrow persistence paths for
    settings, metadata, and message operations.
-2. Make targeted projection and asset metadata lookup avoid full `db.json`
-   reads for small or no-op resources.
+2. Continue read-side reduction with bulk chat/lorebook hydration endpoints or
+   server-side assembly, then scope broader targeted projection loaders.
 3. Replace memory job polling with SSE-driven refresh and overlap prevention.
 4. Add bulk read endpoints or server-side assembly for all-chat/lorebook export
    flows.

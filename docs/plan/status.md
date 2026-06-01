@@ -32,6 +32,10 @@ Completed foundations:
 - Phase 3 targeted projection now short-circuits empty-field resources such as
   `asset`, so no-op projection refreshes advance the client revision cursor
   without loading `db.json` or full stub projection state.
+- Phase 3 targeted projection now serves small non-empty resources such as
+  `preset`, `prompt`, `promptItem`, `persona`, `translatorPreset`, and
+  `loadout` from a field selector that avoids full stub projection work while
+  preserving provider secret masking.
 - Phase 3 asset metadata lookup now uses an in-process index, so repeated asset
   `GET`, `HEAD`, generation resolution, and existence probes avoid reparsing
   `db.json` while metadata is unchanged.
@@ -43,8 +47,9 @@ Active performance risks:
 
 - Unmigrated JSON commands still pay whole-corpus load, clone, diff, and write
   cost.
-- Non-empty targeted projection resources can still load the full stub
-  projection before selecting small fields.
+- Broad targeted projection resources with chat, module, plugin, or lorebook
+  stub semantics can still load the full stub projection before selecting
+  fields.
 - Import, export, and bundle paths can materialize large payloads.
 - Memory job polling, settings writes, watcher echo, and generation resend
   loops need explicit suppression or caps.
@@ -65,7 +70,7 @@ Active performance risks:
 | [Phase 0](phases/phase-0-baseline-foundations.md)         | Implemented foundation, keep current | Existing metrics, bounded hydration, durable event history, route manifest coverage.    |
 | [Phase 1](phases/phase-1-correctness-hardening.md)        | Implemented                          | Closed P1 correctness hardening.                                                        |
 | [Phase 2](phases/phase-2-command-write-cost.md)           | First migration implemented          | Whole-corpus command mutation cost and narrow write paths.                              |
-| [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Two optimizations implemented        | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
+| [Phase 3](phases/phase-3-read-projection-efficiency.md)   | Three optimizations implemented      | Targeted projection, asset metadata reads, bulk read endpoints, full resync budgets.    |
 | [Phase 4](phases/phase-4-stream-generation-resilience.md) | Planned                              | SSE backpressure, generation reattach triggers, resend caps, finalization retry.        |
 | [Phase 5](phases/phase-5-import-export-asset-memory.md)   | Planned                              | Import/export memory pressure, asset mutation durability, per-generation media caching. |
 | [Phase 6](phases/phase-6-client-loop-suppression.md)      | Planned                              | Memory job polling, server-origin watcher echo, settings write coalescing.              |

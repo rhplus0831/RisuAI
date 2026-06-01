@@ -1,6 +1,6 @@
 # Targeted Projection Loaders
 
-Status: first batch implemented.
+Status: second batch implemented.
 
 ## Source Anchors
 
@@ -14,7 +14,7 @@ Status: first batch implemented.
 Avoid loading a full stub projection for targeted resources that can be served
 from narrower loaders or that intentionally return no projected fields.
 
-Implemented batch:
+First implemented batch:
 
 - Source files: `server/fastify/src/routes/projection.ts`,
   `server/fastify/__tests__/projection.test.ts`, `src/ts/bootstrap.test.ts`.
@@ -27,6 +27,28 @@ Implemented batch:
 - Rollback/resync behavior: unknown resources and broad resources still return
   `mode: "full"` and trigger the existing client bootstrap fallback.
 - Proof commands passed:
+  `pnpm api:test -- server/fastify/__tests__/projection.test.ts` and
+  `pnpm test -- src/ts/bootstrap.test.ts`.
+
+Second implemented batch:
+
+- Source files: `server/fastify/src/routes/projection.ts`,
+  `server/fastify/src/repository.ts`,
+  `server/fastify/__tests__/projection.test.ts`.
+- Protocol surface: `GET /api/v1/projection/:resource` for non-empty small
+  resources whose fields do not require chat message stubbing or character
+  lorebook stubbing.
+- Durable read path: `preset`, `prompt`, `promptItem`, `persona`,
+  `translatorPreset`, and `loadout` now select the requested top-level fields
+  from the message-free persisted database and mask secrets on that narrowed
+  field object.
+- Revision/event behavior: preserve the existing `mode: "fields"` response,
+  current revision reporting, and client cursor advancement behavior.
+- Rollback/resync behavior: broad resources such as `character`, `chat`,
+  `message`, `generation`, `lorebook`, `module`, `scriptDefinition`,
+  `triggerDefinition`, and `plugin` keep the existing full stub projection
+  path until their masking and stub semantics are scoped separately.
+- Proof commands:
   `pnpm api:test -- server/fastify/__tests__/projection.test.ts` and
   `pnpm test -- src/ts/bootstrap.test.ts`.
 
@@ -49,9 +71,13 @@ Current result:
 
 - Empty-field resources such as `asset` return `mode: "fields"` with an empty
   field map without loading `db.json`.
-- Unknown and broad resources still use the existing full-resync behavior.
-- Field-specific loaders for non-empty small resources remain future Phase 3
-  work and should be scoped separately before implementation.
+- Small non-empty resources (`preset`, `prompt`, `promptItem`, `persona`,
+  `translatorPreset`, `loadout`) avoid the full stub projection path while
+  preserving provider secret masking.
+- Unknown resources still use the existing full-resync behavior.
+- Broad non-empty resources that carry chat, module, plugin, or lorebook stub
+  semantics remain future Phase 3 work and should be scoped separately before
+  implementation.
 
 ## Validation
 

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../src/app.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
+import { loadPersistedDatabaseFields } from '../src/repository.js'
 import { resourceProjectionFields } from '../src/routes/projection.js'
 import type { FastifyInstance } from 'fastify'
 import { setupAuthedClient } from './helpers/auth.js'
@@ -82,17 +83,21 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields).not.toHaveProperty('language')
   })
 
-  it('masks provider secrets in the returned fields', async () => {
+  it('masks provider secrets in narrow returned fields', async () => {
     await importDatabase({
       characters: [{ chaId: 'char-a', name: 'Ada' }],
       botPresets: [{ id: 'p1', openAIKey: 'sk-secret', proxyKey: 'px-secret' }],
+      language: 'en',
     })
 
     const res = await getProjection('preset')
     const body = res.json()
     expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields).sort()).toEqual(['botPresets', 'botPresetsId'])
     expect(body.fields.botPresets[0].openAIKey).toBe(MASKED_PROVIDER_SECRET)
     expect(body.fields.botPresets[0].proxyKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(body.fields).not.toHaveProperty('characters')
+    expect(body.fields).not.toHaveProperty('language')
   })
 
   it('returns mode "full" for a sprawling resource (settings)', async () => {
@@ -140,6 +145,29 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('asset')).toEqual([])
     expect(resourceProjectionFields('settings')).toBeNull()
     expect(resourceProjectionFields('state')).toBeNull()
+  })
+})
+
+describe('targeted projection field loader', () => {
+  it('selects only requested persisted database fields', () => {
+    writeFileSync(
+      path.join(harness.dataDir, 'db.json'),
+      JSON.stringify({
+        _version: 1,
+        database: {
+          botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
+          botPresetsId: 2,
+          characters: [{ chaId: 'char-a', chats: [{ id: 'chat-a', message: [{ data: 'hi' }] }] }],
+          language: 'en',
+        },
+        assets: [],
+      }),
+    )
+
+    expect(loadPersistedDatabaseFields(harness.dataDir, ['botPresets', 'botPresetsId'])).toEqual({
+      botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
+      botPresetsId: 2,
+    })
   })
 })
 

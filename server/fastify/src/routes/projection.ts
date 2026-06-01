@@ -6,6 +6,7 @@ import { getSchemaState } from '../db.js'
 import {
   loadCharacterLorebookHydration,
   loadChatHydration,
+  loadPersistedDatabaseFields,
   loadStubProjection,
 } from '../repository.js'
 import { maskProviderSecrets } from '../providerSecrets.js'
@@ -53,6 +54,15 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // no-op that only advances the client's revision cursor.
   asset: [],
 }
+
+const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
+  'preset',
+  'prompt',
+  'promptItem',
+  'persona',
+  'translatorPreset',
+  'loadout',
+])
 
 export function resourceProjectionFields(resource: string): string[] | null {
   return Object.prototype.hasOwnProperty.call(RESOURCE_PROJECTION_FIELDS, resource)
@@ -137,20 +147,9 @@ export function registerProjectionRoutes(
         return response
       }
 
-      // Ship chat stubs (message-free) here too; the client re-hydrates the open
-      // chat after merging a `characters` projection (see bootstrap.ts hydration).
-      const persisted = loadStubProjection(db, dataDir)
-      const masked = maskProviderSecrets(persisted.database)
-      const source =
-        masked && typeof masked === 'object' && !Array.isArray(masked)
-          ? (masked as Record<string, unknown>)
-          : {}
-      const fields: Record<string, unknown> = {}
-      for (const key of fieldKeys) {
-        if (Object.prototype.hasOwnProperty.call(source, key)) {
-          fields[key] = source[key]
-        }
-      }
+      const fields = NARROW_FIELD_PROJECTION_RESOURCES.has(resource)
+        ? maskProviderSecrets(loadPersistedDatabaseFields(dataDir, fieldKeys))
+        : loadStubProjectionFields(db, dataDir, fieldKeys)
 
       const response = { revision, resource, mode: 'fields' as const, fields }
       emitProjectionMetric(req.log, resource, revision, response, {
@@ -160,6 +159,28 @@ export function registerProjectionRoutes(
       return response
     },
   )
+}
+
+function loadStubProjectionFields(
+  db: DatabaseSync,
+  dataDir: string,
+  fieldKeys: readonly string[],
+): Record<string, unknown> {
+  // Ship chat stubs (message-free) here too; the client re-hydrates the open
+  // chat after merging a `characters` projection (see bootstrap.ts hydration).
+  const persisted = loadStubProjection(db, dataDir)
+  const masked = maskProviderSecrets(persisted.database)
+  const source =
+    masked && typeof masked === 'object' && !Array.isArray(masked)
+      ? (masked as Record<string, unknown>)
+      : {}
+  const fields: Record<string, unknown> = {}
+  for (const key of fieldKeys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      fields[key] = source[key]
+    }
+  }
+  return fields
 }
 
 function emitProjectionMetric(
