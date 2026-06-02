@@ -78,6 +78,112 @@ function rowToPersistedAsset(row: AssetMetadataRow): PersistedAsset {
   return { id: row.id, ext: row.ext, size: row.size, contentType: row.content_type }
 }
 
+const COLLECTION_FIELDS = [
+  'modules',
+  'plugins',
+  'botPresets',
+  'promptTemplate',
+  'personas',
+  'loadouts',
+  'loreBook',
+  'translatorPresets',
+  'hypaV3Presets',
+] as const
+
+const COLLECTION_TABLE_MAP: Record<string, string> = {
+  modules: 'modules',
+  plugins: 'plugins',
+  botPresets: 'bot_presets',
+  promptTemplate: 'prompt_templates',
+  personas: 'personas',
+  loadouts: 'loadouts',
+  loreBook: 'lore_books',
+  translatorPresets: 'translator_presets',
+  hypaV3Presets: 'hypa_v3_presets',
+}
+
+export function createCollectionTables(db: DatabaseSync): void {
+  for (const tableName of Object.values(COLLECTION_TABLE_MAP)) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ${tableName} (
+        position INTEGER PRIMARY KEY,
+        data_json TEXT NOT NULL CHECK (json_valid(data_json))
+      )
+    `)
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS plugin_custom_storage (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL CHECK (json_valid(value_json))
+    )
+  `)
+}
+
+function loadCollectionsFromSqlite(
+  db: DatabaseSync,
+  database: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...database }
+  for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
+    const rows = db
+      .prepare(`SELECT data_json FROM ${tableName} ORDER BY position`)
+      .all() as unknown as Array<{ data_json: string }>
+    if (rows.length > 0) {
+      merged[field] = rows.map((r) => JSON.parse(r.data_json))
+    }
+    // SQLite empty → keep db.json value ([] marker or absent); don't fabricate a field.
+  }
+  const storageRows = db
+    .prepare('SELECT key, value_json FROM plugin_custom_storage')
+    .all() as unknown as Array<{ key: string; value_json: string }>
+  if (storageRows.length > 0) {
+    const storage: Record<string, unknown> = {}
+    for (const row of storageRows) {
+      storage[row.key] = JSON.parse(row.value_json)
+    }
+    merged.pluginCustomStorage = storage
+  }
+  // SQLite empty → keep db.json value ({} marker or absent).
+  return merged
+}
+
+export function replaceAllCollectionsInTable(db: DatabaseSync, database: unknown): void {
+  if (!isRecord(database)) return
+  for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
+    db.exec(`DELETE FROM ${tableName}`)
+    const arr = database[field]
+    if (!Array.isArray(arr) || arr.length === 0) continue
+    const stmt = db.prepare(`INSERT INTO ${tableName} (position, data_json) VALUES (?, ?)`)
+    for (let i = 0; i < arr.length; i++) {
+      stmt.run(i, JSON.stringify(arr[i]))
+    }
+  }
+  db.exec('DELETE FROM plugin_custom_storage')
+  const storage = database.pluginCustomStorage
+  if (isRecord(storage)) {
+    const stmt = db.prepare(
+      'INSERT INTO plugin_custom_storage (key, value_json) VALUES (?, ?)',
+    )
+    for (const [key, value] of Object.entries(storage)) {
+      stmt.run(key, JSON.stringify(value ?? null))
+    }
+  }
+}
+
+export function stripCollections(next: Persisted): Persisted {
+  if (!isRecord(next.database)) return next
+  const stripped = { ...next.database }
+  for (const field of COLLECTION_FIELDS) {
+    if (Array.isArray(stripped[field])) {
+      stripped[field] = []
+    }
+  }
+  if (isRecord(stripped.pluginCustomStorage)) {
+    stripped.pluginCustomStorage = {}
+  }
+  return { ...next, database: stripped }
+}
+
 export function createCharacterTables(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS characters (
@@ -305,6 +411,7 @@ export function loadPersisted(db: DatabaseSync, dataDir: string): Persisted {
     if (sqliteChars.length > 0 || !Array.isArray(database.characters)) {
       database = { ...database, characters: sqliteChars }
     }
+    database = loadCollectionsFromSqlite(db, database as Record<string, unknown>)
   }
   return {
     _version: PERSISTED_VERSION,
@@ -528,7 +635,8 @@ export function writePersistedWithMessages(
 ): void {
   const messageFree = splitChatMessagesIntoTable(db, next)
   replaceAllCharactersInTable(db, messageFree.database)
-  writePersisted(dataDir, stripCharacters(messageFree))
+  replaceAllCollectionsInTable(db, messageFree.database)
+  writePersisted(dataDir, stripCollections(stripCharacters(messageFree)))
 }
 
 /**
@@ -633,6 +741,40 @@ export function ensureCharactersExtracted(db: DatabaseSync, dataDir: string): vo
   }
 }
 
+export function ensureCollectionsExtracted(db: DatabaseSync, dataDir: string): void {
+  const file = dbJsonPath(dataDir)
+  if (!fs.existsSync(file)) return
+  const raw = fs.readFileSync(file, 'utf8')
+  const parsed = JSON.parse(raw) as Record<string, unknown>
+  const database = parsed.database
+  if (!isRecord(database)) return
+
+  const hasArrayCollection = COLLECTION_FIELDS.some(
+    (f) => Array.isArray(database[f]) && (database[f] as unknown[]).length > 0,
+  )
+  const storage = database.pluginCustomStorage
+  const hasStorage = isRecord(storage) && Object.keys(storage).length > 0
+  if (!hasArrayCollection && !hasStorage) return
+
+  replaceAllCollectionsInTable(db, database)
+  for (const field of COLLECTION_FIELDS) {
+    if (Array.isArray(database[field])) {
+      database[field] = []
+    }
+  }
+  if (isRecord(database.pluginCustomStorage)) {
+    database.pluginCustomStorage = {}
+  }
+  const tmp = `${file}.tmp`
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(parsed))
+    fs.renameSync(tmp, file)
+  } catch (err) {
+    fs.rmSync(tmp, { force: true })
+    throw err
+  }
+}
+
 export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void {
   const raw = loadPersisted(db, dataDir)
   if (!hasEmbeddedChatPayloadsOrBadIds(raw.database)) return
@@ -644,9 +786,10 @@ export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void
   try {
     const messageFree = splitChatMessagesIntoTable(db, hydrated)
     replaceAllCharactersInTable(db, messageFree.database)
+    replaceAllCollectionsInTable(db, messageFree.database)
     db.exec('COMMIT')
     transactionOpen = false
-    writePersisted(dataDir, stripCharacters(messageFree))
+    writePersisted(dataDir, stripCollections(stripCharacters(messageFree)))
   } catch (err) {
     if (transactionOpen) db.exec('ROLLBACK')
     throw err
@@ -855,11 +998,12 @@ export function applyImport(
       database: structuredClone(database),
     })
     replaceAllCharactersInTable(db, messageFree.database)
+    replaceAllCollectionsInTable(db, messageFree.database)
     options.beforeRevision?.(db)
     const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
     db.exec('COMMIT')
     transactionOpen = false
-    writePersisted(dataDir, stripCharacters(messageFree))
+    writePersisted(dataDir, stripCollections(stripCharacters(messageFree)))
     return { revision: event.revision, event }
   } catch (err) {
     if (transactionOpen) {
@@ -901,10 +1045,11 @@ export function initializeDefaultDatabase(
     }
     const database = createInitialDatabase()
     replaceAllCharactersInTable(db, database)
+    replaceAllCollectionsInTable(db, database)
     const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateInitialized)
     db.exec('COMMIT')
     transactionOpen = false
-    writePersisted(dataDir, stripCharacters({ ...current, database }))
+    writePersisted(dataDir, stripCollections(stripCharacters({ ...current, database })))
     return { revision: event.revision, initialized: true, event }
   } catch (err) {
     if (transactionOpen) {
@@ -1098,6 +1243,16 @@ const SQLITE_BACKUP_TABLES = [
   'assets',
   'characters',
   'chats',
+  'modules',
+  'plugins',
+  'bot_presets',
+  'prompt_templates',
+  'personas',
+  'loadouts',
+  'lore_books',
+  'translator_presets',
+  'hypa_v3_presets',
+  'plugin_custom_storage',
 ] as const
 
 function checkpointWal(db: DatabaseSync): void {

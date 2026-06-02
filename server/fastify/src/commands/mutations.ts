@@ -6,8 +6,10 @@ import {
   loadPersisted,
   loadPersistedWithMessages,
   replaceAllCharactersInTable,
+  replaceAllCollectionsInTable,
   stripCharacters,
   stripChatMessages,
+  stripCollections,
   syncChatMessages,
   writePersisted,
 } from '../repository.js'
@@ -117,6 +119,7 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     if (args.writeDatabase) {
       stripChatMessages(persisted)
       replaceAllCharactersInTable(args.db, persisted.database)
+      replaceAllCollectionsInTable(args.db, persisted.database)
     }
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
@@ -127,7 +130,7 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     transactionOpen = false
     if (args.writeDatabase) {
       const dbJsonWriteStartedAt = protocolNowMs()
-      writePersisted(args.dataDir, stripCharacters(persisted))
+      writePersisted(args.dataDir, stripCollections(stripCharacters(persisted)))
       dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     }
     const eventEmitStartedAt = protocolNowMs()
@@ -204,6 +207,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     const sqliteSyncStartedAt = protocolNowMs()
     stripChatMessages(persisted)
     replaceAllCharactersInTable(args.db, persisted.database)
+    replaceAllCollectionsInTable(args.db, persisted.database)
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
     persistCommandEvent(args.db, event)
@@ -212,7 +216,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     args.db.exec('COMMIT')
     transactionOpen = false
     const dbJsonWriteStartedAt = protocolNowMs()
-    writePersisted(args.dataDir, stripCharacters(persisted))
+    writePersisted(args.dataDir, stripCollections(stripCharacters(persisted)))
     dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     const eventEmitStartedAt = protocolNowMs()
     args.eventSink.emit(liveCommandEvent(event, args.eventOrigin))
@@ -294,6 +298,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     mutation.sqlite?.(args.db)
     const messageFree = stripChatMessages({ ...hydrated, database: nextDatabase })
     replaceAllCharactersInTable(args.db, messageFree.database)
+    replaceAllCollectionsInTable(args.db, messageFree.database)
 
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
@@ -306,7 +311,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     // pre-COMMIT failure the transaction rolls back the message rows + revision
     // and db.json was never touched — no manual restore needed.
     const dbJsonWriteStartedAt = protocolNowMs()
-    writePersisted(args.dataDir, stripCharacters(messageFree))
+    writePersisted(args.dataDir, stripCollections(stripCharacters(messageFree)))
     dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     const eventEmitStartedAt = protocolNowMs()
     args.eventSink.emit(liveCommandEvent(event, args.eventOrigin))

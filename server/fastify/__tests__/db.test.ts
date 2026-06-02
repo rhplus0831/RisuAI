@@ -69,17 +69,27 @@ describe('schema migrations', () => {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 0 })
       expect(listTables(db)).toEqual([
         'assets',
+        'bot_presets',
         'characters',
         'chat_hypa_v3',
         'chats',
         'command_events',
         'generation_finalization_retries',
+        'hypa_v3_presets',
+        'loadouts',
+        'lore_books',
         'memory_chunks',
         'memory_embeddings',
         'memory_jobs',
         'memory_summaries',
         'messages',
+        'modules',
+        'personas',
+        'plugin_custom_storage',
+        'plugins',
+        'prompt_templates',
         'schema_version',
+        'translator_presets',
       ])
     } finally {
       db.close()
@@ -95,17 +105,27 @@ describe('schema migrations', () => {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 7 })
       expect(listTables(db)).toEqual([
         'assets',
+        'bot_presets',
         'characters',
         'chat_hypa_v3',
         'chats',
         'command_events',
         'generation_finalization_retries',
+        'hypa_v3_presets',
+        'loadouts',
+        'lore_books',
         'memory_chunks',
         'memory_embeddings',
         'memory_jobs',
         'memory_summaries',
         'messages',
+        'modules',
+        'personas',
+        'plugin_custom_storage',
+        'plugins',
+        'prompt_templates',
         'schema_version',
+        'translator_presets',
       ])
     } finally {
       db.close()

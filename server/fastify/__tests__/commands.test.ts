@@ -459,13 +459,14 @@ describe('first-run database seed', () => {
     })
     expect(harness.commandEvents.list()).toEqual([seeded.json().event])
 
-    // db.json now holds the server-created default database (characters live in SQLite).
+    // db.json now holds the server-created default database (characters live in
+    // SQLite; collections are stripped to empty markers in db.json, actual data in SQLite).
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
     expect(onDisk.database).toMatchObject({
       username: 'User',
       temperature: 80,
-      botPresets: [{ id: 'default-preset', name: 'Default' }],
-      personas: [{ id: 'default-persona', name: 'User' }],
+      botPresets: [],
+      personas: [],
     })
     expect(onDisk.database.characters).toBeUndefined()
 
@@ -485,7 +486,12 @@ describe('first-run database seed', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database).toMatchObject({ username: 'Test', temperature: 80 })
+    expect(bootstrap.json().database).toMatchObject({
+      username: 'Test',
+      temperature: 80,
+      botPresets: [expect.objectContaining({ id: 'default-preset' })],
+      personas: [expect.objectContaining({ id: 'default-persona' })],
+    })
   })
 
   it('does not seed db.json or bump revision when initialization event persistence fails', async () => {

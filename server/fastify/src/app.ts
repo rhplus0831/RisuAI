@@ -37,6 +37,7 @@ import {
   SUPPORTED_ASSET_CONTENT_TYPES,
   ensureAssetsExtracted,
   ensureCharactersExtracted,
+  ensureCollectionsExtracted,
   ensureMessagesExtracted,
   loadPersistedWithMessages,
 } from './repository.js'
@@ -118,6 +119,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // above, which needs the embedded messages on the first upgrade boot.
   ensureAssetsExtracted(db, config.dataDir)
   ensureCharactersExtracted(db, config.dataDir)
+  ensureCollectionsExtracted(db, config.dataDir)
   ensureMessagesExtracted(db, config.dataDir)
   const memoryEventBus = createMemoryEventBus()
   const emitMemoryEvent: MemoryEventSink = (event) => {

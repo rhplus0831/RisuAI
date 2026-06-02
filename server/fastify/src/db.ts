@@ -3,9 +3,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
 import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
-import { createAssetMetadataTable, createCharacterTables } from './repository.js'
+import { createAssetMetadataTable, createCharacterTables, createCollectionTables } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 11
+export const CURRENT_SCHEMA_VERSION = 12
 
 export interface MigrationStep {
   version: number
@@ -102,6 +102,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createCharacterTables(db)
     },
   },
+  {
+    version: 12,
+    name: 'collections-tables',
+    up: (db) => {
+      createCollectionTables(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -140,6 +147,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
       createGenerationFinalizationRetryTable(db)
       createAssetMetadataTable(db)
       createCharacterTables(db)
+      createCollectionTables(db)
     }
     applyMigrations(db, schemaState.version)
   } catch (error) {
