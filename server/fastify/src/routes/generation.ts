@@ -37,6 +37,7 @@ import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
 import { resolveOllamaRequest, runOllama, runOllamaStream } from '../generation/ollama.js'
 import { resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import { requireAuth } from '../http.js'
+import type { DatabaseSync } from 'node:sqlite'
 import { loadPersisted } from '../repository.js'
 import { dispatchChatProvider } from '../prompt/chatDispatch.js'
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
@@ -1224,6 +1225,7 @@ async function handleServerIntentCompletion(
   req: FastifyRequest,
   reply: FastifyReply,
   body: CompletionRequestBody,
+  db: DatabaseSync,
   dataDir: string,
 ): Promise<void> {
   if (body.provider !== undefined || body.model !== undefined || body.options !== undefined) {
@@ -1258,7 +1260,7 @@ async function handleServerIntentCompletion(
     return badRequest(reply, 'currentCharName must be a string when provided')
   }
 
-  const persisted = loadPersisted(dataDir)
+  const persisted = loadPersisted(db, dataDir)
   if (!persisted.database) {
     return badRequest(reply, 'database is not initialized')
   }
@@ -1290,6 +1292,7 @@ async function handleServerIntentCompletion(
 
 export function registerGenerationRoutes(
   app: FastifyInstance,
+  db: DatabaseSync,
   authState: AuthState,
   dataDir: string,
 ): void {
@@ -1301,7 +1304,7 @@ export function registerGenerationRoutes(
 
       const body = (req.body ?? {}) as CompletionRequestBody
       if (body.kind === SERVER_INTENT_KIND) {
-        await handleServerIntentCompletion(req, reply, body, dataDir)
+        await handleServerIntentCompletion(req, reply, body, db, dataDir)
         return
       }
 

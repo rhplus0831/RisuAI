@@ -3,9 +3,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
 import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
-import { createAssetMetadataTable } from './repository.js'
+import { createAssetMetadataTable, createCharacterTables } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 10
+export const CURRENT_SCHEMA_VERSION = 11
 
 export interface MigrationStep {
   version: number
@@ -95,6 +95,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createAssetMetadataTable(db)
     },
   },
+  {
+    version: 11,
+    name: 'characters-table',
+    up: (db) => {
+      createCharacterTables(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -132,6 +139,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
       createCommandEventTable(db)
       createGenerationFinalizationRetryTable(db)
       createAssetMetadataTable(db)
+      createCharacterTables(db)
     }
     applyMigrations(db, schemaState.version)
   } catch (error) {

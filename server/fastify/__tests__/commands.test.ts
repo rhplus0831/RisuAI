@@ -61,6 +61,16 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
+/** Open a temporary db handle, call loadPersisted, close the handle. */
+function loadPersistedFromDir(dataDir: string) {
+  const db = openDatabase(dataDir)
+  try {
+    return loadPersisted(db, dataDir)
+  } finally {
+    db.close()
+  }
+}
+
 async function signAssertion(
   privateKey: CryptoKey,
   publicJwk: JsonWebKey,
@@ -365,7 +375,7 @@ describe('Phase 9-1 command foundation', () => {
       ).toThrow('boom')
 
       expect(getSchemaState(db).revision).toBe(0)
-      expect(loadPersisted(dataDir).database).toEqual({ streamGeminiThoughts: false })
+      expect(loadPersisted(db, dataDir).database).toEqual({ streamGeminiThoughts: false, characters: [] })
       expect(commandEvents.list()).toEqual([])
     } finally {
       db.close()
@@ -399,7 +409,7 @@ describe('Phase 9-1 command foundation', () => {
       ).toThrow('boom')
 
       expect(getSchemaState(db).revision).toBe(0)
-      expect(loadPersisted(dataDir).database).toEqual({ streamGeminiThoughts: false })
+      expect(loadPersisted(db, dataDir).database).toEqual({ streamGeminiThoughts: false, characters: [] })
       expect(commandEvents.list()).toEqual([])
     } finally {
       db.close()
@@ -449,15 +459,15 @@ describe('first-run database seed', () => {
     })
     expect(harness.commandEvents.list()).toEqual([seeded.json().event])
 
-    // db.json now holds the server-created default database.
+    // db.json now holds the server-created default database (characters live in SQLite).
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
     expect(onDisk.database).toMatchObject({
       username: 'User',
       temperature: 80,
-      characters: [],
       botPresets: [{ id: 'default-preset', name: 'Default' }],
       personas: [{ id: 'default-persona', name: 'User' }],
     })
+    expect(onDisk.database.characters).toBeUndefined()
 
     // The previously-rejected settings command now succeeds against revision 1.
     const account = await harness.app.inject({
@@ -494,10 +504,10 @@ describe('first-run database seed', () => {
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
       expect(getSchemaState(db).revision).toBe(0)
+      expect(loadPersisted(db, harness.dataDir).database).toBeNull()
     } finally {
       db.close()
     }
-    expect(loadPersisted(harness.dataDir).database).toBeNull()
   })
 
   it('is an idempotent no-op that never clobbers an existing database', async () => {
@@ -832,7 +842,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(loadPersisted(harness.dataDir).database).toMatchObject({
+    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       openAIKey: 'old-openai',
       claudeAPIKey: 'new-claude',
       OaiCompAPIKeys: { deepseek: 'old-deepseek', deepinfra: 'new-deepinfra' },
@@ -942,7 +952,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(loadPersisted(harness.dataDir).database).toMatchObject({
+    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       customModels: [
         {
           id: 'xcustom:::b',
@@ -1030,7 +1040,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(loadPersisted(harness.dataDir).database).toMatchObject({
+    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       customModels: [
         { id: 'xcustom:::b', name: 'Custom B kept', key: 'custom-b', url: 'https://b.example.com' },
       ],
@@ -3347,7 +3357,7 @@ describe('Phase 9-3a character commands', () => {
       id: 'char-b',
     })
     expect(
-      (loadPersisted(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
+      (loadPersistedFromDir(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
         (character) => character.chaId === 'char-b',
       ),
     ).toMatchObject({
@@ -3393,7 +3403,7 @@ describe('Phase 9-3a character commands', () => {
       characterId: 'char-b',
     })
     expect(
-      (loadPersisted(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
+      (loadPersistedFromDir(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
         (character) => character.chaId === 'char-b',
       ),
     ).toMatchObject({
@@ -3514,12 +3524,12 @@ describe('Phase 9-3a character commands', () => {
       },
       characterId: 'char-b',
     })
-    expect(loadPersisted(harness.dataDir).database).toMatchObject({
+    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       currentChar: 1,
       characterOrder: ['char-a', 'char-b'],
     })
     expect(
-      (loadPersisted(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
+      (loadPersistedFromDir(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
         (character) => character.chaId === 'char-b',
       ),
     ).toMatchObject({
@@ -3911,17 +3921,19 @@ describe('Phase 9-3b chat record and folder commands', () => {
       { role: 'char', data: 'hi', chatId: 'msg-b' },
     ])
 
-    const raw = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8')) as {
+    const persisted = loadPersistedFromDir(harness.dataDir) as {
       database: { characters: Array<{ chats: Array<Record<string, unknown>> }> }
     }
-    expect(raw.database.characters[0].chats[0]).toMatchObject({
+    expect(persisted.database.characters[0].chats[0]).toMatchObject({
       id: 'chat-a',
       name: 'A renamed',
       note: 'metadata only',
       bookmarks: ['msg-a'],
       bookmarkNames: { 'msg-a': 'Pinned' },
     })
-    expect(raw.database.characters[0].chats[0]).not.toHaveProperty('message')
+    // Characters live in SQLite; db.json has no characters key.
+    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    expect(onDisk.database.characters).toBeUndefined()
   })
 
   it('rejects chat fork commands without client-supplied fork ids without bumping revision', async () => {

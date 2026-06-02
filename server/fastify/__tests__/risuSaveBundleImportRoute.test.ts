@@ -9,7 +9,13 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
 import { DatabaseSync } from 'node:sqlite'
-import { writePersisted, assetsDir, insertAssetMetadataBatch } from '../src/repository.js'
+import {
+  writePersisted,
+  writePersistedWithMessages,
+  assetsDir,
+  insertAssetMetadataBatch,
+} from '../src/repository.js'
+import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
 interface Harness {
@@ -51,43 +57,43 @@ async function stopHarness(h: Harness): Promise<void> {
  * import hash check (which a faithful export always satisfies).
  */
 function persistDatabaseWithAsset(dataDir: string): void {
-  writePersisted(dataDir, {
-    _version: 1,
-    database: {
-      version: 1,
-      selectedCharID: 0,
-      characters: [
-        {
-          chaId: 'bundle-import-char',
-          name: 'Bundle Import Character',
-          image: ASSET_ID,
-          chats: [
-            {
-              id: 'bundle-import-chat',
-              name: 'Bundle Import Chat',
-              note: '',
-              localLore: [],
-              message: [{ role: 'user', data: 'hello', chatId: 'bundle-import-message' }],
-            },
-          ],
-        },
-      ],
-      characterOrder: ['bundle-import-char'],
-      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
-      modules: [{ id: 'module-a', name: 'Module A' }],
-      loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
-      plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
-      pluginCustomStorage: {},
-    },
-    assets: [],
-  })
-  const seedDb = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  const db = openDatabase(dataDir)
   try {
-    insertAssetMetadataBatch(seedDb, [
+    writePersistedWithMessages(db, dataDir, {
+      _version: 1,
+      database: {
+        version: 1,
+        selectedCharID: 0,
+        characters: [
+          {
+            chaId: 'bundle-import-char',
+            name: 'Bundle Import Character',
+            image: ASSET_ID,
+            chats: [
+              {
+                id: 'bundle-import-chat',
+                name: 'Bundle Import Chat',
+                note: '',
+                localLore: [],
+                message: [{ role: 'user', data: 'hello', chatId: 'bundle-import-message' }],
+              },
+            ],
+          },
+        ],
+        characterOrder: ['bundle-import-char'],
+        botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+        modules: [{ id: 'module-a', name: 'Module A' }],
+        loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
+        plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+        pluginCustomStorage: {},
+      },
+      assets: [],
+    })
+    insertAssetMetadataBatch(db, [
       { id: ASSET_ID, ext: 'png', size: ASSET_BYTES.length, contentType: 'image/png' },
     ])
   } finally {
-    seedDb.close()
+    db.close()
   }
 
   const dir = assetsDir(dataDir)
@@ -255,23 +261,23 @@ describe('repository .risu bundle import route', () => {
     // than the body limit must still import.
     const bigBytes = Buffer.alloc(5 * 1024 * 1024, 7)
     const bigId = createHash('sha256').update(bigBytes).digest('hex')
-    writePersisted(harness.dataDir, {
-      _version: 1,
-      database: {
-        version: 1,
-        selectedCharID: 0,
-        characters: [{ chaId: 'big', name: 'Big', image: bigId, chats: [] }],
-        characterOrder: ['big'],
-        botPresets: [],
-        modules: [],
-        loadouts: [],
-        plugins: [],
-        pluginCustomStorage: {},
-      },
-      assets: [],
-    })
-    const bigDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    const bigDb = openDatabase(harness.dataDir)
     try {
+      writePersistedWithMessages(bigDb, harness.dataDir, {
+        _version: 1,
+        database: {
+          version: 1,
+          selectedCharID: 0,
+          characters: [{ chaId: 'big', name: 'Big', image: bigId, chats: [] }],
+          characterOrder: ['big'],
+          botPresets: [],
+          modules: [],
+          loadouts: [],
+          plugins: [],
+          pluginCustomStorage: {},
+        },
+        assets: [],
+      })
       insertAssetMetadataBatch(bigDb, [
         { id: bigId, ext: 'png', size: bigBytes.length, contentType: 'image/png' },
       ])

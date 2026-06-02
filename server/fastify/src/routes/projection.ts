@@ -196,7 +196,7 @@ export function registerProjectionRoutes(
       }
 
       const { revision } = getSchemaState(db)
-      const hydration = loadCharacterLorebookHydrations(dataDir, characterIds)
+      const hydration = loadCharacterLorebookHydrations(db, dataDir, characterIds)
       const response = {
         revision,
         resource: 'characterLorebooks',
@@ -256,7 +256,7 @@ export function registerProjectionRoutes(
           emitProjectionMetric(req.log, resource, revision, response)
           return response
         }
-        const hydration = loadCharacterLorebookHydration(dataDir, characterId)
+        const hydration = loadCharacterLorebookHydration(db, dataDir, characterId)
         const response = {
           revision,
           resource,
@@ -278,7 +278,7 @@ export function registerProjectionRoutes(
           return response
         }
 
-        const selection = loadCharacterSelectionProjection(dataDir, characterId)
+        const selection = loadCharacterSelectionProjection(db, dataDir, characterId)
         if (!selection) {
           reply.code(404).send({
             error: 'character_not_found',
@@ -321,9 +321,9 @@ export function registerProjectionRoutes(
       }
 
       const fields = NARROW_FIELD_PROJECTION_RESOURCES.has(resource)
-        ? maskProviderSecrets(loadPersistedDatabaseFields(dataDir, fieldKeys))
+        ? maskProviderSecrets(loadPersistedDatabaseFields(db, dataDir, fieldKeys))
         : NARROW_STUBBED_PROJECTION_RESOURCES.has(resource)
-          ? maskProviderSecrets(loadStubbedProjectionFields(dataDir, fieldKeys))
+          ? maskProviderSecrets(loadStubbedProjectionFields(db, dataDir, fieldKeys))
           : loadStubProjectionFields(db, dataDir, fieldKeys)
 
       const response = { revision, resource, mode: 'fields' as const, fields }
@@ -407,10 +407,11 @@ function loadStubProjectionFields(
 }
 
 function loadCharacterSelectionProjection(
+  db: DatabaseSync,
   dataDir: string,
   characterId: string,
 ): { characterId: string; currentChar: number; lastInteraction?: number } | null {
-  const fields = loadPersistedDatabaseFields(dataDir, ['characters', 'currentChar'])
+  const fields = loadPersistedDatabaseFields(db, dataDir, ['characters', 'currentChar'])
   const characters = Array.isArray(fields.characters) ? fields.characters : []
   const index = characters.findIndex((candidate) => {
     return (

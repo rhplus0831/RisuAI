@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import { buildApp } from '../src/app.js'
-import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
+import { CURRENT_SCHEMA_VERSION, openDatabase } from '../src/db.js'
+import { loadPersisted } from '../src/repository.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import type { FastifyInstance } from 'fastify'
 
@@ -176,10 +177,18 @@ describe('Phase 2A bootstrap + import', () => {
     })
 
     expect(existsSync(path.join(harness.dataDir, 'db.json'))).toBe(true)
-    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk._version).toBe(1)
-    expect(onDisk.assets).toEqual([])
-    expectNormalizedAdaDatabase(onDisk.database, { greeting: 'hi' })
+    const onDiskRaw = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    expect(onDiskRaw._version).toBe(1)
+    expect(onDiskRaw.assets).toEqual([])
+    // After Phase 2, characters are stripped from db.json and live in SQLite.
+    expect(onDiskRaw.database.characters).toBeUndefined()
+    const db = openDatabase(harness.dataDir)
+    try {
+      const onDisk = loadPersisted(db, harness.dataDir)
+      expectNormalizedAdaDatabase(onDisk.database, { greeting: 'hi' })
+    } finally {
+      db.close()
+    }
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -225,13 +234,24 @@ describe('Phase 2A bootstrap + import', () => {
     })
     expect(imported.statusCode).toBe(200)
 
-    // db.json on disk is message-free + hypaV3Data-free: the chat exists but
-    // carries neither blob.
-    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    const onDiskChat = onDisk.database.characters[0].chats[0]
-    expect(onDiskChat.id).toBe('chat-1')
-    expect(onDiskChat.message).toBeUndefined()
-    expect(onDiskChat.hypaV3Data).toBeUndefined()
+    // db.json on disk is message-free + hypaV3Data-free, and characters are
+    // stripped (they live in SQLite).
+    const onDiskRaw = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    expect(onDiskRaw.database.characters).toBeUndefined()
+    // Verify via loadPersisted that the chat metadata is present but messages
+    // are not embedded (they live in the messages table).
+    const verifyDb = openDatabase(harness.dataDir)
+    try {
+      const onDisk = loadPersisted(verifyDb, harness.dataDir)
+      const onDiskChat = (onDisk.database as Record<string, unknown[]>).characters[0] as Record<string, unknown[]>
+      const chat = (onDiskChat.chats as Record<string, unknown>[])[0]
+      expect(chat.id).toBe('chat-1')
+      // loadPersisted does not join messages; they live in SQLite only.
+      expect(chat.message).toBeUndefined()
+      expect(chat.hypaV3Data).toBeUndefined()
+    } finally {
+      verifyDb.close()
+    }
 
     // The messages + hypaV3Data live as rows in their SQLite tables.
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
@@ -396,12 +416,17 @@ describe('Phase 2A bootstrap + import', () => {
     })
     expectNormalizedAdaDatabase(bootstrap.json().database)
 
-    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expectNormalizedAdaDatabase(onDisk.database, {
-      openAIKey: 'sk-openai',
-      aiModel: 'gpt4o-chatgpt',
-      OaiCompAPIKeys: { deepseek: 'ds-key' },
-    })
+    const secretsDb = openDatabase(harness.dataDir)
+    try {
+      const onDisk = loadPersisted(secretsDb, harness.dataDir)
+      expectNormalizedAdaDatabase(onDisk.database, {
+        openAIKey: 'sk-openai',
+        aiModel: 'gpt4o-chatgpt',
+        OaiCompAPIKeys: { deepseek: 'ds-key' },
+      })
+    } finally {
+      secretsDb.close()
+    }
   })
 
   it('masks nested preset and character-owned secrets in bootstrap', async () => {
@@ -475,10 +500,15 @@ describe('Phase 2A bootstrap + import', () => {
     })
     expectNormalizedAdaDatabase(bootstrap.json().database)
 
-    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expectNormalizedAdaDatabase(onDisk.database, {
-      openAIKey: 'sk-top-level',
-      botPresetsId: 0,
-    })
+    const nestedDb = openDatabase(harness.dataDir)
+    try {
+      const onDisk = loadPersisted(nestedDb, harness.dataDir)
+      expectNormalizedAdaDatabase(onDisk.database, {
+        openAIKey: 'sk-top-level',
+        botPresetsId: 0,
+      })
+    } finally {
+      nestedDb.close()
+    }
   })
 })

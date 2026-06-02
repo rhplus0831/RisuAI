@@ -9,7 +9,8 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
-import { insertAssetMetadataBatch, writePersisted } from '../src/repository.js'
+import { insertAssetMetadataBatch, loadPersisted, writePersisted } from '../src/repository.js'
+import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
 interface Harness {
@@ -404,17 +405,27 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
     expect(harness.commandEvents.list()).toEqual([imported.json().event])
 
-    const persisted = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(persisted.database.characters).toHaveLength(1)
-    expect(persisted.database.characterOrder).toEqual(['fixture-char'])
-    expect(persisted.database.botPresets).toEqual([
-      {
-        id: 'preset-a',
-        name: 'Preset A',
-        localNetworkMode: false,
-        localNetworkTimeoutSec: 600,
-      },
-    ])
+    // After Phase 2, characters are stripped from db.json and live in SQLite.
+    const rawOnDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    expect(rawOnDisk.database.characters).toBeUndefined()
+
+    const verifyDb = openDatabase(harness.dataDir)
+    try {
+      const persisted = loadPersisted(verifyDb, harness.dataDir)
+      const database = persisted.database as Record<string, unknown>
+      expect((database.characters as unknown[]).length).toBe(1)
+      expect(database.characterOrder).toEqual(['fixture-char'])
+      expect(database.botPresets).toEqual([
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          localNetworkMode: false,
+          localNetworkTimeoutSec: 600,
+        },
+      ])
+    } finally {
+      verifyDb.close()
+    }
   })
 
   it('rejects legacy uploads whose expanded payload exceeds the import limit', async () => {
@@ -469,9 +480,11 @@ describe('Phase 9-8a multipart .risu import route', () => {
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
 
-    const persisted = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(persisted.database.version).toBe(1)
-    expect(persisted.database.__directory).toBeUndefined()
+    const rawOnDisk2 = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
+    expect(rawOnDisk2.database.version).toBe(1)
+    expect(rawOnDisk2.database.__directory).toBeUndefined()
+    // Characters are stripped from db.json, live in SQLite only.
+    expect(rawOnDisk2.database.characters).toBeUndefined()
   })
 
   it('rejects block uploads whose expanded payload exceeds the import limit', async () => {

@@ -8,7 +8,8 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { decodeRisuSaveBlockEnvelope } from '../src/risuSave/blockCodec.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { classifyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
-import { writePersisted } from '../src/repository.js'
+import { writePersisted, writePersistedWithMessages } from '../src/repository.js'
+import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
 interface Harness {
@@ -77,36 +78,41 @@ async function stopHarness(h: Harness): Promise<void> {
 }
 
 function persistExportableDatabase(dataDir: string): void {
-  writePersisted(dataDir, {
-    _version: 1,
-    database: {
-      version: 1,
-      selectedCharID: 0,
-      characters: [
-        {
-          chaId: 'export-route-char',
-          name: 'Export Route Character',
-          image: ASSET_ID,
-          chats: [
-            {
-              id: 'export-route-chat',
-              name: 'Export Route Chat',
-              note: '',
-              localLore: [],
-              message: [{ role: 'user', data: 'hello', chatId: 'export-route-message' }],
-            },
-          ],
-        },
-      ],
-      characterOrder: ['export-route-char'],
-      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
-      modules: [{ id: 'module-a', name: 'Module A' }],
-      loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
-      plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
-      pluginCustomStorage: { 'plugin-a:key': { assetId: ASSET_ID } },
-    },
-    assets: [{ id: ASSET_ID, ext: 'png', size: 12, contentType: 'image/png' }],
-  })
+  const db = openDatabase(dataDir)
+  try {
+    writePersistedWithMessages(db, dataDir, {
+      _version: 1,
+      database: {
+        version: 1,
+        selectedCharID: 0,
+        characters: [
+          {
+            chaId: 'export-route-char',
+            name: 'Export Route Character',
+            image: ASSET_ID,
+            chats: [
+              {
+                id: 'export-route-chat',
+                name: 'Export Route Chat',
+                note: '',
+                localLore: [],
+                message: [{ role: 'user', data: 'hello', chatId: 'export-route-message' }],
+              },
+            ],
+          },
+        ],
+        characterOrder: ['export-route-char'],
+        botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+        modules: [{ id: 'module-a', name: 'Module A' }],
+        loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
+        plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+        pluginCustomStorage: { 'plugin-a:key': { assetId: ASSET_ID } },
+      },
+      assets: [{ id: ASSET_ID, ext: 'png', size: 12, contentType: 'image/png' }],
+    })
+  } finally {
+    db.close()
+  }
 }
 
 function expectExportRequiredShape(database: Record<string, unknown>): void {
@@ -268,9 +274,9 @@ describe('Phase 9-8b repository .risu export route', () => {
     expect(missing.json()).toEqual({ error: 'database payload missing' })
     expect(harness.commandEvents.list()).toEqual([])
 
-    writeFileSync(
-      path.join(harness.dataDir, 'db.json'),
-      JSON.stringify({
+    const malformedDb = openDatabase(harness.dataDir)
+    try {
+      writePersistedWithMessages(malformedDb, harness.dataDir, {
         _version: 1,
         database: {
           characters: [
@@ -295,8 +301,10 @@ describe('Phase 9-8b repository .risu export route', () => {
           pluginCustomStorage: {},
         },
         assets: [],
-      }),
-    )
+      })
+    } finally {
+      malformedDb.close()
+    }
 
     const malformed = await authedInject({
       method: 'GET',

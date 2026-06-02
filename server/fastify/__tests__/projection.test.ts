@@ -5,7 +5,8 @@ import path from 'node:path'
 import { buildApp } from '../src/app.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { jsonPayloadBytes } from '../src/protocolMetrics.js'
-import { loadPersistedDatabaseFields, loadStubbedProjectionFields } from '../src/repository.js'
+import { ensureCharactersExtracted, loadPersistedDatabaseFields, loadStubbedProjectionFields } from '../src/repository.js'
+import { openDatabase } from '../src/db.js'
 import { fullBootstrapFallbackClass, resourceProjectionFields } from '../src/routes/projection.js'
 import type { FastifyInstance } from 'fastify'
 import { setupAuthedClient } from './helpers/auth.js'
@@ -460,10 +461,16 @@ describe('targeted projection field loader', () => {
       }),
     )
 
-    expect(loadPersistedDatabaseFields(harness.dataDir, ['botPresets', 'botPresetsId'])).toEqual({
-      botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
-      botPresetsId: 2,
-    })
+    const db = openDatabase(harness.dataDir)
+    try {
+      ensureCharactersExtracted(db, harness.dataDir)
+      expect(loadPersistedDatabaseFields(db, harness.dataDir, ['botPresets', 'botPresetsId'])).toEqual({
+        botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
+        botPresetsId: 2,
+      })
+    } finally {
+      db.close()
+    }
   })
 
   it('selects character fields with chat and lorebook stubs', () => {
@@ -494,18 +501,24 @@ describe('targeted projection field loader', () => {
       }),
     )
 
-    expect(
-      loadStubbedProjectionFields(harness.dataDir, ['characters', 'characterOrder', 'currentChar']),
-    ).toEqual({
-      characters: [
-        {
-          chaId: 'char-a',
-          chats: [{ id: 'chat-a', message: [] }],
-        },
-      ],
-      characterOrder: ['char-a'],
-      currentChar: 'char-a',
-    })
+    const db = openDatabase(harness.dataDir)
+    try {
+      ensureCharactersExtracted(db, harness.dataDir)
+      expect(
+        loadStubbedProjectionFields(db, harness.dataDir, ['characters', 'characterOrder', 'currentChar']),
+      ).toEqual({
+        characters: [
+          {
+            chaId: 'char-a',
+            chats: [{ id: 'chat-a', message: [] }],
+          },
+        ],
+        characterOrder: ['char-a'],
+        currentChar: 'char-a',
+      })
+    } finally {
+      db.close()
+    }
   })
 })
 

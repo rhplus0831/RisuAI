@@ -78,6 +78,99 @@ function rowToPersistedAsset(row: AssetMetadataRow): PersistedAsset {
   return { id: row.id, ext: row.ext, size: row.size, contentType: row.content_type }
 }
 
+export function createCharacterTables(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS characters (
+      id TEXT PRIMARY KEY,
+      position INTEGER NOT NULL,
+      data_json TEXT NOT NULL CHECK (json_valid(data_json))
+    );
+    CREATE TABLE IF NOT EXISTS chats (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL
+        REFERENCES characters(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL,
+      data_json TEXT NOT NULL CHECK (json_valid(data_json))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chats_character_id ON chats (character_id);
+  `)
+}
+
+interface CharacterRow {
+  id: string
+  position: number
+  data_json: string
+}
+
+interface ChatRow {
+  id: string
+  character_id: string
+  position: number
+  data_json: string
+}
+
+function loadCharactersFromSqlite(db: DatabaseSync): unknown[] {
+  const charRows = db
+    .prepare('SELECT id, position, data_json FROM characters ORDER BY position')
+    .all() as unknown as CharacterRow[]
+  if (charRows.length === 0) return []
+
+  const chatRows = db
+    .prepare('SELECT id, character_id, position, data_json FROM chats ORDER BY character_id, position')
+    .all() as unknown as ChatRow[]
+
+  const chatsByCharId = new Map<string, unknown[]>()
+  for (const row of chatRows) {
+    const chat = JSON.parse(row.data_json) as Record<string, unknown>
+    const list = chatsByCharId.get(row.character_id) ?? []
+    list.push(chat)
+    chatsByCharId.set(row.character_id, list)
+  }
+
+  return charRows.map((row) => {
+    const char = JSON.parse(row.data_json) as Record<string, unknown>
+    char.chats = chatsByCharId.get(row.id) ?? []
+    return char
+  })
+}
+
+export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown): void {
+  const characters =
+    isRecord(database) && Array.isArray(database.characters) ? database.characters : []
+
+  db.exec('DELETE FROM chats')
+  db.exec('DELETE FROM characters')
+
+  if (characters.length === 0) return
+
+  const insertChar = db.prepare(
+    'INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)',
+  )
+  const insertChat = db.prepare(
+    'INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)',
+  )
+
+  for (let i = 0; i < characters.length; i++) {
+    const char = characters[i]
+    if (!isRecord(char)) continue
+    const chaId = char.chaId
+    if (typeof chaId !== 'string') continue
+
+    const chats = Array.isArray(char.chats) ? char.chats : []
+    const { chats: _chats, ...charWithoutChats } = char
+    insertChar.run(chaId, i, JSON.stringify(charWithoutChats))
+
+    for (let j = 0; j < chats.length; j++) {
+      const chat = chats[j]
+      if (!isRecord(chat)) continue
+      const chatId = chat.id
+      if (typeof chatId !== 'string') continue
+      const { message: _msg, hypaV3Data: _hypa, ...chatClean } = chat
+      insertChat.run(chatId, chaId, j, JSON.stringify(chatClean))
+    }
+  }
+}
+
 export function createAssetMetadataTable(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS assets (
@@ -195,7 +288,7 @@ export function emptyPersisted(): Persisted {
   return { _version: PERSISTED_VERSION, database: null, assets: [] }
 }
 
-export function loadPersisted(dataDir: string): Persisted {
+export function loadPersisted(db: DatabaseSync, dataDir: string): Persisted {
   const file = dbJsonPath(dataDir)
   if (!fs.existsSync(file)) {
     return emptyPersisted()
@@ -206,9 +299,16 @@ export function loadPersisted(dataDir: string): Persisted {
   if (version > PERSISTED_VERSION) {
     throw new Error(`db.json _version ${version} is newer than supported ${PERSISTED_VERSION}`)
   }
+  let database = parsed.database ?? null
+  if (isRecord(database)) {
+    const sqliteChars = loadCharactersFromSqlite(db)
+    if (sqliteChars.length > 0 || !Array.isArray(database.characters)) {
+      database = { ...database, characters: sqliteChars }
+    }
+  }
   return {
     _version: PERSISTED_VERSION,
-    database: parsed.database ?? null,
+    database,
     assets: [],
   }
 }
@@ -227,20 +327,22 @@ function loadLegacyPersistedAssets(dataDir: string): PersistedAsset[] {
 }
 
 export function loadPersistedDatabaseFields(
+  db: DatabaseSync,
   dataDir: string,
   fieldKeys: readonly string[],
 ): Record<string, unknown> {
-  const persisted = loadPersisted(dataDir)
+  const persisted = loadPersisted(db, dataDir)
   const database = persisted.database
   if (!isRecord(database)) return {}
   return selectDatabaseFields(database, fieldKeys)
 }
 
 export function loadStubbedProjectionFields(
+  db: DatabaseSync,
   dataDir: string,
   fieldKeys: readonly string[],
 ): Record<string, unknown> {
-  const persisted = loadPersisted(dataDir)
+  const persisted = loadPersisted(db, dataDir)
   const database = persisted.database
   if (!isRecord(database)) return {}
 
@@ -282,6 +384,12 @@ export function writePersisted(dataDir: string, next: Persisted): void {
     fs.rmSync(tmp, { force: true })
     throw err
   }
+}
+
+export function stripCharacters(next: Persisted): Persisted {
+  if (!isRecord(next.database)) return next
+  const { characters: _chars, ...rest } = next.database as Record<string, unknown>
+  return { ...next, database: rest }
 }
 
 // Chat messages live in SQLite, not in db.json.
@@ -348,7 +456,7 @@ function hasEmbeddedChatPayloadsOrBadIds(database: unknown): boolean {
 
 /** `loadPersisted` + join each chat's messages (SQLite, with embedded fallback). */
 export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Persisted {
-  const persisted = loadPersisted(dataDir)
+  const persisted = loadPersisted(db, dataDir)
   const grouped = getAllChatMessagesGrouped(db)
   const hypaGrouped = getAllChatHypaV3Grouped(db)
   eachChat(persisted.database, (chat) => {
@@ -418,7 +526,9 @@ export function writePersistedWithMessages(
   dataDir: string,
   next: Persisted,
 ): void {
-  writePersisted(dataDir, splitChatMessagesIntoTable(db, next))
+  const messageFree = splitChatMessagesIntoTable(db, next)
+  replaceAllCharactersInTable(db, messageFree.database)
+  writePersisted(dataDir, stripCharacters(messageFree))
 }
 
 /**
@@ -496,8 +606,35 @@ export function ensureAssetsExtracted(db: DatabaseSync, dataDir: string): void {
  * `chat.message[]`, move every chat's messages into the table and rewrite db.json
  * message-free. Idempotent and safe to call on every boot.
  */
+/**
+ * One-time proactive extraction: if `db.json` still carries an embedded
+ * `database.characters` array, move every character + chat into the SQLite
+ * `characters` / `chats` tables and rewrite db.json without characters.
+ * Idempotent and safe to call on every boot.
+ */
+export function ensureCharactersExtracted(db: DatabaseSync, dataDir: string): void {
+  const file = dbJsonPath(dataDir)
+  if (!fs.existsSync(file)) return
+  const raw = fs.readFileSync(file, 'utf8')
+  const parsed = JSON.parse(raw) as Record<string, unknown>
+  const database = parsed.database
+  if (!isRecord(database) || !Array.isArray(database.characters) || database.characters.length === 0)
+    return
+  replaceAllCharactersInTable(db, database)
+  const { characters: _chars, ...rest } = database
+  parsed.database = rest
+  const tmp = `${file}.tmp`
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(parsed))
+    fs.renameSync(tmp, file)
+  } catch (err) {
+    fs.rmSync(tmp, { force: true })
+    throw err
+  }
+}
+
 export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void {
-  const raw = loadPersisted(dataDir)
+  const raw = loadPersisted(db, dataDir)
   if (!hasEmbeddedChatPayloadsOrBadIds(raw.database)) return
 
   const hydrated = loadPersistedWithMessages(db, dataDir)
@@ -506,9 +643,10 @@ export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void
   transactionOpen = true
   try {
     const messageFree = splitChatMessagesIntoTable(db, hydrated)
+    replaceAllCharactersInTable(db, messageFree.database)
     db.exec('COMMIT')
     transactionOpen = false
-    writePersisted(dataDir, messageFree)
+    writePersisted(dataDir, stripCharacters(messageFree))
   } catch (err) {
     if (transactionOpen) db.exec('ROLLBACK')
     throw err
@@ -522,7 +660,7 @@ export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void
  * only the wire projection is stubbed.
  */
 export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted {
-  const persisted = loadPersisted(dataDir)
+  const persisted = loadPersisted(db, dataDir)
   eachChat(persisted.database, (chat) => {
     chat.message = []
     delete chat.hypaV3Data
@@ -574,7 +712,7 @@ export function loadChatHydration(
   }
   // Fallback for a chat not yet extracted into the table (defensive — startup
   // extraction normally makes the table authoritative).
-  const persisted = loadPersisted(dataDir)
+  const persisted = loadPersisted(db, dataDir)
   eachChat(persisted.database, (chat) => {
     if (chat.id !== chatId) return
     if (message.length === 0 && Array.isArray(chat.message)) message = chat.message
@@ -594,7 +732,7 @@ export function loadChatHydrations(
   const fallbackById = new Map<string, { message?: unknown[]; hypaV3Data?: unknown }>()
   const knownChatIds = new Set<string>()
   const requestedChatIds = new Set(chatIds)
-  const persisted = loadPersisted(dataDir)
+  const persisted = loadPersisted(db, dataDir)
 
   eachChat(persisted.database, (chat) => {
     if (typeof chat.id !== 'string') return
@@ -633,10 +771,11 @@ export function loadChatHydrations(
  * un-stubbed db.json and returns `[]` for an unknown / lore-less character.
  */
 export function loadCharacterLorebookHydration(
+  db: DatabaseSync,
   dataDir: string,
   characterId: string,
 ): { globalLore: unknown[] } {
-  const persisted = loadPersisted(dataDir)
+  const persisted = loadPersisted(db, dataDir)
   const characters =
     (
       persisted.database as {
@@ -650,13 +789,14 @@ export function loadCharacterLorebookHydration(
 }
 
 export function loadCharacterLorebookHydrations(
+  db: DatabaseSync,
   dataDir: string,
   characterIds: readonly string[],
 ): BulkCharacterLorebookHydrationPayload {
   const requestedCharacterIds = new Set(characterIds)
   const knownCharacterIds = new Set<string>()
   const globalLoreById = new Map<string, unknown[]>()
-  const persisted = loadPersisted(dataDir)
+  const persisted = loadPersisted(db, dataDir)
   const characters =
     (
       persisted.database as {
@@ -705,7 +845,7 @@ export function applyImport(
   // (e.g. the legacy hypaV3 memory backfill in routes/save.ts) read chat.message
   // after this returns, and splitting mutates its argument in place. db.json is
   // written only after COMMIT so it never lands ahead of the message rows.
-  const current = loadPersisted(dataDir)
+  const current = loadPersisted(db, dataDir)
   let transactionOpen = false
   db.exec('BEGIN IMMEDIATE')
   transactionOpen = true
@@ -714,11 +854,12 @@ export function applyImport(
       ...current,
       database: structuredClone(database),
     })
+    replaceAllCharactersInTable(db, messageFree.database)
     options.beforeRevision?.(db)
     const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
     db.exec('COMMIT')
     transactionOpen = false
-    writePersisted(dataDir, messageFree)
+    writePersisted(dataDir, stripCharacters(messageFree))
     return { revision: event.revision, event }
   } catch (err) {
     if (transactionOpen) {
@@ -749,7 +890,7 @@ export function initializeDefaultDatabase(
   db.exec('BEGIN IMMEDIATE')
   transactionOpen = true
   try {
-    const current = loadPersisted(dataDir)
+    const current = loadPersisted(db, dataDir)
     if (current.database !== null && current.database !== undefined) {
       // Already initialized → never overwrite. Report the live revision so the
       // caller can sync its cursor.
@@ -758,14 +899,12 @@ export function initializeDefaultDatabase(
       transactionOpen = false
       return { revision, initialized: false }
     }
-    const messageFree = {
-      ...current,
-      database: createInitialDatabase(),
-    }
+    const database = createInitialDatabase()
+    replaceAllCharactersInTable(db, database)
     const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateInitialized)
     db.exec('COMMIT')
     transactionOpen = false
-    writePersisted(dataDir, messageFree)
+    writePersisted(dataDir, stripCharacters({ ...current, database }))
     return { revision: event.revision, initialized: true, event }
   } catch (err) {
     if (transactionOpen) {
@@ -957,6 +1096,8 @@ const SQLITE_BACKUP_TABLES = [
   'messages',
   'chat_hypa_v3',
   'assets',
+  'characters',
+  'chats',
 ] as const
 
 function checkpointWal(db: DatabaseSync): void {
@@ -977,7 +1118,7 @@ export function createBackup(
   dataDir: string,
   label: string | null = null,
 ): BackupManifest {
-  const persisted = loadPersisted(dataDir)
+  const persisted = loadPersisted(db, dataDir)
   const { revision } = getSchemaState(db)
   const id = generateBackupId()
   const dir = backupDir(dataDir, id)

@@ -342,7 +342,7 @@ function loadDatabase(opts: SummarizeMemoryJobHandlerOptions): Database {
   const database = opts.loadDatabase
     ? opts.loadDatabase()
     : opts.dataDir
-      ? loadPersisted(opts.dataDir).database
+      ? loadPersisted(opts.db, opts.dataDir).database
       : null
   if (!isRecord(database)) {
     throw new Error('persisted database is missing')

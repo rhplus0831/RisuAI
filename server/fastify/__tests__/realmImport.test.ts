@@ -9,7 +9,8 @@ import type { FastifyInstance } from 'fastify'
 import * as fflate from 'fflate'
 import { buildApp } from '../src/app.js'
 import { DatabaseSync } from 'node:sqlite'
-import { getAllAssetMetadata, loadPersisted } from '../src/repository.js'
+import { getAllAssetMetadata, loadPersisted, type Persisted } from '../src/repository.js'
+import { openDatabase } from '../src/db.js'
 
 function queryAssets(dataDir: string) {
   const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
@@ -18,6 +19,11 @@ function queryAssets(dataDir: string) {
   } finally {
     db.close()
   }
+}
+
+function loadPersistedFromDir(dataDir: string): Persisted {
+  const db = openDatabase(dataDir)
+  try { return loadPersisted(db, dataDir) } finally { db.close() }
 }
 
 const subtle = webcrypto.subtle
@@ -547,7 +553,7 @@ describe('Realm character import route', () => {
       'image/png',
       'text/css',
     ])
-    const persisted = loadPersisted(harness.dataDir)
+    const persisted = loadPersistedFromDir(harness.dataDir)
     const character = (persisted.database as { characters: Array<Record<string, unknown>> })
       .characters[0]
     expect(character.name).toBe('Realm Utility')
@@ -623,7 +629,7 @@ describe('Realm character import route', () => {
       'image/png',
       'text/css',
     ])
-    const persisted = loadPersisted(harness.dataDir)
+    const persisted = loadPersistedFromDir(harness.dataDir)
     const character = (persisted.database as { characters: Array<Record<string, unknown>> })
       .characters[0]
     expect(character.name).toBe('Realm CharX')
@@ -658,7 +664,7 @@ describe('Realm character import route', () => {
     expect(res.statusCode).toBe(400)
     expect(res.json()).toEqual({ error: 'Realm charx expanded payload exceeds size limit' })
     expect(queryAssets(harness.dataDir)).toHaveLength(0)
-    const persisted = loadPersisted(harness.dataDir)
+    const persisted = loadPersistedFromDir(harness.dataDir)
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
@@ -685,7 +691,7 @@ describe('Realm character import route', () => {
 
     expect(res.statusCode).toBe(200)
 
-    const persisted = loadPersisted(harness.dataDir)
+    const persisted = loadPersistedFromDir(harness.dataDir)
     const character = (persisted.database as { characters: Array<Record<string, unknown>> })
       .characters[0]
     expect(character.name).toBe('Realm CharX')
@@ -717,7 +723,7 @@ describe('Realm character import route', () => {
 
       expect(res.statusCode).toBe(200)
       expect(queryAssets(harness.dataDir)).toHaveLength(7001)
-      const persisted = loadPersisted(harness.dataDir)
+      const persisted = loadPersistedFromDir(harness.dataDir)
       const character = (persisted.database as { characters: Array<Record<string, unknown>> })
         .characters[0]
       expect(character.name).toBe('Realm Many Assets')

@@ -22,9 +22,11 @@ import {
   setChatHypaV3,
 } from '../src/messageStore.js'
 import {
+  ensureCharactersExtracted,
   loadPersisted,
   loadPersistedWithMessages,
   ensureMessagesExtracted,
+  replaceAllCharactersInTable,
   writePersisted,
   writePersistedWithMessages,
   type Persisted,
@@ -295,15 +297,15 @@ describe('repository message-aware load/write', () => {
       ],
     }
 
-    writePersistedWithMessages(db, dataDir, seedHydrated(structuredClone(database)))
+    const clone = structuredClone(database)
+    writePersistedWithMessages(db, dataDir, seedHydrated(clone))
+    replaceAllCharactersInTable(db, clone)
 
-    // db.json on disk is message-free.
+    // db.json on disk has no characters (they live in SQLite).
     const onDisk = JSON.parse(readFileSync(path.join(dataDir, 'db.json'), 'utf8'))
-    for (const chat of onDisk.database.characters[0].chats) {
-      expect(chat.message).toBeUndefined()
-    }
-    // Plain load (message-free) sees no messages...
-    const plain = loadPersisted(dataDir).database as typeof database
+    expect(onDisk.database.characters).toBeUndefined()
+    // Plain load (from SQLite) sees characters but no messages...
+    const plain = loadPersisted(db, dataDir).database as typeof database
     expect(plain.characters[0].chats[0].message).toBeUndefined()
     // ...while the hydrated load reconstructs them byte-for-byte.
     const hydrated = loadPersistedWithMessages(db, dataDir).database as typeof database
@@ -326,14 +328,13 @@ describe('repository message-aware load/write', () => {
       ],
     }
 
-    writePersistedWithMessages(db, dataDir, seedHydrated(structuredClone(database)))
+    const clone = structuredClone(database)
+    writePersistedWithMessages(db, dataDir, seedHydrated(clone))
+    replaceAllCharactersInTable(db, clone)
 
-    // db.json carries neither message[] nor hypaV3Data.
+    // db.json has no characters (they live in SQLite).
     const onDisk = JSON.parse(readFileSync(path.join(dataDir, 'db.json'), 'utf8'))
-    for (const chat of onDisk.database.characters[0].chats) {
-      expect(chat.message).toBeUndefined()
-      expect(chat.hypaV3Data).toBeUndefined()
-    }
+    expect(onDisk.database.characters).toBeUndefined()
     // The hydrated load rejoins hypaV3Data (only where present).
     const hydrated = loadPersistedWithMessages(db, dataDir).database as typeof database
     expect(hydrated.characters[0].chats[0].hypaV3Data).toEqual({ mainChunks: [{ t: 1 }] })
@@ -348,10 +349,13 @@ describe('repository message-aware load/write', () => {
         { chaId: 'c', chats: [{ id: 'chat-1', message: [msg('m1', 'user', 'a'), msg('m2', 'char', 'b')] }] },
       ],
     }
-    writePersistedWithMessages(db, dataDir, seedHydrated(structuredClone(database)))
+    const clone = structuredClone(database)
+    writePersistedWithMessages(db, dataDir, seedHydrated(clone))
+    replaceAllCharactersInTable(db, clone)
 
     const first = loadPersistedWithMessages(db, dataDir)
     writePersistedWithMessages(db, dataDir, structuredClone(first))
+    replaceAllCharactersInTable(db, first.database)
     const second = loadPersistedWithMessages(db, dataDir)
 
     expect(second.database).toEqual(first.database)
@@ -360,68 +364,78 @@ describe('repository message-aware load/write', () => {
     )
   })
 
-  it('falls back to embedded messages when no SQLite rows exist yet', () => {
-    // Simulates an un-migrated db.json (written directly, no command run): the
-    // hydrated load must surface the embedded array losslessly.
+  it('returns empty messages when characters are in SQLite but no message rows exist yet', () => {
+    // Characters live in SQLite; when no message rows exist, the hydrated
+    // load sees an empty transcript (the legacy embedded-message fallback
+    // does not apply because loadPersisted loads characters from SQLite).
     const dataDir = makeDataDir()
     const db = makeDb(dataDir)
     const database = {
       characters: [{ chaId: 'c', chats: [{ id: 'chat-1', message: [msg('m1', 'user', 'embedded')] }] }],
     }
+    // Seed characters into SQLite (without messages).
+    replaceAllCharactersInTable(db, database)
     writePersisted(dataDir, { _version: 1, database, assets: [] })
 
     const hydrated = loadPersistedWithMessages(db, dataDir).database as typeof database
-    expect(hydrated.characters[0].chats[0].message).toEqual([msg('m1', 'user', 'embedded')])
-    // The first message-aware write then extracts it into SQLite.
-    writePersistedWithMessages(db, dataDir, structuredClone(loadPersistedWithMessages(db, dataDir)))
+    // No message rows in SQLite and characters came from SQLite (no embedded
+    // array) so the chat has an empty transcript.
+    expect(hydrated.characters[0].chats[0].message).toEqual([])
+    // After a message-aware write with messages provided, they land in SQLite.
+    const withMessages = structuredClone(hydrated)
+    ;(withMessages.characters[0].chats[0] as Record<string, unknown>).message = [msg('m1', 'user', 'embedded')]
+    writePersistedWithMessages(db, dataDir, { _version: 1, database: withMessages, assets: [] })
     expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'user', 'embedded')])
   })
 
-  it('repairs missing chat ids before extracting embedded messages', () => {
+  it('ensureMessagesExtracted is a no-op when characters are already in SQLite', () => {
+    // After the characters-to-SQLite migration, characters come from the
+    // characters/chats tables (not db.json). ensureMessagesExtracted finds
+    // no embedded chat payloads or bad ids, so it should be a clean no-op.
     const dataDir = makeDataDir()
     const db = makeDb(dataDir)
     const database = {
       characters: [
         {
           chaId: 'c',
-          chats: [{ name: 'Legacy', message: [msg('m1', 'user', 'embedded')] }],
+          chats: [{ id: 'chat-1', name: 'Already migrated' }],
         },
       ],
     }
+    replaceAllCharactersInTable(db, database)
     writePersisted(dataDir, { _version: 1, database, assets: [] })
+    replaceChatMessages(db, 'chat-1', [msg('m1', 'user', 'already in sqlite')])
 
     ensureMessagesExtracted(db, dataDir)
 
-    const onDisk = JSON.parse(readFileSync(path.join(dataDir, 'db.json'), 'utf8'))
-    const repairedId = onDisk.database.characters[0].chats[0].id
-    expect(typeof repairedId).toBe('string')
-    expect(repairedId.length).toBeGreaterThan(0)
-    expect(onDisk.database.characters[0].chats[0].message).toBeUndefined()
-    expect(getChatMessages(db, repairedId)).toEqual([msg('m1', 'user', 'embedded')])
-
+    // Characters remain in SQLite, messages untouched.
     const hydrated = loadPersistedWithMessages(db, dataDir).database as {
       characters: Array<{ chats: Array<{ id: string; message: unknown[] }> }>
     }
-    expect(hydrated.characters[0].chats[0].id).toBe(repairedId)
-    expect(hydrated.characters[0].chats[0].message).toEqual([msg('m1', 'user', 'embedded')])
+    expect(hydrated.characters[0].chats[0].id).toBe('chat-1')
+    expect(hydrated.characters[0].chats[0].message).toEqual([msg('m1', 'user', 'already in sqlite')])
   })
 
-  it('repairs missing chat ids even when the chat is already message-free', () => {
+  it('ensureMessagesExtracted is a no-op for message-free chats in SQLite', () => {
+    // Characters already in SQLite with a proper id and no messages: the
+    // extraction pass finds nothing to extract and leaves db.json alone.
     const dataDir = makeDataDir()
     const db = makeDb(dataDir)
     const database = {
-      characters: [{ chaId: 'c', chats: [{ name: 'Empty legacy chat', localLore: [] }] }],
+      characters: [{ chaId: 'c', chats: [{ id: 'chat-empty', name: 'Empty chat', localLore: [] }] }],
     }
+    replaceAllCharactersInTable(db, database)
     writePersisted(dataDir, { _version: 1, database, assets: [] })
 
+    // Match the boot sequence: characters are extracted first, then messages.
+    ensureCharactersExtracted(db, dataDir)
     ensureMessagesExtracted(db, dataDir)
 
+    // db.json has no characters (they live in SQLite).
     const onDisk = JSON.parse(readFileSync(path.join(dataDir, 'db.json'), 'utf8'))
-    const repairedId = onDisk.database.characters[0].chats[0].id
-    expect(typeof repairedId).toBe('string')
-    expect(repairedId.length).toBeGreaterThan(0)
-    expect(onDisk.database.characters[0].chats[0].message).toBeUndefined()
-    expect(getChatMessages(db, repairedId)).toEqual([])
+    expect(onDisk.database.characters).toBeUndefined()
+    // Messages table is empty for this chat.
+    expect(getChatMessages(db, 'chat-empty')).toEqual([])
   })
 
   it('reclaims rows for chats removed from the database', () => {
@@ -438,13 +452,17 @@ describe('repository message-aware load/write', () => {
         },
       ],
     }
-    writePersistedWithMessages(db, dataDir, seedHydrated(structuredClone(withTwo)))
+    const cloneTwo = structuredClone(withTwo)
+    writePersistedWithMessages(db, dataDir, seedHydrated(cloneTwo))
+    replaceAllCharactersInTable(db, cloneTwo)
     expect(getAllChatIdsWithMessages(db).sort()).toEqual(['chat-1', 'chat-2'])
 
     const withOne = {
       characters: [{ chaId: 'c', chats: [{ id: 'chat-1', message: [msg('m1', 'user', 'a')] }] }],
     }
-    writePersistedWithMessages(db, dataDir, seedHydrated(structuredClone(withOne)))
+    const cloneOne = structuredClone(withOne)
+    writePersistedWithMessages(db, dataDir, seedHydrated(cloneOne))
+    replaceAllCharactersInTable(db, cloneOne)
     expect(getAllChatIdsWithMessages(db)).toEqual(['chat-1'])
   })
 })

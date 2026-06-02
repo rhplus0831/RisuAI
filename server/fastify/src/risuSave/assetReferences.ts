@@ -3,7 +3,6 @@ import {
   type PersistedAsset,
   getAllAssetMetadata,
   isValidAssetId,
-  loadPersisted,
   loadPersistedWithMessages,
 } from '../repository.js'
 

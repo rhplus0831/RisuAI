@@ -7,7 +7,6 @@ import {
   deleteAssetMetadataByIds,
   getAllAssetMetadata,
   isValidAssetId,
-  loadPersisted,
   loadPersistedWithMessages,
 } from './repository.js'
 import { buildRisuSaveAssetReport } from './risuSave/assetReferences.js'

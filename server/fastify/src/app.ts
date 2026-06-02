@@ -36,6 +36,7 @@ import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import {
   SUPPORTED_ASSET_CONTENT_TYPES,
   ensureAssetsExtracted,
+  ensureCharactersExtracted,
   ensureMessagesExtracted,
   loadPersistedWithMessages,
 } from './repository.js'
@@ -116,6 +117,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // db.json message-free. No-op once converged. Must run after the backfill
   // above, which needs the embedded messages on the first upgrade boot.
   ensureAssetsExtracted(db, config.dataDir)
+  ensureCharactersExtracted(db, config.dataDir)
   ensureMessagesExtracted(db, config.dataDir)
   const memoryEventBus = createMemoryEventBus()
   const emitMemoryEvent: MemoryEventSink = (event) => {
@@ -228,7 +230,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerStreamJobRoutes(app, authState, streamJobRegistry)
   registerHubRoutes(app, authState, config.hubUrl)
   registerLegacyStorageRoutes(app, authState, config.dataDir)
-  registerGenerationRoutes(app, authState, config.dataDir)
+  registerGenerationRoutes(app, db, authState, config.dataDir)
   registerGenerationChatRoutes(
     app,
     db,

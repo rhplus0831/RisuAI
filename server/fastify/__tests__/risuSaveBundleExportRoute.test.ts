@@ -8,7 +8,13 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { DatabaseSync } from 'node:sqlite'
-import { writePersisted, assetsDir, insertAssetMetadataBatch } from '../src/repository.js'
+import {
+  writePersisted,
+  writePersistedWithMessages,
+  assetsDir,
+  insertAssetMetadataBatch,
+} from '../src/repository.js'
+import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
 interface ExportMetric {
@@ -71,47 +77,47 @@ async function stopHarness(h: Harness): Promise<void> {
 }
 
 function persistBundleDatabase(dataDir: string): void {
-  writePersisted(dataDir, {
-    _version: 1,
-    database: {
-      version: 1,
-      selectedCharID: 0,
-      userIcon: MISSING_FILE,
-      characters: [
-        {
-          chaId: 'bundle-route-char',
-          name: 'Bundle Route Character',
-          image: INCLUDED_ASSET,
-          emotionImages: [['missing', MISSING_REFERENCE]],
-          chats: [
-            {
-              id: 'bundle-route-chat',
-              name: 'Bundle Route Chat',
-              note: '',
-              localLore: [],
-              message: [{ role: 'user', data: 'hello', chatId: 'bundle-route-message' }],
-            },
-          ],
-        },
-      ],
-      characterOrder: ['bundle-route-char'],
-      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
-      modules: [{ id: 'module-a', name: 'Module A' }],
-      loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
-      plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
-      pluginCustomStorage: {},
-    },
-    assets: [],
-  })
-  const seedDb = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  const db = openDatabase(dataDir)
   try {
-    insertAssetMetadataBatch(seedDb, [
+    writePersistedWithMessages(db, dataDir, {
+      _version: 1,
+      database: {
+        version: 1,
+        selectedCharID: 0,
+        userIcon: MISSING_FILE,
+        characters: [
+          {
+            chaId: 'bundle-route-char',
+            name: 'Bundle Route Character',
+            image: INCLUDED_ASSET,
+            emotionImages: [['missing', MISSING_REFERENCE]],
+            chats: [
+              {
+                id: 'bundle-route-chat',
+                name: 'Bundle Route Chat',
+                note: '',
+                localLore: [],
+                message: [{ role: 'user', data: 'hello', chatId: 'bundle-route-message' }],
+              },
+            ],
+          },
+        ],
+        characterOrder: ['bundle-route-char'],
+        botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+        modules: [{ id: 'module-a', name: 'Module A' }],
+        loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
+        plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+        pluginCustomStorage: {},
+      },
+      assets: [],
+    })
+    insertAssetMetadataBatch(db, [
       { id: INCLUDED_ASSET, ext: 'png', size: 12, contentType: 'image/png' },
       { id: MISSING_FILE, ext: 'webp', size: 8, contentType: 'image/webp' },
       { id: ORPHANED_ASSET, ext: 'png', size: 7, contentType: 'image/png' },
     ])
   } finally {
-    seedDb.close()
+    db.close()
   }
 
   const dir = assetsDir(dataDir)
@@ -243,24 +249,24 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
   })
 
   it('includes assets referenced through legacy local asset paths', async () => {
-    writePersisted(harness.dataDir, {
-      _version: 1,
-      database: {
-        version: 1,
-        selectedCharID: 0,
-        userIcon: `assets/${INCLUDED_ASSET}.png`,
-        characters: [],
-        characterOrder: [],
-        botPresets: [],
-        modules: [],
-        loadouts: [],
-        plugins: [],
-        pluginCustomStorage: {},
-      },
-      assets: [],
-    })
-    const legacyDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    const legacyDb = openDatabase(harness.dataDir)
     try {
+      writePersistedWithMessages(legacyDb, harness.dataDir, {
+        _version: 1,
+        database: {
+          version: 1,
+          selectedCharID: 0,
+          userIcon: `assets/${INCLUDED_ASSET}.png`,
+          characters: [],
+          characterOrder: [],
+          botPresets: [],
+          modules: [],
+          loadouts: [],
+          plugins: [],
+          pluginCustomStorage: {},
+        },
+        assets: [],
+      })
       insertAssetMetadataBatch(legacyDb, [
         { id: INCLUDED_ASSET, ext: 'png', size: 12, contentType: 'image/png' },
       ])

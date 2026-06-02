@@ -23,7 +23,7 @@ import {
   encodeRepositoryRisuSaveBlockExport,
   encodeRepositoryRisuSaveLegacyExport,
 } from '../src/risuSave/exportSnapshot.js'
-import { writePersisted } from '../src/repository.js'
+import { writePersisted, writePersistedWithMessages } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -436,52 +436,55 @@ describe('server .risu fixture harness', () => {
       plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
       pluginCustomStorage: { 'plugin-a:key': { assetId } },
     }
-    writePersisted(dataDir, {
-      _version: 1,
-      database,
-      assets: [{ id: assetId, ext: 'png', size: 12, contentType: 'image/png' }],
-    })
+    const db = openDatabase(dataDir)
+    try {
+      writePersistedWithMessages(db, dataDir, {
+        _version: 1,
+        database,
+        assets: [{ id: assetId, ext: 'png', size: 12, contentType: 'image/png' }],
+      })
 
-    const encoded = encodeRepositoryRisuSaveLegacyExport(
-      openDatabase(dataDir),
-      dataDir,
-      'legacy-raw',
-    )
-    const decoded = decodeRisuSaveImportSnapshot(encoded)
+      const encoded = encodeRepositoryRisuSaveLegacyExport(db, dataDir, 'legacy-raw')
+      const decoded = decodeRisuSaveImportSnapshot(encoded)
 
-    expect(decoded.envelope).toBe('legacy-raw')
-    expect(decoded.unsupportedReferences).toEqual([])
-    expect(decoded.database.characters).toHaveLength(1)
-    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(assetId)
-    expect(decoded.database.pluginCustomStorage).toEqual({ 'plugin-a:key': { assetId } })
+      expect(decoded.envelope).toBe('legacy-raw')
+      expect(decoded.unsupportedReferences).toEqual([])
+      expect(decoded.database.characters).toHaveLength(1)
+      expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(assetId)
+      expect(decoded.database.pluginCustomStorage).toEqual({ 'plugin-a:key': { assetId } })
+    } finally {
+      db.close()
+    }
   })
 
   it('exports repository snapshots as RISUSAVE block envelopes', () => {
     const dataDir = makeDataDir()
     const assetId = 'b'.repeat(64)
-    writePersisted(dataDir, {
-      _version: 1,
-      database: {
-        version: 1,
-        selectedCharID: 0,
-        characters: [
-          {
-            chaId: 'block-export-char',
-            name: 'Block Export Character',
-            image: assetId,
-            chats: [],
-          },
-        ],
-        botPresets: [{ id: 'preset-a', name: 'Preset A' }],
-        modules: [{ id: 'module-a', name: 'Module A' }],
-        loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
-        plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
-        pluginCustomStorage: { 'plugin-a:key': { assetId } },
-      },
-      assets: [{ id: assetId, ext: 'webp', size: 44, contentType: 'image/webp' }],
-    })
+    const db = openDatabase(dataDir)
+    try {
+      writePersistedWithMessages(db, dataDir, {
+        _version: 1,
+        database: {
+          version: 1,
+          selectedCharID: 0,
+          characters: [
+            {
+              chaId: 'block-export-char',
+              name: 'Block Export Character',
+              image: assetId,
+              chats: [],
+            },
+          ],
+          botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+          modules: [{ id: 'module-a', name: 'Module A' }],
+          loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
+          plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+          pluginCustomStorage: { 'plugin-a:key': { assetId } },
+        },
+        assets: [{ id: assetId, ext: 'webp', size: 44, contentType: 'image/webp' }],
+      })
 
-    const encoded = encodeRepositoryRisuSaveBlockExport(openDatabase(dataDir), dataDir, {
+    const encoded = encodeRepositoryRisuSaveBlockExport(db, dataDir, {
       compression: true,
     })
     const blocks = decodeRisuSaveBlockEnvelope(encoded)
@@ -519,6 +522,9 @@ describe('server .risu fixture harness', () => {
     ])
     expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(assetId)
     expect(decoded.database.pluginCustomStorage).toEqual({ 'plugin-a:key': { assetId } })
+    } finally {
+      db.close()
+    }
   })
 
   it('rejects repository export when no persisted database exists', () => {
