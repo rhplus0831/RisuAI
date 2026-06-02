@@ -8,12 +8,8 @@ import {
   replaceAllCharactersInTable,
   replaceAllCollectionsInTable,
   replaceAllSettingsInTable,
-  stripCharacters,
   stripChatMessages,
-  stripCollections,
-  stripSettings,
   syncChatMessages,
-  writePersisted,
 } from '../repository.js'
 import {
   persistCommandEvent,
@@ -131,11 +127,6 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
 
     args.db.exec('COMMIT')
     transactionOpen = false
-    if (args.writeDatabase) {
-      const dbJsonWriteStartedAt = protocolNowMs()
-      writePersisted(args.dataDir, stripSettings(stripCollections(stripCharacters(persisted))))
-      dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
-    }
     const eventEmitStartedAt = protocolNowMs()
     args.eventSink.emit(liveCommandEvent(event, args.eventOrigin))
     eventEmitMs = protocolDurationMs(eventEmitStartedAt)
@@ -219,9 +210,6 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
 
     args.db.exec('COMMIT')
     transactionOpen = false
-    const dbJsonWriteStartedAt = protocolNowMs()
-    writePersisted(args.dataDir, stripSettings(stripCollections(stripCharacters(persisted))))
-    dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     const eventEmitStartedAt = protocolNowMs()
     args.eventSink.emit(liveCommandEvent(event, args.eventOrigin))
     eventEmitMs = protocolDurationMs(eventEmitStartedAt)
@@ -312,9 +300,6 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
 
     args.db.exec('COMMIT')
     transactionOpen = false
-    const dbJsonWriteStartedAt = protocolNowMs()
-    writePersisted(args.dataDir, stripSettings(stripCollections(stripCharacters(messageFree))))
-    dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     const eventEmitStartedAt = protocolNowMs()
     args.eventSink.emit(liveCommandEvent(event, args.eventOrigin))
     eventEmitMs = protocolDurationMs(eventEmitStartedAt)

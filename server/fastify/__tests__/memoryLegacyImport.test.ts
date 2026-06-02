@@ -15,7 +15,7 @@ import {
   listMemoryJobs,
   listMemorySummaries,
 } from '../src/memoryRepository.js'
-import { writePersisted } from '../src/repository.js'
+import { writePersistedWithMessages } from '../src/repository.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
 process.env.LOG_LEVEL = 'silent'
@@ -191,9 +191,18 @@ describe('legacy Hypa V3 memory import', () => {
     }
   })
 
-  it('boot backfills legacy rows from an existing db.json', async () => {
+  it('boot backfills legacy rows from an existing database', async () => {
     const dataDir = makeDataDir()
-    writePersisted(dataDir, { _version: 1, database: legacyDatabase(), assets: [] })
+    const seedDb = openDatabase(dataDir)
+    try {
+      writePersistedWithMessages(seedDb, dataDir, {
+        _version: 1,
+        database: legacyDatabase(),
+        assets: [],
+      })
+    } finally {
+      seedDb.close()
+    }
     const { app } = await buildApp({
       config: {
         host: '127.0.0.1',

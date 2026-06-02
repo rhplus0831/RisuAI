@@ -166,7 +166,6 @@ describe('Phase 2D backups', () => {
       assetCount: 0,
     })
     expect(manifest.id).toMatch(/^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[a-f0-9]{6}$/)
-    expect(existsSync(path.join(harness.dataDir, 'backups', manifest.id, 'db.json'))).toBe(true)
     expect(existsSync(path.join(harness.dataDir, 'backups', manifest.id, 'manifest.json'))).toBe(
       true,
     )
@@ -448,7 +447,6 @@ describe('Phase 2D backups', () => {
     ).toEqual(PNG_BYTES)
 
     rmSync(assetsDir(harness.dataDir), { recursive: true, force: true })
-    writeFileSync(path.join(harness.dataDir, 'db.json'), JSON.stringify({ database: { tag: 'B' } }))
 
     const restored = await harness.app.inject({
       method: 'POST',

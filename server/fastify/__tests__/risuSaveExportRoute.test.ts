@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -8,7 +8,7 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { decodeRisuSaveBlockEnvelope } from '../src/risuSave/blockCodec.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { classifyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
-import { writePersisted, writePersistedWithMessages } from '../src/repository.js'
+import { writePersistedWithMessages } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
@@ -213,11 +213,16 @@ describe('Phase 9-8b repository .risu export route', () => {
   })
 
   it('normalizes missing resource families before block export', async () => {
-    writePersisted(harness.dataDir, {
-      _version: 1,
-      database: { v: 1 },
-      assets: [],
-    })
+    const seedDb = openDatabase(harness.dataDir)
+    try {
+      writePersistedWithMessages(seedDb, harness.dataDir, {
+        _version: 1,
+        database: { v: 1 },
+        assets: [],
+      })
+    } finally {
+      seedDb.close()
+    }
 
     const exported = await authedInject({
       method: 'GET',

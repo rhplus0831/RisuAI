@@ -8,7 +8,7 @@ import {
   assetsDir,
   getAllAssetMetadata,
   insertAssetMetadataBatch,
-  writePersisted,
+  writePersistedWithMessages,
   type PersistedAsset,
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
@@ -44,7 +44,7 @@ function writeAssetFile(id: string, mtimeMs: number): string {
 }
 
 function seedDatabase(database: unknown, assets: PersistedAsset[]): void {
-  writePersisted(dataDir, { _version: 1, database, assets: [] })
+  writePersistedWithMessages(db, dataDir, { _version: 1, database, assets: [] })
   insertAssetMetadataBatch(db, assets)
 }
 

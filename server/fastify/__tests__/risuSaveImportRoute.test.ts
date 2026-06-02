@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -9,7 +9,7 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
-import { insertAssetMetadataBatch, loadPersisted, writePersisted } from '../src/repository.js'
+import { insertAssetMetadataBatch, loadPersisted } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
@@ -405,10 +405,6 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
     expect(harness.commandEvents.list()).toEqual([imported.json().event])
 
-    // After Phase 2, characters are stripped from db.json and live in SQLite.
-    const rawOnDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(rawOnDisk.database.characters).toBeUndefined()
-
     const verifyDb = openDatabase(harness.dataDir)
     try {
       const persisted = loadPersisted(verifyDb, harness.dataDir)
@@ -480,12 +476,6 @@ describe('Phase 9-8a multipart .risu import route', () => {
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
 
-    // After Phase 4, settings (including `version`) live in SQLite; db.json
-    // holds only collection markers.
-    const rawOnDisk2 = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(rawOnDisk2.database.version).toBeUndefined()
-    expect(rawOnDisk2.database.__directory).toBeUndefined()
-    expect(rawOnDisk2.database.characters).toBeUndefined()
   })
 
   it('rejects block uploads whose expanded payload exceeds the import limit', async () => {

@@ -447,34 +447,19 @@ export function emptyPersisted(): Persisted {
   return { _version: PERSISTED_VERSION, database: null, assets: [] }
 }
 
-export function loadPersisted(db: DatabaseSync, dataDir: string): Persisted {
+export function loadPersisted(db: DatabaseSync, _dataDir: string): Persisted {
   let database: unknown = loadSettingsFromSqlite(db)
-  if (database !== null) {
-    const rec = database as Record<string, unknown>
-    for (const field of COLLECTION_FIELDS) {
-      if (field !== 'promptTemplate' && !(field in rec)) rec[field] = []
-    }
-    if (!('pluginCustomStorage' in rec)) rec.pluginCustomStorage = {}
-  } else {
-    const file = dbJsonPath(dataDir)
-    if (!fs.existsSync(file)) {
-      return emptyPersisted()
-    }
-    const raw = fs.readFileSync(file, 'utf8')
-    const parsed = JSON.parse(raw) as Partial<Persisted>
-    const version = typeof parsed._version === 'number' ? parsed._version : PERSISTED_VERSION
-    if (version > PERSISTED_VERSION) {
-      throw new Error(`db.json _version ${version} is newer than supported ${PERSISTED_VERSION}`)
-    }
-    database = parsed.database ?? null
+  if (database === null) return emptyPersisted()
+  const rec = database as Record<string, unknown>
+  for (const field of COLLECTION_FIELDS) {
+    if (field !== 'promptTemplate' && !(field in rec)) rec[field] = []
   }
-  if (isRecord(database)) {
-    const sqliteChars = loadCharactersFromSqlite(db)
-    if (sqliteChars.length > 0 || !Array.isArray(database.characters)) {
-      database = { ...database, characters: sqliteChars }
-    }
-    database = loadCollectionsFromSqlite(db, database as Record<string, unknown>)
+  if (!('pluginCustomStorage' in rec)) rec.pluginCustomStorage = {}
+  const sqliteChars = loadCharactersFromSqlite(db)
+  if (sqliteChars.length > 0 || !Array.isArray(rec.characters)) {
+    rec.characters = sqliteChars
   }
+  database = loadCollectionsFromSqlite(db, rec)
   return {
     _version: PERSISTED_VERSION,
     database,
@@ -482,18 +467,6 @@ export function loadPersisted(db: DatabaseSync, dataDir: string): Persisted {
   }
 }
 
-/**
- * Read any leftover `assets` array still embedded in db.json (pre-migration
- * data). Returns the raw array without touching the `assets` SQLite table.
- * Used only by the on-boot extraction helper.
- */
-function loadLegacyPersistedAssets(dataDir: string): PersistedAsset[] {
-  const file = dbJsonPath(dataDir)
-  if (!fs.existsSync(file)) return []
-  const raw = fs.readFileSync(file, 'utf8')
-  const parsed = JSON.parse(raw) as Partial<Persisted>
-  return Array.isArray(parsed.assets) ? (parsed.assets as PersistedAsset[]) : []
-}
 
 export function loadPersistedDatabaseFields(
   db: DatabaseSync,
@@ -541,40 +514,10 @@ function selectDatabaseFields(
   return fields
 }
 
-export function writePersisted(dataDir: string, next: Persisted): void {
-  fs.mkdirSync(dataDir, { recursive: true })
-  const file = dbJsonPath(dataDir)
-  const tmp = `${file}.tmp`
-  const stripped = { ...next, assets: [] }
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(stripped))
-    fs.renameSync(tmp, file)
-  } catch (err) {
-    fs.rmSync(tmp, { force: true })
-    throw err
-  }
-}
-
-export function stripCharacters(next: Persisted): Persisted {
-  if (!isRecord(next.database)) return next
-  const { characters: _chars, ...rest } = next.database as Record<string, unknown>
-  return { ...next, database: rest }
-}
-
-// Chat messages live in SQLite, not in db.json.
-//
-// `loadPersisted` / `writePersisted` operate on the message-free `db.json` blob
-// (the asset-GC / memory / backup paths that never look at messages keep using
-// them). The `*WithMessages` variants below are the message-aware boundary used
-// by every reader that needs a fully-hydrated `Database` (mutation engine,
-// bootstrap, projection, prompt assembly, risuSave export) and the writers that
-// persist message edits (mutation engine, import).
-//
-// Join rule (lossless migration): a chat's messages come from the SQLite rows;
-// if a chat has *no* rows yet but still carries an embedded `message[]` in
-// db.json (un-migrated / freshly-imported-by-hand data), the embedded array is
-// used as the source. The next `writePersistedWithMessages` extracts it into the
-// table and strips it from db.json, so db.json converges to message-free.
+// `loadPersistedWithMessages` is the message-aware read boundary used by every
+// reader that needs a fully-hydrated `Database` (mutation engine, bootstrap,
+// projection, prompt assembly, risuSave export). Messages live in the SQLite
+// `messages` table; `loadPersisted` returns message-free chats.
 
 type JsonRecord = Record<string, unknown>
 
@@ -654,19 +597,11 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
 
 /**
  * Split each chat's `message[]` into the messages table and return the
- * message-free `Persisted`. Pure SQLite write — it does NOT touch db.json. Run
- * inside the caller's open transaction; persist the returned value with
- * `writePersisted` only AFTER the transaction COMMITs. Ordering matters: the
- * durable db.json write must never land ahead of the message rows + revision
- * bump, so a crash between the two stores leaves db.json *behind* (re-applied by
- * the next write) instead of pairing new chat metadata with stale messages.
+ * message-free `Persisted`. Pure SQLite write — runs inside the caller's open
+ * transaction.
  *
  * The `next.database` object is mutated in place (its chats lose `message`) —
  * callers pass a throwaway clone.
- *
- * Invariant: `next.database` is a *complete* hydrated database (every chat
- * present). The table is rebuilt wholesale, which also reclaims rows for deleted
- * chats.
  */
 export function splitChatMessagesIntoTable(db: DatabaseSync, next: Persisted): Persisted {
   repairChatIds(next.database)
@@ -686,20 +621,18 @@ export function splitChatMessagesIntoTable(db: DatabaseSync, next: Persisted): P
 }
 
 /**
- * Convenience for non-transactional callers (and tests): split messages into the
- * table and write the message-free db.json in one step. Transactional callers
- * use `splitChatMessagesIntoTable` + a post-COMMIT `writePersisted` instead.
+ * Convenience for non-transactional callers (and tests): split messages into
+ * SQLite tables and sync all table families.
  */
 export function writePersistedWithMessages(
   db: DatabaseSync,
-  dataDir: string,
+  _dataDir: string,
   next: Persisted,
 ): void {
   const messageFree = splitChatMessagesIntoTable(db, next)
   replaceAllCharactersInTable(db, messageFree.database)
   replaceAllCollectionsInTable(db, messageFree.database)
   replaceAllSettingsInTable(db, messageFree.database)
-  writePersisted(dataDir, stripSettings(stripCollections(stripCharacters(messageFree))))
 }
 
 /**
@@ -740,7 +673,7 @@ export function syncChatMessages(
   }
 }
 
-/** Strip every chat's `message[]` + `hypaV3Data` for message-free db.json/wire. */
+/** Strip every chat's `message[]` + `hypaV3Data` for message-free wire/table writes. */
 export function stripChatMessages(next: Persisted): Persisted {
   eachChat(next.database, (chat) => {
     delete chat.message
@@ -750,141 +683,40 @@ export function stripChatMessages(next: Persisted): Persisted {
 }
 
 /**
- * One-time proactive extraction: if `db.json` still carries an embedded `assets`
- * array, move every entry into the SQLite `assets` table and rewrite db.json
- * without assets. Idempotent and safe to call on every boot.
+ * One-time boot migration: if a legacy `db.json` still exists, import all its
+ * data into SQLite (settings, characters, collections, assets, messages) and
+ * rename the file to `db.json.migrated`. Idempotent and safe to call on every
+ * boot — a no-op once the file is gone.
  */
-export function ensureAssetsExtracted(db: DatabaseSync, dataDir: string): void {
-  const legacyAssets = loadLegacyPersistedAssets(dataDir)
-  if (legacyAssets.length === 0) return
-  insertAssetMetadataBatch(db, legacyAssets)
-  const file = dbJsonPath(dataDir)
-  const raw = fs.readFileSync(file, 'utf8')
-  const parsed = JSON.parse(raw) as Record<string, unknown>
-  delete parsed.assets
-  const tmp = `${file}.tmp`
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(parsed))
-    fs.renameSync(tmp, file)
-  } catch (err) {
-    fs.rmSync(tmp, { force: true })
-    throw err
-  }
-}
-
-/**
- * One-time proactive extraction: if `db.json` still carries embedded
- * `chat.message[]`, move every chat's messages into the table and rewrite db.json
- * message-free. Idempotent and safe to call on every boot.
- */
-/**
- * One-time proactive extraction: if `db.json` still carries an embedded
- * `database.characters` array, move every character + chat into the SQLite
- * `characters` / `chats` tables and rewrite db.json without characters.
- * Idempotent and safe to call on every boot.
- */
-export function ensureCharactersExtracted(db: DatabaseSync, dataDir: string): void {
+export function ensureDbJsonImported(db: DatabaseSync, dataDir: string): void {
   const file = dbJsonPath(dataDir)
   if (!fs.existsSync(file)) return
   const raw = fs.readFileSync(file, 'utf8')
-  const parsed = JSON.parse(raw) as Record<string, unknown>
+  const parsed = JSON.parse(raw) as Partial<Persisted>
   const database = parsed.database
-  if (!isRecord(database) || !Array.isArray(database.characters) || database.characters.length === 0)
-    return
-  replaceAllCharactersInTable(db, database)
-  const { characters: _chars, ...rest } = database
-  parsed.database = rest
-  const tmp = `${file}.tmp`
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(parsed))
-    fs.renameSync(tmp, file)
-  } catch (err) {
-    fs.rmSync(tmp, { force: true })
-    throw err
+
+  if (isRecord(database)) {
+    replaceAllSettingsInTable(db, database)
+    replaceAllCharactersInTable(db, database)
+    replaceAllCollectionsInTable(db, database)
+
+    repairChatIds(database)
+    const chats: { chatId: string; messages: unknown[] }[] = []
+    const hypa: { chatId: string; hypaV3Data: unknown }[] = []
+    eachChat(database, (chat) => {
+      const messages = Array.isArray(chat.message) ? chat.message : []
+      const chatId = chat.id as string
+      if (messages.length > 0) chats.push({ chatId, messages })
+      if (chat.hypaV3Data !== undefined) hypa.push({ chatId, hypaV3Data: chat.hypaV3Data })
+    })
+    if (chats.length > 0) replaceAllChatMessages(db, chats)
+    if (hypa.length > 0) replaceAllChatHypaV3(db, hypa)
   }
-}
 
-export function ensureCollectionsExtracted(db: DatabaseSync, dataDir: string): void {
-  const file = dbJsonPath(dataDir)
-  if (!fs.existsSync(file)) return
-  const raw = fs.readFileSync(file, 'utf8')
-  const parsed = JSON.parse(raw) as Record<string, unknown>
-  const database = parsed.database
-  if (!isRecord(database)) return
+  const legacyAssets = Array.isArray(parsed.assets) ? (parsed.assets as PersistedAsset[]) : []
+  if (legacyAssets.length > 0) insertAssetMetadataBatch(db, legacyAssets)
 
-  const hasArrayCollection = COLLECTION_FIELDS.some(
-    (f) => Array.isArray(database[f]) && (database[f] as unknown[]).length > 0,
-  )
-  const storage = database.pluginCustomStorage
-  const hasStorage = isRecord(storage) && Object.keys(storage).length > 0
-  if (!hasArrayCollection && !hasStorage) return
-
-  replaceAllCollectionsInTable(db, database)
-  for (const field of COLLECTION_FIELDS) {
-    if (Array.isArray(database[field])) {
-      database[field] = []
-    }
-  }
-  if (isRecord(database.pluginCustomStorage)) {
-    database.pluginCustomStorage = {}
-  }
-  const tmp = `${file}.tmp`
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(parsed))
-    fs.renameSync(tmp, file)
-  } catch (err) {
-    fs.rmSync(tmp, { force: true })
-    throw err
-  }
-}
-
-export function ensureSettingsExtracted(db: DatabaseSync, dataDir: string): void {
-  const file = dbJsonPath(dataDir)
-  if (!fs.existsSync(file)) return
-  const raw = fs.readFileSync(file, 'utf8')
-  const parsed = JSON.parse(raw) as Record<string, unknown>
-  const database = parsed.database
-  if (!isRecord(database)) return
-
-  const settings = extractSettings(database)
-  if (Object.keys(settings).length === 0) return
-
-  replaceAllSettingsInTable(db, database)
-  for (const key of Object.keys(database)) {
-    if (!NON_SETTINGS_FIELDS.has(key)) {
-      delete database[key]
-    }
-  }
-  const tmp = `${file}.tmp`
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(parsed))
-    fs.renameSync(tmp, file)
-  } catch (err) {
-    fs.rmSync(tmp, { force: true })
-    throw err
-  }
-}
-
-export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void {
-  const raw = loadPersisted(db, dataDir)
-  if (!hasEmbeddedChatPayloadsOrBadIds(raw.database)) return
-
-  const hydrated = loadPersistedWithMessages(db, dataDir)
-  let transactionOpen = false
-  db.exec('BEGIN IMMEDIATE')
-  transactionOpen = true
-  try {
-    const messageFree = splitChatMessagesIntoTable(db, hydrated)
-    replaceAllCharactersInTable(db, messageFree.database)
-    replaceAllCollectionsInTable(db, messageFree.database)
-    replaceAllSettingsInTable(db, messageFree.database)
-    db.exec('COMMIT')
-    transactionOpen = false
-    writePersisted(dataDir, stripSettings(stripCollections(stripCharacters(messageFree))))
-  } catch (err) {
-    if (transactionOpen) db.exec('ROLLBACK')
-    throw err
-  }
+  fs.renameSync(file, `${file}.migrated`)
 }
 
 /**
@@ -1095,7 +927,6 @@ export function applyImport(
     const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
     db.exec('COMMIT')
     transactionOpen = false
-    writePersisted(dataDir, stripSettings(stripCollections(stripCharacters(messageFree))))
     return { revision: event.revision, event }
   } catch (err) {
     if (transactionOpen) {
@@ -1106,7 +937,7 @@ export function applyImport(
 }
 
 /**
- * First-run seed: write the server-owned default database to db.json ONLY when
+ * First-run seed: write the server-owned default database to SQLite ONLY when
  * no database exists yet.
  *
  * Idempotent and clobber-safe — if a database is already present (a non-null
@@ -1114,9 +945,6 @@ export function applyImport(
  * bumping. The presence check runs inside the same `BEGIN IMMEDIATE`
  * transaction as the write, so two clients opening the same fresh server (a
  * second tab, a reload race) can never seed twice or overwrite real data.
- *
- * The initial database has no chats/messages, so it can be persisted directly
- * after COMMIT without the import path's message extraction pass.
  */
 export function initializeDefaultDatabase(
   db: DatabaseSync,
@@ -1142,7 +970,6 @@ export function initializeDefaultDatabase(
     const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateInitialized)
     db.exec('COMMIT')
     transactionOpen = false
-    writePersisted(dataDir, stripSettings(stripCollections(stripCharacters({ ...current, database }))))
     return { revision: event.revision, initialized: true, event }
   } catch (err) {
     if (transactionOpen) {
@@ -1308,7 +1135,7 @@ export function backupDir(dataDir: string, id: string): string {
 //                  via ATTACH so the live `DatabaseSync` handle stays valid. Every
 //                  table that must survive restore is listed in SQLITE_BACKUP_TABLES.
 //   - 'save'     : legacy storage directory written by /api/v1/storage/*.
-export const KNOWN_DATA_DIR_CHILDREN = ['db.json', 'assets', 'risu.db', 'save'] as const
+export const KNOWN_DATA_DIR_CHILDREN = ['assets', 'risu.db', 'save'] as const
 
 function saveDir(dataDir: string): string {
   return path.join(dataDir, 'save')
@@ -1367,14 +1194,11 @@ export function createBackup(
   dataDir: string,
   label: string | null = null,
 ): BackupManifest {
-  const persisted = loadPersisted(db, dataDir)
   const { revision } = getSchemaState(db)
   const id = generateBackupId()
   const dir = backupDir(dataDir, id)
   fs.mkdirSync(dir, { recursive: true })
 
-  // Snapshot every KNOWN_DATA_DIR_CHILDREN entry.
-  fs.writeFileSync(path.join(dir, 'db.json'), JSON.stringify(persisted))
   copyDirectoryIfPresent(assetsDir(dataDir), path.join(dir, 'assets'))
   // SQLite: flush WAL then file-copy.
   checkpointWal(db)
@@ -1490,16 +1314,12 @@ export function restoreBackup(
   if (!isValidBackupId(id)) {
     throw new EntityNotFoundError(`Backup not found: ${id}`)
   }
-  const snapshot = path.join(backupDir(dataDir, id), 'db.json')
-  if (!fs.existsSync(snapshot)) {
+  const manifestPath = path.join(backupDir(dataDir, id), 'manifest.json')
+  const legacySnapshot = path.join(backupDir(dataDir, id), 'db.json')
+  if (!fs.existsSync(manifestPath) && !fs.existsSync(legacySnapshot)) {
     throw new EntityNotFoundError(`Backup not found: ${id}`)
   }
 
-  // Stage each KNOWN_DATA_DIR_CHILDREN entry under a temp path, then swap
-  // them into place. The SQLite restore uses ATTACH to preserve `db`.
-  const live = path.join(dataDir, 'db.json')
-  const tmp = `${live}.tmp`
-  const old = `${live}.old`
   const liveAssets = assetsDir(dataDir)
   const backupAssets = path.join(backupDir(dataDir, id), 'assets')
   const tmpAssets = path.join(dataDir, `.assets-${id}.tmp`)
@@ -1514,11 +1334,7 @@ export function restoreBackup(
   rmDirectoryIfPresent(oldAssets)
   rmDirectoryIfPresent(tmpSave)
   rmDirectoryIfPresent(oldSave)
-  if (fs.existsSync(old)) {
-    fs.rmSync(old, { force: true })
-  }
 
-  // Stage assets and save dirs as temp copies.
   if (fs.existsSync(backupAssets)) {
     fs.cpSync(backupAssets, tmpAssets, { recursive: true })
   } else {
@@ -1530,13 +1346,6 @@ export function restoreBackup(
     fs.mkdirSync(tmpSave, { recursive: true })
   }
 
-  // Stage db.json snapshot.
-  fs.copyFileSync(snapshot, tmp)
-
-  // Move live directories aside so the swap can roll back.
-  if (fs.existsSync(live)) {
-    fs.renameSync(live, old)
-  }
   if (fs.existsSync(liveAssets)) {
     fs.renameSync(liveAssets, oldAssets)
   }
@@ -1546,14 +1355,10 @@ export function restoreBackup(
 
   let event: CommandEvent | undefined
   try {
-    // SQLite table restore, revision bump, command event persistence, and file
-    // swaps share one rollback boundary: if the command event or any swap fails,
-    // the SQLite transaction rolls back and the live directories are restored.
     restoreSqliteFromBackup(db, backupSqlite, () => {
       event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
       fs.renameSync(tmpAssets, liveAssets)
       fs.renameSync(tmpSave, liveSave)
-      fs.renameSync(tmp, live)
     })
   } catch (err) {
     rmDirectoryIfPresent(liveAssets)
@@ -1564,25 +1369,22 @@ export function restoreBackup(
     if (fs.existsSync(oldSave)) {
       fs.renameSync(oldSave, liveSave)
     }
-    if (fs.existsSync(live)) {
-      fs.rmSync(live, { force: true })
-    }
-    if (fs.existsSync(old)) {
-      fs.renameSync(old, live)
-    }
     rmDirectoryIfPresent(tmpAssets)
     rmDirectoryIfPresent(tmpSave)
-    if (fs.existsSync(tmp)) {
-      fs.rmSync(tmp, { force: true })
-    }
     throw err
   }
 
   rmDirectoryIfPresent(oldAssets)
   rmDirectoryIfPresent(oldSave)
-  if (fs.existsSync(old)) {
-    fs.rmSync(old, { force: true })
+
+  // If the backup predates Phase 5 and carries a db.json, import it into
+  // SQLite so no legacy data is lost.
+  if (fs.existsSync(legacySnapshot)) {
+    const liveDbJson = dbJsonPath(dataDir)
+    fs.copyFileSync(legacySnapshot, liveDbJson)
+    ensureDbJsonImported(db, dataDir)
   }
+
   if (!event) {
     throw new Error('restore did not produce a command event')
   }

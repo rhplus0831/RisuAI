@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { openDatabase } from '../src/db.js'
+import { writePersistedWithMessages } from '../src/repository.js'
 
 const subtle = webcrypto.subtle
 
@@ -102,9 +104,9 @@ const basePayload = {
 }
 
 function writeDatabase(database: Record<string, unknown>): void {
-  writeFileSync(
-    path.join(harness.dataDir, 'db.json'),
-    JSON.stringify({
+  const db = openDatabase(harness.dataDir)
+  try {
+    writePersistedWithMessages(db, harness.dataDir, {
       _version: 1,
       database: {
         aiModel: 'echo_model',
@@ -118,8 +120,10 @@ function writeDatabase(database: Record<string, unknown>): void {
         ...database,
       },
       assets: [],
-    }),
-  )
+    })
+  } finally {
+    db.close()
+  }
 }
 
 describe('Phase 6-1 POST /api/v1/generate/completion', () => {

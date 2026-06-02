@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../src/app.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { jsonPayloadBytes } from '../src/protocolMetrics.js'
-import { ensureCharactersExtracted, loadPersistedDatabaseFields, loadStubbedProjectionFields } from '../src/repository.js'
+import { ensureDbJsonImported, loadPersistedDatabaseFields, loadStubbedProjectionFields, writePersistedWithMessages } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { fullBootstrapFallbackClass, resourceProjectionFields } from '../src/routes/projection.js'
 import type { FastifyInstance } from 'fastify'
@@ -223,9 +223,8 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields).toEqual({})
   })
 
-  it('does not load db.json for the empty asset projection resource', async () => {
-    writeFileSync(path.join(harness.dataDir, 'db.json'), '{not valid json')
-
+  it('returns empty fields for the asset resource even when no database is seeded', async () => {
+    // db.json is never read; asset projection always returns empty fields.
     const res = await getProjection('asset')
     expect(res.statusCode).toBe(200)
     const body = res.json()
@@ -447,9 +446,9 @@ describe('bulk chat message hydration route', () => {
 
 describe('targeted projection field loader', () => {
   it('selects only requested persisted database fields', () => {
-    writeFileSync(
-      path.join(harness.dataDir, 'db.json'),
-      JSON.stringify({
+    const db = openDatabase(harness.dataDir)
+    try {
+      writePersistedWithMessages(db, harness.dataDir, {
         _version: 1,
         database: {
           botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
@@ -458,12 +457,7 @@ describe('targeted projection field loader', () => {
           language: 'en',
         },
         assets: [],
-      }),
-    )
-
-    const db = openDatabase(harness.dataDir)
-    try {
-      ensureCharactersExtracted(db, harness.dataDir)
+      })
       expect(loadPersistedDatabaseFields(db, harness.dataDir, ['botPresets', 'botPresetsId'])).toEqual({
         botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
         botPresetsId: 2,
@@ -474,9 +468,9 @@ describe('targeted projection field loader', () => {
   })
 
   it('selects character fields with chat and lorebook stubs', () => {
-    writeFileSync(
-      path.join(harness.dataDir, 'db.json'),
-      JSON.stringify({
+    const db = openDatabase(harness.dataDir)
+    try {
+      writePersistedWithMessages(db, harness.dataDir, {
         _version: 1,
         database: {
           enableLorebookStubs: true,
@@ -498,12 +492,7 @@ describe('targeted projection field loader', () => {
           botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
         },
         assets: [],
-      }),
-    )
-
-    const db = openDatabase(harness.dataDir)
-    try {
-      ensureCharactersExtracted(db, harness.dataDir)
+      })
       expect(
         loadStubbedProjectionFields(db, harness.dataDir, ['characters', 'characterOrder', 'currentChar']),
       ).toEqual({

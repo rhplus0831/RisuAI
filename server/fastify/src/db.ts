@@ -5,7 +5,7 @@ import { createChatBlobTable, createMessageTable } from './messageStore.js'
 import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
 import { createAssetMetadataTable, createCharacterTables, createCollectionTables, createSettingsTable } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 13
+export const CURRENT_SCHEMA_VERSION = 14
 
 export interface MigrationStep {
   version: number
@@ -114,6 +114,14 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     name: 'settings-table',
     up: (db) => {
       createSettingsTable(db)
+    },
+  },
+  {
+    version: 14,
+    name: 'remove-db-json',
+    up: () => {
+      // No table changes; the boot path (`ensureDbJsonImported`) handles file
+      // removal. The version bump signals that db.json is no longer expected.
     },
   },
 ]

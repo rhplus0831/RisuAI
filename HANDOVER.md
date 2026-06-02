@@ -105,7 +105,28 @@ Once characters are in SQLite, mutations that touch one character no longer need
 to serialize all 50. The mutation engine can UPDATE a single row. This is the
 primary performance win.
 
-## Phase 5 (future)
+### Phase 5: Remove db.json (v14)
 
-See `docs/db-json-to-sqlite.md` for the full plan. Phase 5 removes db.json
-entirely.
+Removed db.json from the hot path entirely. All persistence is now in SQLite.
+
+After this commit:
+- `loadPersisted` reads from SQLite only (settings + characters + collections);
+  no db.json fallback on the read path
+- `writePersisted` is deleted; `stripCharacters`, `stripCollections`,
+  `stripSettings` are deleted — all callers write to SQLite tables only
+- All mutation engines, `applyImport`, `initializeDefaultDatabase`, and
+  `writePersistedWithMessages` no longer touch db.json
+- `ensureDbJsonImported` replaces the five `ensure*Extracted` functions: on
+  boot, if a legacy db.json exists, it imports all data into SQLite
+  (settings, characters, collections, assets, messages) and renames the file
+  to `db.json.migrated`
+- `createBackup` no longer writes db.json to the backup directory; `risu.db`
+  carries all state
+- `restoreBackup` no longer requires db.json; uses `manifest.json` for
+  existence; if a legacy backup contains db.json, it is imported into SQLite
+  during restore
+- `KNOWN_DATA_DIR_CHILDREN` no longer includes `'db.json'`
+- Migration v14 is a no-op version bump signalling that db.json is no longer
+  expected
+
+Verification: api:test 1515/test 948/audit green.

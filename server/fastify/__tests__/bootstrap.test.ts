@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
@@ -176,12 +176,7 @@ describe('Phase 2A bootstrap + import', () => {
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
 
-    expect(existsSync(path.join(harness.dataDir, 'db.json'))).toBe(true)
-    const onDiskRaw = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDiskRaw._version).toBe(1)
-    expect(onDiskRaw.assets).toEqual([])
-    // After Phase 2, characters are stripped from db.json and live in SQLite.
-    expect(onDiskRaw.database.characters).toBeUndefined()
+    // After Phase 5, db.json is removed; all state lives in SQLite.
     const db = openDatabase(harness.dataDir)
     try {
       const onDisk = loadPersisted(db, harness.dataDir)
@@ -234,12 +229,9 @@ describe('Phase 2A bootstrap + import', () => {
     })
     expect(imported.statusCode).toBe(200)
 
-    // db.json on disk is message-free + hypaV3Data-free, and characters are
-    // stripped (they live in SQLite).
-    const onDiskRaw = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDiskRaw.database.characters).toBeUndefined()
-    // Verify via loadPersisted that the chat metadata is present but messages
-    // are not embedded (they live in the messages table).
+    // After Phase 5, db.json is removed; verify via loadPersisted that the
+    // chat metadata is present but messages are not embedded (they live in the
+    // messages table).
     const verifyDb = openDatabase(harness.dataDir)
     try {
       const onDisk = loadPersisted(verifyDb, harness.dataDir)

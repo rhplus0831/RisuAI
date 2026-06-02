@@ -35,11 +35,7 @@ import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import {
   SUPPORTED_ASSET_CONTENT_TYPES,
-  ensureAssetsExtracted,
-  ensureCharactersExtracted,
-  ensureCollectionsExtracted,
-  ensureMessagesExtracted,
-  ensureSettingsExtracted,
+  ensureDbJsonImported,
   loadPersistedWithMessages,
 } from './repository.js'
 import { ASSET_GC_INTERVAL_MS, type AssetGcOptions, runAssetGc } from './assetGc.js'
@@ -118,11 +114,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // Proactively move any embedded chat.message[] into the SQLite table and make
   // db.json message-free. No-op once converged. Must run after the backfill
   // above, which needs the embedded messages on the first upgrade boot.
-  ensureAssetsExtracted(db, config.dataDir)
-  ensureCharactersExtracted(db, config.dataDir)
-  ensureCollectionsExtracted(db, config.dataDir)
-  ensureSettingsExtracted(db, config.dataDir)
-  ensureMessagesExtracted(db, config.dataDir)
+  ensureDbJsonImported(db, config.dataDir)
   const memoryEventBus = createMemoryEventBus()
   const emitMemoryEvent: MemoryEventSink = (event) => {
     if (opts.memoryEvents) {

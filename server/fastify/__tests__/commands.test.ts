@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
@@ -13,7 +13,7 @@ import {
 } from '../src/commands/mutations.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
-import { loadPersisted, writePersisted, insertAssetMetadataBatch } from '../src/repository.js'
+import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
 
 const subtle = webcrypto.subtle
 
@@ -252,7 +252,7 @@ describe('Phase 9-1 command foundation', () => {
     expect(res.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
   })
 
-  it('emits no event and leaves revision + db.json untouched on a stale (409) write', async () => {
+  it('emits no event and leaves revision + persisted state untouched on a stale (409) write', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDatabase(harness.app, assertion, { streamGeminiThoughts: false })
     // Drop the import's own event so we observe only what the stale write does.
@@ -267,7 +267,7 @@ describe('Phase 9-1 command foundation', () => {
     expect(res.statusCode).toBe(409)
 
     // The revision-mismatch guard throws BEFORE the mutate callback, so nothing
-    // may have leaked: no event, no revision bump, no db.json write.
+    // may have leaked: no event, no revision bump, no persisted write.
     expect(harness.commandEvents.list()).toEqual([])
 
     const bootstrap = await harness.app.inject({
@@ -277,9 +277,6 @@ describe('Phase 9-1 command foundation', () => {
     })
     expect(bootstrap.json().revision).toBe(1)
     expect(bootstrap.json().database).toMatchObject({ streamGeminiThoughts: false })
-
-    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database.streamGeminiThoughts).toBeUndefined()
   })
 
   it('applies the runtime settings harness command, emits an event, and appears in bootstrap', async () => {
@@ -321,7 +318,7 @@ describe('Phase 9-1 command foundation', () => {
     })
   })
 
-  it('does not bump revision or mutate db.json on validation failure', async () => {
+  it('does not bump revision or mutate persisted state on validation failure', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       streamGeminiThoughts: false,
@@ -344,16 +341,13 @@ describe('Phase 9-1 command foundation', () => {
     })
     expect(bootstrap.json().revision).toBe(1)
     expect(bootstrap.json().database).toMatchObject({ streamGeminiThoughts: false })
-
-    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database.streamGeminiThoughts).toBeUndefined()
   })
 
   it('rolls back a thrown JSON command mutation before bumping revision', () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-command-helper-'))
     const db = openDatabase(dataDir)
     const commandEvents = createCommandEventSink()
-    writePersisted(dataDir, {
+    writePersistedWithMessages(db, dataDir, {
       _version: 1,
       database: { streamGeminiThoughts: false },
       assets: [],
@@ -375,7 +369,7 @@ describe('Phase 9-1 command foundation', () => {
       ).toThrow('boom')
 
       expect(getSchemaState(db).revision).toBe(0)
-      expect(loadPersisted(db, dataDir).database).toEqual({ streamGeminiThoughts: false, characters: [] })
+      expect(loadPersisted(db, dataDir).database).toMatchObject({ streamGeminiThoughts: false, characters: [] })
       expect(commandEvents.list()).toEqual([])
     } finally {
       db.close()
@@ -383,11 +377,11 @@ describe('Phase 9-1 command foundation', () => {
     }
   })
 
-  it('rolls back a thrown message-free JSON command mutation before writing db.json', () => {
+  it('rolls back a thrown message-free JSON command mutation before persisting', () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-message-free-command-helper-'))
     const db = openDatabase(dataDir)
     const commandEvents = createCommandEventSink()
-    writePersisted(dataDir, {
+    writePersistedWithMessages(db, dataDir, {
       _version: 1,
       database: { streamGeminiThoughts: false },
       assets: [],
@@ -409,7 +403,7 @@ describe('Phase 9-1 command foundation', () => {
       ).toThrow('boom')
 
       expect(getSchemaState(db).revision).toBe(0)
-      expect(loadPersisted(db, dataDir).database).toEqual({ streamGeminiThoughts: false, characters: [] })
+      expect(loadPersisted(db, dataDir).database).toMatchObject({ streamGeminiThoughts: false, characters: [] })
       expect(commandEvents.list()).toEqual([])
     } finally {
       db.close()
@@ -459,14 +453,6 @@ describe('first-run database seed', () => {
     })
     expect(harness.commandEvents.list()).toEqual([seeded.json().event])
 
-    // db.json now holds only collection markers (settings live in SQLite;
-    // characters live in SQLite; collections are stripped to empty markers).
-    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database.username).toBeUndefined()
-    expect(onDisk.database.characters).toBeUndefined()
-    expect(onDisk.database.botPresets).toEqual([])
-    expect(onDisk.database.personas).toEqual([])
-
     // The previously-rejected settings command now succeeds against revision 1.
     const account = await harness.app.inject({
       method: 'PATCH',
@@ -491,7 +477,7 @@ describe('first-run database seed', () => {
     })
   })
 
-  it('does not seed db.json or bump revision when initialization event persistence fails', async () => {
+  it('does not seed database or bump revision when initialization event persistence fails', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     failCommandEventPersistence(harness.dataDir)
 
@@ -3864,7 +3850,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
   })
 
-  it('updates chat metadata without rewriting message rows or db.json message payloads', async () => {
+  it('updates chat metadata without rewriting message rows', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       characters: [
@@ -3934,9 +3920,6 @@ describe('Phase 9-3b chat record and folder commands', () => {
       bookmarks: ['msg-a'],
       bookmarkNames: { 'msg-a': 'Pinned' },
     })
-    // Characters live in SQLite; db.json has no characters key.
-    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database.characters).toBeUndefined()
   })
 
   it('rejects chat fork commands without client-supplied fork ids without bumping revision', async () => {
@@ -5059,8 +5042,8 @@ describe('Phase 9-3c message history commands', () => {
     expect(chatAMessages[0].chatId).toBe('msg-shared')
     expect(renamedMessageId).not.toBe('msg-shared')
     expect(typeof renamedMessageId).toBe('string')
-    // The import's cross-chat uid repair also rewrote chat-b's bookmarks (db.json
-    // metadata) to the renamed id — verified against the stub bootstrap.
+    // The import's cross-chat uid repair also rewrote chat-b's bookmarks
+    // (metadata) to the renamed id — verified against the stub bootstrap.
     expect(charB.chats[0].bookmarks).toEqual([renamedMessageId])
     expect(charB.chats[0].bookmarkNames).toEqual({ [renamedMessageId]: 'Pinned' })
   })
