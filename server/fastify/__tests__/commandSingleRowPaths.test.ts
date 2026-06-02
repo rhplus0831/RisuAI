@@ -164,6 +164,19 @@ function readSettings(): Record<string, unknown> {
   }
 }
 
+/** Chat ids for one character in stored `position` order. */
+function readChatOrder(characterId: string): string[] {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    const rows = db
+      .prepare('SELECT id FROM chats WHERE character_id = ? ORDER BY position')
+      .all(characterId) as Array<{ id: string }>
+    return rows.map((r) => r.id)
+  } finally {
+    db.close()
+  }
+}
+
 function rowidSnapshot(): { characters: Record<string, number>; chats: Record<string, number> } {
   return {
     characters: tableRowidsById(harness.dataDir, 'characters'),
@@ -428,5 +441,49 @@ describe('Phase 3 single chat-row paths', () => {
     assertCommandMetricGate(metric)
     expectNoChurn(before)
     expect(readChat('chat-a-1').localLore).toEqual([entry])
+  })
+})
+
+describe('Phase 3 character + chat-row cascade paths', () => {
+  it('DELETE chat-folders/:id writes the character row + the re-homed chat rows', async () => {
+    const revision = await importDatabase(seedDatabase())
+    expect(readChat('chat-a-1').folderId, 'folderId preserved on import').toBe('folder-1')
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/chat-folders/folder-1',
+      payload: { baseRevision: revision },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    // chat-a-1 was in folder-1, so its row is re-homed alongside the char row.
+    expect(metric.writtenTables).toEqual(['characters', 'chats'])
+    assertCommandMetricGate(metric)
+    // UPDATE-in-place: no row is DELETE+reINSERTed, so every rowid stays put.
+    expectNoChurn(before)
+    expect(readCharacter('char-a').chatFolders).toEqual([])
+    expect(readChat('chat-a-1').folderId).toBeNull()
+  })
+
+  it('POST chats/reorder shifts only that character\'s chat-row positions', async () => {
+    const revision = await importDatabase(seedDatabase())
+    expect(readChatOrder('char-a')).toEqual(['chat-a-1', 'chat-a-2'])
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats/reorder',
+      payload: { baseRevision: revision, chatIds: ['chat-a-2', 'chat-a-1'] },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters', 'chats'])
+    assertCommandMetricGate(metric)
+    // Positions are UPDATEd in place, so no chat row churns its rowid.
+    expectNoChurn(before)
+    expect(readChatOrder('char-a')).toEqual(['chat-a-2', 'chat-a-1'])
+    // char-b's single chat is untouched.
+    expect(readChatOrder('char-b')).toEqual(['chat-b-1'])
   })
 })

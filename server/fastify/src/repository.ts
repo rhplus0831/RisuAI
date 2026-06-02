@@ -451,6 +451,28 @@ export function writeSingleChatRow(db: DatabaseSync, chatId: string, chat: JsonR
   db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chatClean), chatId)
 }
 
+/** Re-stamp one character's chat rows in place: `position` = array index and the
+ *  updated `data_json`, keyed by id, for reorder / folder-cascade edits where the
+ *  chat set is unchanged. Each row keeps its rowid (UPDATE, not DELETE+reINSERT);
+ *  `message` / `hypaV3Data` are stripped (they live in the message store). */
+export function writeCharacterChatRows(
+  db: DatabaseSync,
+  characterId: string,
+  chats: readonly JsonRecord[],
+): void {
+  recordTableWrite('chats')
+  const stmt = db.prepare(
+    'UPDATE chats SET position = ?, data_json = ? WHERE id = ? AND character_id = ?',
+  )
+  for (let i = 0; i < chats.length; i++) {
+    const chat = chats[i]
+    const chatId = chat.id
+    if (typeof chatId !== 'string') continue
+    const { message: _msg, hypaV3Data: _hypa, ...chatClean } = chat
+    stmt.run(i, JSON.stringify(chatClean), chatId, characterId)
+  }
+}
+
 function collectionTableForField(field: string): string {
   const tableName = COLLECTION_TABLE_MAP[field]
   if (!tableName) {

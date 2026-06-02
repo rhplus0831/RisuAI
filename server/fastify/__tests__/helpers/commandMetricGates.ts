@@ -100,11 +100,23 @@ export const COMMAND_METRIC_REVIEW_GATES = {
     maxTables: ['hypa_v3_presets', 'settings'],
   },
   'targeted-character-row': {
-    reviewGate: 'single character-row edits write that character row plus settings only when a pointer moved',
+    reviewGate:
+      'character-scoped edits write that character row (+ its own chat rows on folder-cascade / chats-reorder, + settings only when a pointer moved) and never another collection table',
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
-    maxTables: ['characters', 'settings'],
-    forbiddenTables: ['chats'],
+    maxTables: ['characters', 'chats', 'settings'],
+    forbiddenTables: [
+      'bot_presets',
+      'hypa_v3_presets',
+      'loadouts',
+      'lore_books',
+      'modules',
+      'personas',
+      'plugin_custom_storage',
+      'plugins',
+      'prompt_templates',
+      'translator_presets',
+    ],
   },
   'targeted-chat-row': {
     reviewGate: 'single chat-row edits write that chat row plus its parent character row only when a pointer moved',

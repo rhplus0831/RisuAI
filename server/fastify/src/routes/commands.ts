@@ -212,6 +212,7 @@ import {
   replacePluginStorage,
   RevisionMismatchError,
   ValidationError,
+  writeCharacterChatRows,
   writePluginStorageKey,
   writeSettingsOnly,
   writeSingleCharacterRow,
@@ -2815,12 +2816,13 @@ export function registerCommandRoutes(
         body.selectedChatId === undefined
           ? undefined
           : readChatId(body.selectedChatId, 'selectedChatId')
-      const result = applyMessageFreeJsonCommandMutation<{ selectedChatId: string | null }>({
+      const result = applyTargetedCommandMutation<{ selectedChatId: string | null }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
           validateFullChatOrder(character, chatIds, folderByChatId)
@@ -2838,6 +2840,11 @@ export function registerCommandRoutes(
           } else {
             ensureCharacterChats(character)
           }
+          // Reorder shifts only this character's chat-row positions (+ folderId
+          // where folderByChatId moved a chat); the character row carries the
+          // `chatPage` pointer. No other character or collection is touched.
+          writeCharacterChatRows(innerDb, characterId, character.chats as Record<string, unknown>[])
+          writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatReordered, parentId: characterId },
             extra: { selectedChatId: selectedChatId(character) },
@@ -2953,20 +2960,32 @@ export function registerCommandRoutes(
       const folderId = readChatFolderId((req.params as { folderId?: unknown }).folderId)
       const body = (req.body ?? {}) as ChatFolderCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyMessageFreeJsonCommandMutation<{ folderId: string }>({
+      const result = applyTargetedCommandMutation<{ folderId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
           const { character, folderIndex } = requireChatFolderIndex(characters, folderId)
           const folders = ensureCharacterChatFolders(character)
           folders.splice(folderIndex, 1)
-          for (const chat of ensureCharacterChats(character)) {
+          // The folder lives on the character row (`chatFolders`); deleting it
+          // re-homes only the chat rows whose `folderId` pointed at it. Iterate
+          // the already-normalized `character.chats` directly: calling
+          // `ensureCharacterChats` again here would itself null the now-orphaned
+          // `folderId` before this comparison could see it.
+          const reHomed: Record<string, unknown>[] = []
+          for (const chat of character.chats as Record<string, unknown>[]) {
             if (chat.folderId === folderId) {
               chat.folderId = null
+              reHomed.push(chat)
             }
+          }
+          writeSingleCharacterRow(innerDb, character.chaId as string, character)
+          for (const chat of reHomed) {
+            writeSingleChatRow(innerDb, chat.id as string, chat)
           }
           return {
             event: {
