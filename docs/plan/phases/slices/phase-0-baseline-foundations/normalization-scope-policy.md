@@ -4,7 +4,7 @@ Status: planned. Codifies Prerequisites 2 and 3 as a written contract.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Prerequisites 2 and 3.
 - `server/fastify/src/routes/commands.ts` - the `ensure*`/`normalize*` repair
   passes at the head of many `mutate` callbacks (`ensureCharacterCollection`,
@@ -20,7 +20,7 @@ This is a policy slice, not runtime code. It writes the contract every targeted
 path must follow so narrowing stays faithful rather than "looks narrow but drops
 data," and provides one shared assertion helper.
 
-**Prerequisite 2 — global de-dup is validate-only.** Many `mutate` callbacks open
+Prerequisite 2 — global de-dup is validate-only. Many `mutate` callbacks open
 with a repair pass that mutates sibling/other rows in place (re-IDs duplicate ids
 via `randomUUID()`, default-fills, clamps pointers). The broad path
 opportunistically persists those repairs for every row; a targeted path computes
@@ -28,9 +28,9 @@ them for validation and discards the sibling-row writes. This is the same
 tradeoff `b57df5cd` accepted (`loadCharacterSelectionRows` reads one raw row and
 skips normalization) and is data-safe under the project posture (no users, no
 migrations, dirty-backup data acceptable). Each targeted path still re-normalizes
-**its own** target row.
+its own target row.
 
-**Prerequisite 3 — "single-X" usually means one row plus the settings row.**
+Prerequisite 3 — "single-X" usually means one row plus the settings row.
 Normalization commonly writes a settings scalar alongside the row edit
 (`characterOrder`/`currentChar` on character create/trash; `lastLoadedLoadoutName`
 on loadout edits; the collection's pointer clamp on preset/persona/translator

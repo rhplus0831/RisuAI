@@ -5,7 +5,7 @@ projection-field co-fix.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 personas row and the `persona` projection-field bug.
 - `server/fastify/src/routes/commands.ts` - create (1637), patch (1682), delete
   (1732), select (1804), reorder (1850).
@@ -26,8 +26,8 @@ tables + all characters. Narrow to the `personas` table (+ settings).
 | `POST personas/reorder` (1850) | `personas` table. |
 
 select/delete also write the legacy mirror scalars (`username`, `userIcon`,
-`personaPrompt`, `userNote`) via `mirrorLegacyProfile` — these are **not** in the
-persona projection field set. **Projection-field fix:** add them to the `persona`
+`personaPrompt`, `userNote`) via `mirrorLegacyProfile` — these are not in the
+persona projection field set. Projection-field fix: add them to the `persona`
 resource (they read straight off the settings row).
 
 ## Implementation Scope

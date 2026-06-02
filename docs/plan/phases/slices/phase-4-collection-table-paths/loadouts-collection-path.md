@@ -5,7 +5,7 @@ projection-field co-fix.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 loadouts row and the `loadout` projection-field bug.
 - `server/fastify/src/routes/commands.ts` - create (2085), patch (2121), delete
   (2163), favorite (2197), touch (2232).
@@ -27,7 +27,7 @@ tables + all characters. Narrow to the `loadouts` table + settings.
 
 `favorite`/`touch` are pure field edits but `ensureLoadoutCollection` rewrites the
 whole array on every call, so they are full one-table rewrites, not single-row.
-**Projection-field fix:** `loadout` omits `lastLoadedLoadoutName`, which
+Projection-field fix: `loadout` omits `lastLoadedLoadoutName`, which
 `touch`/`delete` write — add it (see
 [`../phase-5-projection-range-narrowing/projection-field-bug-fixes.md`](../phase-5-projection-range-narrowing/projection-field-bug-fixes.md)).
 

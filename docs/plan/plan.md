@@ -4,31 +4,28 @@ Date: 2026-06-03
 
 ## Goal
 
-Narrow every command route in `server/fastify/src/routes/commands.ts` so the
-state it physically writes (and the projection it re-ships on refresh) matches
-the state it logically changes, without weakening the `baseRevision`, single
-revision-bump, single command-event, transaction-ordering, or projection
-contracts.
+Narrow each command route in `server/fastify/src/routes/commands.ts` so its
+physical writes, and any refresh projection, match the state it logically
+changes. Preserve `baseRevision`, the single revision bump, the single command
+event, transaction ordering, and projection contracts.
 
 End state:
 
-- A command that changes one settings scalar issues one `UPDATE settings`.
-- A command that changes one character row, one chat row, or one element of one
-  collection writes only that row (plus the settings row when a pointer scalar
-  genuinely moved), never every character row and all nine collection tables.
-- Key-addressable plugin custom storage writes touch only `plugin_custom_storage`.
-- Narrowed mutations have matching narrow projection resources where a foreign or
-  recovery refresh would otherwise re-ship whole arrays, and the pre-existing
-  projection-field bugs are corrected.
-- Routes whose deeper narrowing is genuinely blocked (cross-table spans,
-  load-bearing message or normalization dependencies) sit at the safe
-  `message-free` floor with the blocker and unblock condition recorded.
-- Every new narrow path has a `dbJsonWriteMs: 0` metric review gate and a
-  rowid-stability regression test proving unrelated rows are not rewritten.
+- Settings-scalar commands issue one `UPDATE settings`.
+- Single character, chat, or collection-row commands write only that row, plus
+  settings when a pointer scalar moved.
+- Plugin custom storage writes touch only `plugin_custom_storage`.
+- Narrow writes have matching narrow projection resources when broad refreshes
+  would otherwise re-ship whole arrays.
+- Existing projection-field bugs are fixed.
+- Blocked routes stay at the `message-free` floor with the blocker and unblock
+  condition recorded.
+- Every new narrow path has a `dbJsonWriteMs: 0` metric gate and a
+  rowid-stability regression test.
 
 ## Boundary Sources
 
-- [`../mutation-range-mismatch.md`](mutation-range-mismatch.md) seeded the
+- [`mutation-range-mismatch.md`](mutation-range-mismatch.md) seeded the
   route inventory, per-tier findings, severity, and prerequisites for this plan;
   [`status.md`](status.md) records which items have since closed.
 - `server/fastify/src/routes/commands.ts` owns the 79 command routes and which
@@ -46,23 +43,27 @@ End state:
 
 ## Current Baseline
 
-The JSON `database` is split across SQLite tables: a single `settings` row holds
-every non-collection, non-character top-level key (pointers and scalars such as
-`characterOrder`, `currentChar`, `botPresetsId`, `selectedPersona`,
-`enabledModules`, `currentPluginProvider`, `loreBookPage`, `translatorPreset*`,
-`lastLoadedLoadoutName`); `characters` holds one row per character; `chats` holds
-one row per chat; nine position-keyed collection tables hold `modules`, `plugins`,
-`botPresets`, `promptTemplate`, `personas`, `loadouts`, `loreBook`,
-`translatorPresets`, and `hypaV3Presets`; `plugin_custom_storage` is a standalone
-key/value table; and the message store holds `chats[].message[]`, `hypaV3Data`,
-and alternates with surgical writers.
+The JSON `database` is split across SQLite tables:
+
+- `settings`: one row for non-collection, non-character top-level keys
+  (`characterOrder`, `currentChar`, `botPresetsId`, `selectedPersona`,
+  `enabledModules`, `currentPluginProvider`, `loreBookPage`,
+  `translatorPreset*`, `lastLoadedLoadoutName`, etc.).
+- `characters`: one row per character.
+- `chats`: one row per chat.
+- Nine position-keyed collection tables: `modules`, `plugins`, `botPresets`,
+  `promptTemplate`, `personas`, `loadouts`, `loreBook`, `translatorPresets`,
+  `hypaV3Presets`.
+- `plugin_custom_storage`: standalone key/value table.
+- Message store: `chats[].message[]`, `hypaV3Data`, and alternates, already with
+  surgical writers.
 
 The four mutation helpers in `server/fastify/src/commands/mutations.ts`:
 
 | Helper | `mutationPath` | Physically writes |
 | --- | --- | --- |
-| `applyJsonCommandMutation` | `hydrated` | loads ALL chat messages, then surgical `syncChatMessages` plus a rewrite of ALL characters, ALL chats, ALL nine collection tables, and settings |
-| `applyMessageFreeJsonCommandMutation` | `message-free` | no message load, but still rewrites ALL characters, ALL chats, ALL nine collection tables, and settings |
+| `applyJsonCommandMutation` | `hydrated` | loads all chat messages, then surgical `syncChatMessages` plus a rewrite of all characters, chats, nine collection tables, and settings |
+| `applyMessageFreeJsonCommandMutation` | `message-free` | no message load, but still rewrites all characters, chats, nine collection tables, and settings |
 | `applyTargetedCommandMutation` | custom | loads message-free `db.json` for validation only; callback does its own targeted SQLite writes; runs the broad `replaceAll*` only if `writeDatabase: true` (default off) |
 | `applyCharacterSelectionCommandMutation` | `targeted-character-selection` | bespoke: writes exactly one character row plus the settings row — the reference fix |
 
@@ -74,37 +75,25 @@ change. Post-verification severity is 51 high, 18 medium, 3 low.
 
 ## Prerequisites
 
-These cross-cutting prerequisites (from the audit's adversarial verifier) keep
-the fixes faithful rather than "looks narrow but drops data," and are realized in
-Phase 0 before any Tier write is narrowed.
+Phase 0 handles these prerequisites before any tier write is narrowed.
 
-1. **The targeted writers do not exist yet.** `repository.ts` has only
-   `writeCharacterSelectionRows` plus the broad `replaceAll*` and the surgical
-   message-store writers. A small writer kit is required: `writeSettingsOnly`,
-   `writeSingleCharacterRow`, `writeSingleChatRow`, `writeSingleCollectionTable`
-   / `writeSingleCollectionRow`, and `writePluginStorageKey` /
-   `deletePluginStorageKey`.
-2. **Whole-collection normalization is a deliberate dropped write.** Many
-   `mutate` callbacks open with a repair pass that re-IDs duplicate ids,
-   default-fills, or clamps pointers across sibling rows. The broad path
-   opportunistically persists those repairs for every row; a targeted write
-   computes them and discards them. This is the same tradeoff `b57df5cd` already
-   accepted and is data-safe under the project posture (no users, no migrations,
-   dirty-backup data acceptable). Each targeted path re-normalizes only its own
-   target row and treats global de-dup as validate-only.
-3. **"Single-X" usually means one row plus the settings row.** Normalization
-   commonly writes a settings scalar alongside the row edit (`characterOrder` /
-   `currentChar` on character create/trash, `lastLoadedLoadoutName` on loadout
-   edits, the collection's pointer clamp on preset/persona/translator edits). The
-   targeted writer conditionally `UPDATE settings` only when that scalar actually
-   changed, exactly as `writeCharacterSelectionRows` writes both rows.
-4. **The universal cheap floor: drop `hydrated` to `message-free`.** 64 of the
-   66 `applyJsonCommandMutation` routes never read or write `chat.message[]`, so
-   `loadPersistedWithMessages` plus `syncChatMessages` is pure waste (the sync is
-   a guaranteed no-op). Swapping those routes to
-   `applyMessageFreeJsonCommandMutation` is mechanical, helper-free, and
-   correctness-risk-free; it is a stopgap, not the fix, because it still rewrites
-   all characters plus nine collection tables plus settings.
+1. Build the writer kit. `repository.ts` has only `writeCharacterSelectionRows`,
+   broad `replaceAll*`, and surgical message-store writers. Add
+   `writeSettingsOnly`, `writeSingleCharacterRow`, `writeSingleChatRow`,
+   `writeSingleCollectionTable` / `writeSingleCollectionRow`,
+   `writePluginStorageKey`, and `deletePluginStorageKey`.
+2. Treat global normalization as validate-only. Broad paths persist sibling-row
+   repairs; targeted paths compute those repairs for validation, then write only
+   the target row. This matches `b57df5cd` and is acceptable here because there
+   are no users, no migrations, and backup data may be lost.
+3. Co-write settings when a pointer moved. Many row edits also touch settings
+   (`characterOrder`, `currentChar`, `lastLoadedLoadoutName`, preset/persona/
+   translator pointers). Targeted writers update settings only when the scalar
+   actually changed.
+4. Use `message-free` as the cheap floor. Most `hydrated` routes never touch
+   `chat.message[]`, so the message load and `syncChatMessages` no-op can go.
+   This is mechanical and safe, but it is only a stopgap because it still rewrites
+   characters, collections, and settings.
 
 ## Invariants
 
@@ -131,40 +120,32 @@ Phase 0 before any Tier write is narrowed.
 
 | Phase | Goal |
 | --- | --- |
-| [0. Baseline Foundations](phases/phase-0-baseline-foundations.md) | Build the targeted writer kit, the targeted mutation paths, the mutation-range metric + review gates, and the normalization-scope policy that every later tier depends on. |
-| [1. Message-Free Floor](phases/phase-1-message-free-floor.md) | Mechanically swap the ~62 non-message `hydrated` routes to `message-free` (Prerequisite 4) — the safe, helper-free first commit. |
-| [2. Settings And Plugin-Storage Paths](phases/phase-2-settings-and-plugin-storage-paths.md) | Narrow Tier-1 pure-settings/pointer writes to `UPDATE settings` and Tier-2 plugin custom storage to single-key writes. |
-| [3. Single Row Paths](phases/phase-3-single-row-paths.md) | Narrow Tier-3 single character-row and single chat-row metadata edits to one-row writes. |
-| [4. Collection-Table Paths](phases/phase-4-collection-table-paths.md) | Narrow Tier-4 edits from all nine collection tables to one table (single-row or one-table rewrite), with pointer-settings co-writes. |
-| [5. Projection-Range Narrowing](phases/phase-5-projection-range-narrowing.md) | Add narrow projection resources for the narrowed writes, split the broad `lorebook` resource, and fix the pre-existing projection-field bugs. |
-| [6. Message-Free Ceiling](phases/phase-6-message-free-ceiling.md) | Keep Tier-5 routes at the `message-free` floor where deeper narrowing is genuinely blocked, recording each blocker and unblock condition. |
-| [7. Verification Budgets](phases/phase-7-verification-budgets.md) | Turn written-table-set, rowid-stability, and `dbJsonWriteMs: 0` checks into maintained gates and keep the latest verification log. |
+| [0. Baseline Foundations](phases/phase-0-baseline-foundations.md) | Add the writer kit, targeted paths, metric gates, and normalization policy. |
+| [1. Message-Free Floor](phases/phase-1-message-free-floor.md) | Swap safe non-message `hydrated` routes to `message-free`. |
+| [2. Settings And Plugin-Storage Paths](phases/phase-2-settings-and-plugin-storage-paths.md) | Narrow settings and plugin-storage writes. |
+| [3. Single Row Paths](phases/phase-3-single-row-paths.md) | Narrow single character-row and chat-row edits. |
+| [4. Collection-Table Paths](phases/phase-4-collection-table-paths.md) | Narrow collection edits to one table plus needed settings. |
+| [5. Projection-Range Narrowing](phases/phase-5-projection-range-narrowing.md) | Add narrow projection resources and fix projection-field bugs. |
+| [6. Message-Free Ceiling](phases/phase-6-message-free-ceiling.md) | Record routes that stop at the `message-free` floor. |
+| [7. Verification Budgets](phases/phase-7-verification-budgets.md) | Maintain written-table, rowid, and `dbJsonWriteMs: 0` gates. |
 
 ## Suggested Execution Order
 
-1. Capture the Phase 0 mutation-range metric baseline for the 71 over-broad
-   routes against the existing message-heavy harness, and land the
-   rowid-stability / `dbJsonWriteMs: 0` review-gate template. This proves the
-   before-state.
-2. Land the Phase 1 mechanical floor next; it depends on no new helper and
-   removes the all-messages load and chat-row rewrite from ~62 routes with zero
-   correctness risk. (Skip the genuinely message-dependent routes: 2390, 2495,
-   2617, 2655, and the message commands.)
-3. Finish the rest of Phase 0 (writer kit, targeted mutation paths,
-   normalization-scope policy); Phases 2-5 depend on it.
-4. Phase 2 first among the write tiers — highest amplification, cleanest fix,
-   projection already safe or sprawling-by-design.
-5. Phase 3, landing the matching Phase 5 character/chat projection branches in
-   the same batches.
-6. Phase 4 (plugins family first — projection already narrow, lowest risk), then
-   the remaining families with their pointer-settings co-writes and the
-   Phase 5 collection-projection and field-bug co-fixes.
-7. The Phase 5 `lorebook` resource split once a global-lorebook command is
+1. Capture the Phase 0 metric baseline and land the reusable
+   rowid-stability / `dbJsonWriteMs: 0` gate.
+2. Land the Phase 1 floor. Skip the message-dependent routes: 2390, 2495, 2617,
+   2655, and the message commands.
+3. Finish Phase 0: writer kit, targeted mutation paths, normalization policy.
+4. Do Phase 2 first among write tiers: highest amplification, cleanest fix.
+5. Do Phase 3 with its matching Phase 5 character/chat projections.
+6. Do Phase 4, plugins first, then the other families with pointer co-writes and
+   projection-field fixes.
+7. Split the Phase 5 `lorebook` resource after a global-lorebook command is
    narrowed.
-8. Defer Phase 6 deeper narrowing until the relevant normalization passes are
-   scoped to validate-only; until then leave those routes at the floor.
+8. Leave Phase 6 routes at the floor until their normalization/message blockers
+   are scoped.
 9. Keep Phase 7 gates and [`latest-verification.md`](latest-verification.md)
-   current as each tier lands.
+   current as tiers land.
 
 For every targeted path: re-normalize the target row, treat global de-dup as
 validate-only (Prerequisite 2), conditionally co-write settings (Prerequisite 3),

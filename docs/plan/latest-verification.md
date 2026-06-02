@@ -2,19 +2,17 @@
 
 Date: 2026-06-03
 
-This file records the latest maintained verification result for the command
-mutation-range narrowing workstream. Replace this section on the next full or
-focused verification run; do not append historical runs here.
+This file holds the latest verification result for this workstream. Replace the
+latest-run section on each full or focused run; do not append history.
 
 ## Latest Run
 
 - Runtime/code commit under test: none. No mutation-range narrowing slice has
   landed. This entry records the pre-implementation baseline.
-- Scope: the seed audit [`../mutation-range-mismatch.md`](mutation-range-mismatch.md)
-  was produced by a fan-out classifier pass and re-checked by an adversarial
-  verifier. No route, helper, write range, projection, revision, or event
-  behavior has changed yet. The only existing narrow path is the reference fix
-  `b57df5cd` (`characters/select`).
+- Scope: the seed audit [`mutation-range-mismatch.md`](mutation-range-mismatch.md)
+  came from a fan-out classifier pass and an adversarial verifier. No route,
+  helper, write range, projection, revision, or event behavior has changed. The
+  only existing narrow path is `b57df5cd` (`characters/select`).
 - Result: not yet run for this workstream — the first implementation slice must
   populate the gate set below.
 

@@ -4,7 +4,7 @@ Status: planned. The safe, helper-free first commit (Prerequisite 4).
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Prerequisite 4 and "Suggested implementation order" step 1; the appendix route
   table lists every route's current helper.
 - `server/fastify/src/routes/commands.ts` - the route registrations.
@@ -23,7 +23,7 @@ This is a stopgap, not the fix: a `message-free` route still rewrites all
 characters, all nine collection tables, and settings. It is the safe first commit
 for every `hydrated` non-message route the later tiers will narrow further.
 
-**Skip (keep their current helper):**
+Skip (keep their current helper):
 
 - 2390 `DELETE characters/:id` — orphan message rows are cleaned only because the
   hydrate lets `syncChatMessages` see them vanish (Phase 6).

@@ -5,7 +5,7 @@ projection-field co-fix.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 prompt-items row and the `promptItem` projection-field bug.
 - `server/fastify/src/routes/commands.ts` - create (1453), patch (1489), delete
   (1528), enable (1562), reorder (1601).
@@ -26,7 +26,7 @@ rewrite all nine collection tables + all characters. Narrow to the
 | `POST prompt-items/enable` (1562) | single-row `prompt_templates`. |
 | `POST prompt-items/reorder` (1601) | `prompt_templates` table. |
 
-No pointer scalar rides along. **Projection-field bug:** `promptItem` maps to
+No pointer scalar rides along. Projection-field bug: `promptItem` maps to
 `['botPresets']`, so a foreign refresh never reflects the changed `promptTemplate`
 — fix it to `['promptTemplate']` in this slice (see
 [`../phase-5-projection-range-narrowing/projection-field-bug-fixes.md`](../phase-5-projection-range-narrowing/projection-field-bug-fixes.md)).

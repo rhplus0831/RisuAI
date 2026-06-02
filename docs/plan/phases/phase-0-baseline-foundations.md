@@ -2,15 +2,14 @@
 
 Status: planned.
 
-Goal: build the shared scaffolding every later tier depends on — the targeted
-SQLite writer kit, the targeted mutation paths and their `mutationPath` labels,
-the mutation-range metric and review gates, and the written normalization-scope
-policy. None of this changes a route's write range on its own; it makes a narrow
-write possible and provable.
+Goal: add the shared scaffolding later tiers need: targeted SQLite writers,
+targeted mutation paths, `mutationPath` labels, mutation-range metrics, review
+gates, and the normalization-scope policy. This phase does not narrow routes; it
+makes narrowing possible and provable.
 
 ## Source Anchors
 
-- [`../../mutation-range-mismatch.md`](../mutation-range-mismatch.md) -
+- [`../mutation-range-mismatch.md`](../mutation-range-mismatch.md) -
   prerequisites 1-3 and the reference fix.
 - `server/fastify/src/repository.ts` - `writeCharacterSelectionRows`, the broad
   `replaceAll*` writers, the nine collection tables, `plugin_custom_storage`.

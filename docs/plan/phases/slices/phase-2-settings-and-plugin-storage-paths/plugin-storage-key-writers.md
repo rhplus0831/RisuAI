@@ -5,7 +5,7 @@ Status: planned. Tier 2. Depends on the Phase 0 writer kit
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 2.
 - `server/fastify/src/routes/commands.ts` - put (4032), delete (4066), bulk
   (4099).

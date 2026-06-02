@@ -4,7 +4,7 @@ Status: planned. Tier 4. Depends on the Phase 0 writer kit.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 presets row.
 - `server/fastify/src/routes/commands.ts` - create (1105), patch (1143), delete
   (1185), copy (1251), select (1299), import (1341), reorder (1379).
@@ -21,9 +21,9 @@ tables + all characters. Narrow to the `bot_presets` table (+ settings
 | --- | --- |
 | `POST presets` (1105) | `bot_presets` table (+ settings `botPresetsId`). |
 | `PATCH presets/:id` (1143) | single-row `bot_presets`. |
-| `DELETE presets/:id` (1185) | `bot_presets` table (+ settings `botPresetsId`). **With `apply=true`:** also the `prompt_templates` table + ~73 settings scalars (via `applyPreset` writing `promptTemplate`). |
+| `DELETE presets/:id` (1185) | `bot_presets` table (+ settings `botPresetsId`). With `apply=true`: also the `prompt_templates` table + ~73 settings scalars (via `applyPreset` writing `promptTemplate`). |
 | `POST presets/:id/copy` (1251) | `bot_presets` table. |
-| `POST presets/select` (1299) | `bot_presets` table (+ settings `botPresetsId`). **With `apply=true`:** also `prompt_templates` + ~73 settings scalars. |
+| `POST presets/select` (1299) | `bot_presets` table (+ settings `botPresetsId`). With `apply=true`: also `prompt_templates` + ~73 settings scalars. |
 | `POST presets/import` (1341) | `bot_presets` table. |
 | `POST presets/reorder` (1379) | `bot_presets` table. |
 

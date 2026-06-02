@@ -5,7 +5,7 @@ Phase 0 writer kit.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 translator row and the Tier-1 note on `translator-presets/select`.
 - `server/fastify/src/routes/commands.ts` - create (1895), patch (1936), delete
   (1984), select (2050).
@@ -22,10 +22,10 @@ settings.
 | `POST translator-presets` (1895) | `translator_presets` table + settings. |
 | `PATCH translator-presets/:id` (1936) | `translator_presets` table + settings. |
 | `DELETE translator-presets/:id` (1984) | `translator_presets` table + settings. |
-| `POST translator-presets/select` (2050) | `translator_presets` table + settings (`translatorPresetId`/`translatorPrompt`/`translatorMaxResponse`). Reclassified here from Tier 1 — it is **not** settings-only. |
+| `POST translator-presets/select` (2050) | `translator_presets` table + settings (`translatorPresetId`/`translatorPrompt`/`translatorMaxResponse`). Reclassified here from Tier 1 — it is not settings-only. |
 
 `ensureTranslatorPresetCollection` reassigns the whole array and syncs legacy
-fields on **every** call, so even pure field edits become a full one-table
+fields on every call, so even pure field edits become a full one-table
 rewrite + an unconditional settings write (not a single-row `UPDATE`). select
 (2050) is included here rather than in the Phase 2 settings-only slice for exactly
 this reason.

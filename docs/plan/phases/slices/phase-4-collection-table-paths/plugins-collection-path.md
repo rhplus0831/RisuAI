@@ -6,7 +6,7 @@ Depends on the Phase 0 writer kit (`writeSingleCollectionTable` /
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 plugins row.
 - `server/fastify/src/routes/commands.ts` - create (3823), patch (3859), delete
   (3894), enable (3931), reorder (3998).

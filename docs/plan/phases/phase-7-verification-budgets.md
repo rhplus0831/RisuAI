@@ -2,12 +2,9 @@
 
 Status: planned. Maintained throughout as each tier lands.
 
-Goal: turn the proof of a narrow write into a maintained gate, so a later edit
-cannot silently widen a route's write range back. The reference fix established
-two checkable artifacts: a `dbJsonWriteMs: 0` metric review gate per targeted
-`mutationPath`, and a `tableRowidsById` rowid-stability assertion proving
-unrelated rows keep their rowids. This phase generalizes both into per-route
-budgets and keeps the verification log current.
+Goal: keep narrow writes narrow. Generalize the reference fix's
+`dbJsonWriteMs: 0` metric gate and `tableRowidsById` rowid-stability assertion
+into maintained per-route budgets. Keep the verification log current.
 
 ## Source Anchors
 

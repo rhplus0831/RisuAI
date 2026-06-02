@@ -5,7 +5,7 @@ script-definition normalization is scoped to validate-only.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 5 entries for 4171, 4205.
 - `server/fastify/src/routes/commands.ts` - PUT characters/:id/scripts (4171), PUT
   characters/:id/triggers (4205).
@@ -14,7 +14,7 @@ script-definition normalization is scoped to validate-only.
 
 | Route (line) | Blocker | Floor / unblock |
 | --- | --- | --- |
-| `PUT characters/:id/scripts` (4171) | `normalizeScriptDefinitionDatabase` + `ensureCharacterCollection` rewrite **all** characters + **all** modules + settings (`characterOrder`/`currentChar`) on every call. A single-character-row write would silently drop those repairs, and there is no helper for it. | `message-free-downgrade` only now. Verifier downgraded from the optimistic single-character-row claim: medium. |
+| `PUT characters/:id/scripts` (4171) | `normalizeScriptDefinitionDatabase` + `ensureCharacterCollection` rewrite all characters + all modules + settings (`characterOrder`/`currentChar`) on every call. A single-character-row write would silently drop those repairs, and there is no helper for it. | `message-free-downgrade` only now. Verifier downgraded from the optimistic single-character-row claim: medium. |
 | `PUT characters/:id/triggers` (4205) | Same normalization span as 4171. | `message-free-downgrade` only now. Verifier: low. |
 
 The single-character-row fix (the audit's optimistic lever) requires

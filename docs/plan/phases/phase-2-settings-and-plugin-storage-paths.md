@@ -2,16 +2,13 @@
 
 Status: planned. Depends on the Phase 0 writer kit and review gates.
 
-Goal: narrow the two highest-ratio, cleanest tiers. Tier 1 routes change one
-settings scalar but rewrite the whole DB; they narrow to one `UPDATE settings`.
-Tier 2 plugin custom storage is key-addressable but rewrites all characters plus
-nine collection tables; it narrows to a single-key write on `plugin_custom_storage`.
-Both are closest to the reference fix, and their projections are already safe or
-sprawling-by-design.
+Goal: narrow the two cleanest high-ratio tiers. Tier 1 becomes one
+`UPDATE settings`. Tier 2 becomes a key write on `plugin_custom_storage`. Their
+projections are already safe or intentionally sprawling.
 
 ## Source Anchors
 
-- [`../../mutation-range-mismatch.md`](../mutation-range-mismatch.md) - Tier 1
+- [`../mutation-range-mismatch.md`](../mutation-range-mismatch.md) - Tier 1
   and Tier 2.
 - `server/fastify/src/routes/commands.ts` - the Tier-1 and Tier-2 routes.
 - `server/fastify/src/commands/mutations.ts` - target paths.

@@ -5,7 +5,7 @@ Status: planned. Tier 3. Depends on the Phase 0 writer kit (`writeSingleChatRow`
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 3 "Single chat row".
 - `server/fastify/src/routes/commands.ts` - scriptstate (2983), chats/:id PATCH
   (2560), chats/:id/lorebooks (3564).
@@ -18,7 +18,7 @@ The change is one chat row (`scriptstate` and `localLore` live in
 
 | Route (line) | Desired write | Notes |
 | --- | --- | --- |
-| `PATCH chats/:id/scriptstate` (2983) | the patched chat row (`scriptstate`); + its parent character row only if keeping the `normalizeAllCharacterChats` repairs. | **Hot path** (script/generation runtime), currently `hydrated`. Dominant win is dropping the all-message hydrate + the all-character/nine-collection rewrite on every scriptstate write. |
+| `PATCH chats/:id/scriptstate` (2983) | the patched chat row (`scriptstate`); + its parent character row only if keeping the `normalizeAllCharacterChats` repairs. | Hot path (script/generation runtime), currently `hydrated`. Dominant win is dropping the all-message hydrate + the all-character/nine-collection rewrite on every scriptstate write. |
 | `PATCH chats/:id` (2560) | one chat row; + the parent character row only when `select:true` (`chatPage` moves). | Already `message-free`. |
 | `PUT chats/:id/lorebooks` (3564) | one chat row (`localLore`). | Needs `writeSingleChatRow` and a policy on cross-character normalization (validate-only). |
 

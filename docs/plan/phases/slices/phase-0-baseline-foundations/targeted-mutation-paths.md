@@ -9,7 +9,7 @@ Status: planned. Depends on [`targeted-writer-kit.md`](targeted-writer-kit.md).
   `applyCharacterSelectionCommandMutation` (~266), `applyJsonCommandMutation`
   (~349).
 - `server/fastify/src/repository.ts` - the writer kit.
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   the four-helper table.
 
 ## Scope

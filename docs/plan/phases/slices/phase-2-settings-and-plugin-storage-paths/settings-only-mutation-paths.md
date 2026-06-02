@@ -5,7 +5,7 @@ and review gates.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 1.
 - `server/fastify/src/routes/commands.ts` - the routes below.
 - `server/fastify/src/repository.ts` - `writeSettingsOnly`.
@@ -29,7 +29,7 @@ settings-only mutation modeled on `applyCharacterSelectionCommandMutation`
 | `PATCH settings/:group` (1074) | `UPDATE settings` (8 of 9 groups) | the `memory` group additionally rewrites `hypa_v3_presets` only when the patch carries `hypaV3Presets`. Already `message-free`; this is the high-severity core (it rewrites every character row for a settings patch). |
 | `POST lorebooks/:lorebookId/select` (3459) | `UPDATE settings` only (`loreBookPage`) | must explicitly accept dropping the `ensureAllChildLorebooks` repairs it currently persists across characters/chats/modules (Prerequisite 2). |
 
-translator-presets/select (2050) is listed in the audit's Tier 1 but is **not**
+translator-presets/select (2050) is listed in the audit's Tier 1 but is not
 settings-only — it also rewrites the `translator_presets` table — so it is
 handled with the translator family in
 [`../phase-4-collection-table-paths/translator-presets-collection-path.md`](../phase-4-collection-table-paths/translator-presets-collection-path.md).

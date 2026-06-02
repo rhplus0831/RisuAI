@@ -4,19 +4,14 @@ Status: planned. Depends on the Phase 0 writer kit
 (`writeSingleCollectionTable` / `writeSingleCollectionRow`, `writeSettingsOnly`)
 and review gates.
 
-Goal: narrow Tier-4 edits from "all nine collection tables + all characters" to
-the one collection table that changed. Pure field edits (`PATCH`, `enable`,
-`favorite`) become a single-row `UPDATE ... WHERE position=?`; create/delete/
-reorder shift positions and justify a full rewrite of that one table. A family's
-pointer scalar (`botPresetsId`, `selectedPersona`, `translatorPresetId`,
-`loreBookPage`, `lastLoadedLoadoutName`, `currentPluginProvider`) rides along in
-settings only when it actually changed (Prerequisite 3). One slice per family so
-an agent picks up one family per batch; the projection-field bug co-fixes land in
-the same slices (see Phase 5).
+Goal: narrow Tier-4 edits to the one collection table that changed. Pure field
+edits use one-row `UPDATE ... WHERE position=?`; create/delete/reorder rewrite
+that one table. Settings pointer scalars ride along only when they changed. Each
+slice owns one collection family and its projection-field co-fix.
 
 ## Source Anchors
 
-- [`../../mutation-range-mismatch.md`](../mutation-range-mismatch.md) - the
+- [`../mutation-range-mismatch.md`](../mutation-range-mismatch.md) - the
   Tier-4 family table.
 - `server/fastify/src/routes/commands.ts` - the family routes.
 - `server/fastify/src/repository.ts` - the nine collection tables and the

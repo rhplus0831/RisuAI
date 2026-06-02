@@ -4,18 +4,14 @@ Status: planned. Co-scheduled with Phases 2-4 (a projection branch lands in the
 same batch as the write it serves); the field-bug fixes are independent and can
 land anytime.
 
-Goal: narrow the read/refresh side. `RESOURCE_PROJECTION_FIELDS`
-(`routes/projection.ts`) maps each command-event `resource` to the top-level keys
-a foreign or recovery refresh re-ships. Under the single-writer invariant these
-refreshes are rare, so this is secondary to the write side — but a narrowed write
-with a broad projection leaves the refresh shipping whole arrays, and the
-reference fix narrowed both (it added `characterSelection` → `[]` plus a bespoke
-loader branch). The three field bugs ship the wrong field and are broken today
-regardless of write range.
+Goal: narrow the read/refresh side. `RESOURCE_PROJECTION_FIELDS` maps each event
+resource to the fields a foreign or recovery refresh ships. These refreshes are
+rare, but a narrowed write with a broad projection still refreshes too much. The
+three field bugs ship the wrong fields today and should be fixed regardless.
 
 ## Source Anchors
 
-- [`../../mutation-range-mismatch.md`](../mutation-range-mismatch.md) -
+- [`../mutation-range-mismatch.md`](../mutation-range-mismatch.md) -
   "Projection-range mismatches (read/refresh side)".
 - `server/fastify/src/routes/projection.ts` - `RESOURCE_PROJECTION_FIELDS`
   (line ~34), `characterSelection` (~36), `loadCharacterSelectionProjection`

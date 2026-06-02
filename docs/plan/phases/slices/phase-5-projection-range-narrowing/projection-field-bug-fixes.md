@@ -6,7 +6,7 @@ fix is standalone.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   "Pre-existing projection-field bugs".
 - `server/fastify/src/routes/projection.ts` - `prompt`/`promptItem` (~45-46),
   `persona`, `loadout`.

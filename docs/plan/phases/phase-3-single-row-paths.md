@@ -3,15 +3,14 @@
 Status: planned. Depends on the Phase 0 writer kit (`writeSingleCharacterRow`,
 `writeSingleChatRow`) and review gates.
 
-Goal: narrow Tier-3 single character-row and single chat-row metadata edits from
-a whole-DB rewrite to a one-row `UPDATE ... WHERE id=?`. Most of these are
-`hydrated` despite touching no messages, so they also lose the all-messages load.
-Narrowing the write never desyncs the projection (the foreign/recovery refresh
-reads SQLite fresh); the matching narrow projection branch lands in Phase 5.
+Goal: narrow Tier-3 character/chat metadata edits to
+`UPDATE ... WHERE id=?`. Most are `hydrated` despite touching no messages, so
+they also drop the all-message load. Projection stays correct because refresh
+reads SQLite fresh; Phase 5 adds the narrower refresh shapes.
 
 ## Source Anchors
 
-- [`../../mutation-range-mismatch.md`](../mutation-range-mismatch.md) - Tier 3.
+- [`../mutation-range-mismatch.md`](../mutation-range-mismatch.md) - Tier 3.
 - `server/fastify/src/routes/commands.ts` - the Tier-3 routes.
 - `server/fastify/src/repository.ts` - `writeSingleCharacterRow`,
   `writeSingleChatRow` (no `chats` single-row writer exists today).

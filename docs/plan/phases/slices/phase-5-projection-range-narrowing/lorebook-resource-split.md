@@ -5,7 +5,7 @@ character/chat/module lorebook projections.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   the `lorebook` resource (the broadest) and the resource-split note.
 - `server/fastify/src/routes/projection.ts` - `lorebook` →
   `['characters','modules','loreBook','loreBookPage']`.

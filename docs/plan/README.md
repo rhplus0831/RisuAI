@@ -2,14 +2,14 @@
 
 Date: 2026-06-03
 
-This directory is the working plan for resolving the command mutation-range
-mismatches catalogued in [`../mutation-range-mismatch.md`](mutation-range-mismatch.md).
-A "mutation-range mismatch" is a command that logically changes a small slice of
-state (one settings scalar, one row of one collection, one character row, one
-chat row) but is routed through a broad mutation helper that physically rewrites
-far more, or maps to a broad projection resource that re-ships whole arrays on
-refresh. The codebase remains the source of truth; the seed audit is the
-inventory, and `status.md` is the current state.
+This directory tracks the command mutation-range narrowing work. A
+mutation-range mismatch is a command that changes a small slice of state but
+uses a broad helper that rewrites much more, or emits a broad projection
+resource that refreshes whole arrays.
+
+Use `status.md` for the current state. Use
+[`mutation-range-mismatch.md`](mutation-range-mismatch.md) as the seed
+inventory. The code remains the source of truth.
 
 ## Read Order
 
@@ -34,14 +34,13 @@ inventory, and `status.md` is the current state.
   [`next-steps.md`](next-steps.md).
 - Phase-level scope and exit criteria live in [`phases/`](phases/).
 - Slice definitions live in `phases/slices/[phase]/[slice-name].md`.
-- The seed single-page audit (route table, per-route findings, adversarial
-  verifier notes) is [`../mutation-range-mismatch.md`](mutation-range-mismatch.md);
-  it plays the role that `../AUDIT.md` played for the broader protocol plan and
-  is the source this structure was decomposed from.
+- The seed audit is [`mutation-range-mismatch.md`](mutation-range-mismatch.md);
+  it has the route table, per-route findings, and verifier notes this plan was
+  split from.
 
 ## Source Anchors
 
-- [`../mutation-range-mismatch.md`](mutation-range-mismatch.md) - the audit
+- [`mutation-range-mismatch.md`](mutation-range-mismatch.md) - the audit
   that seeded this plan (79 routes, 71 over-broad, classifier + adversarial
   verifier).
 - `server/fastify/src/routes/commands.ts` - the 79 command routes.
@@ -57,13 +56,13 @@ inventory, and `status.md` is the current state.
 
 ## Reference Fix
 
-`b57df5cd` ("fix: speed up character selection command") is the canonical
-template every slice models: a logical one-pointer change that used to rewrite
-every character row, all nine collection tables, and the settings row now writes
-exactly one character row plus the settings row through
-`applyCharacterSelectionCommandMutation` / `writeCharacterSelectionRows`
-(`mutationPath: 'targeted-character-selection'`, `dbJsonWriteMs: 0` review gate),
-paired with a narrow `characterSelection` projection resource
-(`RESOURCE_PROJECTION_FIELDS.characterSelection = []`, `loadCharacterSelectionProjection`)
-and a rowid-stability regression test (`tableRowidsById` in
-`server/fastify/__tests__/commands.test.ts`).
+`b57df5cd` ("fix: speed up character selection command") is the template:
+
+- The old path rewrote every character row, all nine collection tables, and
+  settings for one pointer change.
+- The new path writes one character row plus settings through
+  `applyCharacterSelectionCommandMutation` / `writeCharacterSelectionRows`.
+- The review gate checks `mutationPath: 'targeted-character-selection'` and
+  `dbJsonWriteMs: 0`.
+- The projection uses the narrow `characterSelection` resource.
+- The regression test uses `tableRowidsById` to prove unrelated rows stay put.

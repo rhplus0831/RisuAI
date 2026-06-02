@@ -2,17 +2,14 @@
 
 Status: planned.
 
-Goal: realize Prerequisite 4 — the universal cheap floor. Swap every `hydrated`
-non-message route to `applyMessageFreeJsonCommandMutation`, removing the
-all-messages load and the chat-row rewrite (the `syncChatMessages` no-op) with
-zero new helpers and zero correctness risk. This is the safe first commit and
-depends on nothing in Phase 0. It is a stopgap, not the fix: a `message-free`
-route still rewrites all characters, all nine collection tables, and settings, so
-it never reaches the per-row target for a route the later tiers narrow.
+Goal: apply the cheap floor. Swap safe `hydrated` non-message routes to
+`applyMessageFreeJsonCommandMutation`. This removes the all-message load and the
+`syncChatMessages` no-op without new helpers. It is a stopgap: `message-free`
+still rewrites characters, nine collection tables, and settings.
 
 ## Source Anchors
 
-- [`../../mutation-range-mismatch.md`](../mutation-range-mismatch.md) -
+- [`../mutation-range-mismatch.md`](../mutation-range-mismatch.md) -
   Prerequisite 4 and "Suggested implementation order" step 1.
 - `server/fastify/src/routes/commands.ts` - the routes to swap.
 - `server/fastify/src/commands/mutations.ts` - `applyJsonCommandMutation` vs

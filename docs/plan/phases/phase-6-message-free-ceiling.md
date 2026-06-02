@@ -3,15 +3,13 @@
 Status: planned. Blocked: each route here needs a prerequisite scoped before its
 deeper narrowing is safe.
 
-Goal: for the Tier-5 routes, the `message-free` floor (Phase 1) is also the safe
-ceiling. A true per-row write is blocked by a genuine cross-table span or a
-load-bearing message/normalization dependency. This phase keeps each route at the
-floor, records the exact blocker and the unblock condition, and does not attempt
-the deeper narrowing until the prerequisite is met.
+Goal: keep Tier-5 routes at their safe floor. A per-row write is blocked by a
+cross-table span, message dependency, or normalization dependency. Record the
+blocker and unblock condition; do not narrow deeper in this phase.
 
 ## Source Anchors
 
-- [`../../mutation-range-mismatch.md`](../mutation-range-mismatch.md) - Tier 5.
+- [`../mutation-range-mismatch.md`](../mutation-range-mismatch.md) - Tier 5.
 - `server/fastify/src/routes/commands.ts` - the Tier-5 routes.
 - `server/fastify/src/messageStore.ts` - targeted message deletes
   (`deleteChatMessages` / `deleteChatHypaV3`) needed before narrowing the deletes.

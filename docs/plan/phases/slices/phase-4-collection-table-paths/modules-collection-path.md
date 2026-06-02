@@ -5,7 +5,7 @@ projection co-fix and a normalization caveat.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 modules row.
 - `server/fastify/src/routes/commands.ts` - patch (3638), reorder (3748),
   :id/lorebooks (4137), :id/scripts (4239), :id/triggers (4273).

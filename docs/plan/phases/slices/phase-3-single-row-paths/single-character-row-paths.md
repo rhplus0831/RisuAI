@@ -5,7 +5,7 @@ Status: planned. Tier 3. Depends on the Phase 0 writer kit
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 3 "Single character row".
 - `server/fastify/src/routes/commands.ts` - the routes below.
 - `server/fastify/src/repository.ts` - `writeSingleCharacterRow`,
@@ -24,9 +24,9 @@ live in the character `data_json`, which excludes only `chats`). Narrow each to
 | `POST characters/:id/chat-folders` (2811) | one character row (`chatFolders` inline on the character row). |
 | `PATCH chat-folders/:folderId` (2853) | one character row. |
 | `POST characters/:id/chat-folders/reorder` (2939) | one character row (`chatFolders` + optional `chatPage`). |
-| `DELETE chat-folders/:folderId` (2896) | one character row (`chatFolders`) **+ that character's chat rows** whose `folderId` is nulled (`chat.folderId` lives in `chats`). |
+| `DELETE chat-folders/:folderId` (2896) | one character row (`chatFolders`) + that character's chat rows whose `folderId` is nulled (`chat.folderId` lives in `chats`). |
 | `POST characters/:id/chats/reorder` (2758) | that character's chat rows (positions shift) + its character row (`chatPage`); no messages (chat ids unchanged → `syncChatMessages` no-op). |
-| `POST characters/:id/modules/reorder` (3782) | one character row (`character.modules`) **+ the `modules` table + `enabledModules`** when `ensureModuleRecords`/`ensureEnabledModules` actually mutate them. |
+| `POST characters/:id/modules/reorder` (3782) | one character row (`character.modules`) + the `modules` table + `enabledModules` when `ensureModuleRecords`/`ensureEnabledModules` actually mutate them. |
 | `POST chats/:id/fork` (2655) | the source character's row (`chatPage`/`chatFolders`) + all of that character's chat rows (head `unshift` shifts positions) + the forked chat's new messages (surgical). Cross-character validation/normalization stays validate-only. |
 
 fork (2655) is the one route here that touches messages, so it is excluded from

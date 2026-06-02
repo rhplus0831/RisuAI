@@ -4,7 +4,7 @@ Status: planned. Co-scheduled with Phases 2 and 4.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   the `module` and `scriptDefinition`/`triggerDefinition` broad resources.
 - `server/fastify/src/routes/projection.ts` - `module` →
   `['modules','enabledModules','loadouts','characters']`;

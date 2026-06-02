@@ -2,19 +2,16 @@
 
 Date: 2026-06-03
 
-This file records the code-grounded analysis for each mutation-range mismatch
-tier: the write a command logically performs, the range a helper physically
-writes today, and the target range. It is a routing document, not a verification
-log. Keep [`latest-verification.md`](latest-verification.md) as the single
-maintained record for proof-command runs, and
-[`../mutation-range-mismatch.md`](mutation-range-mismatch.md) as the per-route
-detail with adversarial-verifier notes.
+This file routes each mismatch tier: logical write, current physical write, and
+target write. It is not a verification log. Keep proof runs in
+[`latest-verification.md`](latest-verification.md), and keep per-route detail in
+[`mutation-range-mismatch.md`](mutation-range-mismatch.md).
 
 ## Summary
 
-All findings are analyzed; none are implemented. Each tier below maps to a phase
-slice. Severity is the post-verification figure from the audit (51 high, 18
-medium, 3 low across 71 over-broad routes).
+All findings are analyzed; none are implemented. Each tier maps to a phase slice.
+Severity comes from the verified audit: 51 high, 18 medium, 3 low across 71
+over-broad routes.
 
 | Tier / area | Current finding (actual write range) | Target write range | Phase / slice | Status |
 | --- | --- | --- | --- | --- |
@@ -40,30 +37,22 @@ medium, 3 low across 71 over-broad routes).
 
 ## Decision
 
-The work is ordered by amplification × call frequency × fix cleanliness, exactly
-as the audit prioritizes. Phase 0 must land the writer kit and review gates
-first because no Tier write can prove it narrowed without a rowid-stability
-assertion. The mechanical `message-free` floor (Phase 1) is the safe stopgap and
-should land early; it removes the all-messages load and chat-row rewrite from ~62
-routes but does not reach the per-row target, so it is never the final fix for a
-route the audit marks reachable to a narrow write.
+Order the work by write amplification, call frequency, and fix clarity. Phase 0
+adds the writer kit and gates, so later slices can prove they stopped rewriting
+unrelated rows. Phase 1 is the safe stopgap: it removes the all-message load and
+chat-row rewrite from ~62 routes, but it is not the final fix for routes that can
+reach a per-row write.
 
-- **Settings/pointer (Tier 1):** cleanest fix, highest ratio. translator-presets/select
-  and modules/enable carry projection caveats (translator needs the table write;
-  module needs a narrow `moduleEnabled` resource), and lorebooks/:id/select must
-  explicitly accept dropping the global child-lorebook normalization.
-- **Plugin storage (Tier 2):** standalone table, written at runtime; narrowing
-  yields no projection change (`pluginStorage` is sprawling-by-design) but real
+- Settings/pointer (Tier 1): cleanest, highest ratio. Note the translator table
+  write, the `moduleEnabled` projection, and the lorebook normalization drop.
+- Plugin storage (Tier 2): standalone runtime table. No projection win, but real
   recurring write savings.
-- **Single rows (Tier 3):** narrowing never desyncs the projection because the
-  refresh reads SQLite fresh; the projection stays broad until the matching
-  Phase 5 branch lands. scriptstate is the hot path to prioritize.
-- **Collections (Tier 4):** plugins family first (projection already
-  `['plugins','currentPluginProvider']`, lowest risk); the rest need pointer-settings
-  co-writes and carry the projection-field bug co-fixes.
-- **Projection (Phase 5):** secondary to the write side under the single-writer
-  invariant (foreign refreshes are rare), but a narrowed write with a broad
-  projection is incomplete, and the three field bugs are wrong today regardless.
+- Single rows (Tier 3): safe to narrow before projection because refresh reads
+  SQLite fresh. Prioritize hot `scriptstate`.
+- Collections (Tier 4): start with plugins; its projection is already narrow.
+  Other families need pointer co-writes and projection-field fixes.
+- Projection (Phase 5): secondary to writes, but still required. The three field
+  bugs are wrong today.
 
 ## Non-Goals
 

@@ -8,7 +8,7 @@ Status: planned. Realizes Prerequisite 1.
   broad `replaceAll*` writers (`replaceAllSettingsInTable` ~207,
   `replaceAllCharactersInTable` ~309, `replaceAllCollectionsInTable` ~156), and
   `plugin_custom_storage` (DELETE+reinsert ~167-176).
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Prerequisite 1 writer list.
 
 ## Scope

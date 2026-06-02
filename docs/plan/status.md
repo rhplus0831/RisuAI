@@ -5,32 +5,30 @@ Date: 2026-06-03
 This is the status router for the command mutation-range narrowing workstream.
 Use it first, then open only the phase or slice needed for the next task.
 
-Current status reflects the seed audit [`../mutation-range-mismatch.md`](mutation-range-mismatch.md)
-(audited 2026-06-03) and the codebase as of that date. No mutation-range slice
-has landed yet; this plan decomposes the audit into phases and slices. The
-reference fix `b57df5cd` (`characters/select`) is the only narrow path that
-already exists.
+Current status reflects the seed audit
+[`mutation-range-mismatch.md`](mutation-range-mismatch.md), audited 2026-06-03.
+No mutation-range slice has landed yet. The only existing narrow path is the
+reference fix `b57df5cd` (`characters/select`).
 
 ## Current Snapshot
 
-Analysis complete, implementation not started:
+Analysis is complete; implementation has not started.
 
 - The 79 command routes are classified: 8 already minimal, 71 over-broad (66 on
   `hydrated`, 5 on `message-free`). Severity after adversarial verification is 51
   high, 18 medium, 3 low. The full route table lives in the audit appendix.
 - The four mutation helpers and the SQLite table split are mapped (see
   [`plan.md`](plan.md)).
-- The four cross-cutting prerequisites are recorded: the writer kit does not
-  exist yet, whole-collection normalization is a deliberate dropped write, a
-  "single-X" write usually also touches the settings row, and dropping `hydrated`
-  to `message-free` is the universal cheap floor.
+- Four prerequisites are recorded: build the writer kit, treat global
+  normalization as validate-only, co-write settings when a pointer moves, and use
+  `message-free` as the safe floor.
 - The projection-range mismatches are catalogued: broad resources that re-ship
   whole arrays (`character`, `chat`/`message`/`generation`, `lorebook`, `module`,
   `scriptDefinition`/`triggerDefinition`) and three pre-existing field bugs
   (`prompt`/`promptItem` ship `botPresets`, `persona` omits legacy mirror
   scalars, `loadout` omits `lastLoadedLoadoutName`).
 
-Nothing in this workstream is implemented. Every phase below is "planned."
+Every phase below is still planned.
 
 ## Phase Router
 
@@ -47,22 +45,21 @@ Nothing in this workstream is implemented. Every phase below is "planned."
 
 ## Active Risk Summary
 
-The over-broad write and projection ranges are analyzed per tier in
-[`active-risk-analysis.md`](active-risk-analysis.md). The headline ratios, in
-priority order:
+[`active-risk-analysis.md`](active-risk-analysis.md) has the per-tier detail.
+Headlines, in priority order:
 
-- **Tier 1 (highest ratio):** one settings scalar rewrites every character row +
+- Tier 1 (highest ratio): one settings scalar rewrites every character row +
   every chat row + nine collection tables (+ most load every message). Target:
   one `UPDATE settings`.
-- **Tier 2:** key-addressable plugin storage rewrites all characters + nine
+- Tier 2: key-addressable plugin storage rewrites all characters + nine
   collection tables. Target: one `plugin_custom_storage` upsert/delete. Written
   by plugins at runtime, so the waste recurs.
-- **Tier 3:** one character row or one chat row, often `hydrated` despite
+- Tier 3: one character row or one chat row, often `hydrated` despite
   touching no messages. The scriptstate write (`2983`) is the hot one.
-- **Tier 4:** one element of one of nine collection tables rewrites all nine plus
+- Tier 4: one element of one of nine collection tables rewrites all nine plus
   all characters. Plugins family is the lowest-risk fix (projection already
   narrow).
-- **Tier 5:** deeper narrowing blocked by cross-table spans or load-bearing
+- Tier 5: deeper narrowing blocked by cross-table spans or load-bearing
   message/normalization dependencies; the `message-free` floor is the ceiling.
 
 ## Latest Verification
@@ -84,10 +81,8 @@ baseline and the gate set the first slice must populate.
 - Keep `status.md` and `next-steps.md` as the navigation entry points.
 - Keep phase summaries in `phases/`; keep concrete task scope in
   `phases/slices/[phase]/`.
-- Do not treat a phase doc as permission to drop a write the broad path performs
-  without confirming a reader does not depend on it. Re-check the code,
-  [`../mutation-range-mismatch.md`](mutation-range-mismatch.md), and the
-  relevant structure doc before editing.
+- Do not drop a broad-path write until the code, the audit, and the relevant
+  structure doc show no reader depends on it.
 - Every narrow slice lands with a rowid-stability regression test and a metric
   review gate; do not mark a tier implemented without both.
 - Update this status and the phase router after a phase changes state.

@@ -5,7 +5,7 @@ normalization-drop decision and a Phase 5 resource-split dependency.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 lorebooks row.
 - `server/fastify/src/routes/commands.ts` - create (3306), patch (3343), delete
   (3378), reorder (3416), entries (3493).
@@ -22,14 +22,14 @@ table + settings.
 | Route (line) | Desired write |
 | --- | --- |
 | `POST lorebooks` (3306) | `lore_books` table + settings (`loreBookPage`). |
-| `PATCH lorebooks/:id` (3343) | single-row `lore_books` UPDATE, no settings. **The clean one.** |
+| `PATCH lorebooks/:id` (3343) | single-row `lore_books` UPDATE, no settings. The clean one. |
 | `DELETE lorebooks/:id` (3378) | `lore_books` table + settings. |
 | `POST lorebooks/reorder` (3416) | `lore_books` table + settings. |
 | `PUT lorebooks/:id/entries` (3493) | `lore_books` table + settings. |
 
 `ensureAllChildLorebooks` also repairs `character.globalLore` / `chat.localLore` /
 `module.lorebook` in memory; create/reorder/entries currently persist those, so
-they are effectively `message-free-downgrade`-only **unless** the slice accepts
+they are effectively `message-free-downgrade`-only unless the slice accepts
 dropping child-lorebook normalization (Prerequisite 2 — recorded here). `patch`
 (name edit) is the clean single-row case with no settings and no child repair.
 

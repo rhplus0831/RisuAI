@@ -4,7 +4,7 @@ Status: planned. Co-scheduled with Phase 3.
 
 ## Source Anchors
 
-- [`../../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
+- [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   "Projection-range mismatches" broad resources for `character`, `chat`,
   `chatFolder`, `message`, `generation`.
 - `server/fastify/src/routes/projection.ts` - `RESOURCE_PROJECTION_FIELDS` (~34),
