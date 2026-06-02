@@ -22,12 +22,19 @@ interface HydrationDiagnostics {
 interface ProtocolDiagnostics {
   fullBootstrapResync: Record<string, number>
   unexpectedFullBootstrapResync: Record<string, number>
+  // Counts which command-event `resource` triggered a full-bootstrap fallback,
+  // so the cost of sprawling-resource (`settings`, `state`, `pluginStorage`) and
+  // unknown-resource fallbacks can be attributed per resource. Only populated
+  // for resyncs with a known triggering resource (event-driven ones); restore
+  // and replay-unavailable resyncs have no single resource and are omitted.
+  fullBootstrapResyncResources: Record<string, number>
   hydration: Record<HydrationKind, HydrationDiagnostics>
 }
 
 const diagnostics: ProtocolDiagnostics = {
   fullBootstrapResync: {},
   unexpectedFullBootstrapResync: {},
+  fullBootstrapResyncResources: {},
   hydration: {
     chat: emptyHydrationDiagnostics(),
     characterLorebook: emptyHydrationDiagnostics(),
@@ -47,14 +54,18 @@ function emptyHydrationDiagnostics(): HydrationDiagnostics {
   }
 }
 
-export function recordFullBootstrapResync(reason: string): void {
+export function recordFullBootstrapResync(reason: string, resource?: string): void {
   diagnostics.fullBootstrapResync[reason] = (diagnostics.fullBootstrapResync[reason] ?? 0) + 1
   const expected = isExpectedFullBootstrapResyncReason(reason)
   if (!expected) {
     diagnostics.unexpectedFullBootstrapResync[reason] =
       (diagnostics.unexpectedFullBootstrapResync[reason] ?? 0) + 1
   }
-  debugProtocol('full-bootstrap-resync', { reason, expected })
+  if (resource) {
+    diagnostics.fullBootstrapResyncResources[resource] =
+      (diagnostics.fullBootstrapResyncResources[resource] ?? 0) + 1
+  }
+  debugProtocol('full-bootstrap-resync', { reason, expected, resource })
 }
 
 export function isExpectedFullBootstrapResyncReason(

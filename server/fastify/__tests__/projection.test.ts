@@ -1,11 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../src/app.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
+import { jsonPayloadBytes } from '../src/protocolMetrics.js'
 import { loadPersistedDatabaseFields, loadStubbedProjectionFields } from '../src/repository.js'
-import { resourceProjectionFields } from '../src/routes/projection.js'
+import { fullBootstrapFallbackClass, resourceProjectionFields } from '../src/routes/projection.js'
 import type { FastifyInstance } from 'fastify'
 import { setupAuthedClient } from './helpers/auth.js'
 
@@ -13,6 +14,31 @@ interface Harness {
   app: FastifyInstance
   dataDir: string
 }
+
+interface ProjectionMetric {
+  metric: string
+  resource?: string
+  revision?: number
+  mode?: string
+  fallbackClass?: string | null
+  payloadBytes?: number | null
+}
+
+// Capture opt-in protocol metrics regardless of the logger sink so the
+// sprawling-resource full-bootstrap measurement can assert which resources
+// trigger a `mode: 'full'` fallback and how the route classifies them.
+const capturedMetrics = vi.hoisted((): ProjectionMetric[] => [])
+
+vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
+  return {
+    ...actual,
+    emitProtocolMetric: (name: string, fields: Record<string, unknown>) => {
+      if (!actual.protocolMetricsEnabled()) return
+      capturedMetrics.push({ metric: name, ...fields } as ProjectionMetric)
+    },
+  }
+})
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
@@ -194,6 +220,18 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('asset')).toEqual([])
     expect(resourceProjectionFields('settings')).toBeNull()
     expect(resourceProjectionFields('state')).toBeNull()
+  })
+
+  it('classifies full-bootstrap fallbacks as sprawling, unknown, or narrowable', () => {
+    // Narrowable resources never trigger the fallback.
+    expect(fullBootstrapFallbackClass('character')).toBeNull()
+    expect(fullBootstrapFallbackClass('asset')).toBeNull()
+    // Known sprawling resources fall back on purpose.
+    expect(fullBootstrapFallbackClass('settings')).toBe('sprawling')
+    expect(fullBootstrapFallbackClass('state')).toBe('sprawling')
+    expect(fullBootstrapFallbackClass('pluginStorage')).toBe('sprawling')
+    // Anything else is an unknown/foreign resource fallback.
+    expect(fullBootstrapFallbackClass('does-not-exist')).toBe('unknown')
   })
 
   it('returns module deletion cross-writes with character stubs', async () => {
@@ -544,5 +582,101 @@ describe('Phase 5 lorebook stubs (enableLorebookStubs)', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.json().mode).toBe('full')
+  })
+})
+
+// Phase 3 sprawling-resource full-bootstrap measurement.
+//
+// Measurement-only: the route behavior is unchanged (these resources still
+// return `mode: 'full'`). The opt-in `projection_response` metric now records
+// `mode` plus a `fallbackClass` so the cost of expensive sprawling-resource and
+// unknown-resource full-bootstrap fallbacks can be attributed per resource.
+describe('sprawling-resource full-bootstrap measurement', () => {
+  const PREVIOUS_PROTOCOL_METRICS = process.env.RISU_PROTOCOL_METRICS
+
+  beforeEach(() => {
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    capturedMetrics.length = 0
+  })
+
+  afterEach(() => {
+    if (PREVIOUS_PROTOCOL_METRICS === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = PREVIOUS_PROTOCOL_METRICS
+    }
+  })
+
+  function latestProjectionMetric(resource: string): ProjectionMetric {
+    const metric = [...capturedMetrics]
+      .reverse()
+      .find((entry) => entry.metric === 'projection_response' && entry.resource === resource)
+    expect(metric, `missing projection_response metric for ${resource}`).toBeTruthy()
+    return metric as ProjectionMetric
+  }
+
+  it('records mode and a sprawling fallback class for settings/state/pluginStorage', async () => {
+    await importDatabase({ characters: [], language: 'en' })
+
+    for (const resource of ['settings', 'state', 'pluginStorage']) {
+      capturedMetrics.length = 0
+      const res = await getProjection(resource)
+      const body = res.json()
+      expect(body.mode).toBe('full')
+
+      const metric = latestProjectionMetric(resource)
+      expect(metric.mode).toBe('full')
+      expect(metric.fallbackClass).toBe('sprawling')
+      expect(metric.payloadBytes).toBe(jsonPayloadBytes(body))
+    }
+  })
+
+  it('records an unknown fallback class for foreign resources', async () => {
+    await importDatabase({ characters: [] })
+    const res = await getProjection('does-not-exist')
+    expect(res.json().mode).toBe('full')
+
+    const metric = latestProjectionMetric('does-not-exist')
+    expect(metric.mode).toBe('full')
+    expect(metric.fallbackClass).toBe('unknown')
+  })
+
+  it('records mode without a fallback class for narrowable resources', async () => {
+    await importDatabase({ characters: [{ chaId: 'char-a', name: 'Ada', chats: [] }] })
+    const res = await getProjection('character')
+    expect(res.json().mode).toBe('fields')
+
+    const metric = latestProjectionMetric('character')
+    expect(metric.mode).toBe('fields')
+    expect(metric.fallbackClass).toBeUndefined()
+  })
+
+  it('summarizes sprawling fallback payload sizes when RISU_PROJECTION_FULL_SUMMARY=1', async () => {
+    await importDatabase({ characters: [], language: 'en' })
+    capturedMetrics.length = 0
+
+    const resources = ['settings', 'state', 'pluginStorage', 'does-not-exist']
+    for (const resource of resources) {
+      await getProjection(resource)
+    }
+
+    const fullFallbacks = capturedMetrics.filter(
+      (entry) => entry.metric === 'projection_response' && entry.mode === 'full',
+    )
+    expect(fullFallbacks).toHaveLength(resources.length)
+
+    if (process.env.RISU_PROJECTION_FULL_SUMMARY === '1') {
+      console.log(
+        JSON.stringify(
+          fullFallbacks.map((entry) => ({
+            resource: entry.resource,
+            fallbackClass: entry.fallbackClass,
+            payloadBytes: entry.payloadBytes,
+          })),
+          null,
+          2,
+        ),
+      )
+    }
   })
 })

@@ -317,13 +317,26 @@ function unexpectedFullBootstrapCount(snapshot: ProtocolDiagnosticsSnapshot): nu
   )
 }
 
+function fullBootstrapResourceCount(
+  snapshot: ProtocolDiagnosticsSnapshot,
+  resource: string,
+): number {
+  return snapshot.fullBootstrapResyncResources[resource] ?? 0
+}
+
 function expectFullBootstrapResyncDelta(
   before: ProtocolDiagnosticsSnapshot,
   reason: FullBootstrapResyncReason,
+  resource?: string,
 ): void {
   const after = getProtocolDiagnosticsSnapshot()
   expect(fullBootstrapReasonCount(after, reason) - fullBootstrapReasonCount(before, reason)).toBe(1)
   expect(unexpectedFullBootstrapCount(after) - unexpectedFullBootstrapCount(before)).toBe(0)
+  if (resource !== undefined) {
+    expect(
+      fullBootstrapResourceCount(after, resource) - fullBootstrapResourceCount(before, resource),
+    ).toBe(1)
+  }
 }
 
 describe('web bootstrap startup source', () => {
@@ -445,7 +458,9 @@ describe('web bootstrap startup source', () => {
     })
     expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
     expect(peekCachedServerCommandRevision()).toBe(6)
-    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-full-mode')
+    // The sprawling `settings` resource is attributed to the per-resource
+    // full-bootstrap fallback count for the measurement.
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-full-mode', 'settings')
   })
 
   it('full-bootstraps restored state events so the active projection changes', async () => {

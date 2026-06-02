@@ -28,8 +28,9 @@ function rawProjectionCharacters(
 
 export async function forceServerProjectionResync(
   reason: string,
+  options: { resource?: string } = {},
 ): Promise<ServerProjectionResyncResult> {
-  recordFullBootstrapResync(reason)
+  recordFullBootstrapResync(reason, options.resource)
   if (serverProjectionRefreshPromise) {
     serverProjectionRefreshPending = true
     return serverProjectionRefreshPromise

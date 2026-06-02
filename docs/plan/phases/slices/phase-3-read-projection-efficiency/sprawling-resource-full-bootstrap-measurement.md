@@ -1,6 +1,6 @@
 # Sprawling Resource Full Bootstrap Measurement
 
-Status: candidate; analysis only, not implemented.
+Status: implemented measurement; no runtime narrowing yet.
 
 ## Source Anchors
 
@@ -35,6 +35,37 @@ Measurement-only first pass:
 - Keep full-bootstrap fallback as the default for resources without a precise
   field map.
 
+## Implemented Scope
+
+The measurement is opt-in and changes no route behavior:
+
+- The server `projection_response` metric now records `mode` for every
+  projection response and a `fallbackClass` (`sprawling` | `unknown`) for the
+  resource-level `mode: 'full'` fallback. `settings`, `state`, and
+  `pluginStorage` classify as `sprawling`; any other unlisted resource is
+  `unknown`. The classification is exported as `fullBootstrapFallbackClass()`
+  from `server/fastify/src/routes/projection.ts`.
+- The client protocol diagnostics gained
+  `fullBootstrapResyncResources: Record<string, number>`, populated through
+  `recordFullBootstrapResync(reason, resource?)`. `forceServerProjectionResync`
+  forwards the triggering command-event resource for the event-driven resyncs
+  (`no-baseline`, `projection-full-mode`, `projection-error`, `revision-gap`),
+  so the cost of each fallback can be attributed per resource. Restore and
+  replay-unavailable resyncs have no single resource and stay unattributed.
+
+### Findings
+
+- The `mode: 'full'` projection *response* payload is tiny (47-56 bytes for
+  `settings`/`state`/`pluginStorage`/unknown in the focused fixture): it only
+  tells the client to bootstrap. The real cost of a sprawling-resource fallback
+  is the subsequent full bootstrap the client performs, not the projection
+  route response. The per-resource client diagnostic is therefore the signal
+  that gates any later targeted-resource work.
+- No runtime narrowing is justified from the focused fixtures alone. A later
+  targeted-resource slice must show, from the per-resource fallback counts on a
+  real corpus, that one named resource family is both frequent and expensive
+  before naming its exact field projection contract.
+
 ## Protocol Behavior
 
 - No event-shape, revision, or replay behavior changes are allowed in the
@@ -61,3 +92,4 @@ resyncs, coalesce command events, or change the cached revision cursor.
 
 - `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/bootstrap.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/projection.test.ts`
+- `RISU_PROTOCOL_METRICS=1 RISU_PROJECTION_FULL_SUMMARY=1 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/projection.test.ts --reporter verbose`

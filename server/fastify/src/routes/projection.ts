@@ -80,6 +80,26 @@ const NARROW_STUBBED_PROJECTION_RESOURCES = new Set([
   'module',
 ])
 
+// Resources whose projected state intentionally sprawls across many top-level
+// settings scalars or server-owned state, so the projection route cannot narrow
+// them and returns `mode: 'full'` on purpose. Any other unlisted resource also
+// falls back to full bootstrap, but as an *unknown* (typically foreign/future)
+// resource rather than a known sprawling one. The measurement distinguishes the
+// two so a later targeted-resource slice can tell an expected sprawling
+// fallback from an unexpected unknown-resource fallback.
+const SPRAWLING_FULL_PROJECTION_RESOURCES = new Set(['settings', 'state', 'pluginStorage'])
+
+export type FullBootstrapFallbackClass = 'sprawling' | 'unknown'
+
+/**
+ * Classifies why a resource falls back to a full-bootstrap projection. Returns
+ * `null` for resources the route can narrow (they never trigger the fallback).
+ */
+export function fullBootstrapFallbackClass(resource: string): FullBootstrapFallbackClass | null {
+  if (resourceProjectionFields(resource) !== null) return null
+  return SPRAWLING_FULL_PROJECTION_RESOURCES.has(resource) ? 'sprawling' : 'unknown'
+}
+
 const bulkChatMessagesBodySchema = {
   body: {
     type: 'object',
@@ -250,9 +270,14 @@ export function registerProjectionRoutes(
       const fieldKeys = resourceProjectionFields(resource)
 
       if (fieldKeys === null) {
-        // Unknown or sprawling resource: tell the client to full-bootstrap.
+        // Unknown or sprawling resource: tell the client to full-bootstrap. The
+        // opt-in metric records whether this is an expected sprawling resource
+        // (`settings`, `state`, `pluginStorage`) or an unknown one so the cost
+        // of these fallbacks can be attributed per resource.
         const response = { revision, resource, mode: 'full' as const }
-        emitProjectionMetric(req.log, resource, revision, response)
+        emitProjectionMetric(req.log, resource, revision, response, {
+          fallbackClass: fullBootstrapFallbackClass(resource),
+        })
         return response
       }
 
@@ -358,11 +383,16 @@ function emitProjectionMetric(
   response: unknown,
   extra: Record<string, unknown> = {},
 ): void {
+  const mode =
+    response && typeof response === 'object' && 'mode' in response
+      ? (response as { mode?: unknown }).mode
+      : undefined
   emitProtocolMetric(
     'projection_response',
     {
       resource,
       revision,
+      ...(typeof mode === 'string' ? { mode } : {}),
       payloadBytes: jsonPayloadBytes(response),
       ...extra,
     },

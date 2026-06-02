@@ -314,7 +314,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
   const cached = peekCachedServerCommandRevision()
   if (cached === null) {
     // No baseline yet: reconcile from scratch.
-    await forceServerProjectionResync('no-baseline')
+    await forceServerProjectionResync('no-baseline', { resource: event.resource })
     return
   }
   if (event.revision <= cached) {
@@ -354,11 +354,12 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       result.status === 'ok' && result.mode === 'full'
         ? 'projection-full-mode'
         : 'projection-error',
+      { resource: event.resource },
     )
     return
   }
   // Gap detected (event.revision > cached + 1) → self-healing full bootstrap.
-  await forceServerProjectionResync('revision-gap')
+  await forceServerProjectionResync('revision-gap', { resource: event.resource })
 }
 
 /**
