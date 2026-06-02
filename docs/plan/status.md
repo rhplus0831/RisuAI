@@ -1,0 +1,93 @@
+# Command Mutation-Range Narrowing Status
+
+Date: 2026-06-03
+
+This is the status router for the command mutation-range narrowing workstream.
+Use it first, then open only the phase or slice needed for the next task.
+
+Current status reflects the seed audit [`../mutation-range-mismatch.md`](mutation-range-mismatch.md)
+(audited 2026-06-03) and the codebase as of that date. No mutation-range slice
+has landed yet; this plan decomposes the audit into phases and slices. The
+reference fix `b57df5cd` (`characters/select`) is the only narrow path that
+already exists.
+
+## Current Snapshot
+
+Analysis complete, implementation not started:
+
+- The 79 command routes are classified: 8 already minimal, 71 over-broad (66 on
+  `hydrated`, 5 on `message-free`). Severity after adversarial verification is 51
+  high, 18 medium, 3 low. The full route table lives in the audit appendix.
+- The four mutation helpers and the SQLite table split are mapped (see
+  [`plan.md`](plan.md)).
+- The four cross-cutting prerequisites are recorded: the writer kit does not
+  exist yet, whole-collection normalization is a deliberate dropped write, a
+  "single-X" write usually also touches the settings row, and dropping `hydrated`
+  to `message-free` is the universal cheap floor.
+- The projection-range mismatches are catalogued: broad resources that re-ship
+  whole arrays (`character`, `chat`/`message`/`generation`, `lorebook`, `module`,
+  `scriptDefinition`/`triggerDefinition`) and three pre-existing field bugs
+  (`prompt`/`promptItem` ship `botPresets`, `persona` omits legacy mirror
+  scalars, `loadout` omits `lastLoadedLoadoutName`).
+
+Nothing in this workstream is implemented. Every phase below is "planned."
+
+## Phase Router
+
+| Phase | Status | Open when working on... |
+| --- | --- | --- |
+| [Phase 0](phases/phase-0-baseline-foundations.md) | Planned | Writer kit, targeted mutation paths, mutation-range metric, review gates, normalization-scope policy. |
+| [Phase 1](phases/phase-1-message-free-floor.md) | Planned | The mechanical `hydrated` to `message-free` sweep across ~62 non-message routes. |
+| [Phase 2](phases/phase-2-settings-and-plugin-storage-paths.md) | Planned | Tier-1 settings/pointer-only writes and Tier-2 plugin custom storage writes. |
+| [Phase 3](phases/phase-3-single-row-paths.md) | Planned | Tier-3 single character-row and single chat-row metadata edits. |
+| [Phase 4](phases/phase-4-collection-table-paths.md) | Planned | Tier-4 single collection-table edits across the eight collection families. |
+| [Phase 5](phases/phase-5-projection-range-narrowing.md) | Planned | Narrow projection resources, the `lorebook` resource split, and the projection-field bug fixes. |
+| [Phase 6](phases/phase-6-message-free-ceiling.md) | Planned | Tier-5 routes blocked at the `message-free` floor and their unblock conditions. |
+| [Phase 7](phases/phase-7-verification-budgets.md) | Planned | Written-table-set, rowid-stability, and `dbJsonWriteMs: 0` gates and the verification log. |
+
+## Active Risk Summary
+
+The over-broad write and projection ranges are analyzed per tier in
+[`active-risk-analysis.md`](active-risk-analysis.md). The headline ratios, in
+priority order:
+
+- **Tier 1 (highest ratio):** one settings scalar rewrites every character row +
+  every chat row + nine collection tables (+ most load every message). Target:
+  one `UPDATE settings`.
+- **Tier 2:** key-addressable plugin storage rewrites all characters + nine
+  collection tables. Target: one `plugin_custom_storage` upsert/delete. Written
+  by plugins at runtime, so the waste recurs.
+- **Tier 3:** one character row or one chat row, often `hydrated` despite
+  touching no messages. The scriptstate write (`2983`) is the hot one.
+- **Tier 4:** one element of one of nine collection tables rewrites all nine plus
+  all characters. Plugins family is the lowest-risk fix (projection already
+  narrow).
+- **Tier 5:** deeper narrowing blocked by cross-table spans or load-bearing
+  message/normalization dependencies; the `message-free` floor is the ceiling.
+
+## Latest Verification
+
+See [`latest-verification.md`](latest-verification.md). No runtime change has
+landed for this workstream yet, so that file records the pre-implementation
+baseline and the gate set the first slice must populate.
+
+## Start Here
+
+- Use [`next-steps.md`](next-steps.md) to choose the next task.
+- Use [`active-risk-analysis.md`](active-risk-analysis.md) for the per-tier
+  actual-vs-desired write ranges.
+- Use [`plan.md`](plan.md) for prerequisites, invariants, and phase order.
+- Use [`phases/README.md`](phases/README.md) for all phase docs.
+
+## Maintenance Rules
+
+- Keep `status.md` and `next-steps.md` as the navigation entry points.
+- Keep phase summaries in `phases/`; keep concrete task scope in
+  `phases/slices/[phase]/`.
+- Do not treat a phase doc as permission to drop a write the broad path performs
+  without confirming a reader does not depend on it. Re-check the code,
+  [`../mutation-range-mismatch.md`](mutation-range-mismatch.md), and the
+  relevant structure doc before editing.
+- Every narrow slice lands with a rowid-stability regression test and a metric
+  review gate; do not mark a tier implemented without both.
+- Update this status and the phase router after a phase changes state.

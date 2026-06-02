@@ -1,0 +1,31 @@
+# Command Mutation-Range Narrowing Phases
+
+Date: 2026-06-03
+
+Use these files for phase-specific status, scope, exit criteria, and slice
+routing. Concrete slice definitions live under
+`slices/[phase]/[slice-name].md`.
+
+| Phase | Status | Phase doc | Slice folder |
+| --- | --- | --- | --- |
+| 0 | Planned | [`phase-0-baseline-foundations.md`](phase-0-baseline-foundations.md) | [`slices/phase-0-baseline-foundations/`](slices/phase-0-baseline-foundations/) |
+| 1 | Planned | [`phase-1-message-free-floor.md`](phase-1-message-free-floor.md) | [`slices/phase-1-message-free-floor/`](slices/phase-1-message-free-floor/) |
+| 2 | Planned | [`phase-2-settings-and-plugin-storage-paths.md`](phase-2-settings-and-plugin-storage-paths.md) | [`slices/phase-2-settings-and-plugin-storage-paths/`](slices/phase-2-settings-and-plugin-storage-paths/) |
+| 3 | Planned | [`phase-3-single-row-paths.md`](phase-3-single-row-paths.md) | [`slices/phase-3-single-row-paths/`](slices/phase-3-single-row-paths/) |
+| 4 | Planned | [`phase-4-collection-table-paths.md`](phase-4-collection-table-paths.md) | [`slices/phase-4-collection-table-paths/`](slices/phase-4-collection-table-paths/) |
+| 5 | Planned | [`phase-5-projection-range-narrowing.md`](phase-5-projection-range-narrowing.md) | [`slices/phase-5-projection-range-narrowing/`](slices/phase-5-projection-range-narrowing/) |
+| 6 | Planned | [`phase-6-message-free-ceiling.md`](phase-6-message-free-ceiling.md) | [`slices/phase-6-message-free-ceiling/`](slices/phase-6-message-free-ceiling/) |
+| 7 | Planned | [`phase-7-verification-budgets.md`](phase-7-verification-budgets.md) | [`slices/phase-7-verification-budgets/`](slices/phase-7-verification-budgets/) |
+
+## Slice Rules
+
+- One slice should name one implementation batch or proof batch.
+- Each slice should include scope, source anchors (with route line numbers),
+  the target SQLite tables, the settings co-write condition, the
+  normalization-drop decision, protocol/revision/event behavior, done criteria,
+  and validation commands.
+- A phase can have many slices, but a slice should be small enough for an agent
+  to pick up directly from [`../next-steps.md`](../next-steps.md).
+- Every Tier write slice lands with a rowid-stability regression test and a
+  metric review gate; the floor sweep (Phase 1) is the only exception, since it
+  changes the helper but not the per-row target.

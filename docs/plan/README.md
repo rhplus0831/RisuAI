@@ -1,0 +1,69 @@
+# Command Mutation-Range Narrowing Plan
+
+Date: 2026-06-03
+
+This directory is the working plan for resolving the command mutation-range
+mismatches catalogued in [`../mutation-range-mismatch.md`](mutation-range-mismatch.md).
+A "mutation-range mismatch" is a command that logically changes a small slice of
+state (one settings scalar, one row of one collection, one character row, one
+chat row) but is routed through a broad mutation helper that physically rewrites
+far more, or maps to a broad projection resource that re-ships whole arrays on
+refresh. The codebase remains the source of truth; the seed audit is the
+inventory, and `status.md` is the current state.
+
+## Read Order
+
+1. [`status.md`](status.md) - current snapshot and navigation router.
+2. [`next-steps.md`](next-steps.md) - tactical entry point for selecting the
+   next coherent task batch.
+3. [`active-risk-analysis.md`](active-risk-analysis.md) - per-tier analysis of
+   the over-broad write and projection ranges and their target ranges.
+4. [`plan.md`](plan.md) - goal, sources, invariants, prerequisites, and phase
+   order.
+5. [`phases/README.md`](phases/README.md) - phase index.
+6. [`phases/slices/`](phases/slices/) - concrete task slices under each phase.
+
+## Canonical Detail
+
+- Current status and phase routing live in [`status.md`](status.md).
+- The per-tier risk analysis (actual vs desired write range) lives in
+  [`active-risk-analysis.md`](active-risk-analysis.md).
+- The latest maintained verification result lives in
+  [`latest-verification.md`](latest-verification.md).
+- Next task selection, non-goals, and proof commands live in
+  [`next-steps.md`](next-steps.md).
+- Phase-level scope and exit criteria live in [`phases/`](phases/).
+- Slice definitions live in `phases/slices/[phase]/[slice-name].md`.
+- The seed single-page audit (route table, per-route findings, adversarial
+  verifier notes) is [`../mutation-range-mismatch.md`](mutation-range-mismatch.md);
+  it plays the role that `../AUDIT.md` played for the broader protocol plan and
+  is the source this structure was decomposed from.
+
+## Source Anchors
+
+- [`../mutation-range-mismatch.md`](mutation-range-mismatch.md) - the audit
+  that seeded this plan (79 routes, 71 over-broad, classifier + adversarial
+  verifier).
+- `server/fastify/src/routes/commands.ts` - the 79 command routes.
+- `server/fastify/src/commands/mutations.ts` - the four mutation helpers.
+- `server/fastify/src/repository.ts` - SQLite table writers and the reference
+  fix `writeCharacterSelectionRows`.
+- `server/fastify/src/routes/projection.ts` - `RESOURCE_PROJECTION_FIELDS` and
+  the narrow `characterSelection` projection.
+- [`../structure/server-projection-and-bridges.md`](../structure/server-projection-and-bridges.md)
+  and [`../structure/data-and-events.md`](../structure/data-and-events.md) -
+  projection, hydration, revision, event, and active-writer references.
+- [`../../STRUCTURE.md`](../../STRUCTURE.md) - present-tense code navigation.
+
+## Reference Fix
+
+`b57df5cd` ("fix: speed up character selection command") is the canonical
+template every slice models: a logical one-pointer change that used to rewrite
+every character row, all nine collection tables, and the settings row now writes
+exactly one character row plus the settings row through
+`applyCharacterSelectionCommandMutation` / `writeCharacterSelectionRows`
+(`mutationPath: 'targeted-character-selection'`, `dbJsonWriteMs: 0` review gate),
+paired with a narrow `characterSelection` projection resource
+(`RESOURCE_PROJECTION_FIELDS.characterSelection = []`, `loadCharacterSelectionProjection`)
+and a rowid-stability regression test (`tableRowidsById` in
+`server/fastify/__tests__/commands.test.ts`).
