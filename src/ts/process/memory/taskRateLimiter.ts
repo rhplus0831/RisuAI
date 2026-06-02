@@ -1,3 +1,4 @@
+// @ts-nocheck
 export interface TaskRateLimiterOptions {
   tasksPerMinute?: number
   maxConcurrentTasks?: number

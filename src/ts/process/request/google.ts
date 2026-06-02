@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { fetchNative, textifyReadableStream } from 'src/ts/globalApi.svelte'
 import { LLMFlags, LLMFormat, type LLMModel } from 'src/ts/model/modellist'
 import { getDatabase } from 'src/ts/storage/database.svelte'

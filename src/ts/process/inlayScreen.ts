@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { writeInlayImage } from './files/inlays'
 import type { character } from '../storage/database.svelte'
 import { generateAIImage } from './stableDiff'

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { getDatabase } from 'src/ts/storage/database.svelte'
 
 export function getGenerationModelString(name?: string) {

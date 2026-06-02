@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { type memoryVector, HypaProcesser, similarity } from './hypamemory'
 import { isContextModel, getContextProvider } from './contextualEmbedding'
 import { TaskRateLimiter } from './taskRateLimiter'

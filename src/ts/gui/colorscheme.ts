@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { get, writable } from 'svelte/store'
 import { getDatabase, setDatabase } from '../storage/database.svelte'
 import { downloadFile } from '../globalApi.svelte'

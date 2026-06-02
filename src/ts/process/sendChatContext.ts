@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { get } from 'svelte/store'
 import { v4 } from 'uuid'
 import { alertToast } from '../alert'

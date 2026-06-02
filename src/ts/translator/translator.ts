@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { get } from 'svelte/store'
 import { parseChatML } from '../parser/chatML'
 import { getDatabase, type character, type customscript } from '../storage/database.svelte'

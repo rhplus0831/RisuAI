@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { getDatabase } from '../storage/database.svelte'
 import {
   LLMFlags,

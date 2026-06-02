@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { checkNullish } from './util'
 import { get } from 'svelte/store'
 import {

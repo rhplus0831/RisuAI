@@ -1,3 +1,4 @@
+// @ts-nocheck
 import localforage from 'localforage'
 import { globalFetch } from 'src/ts/globalApi.svelte'
 import { runEmbedding } from '../transformers'

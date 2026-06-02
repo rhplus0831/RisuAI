@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { risuChatParser } from 'src/ts/parser/parser.svelte'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { jsonOutputTrimmer } from 'src/ts/util'

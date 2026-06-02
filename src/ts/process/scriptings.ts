@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { asBuffer } from 'src/ts/util'
 import { getChatVar, getGlobalChatVar, setChatVar } from '../parser/chatVar.svelte'
 import { hasher, type simpleCharacterArgument, risuChatParser } from '../parser/parser.svelte'

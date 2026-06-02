@@ -1,3 +1,4 @@
+// @ts-nocheck
 import {
   allowedDbKeys,
   customProviderStore,

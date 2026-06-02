@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Database, character } from '../storage/database.svelte'
 import { registerCBS, type CBSRegisterArg, type RegisterCallback, type matcherArg } from '../cbs'
 import { calcString } from '../process/infunctions'

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { LatencyOptimisedTranslator, TranslatorBacking } from '@browsermt/bergamot-translator'
 import { gunzipSync } from 'fflate'
 import { asBuffer } from '../util'

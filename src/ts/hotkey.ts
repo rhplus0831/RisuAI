@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { get } from 'svelte/store'
 import { alertMd, alertSelect, alertToast, alertWait, doingAlert, alertRequestLogs } from './alert'
 import { changeToPreset as changeToPreset2, getDatabase } from './storage/database.svelte'

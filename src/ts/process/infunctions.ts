@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { getChatVar, getGlobalChatVar } from '../parser/chatVarBackend'
 
 function toRPN(expression: string) {

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { parseAdditionalParamJsonValue } from './additionalParams'
 

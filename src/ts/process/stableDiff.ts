@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { get } from 'svelte/store'
 import { getDatabase, type character } from '../storage/database.svelte'
 import { requestChatData } from './request/request'

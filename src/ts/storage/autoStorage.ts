@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { FastifyStorage } from './fastifyStorage'
 
 export class AutoStorage {

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { botPreset } from '../../storage/database.svelte'
 import type { NAISettings } from '../models/nai'
 

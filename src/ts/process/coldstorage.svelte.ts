@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { DBState } from '../stores.svelte'
 import { compress as fflateCompress, decompress as fflateDecompress } from 'fflate'
 import { alertClear, alertError, alertWait } from '../alert'

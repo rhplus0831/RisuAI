@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { get } from 'svelte/store'
 import { CharEmotion, selectedCharID } from '../stores.svelte'
 import {

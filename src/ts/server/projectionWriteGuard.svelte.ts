@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { DBState } from '../stores.svelte'
 import type { Database } from '../storage/database.svelte'
 

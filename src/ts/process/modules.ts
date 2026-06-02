@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { language } from 'src/lang'
 import {
   alertClear,

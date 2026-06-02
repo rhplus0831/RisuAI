@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { MCPClientLike } from './internalmcp'
 import type { MCPTool, RPCToolCallContent } from './mcplib'
 

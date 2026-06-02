@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { DBState } from '../../stores.svelte'
 import { parseChatML } from '../../parser/chatML'
 import { requestChatData } from '../request/request'

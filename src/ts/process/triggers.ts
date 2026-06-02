@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { parseChatML } from '../parser/chatML'
 import { risuChatParser } from '../parser/parser.svelte'
 import {

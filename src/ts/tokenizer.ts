@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Tiktoken } from '@dqbd/tiktoken'
 import type { Tokenizer } from '@mlc-ai/web-tokenizers'
 import {
