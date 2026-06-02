@@ -9,7 +9,7 @@ event, transaction, and projection contracts.
 
 ## Source Anchors
 
-- [`../../AUDIT.md`](../../AUDIT.md)
+- [`../../../AUDIT.md`](../../../AUDIT.md)
 - `server/fastify/src/commands/mutations.ts`
 - `server/fastify/src/repository.ts`
 - `server/fastify/src/messageStore.ts`

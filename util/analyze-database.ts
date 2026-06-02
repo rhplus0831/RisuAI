@@ -1,5 +1,5 @@
 /**
- * Restore-and-analyze harness for the docs/plan protocol performance gates.
+ * Restore-and-analyze harness for protocol performance gates.
  *
  * Loads a real database snapshot into a throwaway temporary data directory and
  * reports the measurements that are fully derivable from a static database — the
@@ -17,7 +17,7 @@
  * NOT reported here (runtime-only): how OFTEN a fallback fires, browser cache hit
  * rate, and prompt-assembly stage timings under real sends. Get those by running
  * the real server with `RISU_PROTOCOL_METRICS=1`. See
- * docs/plan/active-risk-analysis.md.
+ * docs/archive/server-client-protocol-stability-performance/active-risk-analysis.md.
  *
  * Inputs (auto-detected):
  *   - A `.risu` export file (richest single file — re-embeds chat messages).
@@ -424,7 +424,9 @@ function printReport(analysis: DatabaseAnalysis): void {
   lines.push(
     '    the projection_response / asset_byte_read / risusave_export lines land in the log.',
   )
-  lines.push('  - see docs/plan/active-risk-analysis.md and docs/plan/next-steps.md.')
+  lines.push(
+    '  - see docs/leftover.md and docs/archive/server-client-protocol-stability-performance/active-risk-analysis.md.',
+  )
 
   console.log(lines.join('\n'))
 }

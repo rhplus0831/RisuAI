@@ -143,7 +143,7 @@ maintained full or focused verification result.
 - Keep phase summaries in `phases/`; keep concrete task scope in
   `phases/slices/[phase]/`.
 - Do not treat a phase doc as permission to widen runtime behavior. Re-check
-  the code, `../AUDIT.md`, and the relevant structure doc before editing.
+  the code, `../../AUDIT.md`, and the relevant structure doc before editing.
 - Add a slice before starting a new implementation batch if no existing slice
   names its source area, mutations, event behavior, rollback behavior, and proof
   command.

@@ -1,17 +1,16 @@
 # Server/Client Protocol Stability And Performance
 
-Date: 2026-06-01
+Date: 2026-06-02
 
-This workstream was merged into the canonical plan directory at
-[`../plan`](../plan/). Keep new task navigation there so agents have one current
-entry point.
+This workstream is archived. The completed plan and verification record live at
+[`../archive/server-client-protocol-stability-performance`](../archive/server-client-protocol-stability-performance/).
 
 Start with:
 
-- [`../plan/status.md`](../plan/status.md)
-- [`../plan/next-steps.md`](../plan/next-steps.md)
-- [`../plan/phases/README.md`](../plan/phases/README.md)
+- [`../archive/server-client-protocol-stability-performance/status.md`](../archive/server-client-protocol-stability-performance/status.md)
+- [`../archive/server-client-protocol-stability-performance/latest-verification.md`](../archive/server-client-protocol-stability-performance/latest-verification.md)
+- [`../leftover.md`](../leftover.md) for live follow-ups after closeout
 
-Concrete slices live under:
+Concrete historical slices live under:
 
-`../plan/phases/slices/[phase]/[slice-name].md`
+`../archive/server-client-protocol-stability-performance/phases/slices/[phase]/[slice-name].md`

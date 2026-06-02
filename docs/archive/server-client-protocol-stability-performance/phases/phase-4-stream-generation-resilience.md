@@ -7,7 +7,7 @@ bounded and observable.
 
 ## Source Anchors
 
-- [`../../AUDIT.md`](../../AUDIT.md)
+- [`../../../AUDIT.md`](../../../AUDIT.md)
 - `server/fastify/src/routes/events.ts`
 - `server/fastify/src/streamJobs.ts`
 - `server/fastify/src/generationJobs.ts`

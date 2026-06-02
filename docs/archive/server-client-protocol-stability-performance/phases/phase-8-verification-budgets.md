@@ -7,7 +7,7 @@ latest-verification gates.
 
 ## Source Anchors
 
-- [`../../AUDIT.md`](../../AUDIT.md)
+- [`../../../AUDIT.md`](../../../AUDIT.md)
 - `server/fastify/src/protocolMetrics.ts`
 - `src/ts/server/protocolDiagnostics.ts`
 - `server/fastify/__tests__/`

@@ -9,7 +9,7 @@ not a broad cleanup pass.
 ## Start Point
 
 - Start with the active risks in [`status.md`](status.md). Use
-  [`../AUDIT.md`](../AUDIT.md) as the original risk inventory, not as the
+  [`../../AUDIT.md`](../../AUDIT.md) as the original risk inventory, not as the
   current status source.
 - If a branch already has runtime changes, run or inspect the focused tests
   listed in the relevant slice before selecting new scope.

@@ -40,9 +40,11 @@ client-thinning server-projection workstream
 durable generation
 ([`docs/archive/durable-generation/`](docs/archive/durable-generation/README.md)),
 and lazy projection
-([`docs/archive/lazy-projection/`](docs/archive/lazy-projection/README.md)).
-All four are closed; the archives hold the consolidated invariant contracts,
-phase scope docs, and design references.
+([`docs/archive/lazy-projection/`](docs/archive/lazy-projection/README.md)),
+plus the server/client protocol stability and performance closeout
+([`docs/archive/server-client-protocol-stability-performance/`](docs/archive/server-client-protocol-stability-performance/README.md)).
+These workstreams are closed; the archives hold the consolidated invariant
+contracts, phase scope docs, and design references.
 
 ## Top-Level Map
 
@@ -65,10 +67,9 @@ phase scope docs, and design references.
 | `.github/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.dockerignore`    | Repository automation, editor recommendations, install policy, merge attributes, and ignore/container rules.         |
 | `docs/structure/`                                                                    | Focused present-tense structure notes.                                                                               |
 | `docs/FASTIFY-REPORT.md`, `docs/SERVER-AND-CLIENT*.md`                               | Dated Fastify ownership, responsibility, and protocol audit reports.                                                 |
-| `docs/plan/`                                                                         | Canonical server/client protocol stability and performance plan; `status.md` and `next-steps.md` route phase slices. |
-| `docs/server-client-protocol-stability-performance/`                                 | Compatibility entry for the merged protocol stability/performance workstream; points back to `docs/plan/`.           |
+| `docs/server-client-protocol-stability-performance/`                                 | Compatibility entry for the archived protocol stability/performance workstream; points to the archive and leftovers. |
 | `docs/leftover.md`                                                                   | Live tracker of intentionally-deferred items across the closed workstreams.                                          |
-| `docs/archive/`                                                                      | Closed workstream records: Fastify, client thinning, durable generation, and lazy projection.                        |
+| `docs/archive/`                                                                      | Closed workstream records: Fastify, client thinning, durable generation, lazy projection, and protocol stability.    |
 | `dist/`, `data/`, `node_modules/`, `test-results/`, `scripts/`, `.idea/`, `.claude/` | Generated, installed, ignored scratch, local runtime/test output, or local editor/agent state; do not hand-edit.     |
 
 ## Runtime Entrypoints

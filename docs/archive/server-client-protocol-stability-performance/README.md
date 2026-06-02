@@ -1,11 +1,18 @@
-# Server/Client Protocol Stability And Performance Plan
+# Server/Client Protocol Stability And Performance (ARCHIVED 2026-06-02)
 
 Date: 2026-06-02
 
-This directory is the merged working plan for Fastify server/client protocol
+> **ARCHIVED - workstream complete.** Moved from `docs/plan/` to
+> `docs/archive/server-client-protocol-stability-performance/` on 2026-06-02
+> after subagent verification confirmed phases 0-8 are complete. The remaining
+> follow-ups are evidence-gated performance narrowing items tracked in
+> [`../../leftover.md`](../../leftover.md). These docs are kept as the
+> historical plan, verification record, and phase/slice detail.
+
+This directory was the merged working plan for Fastify server/client protocol
 stability and performance. The codebase remains the source of truth. Use
-`../AUDIT.md` for the original risk inventory and `status.md` for the current
-state after later implementation commits.
+`../../AUDIT.md` for the original risk inventory and `status.md` for the final
+workstream state after later implementation commits.
 
 ## Read Order
 
@@ -36,9 +43,9 @@ state after later implementation commits.
 
 ## Source Anchors
 
-- [`../AUDIT.md`](../AUDIT.md) - side-effect audit that seeded this plan.
-- [`../SERVER-AND-CLIENT.md`](../SERVER-AND-CLIENT.md) - ownership split.
-- [`../SERVER-AND-CLIENT-PROTOCOL.md`](../SERVER-AND-CLIENT-PROTOCOL.md) -
+- [`../../AUDIT.md`](../../AUDIT.md) - side-effect audit that seeded this plan.
+- [`../../SERVER-AND-CLIENT.md`](../../SERVER-AND-CLIENT.md) - ownership split.
+- [`../../SERVER-AND-CLIENT-PROTOCOL.md`](../../SERVER-AND-CLIENT-PROTOCOL.md) -
   current protocol model and prior plan inputs.
-- [`../../STRUCTURE.md`](../../STRUCTURE.md) and [`../structure/`](../structure/)
+- [`../../../STRUCTURE.md`](../../../STRUCTURE.md) and [`../../structure/`](../../structure/)
   - present-tense code navigation.

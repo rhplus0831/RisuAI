@@ -3,7 +3,8 @@
 Last audited: 2026-06-02.
 
 This is the live tracker for closeable work that remains after the archived
-Fastify, client-thinning, durable-generation, and lazy-projection workstreams.
+Fastify, client-thinning, durable-generation, lazy-projection, and
+server/client protocol stability and performance workstreams.
 Resolved history belongs in `git log` and `docs/archive/`; permanent no-port
 constraints belong in `docs/structure/`.
 
@@ -156,6 +157,64 @@ left open, and the evidence checked during the audit.
 - Trigger: a user reports failed/oversized backup downloads, or the maintainer wants
   symmetric streamed save via the File System Access API (`showSaveFilePicker`) or a
   similar path.
+
+## Protocol performance gates
+
+### Prompt-construction runtime narrowing is evidence-gated
+
+- What remains: server prompt assembly still loads a hydrated persisted database
+  once per assembly. Opt-in metrics now split database load, scope resolution,
+  submit transforms, static/plain slots, lorebook/preflight, history/bias, memory
+  bridge, final render, and budget stages.
+- Why open: focused fixtures did not justify a runtime narrowing by themselves; a
+  future slice should name one dominant stage on representative lorebook-heavy,
+  asset-heavy, memory-enabled, or real user corpora.
+- Evidence: `server/fastify/src/routes/generationChat.ts`;
+  `server/fastify/src/prompt/assemble.ts`;
+  `docs/archive/server-client-protocol-stability-performance/active-risk-analysis.md`.
+- Trigger: `RISU_PROTOCOL_METRICS=1` output shows one prompt-construction stage
+  dominating a real workflow.
+
+### Sprawling-resource full-bootstrap narrowing is evidence-gated
+
+- What remains: `settings`, `state`, `pluginStorage`, and unknown targeted
+  projection resources intentionally fall back to full bootstrap. Metrics now
+  classify `projection_response` mode/fallback class, and the client attributes
+  full-bootstrap fallbacks per resource.
+- Why open: the full-mode response is tiny; the cost is the downstream bootstrap.
+  A targeted field contract should only be added for a named resource family with
+  measured frequency and cost.
+- Evidence: `server/fastify/src/routes/projection.ts`; `src/ts/bootstrap.ts`;
+  `src/ts/server/projectionResync.ts`;
+  `docs/archive/server-client-protocol-stability-performance/active-risk-analysis.md`.
+- Trigger: real-session diagnostics show frequent expensive full-bootstrap
+  fallback for one resource family.
+
+### Asset-byte fanout narrowing is evidence-gated
+
+- What remains: asset byte reads remain one `GET /api/v1/assets/:id` per asset.
+  The route emits an opt-in `asset_byte_read` metric, and the client aggregates
+  request/unique/repeated-read counts.
+- Why open: the route already uses immutable cache headers, so a bulk-byte route
+  only pays off when real usage shows uncached repeated reads the browser cache
+  does not absorb.
+- Evidence: `server/fastify/src/routes/assets.ts`; `src/ts/server/assets.ts`;
+  `docs/archive/server-client-protocol-stability-performance/active-risk-analysis.md`.
+- Trigger: asset-heavy real-session metrics show high uncached `repeatedReads`.
+
+### Ordinary `.risu` export streaming is evidence-gated
+
+- What remains: ordinary `/api/v1/export/risusave` builds a complete
+  `Uint8Array`. The route now measures snapshot, encode, and output cost for
+  ordinary and bundle export.
+- Why open: focused fixtures showed small uncompressed costs and gzip compression
+  as the dominant encode cost; a streaming block-envelope writer needs large real
+  export evidence before widening the compatibility surface.
+- Evidence: `server/fastify/src/routes/save.ts`;
+  `server/fastify/src/risuSave/exportSnapshot.ts`;
+  `server/fastify/src/risuSave/blockCodec.ts`;
+  `docs/archive/server-client-protocol-stability-performance/active-risk-analysis.md`.
+- Trigger: large message-heavy exports show materialized-buffer memory pressure.
 
 ## Cross-cutting and audit maintenance
 

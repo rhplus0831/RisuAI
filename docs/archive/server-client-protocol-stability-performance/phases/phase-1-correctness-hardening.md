@@ -8,7 +8,7 @@ optimizing lower-severity costs.
 
 ## Source Anchors
 
-- [`../../AUDIT.md`](../../AUDIT.md)
+- [`../../../AUDIT.md`](../../../AUDIT.md)
 - `server/fastify/src/routes/events.ts`
 - `server/fastify/src/routes/backups.ts`
 - `server/fastify/src/streamJobs.ts`

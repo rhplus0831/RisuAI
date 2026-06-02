@@ -9,7 +9,7 @@ protocol streams, and close route coverage gaps found by the audit.
 
 ## Source Anchors
 
-- [`../../AUDIT.md`](../../AUDIT.md)
+- [`../../../AUDIT.md`](../../../AUDIT.md)
 - `server/fastify/src/app.ts`
 - `server/fastify/src/routeRateLimits.ts`
 - `server/fastify/src/routeManifest.ts`
