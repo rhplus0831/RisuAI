@@ -156,6 +156,27 @@ against the tree on 2026-05-31 (branch `fastify`).
 
 ---
 
+## Save/Restore Locally — remaining open items
+
+The feature (Settings → Account & files: "Save/Load Backup Locally") is built and
+**real-app-validated** on 2026-06-02: restoring an original-app `.bin` round-trips
+images back. It had been blocked by a `command_events.payload_json` schema-drift 500
+(legacy databases carried a removed `NOT NULL` column), fixed by guarded schema
+migration v9. Backup imports stream to a temp file and decode in bounded batches, so
+`RISU_API_IMPORT_MAX_BYTES` now defaults to unlimited (multi-GB backups import
+without tuning). Genuinely-open, non-blocking items:
+
+- **Streamed large downloads.** "Save Backup Locally" builds the `.risu.zip` as a
+  `Blob` in the browser, so multi-GB *downloads* can still hit browser memory/Blob
+  limits. *Import* is already streamed + unbounded server-side; the symmetric
+  download path (`showSaveFilePicker` streaming) is the follow-up. Trigger: a user
+  reports a failed or oversized backup download.
+- **"Save Partial Backup Locally"** (the original app's profile-images-only variant)
+  was intentionally not restored — it was a browser-local-storage speed workaround.
+  Add as a filtered server export variant only if the maintainer wants it.
+
+---
+
 ## Cross-cutting / infrastructure
 
 - **Vite dev Fastify marker.** `pnpm dev` proxies `/api` but does not inject
