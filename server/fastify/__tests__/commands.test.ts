@@ -3354,7 +3354,7 @@ describe('Phase 9-3a character commands', () => {
       event: {
         type: 'character.selected',
         revision: 5,
-        resource: 'character',
+        resource: 'characterSelection',
         id: 'char-b',
       },
       characterId: 'char-b',

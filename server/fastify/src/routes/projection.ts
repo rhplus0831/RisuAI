@@ -32,6 +32,7 @@ import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
 // gap/reconnect recovery path.
 const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   character: ['characters', 'characterOrder', 'currentChar'],
+  characterSelection: [],
   chat: ['characters'],
   chatFolder: ['characters'],
   message: ['characters'],
@@ -267,6 +268,35 @@ export function registerProjectionRoutes(
         return response
       }
 
+      // Character selection only changes the active character pointer and that
+      // character's `lastInteraction`. Do not ship the whole `characters` array.
+      if (resource === 'characterSelection') {
+        const characterId = req.query.id
+        if (typeof characterId !== 'string' || characterId.trim() === '') {
+          const response = { revision, resource, mode: 'full' as const }
+          emitProjectionMetric(req.log, resource, revision, response)
+          return response
+        }
+
+        const selection = loadCharacterSelectionProjection(dataDir, characterId)
+        if (!selection) {
+          reply.code(404).send({
+            error: 'character_not_found',
+            reason: `Character not found: ${characterId}`,
+          })
+          return
+        }
+
+        const response = {
+          revision,
+          resource,
+          mode: 'character-selection' as const,
+          ...selection,
+        }
+        emitProjectionMetric(req.log, resource, revision, response, { id: characterId })
+        return response
+      }
+
       const fieldKeys = resourceProjectionFields(resource)
 
       if (fieldKeys === null) {
@@ -374,6 +404,31 @@ function loadStubProjectionFields(
     }
   }
   return fields
+}
+
+function loadCharacterSelectionProjection(
+  dataDir: string,
+  characterId: string,
+): { characterId: string; currentChar: number; lastInteraction?: number } | null {
+  const fields = loadPersistedDatabaseFields(dataDir, ['characters', 'currentChar'])
+  const characters = Array.isArray(fields.characters) ? fields.characters : []
+  const index = characters.findIndex((candidate) => {
+    return (
+      !!candidate &&
+      typeof candidate === 'object' &&
+      (candidate as { chaId?: unknown }).chaId === characterId
+    )
+  })
+  if (index < 0) return null
+
+  const currentChar = Number.isInteger(fields.currentChar) ? (fields.currentChar as number) : index
+  const character = characters[index] as { lastInteraction?: unknown }
+  const lastInteraction = character.lastInteraction
+  return {
+    characterId,
+    currentChar,
+    ...(typeof lastInteraction === 'number' ? { lastInteraction } : {}),
+  }
 }
 
 function emitProjectionMetric(

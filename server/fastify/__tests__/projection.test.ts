@@ -80,10 +80,10 @@ async function importDatabase(database: unknown): Promise<number> {
   return res.json().revision as number
 }
 
-async function getProjection(resource: string) {
+async function getProjection(resource: string, query = '') {
   return harness.app.inject({
     method: 'GET',
-    url: `/api/v1/projection/${resource}`,
+    url: `/api/v1/projection/${resource}${query}`,
     headers: { 'risu-auth': assertion },
   })
 }
@@ -146,6 +146,42 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields).not.toHaveProperty('botPresets')
   })
 
+  it('returns only the selected character pointer data for character selection', async () => {
+    const revision = await importDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          lastInteraction: 111,
+          chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hello' }] }],
+        },
+        {
+          chaId: 'char-b',
+          name: 'Babbage',
+          lastInteraction: 222,
+          chats: [{ id: 'chat-b', message: [{ role: 'char', data: 'hi' }] }],
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 1,
+    })
+
+    const res = await getProjection('characterSelection', '?id=char-b')
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body).toEqual({
+      revision,
+      resource: 'characterSelection',
+      mode: 'character-selection',
+      characterId: 'char-b',
+      currentChar: 1,
+      lastInteraction: 222,
+    })
+    expect(body).not.toHaveProperty('fields')
+    expect(JSON.stringify(body)).not.toContain('Ada')
+    expect(JSON.stringify(body)).not.toContain('Babbage')
+  })
+
   it('masks provider secrets in narrow returned fields', async () => {
     await importDatabase({
       characters: [{ chaId: 'char-a', name: 'Ada' }],
@@ -204,6 +240,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       'characterOrder',
       'currentChar',
     ])
+    expect(resourceProjectionFields('characterSelection')).toEqual([])
     expect(resourceProjectionFields('generation')).toEqual(['characters'])
     expect(resourceProjectionFields('module')).toEqual([
       'modules',
@@ -225,6 +262,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
   it('classifies full-bootstrap fallbacks as sprawling, unknown, or narrowable', () => {
     // Narrowable resources never trigger the fallback.
     expect(fullBootstrapFallbackClass('character')).toBeNull()
+    expect(fullBootstrapFallbackClass('characterSelection')).toBeNull()
     expect(fullBootstrapFallbackClass('asset')).toBeNull()
     // Known sprawling resources fall back on purpose.
     expect(fullBootstrapFallbackClass('settings')).toBe('sprawling')

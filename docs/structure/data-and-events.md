@@ -43,6 +43,12 @@ then writes message-free `db.json`. Crash ordering can leave SQLite ahead of
 `db.json`, but `db.json` must not land ahead of message rows plus the revision
 bump.
 
+Command-event resources should be as narrow as the changed state allows.
+`character.selected` is emitted as `resource: "characterSelection"` rather than
+the broad `character` resource; its projection returns only the active character
+index and selected character `lastInteraction`, avoiding a whole-character-array
+refresh for sidebar selection.
+
 There are command-adjacent server-owned exceptions:
 
 - `/api/v1/commands/state/initialize` creates the server-owned default database

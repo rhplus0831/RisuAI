@@ -2,6 +2,7 @@ import { checkNullish } from './util'
 import { v4 as uuidv4 } from 'uuid'
 import { get } from 'svelte/store'
 import {
+  applyServerCharacterSelectionProjection,
   applyServerProjectionDatabase,
   mergeServerProjectionFields,
   setDatabase,
@@ -318,6 +319,15 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       id: event.id,
       parentId: event.parentId,
     })
+    if (result.status === 'ok' && result.mode === 'character-selection') {
+      applyServerCharacterSelectionProjection({
+        characterId: result.characterId,
+        currentChar: result.currentChar,
+        lastInteraction: result.lastInteraction,
+      })
+      setCachedServerCommandRevision(event.revision)
+      return
+    }
     if (result.status === 'ok' && result.mode === 'fields') {
       mergeServerProjectionFields(result.fields)
       // The `characters` fields are message-free stubs and the merge replaces

@@ -305,7 +305,7 @@ export const COMMAND_EVENT_CATALOG = {
   },
   characterSelected: {
     type: 'character.selected',
-    resource: 'character',
+    resource: 'characterSelection',
   },
   characterReordered: {
     type: 'character.reordered',

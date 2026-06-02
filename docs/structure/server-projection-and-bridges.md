@@ -23,10 +23,10 @@ server-owned mutation routes.
 
 `src/ts/server/bootstrap.ts` validates bootstrap payloads and exposes the
 writer-intent and read-only variants. `src/ts/server/projection.ts` wraps
-targeted projection, chat-message hydration, and character-lorebook hydration.
-`src/ts/server/projectionResync.ts` is the shared full-bootstrap recovery path
-used by event replay misses, projection gaps, backup restore, and other
-partial-success repairs.
+targeted projection, chat-message hydration, character-selection projection, and
+character-lorebook hydration. `src/ts/server/projectionResync.ts` is the shared
+full-bootstrap recovery path used by event replay misses, projection gaps,
+backup restore, and other partial-success repairs.
 
 ## Event Reconcile
 
@@ -36,6 +36,10 @@ command events serially:
 
 - Own echoes and already-applied revisions are skipped.
 - Contiguous foreign events fetch `GET /api/v1/projection/:resource`.
+- `character.selected` uses the narrow `characterSelection` resource. Its
+  response updates only `currentChar`, `selectedCharID`, and the selected
+  character's `lastInteraction`, so selecting a character does not replace the
+  whole `characters` array or force chat-message rehydration.
 - Gaps, replay-unavailable responses, projection failures, unknown resources,
   or server-requested full mode fall back to read-only full bootstrap.
 - Memory events bypass projection refresh and update Hypa V3 progress UI.
@@ -51,8 +55,10 @@ those events so memory-job panels can refresh without polling continuously.
 
 ## Hydration
 
-Normal bootstrap and targeted projection payloads contain chat stubs: messages,
-per-chat `hypaV3Data`, and reroll alternates are loaded only for hydrated chats.
+Normal bootstrap and broad character-family targeted projection payloads contain
+chat stubs: messages, per-chat `hypaV3Data`, and reroll alternates are loaded
+only for hydrated chats. Narrow `characterSelection` responses do not carry
+chat stubs and therefore do not reset chat hydration.
 
 Important files:
 

@@ -207,7 +207,13 @@ import {
   getProtocolDiagnosticsSnapshot,
   type FullBootstrapResyncReason,
 } from './server/protocolDiagnostics'
-import { DBState, LoadingStatusState, hypaV3ProgressStore, loadedStore } from './stores.svelte'
+import {
+  DBState,
+  LoadingStatusState,
+  hypaV3ProgressStore,
+  loadedStore,
+  selectedCharID,
+} from './stores.svelte'
 
 function serverDefaultDatabase() {
   return {
@@ -399,6 +405,63 @@ describe('web bootstrap startup source', () => {
     expect(hydrationSpies.resetChatHydration).toHaveBeenCalled()
     expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies character selection projections without replacing characters or rehydrating chats', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            { chaId: 'char-a', name: 'Ada', lastInteraction: 1, chats: [{ id: 'chat-a' }] },
+            { chaId: 'char-b', name: 'Babbage', lastInteraction: 2, chats: [{ id: 'chat-b' }] },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
+
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'character-selection' as const,
+      characterId: 'char-b',
+      currentChar: 1,
+      lastInteraction: 222,
+    }))
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({
+      type: 'character.selected',
+      revision: 6,
+      resource: 'characterSelection',
+      id: 'char-b',
+    })
+
+    await vi.waitFor(() => {
+      expect(get(selectedCharID)).toBe(1)
+    })
+    expect((DBState.db as unknown as { currentChar?: number }).currentChar).toBe(1)
+    expect(DBState.db.characters).toEqual([
+      { chaId: 'char-a', name: 'Ada', lastInteraction: 1, chats: [{ id: 'chat-a' }] },
+      { chaId: 'char-b', name: 'Babbage', lastInteraction: 222, chats: [{ id: 'chat-b' }] },
+    ])
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('characterSelection', {
+      id: 'char-b',
+      parentId: undefined,
+    })
+    expect(peekCachedServerCommandRevision()).toBe(6)
+    expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
+    expect(hydrationSpies.hydrateActiveChat).not.toHaveBeenCalled()
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).not.toHaveBeenCalled()
   })
 
   it('advances empty targeted projection events without full bootstrap or hydration reset', async () => {

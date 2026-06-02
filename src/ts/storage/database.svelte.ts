@@ -809,6 +809,23 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
   })
 }
 
+export function applyServerCharacterSelectionProjection(input: {
+  characterId: string
+  currentChar: number
+  lastInteraction?: number
+}) {
+  return withServerProjectionApply(() => {
+    ;(DBState.db as unknown as { currentChar?: number }).currentChar = input.currentChar
+    const character = DBState.db.characters?.find(
+      (candidate) => candidate?.chaId === input.characterId,
+    )
+    if (character && input.lastInteraction !== undefined) {
+      character.lastInteraction = input.lastInteraction
+    }
+    selectedCharID.set(input.currentChar)
+  })
+}
+
 /**
  * Fill a stubbed chat's `message[]` with messages hydrated from the server on
  * chat-open. Targets the chat by id across all characters; a trusted projection

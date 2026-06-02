@@ -5,6 +5,14 @@ const PROJECTION_ENDPOINT = '/api/v1/projection'
 
 export type ServerProjectionResourceResult =
   | { status: 'ok'; revision: number; mode: 'fields'; fields: Partial<Database> }
+  | {
+      status: 'ok'
+      revision: number
+      mode: 'character-selection'
+      characterId: string
+      currentChar: number
+      lastInteraction?: number
+    }
   | { status: 'ok'; revision: number; mode: 'full' }
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
@@ -82,6 +90,28 @@ export async function fetchServerProjectionResource(
       revision: revision as number,
       mode: 'fields',
       fields: fields as Partial<Database>,
+    }
+  }
+
+  if (record.mode === 'character-selection') {
+    if (typeof record.characterId !== 'string' || record.characterId.trim() === '') {
+      return { status: 'error', error: 'Invalid character-selection response' }
+    }
+    if (!Number.isInteger(record.currentChar) || (record.currentChar as number) < -1) {
+      return { status: 'error', error: 'Invalid character-selection response' }
+    }
+    if (record.lastInteraction !== undefined && typeof record.lastInteraction !== 'number') {
+      return { status: 'error', error: 'Invalid character-selection response' }
+    }
+    return {
+      status: 'ok',
+      revision: revision as number,
+      mode: 'character-selection',
+      characterId: record.characterId,
+      currentChar: record.currentChar as number,
+      ...(typeof record.lastInteraction === 'number'
+        ? { lastInteraction: record.lastInteraction }
+        : {}),
     }
   }
 

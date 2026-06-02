@@ -1368,7 +1368,7 @@ describe('server command API adapter', () => {
           event: {
             type: 'character.selected',
             revision: 5,
-            resource: 'character',
+            resource: 'characterSelection',
             id: 'char-a',
           },
           characterId: 'char-a',
