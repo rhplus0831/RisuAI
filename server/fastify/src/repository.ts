@@ -268,6 +268,19 @@ interface ChatRow {
   data_json: string
 }
 
+export interface CharacterSelectionRows {
+  characterId: string
+  position: number
+  character: JsonRecord
+  settings: JsonRecord
+}
+
+export interface CharacterSelectionProjection {
+  characterId: string
+  currentChar: number
+  lastInteraction?: number
+}
+
 function loadCharactersFromSqlite(db: DatabaseSync): unknown[] {
   const charRows = db
     .prepare('SELECT id, position, data_json FROM characters ORDER BY position')
@@ -327,6 +340,65 @@ export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown)
       const { message: _msg, hypaV3Data: _hypa, ...chatClean } = chat
       insertChat.run(chatId, chaId, j, JSON.stringify(chatClean))
     }
+  }
+}
+
+export function loadCharacterSelectionRows(
+  db: DatabaseSync,
+  characterId: string,
+): CharacterSelectionRows {
+  const settings = loadSettingsFromSqlite(db)
+  if (settings === null) {
+    throw new ValidationError('database must be an object before character commands can run')
+  }
+
+  const row = db
+    .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
+    .get(characterId) as CharacterRow | undefined
+  if (!row) {
+    throw new EntityNotFoundError(`Character not found: ${characterId}`)
+  }
+
+  const character = JSON.parse(row.data_json)
+  if (!isRecord(character)) {
+    throw new ValidationError(`Character row is not an object: ${characterId}`)
+  }
+
+  return {
+    characterId: row.id,
+    position: row.position,
+    character,
+    settings,
+  }
+}
+
+export function writeCharacterSelectionRows(db: DatabaseSync, rows: CharacterSelectionRows): void {
+  db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(
+    JSON.stringify(rows.character),
+    rows.characterId,
+  )
+  db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(rows.settings))
+}
+
+export function loadCharacterSelectionProjection(
+  db: DatabaseSync,
+  characterId: string,
+): CharacterSelectionProjection | null {
+  const row = db
+    .prepare('SELECT position, data_json FROM characters WHERE id = ?')
+    .get(characterId) as Pick<CharacterRow, 'position' | 'data_json'> | undefined
+  if (!row) return null
+
+  const settings = loadSettingsFromSqlite(db)
+  const currentChar = Number.isInteger(settings?.currentChar)
+    ? (settings.currentChar as number)
+    : row.position
+  const character = JSON.parse(row.data_json)
+  const lastInteraction = isRecord(character) ? character.lastInteraction : undefined
+  return {
+    characterId,
+    currentChar,
+    ...(typeof lastInteraction === 'number' ? { lastInteraction } : {}),
   }
 }
 

@@ -1,9 +1,9 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
 import {
+  loadCharacterSelectionProjection,
   loadCharacterLorebookHydration,
   loadCharacterLorebookHydrations,
   loadChatHydration,
@@ -278,7 +278,7 @@ export function registerProjectionRoutes(
           return response
         }
 
-        const selection = loadCharacterSelectionProjection(db, dataDir, characterId)
+        const selection = loadCharacterSelectionProjection(db, characterId)
         if (!selection) {
           reply.code(404).send({
             error: 'character_not_found',
@@ -404,32 +404,6 @@ function loadStubProjectionFields(
     }
   }
   return fields
-}
-
-function loadCharacterSelectionProjection(
-  db: DatabaseSync,
-  dataDir: string,
-  characterId: string,
-): { characterId: string; currentChar: number; lastInteraction?: number } | null {
-  const fields = loadPersistedDatabaseFields(db, dataDir, ['characters', 'currentChar'])
-  const characters = Array.isArray(fields.characters) ? fields.characters : []
-  const index = characters.findIndex((candidate) => {
-    return (
-      !!candidate &&
-      typeof candidate === 'object' &&
-      (candidate as { chaId?: unknown }).chaId === characterId
-    )
-  })
-  if (index < 0) return null
-
-  const currentChar = Number.isInteger(fields.currentChar) ? (fields.currentChar as number) : index
-  const character = characters[index] as { lastInteraction?: unknown }
-  const lastInteraction = character.lastInteraction
-  return {
-    characterId,
-    currentChar,
-    ...(typeof lastInteraction === 'number' ? { lastInteraction } : {}),
-  }
 }
 
 function emitProjectionMetric(

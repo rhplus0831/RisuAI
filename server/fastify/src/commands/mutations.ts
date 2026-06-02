@@ -3,6 +3,7 @@ import { bumpRevision, getSchemaState } from '../db.js'
 import {
   RevisionMismatchError,
   ValidationError,
+  loadCharacterSelectionRows,
   loadPersisted,
   loadPersistedWithMessages,
   replaceAllCharactersInTable,
@@ -10,8 +11,10 @@ import {
   replaceAllSettingsInTable,
   stripChatMessages,
   syncChatMessages,
+  writeCharacterSelectionRows,
 } from '../repository.js'
 import {
+  COMMAND_EVENT_CATALOG,
   persistCommandEvent,
   type CommandEvent,
   type CommandEventDraft,
@@ -72,6 +75,15 @@ export interface TargetedCommandMutationArgs<TExtra extends Record<string, unkno
     event: CommandEventDraft
     extra?: TExtra
   }
+}
+
+export interface CharacterSelectionCommandMutationArgs {
+  db: DatabaseSync
+  baseRevision: number
+  characterId: string
+  lastInteraction: number
+  eventSink: CommandEventSink
+  eventOrigin?: CommandEventOrigin
 }
 
 export function readBaseRevision(body: unknown): number {
@@ -246,6 +258,89 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
       status: 'error',
       error: err instanceof Error ? err.message : String(err),
       mutationPath: 'message-free',
+    })
+    throw err
+  }
+}
+
+export function applyCharacterSelectionCommandMutation(
+  args: CharacterSelectionCommandMutationArgs,
+): JsonCommandMutationResult<{ characterId: string }> {
+  let transactionOpen = false
+  const totalStartedAt = protocolNowMs()
+  let loadMs = 0
+  let cloneMutateMs = 0
+  let sqliteSyncMs = 0
+  let dbJsonWriteMs = 0
+  let eventEmitMs = 0
+
+  args.db.exec('BEGIN IMMEDIATE')
+  transactionOpen = true
+
+  try {
+    const { revision: currentRevision } = getSchemaState(args.db)
+    if (args.baseRevision !== currentRevision) {
+      throw new RevisionMismatchError(currentRevision)
+    }
+
+    const loadStartedAt = protocolNowMs()
+    const rows = loadCharacterSelectionRows(args.db, args.characterId)
+    loadMs = protocolDurationMs(loadStartedAt)
+
+    const cloneMutateStartedAt = protocolNowMs()
+    rows.character.lastInteraction = args.lastInteraction
+    rows.settings.currentChar = rows.position
+    cloneMutateMs = protocolDurationMs(cloneMutateStartedAt)
+
+    const sqliteSyncStartedAt = protocolNowMs()
+    writeCharacterSelectionRows(args.db, rows)
+    const revision = bumpRevision(args.db)
+    const event: CommandEvent = {
+      ...COMMAND_EVENT_CATALOG.characterSelected,
+      id: args.characterId,
+      revision,
+    }
+    persistCommandEvent(args.db, event)
+    sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
+
+    args.db.exec('COMMIT')
+    transactionOpen = false
+    const eventEmitStartedAt = protocolNowMs()
+    args.eventSink.emit(liveCommandEvent(event, args.eventOrigin))
+    eventEmitMs = protocolDurationMs(eventEmitStartedAt)
+    emitProtocolMetric('command_mutation', {
+      type: event.type,
+      resource: event.resource,
+      revision,
+      loadMs,
+      cloneMutateMs,
+      sqliteSyncMs,
+      dbJsonWriteMs,
+      eventEmitMs,
+      totalMs: protocolDurationMs(totalStartedAt),
+      status: 'ok',
+      mutationPath: 'targeted-character-selection',
+    })
+
+    return {
+      revision,
+      event,
+      extra: { characterId: args.characterId },
+    }
+  } catch (err) {
+    if (transactionOpen) {
+      args.db.exec('ROLLBACK')
+    }
+    emitProtocolMetric('command_mutation', {
+      loadMs,
+      cloneMutateMs,
+      sqliteSyncMs,
+      dbJsonWriteMs,
+      eventEmitMs,
+      totalMs: protocolDurationMs(totalStartedAt),
+      status: 'error',
+      error: err instanceof Error ? err.message : String(err),
+      mutationPath: 'targeted-character-selection',
     })
     throw err
   }

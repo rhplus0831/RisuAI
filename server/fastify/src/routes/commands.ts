@@ -8,6 +8,7 @@ import {
   type CommandEventSink,
 } from '../commands/events.js'
 import {
+  applyCharacterSelectionCommandMutation,
   applyJsonCommandMutation,
   applyMessageFreeJsonCommandMutation,
   applyTargetedCommandMutation,
@@ -2435,22 +2436,12 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const characterId = readCharacterId(body.characterId)
       const lastInteraction = readSelectionLastInteraction(body.lastInteraction)
-      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
+      const result = applyCharacterSelectionCommandMutation({
         db,
-        dataDir,
         baseRevision,
+        characterId,
+        lastInteraction,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
-          const target = ensureCharacterDatabaseObject(database)
-          const characters = ensureCharacterCollection(target)
-          const index = requireCharacterIndex(characters, characterId)
-          characters[index].lastInteraction = lastInteraction
-          target.currentChar = index
-          return {
-            event: { ...COMMAND_EVENT_CATALOG.characterSelected, id: characterId },
-            extra: { characterId },
-          }
-        },
       })
 
       return {

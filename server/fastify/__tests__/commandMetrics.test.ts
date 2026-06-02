@@ -50,6 +50,11 @@ const COMMAND_METRIC_REVIEW_GATES = {
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
   },
+  'targeted-character-selection': {
+    reviewGate: 'character selection should update only the selected character row and settings',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+  },
 } satisfies Record<
   string,
   {
@@ -315,7 +320,7 @@ describe('command protocol metrics', () => {
       for (const section of gate.sections) {
         expect(metric[section], `${metric.type}.${section}`).toBeGreaterThanOrEqual(0)
       }
-      if (typeof gate.dbJsonWriteMs === 'number') {
+      if ('dbJsonWriteMs' in gate && typeof gate.dbJsonWriteMs === 'number') {
         expect(metric.dbJsonWriteMs).toBe(gate.dbJsonWriteMs)
       }
     }
@@ -330,7 +335,7 @@ describe('command protocol metrics', () => {
     expect(settings.metric.mutationPath).toBe('message-free')
     expect(pluginStorage.metric.mutationPath).toBe('message-free')
     expect(chat.metric.mutationPath).toBe('message-free')
-    expect(characterSelect.metric.mutationPath).toBe('message-free')
+    expect(characterSelect.metric.mutationPath).toBe('targeted-character-selection')
     for (const metric of [
       messageAppend.metric,
       messageUpdate.metric,

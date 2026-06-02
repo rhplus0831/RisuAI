@@ -157,6 +157,19 @@ function activeMessageRowids(dataDir: string, chatId: string): { seq: number; ro
   }
 }
 
+function tableRowidsById(dataDir: string, table: 'characters' | 'chats'): Record<string, number> {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    const rows = db.prepare(`SELECT id, rowid FROM ${table} ORDER BY id`).all() as Array<{
+      id: string
+      rowid: number
+    }>
+    return Object.fromEntries(rows.map((row) => [row.id, row.rowid]))
+  } finally {
+    db.close()
+  }
+}
+
 async function uploadAsset(
   app: FastifyInstance,
   assertion: string,
@@ -3231,6 +3244,50 @@ describe('Phase 9-3a character commands', () => {
         origin: { writerSessionId: 'writer-a' },
       },
     ])
+  })
+
+  it('selects a character without rewriting unrelated character or chat rows', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            { id: 'chat-a-1', name: 'A1', message: [] },
+            { id: 'chat-a-2', name: 'A2', message: [] },
+          ],
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          chats: [{ id: 'chat-b-1', name: 'B1', message: [] }],
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+    const characterRowsBefore = tableRowidsById(harness.dataDir, 'characters')
+    const chatRowsBefore = tableRowidsById(harness.dataDir, 'chats')
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        characterId: 'char-b',
+        lastInteraction: 4321,
+      },
+    })
+
+    expect(selected.statusCode).toBe(200)
+    expect(tableRowidsById(harness.dataDir, 'characters')).toEqual(characterRowsBefore)
+    expect(tableRowidsById(harness.dataDir, 'chats')).toEqual(chatRowsBefore)
+    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
+      currentChar: 1,
+      characters: [{ chaId: 'char-a' }, { chaId: 'char-b', lastInteraction: 4321 }],
+    })
   })
 
   it('creates, updates, selects, reorders, and deletes characters by chaId', async () => {
