@@ -1,4 +1,3 @@
-// @ts-nocheck
 import localforage from 'localforage'
 import { type HypaModel, localModels } from './hypamemory'
 import { isContextModel, getContextProvider } from './contextualEmbedding'

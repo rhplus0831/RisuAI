@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { get, writable, type Writable } from 'svelte/store'
 import type { Database, Message } from './storage/database.svelte'
 import { getDatabase } from './storage/database.svelte'

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { DBState } from '../../stores.svelte'
 import {
   setCurrentChat,

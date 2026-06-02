@@ -1,4 +1,3 @@
-// @ts-nocheck
 import localforage from 'localforage'
 import { toGetter } from '../globalApi.svelte'
 import { DBState } from '../stores.svelte'

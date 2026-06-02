@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 import { getCharacter } from './utils'
 import { type character } from 'src/ts/storage/database.svelte'

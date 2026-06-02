@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Chat, character } from '../../storage/database.svelte'
 import { DBState } from '../../stores.svelte'
 import type { OpenAIChat } from '../index.svelte'

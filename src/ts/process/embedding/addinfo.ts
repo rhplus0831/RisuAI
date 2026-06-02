@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { getDatabase, type Chat, type character } from 'src/ts/storage/database.svelte'
 import { HypaProcesser } from '../memory/hypamemory'
 import { getUserName } from 'src/ts/util'

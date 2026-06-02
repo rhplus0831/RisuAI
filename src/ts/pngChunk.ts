@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Buffer } from 'buffer'
 import crc32 from 'crc/crc32'
 import { AppendableBuffer, VirtualWriter, type LocalWriter } from './globalApi.svelte'

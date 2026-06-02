@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { getCurrentCharacter, type character } from 'src/ts/storage/database.svelte'
 import { DBState } from 'src/ts/stores.svelte'
 

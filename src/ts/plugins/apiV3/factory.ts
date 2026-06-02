@@ -1,4 +1,3 @@
-// @ts-nocheck
 type MsgType =
   | 'CALL_ROOT'
   | 'CALL_INSTANCE'

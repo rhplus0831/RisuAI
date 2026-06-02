@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { language } from 'src/lang'
 import { alertError } from 'src/ts/alert'
 import { getDatabase } from 'src/ts/storage/database.svelte'

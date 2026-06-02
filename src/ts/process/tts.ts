@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { alertError } from '../alert'
 import { getCurrentCharacter, getDatabase, type character } from '../storage/database.svelte'
 import { runTranslator, translateVox } from '../translator/translator'

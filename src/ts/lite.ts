@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { writable } from 'svelte/store'
 
 if (import.meta.env.DEV) {

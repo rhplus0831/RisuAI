@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { getDatabase, saveImage } from './storage/database.svelte'
 import { selectSingleFile, sleep } from './util'
 import { alertError, alertNormal, alertStore } from './alert'

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { risuChatParser } from './parser.svelte'
 
 export function parseChatML(data: string): OpenAIChat[] | null {

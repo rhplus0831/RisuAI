@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
 import { currentCharacterStateSnapshot, dispatchUpdateCharacter } from 'src/ts/characterCommands'

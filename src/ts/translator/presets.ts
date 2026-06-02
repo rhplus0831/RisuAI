@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { decode as decodeMsgpack, encode as encodeMsgpack } from 'msgpackr/index-no-eval'
 import * as fflate from 'fflate'
 import { decryptBuffer, encryptBuffer } from 'src/ts/util'

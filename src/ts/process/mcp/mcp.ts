@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from './mcplib'
 import { DBState } from 'src/ts/stores.svelte'

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { changeUserPersona } from './persona'
 import { currentModuleStateSnapshot, dispatchEnableModule } from './moduleCommands'
 import {

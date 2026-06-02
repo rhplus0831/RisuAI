@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { sleep } from './util'
 import { globalFetch } from './globalApi.svelte'
 

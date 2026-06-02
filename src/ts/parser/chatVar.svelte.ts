@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { get } from 'svelte/store'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { parseKeyValue } from '../util'

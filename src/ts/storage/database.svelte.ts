@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { get } from 'svelte/store'
 import { checkNullish, decryptBuffer, encryptBuffer, selectSingleFile } from '../util'
 import { changeLanguage, language } from '../../lang'

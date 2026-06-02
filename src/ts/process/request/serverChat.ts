@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Browser client adapter for `POST /api/v1/generate/chat`.
  *

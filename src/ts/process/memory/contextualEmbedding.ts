@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { globalFetch } from 'src/ts/globalApi.svelte'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { contextHash, type VectorArray } from './hypamemory'

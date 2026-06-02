@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Ollama } from 'ollama/dist/browser.mjs'
 import { language } from '../../../lang'
 import { fetchNative, globalFetch } from '../../globalApi.svelte'

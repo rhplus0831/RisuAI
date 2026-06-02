@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { get, writable } from 'svelte/store'
 import { language } from '../../lang'
 import {

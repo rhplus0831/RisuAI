@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { tokenizeAccurate } from '../tokenizer'
 import { createPreset, getDatabase, presetTemplate, setDatabase } from '../storage/database.svelte'
 import { alertError, alertNormal } from '../alert'

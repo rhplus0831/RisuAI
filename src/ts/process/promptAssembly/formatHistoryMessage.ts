@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Buffer } from 'buffer'
 import { v4 } from 'uuid'
 import type { Message, character } from '../../storage/database.svelte'

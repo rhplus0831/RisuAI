@@ -1,4 +1,3 @@
-// @ts-nocheck
 import localforage from 'localforage'
 import { v4 } from 'uuid'
 import { getImageType } from 'src/ts/media'

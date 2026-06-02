@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Template } from '@huggingface/jinja'
 import type { OpenAIChat } from '../index.svelte'
 import { getCurrentCharacter, getDatabase } from 'src/ts/storage/database.svelte'

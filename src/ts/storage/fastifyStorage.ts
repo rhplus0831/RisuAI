@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { language } from 'src/lang'
 import { alertError, alertInput, waitAlert } from '../alert'
 import {

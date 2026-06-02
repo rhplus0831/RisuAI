@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { getChatVar, setChatVar } from 'src/ts/parser/chatVar.svelte'
 import { MCPClientLike } from './internalmcp'
 import type { MCPTool, RPCToolCallContent } from './mcplib'

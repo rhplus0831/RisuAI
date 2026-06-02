@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { getUserName } from 'src/ts/util'
 import type { OpenAIChat } from '../index.svelte'
