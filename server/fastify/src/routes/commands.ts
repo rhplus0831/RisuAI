@@ -214,6 +214,8 @@ import {
   ValidationError,
   writePluginStorageKey,
   writeSettingsOnly,
+  writeSingleCharacterRow,
+  writeSingleChatRow,
   writeSingleCollectionTable,
 } from '../repository.js'
 
@@ -2376,12 +2378,13 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readCharacterPatch(body.patch, { assetDb: db })
-      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
+      const result = applyTargetedCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
           const index = requireCharacterIndex(characters, characterId)
@@ -2390,7 +2393,20 @@ export function registerCommandRoutes(
             ...patch,
             chaId: characterId,
           }
-          ensureCharacterCollection(target)
+          // Re-normalize: a `trashTime` patch re-runs the characterOrder /
+          // currentChar repair (settings scalars); sibling-row de-dup is
+          // validate-only (Prerequisite 2). `chats`/`globalLore`/`chatFolders`/
+          // `modules` are excluded patch keys, so the one character row is the
+          // whole change.
+          const normalized = ensureCharacterCollection(target)
+          writeSingleCharacterRow(
+            innerDb,
+            characterId,
+            normalized[requireCharacterIndex(normalized, characterId)],
+          )
+          if (Object.prototype.hasOwnProperty.call(patch, 'trashTime')) {
+            writeSettingsOnly(innerDb, extractSettings(target))
+          }
           return {
             event: { ...COMMAND_EVENT_CATALOG.characterUpdated, id: characterId },
             extra: { characterId },
@@ -2842,19 +2858,23 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ChatFolderCommandBody
       const baseRevision = readBaseRevision(body)
       const folder = createChatFolderRecord(body.folder)
-      const result = applyMessageFreeJsonCommandMutation<{ folderId: string }>({
+      const result = applyTargetedCommandMutation<{ folderId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
           const folders = ensureCharacterChatFolders(character)
           if (chatFolderIdExists(characters, folder.id)) {
             throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
           }
+          // `chatFolders` lives in the character row; sibling-character chat
+          // normalization is validate-only (Prerequisite 2).
           folders.unshift(folder)
+          writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.chatFolderCreated,
@@ -2884,12 +2904,13 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ChatFolderCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readChatFolderPatch(body.patch)
-      const result = applyMessageFreeJsonCommandMutation<{ folderId: string }>({
+      const result = applyTargetedCommandMutation<{ folderId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
           const { character, folderIndex } = requireChatFolderIndex(characters, folderId)
           const folders = ensureCharacterChatFolders(character)
@@ -2898,6 +2919,7 @@ export function registerCommandRoutes(
             ...patch,
             id: folderId,
           }
+          writeSingleCharacterRow(innerDb, character.chaId as string, character)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.chatFolderUpdated,
@@ -2974,21 +2996,25 @@ export function registerCommandRoutes(
         body.selectedChatId === undefined
           ? undefined
           : readChatId(body.selectedChatId, 'selectedChatId')
-      const result = applyMessageFreeJsonCommandMutation<{ selectedChatId: string | null }>({
+      const result = applyTargetedCommandMutation<{ selectedChatId: string | null }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
           validateFullChatFolderOrder(character, folderIds)
           const folders = ensureCharacterChatFolders(character)
           const folderById = new Map(folders.map((folder) => [folder.id, folder]))
+          // `chatFolders` and `chatPage` (via selectChat) live in the character
+          // row; reordering folders touches no chat row.
           character.chatFolders = folderIds.map((folderId) => folderById.get(folderId)!)
           if (selectedId) {
             selectChat(character, selectedId)
           }
+          writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatFolderReordered, parentId: characterId },
             extra: { selectedChatId: selectedChatId(character) },
@@ -3566,15 +3592,19 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
       const entries = validateLorebookEntries(body.entries)
-      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
+      const result = applyTargetedCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const { character } = normalizeSelectedCharacterLorebooks(target, characterId)
+          // `globalLore` lives in the character row; cross-character lorebook
+          // normalization is validate-only (Prerequisite 2).
           character.globalLore = entries
+          writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: characterId },
             extra: { characterId },
@@ -3824,17 +3854,22 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
       const moduleIds = readModuleIdList(body.moduleIds)
-      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
+      const result = applyTargetedCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
           const character = findCharacterForModuleCommand(target, characterId)
           validateCharacterModuleLinks(modules, moduleIds)
+          // The only persistent change is `character.modules` (the character
+          // row); the `ensureModuleRecords` collection repair is validate-only
+          // (Prerequisite 2), so the `modules` table is not rewritten.
           character.modules = moduleIds
+          writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.characterModulesReordered,
