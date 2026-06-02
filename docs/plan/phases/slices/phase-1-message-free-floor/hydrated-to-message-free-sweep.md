@@ -1,6 +1,8 @@
 # Hydrated To Message-Free Sweep
 
-Status: planned. The safe, helper-free first commit (Prerequisite 4).
+Status: implemented (`208e538a` on `fastify`). The safe, helper-free first
+commit (Prerequisite 4): 62 routes swapped, the four message-dependent routes
+(2390, 2495, 2617, 2655) left on `applyJsonCommandMutation`.
 
 ## Source Anchors
 

@@ -21,22 +21,18 @@ batch. Avoid broad cleanup passes.
 
 ## Current Best Targets
 
-Phase 0 (baseline foundations) is implemented. Recommended order from here:
+Phase 0 (baseline foundations) and Phase 1 (the message-free floor sweep,
+`208e538a`) are implemented. Recommended order from here:
 
-1. Phase 1 mechanical floor. The
-   [`hydrated-to-message-free-sweep.md`](phases/slices/phase-1-message-free-floor/hydrated-to-message-free-sweep.md)
-   is the safe, helper-free next commit across ~62 routes; it needs no Phase 0
-   helper, only swapping `applyJsonCommandMutation` → `applyMessageFreeJsonCommandMutation`
-   on non-message routes.
-2. Phase 2 settings + plugin storage. Highest amplification, cleanest fix;
+1. Phase 2 settings + plugin storage. Highest amplification, cleanest fix;
    projection already safe or sprawling-by-design. Routes onto
    `targeted-settings` / `targeted-plugin-storage` via the writer kit.
-3. Phase 3 single-row paths, landing the matching Phase 5 character/chat
+2. Phase 3 single-row paths, landing the matching Phase 5 character/chat
    projection branches in the same batches.
-4. Phase 4 collection families, plugins first (projection already narrow),
+3. Phase 4 collection families, plugins first (projection already narrow),
    then the rest with their pointer-settings co-writes and the Phase 5
    projection-field bug co-fixes.
-5. Phase 5 `lorebook` resource split once a global-lorebook command is
+4. Phase 5 `lorebook` resource split once a global-lorebook command is
    narrowed.
 
 ## Not First
@@ -55,9 +51,9 @@ Phase 0 (baseline foundations) is implemented. Recommended order from here:
 ## Selection Order
 
 1. Phase 0 baseline metric + gates and writer kit + targeted paths — done.
-2. Phase 1 floor (next).
-3. Phase 2, then Phase 3 (+ its projection branches), then Phase 4 (plugins
-   first) with Phase 5 co-fixes.
+2. Phase 1 floor — done (`208e538a`).
+3. Phase 2 (next), then Phase 3 (+ its projection branches), then Phase 4
+   (plugins first) with Phase 5 co-fixes.
 4. Phase 5 `lorebook` split.
 5. Refresh [`latest-verification.md`](latest-verification.md) after each tier's
    focused and full run.

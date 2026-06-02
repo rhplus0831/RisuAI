@@ -7,14 +7,23 @@ Use it first, then open only the phase or slice needed for the next task.
 
 Current status reflects the seed audit
 [`mutation-range-mismatch.md`](mutation-range-mismatch.md), audited 2026-06-03.
-Phase 0 (baseline foundations) has landed; no route has been narrowed yet, so the
-only narrow runtime path is still the reference fix `b57df5cd`
-(`characters/select`).
+Phase 0 (baseline foundations) and Phase 1 (the message-free floor) have landed.
+No per-row write has been narrowed yet: the only narrow runtime paths are the
+reference fix `b57df5cd` (`characters/select`) and the six targeted message
+commands; every floor route still rewrites the broad table set.
 
 ## Current Snapshot
 
-Analysis is complete. Phase 0 scaffolding is in place; the first route-narrowing
-tier (Phase 1) has not started.
+Analysis is complete. Phase 0 scaffolding is in place and Phase 1 (the
+mechanical floor sweep) has landed; the first per-row narrowing tier (Phase 2)
+has not started.
+
+- Phase 1 landed (`208e538a`): the 62 safe `hydrated` non-message routes now run
+  on `applyMessageFreeJsonCommandMutation`, dropping the all-message load and the
+  no-op `syncChatMessages` chat-row rewrite. The four message-dependent routes
+  (2390, 2495, 2617, 2655) are unchanged and handed to Phase 3/Phase 6. This is a
+  stopgap: a `message-free` route still rewrites all characters, the nine
+  collection tables, and settings.
 
 - Phase 0 landed: the targeted writer kit (`repository.ts`), the
   `TARGETED_MUTATION_PATHS` vehicles (`mutations.ts`), the `writtenTables`
@@ -37,14 +46,15 @@ tier (Phase 1) has not started.
   (`prompt`/`promptItem` ship `botPresets`, `persona` omits legacy mirror
   scalars, `loadout` omits `lastLoadedLoadoutName`).
 
-Phase 0 is implemented; every tier phase below is still planned.
+Phase 0 and Phase 1 are implemented; every per-row tier phase below (Phase 2
+onward) is still planned.
 
 ## Phase Router
 
 | Phase | Status | Open when working on... |
 | --- | --- | --- |
 | [Phase 0](phases/phase-0-baseline-foundations.md) | Implemented | Writer kit, targeted mutation paths, mutation-range metric, review gates, normalization-scope policy. |
-| [Phase 1](phases/phase-1-message-free-floor.md) | Planned | The mechanical `hydrated` to `message-free` sweep across ~62 non-message routes. |
+| [Phase 1](phases/phase-1-message-free-floor.md) | Implemented | The mechanical `hydrated` to `message-free` sweep across the 62 non-message routes. |
 | [Phase 2](phases/phase-2-settings-and-plugin-storage-paths.md) | Planned | Tier-1 settings/pointer-only writes and Tier-2 plugin custom storage writes. |
 | [Phase 3](phases/phase-3-single-row-paths.md) | Planned | Tier-3 single character-row and single chat-row metadata edits. |
 | [Phase 4](phases/phase-4-collection-table-paths.md) | Planned | Tier-4 single collection-table edits across the eight collection families. |
@@ -73,9 +83,10 @@ Headlines, in priority order:
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). No runtime change has
-landed for this workstream yet, so that file records the pre-implementation
-baseline and the gate set the first slice must populate.
+See [`latest-verification.md`](latest-verification.md). The Phase 1 floor sweep
+(`208e538a`) is the latest runtime change; it is behavior-preserving, so the
+`writtenTables` broad-set baseline still stands and the per-row gates remain
+unpopulated until Phase 2.
 
 ## Start Here
 

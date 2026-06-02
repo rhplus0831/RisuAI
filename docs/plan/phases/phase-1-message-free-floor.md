@@ -1,6 +1,9 @@
 # Phase 1: Message-Free Floor
 
-Status: planned.
+Status: implemented (`208e538a` on `fastify`). The 62 safe `hydrated`
+non-message routes now run on `applyMessageFreeJsonCommandMutation`; the four
+message-dependent routes (2390, 2495, 2617, 2655) are unchanged and handed to
+Phase 3/Phase 6.
 
 Goal: apply the cheap floor. Swap safe `hydrated` non-message routes to
 `applyMessageFreeJsonCommandMutation`. This removes the all-message load and the
