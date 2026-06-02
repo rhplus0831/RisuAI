@@ -34,7 +34,11 @@ backup restore, and other partial-success repairs.
 revision as `sinceRevision` / `Last-Event-ID`. `src/ts/bootstrap.ts` processes
 command events serially:
 
-- Own echoes and already-applied revisions are skipped.
+- Own echoes and already-applied revisions are skipped. Live command events
+  emitted from active-writer command routes carry transient
+  `origin.writerSessionId`; the originating browser skips those immediately,
+  even if the SSE frame arrives before the command response updates the cached
+  revision.
 - Contiguous foreign events fetch `GET /api/v1/projection/:resource`.
 - `character.selected` uses the narrow `characterSelection` resource. Its
   response updates only `currentChar`, `selectedCharID`, and the selected

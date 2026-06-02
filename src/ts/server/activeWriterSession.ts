@@ -8,6 +8,10 @@ export function getActiveWriterSessionId(): string {
   return activeWriterSessionId
 }
 
+export function peekActiveWriterSessionId(): string | null {
+  return activeWriterSessionId
+}
+
 export function activeWriterSessionHeader(): Record<string, string> {
   return {
     [ACTIVE_WRITER_SESSION_HEADER]: getActiveWriterSessionId(),
@@ -38,6 +42,9 @@ function scheduleStaleSessionReload(): void {
 }
 
 async function notifyStaleSession(): Promise<void> {
-  const [{ language }, { alertError }] = await Promise.all([import('../../lang'), import('../alert')])
+  const [{ language }, { alertError }] = await Promise.all([
+    import('../../lang'),
+    import('../alert'),
+  ])
   alertError(language.reloadSession)
 }

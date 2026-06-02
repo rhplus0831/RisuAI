@@ -340,6 +340,9 @@ export interface CommandEvent {
   resource: string
   id?: string
   parentId?: string
+  origin?: {
+    writerSessionId: string
+  }
 }
 
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =

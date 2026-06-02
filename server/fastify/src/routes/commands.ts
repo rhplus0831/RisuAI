@@ -1,13 +1,19 @@
-import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
-import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
+import {
+  COMMAND_EVENT_CATALOG,
+  type CommandEvent,
+  type CommandEventOrigin,
+  type CommandEventSink,
+} from '../commands/events.js'
 import {
   applyJsonCommandMutation,
   applyMessageFreeJsonCommandMutation,
   applyTargetedCommandMutation,
   readBaseRevision,
 } from '../commands/mutations.js'
+import { readActiveWriterSessionId } from '../activeWriter.js'
 import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   createPromptItemRecord,
@@ -202,6 +208,25 @@ import {
   RevisionMismatchError,
   ValidationError,
 } from '../repository.js'
+
+function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
+  const writerSessionId = readActiveWriterSessionId(req)
+  return writerSessionId ? { writerSessionId } : undefined
+}
+
+function commandMutationContext(req: FastifyRequest, eventSink: CommandEventSink) {
+  const origin = commandEventOrigin(req)
+  return origin ? { eventSink, eventOrigin: origin } : { eventSink }
+}
+
+function emitCommandEventForRequest(
+  req: FastifyRequest,
+  eventSink: CommandEventSink,
+  event: CommandEvent,
+): void {
+  const origin = commandEventOrigin(req)
+  eventSink.emit(origin ? { ...event, origin } : event)
+}
 
 interface RuntimeSettingsCommandBody {
   baseRevision?: unknown
@@ -1038,7 +1063,7 @@ export function registerCommandRoutes(
       if (!result.event) {
         throw new Error('state initialization did not produce a command event')
       }
-      eventSink.emit(result.event)
+      emitCommandEventForRequest(req, eventSink, result.event)
       return { revision: result.revision, initialized: true, event: result.event }
     } catch (err) {
       return sendCommandError(reply, err)
@@ -1058,7 +1083,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           applySettingsPatch(database, patch)
           return {
@@ -1089,7 +1114,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1129,7 +1154,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1174,7 +1199,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1236,7 +1261,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1283,7 +1308,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1325,7 +1350,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1364,7 +1389,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1406,7 +1431,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           applySettingsPatch(database, patch)
           return {
@@ -1435,7 +1460,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           const items = ensurePromptTemplateCollection(target)
@@ -1472,7 +1497,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           const items = ensurePromptTemplateCollection(target)
@@ -1510,7 +1535,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           const items = ensurePromptTemplateCollection(target)
@@ -1547,7 +1572,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           if (enabled) {
@@ -1586,7 +1611,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureDatabaseObject(database)
           const items = ensurePromptTemplateCollection(target)
@@ -1624,7 +1649,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
@@ -1673,7 +1698,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
@@ -1727,7 +1752,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
@@ -1792,7 +1817,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
@@ -1835,7 +1860,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
@@ -1878,7 +1903,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
@@ -1925,7 +1950,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
@@ -1976,7 +2001,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
@@ -2032,7 +2057,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
@@ -2067,7 +2092,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
@@ -2107,7 +2132,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
@@ -2145,7 +2170,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
@@ -2180,7 +2205,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
@@ -2216,7 +2241,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
@@ -2255,7 +2280,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
@@ -2294,7 +2319,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
@@ -2333,7 +2358,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
@@ -2375,7 +2400,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
@@ -2414,7 +2439,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
@@ -2453,7 +2478,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
@@ -2491,7 +2516,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureModuleCommandDatabase(database)
           const characters = normalizeAllCharacterChats(target)
@@ -2557,7 +2582,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureModuleCommandDatabase(database)
           const characters = normalizeAllCharacterChats(target)
@@ -2609,7 +2634,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const characters = normalizeAllCharacterChats(database)
           const { character, chatIndex } = requireChatLocation(characters, chatId)
@@ -2658,7 +2683,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureModuleCommandDatabase(database)
           const characters = normalizeAllCharacterChats(target)
@@ -2756,7 +2781,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const characters = normalizeAllCharacterChats(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
@@ -2804,7 +2829,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const characters = normalizeAllCharacterChats(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
@@ -2846,7 +2871,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const characters = normalizeAllCharacterChats(database)
           const { character, folderIndex } = requireChatFolderIndex(characters, folderId)
@@ -2888,7 +2913,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const characters = normalizeAllCharacterChats(database)
           const { character, folderIndex } = requireChatFolderIndex(characters, folderId)
@@ -2936,7 +2961,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const characters = normalizeAllCharacterChats(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
@@ -2978,7 +3003,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const characters = normalizeAllCharacterChats(database)
           const { character, chat } = requireChatLocation(characters, chatId)
@@ -3023,7 +3048,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
@@ -3065,7 +3090,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
@@ -3110,7 +3135,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
@@ -3160,7 +3185,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
@@ -3200,7 +3225,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
@@ -3241,7 +3266,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-generation',
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
@@ -3299,7 +3324,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -3336,7 +3361,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -3370,7 +3395,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -3408,7 +3433,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -3451,7 +3476,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -3486,7 +3511,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -3523,7 +3548,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLorebookDatabase(database)
           const { character } = normalizeSelectedCharacterLorebooks(target, characterId)
@@ -3557,7 +3582,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLorebookDatabase(database)
           const { chat, parentId } = normalizeSelectedChatLorebooks(target, chatId)
@@ -3594,7 +3619,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
@@ -3631,7 +3656,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
@@ -3665,7 +3690,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
@@ -3701,7 +3726,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureModuleCommandDatabase(database)
           requireModuleIndex(ensureModuleRecords(target), moduleId)
@@ -3740,7 +3765,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
@@ -3777,7 +3802,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
@@ -3815,7 +3840,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
@@ -3852,7 +3877,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
@@ -3886,7 +3911,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
@@ -3924,7 +3949,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
@@ -3958,7 +3983,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePluginCommandDatabase(database)
           target.currentPluginProvider = provider
@@ -3990,7 +4015,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
@@ -4025,7 +4050,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePluginStorageDatabase(database)
           const storage = ensurePluginCustomStorage(target)
@@ -4058,7 +4083,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePluginStorageDatabase(database)
           const storage = ensurePluginCustomStorage(target)
@@ -4091,7 +4116,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensurePluginStorageDatabase(database)
           const storage = patch.clear ? {} : ensurePluginCustomStorage(target)
@@ -4130,7 +4155,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureLorebookDatabase(database)
           const module = requireModule(ensureModuleCollection(target), moduleId)
@@ -4164,7 +4189,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = normalizeScriptDefinitionDatabase(database)
           const character = readCharacterScriptParent(target, characterId)
@@ -4198,7 +4223,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = normalizeScriptDefinitionDatabase(database)
           const character = readCharacterScriptParent(target, characterId)
@@ -4232,7 +4257,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = normalizeScriptDefinitionDatabase(database)
           const module = readModuleScriptParent(target, moduleId)
@@ -4266,7 +4291,7 @@ export function registerCommandRoutes(
         db,
         dataDir,
         baseRevision,
-        eventSink,
+        ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = normalizeScriptDefinitionDatabase(database)
           const module = readModuleScriptParent(target, moduleId)

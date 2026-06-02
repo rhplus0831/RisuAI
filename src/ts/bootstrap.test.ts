@@ -37,6 +37,7 @@ const serverEventsState = vi.hoisted(() => ({
       resource: string
       id?: string
       parentId?: string
+      origin?: { writerSessionId: string }
     }) => void
     onMemoryEvent?: (event: {
       type: 'memory.job'
@@ -55,6 +56,7 @@ const serverEventsState = vi.hoisted(() => ({
         resource: string
         id?: string
         parentId?: string
+        origin?: { writerSessionId: string }
       }) => void
       onMemoryEvent?: (event: {
         type: 'memory.job'
@@ -203,6 +205,7 @@ import {
   peekCachedServerCommandRevision,
   setCachedServerCommandRevision,
 } from './server/commands'
+import { getActiveWriterSessionId } from './server/activeWriterSession'
 import {
   getProtocolDiagnosticsSnapshot,
   type FullBootstrapResyncReason,
@@ -370,6 +373,26 @@ describe('web bootstrap startup source', () => {
     const subscription = serverEventsState.subscriptions[0]
     // The echoed event carries the revision we already applied.
     subscription.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
+    await flushServerProjectionSync()
+
+    expect(serverProjectionState.fetchResource).not.toHaveBeenCalled()
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+    expect(peekCachedServerCommandRevision()).toBe(6)
+  })
+
+  it('skips own command events by writer origin before the command response advances revision', async () => {
+    await loadWebInitialDatabase()
+    expect(peekCachedServerCommandRevision()).toBe(5)
+    const writerSessionId = getActiveWriterSessionId()
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({
+      type: 'character.selected',
+      revision: 6,
+      resource: 'characterSelection',
+      id: 'char-a',
+      origin: { writerSessionId },
+    })
     await flushServerProjectionSync()
 
     expect(serverProjectionState.fetchResource).not.toHaveBeenCalled()

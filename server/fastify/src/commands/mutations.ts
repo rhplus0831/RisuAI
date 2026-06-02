@@ -13,6 +13,7 @@ import {
   persistCommandEvent,
   type CommandEvent,
   type CommandEventDraft,
+  type CommandEventOrigin,
   type CommandEventSink,
 } from './events.js'
 import { emitProtocolMetric, protocolDurationMs, protocolNowMs } from '../protocolMetrics.js'
@@ -28,6 +29,7 @@ export interface JsonCommandMutationArgs<TExtra extends Record<string, unknown>>
   dataDir: string
   baseRevision: number
   eventSink: CommandEventSink
+  eventOrigin?: CommandEventOrigin
   mutate: (database: unknown) => {
     event: CommandEventDraft
     extra?: TExtra
@@ -46,6 +48,7 @@ export interface MessageFreeJsonCommandMutationArgs<TExtra extends Record<string
   dataDir: string
   baseRevision: number
   eventSink: CommandEventSink
+  eventOrigin?: CommandEventOrigin
   mutate: (database: unknown) => {
     event: CommandEventDraft
     extra?: TExtra
@@ -57,6 +60,7 @@ export interface TargetedCommandMutationArgs<TExtra extends Record<string, unkno
   dataDir: string
   baseRevision: number
   eventSink: CommandEventSink
+  eventOrigin?: CommandEventOrigin
   mutationPath: string
   writeDatabase?: boolean
   mutate: (
@@ -122,7 +126,7 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
       dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     }
     const eventEmitStartedAt = protocolNowMs()
-    args.eventSink.emit(event)
+    args.eventSink.emit(liveCommandEvent(event, args.eventOrigin))
     eventEmitMs = protocolDurationMs(eventEmitStartedAt)
     emitProtocolMetric('command_mutation', {
       type: event.type,
@@ -205,7 +209,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     writePersisted(args.dataDir, persisted)
     dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     const eventEmitStartedAt = protocolNowMs()
-    args.eventSink.emit(event)
+    args.eventSink.emit(liveCommandEvent(event, args.eventOrigin))
     eventEmitMs = protocolDurationMs(eventEmitStartedAt)
     emitProtocolMetric('command_mutation', {
       type: event.type,
@@ -298,7 +302,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     writePersisted(args.dataDir, messageFree)
     dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     const eventEmitStartedAt = protocolNowMs()
-    args.eventSink.emit(event)
+    args.eventSink.emit(liveCommandEvent(event, args.eventOrigin))
     eventEmitMs = protocolDurationMs(eventEmitStartedAt)
     emitProtocolMetric('command_mutation', {
       type: event.type,
@@ -336,6 +340,10 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     })
     throw err
   }
+}
+
+function liveCommandEvent(event: CommandEvent, origin?: CommandEventOrigin): CommandEvent {
+  return origin ? { ...event, origin } : event
 }
 
 function cloneJsonValue<T>(value: T): T {

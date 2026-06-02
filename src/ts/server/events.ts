@@ -280,6 +280,7 @@ function parseCommandEvent(data: string): CommandEvent | null {
   if (typeof record.resource !== 'string') return null
   if (record.id !== undefined && typeof record.id !== 'string') return null
   if (record.parentId !== undefined && typeof record.parentId !== 'string') return null
+  if (record.origin !== undefined && !isCommandEventOrigin(record.origin)) return null
 
   return {
     type: record.type,
@@ -287,5 +288,12 @@ function parseCommandEvent(data: string): CommandEvent | null {
     resource: record.resource,
     ...(typeof record.id === 'string' ? { id: record.id } : {}),
     ...(typeof record.parentId === 'string' ? { parentId: record.parentId } : {}),
+    ...(isCommandEventOrigin(record.origin) ? { origin: record.origin } : {}),
   }
+}
+
+function isCommandEventOrigin(value: unknown): value is { writerSessionId: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const writerSessionId = (value as { writerSessionId?: unknown }).writerSessionId
+  return typeof writerSessionId === 'string' && writerSessionId.trim() !== ''
 }

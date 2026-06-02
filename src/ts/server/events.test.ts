@@ -70,6 +70,7 @@ describe('server command event subscription helper', () => {
       type: 'settings.updated',
       revision: 3,
       resource: 'settings',
+      origin: { writerSessionId: 'writer-a' },
     }
     const memoryEvent: ServerMemoryEvent = {
       type: 'memory.job',

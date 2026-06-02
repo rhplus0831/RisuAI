@@ -3201,6 +3201,44 @@ describe('Phase 9-2f loadout commands', () => {
 })
 
 describe('Phase 9-3a character commands', () => {
+  it('adds writer origin only to live command events', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B', chats: [] },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+    harness.commandEvents.clear()
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/select',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: {
+        baseRevision: revision,
+        characterId: 'char-b',
+        lastInteraction: 4321,
+      },
+    })
+
+    expect(selected.statusCode).toBe(200)
+    expect(selected.json().event).toEqual({
+      type: 'character.selected',
+      revision: revision + 1,
+      resource: 'characterSelection',
+      id: 'char-b',
+    })
+    expect(harness.commandEvents.list()).toEqual([
+      {
+        ...selected.json().event,
+        origin: { writerSessionId: 'writer-a' },
+      },
+    ])
+  })
+
   it('creates, updates, selects, reorders, and deletes characters by chaId', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

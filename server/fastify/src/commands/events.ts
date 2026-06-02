@@ -7,9 +7,14 @@ export interface CommandEvent {
   resource: string
   id?: string
   parentId?: string
+  origin?: CommandEventOrigin
 }
 
-export type CommandEventDraft = Omit<CommandEvent, 'revision'>
+export interface CommandEventOrigin {
+  writerSessionId: string
+}
+
+export type CommandEventDraft = Omit<CommandEvent, 'revision' | 'origin'>
 
 export type CommandEventListener = (event: CommandEvent) => void
 

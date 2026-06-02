@@ -36,6 +36,13 @@ revision. Normal revision-tracked command mutations should:
 Stale clients receive 409. On the browser side, command helpers cache the latest
 revision from bootstrap and command responses.
 
+Live command events emitted from active-writer command routes may include a
+transient `origin.writerSessionId` matching the request's
+`risu-writer-session` header. This origin is not part of the persisted command
+event history; it lets the originating browser skip its own SSE echo even when
+the stream frame arrives before the command response advances the cached
+revision.
+
 The split-store write path hydrates messages from SQLite, mutates a cloned
 database, synchronizes changed chat messages / `hypaV3Data` / reroll alternates
 back into SQLite, bumps the revision, persists the command event, commits, and

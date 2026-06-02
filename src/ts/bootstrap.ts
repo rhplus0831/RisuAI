@@ -50,6 +50,7 @@ import {
   setCachedServerCommandRevision,
   type CommandEvent,
 } from './server/commands'
+import { peekActiveWriterSessionId } from './server/activeWriterSession'
 import { fetchServerProjectionResource } from './server/projection'
 import { forceServerProjectionResync } from './server/projectionResync'
 import {
@@ -304,6 +305,10 @@ function enqueueServerProjectionSync(task: () => Promise<void>) {
 }
 
 async function processServerCommandEvent(event: CommandEvent): Promise<void> {
+  if (isOwnCommandEvent(event)) {
+    setCachedServerCommandRevision(event.revision)
+    return
+  }
   const cached = peekCachedServerCommandRevision()
   if (cached === null) {
     // No baseline yet: reconcile from scratch.
@@ -362,6 +367,11 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
   }
   // Gap detected (event.revision > cached + 1) → self-healing full bootstrap.
   await forceServerProjectionResync('revision-gap', { resource: event.resource })
+}
+
+function isOwnCommandEvent(event: CommandEvent): boolean {
+  const writerSessionId = peekActiveWriterSessionId()
+  return !!writerSessionId && event.origin?.writerSessionId === writerSessionId
 }
 
 /**

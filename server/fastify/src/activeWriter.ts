@@ -40,7 +40,7 @@ function isActiveWriter(state: ActiveWriterState, req: FastifyRequest): boolean 
   return readActiveWriterSessionId(req) === state.sessionId
 }
 
-function readActiveWriterSessionId(req: FastifyRequest): string | null {
+export function readActiveWriterSessionId(req: FastifyRequest): string | null {
   const raw = req.headers[ACTIVE_WRITER_SESSION_HEADER]
   const value = Array.isArray(raw) ? raw[0] : raw
   if (typeof value !== 'string') return null
