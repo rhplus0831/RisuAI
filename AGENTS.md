@@ -27,3 +27,12 @@ The Fastify variation has not been released yet, so there are currently no real 
 
 * We do not need to worry about DB migrations.
 * The `data` folder is only a copied backup brought over from the original Risuai project, and it is acceptable if that data is lost.
+
+# TypeScript Check Workflow
+
+The server tsconfig (`server/fastify/tsconfig.json`) uses `strict: true` and references a client-lib project (`tsconfig.client-lib.json`, `strict: false`) via TypeScript project references. To type-check the server:
+
+```bash
+pnpm exec tsc -p tsconfig.client-lib.json              # build client .d.ts (re-run after client src/ changes)
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit  # check server (strict, zero errors)
+```
