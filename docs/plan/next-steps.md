@@ -13,35 +13,30 @@ batch. Avoid broad cleanup passes.
 - Before editing runtime code, add a compact scope to the active slice: routes
   and line numbers, target SQLite tables, settings co-write condition,
   revision/event behavior, normalization-drop decision, and proof command.
-- Confirm the Phase 0 writer kit and review-gate template exist before starting
-  any Tier write slice; the floor sweep (Phase 1) is the only tier that needs no
-  Phase 0 helper.
+- The Phase 0 writer kit, the `TARGETED_MUTATION_PATHS` vehicles, and the
+  review-gate template (`__tests__/helpers/commandMetricGates.ts` /
+  `rowStability.ts`) all exist now; a Tier write slice imports them rather than
+  rebuilding them. The floor sweep (Phase 1) is the only tier that needs no Phase
+  0 helper.
 
 ## Current Best Targets
 
-Nothing is implemented yet. Recommended order:
+Phase 0 (baseline foundations) is implemented. Recommended order from here:
 
-1. Phase 0 baseline + gates. Land the mutation-range metric baseline
-   ([`mutation-range-metric-and-gates.md`](phases/slices/phase-0-baseline-foundations/mutation-range-metric-and-gates.md))
-   so the before-state of the 71 over-broad routes is recorded, plus the
-   rowid-stability / `dbJsonWriteMs: 0` review-gate template.
-2. Phase 1 mechanical floor. The
+1. Phase 1 mechanical floor. The
    [`hydrated-to-message-free-sweep.md`](phases/slices/phase-1-message-free-floor/hydrated-to-message-free-sweep.md)
-   is the safe, helper-free first commit across ~62 routes. It depends on no
-   Phase 0 helper and can land before the writer kit is finished.
-3. Phase 0 writer kit + targeted paths. Build
-   [`targeted-writer-kit.md`](phases/slices/phase-0-baseline-foundations/targeted-writer-kit.md)
-   and
-   [`targeted-mutation-paths.md`](phases/slices/phase-0-baseline-foundations/targeted-mutation-paths.md);
-   Phases 2-5 depend on them.
-4. Phase 2 settings + plugin storage. Highest amplification, cleanest fix;
-   projection already safe or sprawling-by-design.
-5. Phase 3 single-row paths, landing the matching Phase 5 character/chat
+   is the safe, helper-free next commit across ~62 routes; it needs no Phase 0
+   helper, only swapping `applyJsonCommandMutation` → `applyMessageFreeJsonCommandMutation`
+   on non-message routes.
+2. Phase 2 settings + plugin storage. Highest amplification, cleanest fix;
+   projection already safe or sprawling-by-design. Routes onto
+   `targeted-settings` / `targeted-plugin-storage` via the writer kit.
+3. Phase 3 single-row paths, landing the matching Phase 5 character/chat
    projection branches in the same batches.
-6. Phase 4 collection families, plugins first (projection already narrow),
+4. Phase 4 collection families, plugins first (projection already narrow),
    then the rest with their pointer-settings co-writes and the Phase 5
    projection-field bug co-fixes.
-7. Phase 5 `lorebook` resource split once a global-lorebook command is
+5. Phase 5 `lorebook` resource split once a global-lorebook command is
    narrowed.
 
 ## Not First
@@ -59,8 +54,8 @@ Nothing is implemented yet. Recommended order:
 
 ## Selection Order
 
-1. Phase 0 baseline metric + gates, then the Phase 1 floor.
-2. Phase 0 writer kit + targeted mutation paths.
+1. Phase 0 baseline metric + gates and writer kit + targeted paths — done.
+2. Phase 1 floor (next).
 3. Phase 2, then Phase 3 (+ its projection branches), then Phase 4 (plugins
    first) with Phase 5 co-fixes.
 4. Phase 5 `lorebook` split.

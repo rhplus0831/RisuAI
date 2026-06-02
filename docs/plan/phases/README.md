@@ -8,7 +8,7 @@ routing. Concrete slice definitions live under
 
 | Phase | Status | Phase doc | Slice folder |
 | --- | --- | --- | --- |
-| 0 | Planned | [`phase-0-baseline-foundations.md`](phase-0-baseline-foundations.md) | [`slices/phase-0-baseline-foundations/`](slices/phase-0-baseline-foundations/) |
+| 0 | Implemented | [`phase-0-baseline-foundations.md`](phase-0-baseline-foundations.md) | [`slices/phase-0-baseline-foundations/`](slices/phase-0-baseline-foundations/) |
 | 1 | Planned | [`phase-1-message-free-floor.md`](phase-1-message-free-floor.md) | [`slices/phase-1-message-free-floor/`](slices/phase-1-message-free-floor/) |
 | 2 | Planned | [`phase-2-settings-and-plugin-storage-paths.md`](phase-2-settings-and-plugin-storage-paths.md) | [`slices/phase-2-settings-and-plugin-storage-paths/`](slices/phase-2-settings-and-plugin-storage-paths/) |
 | 3 | Planned | [`phase-3-single-row-paths.md`](phase-3-single-row-paths.md) | [`slices/phase-3-single-row-paths/`](slices/phase-3-single-row-paths/) |

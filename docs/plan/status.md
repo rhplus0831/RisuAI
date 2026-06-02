@@ -7,12 +7,21 @@ Use it first, then open only the phase or slice needed for the next task.
 
 Current status reflects the seed audit
 [`mutation-range-mismatch.md`](mutation-range-mismatch.md), audited 2026-06-03.
-No mutation-range slice has landed yet. The only existing narrow path is the
-reference fix `b57df5cd` (`characters/select`).
+Phase 0 (baseline foundations) has landed; no route has been narrowed yet, so the
+only narrow runtime path is still the reference fix `b57df5cd`
+(`characters/select`).
 
 ## Current Snapshot
 
-Analysis is complete; implementation has not started.
+Analysis is complete. Phase 0 scaffolding is in place; the first route-narrowing
+tier (Phase 1) has not started.
+
+- Phase 0 landed: the targeted writer kit (`repository.ts`), the
+  `TARGETED_MUTATION_PATHS` vehicles (`mutations.ts`), the `writtenTables`
+  mutation-range metric + importable review-gate / rowid-stability templates
+  (`__tests__/helpers/`), and the normalization-scope policy + `assertOnlyRowsWritten`.
+  The over-broad before-state is captured (every `message-free`/`hydrated`
+  command rewrites the 13-table broad set for one sub-row change).
 
 - The 79 command routes are classified: 8 already minimal, 71 over-broad (66 on
   `hydrated`, 5 on `message-free`). Severity after adversarial verification is 51
@@ -28,13 +37,13 @@ Analysis is complete; implementation has not started.
   (`prompt`/`promptItem` ship `botPresets`, `persona` omits legacy mirror
   scalars, `loadout` omits `lastLoadedLoadoutName`).
 
-Every phase below is still planned.
+Phase 0 is implemented; every tier phase below is still planned.
 
 ## Phase Router
 
 | Phase | Status | Open when working on... |
 | --- | --- | --- |
-| [Phase 0](phases/phase-0-baseline-foundations.md) | Planned | Writer kit, targeted mutation paths, mutation-range metric, review gates, normalization-scope policy. |
+| [Phase 0](phases/phase-0-baseline-foundations.md) | Implemented | Writer kit, targeted mutation paths, mutation-range metric, review gates, normalization-scope policy. |
 | [Phase 1](phases/phase-1-message-free-floor.md) | Planned | The mechanical `hydrated` to `message-free` sweep across ~62 non-message routes. |
 | [Phase 2](phases/phase-2-settings-and-plugin-storage-paths.md) | Planned | Tier-1 settings/pointer-only writes and Tier-2 plugin custom storage writes. |
 | [Phase 3](phases/phase-3-single-row-paths.md) | Planned | Tier-3 single character-row and single chat-row metadata edits. |

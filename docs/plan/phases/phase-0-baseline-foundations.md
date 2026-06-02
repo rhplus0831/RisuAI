@@ -1,6 +1,7 @@
 # Phase 0: Baseline Foundations
 
-Status: planned.
+Status: implemented (2026-06-03). All four slices have landed; no route was
+narrowed (that starts in Phase 1).
 
 Goal: add the shared scaffolding later tiers need: targeted SQLite writers,
 targeted mutation paths, `mutationPath` labels, mutation-range metrics, review
@@ -41,15 +42,22 @@ makes narrowing possible and provable.
 
 ## Exit Criteria
 
-- The writer kit exists with unit tests proving each writer touches exactly its
-  rows and leaves all other rowids stable.
-- `applyTargetedCommandMutation` (or a bespoke helper) can carry each narrow
-  write with the same revision/event/transaction ordering as the reference fix.
-- The mutation-range metric records the written-table set per route, and the
-  before-state of the 71 over-broad routes is captured.
-- The review-gate template (`dbJsonWriteMs: 0` + rowid-stability) is reusable
-  from a single import.
-- The normalization-scope policy is written and linked from every tier phase.
+- [x] The writer kit exists with unit tests
+  (`__tests__/repositoryWriterKit.test.ts`) proving each writer touches exactly
+  its rows and leaves all other rowids stable.
+- [x] `applyTargetedCommandMutation` carries each narrow write (via
+  `TARGETED_MUTATION_PATHS` + the kit) with the same single revision bump / single
+  event / atomic-rollback ordering as the reference fix
+  (`__tests__/targetedMutationPaths.test.ts`).
+- [x] The mutation-range metric records the written-table set
+  (`writtenTables`) per route, and the before-state of the 71 over-broad routes
+  is captured (the Measurement table in the metric slice).
+- [x] The review-gate template (`dbJsonWriteMs: 0` + expected/forbidden table
+  sets) is reusable from a single import
+  (`__tests__/helpers/commandMetricGates.ts`), with the rowid-stability
+  primitives in `__tests__/helpers/rowStability.ts`.
+- [x] The normalization-scope policy is written and linked from every tier phase
+  (Phases 2-4), and `assertOnlyRowsWritten` is in use.
 
 ## Validation
 
