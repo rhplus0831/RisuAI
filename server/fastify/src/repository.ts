@@ -90,6 +90,12 @@ const COLLECTION_FIELDS = [
   'hypaV3Presets',
 ] as const
 
+const NON_SETTINGS_FIELDS = new Set<string>([
+  'characters',
+  ...COLLECTION_FIELDS,
+  'pluginCustomStorage',
+])
+
 const COLLECTION_TABLE_MAP: Record<string, string> = {
   modules: 'modules',
   plugins: 'plugins',
@@ -131,7 +137,7 @@ function loadCollectionsFromSqlite(
     if (rows.length > 0) {
       merged[field] = rows.map((r) => JSON.parse(r.data_json))
     }
-    // SQLite empty → keep db.json value ([] marker or absent); don't fabricate a field.
+    // SQLite empty → keep existing value ([] marker or absent); don't fabricate a field.
   }
   const storageRows = db
     .prepare('SELECT key, value_json FROM plugin_custom_storage')
@@ -143,7 +149,7 @@ function loadCollectionsFromSqlite(
     }
     merged.pluginCustomStorage = storage
   }
-  // SQLite empty → keep db.json value ({} marker or absent).
+  // SQLite empty → keep existing value ({} marker or absent).
   return merged
 }
 
@@ -168,6 +174,53 @@ export function replaceAllCollectionsInTable(db: DatabaseSync, database: unknown
       stmt.run(key, JSON.stringify(value ?? null))
     }
   }
+}
+
+export function createSettingsTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      data_json TEXT NOT NULL CHECK (json_valid(data_json))
+    )
+  `)
+}
+
+function loadSettingsFromSqlite(db: DatabaseSync): Record<string, unknown> | null {
+  const row = db
+    .prepare('SELECT data_json FROM settings WHERE id = 1')
+    .get() as { data_json: string } | undefined
+  if (!row) return null
+  const parsed = JSON.parse(row.data_json)
+  return isRecord(parsed) ? parsed : null
+}
+
+function extractSettings(database: Record<string, unknown>): Record<string, unknown> {
+  const settings: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(database)) {
+    if (!NON_SETTINGS_FIELDS.has(key)) {
+      settings[key] = value
+    }
+  }
+  return settings
+}
+
+export function replaceAllSettingsInTable(db: DatabaseSync, database: unknown): void {
+  if (!isRecord(database)) return
+  const settings = extractSettings(database)
+  db.exec('DELETE FROM settings')
+  db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(settings))
+}
+
+export function stripSettings(next: Persisted): Persisted {
+  if (!isRecord(next.database)) return next
+  const kept: Record<string, unknown> = {}
+  const db = next.database as Record<string, unknown>
+  for (const key of Object.keys(db)) {
+    if (NON_SETTINGS_FIELDS.has(key)) {
+      kept[key] = db[key]
+    }
+  }
+  return { ...next, database: kept }
 }
 
 export function stripCollections(next: Persisted): Persisted {
@@ -395,17 +448,26 @@ export function emptyPersisted(): Persisted {
 }
 
 export function loadPersisted(db: DatabaseSync, dataDir: string): Persisted {
-  const file = dbJsonPath(dataDir)
-  if (!fs.existsSync(file)) {
-    return emptyPersisted()
+  let database: unknown = loadSettingsFromSqlite(db)
+  if (database !== null) {
+    const rec = database as Record<string, unknown>
+    for (const field of COLLECTION_FIELDS) {
+      if (field !== 'promptTemplate' && !(field in rec)) rec[field] = []
+    }
+    if (!('pluginCustomStorage' in rec)) rec.pluginCustomStorage = {}
+  } else {
+    const file = dbJsonPath(dataDir)
+    if (!fs.existsSync(file)) {
+      return emptyPersisted()
+    }
+    const raw = fs.readFileSync(file, 'utf8')
+    const parsed = JSON.parse(raw) as Partial<Persisted>
+    const version = typeof parsed._version === 'number' ? parsed._version : PERSISTED_VERSION
+    if (version > PERSISTED_VERSION) {
+      throw new Error(`db.json _version ${version} is newer than supported ${PERSISTED_VERSION}`)
+    }
+    database = parsed.database ?? null
   }
-  const raw = fs.readFileSync(file, 'utf8')
-  const parsed = JSON.parse(raw) as Partial<Persisted>
-  const version = typeof parsed._version === 'number' ? parsed._version : PERSISTED_VERSION
-  if (version > PERSISTED_VERSION) {
-    throw new Error(`db.json _version ${version} is newer than supported ${PERSISTED_VERSION}`)
-  }
-  let database = parsed.database ?? null
   if (isRecord(database)) {
     const sqliteChars = loadCharactersFromSqlite(db)
     if (sqliteChars.length > 0 || !Array.isArray(database.characters)) {
@@ -636,7 +698,8 @@ export function writePersistedWithMessages(
   const messageFree = splitChatMessagesIntoTable(db, next)
   replaceAllCharactersInTable(db, messageFree.database)
   replaceAllCollectionsInTable(db, messageFree.database)
-  writePersisted(dataDir, stripCollections(stripCharacters(messageFree)))
+  replaceAllSettingsInTable(db, messageFree.database)
+  writePersisted(dataDir, stripSettings(stripCollections(stripCharacters(messageFree))))
 }
 
 /**
@@ -775,6 +838,33 @@ export function ensureCollectionsExtracted(db: DatabaseSync, dataDir: string): v
   }
 }
 
+export function ensureSettingsExtracted(db: DatabaseSync, dataDir: string): void {
+  const file = dbJsonPath(dataDir)
+  if (!fs.existsSync(file)) return
+  const raw = fs.readFileSync(file, 'utf8')
+  const parsed = JSON.parse(raw) as Record<string, unknown>
+  const database = parsed.database
+  if (!isRecord(database)) return
+
+  const settings = extractSettings(database)
+  if (Object.keys(settings).length === 0) return
+
+  replaceAllSettingsInTable(db, database)
+  for (const key of Object.keys(database)) {
+    if (!NON_SETTINGS_FIELDS.has(key)) {
+      delete database[key]
+    }
+  }
+  const tmp = `${file}.tmp`
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(parsed))
+    fs.renameSync(tmp, file)
+  } catch (err) {
+    fs.rmSync(tmp, { force: true })
+    throw err
+  }
+}
+
 export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void {
   const raw = loadPersisted(db, dataDir)
   if (!hasEmbeddedChatPayloadsOrBadIds(raw.database)) return
@@ -787,9 +877,10 @@ export function ensureMessagesExtracted(db: DatabaseSync, dataDir: string): void
     const messageFree = splitChatMessagesIntoTable(db, hydrated)
     replaceAllCharactersInTable(db, messageFree.database)
     replaceAllCollectionsInTable(db, messageFree.database)
+    replaceAllSettingsInTable(db, messageFree.database)
     db.exec('COMMIT')
     transactionOpen = false
-    writePersisted(dataDir, stripCollections(stripCharacters(messageFree)))
+    writePersisted(dataDir, stripSettings(stripCollections(stripCharacters(messageFree))))
   } catch (err) {
     if (transactionOpen) db.exec('ROLLBACK')
     throw err
@@ -999,11 +1090,12 @@ export function applyImport(
     })
     replaceAllCharactersInTable(db, messageFree.database)
     replaceAllCollectionsInTable(db, messageFree.database)
+    replaceAllSettingsInTable(db, messageFree.database)
     options.beforeRevision?.(db)
     const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
     db.exec('COMMIT')
     transactionOpen = false
-    writePersisted(dataDir, stripCollections(stripCharacters(messageFree)))
+    writePersisted(dataDir, stripSettings(stripCollections(stripCharacters(messageFree))))
     return { revision: event.revision, event }
   } catch (err) {
     if (transactionOpen) {
@@ -1046,10 +1138,11 @@ export function initializeDefaultDatabase(
     const database = createInitialDatabase()
     replaceAllCharactersInTable(db, database)
     replaceAllCollectionsInTable(db, database)
+    replaceAllSettingsInTable(db, database)
     const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateInitialized)
     db.exec('COMMIT')
     transactionOpen = false
-    writePersisted(dataDir, stripCollections(stripCharacters({ ...current, database })))
+    writePersisted(dataDir, stripSettings(stripCollections(stripCharacters({ ...current, database }))))
     return { revision: event.revision, initialized: true, event }
   } catch (err) {
     if (transactionOpen) {
@@ -1253,6 +1346,7 @@ const SQLITE_BACKUP_TABLES = [
   'translator_presets',
   'hypa_v3_presets',
   'plugin_custom_storage',
+  'settings',
 ] as const
 
 function checkpointWal(db: DatabaseSync): void {

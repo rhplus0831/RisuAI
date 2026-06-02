@@ -7,9 +7,11 @@ import {
   loadPersistedWithMessages,
   replaceAllCharactersInTable,
   replaceAllCollectionsInTable,
+  replaceAllSettingsInTable,
   stripCharacters,
   stripChatMessages,
   stripCollections,
+  stripSettings,
   syncChatMessages,
   writePersisted,
 } from '../repository.js'
@@ -120,6 +122,7 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
       stripChatMessages(persisted)
       replaceAllCharactersInTable(args.db, persisted.database)
       replaceAllCollectionsInTable(args.db, persisted.database)
+      replaceAllSettingsInTable(args.db, persisted.database)
     }
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
@@ -130,7 +133,7 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     transactionOpen = false
     if (args.writeDatabase) {
       const dbJsonWriteStartedAt = protocolNowMs()
-      writePersisted(args.dataDir, stripCollections(stripCharacters(persisted)))
+      writePersisted(args.dataDir, stripSettings(stripCollections(stripCharacters(persisted))))
       dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     }
     const eventEmitStartedAt = protocolNowMs()
@@ -208,6 +211,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     stripChatMessages(persisted)
     replaceAllCharactersInTable(args.db, persisted.database)
     replaceAllCollectionsInTable(args.db, persisted.database)
+    replaceAllSettingsInTable(args.db, persisted.database)
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
     persistCommandEvent(args.db, event)
@@ -216,7 +220,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     args.db.exec('COMMIT')
     transactionOpen = false
     const dbJsonWriteStartedAt = protocolNowMs()
-    writePersisted(args.dataDir, stripCollections(stripCharacters(persisted)))
+    writePersisted(args.dataDir, stripSettings(stripCollections(stripCharacters(persisted))))
     dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     const eventEmitStartedAt = protocolNowMs()
     args.eventSink.emit(liveCommandEvent(event, args.eventOrigin))
@@ -299,6 +303,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     const messageFree = stripChatMessages({ ...hydrated, database: nextDatabase })
     replaceAllCharactersInTable(args.db, messageFree.database)
     replaceAllCollectionsInTable(args.db, messageFree.database)
+    replaceAllSettingsInTable(args.db, messageFree.database)
 
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
@@ -307,11 +312,8 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
 
     args.db.exec('COMMIT')
     transactionOpen = false
-    // db.json is durable only after the SQLite COMMIT, never ahead of it. On any
-    // pre-COMMIT failure the transaction rolls back the message rows + revision
-    // and db.json was never touched — no manual restore needed.
     const dbJsonWriteStartedAt = protocolNowMs()
-    writePersisted(args.dataDir, stripCollections(stripCharacters(messageFree)))
+    writePersisted(args.dataDir, stripSettings(stripCollections(stripCharacters(messageFree))))
     dbJsonWriteMs = protocolDurationMs(dbJsonWriteStartedAt)
     const eventEmitStartedAt = protocolNowMs()
     args.eventSink.emit(liveCommandEvent(event, args.eventOrigin))

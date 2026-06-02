@@ -72,13 +72,40 @@ After this commit:
 
 Verification: api:test 1515/test 948/audit green.
 
+### Phase 4: Scalar Settings (v13)
+
+Moved the ~271 scalar settings, nested setting objects, and remaining small
+arrays from db.json to a single-row SQLite `settings` table. Migration v13
+creates the table; `ensureSettingsExtracted` runs on boot to losslessly import
+any legacy db.json settings.
+
+After this commit:
+- `settings` table has schema `(id INTEGER PRIMARY KEY CHECK (id = 1),
+  data_json TEXT NOT NULL CHECK (json_valid(data_json)))` — one row, JSON blob
+- `loadPersisted` reads settings from SQLite first; falls back to db.json
+  only when the settings table is empty (legacy migration path)
+- All mutation engines call `replaceAllSettingsInTable` inside the transaction,
+  then `stripSettings` before `writePersisted`
+- `extractSettings` filters out characters, collections, and
+  `pluginCustomStorage` from the database object — everything else is settings
+- `stripSettings` is the inverse: keeps only collection fields in db.json
+- Collection defaults are seeded when loading from SQLite, except
+  `promptTemplate` (absent ≠ empty `[]` for the prompt assembler)
+- `ensureSettingsExtracted` on boot moves settings from db.json to SQLite and
+  deletes them from db.json
+- Backup/restore includes `settings` in `SQLITE_BACKUP_TABLES`
+- db.json after Phase 4: `{ "_version": 1, "database": { <collection markers> },
+  "assets": [] }` — all content is in SQLite
+
+Verification: api:test 1515/test 948/audit green.
+
 ### Incremental narrowing opportunity
 
 Once characters are in SQLite, mutations that touch one character no longer need
 to serialize all 50. The mutation engine can UPDATE a single row. This is the
 primary performance win.
 
-## Phase 4–5 (future)
+## Phase 5 (future)
 
-See `docs/db-json-to-sqlite.md` for the full plan. Phase 4 (scalar settings)
-can proceed independently after Phase 3. Phase 5 removes db.json entirely.
+See `docs/db-json-to-sqlite.md` for the full plan. Phase 5 removes db.json
+entirely.

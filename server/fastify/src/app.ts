@@ -39,6 +39,7 @@ import {
   ensureCharactersExtracted,
   ensureCollectionsExtracted,
   ensureMessagesExtracted,
+  ensureSettingsExtracted,
   loadPersistedWithMessages,
 } from './repository.js'
 import { ASSET_GC_INTERVAL_MS, type AssetGcOptions, runAssetGc } from './assetGc.js'
@@ -120,6 +121,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   ensureAssetsExtracted(db, config.dataDir)
   ensureCharactersExtracted(db, config.dataDir)
   ensureCollectionsExtracted(db, config.dataDir)
+  ensureSettingsExtracted(db, config.dataDir)
   ensureMessagesExtracted(db, config.dataDir)
   const memoryEventBus = createMemoryEventBus()
   const emitMemoryEvent: MemoryEventSink = (event) => {

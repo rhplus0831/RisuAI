@@ -279,7 +279,7 @@ describe('Phase 9-1 command foundation', () => {
     expect(bootstrap.json().database).toMatchObject({ streamGeminiThoughts: false })
 
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database).toMatchObject({ streamGeminiThoughts: false })
+    expect(onDisk.database.streamGeminiThoughts).toBeUndefined()
   })
 
   it('applies the runtime settings harness command, emits an event, and appears in bootstrap', async () => {
@@ -346,7 +346,7 @@ describe('Phase 9-1 command foundation', () => {
     expect(bootstrap.json().database).toMatchObject({ streamGeminiThoughts: false })
 
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database).toMatchObject({ streamGeminiThoughts: false })
+    expect(onDisk.database.streamGeminiThoughts).toBeUndefined()
   })
 
   it('rolls back a thrown JSON command mutation before bumping revision', () => {
@@ -459,16 +459,13 @@ describe('first-run database seed', () => {
     })
     expect(harness.commandEvents.list()).toEqual([seeded.json().event])
 
-    // db.json now holds the server-created default database (characters live in
-    // SQLite; collections are stripped to empty markers in db.json, actual data in SQLite).
+    // db.json now holds only collection markers (settings live in SQLite;
+    // characters live in SQLite; collections are stripped to empty markers).
     const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.database).toMatchObject({
-      username: 'User',
-      temperature: 80,
-      botPresets: [],
-      personas: [],
-    })
+    expect(onDisk.database.username).toBeUndefined()
     expect(onDisk.database.characters).toBeUndefined()
+    expect(onDisk.database.botPresets).toEqual([])
+    expect(onDisk.database.personas).toEqual([])
 
     // The previously-rejected settings command now succeeds against revision 1.
     const account = await harness.app.inject({

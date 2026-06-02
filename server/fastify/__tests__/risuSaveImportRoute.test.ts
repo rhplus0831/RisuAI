@@ -480,10 +480,11 @@ describe('Phase 9-8a multipart .risu import route', () => {
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
 
+    // After Phase 4, settings (including `version`) live in SQLite; db.json
+    // holds only collection markers.
     const rawOnDisk2 = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(rawOnDisk2.database.version).toBe(1)
+    expect(rawOnDisk2.database.version).toBeUndefined()
     expect(rawOnDisk2.database.__directory).toBeUndefined()
-    // Characters are stripped from db.json, live in SQLite only.
     expect(rawOnDisk2.database.characters).toBeUndefined()
   })
 

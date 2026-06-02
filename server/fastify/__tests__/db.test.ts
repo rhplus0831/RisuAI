@@ -89,6 +89,7 @@ describe('schema migrations', () => {
         'plugins',
         'prompt_templates',
         'schema_version',
+        'settings',
         'translator_presets',
       ])
     } finally {
@@ -125,6 +126,7 @@ describe('schema migrations', () => {
         'plugins',
         'prompt_templates',
         'schema_version',
+        'settings',
         'translator_presets',
       ])
     } finally {
