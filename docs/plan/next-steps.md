@@ -70,6 +70,25 @@ names a concrete dominant cost:
 4. Refresh [`latest-verification.md`](latest-verification.md) after the next
    full or focused verification run.
 
+## Analyzing A Real Database
+
+The static-DB-derivable half of the remaining gates can be gathered offline from
+a restored snapshot with `pnpm analyze:db <input>` (`util/analyze-database.ts`).
+It loads a real snapshot into a throwaway temp data dir and reports export
+materialization (snapshot/encode/output per envelope), the full-bootstrap payload
+size, and the asset inventory plus per-character byte-fetch fanout — the cost half
+of the Phase 5 and Phase 3 gates.
+
+- Inputs: a `.risu` export (richest single file — re-embeds messages), a server
+  `db.json` (message-free; messages live in SQLite), a raw database JSON, or a
+  `data/` dir (copied read-only; preserves messages and assets). Add `--json`
+  for machine-readable output.
+- It cannot reconstruct the runtime half — how often a fallback fires, browser
+  cache hit rate, or prompt-assembly stage timings under real sends. Get those by
+  running the real server with `RISU_PROTOCOL_METRICS=1` during normal use; the
+  `projection_response` / `asset_byte_read` / `risusave_export` lines land in the
+  server log.
+
 ## Proof Commands
 
 Use the smallest focused command first, then broaden only when the change
