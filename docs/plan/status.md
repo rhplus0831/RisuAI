@@ -7,16 +7,26 @@ Use it first, then open only the phase or slice needed for the next task.
 
 Current status reflects the seed audit
 [`mutation-range-mismatch.md`](mutation-range-mismatch.md), audited 2026-06-03.
-Phase 0 (baseline foundations) and Phase 1 (the message-free floor) have landed.
-No per-row write has been narrowed yet: the only narrow runtime paths are the
-reference fix `b57df5cd` (`characters/select`) and the six targeted message
-commands; every floor route still rewrites the broad table set.
+Phase 0 (baseline foundations), Phase 1 (the message-free floor), and Phase 2
+(settings + plugin-storage paths) have landed. The narrow runtime paths are now
+the reference fix `b57df5cd` (`characters/select`), the six targeted message
+commands, the six `targeted-settings` routes, and the three
+`targeted-plugin-storage` routes; the remaining floor routes still rewrite the
+broad table set.
 
 ## Current Snapshot
 
-Analysis is complete. Phase 0 scaffolding is in place and Phase 1 (the
-mechanical floor sweep) has landed; the first per-row narrowing tier (Phase 2)
-has not started.
+Analysis is complete. Phases 0-2 have landed; the first per-row character/chat
+narrowing tier (Phase 3) has not started.
+
+- Phase 2 landed (`56ddd865`): the six Tier-1 settings-scalar routes
+  (settings/:group, prompt-settings, characters/reorder, plugins/provider,
+  modules/enable, lorebooks/:id/select) now issue one `UPDATE settings`
+  (`targeted-settings`; the memory group additionally co-writes `hypa_v3_presets`
+  when the patch carries `hypaV3Presets`), and the three Tier-2 plugin-storage
+  routes (put/delete/bulk) write only `plugin_custom_storage`
+  (`targeted-plugin-storage`). Proven by `commandSettingsAndPluginStorageRange.test.ts`
+  (targeted path + exact `writtenTables` + character/chat rowid stability).
 
 - Phase 1 landed (`208e538a`): the 62 safe `hydrated` non-message routes now run
   on `applyMessageFreeJsonCommandMutation`, dropping the all-message load and the
@@ -46,7 +56,7 @@ has not started.
   (`prompt`/`promptItem` ship `botPresets`, `persona` omits legacy mirror
   scalars, `loadout` omits `lastLoadedLoadoutName`).
 
-Phase 0 and Phase 1 are implemented; every per-row tier phase below (Phase 2
+Phases 0, 1, and 2 are implemented; every per-row tier phase below (Phase 3
 onward) is still planned.
 
 ## Phase Router
@@ -55,7 +65,7 @@ onward) is still planned.
 | --- | --- | --- |
 | [Phase 0](phases/phase-0-baseline-foundations.md) | Implemented | Writer kit, targeted mutation paths, mutation-range metric, review gates, normalization-scope policy. |
 | [Phase 1](phases/phase-1-message-free-floor.md) | Implemented | The mechanical `hydrated` to `message-free` sweep across the 62 non-message routes. |
-| [Phase 2](phases/phase-2-settings-and-plugin-storage-paths.md) | Planned | Tier-1 settings/pointer-only writes and Tier-2 plugin custom storage writes. |
+| [Phase 2](phases/phase-2-settings-and-plugin-storage-paths.md) | Implemented | Tier-1 settings/pointer-only writes and Tier-2 plugin custom storage writes. |
 | [Phase 3](phases/phase-3-single-row-paths.md) | Planned | Tier-3 single character-row and single chat-row metadata edits. |
 | [Phase 4](phases/phase-4-collection-table-paths.md) | Planned | Tier-4 single collection-table edits across the eight collection families. |
 | [Phase 5](phases/phase-5-projection-range-narrowing.md) | Planned | Narrow projection resources, the `lorebook` resource split, and the projection-field bug fixes. |
@@ -67,13 +77,13 @@ onward) is still planned.
 [`active-risk-analysis.md`](active-risk-analysis.md) has the per-tier detail.
 Headlines, in priority order:
 
-- Tier 1 (highest ratio): one settings scalar rewrites every character row +
-  every chat row + nine collection tables (+ most load every message). Target:
-  one `UPDATE settings`.
-- Tier 2: key-addressable plugin storage rewrites all characters + nine
-  collection tables. Target: one `plugin_custom_storage` upsert/delete. Written
-  by plugins at runtime, so the waste recurs.
-- Tier 3: one character row or one chat row, often `hydrated` despite
+- Tier 1 (highest ratio): DONE (Phase 2). The six settings-scalar routes now
+  issue one `UPDATE settings` instead of rewriting every character row + every
+  chat row + nine collection tables.
+- Tier 2: DONE (Phase 2). The three plugin-storage routes now write only
+  `plugin_custom_storage` (upsert/delete/clear) instead of all characters + nine
+  collection tables.
+- Tier 3 (next): one character row or one chat row, often `hydrated` despite
   touching no messages. The scriptstate write (`2983`) is the hot one.
 - Tier 4: one element of one of nine collection tables rewrites all nine plus
   all characters. Plugins family is the lowest-risk fix (projection already

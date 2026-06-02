@@ -1,6 +1,11 @@
 # Phase 2: Settings And Plugin-Storage Paths
 
-Status: planned. Depends on the Phase 0 writer kit and review gates.
+Status: implemented (`56ddd865` on `fastify`). The six Tier-1 settings-scalar
+routes now report `targeted-settings` (one `UPDATE settings`, plus the
+`hypa_v3_presets` co-write for the memory group) and the three Tier-2
+plugin-storage routes report `targeted-plugin-storage` (only
+`plugin_custom_storage`). The exit-criteria proofs landed in
+`commandSettingsAndPluginStorageRange.test.ts`.
 
 Goal: narrow the two cleanest high-ratio tiers. Tier 1 becomes one
 `UPDATE settings`. Tier 2 becomes a key write on `plugin_custom_storage`. Their

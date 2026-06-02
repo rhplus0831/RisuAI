@@ -1,7 +1,11 @@
 # Settings-Only Mutation Paths
 
-Status: planned. Tier 1. Depends on the Phase 0 writer kit (`writeSettingsOnly`)
-and review gates.
+Status: implemented (`56ddd865` on `fastify`). Tier 1. The six routes route onto
+`applyTargetedCommandMutation` (`targeted-settings`) and write only the settings
+row via `writeSettingsOnly(extractSettings(database))`; the memory group also
+co-writes `hypa_v3_presets` when the patch carries `hypaV3Presets`. The dropped
+`characters/reorder` and `lorebooks/:id/select` global normalizations are
+recorded as validate-only below.
 
 ## Source Anchors
 

@@ -9,14 +9,15 @@ target write. It is not a verification log. Keep proof runs in
 
 ## Summary
 
-All findings are analyzed; none are implemented. Each tier maps to a phase slice.
-Severity comes from the verified audit: 51 high, 18 medium, 3 low across 71
-over-broad routes.
+All findings are analyzed. Tier 1 and Tier 2 are implemented (Phase 2,
+`56ddd865`); Tiers 3-5 remain planned. Each tier maps to a phase slice. Severity
+comes from the verified audit: 51 high, 18 medium, 3 low across 71 over-broad
+routes.
 
 | Tier / area | Current finding (actual write range) | Target write range | Phase / slice | Status |
 | --- | --- | --- | --- | --- |
-| Tier 1 — settings/pointer scalars | One settings scalar rewrites every character row + every chat row + all nine collection tables, and most also load every message (`hydrated`). 7 routes: characters/reorder, prompt-settings, plugins/provider, modules/enable, settings/:group, lorebooks/:id/select, translator-presets/select. | `UPDATE settings` only (six routes); translator-presets/select is settings + the `translator_presets` table. | [Phase 2 / settings-only](phases/slices/phase-2-settings-and-plugin-storage-paths/settings-only-mutation-paths.md) | Planned |
-| Tier 2 — plugin custom storage | put/delete/bulk rewrite all characters + all chats + nine collection tables + settings + `plugin_custom_storage` (`message-free`). Written by plugins at runtime, so the waste recurs. | Single-key `UPSERT`/`DELETE` on `plugin_custom_storage` (bulk = clear + reinsert). | [Phase 2 / plugin-storage](phases/slices/phase-2-settings-and-plugin-storage-paths/plugin-storage-key-writers.md) | Planned |
+| Tier 1 — settings/pointer scalars | One settings scalar rewrites every character row + every chat row + all nine collection tables, and most also load every message (`hydrated`). 7 routes: characters/reorder, prompt-settings, plugins/provider, modules/enable, settings/:group, lorebooks/:id/select, translator-presets/select. | `UPDATE settings` only (six routes); translator-presets/select is settings + the `translator_presets` table. | [Phase 2 / settings-only](phases/slices/phase-2-settings-and-plugin-storage-paths/settings-only-mutation-paths.md) | Implemented (six routes; translator-presets/select deferred to Phase 4) |
+| Tier 2 — plugin custom storage | put/delete/bulk rewrite all characters + all chats + nine collection tables + settings + `plugin_custom_storage` (`message-free`). Written by plugins at runtime, so the waste recurs. | Single-key `UPSERT`/`DELETE` on `plugin_custom_storage` (bulk = clear + reinsert). | [Phase 2 / plugin-storage](phases/slices/phase-2-settings-and-plugin-storage-paths/plugin-storage-key-writers.md) | Implemented |
 | Tier 3 — single character row | One character row (`data_json` holds folders/scripts/globalLore), most `hydrated` despite no messages. 9 routes incl. characters/:id PATCH, chat-folders CRUD/reorder, chats/reorder, per-character modules/reorder, chats/:id/fork. | One `characters` row (+ settings on trash; + that character's chat rows for folder-delete/reorder; + modules table on modules/reorder; + surgical messages on fork). | [Phase 3 / single character row](phases/slices/phase-3-single-row-paths/single-character-row-paths.md) | Planned |
 | Tier 3 — single chat row | One chat row (`scriptstate`/`localLore` in `chats.data_json`). scriptstate (`2983`, `hydrated`) is hot (script/generation runtime). | One `chats` row (+ parent character row when `chatPage` moves or when keeping `normalizeAllCharacterChats` repairs). | [Phase 3 / single chat row](phases/slices/phase-3-single-row-paths/single-chat-row-paths.md) | Planned |
 | Tier 4 — single collection table | One element/ordering of one of nine tables rewrites all nine + all characters (+ messages on `hydrated`). Eight families, ~37 routes. | The one collection table (single-row `WHERE position=?` for pure field edits; one-table rewrite for create/delete/reorder), + the family's pointer scalar in settings. | [Phase 4](phases/phase-4-collection-table-paths.md) (one slice per family) | Planned |

@@ -1,7 +1,11 @@
 # Plugin Storage Key Writers
 
-Status: planned. Tier 2. Depends on the Phase 0 writer kit
-(`writePluginStorageKey` / `deletePluginStorageKey`).
+Status: implemented (`56ddd865` on `fastify`). Tier 2. The three routes route
+onto `applyTargetedCommandMutation` (`targeted-plugin-storage`) and write only
+`plugin_custom_storage`: put via `writePluginStorageKey`, delete via
+`deletePluginStorageKey`, bulk via the new `replacePluginStorage` (clear +
+reinsert). Put/delete/bulk-clear semantics are covered in
+`commandSettingsAndPluginStorageRange.test.ts`.
 
 ## Source Anchors
 

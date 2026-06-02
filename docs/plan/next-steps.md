@@ -21,18 +21,16 @@ batch. Avoid broad cleanup passes.
 
 ## Current Best Targets
 
-Phase 0 (baseline foundations) and Phase 1 (the message-free floor sweep,
-`208e538a`) are implemented. Recommended order from here:
+Phase 0 (baseline foundations), Phase 1 (the message-free floor sweep,
+`208e538a`), and Phase 2 (settings + plugin storage, `56ddd865`) are implemented.
+Recommended order from here:
 
-1. Phase 2 settings + plugin storage. Highest amplification, cleanest fix;
-   projection already safe or sprawling-by-design. Routes onto
-   `targeted-settings` / `targeted-plugin-storage` via the writer kit.
-2. Phase 3 single-row paths, landing the matching Phase 5 character/chat
+1. Phase 3 single-row paths, landing the matching Phase 5 character/chat
    projection branches in the same batches.
-3. Phase 4 collection families, plugins first (projection already narrow),
+2. Phase 4 collection families, plugins first (projection already narrow),
    then the rest with their pointer-settings co-writes and the Phase 5
    projection-field bug co-fixes.
-4. Phase 5 `lorebook` resource split once a global-lorebook command is
+3. Phase 5 `lorebook` resource split once a global-lorebook command is
    narrowed.
 
 ## Not First
@@ -52,10 +50,11 @@ Phase 0 (baseline foundations) and Phase 1 (the message-free floor sweep,
 
 1. Phase 0 baseline metric + gates and writer kit + targeted paths — done.
 2. Phase 1 floor — done (`208e538a`).
-3. Phase 2 (next), then Phase 3 (+ its projection branches), then Phase 4
-   (plugins first) with Phase 5 co-fixes.
-4. Phase 5 `lorebook` split.
-5. Refresh [`latest-verification.md`](latest-verification.md) after each tier's
+3. Phase 2 settings + plugin storage — done (`56ddd865`).
+4. Phase 3 (next, + its projection branches), then Phase 4 (plugins first) with
+   Phase 5 co-fixes.
+5. Phase 5 `lorebook` split.
+6. Refresh [`latest-verification.md`](latest-verification.md) after each tier's
    focused and full run.
 
 ## Proof Commands
