@@ -2608,7 +2608,7 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const selectUpdated = readChatOptionalBoolean(body.select, 'select') ?? false
       const patch = readChatPatch(body.patch, { allowEmpty: selectUpdated })
-      const result = applyMessageFreeJsonCommandMutation<{
+      const result = applyTargetedCommandMutation<{
         chatId: string
         selectedChatId: string | null
       }>({
@@ -2616,7 +2616,8 @@ export function registerCommandRoutes(
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        mutate(database, innerDb) {
           const target = ensureModuleCommandDatabase(database)
           const characters = normalizeAllCharacterChats(target)
           const modules = ensureModuleRecords(target)
@@ -2636,8 +2637,12 @@ export function registerCommandRoutes(
             ...patch,
             id: chatId,
           }
+          writeSingleChatRow(innerDb, chatId, chats[chatIndex])
+          // The parent character row is rewritten only when `select:true` moves
+          // its `chatPage` pointer.
           if (selectUpdated) {
             character.chatPage = chatIndex
+            writeSingleCharacterRow(innerDb, character.chaId as string, character)
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatUpdated, id: chatId, parentId: character.chaId },
@@ -3042,14 +3047,18 @@ export function registerCommandRoutes(
       const patch = readChatScriptstatePatch(body.patch)
       const deleteKeys = readChatScriptstateDeleteKeys(body.deleteKeys)
       validateChatScriptstateCommand(patch, deleteKeys)
-      const result = applyMessageFreeJsonCommandMutation<{ chatId: string }>({
+      const result = applyTargetedCommandMutation<{ chatId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
           const { character, chat } = requireChatLocation(characters, chatId)
+          // `scriptstate` lives in the chat row. This hot generation/script path
+          // no longer hydrates every message or rewrites every character; sibling
+          // chat normalization is validate-only (Prerequisite 2).
           chat.scriptstate ??= {}
           for (const key of deleteKeys) {
             delete chat.scriptstate[key]
@@ -3058,6 +3067,7 @@ export function registerCommandRoutes(
           if (Object.keys(chat.scriptstate).length === 0) {
             delete chat.scriptstate
           }
+          writeSingleChatRow(innerDb, chatId, chat)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.chatScriptstateUpdated,
@@ -3630,15 +3640,19 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
       const entries = validateLorebookEntries(body.entries)
-      const result = applyMessageFreeJsonCommandMutation<{ chatId: string }>({
+      const result = applyTargetedCommandMutation<{ chatId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const { chat, parentId } = normalizeSelectedChatLorebooks(target, chatId)
+          // `localLore` lives in the chat row; cross-character lorebook
+          // normalization is validate-only (Prerequisite 2).
           chat.localLore = entries
+          writeSingleChatRow(innerDb, chatId, chat)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,

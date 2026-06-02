@@ -6,7 +6,6 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import {
-  BROAD_WRITE_TABLES,
   assertCommandMetricGate,
   commandMetricReviewGate,
   type CommandMutationMetric,
@@ -276,7 +275,7 @@ describe('command protocol metrics', () => {
     }
     expect(settings.metric.mutationPath).toBe('targeted-settings')
     expect(pluginStorage.metric.mutationPath).toBe('targeted-plugin-storage')
-    expect(chat.metric.mutationPath).toBe('message-free')
+    expect(chat.metric.mutationPath).toBe('targeted-chat-row')
     expect(characterSelect.metric.mutationPath).toBe('targeted-character-selection')
     for (const metric of [
       messageAppend.metric,
@@ -290,11 +289,11 @@ describe('command protocol metrics', () => {
     }
     expect(generation.metric.mutationPath).toBe('targeted-generation')
 
-    // Written-table ranges. `chat.updated` (PATCH chats/:chatId) is still on the
-    // over-broad `message-free` floor: it physically rewrites the full 13-table
-    // set for a single sub-row change. Phase 2 narrowed settings and plugin
-    // storage to their own tables.
-    expect(chat.metric.writtenTables, 'chat.writtenTables').toEqual([...BROAD_WRITE_TABLES])
+    // Written-table ranges. Phases 2-3 narrowed these single-sub-row commands
+    // off the over-broad 13-table floor onto their own tables: settings/plugin
+    // storage to their tables, and `chat.updated` (PATCH chats/:chatId, no
+    // `select`) to one `UPDATE chats`.
+    expect(chat.metric.writtenTables, 'chat.writtenTables').toEqual(['chats'])
     expect(settings.metric.writtenTables, 'settings.writtenTables').toEqual(['settings'])
     expect(pluginStorage.metric.writtenTables, 'pluginStorage.writtenTables').toEqual([
       'plugin_custom_storage',

@@ -348,3 +348,85 @@ describe('Phase 3 single character-row paths', () => {
     expect(readCharacter('char-a').modules).toEqual(['mod-b', 'mod-a'])
   })
 })
+
+describe('Phase 3 single chat-row paths', () => {
+  it('PATCH chats/:id/scriptstate writes only the chat row', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a-1/scriptstate',
+      payload: { baseRevision: revision, patch: { counter: 5 } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-chat-row')
+    expect(metric.writtenTables).toEqual(['chats'])
+    assertCommandMetricGate(metric)
+    expectNoChurn(before)
+    expect(readChat('chat-a-1').scriptstate).toEqual({ counter: 5 })
+  })
+
+  it('PATCH chats/:id writes only the chat row', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a-1',
+      payload: { baseRevision: revision, patch: { name: 'A1 renamed' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-chat-row')
+    expect(metric.writtenTables).toEqual(['chats'])
+    assertCommandMetricGate(metric)
+    expectNoChurn(before)
+    expect(readChat('chat-a-1').name).toBe('A1 renamed')
+  })
+
+  it('PATCH chats/:id with select:true co-writes the parent character row', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a-2',
+      payload: { baseRevision: revision, select: true, patch: {} },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-chat-row')
+    expect(metric.writtenTables).toEqual(['characters', 'chats'])
+    assertCommandMetricGate(metric)
+    expectNoChurn(before)
+    // chat-a-2 is index 1 in char-a's chats, so selecting it moves chatPage.
+    expect(readCharacter('char-a').chatPage).toBe(1)
+  })
+
+  it('PUT chats/:id/lorebooks writes only the chat row (localLore)', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const entry = {
+      id: 'entry-chat',
+      key: 'k',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'C',
+      content: 'c',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    const { metric } = await runCommand({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a-1/lorebooks',
+      payload: { baseRevision: revision, entries: [entry] },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-chat-row')
+    expect(metric.writtenTables).toEqual(['chats'])
+    assertCommandMetricGate(metric)
+    expectNoChurn(before)
+    expect(readChat('chat-a-1').localLore).toEqual([entry])
+  })
+})
