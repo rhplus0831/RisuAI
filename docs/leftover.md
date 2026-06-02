@@ -1,186 +1,200 @@
-# Leftover Items — closed Fastify workstreams
+# Leftover Items - Fastify workstreams
 
-Date: 2026-05-30
+Last audited: 2026-06-02.
 
-Canonical list of items that still need an owner decision or were intentionally
-deferred, after the **client-thinning**, **durable-generation (Milestone 1)**, and
-**lazy-projection** workstreams were implemented and archived. Each entry names what
-it is, why it is not done, and the trigger that would make it actionable.
+This is the live tracker for closeable work that remains after the archived
+Fastify, client-thinning, durable-generation, and lazy-projection workstreams.
+Resolved history belongs in `git log` and `docs/archive/`; permanent no-port
+constraints belong in `docs/structure/`.
 
-This file supersedes the former `docs/deferred.md` (folded in below). The source
-workstream docs now live under [`archive/client-thinning/`](archive/client-thinning/),
-[`archive/durable-generation/`](archive/durable-generation/), and
-[`archive/lazy-projection/`](archive/lazy-projection/).
+Keep an item here only when a future agent can implement it, make an owner
+decision, or explicitly retire it. Each item names the remaining gap, why it was
+left open, and the evidence checked during the audit.
 
-The codebase is the source of truth. Where a claim cites a file, it was verified
-against the tree on 2026-05-31 (branch `fastify`).
+## Generation correctness and polish
 
----
+### Inline generation persistence failure is still best-effort
 
-## Resolved during this audit (2026-05-30)
+- What remains: `buildPostGenerationFrame()` now persists raw provider text when
+  post-generation derivation throws, but an inline `persistServerGenerationResult()`
+  failure still returns no `done.postGeneration` frame and leaves the browser with
+  its optimistic copy.
+- Why open: the inline path has no hard-fail, projection-restore, or retry
+  contract. Durable jobs have the separate
+  `generation_finalization_retries` queue; inline sends do not.
+- Evidence: `server/fastify/src/routes/generationChat.ts`
+  (`resolvePostGenerationResult`, `buildPostGenerationFrame`);
+  `server/fastify/src/generationFinalizationRetry.ts`.
+- Trigger: a stricter inline failure contract is needed, or the maintainer decides
+  best-effort inline persistence is final and this item can be retired.
 
-- **Client-thinning audit was RED — found and fixed.** The durable-generation work
-  added `DELETE /api/v1/generate/chat/:id` (cancel) and classified it in
-  `server/fastify/src/activeWriter.ts:63`, but never added the matching entry to the
-  EC5 audit's `MUTATING_ROUTE_RULES` table, so `pnpm client-thinning:audit` exited 1
-  with "Unclassified mutating Fastify route: DELETE /api/v1/generate/chat/:id" — while
-  every status doc claimed the audit passed. Fixed by adding the `active-writer` rule
-  entry (`util/client-thinning-audit.ts`) plus the route + needle in both EC5 fixtures
-  (`util/client-thinning-audit-fixtures/active-writer-guard/{classified-bypass,failing-unclassified-route}/`).
-  Audit now green; `util/client-thinning-audit.test.ts` is 58/58.
-- **Durable post-gen failure policy — was marked OPEN, actually implemented.** The
-  draft (Step 3 gotcha F) and `deferred.md` listed this as undecided; it is implemented
-  in `buildDurablePostGeneration` (`server/fastify/src/routes/generationChat.ts`):
-  derivation throw → persist raw + `warning`; persist throw (chat gone/changed) → job
-  `error`. Docs reconciled.
-- **Durable `/chat` writer/423 gate location — resolved.** The gate is the global
-  active-writer `preHandler` in `server/fastify/src/activeWriter.ts`;
-  `isServerOwnedMutation()` includes `POST /api/v1/generate/chat`,
-  `/api/v1/generate/preview-prompt`, and `DELETE /api/v1/generate/chat/:id`.
-- **Doc count contradictions — fixed.** Stale "22 rules / 55 tests" mentions in
-  `phases/slices/README.md` and `reference/proof-points.md` corrected to the real
-  **23 checks / 58 tests**.
-- **Lazy projection audit closed.** The source/history audit confirmed the non-lorebook
-  lazy-projection work landed: server-side asset GC, surgical inbound sync,
-  server-owned generation result writes, SQLite chat messages + per-chat `hypaV3Data`,
-  chat-stub bootstrap + hydration, durable `continue`/`regenerate`, persisted reroll
-  alternates, and browser auto-reattach. The plan is archived under
-  [`archive/lazy-projection/`](archive/lazy-projection/).
-- **Stale durable-generation follow-ups resolved by lazy projection.** Browser
-  auto-reattach now consumes `activeGenerationJobs`; durable generation now includes
-  `send`, `continue`, and `regenerate`; contiguous command events use targeted
-  projection fetches instead of a debounced full-bootstrap refresh.
+### Output-trigger transcript surgery is projection-only
 
-## Resolved during follow-up (2026-05-31)
+- What remains: server post-generation persists final assistant text and
+  chat-scriptstate deltas, but `output` trigger message mutations such as
+  impersonate/cutchat/modifychat are sent as `message_patch` for the browser
+  projection rather than durably written as transcript edits.
+- Why open: this preserves current projection behavior, but it is not a durable
+  transcript surgery model.
+- Evidence: `runServerPostGeneration()` captures `messageMutations` in
+  `server/fastify/src/prompt/assemble.ts`; `persistServerGenerationResult()` only
+  writes `chatVarMutations` plus the assistant row in
+  `server/fastify/src/routes/generationChat.ts`; the browser applies the patch in
+  `src/ts/process/request/serverMessagePatch.ts`.
+- Trigger: output-trigger transcript edits need to survive reload/import without
+  relying on the browser projection patch.
 
-- **DevTool scriptstate editing no longer bypasses server commands.** The variable
-  editor in `src/lib/SideBars/DevTool.svelte` now commits string/number/boolean
-  changes through the chat scriptstate command helper instead of binding inputs
-  directly into `DBState.db.characters[...].chats[...].scriptstate[...]`. The
-  client guard is backed by a focused test and a dedicated audit check
-  (`A4R-devtool scriptstate command-backed`).
-- **Fastify-mode inlay bytes no longer remain browser-local.** Inlay images,
-  audio/video, and signature payloads created in server-backed mode are uploaded
-  through `/api/v1/assets` and referenced by content-addressed asset id. Legacy
-  browser-local inlay ids are uploaded once and sent to `/generate/chat` only as
-  id-to-asset-id aliases; prompt assembly resolves bytes from `data/assets/`.
-  Asset GC and bundle export now hydrate chat messages so inlay-token references
-  are counted with the rest of the asset graph.
-- **`useServerPromptAssembly` flag removed.** Fastify-mode prompt assembly no
-  longer has a flag-off browser-local escape hatch: `resolveServerPromptAssembly()`
-  returns `local` only outside Fastify mode, server settings no longer expose the
-  flag, legacy persisted values are normalized away on server import/defaulting,
-  and `pnpm client-thinning:audit` now guards against reintroducing it.
+### Regenerate transcript trimming still depends on `Message.saying`
 
----
+- What remains: `prepareRegenerateTranscript()` trims trailing assistant rows by
+  comparing `Message.saying` and a quota. `docs/FASTIFY-REPORT.md` flags this as a
+  low-severity server-only heuristic that can over- or under-trim when `saying` is
+  absent.
+- Why open: the target is already validated as the latest assistant message, so a
+  simpler index-based pop should be enough, but it has not been changed.
+- Evidence: `server/fastify/src/prompt/assemble.ts`
+  (`prepareRegenerateTranscript`).
+- Trigger: a regenerate cleanup pass, or any report of odd multi-tail regenerate
+  behavior.
 
-## Client-thinning — open items
+### Streaming cancel terminal frame does not reconcile to the persisted row
 
-### Needs a decision
+- What remains: a streaming cancel persists the accumulated text through
+  `buildRawModeMessage()` (which trims and may target continue/regenerate rows),
+  but the terminal `done` frame emitted to a reattached observer uses the raw
+  accumulated result and omits the bumped revision.
+- Why open: the canceller has already stopped reading, so only a separately
+  reattached observer sees the mismatch; the next command refreshes through the
+  normal revision reconciliation.
+- Evidence: `persistRawCancelledResult()` and the abort branch in
+  `server/fastify/src/routes/generationChat.ts`; low-severity note in
+  `docs/FASTIFY-REPORT.md`.
+- Trigger: make cancel observers reconcile immediately, or accept the extra refresh
+  round-trip and retire this item.
 
-- **`Message.saying` field fate / load-time group filter.** Decision #3 keeps
-  `Message.saying` (single-character speaker attribution; removal gated on a designed
-  replacement attribution model). Decision #4 keeps the `setDatabase` `type !== 'group'`
-  load filter (enforced by `A4R-group-chat-removed`). Trigger: a designed
-  speaker-attribution replacement is specified.
-- **Lua server VM security model is single-user self-host only.** The egress guard +
-  exec limits (incl. the 30/min request window) are scaled to "your own code on your
-  own box." A hosted/multi-tenant deployment needs a much higher bar (egress
-  allow-list, per-tenant isolation, possibly `worker_threads`). Trigger: deciding to
-  ship a hosted/multi-tenant Fastify deployment.
-  Source: `archive/client-thinning/phases/slices/slice-3b-lua/README.md`.
+### `outputTokens` can be a response budget instead of a measured count
 
-### Intentionally deferred (no action unless the trigger fires)
+- What remains: `coerceGenerationInfo()` backfills `generationInfo.outputTokens`
+  from `info.responseBudget` when the done frame does not carry an output count.
+- Why open: the value can overstate the displayed/persisted output token count; it
+  does not change request behavior.
+- Evidence: `src/ts/process/request/serverChat.ts` (`coerceGenerationInfo`);
+  low-severity note in `docs/FASTIFY-REPORT.md`.
+- Trigger: token-count metadata needs to be exact, or the UI/storage stops treating
+  this field as a measured completion count.
 
-- **Stale group-chat strings/comments cleanup** (decision #6). Dead `removeFromGroup`
-  lang keys (`src/lang/*.ts`), the `src/ts/cbs.ts` `{{char}}` group-name description,
-  and the `risuai.d.ts` "and group chats" comment still exist. Deferred to the final
-  cleanup pass, not a standalone task. Docs-only; proof = no live behavior change.
-- **A2 post-generation derivation is best-effort on the non-durable path.** A thrown
-  `runServerPostGeneration` is swallowed (no `done.postGeneration` frame, no browser
-  fallback). Code TODO at `server/fastify/src/routes/generationChat.ts` (the
-  `buildPostGenerationFrame` catch). Trigger: a stricter hard-fail / restore / retry
-  contract is needed.
-- **Output-trigger message surgery not durably persisted.** impersonate/cutchat/
-  modifychat from an `'output'` trigger are surfaced in the post-gen `message_patch`
-  for the projection only, not separately persisted server-side (matches today's
-  projection-only behavior). Likewise `editoutput`-that-adds-inlay-markers is an
-  ordering edge the terminal pass does not specially reconcile.
-- **Lua host functions returning stubbed values.** On the server VM these are deferred
-  (`server/fastify/src/prompt/luaRuntime.ts`): `LLM()`/`axLLM()` return an error JSON
-  (port path: route through `dispatchChatProvider`), `similarity()` returns `[]`
-  (needs server embedding infra), `generateImage`/`getCharacterImage`/`getPersonaImage`
-  are no-op/error (B1 image-gen; could reuse slice-3a `resolveStoredAssetImage`),
-  `getPersonaDescription()` returns `''`. Trigger: a real char's `triggerlua` needs one
-  during a server-assembled send.
-- **Non-vision image-caption (content class 2) is permanently unsupported.** No server
-  equivalent of the browser-only `runImageEmbedding` captioning pipeline; emitting a
-  silently captionless prompt was rejected, so it hard-fails as `unsupported`. Trigger:
-  only if a server-side image-captioning pipeline is ever introduced.
-- **pluginV2 edit/replacer hooks are permanently unsupported** (no-port; superseded by
-  Plugin V3). `hasPluginV2EditSet` never flips to server; guarded by `A4R-pluginv2`.
-  Listed as a standing constraint, not a gap.
-- **Server provider dispatch can still hard-fail a provider shape the browser
-  prompt-assembly preflight accepts** (decision #5 seam). The `db → modelInfo`
-  derivation stays per-side (server uses string-prefix, not the `LLMModels`
-  registry). Closing it would require replicating the model registry on the server;
-  explicitly out of scope for #5.
-- **Manual legacy local-client verification** is separate from Fastify projection
-  hardening; only opened if a dedicated local-client verification task is created.
+## Durable generation
 
-### Follow-ups (smaller, gated)
+### In-flight generation jobs do not survive server restart
 
-- **Promote the interactive-Lua detection to the precise runtime-abort arm.** Today
-  it is a classify-time source scan (`alertInput|alertSelect|alertConfirm` regex →
-  `unsupported`); the runtime also flags `interactiveInvoked`. Trigger: a
-  false-positive/negative on the regex is observed.
-- **Move the remaining shallow string/regex audit rules to AST invariants.** Only the
-  four empirically-defeated rules (A4R2, A4R7, A4R-fanout-svelte, EC2) are hardened.
-  Trigger: a sincere variant prints "Client-thinning audit passed." against a still-
-  shallow rule; then convert that rule + ship adversarial fixtures.
-- **Fanout Svelte AST extraction misses quoted-attribute interpolations**
-  (`attr="{ ... }"`). It covers `<script>` blocks and `={ ... }` handlers only.
-  Trigger: a mutating dispatch site lands inside a quoted attribute interpolation.
+- What remains: `GenerationJobRegistry` and the underlying `JobRegistry` are
+  process-memory state. Bootstrap exposes `activeGenerationJobs` only for jobs
+  still present in that in-memory registry.
+- What is already done: browser reload/reattach works while the server process
+  stays alive, and failed durable finalization writes are now kept in the SQLite
+  `generation_finalization_retries` table.
+- Evidence: `server/fastify/src/generationJobs.ts`,
+  `server/fastify/src/streamJobs.ts`, `server/fastify/src/routes/bootstrap.ts`,
+  `server/fastify/src/generationFinalizationRetry.ts`.
+- Trigger: Milestone 2 restart survival is needed. Use Hypa V3 memory jobs as the
+  persistence/recovery precedent.
 
----
+## Server Lua
 
-## Durable generation — remaining open items
+### Hosted or multi-tenant Lua needs a stronger security model
 
-- **Milestone 2 — survive a server restart.** M1 jobs are in-memory
-  (`GenerationJobRegistry`, lost on restart). Disk-persisting job state/result is
-  deferred; a chat generation is short-lived, so restart-survival is low value for a
-  single-user self-host. Precedent to study: HypaV3 `memoryRepository` /
-  `routes/memoryJobs.ts`. The `StreamJob.writerSessionId` field captured at M1 job
-  creation is the hook left for this (currently stored but unused by the completion
-  write, which is a server-owned completion of an already-authorized job).
+- What remains: the server Lua VM is designed for single-user self-host. It has
+  per-call engine isolation, execution limits, SSRF-guarded `request()`, pinned
+  DNS, response caps, and a shared 30/min egress window, but it is not a hosted
+  multi-tenant sandbox.
+- Why open: hosted deployment would need an owner decision and additional controls
+  such as an egress allow-list, per-tenant rate/isolation state, and possibly
+  worker isolation.
+- Evidence: `server/fastify/src/prompt/luaRuntime.ts`;
+  `docs/archive/client-thinning/phases/slices/slice-3b-lua/README.md`.
+- Trigger: deciding to ship a hosted or multi-tenant Fastify deployment.
 
----
+### Several Lua host functions still return stubs
 
-## Save/Restore Locally — remaining open items
+- What remains: server Lua host functions for `LLM()`/`axLLM()`/`simpleLLM()`,
+  `similarity()`, `generateImage()`, image getters, persona description, and
+  lorebook reads return explicit errors or empty values.
+- Why open: these were deferred because the text-send server assembler did not need
+  them, and each requires another server-side subsystem decision.
+- Evidence: `server/fastify/src/prompt/luaRuntime.ts` (`declareHostFunctions`).
+- Trigger: a real server-assembled character/module needs one of these host
+  functions during prompt assembly.
 
-The feature (Settings → Account & files: "Save/Load Backup Locally") is built and
-**real-app-validated** on 2026-06-02: restoring an original-app `.bin` round-trips
-images back. It had been blocked by a `command_events.payload_json` schema-drift 500
-(legacy databases carried a removed `NOT NULL` column), fixed by guarded schema
-migration v9. Backup imports stream to a temp file and decode in bounded batches, so
-`RISU_API_IMPORT_MAX_BYTES` now defaults to unlimited (multi-GB backups import
-without tuning). Genuinely-open, non-blocking items:
+### Interactive Lua detection is conservative
 
-- **Streamed large downloads.** "Save Backup Locally" builds the `.risu.zip` as a
-  `Blob` in the browser, so multi-GB *downloads* can still hit browser memory/Blob
-  limits. *Import* is already streamed + unbounded server-side; the symmetric
-  download path (`showSaveFilePicker` streaming) is the follow-up. Trigger: a user
-  reports a failed or oversized backup download.
-- **"Save Partial Backup Locally"** (the original app's profile-images-only variant)
-  was intentionally not restored — it was a browser-local-storage speed workaround.
-  Add as a filtered server export variant only if the maintainer wants it.
+- What remains: the classifier scans `triggerlua` source for
+  `alertInput|alertSelect|alertConfirm` and hard-fails server assembly before the
+  runtime can prove whether the call path actually invokes a browser dialog. The
+  runtime also sets `interactiveInvoked` when an interactive host function is
+  called.
+- Why open: the source scan is safe, but it can false-positive on unused/commented
+  references or false-negative if a new interactive alias is introduced.
+- Evidence: `src/ts/process/request/serverPromptAssembly.ts`
+  (`INTERACTIVE_LUA_API_RE`); `server/fastify/src/prompt/luaRuntime.ts`
+  (`interactiveInvoked`).
+- Trigger: an observed false positive/negative, or a planned move to runtime-abort
+  classification.
 
----
+## Save/restore locally
 
-## Cross-cutting / infrastructure
+### Device backup download is not end-to-end streamed to disk
 
-- **Vite dev Fastify marker.** `pnpm dev` proxies `/api` but does not inject
-  `globalThis.__FASTIFY__`, so `isFastifyServer` is false in dev (only
-  `pnpm buildsite` + `pnpm api:start` is true Fastify-backed mode). Decide separately
-  whether true Fastify-backed dev needs a documented build/serve flow or a dev-time
-  marker injection.
+- What remains: server bundle export streams asset entries, but the browser still
+  consumes the response as a `Blob` and saves via an object URL. Very large
+  downloads can still hit browser Blob/device-memory limits. The embedded
+  `database.risu` bytes are also materialized before asset streaming starts.
+- What is already done: device backup import streams uploads to a temp file and
+  decodes in bounded batches; `RISU_API_IMPORT_MAX_BYTES` defaults to unlimited.
+- Evidence: `server/fastify/src/routes/save.ts`,
+  `server/fastify/src/risuSave/bundleExport.ts`,
+  `src/ts/server/backups.ts`, `src/ts/storage/backup.ts`.
+- Trigger: a user reports failed/oversized backup downloads, or the maintainer wants
+  symmetric streamed save via the File System Access API (`showSaveFilePicker`) or a
+  similar path.
+
+## Cross-cutting and audit maintenance
+
+### Fastify-backed Vite dev mode still needs an owner decision
+
+- What remains: `pnpm dev` proxies `/api`, but Vite does not inject
+  `globalThis.__FASTIFY__`, so `isFastifyServer` is false and the app uses
+  local/dev compatibility paths.
+- Why open: this is documented, but there is no decision on whether true
+  Fastify-backed dev should be provided through marker injection or a documented
+  build-and-serve workflow.
+- Evidence: `vite.config.ts`, `server/fastify/src/app.ts`,
+  `src/ts/platform.ts`, `docs/structure/frontend.md`,
+  `docs/structure/testing-and-operations.md`.
+- Trigger: developers need to exercise production Fastify browser behavior without
+  running a built SPA through Fastify.
+
+### Dead group-chat strings and comments remain
+
+- What remains: group-chat behavior is removed/guarded, but dead language keys and
+  comments still mention group chat.
+- Why open: this is cleanup only; the runtime guard is already enforced by
+  `setDatabase`, server defaults, and the `A4R-group-chat-removed` audit rule.
+- Evidence: `src/lang/*` `removeFromGroup`, `src/ts/cbs.ts` `{{char}}`
+  description, `src/ts/plugins/apiV3/risuai.d.ts` "characters and group chats";
+  guards in `src/ts/storage/database.svelte.ts`,
+  `server/fastify/src/databaseDefaults.ts`, and
+  `util/client-thinning-audit.ts`.
+- Trigger: final legacy-text cleanup pass.
+
+### Fanout audit misses quoted Svelte attribute interpolations
+
+- What remains: the `A4R-fanout` Svelte extractor reads `<script>` blocks and
+  markup attributes shaped as `attr={...}`. It does not parse quoted
+  interpolations such as `attr="{ ... }"`.
+- Why open: no current mutating dispatch site is known to live in that shape, but it
+  is a documented audit blind spot.
+- Evidence: `util/client-thinning-audit.ts`
+  (`extractSvelteAttributeExpressions`, `FANOUT_SVELTE_PATHS`).
+- Trigger: a mutating dispatch lands inside a quoted Svelte interpolation, or the
+  extractor is proactively generalized to the broader brace-group parser used by
+  the group-chat audit.
