@@ -84,6 +84,7 @@ async function startHarness(hubUrl: string): Promise<Harness> {
       port: 0,
       dataDir,
       bodyLimit: 1024 * 1024,
+      importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl,
     },

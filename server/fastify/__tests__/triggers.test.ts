@@ -297,7 +297,7 @@ function makeEngine(
   } = {},
 ): ReturnType<typeof createTriggerVarEngine> & EngineSetup {
   // dbChat is the persisted chat; workingChat is the clone runTrigger makes.
-  const dbChat = makeChat({ scriptstate: { ...(opts.scriptstate ?? {}) } })
+  const dbChat = makeChat({ scriptstate: { ...(opts.scriptstate ?? {}) } as Record<string, string | number | boolean> })
   const char = makeChar({ chats: [dbChat] })
   const db = makeDb({ characters: [char] })
   const workingChat = structuredClone(dbChat)

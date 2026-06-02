@@ -189,7 +189,7 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
 
     const state = beginAssembly(baseInput({ characterId: 'char-b', chatId: 'b1' }), depsFor(db))
     // The resolved indices match the active pointers.
-    expect(state.selectedCharID).toBe(db.currentChar)
+    expect(state.selectedCharID).toBe((db as any).currentChar)
     expect(state.chatPage).toBe(state.currentChar.chatPage)
   })
 })
@@ -555,7 +555,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
       chats: [
         makeChat({
           id: 'chat-1',
-          message: [msg('user', 'hello'), msg('char', 'hi there')] as never,
+          message: [msg('user', 'hello', 'msg-1'), msg('char', 'hi there', 'msg-2')] as never,
         }),
       ],
       ...overrides,
@@ -1210,7 +1210,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
           chats: [
             makeChat({
               id: 'chat-1',
-              message: [msg('user', 'hello'), msg('char', 'hi there')] as never,
+              message: [msg('user', 'hello', 'msg-1'), msg('char', 'hi there', 'msg-2')] as never,
             }),
           ],
         } as Partial<character>),
@@ -1265,7 +1265,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
               id: 'chat-1',
               message: [
                 msg('user', 'first prompt', 'msg-user-1'),
-                { ...msg('char', 'old reply', 'msg-char-1'), saying: 'char-tess' },
+                { ...(msg('char', 'old reply', 'msg-char-1') as any), saying: 'char-tess' },
               ] as never,
             }),
           ],

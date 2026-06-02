@@ -1699,7 +1699,7 @@ describe('Phase 7-9f start trigger handoff', () => {
         startTrigger([{ type: 'setvar', operator: '=', var: 'x', value: '7' }]),
       ],
     })
-    const db = makeDatabase({ characters: [char], currentChar: 0 })
+    const db = makeDatabase({ characters: [char], currentChar: 0 } as any)
     const result = await buildHistoryWindow(ctxFor(db), char, makeChat())
     expect(result.varChanged).toBe(true)
     expect(char.chats[0].scriptstate?.['$x']).toBe('7')

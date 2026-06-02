@@ -115,7 +115,7 @@ export function applyV2DataEffect(
     case 'v2GetFirstMessage': {
       engine.setVar(
         expand(effect.outputVar),
-        chat.fmIndex === -1
+        chat.fmIndex == null || chat.fmIndex === -1
           ? char.firstMessage
           : char.alternateGreetings[chat.fmIndex],
       )
@@ -497,7 +497,7 @@ export function applyV2DataEffect(
           const parsed = parseFloat(engine.getVar(varName))
           return isNaN(parsed) ? '0' : parsed.toString()
         })
-        engine.setVar(outVar, calcString(expression).toString())
+        engine.setVar(outVar, (calcString(expression) ?? 0).toString())
       } catch {
         engine.setVar(outVar, '0')
       }

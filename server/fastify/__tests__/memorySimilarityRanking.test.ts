@@ -33,7 +33,7 @@ function summary(input: Partial<MemorySummary> & { id: string; chunkId: string }
 }
 
 function embedding(
-  input: Partial<MemoryEmbedding> & { id: string; chunkId: string; vector: readonly number[] },
+  input: Omit<Partial<MemoryEmbedding>, 'vector'> & { id: string; chunkId: string; vector: readonly number[] },
 ): MemoryEmbedding {
   return {
     id: input.id,

@@ -29,6 +29,7 @@ async function startHarness(generationChat?: GenerationChatRouteOptions): Promis
       port: 0,
       dataDir,
       bodyLimit: 1024 * 1024,
+      importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },
@@ -1545,10 +1546,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
     }
-    db.characters[0].chats[0].message = [
+    ;(db.characters[0].chats[0] as any).message = [
       { role: 'user', data: 'before stop', chatId: 'msg-before-stop' },
     ]
-    db.characters[0].chats[0].scriptstate = { $score: '1' }
+    ;(db.characters[0].chats[0] as any).scriptstate = { $score: '1' }
     db.characters[0].triggerscript = [
       {
         comment: '',

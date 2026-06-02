@@ -131,7 +131,7 @@ describe('summarize memory job handler', () => {
       expect(await worker.tick()).toBe(true)
 
       expect(summarize).toHaveBeenCalledOnce()
-      const [messages, opts] = summarize.mock.calls[0]
+      const [messages, opts] = (summarize.mock.calls as any[][])[0]
       expect(messages).toEqual([
         {
           role: 'user',

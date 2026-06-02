@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
-import { createAuthState, registerPublicKey } from '../src/auth.ts'
+import { createAuthState, registerPublicKey } from '../src/auth.js'
 
 describe('auth.knownKeyHashes (A4EC5 / B6 bounded accumulator)', () => {
   let tmpDir: string

@@ -9,7 +9,6 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { DatabaseSync } from 'node:sqlite'
 import {
-  writePersisted,
   writePersistedWithMessages,
   assetsDir,
   insertAssetMetadataBatch,
@@ -62,6 +61,7 @@ async function startHarness(): Promise<Harness> {
       port: 0,
       dataDir,
       bodyLimit: 1024 * 1024,
+      importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },

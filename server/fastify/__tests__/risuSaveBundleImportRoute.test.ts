@@ -10,7 +10,6 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
 import { DatabaseSync } from 'node:sqlite'
 import {
-  writePersisted,
   writePersistedWithMessages,
   assetsDir,
   insertAssetMetadataBatch,
@@ -37,6 +36,7 @@ async function startHarness(): Promise<Harness> {
       port: 0,
       dataDir,
       bodyLimit: 4 * 1024 * 1024,
+      importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },

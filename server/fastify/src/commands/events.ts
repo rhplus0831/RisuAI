@@ -121,7 +121,7 @@ export function listPersistedCommandEventHistory(db: DatabaseSync): readonly Com
         ORDER BY revision ASC
       `,
     )
-    .all() as PersistedCommandEventRow[]
+    .all() as unknown as PersistedCommandEventRow[]
   return rows.map(commandEventFromRow)
 }
 

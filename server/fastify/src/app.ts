@@ -236,7 +236,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     generationJobRegistry,
     opts.generationChat,
   )
-  const finalizationRetryOptions = opts.generationChat?.finalizationRetry ?? {}
+  const finalizationRetryRaw = opts.generationChat?.finalizationRetry
+  const finalizationRetryOptions = finalizationRetryRaw === false ? false : (finalizationRetryRaw ?? {})
   const runGenerationFinalizationRetrySweep = (): void => {
     try {
       retryQueuedGenerationFinalizations({
@@ -245,7 +246,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
         eventSink: commandEventSink,
         logger: app.log,
         maxPerSweep:
-          finalizationRetryOptions && finalizationRetryOptions !== false
+          finalizationRetryOptions !== false
             ? finalizationRetryOptions.maxPerSweep
             : undefined,
       })

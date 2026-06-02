@@ -96,7 +96,7 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
       risuChatParser(text, {
         chatID: arg.chatID,
         db: arg.db,
-        chara: arg.chara,
+        chara: arg.chara ?? undefined,
         rmVar: arg.rmVar,
         var: arg.var,
         tokenizeAccurate: arg.tokenizeAccurate,
@@ -116,7 +116,7 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     getChatVar,
     setChatVar,
     getGlobalChatVar,
-    calcString,
+    calcString: (str: string) => calcString(str) ?? 0,
     dateTimeFormat,
     // Module + lorebook callbacks are not available in this server adapter yet.
     getModules: () => [],

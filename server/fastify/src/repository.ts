@@ -390,9 +390,10 @@ export function loadCharacterSelectionProjection(
   if (!row) return null
 
   const settings = loadSettingsFromSqlite(db)
-  const currentChar = Number.isInteger(settings?.currentChar)
-    ? (settings.currentChar as number)
-    : row.position
+  const currentChar =
+    settings !== null && Number.isInteger(settings.currentChar)
+      ? (settings.currentChar as number)
+      : row.position
   const character = JSON.parse(row.data_json)
   const lastInteraction = isRecord(character) ? character.lastInteraction : undefined
   return {

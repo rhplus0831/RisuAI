@@ -1,3 +1,4 @@
+import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'

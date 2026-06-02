@@ -23,7 +23,7 @@ import {
   encodeRepositoryRisuSaveBlockExport,
   encodeRepositoryRisuSaveLegacyExport,
 } from '../src/risuSave/exportSnapshot.js'
-import { writePersisted, writePersistedWithMessages } from '../src/repository.js'
+import { writePersistedWithMessages } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -285,7 +285,7 @@ describe('server .risu fixture harness', () => {
     ])
     expect(decoded.database.botPresetsId).toBe(0)
 
-    const character = decoded.database.characters[0] as Record<string, unknown>
+    const character = (decoded.database.characters as unknown[])[0] as Record<string, unknown>
     expect(character.chaId).toBe('fixture-char')
     expect(character.chats).toHaveLength(1)
     const chat = (character.chats as Array<Record<string, unknown>>)[0]

@@ -13,7 +13,7 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
   getUserName: () => 'placeholder_user',
   getPersonaPrompt: () => 'placeholder_persona',
   risuChatParser: (text: string) => text,
-  makeArray: (arr: string[]) => JSON.stringify(arr),
+  makeArray: (arr: unknown[]) => JSON.stringify(arr),
   safeStructuredClone: <T>(obj: T) => JSON.parse(JSON.stringify(obj)),
   parseArray: (str: string) => {
     try {
@@ -185,7 +185,7 @@ export function registerCBS(arg: CBSRegisterArg) {
           return matcherArg.chara.name
         }
       }
-      return currentChar.nickname || currentChar.name
+      return (currentChar as character | undefined)?.nickname || (currentChar as character | undefined)?.name || ''
     },
     alias: ['bot'],
     description:
@@ -228,7 +228,7 @@ export function registerCBS(arg: CBSRegisterArg) {
         }
         pointer--
       }
-      return chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
+      return chat.fmIndex == null || chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
     },
     alias: ['previouscharchat', 'lastcharmessage'],
     description:
@@ -250,7 +250,7 @@ export function registerCBS(arg: CBSRegisterArg) {
           }
           pointer--
         }
-        return chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
+        return chat.fmIndex == null || chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
       }
       return ''
     },
@@ -469,7 +469,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       const db = getDatabase()
       const selchar = db.characters[getSelectedCharID()]
       const chat = selchar.chats[selchar.chatPage]
-      return chat.fmIndex.toString()
+      return (chat.fmIndex ?? -1).toString()
     },
     alias: ['firstmessageindex', 'first_msg_index'],
     description:
@@ -828,9 +828,10 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'tempvar',
     callback: (str, matcherArg, args, vars) => {
+      const v = vars ?? {}
       return {
-        text: vars[args[0]] ?? '',
-        var: vars,
+        text: v[args[0]] ?? '',
+        var: v,
       }
     },
     alias: ['gettempvar'],
@@ -841,10 +842,11 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'settempvar',
     callback: (str, matcherArg, args, vars) => {
-      vars[args[0]] = args[1]
+      const v = vars ?? {}
+      v[args[0]] = args[1]
       return {
         text: '',
-        var: vars,
+        var: v,
       }
     },
     alias: [],
@@ -855,11 +857,12 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'return',
     callback: (str, matcherArg, args, vars) => {
-      vars['__return__'] = args[0]
-      vars['__force_return__'] = '1'
+      const v = vars ?? {}
+      v['__return__'] = args[0]
+      v['__force_return__'] = '1'
       return {
         text: '',
-        var: vars,
+        var: v,
       }
     },
     alias: [],
@@ -1432,7 +1435,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'makedict',
     callback: (str, matcherArg, args, vars) => {
-      let out = {}
+      let out: Record<string, string> = {}
       for (let i = 0; i < args.length; i++) {
         const current = args[i]
         const firstEqual = current.indexOf('=')
@@ -1463,7 +1466,7 @@ export function registerCBS(arg: CBSRegisterArg) {
         makeArray(
           selchar.emotionImages?.map((f) => {
             return f[0]
-          }),
+          }) ?? [],
         ) ?? ''
       )
     },
@@ -1483,7 +1486,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       return makeArray(
         selchar.additionalAssets?.map((f) => {
           return f[0]
-        }),
+        }) ?? [],
       )
     },
     alias: [],
@@ -1674,7 +1677,7 @@ export function registerCBS(arg: CBSRegisterArg) {
             {
               role: 'char',
               data:
-                chat.fmIndex === -1
+                chat.fmIndex == null || chat.fmIndex === -1
                   ? selchar.firstMessage
                   : selchar.alternateGreetings[chat.fmIndex],
             },
@@ -1798,7 +1801,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       return makeArray(
         module.assets?.map((f) => {
           return f[0]
-        }),
+        }) ?? [],
       )
     },
     alias: ['module_assetlist'],
@@ -2416,7 +2419,7 @@ export function registerCBS(arg: CBSRegisterArg) {
         trimPointer = 0
       }
 
-      matcherArg?.setNestedRoot(root.substring(0, trimPointer).trimEnd())
+      matcherArg.setNestedRoot?.(root.substring(0, trimPointer).trimEnd())
       return ''
     },
     alias: [],
@@ -2452,7 +2455,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       } else if (sentenceEndFound) {
         trimPointer += 1
       }
-      matcherArg?.setNestedRoot(root.substring(0, trimPointer).trimEnd())
+      matcherArg.setNestedRoot?.(root.substring(0, trimPointer).trimEnd())
       return ''
     },
     alias: [],
@@ -2463,7 +2466,9 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'declare',
     callback: (str, matcherArg, args, vars) => {
-      matcherArg.var[`__declared_${args[0]}__`] = '1'
+      if (matcherArg.var) {
+        matcherArg.var[`__declared_${args[0]}__`] = '1'
+      }
       return ''
     },
     alias: [],

@@ -172,7 +172,7 @@ describe('Phase 7-3 buildAuthorNote', () => {
   })
 
   it('returns [] when promptTemplate is null and chat.note is empty', () => {
-    const db = makeDatabase({ promptTemplate: null })
+    const db = makeDatabase({ promptTemplate: undefined })
     expect(buildAuthorNote(ctxFor(db), makeChat({ note: '' }))).toEqual([])
   })
 })

@@ -123,7 +123,7 @@ describe('embed memory job handler', () => {
       expect(await worker.tick()).toBe(true)
 
       expect(embed).toHaveBeenCalledOnce()
-      expect(embed.mock.calls[0][0]).toMatchObject({
+      expect((embed.mock.calls as any[][])[0][0]).toMatchObject({
         request: {
           provider: 'custom',
           endpoint: 'https://example.test/v1/embeddings',
@@ -421,7 +421,7 @@ describe('embed memory job handler', () => {
       expect(await worker.tick()).toBe(true)
 
       expect(embedGroups).toHaveBeenCalledOnce()
-      expect(embedGroups.mock.calls[0][0]).toMatchObject({
+      expect((embedGroups.mock.calls as any[][])[0][0]).toMatchObject({
         request: {
           provider: 'voyage-contextual',
           endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',

@@ -26,6 +26,7 @@ async function startHarness(opts: { memoryEvents?: MemoryEventSink } = {}): Prom
       port: 0,
       dataDir,
       bodyLimit: 1024 * 1024,
+      importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },
@@ -332,7 +333,7 @@ describe('Phase 8-2e memory job routes', () => {
 
   it('returns validation failures for malformed enqueue, list, and cancel requests', async () => {
     for (const payload of [
-      null,
+      null as unknown as undefined,
       { kind: 'chunk' },
       { chatId: '', kind: 'chunk' },
       { chatId: 'chat-1', kind: 'unknown' },
@@ -345,7 +346,7 @@ describe('Phase 8-2e memory job routes', () => {
         headers: { 'risu-auth': assertion },
         payload,
       })
-      expect(res.statusCode, JSON.stringify(payload)).toBe(400)
+      expect(res!.statusCode, JSON.stringify(payload)).toBe(400)
     }
 
     for (const url of [

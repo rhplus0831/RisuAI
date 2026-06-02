@@ -48,6 +48,7 @@ async function startHarness(): Promise<Harness> {
       port: 0,
       dataDir,
       bodyLimit: 1024 * 1024,
+      importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },
@@ -1225,7 +1226,6 @@ describe('Phase 9-2a scalar settings groups', () => {
         baseRevision: runtime.json().revision,
         patch: {
           sdProvider: 'wavespeed',
-          emotionProcesser: 'llm',
           webUiUrl: 'https://webui.example.test',
           sdSteps: 24,
           sdCFG: 8,
@@ -1421,7 +1421,6 @@ describe('Phase 9-2a scalar settings groups', () => {
       },
       localStopStrings: ['stop'],
       sdProvider: 'wavespeed',
-      emotionProcesser: 'llm',
       webUiUrl: 'https://webui.example.test',
       sdSteps: 24,
       sdCFG: 8,
@@ -3403,7 +3402,7 @@ describe('Phase 9-3a character commands', () => {
       id: 'char-b',
     })
     expect(
-      (loadPersistedFromDir(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
+      ((loadPersistedFromDir(harness.dataDir).database as any).characters as Array<Record<string, unknown>>).find(
         (character) => character.chaId === 'char-b',
       ),
     ).toMatchObject({
@@ -3449,7 +3448,7 @@ describe('Phase 9-3a character commands', () => {
       characterId: 'char-b',
     })
     expect(
-      (loadPersistedFromDir(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
+      ((loadPersistedFromDir(harness.dataDir).database as any).characters as Array<Record<string, unknown>>).find(
         (character) => character.chaId === 'char-b',
       ),
     ).toMatchObject({
@@ -3575,7 +3574,7 @@ describe('Phase 9-3a character commands', () => {
       characterOrder: ['char-a', 'char-b'],
     })
     expect(
-      (loadPersistedFromDir(harness.dataDir).database.characters as Array<Record<string, unknown>>).find(
+      ((loadPersistedFromDir(harness.dataDir).database as any).characters as Array<Record<string, unknown>>).find(
         (character) => character.chaId === 'char-b',
       ),
     ).toMatchObject({
@@ -5037,13 +5036,13 @@ describe('Phase 9-3c message history commands', () => {
     })
     expect(bootstrap.json().revision).toBe(1)
     const messages = await persistedChatMessages(harness.app, assertion, 'chat-a')
-    expect(messages.map((message: { role: string; data: string }) => message.data)).toEqual([
+    expect(messages.map((message) => (message as any).data)).toEqual([
       'missing id',
       'duplicate a',
       'duplicate b',
     ])
-    expect(messages.map((message: { chatId: string }) => message.chatId)).toHaveLength(3)
-    expect(new Set(messages.map((message: { chatId: string }) => message.chatId)).size).toBe(3)
+    expect(messages.map((message) => (message as any).chatId)).toHaveLength(3)
+    expect(new Set(messages.map((message) => (message as any).chatId)).size).toBe(3)
   })
 
   it('repairs imported duplicate message ids across chats and updates local references', async () => {

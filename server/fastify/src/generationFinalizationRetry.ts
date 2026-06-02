@@ -139,7 +139,7 @@ export function listPendingGenerationFinalizationRetries(
         LIMIT ?
       `,
     )
-    .all(boundedLimit) as GenerationFinalizationRetryRow[]
+    .all(boundedLimit) as unknown as GenerationFinalizationRetryRow[]
 
   return rows.map((row) => ({
     generationId: row.generation_id,

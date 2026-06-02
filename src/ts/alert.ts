@@ -40,7 +40,7 @@ type AlertGenerationInfoStoreData = {
   genInfo: MessageGenerationInfo
   idx: number
 }
-export const alertGenerationInfoStore = writable<AlertGenerationInfoStoreData>(null)
+export const alertGenerationInfoStore = writable<AlertGenerationInfoStoreData | undefined>(undefined)
 export const alertStore = {
   set: (d: alertData) => {
     alertStoreImported.set(d)

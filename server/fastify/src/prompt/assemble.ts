@@ -8,6 +8,7 @@ import { EntityNotFoundError } from '../repository.js'
 import {
   normalizeHypaV3Settings,
   planStandardHypaV3Memory,
+  type HypaV3Settings,
   type HypaV3SummaryRef,
 } from '../memoryPlanner.js'
 import { planHypaV3ChunkJobs } from '../memoryChunkPlanner.js'
@@ -525,7 +526,7 @@ function appendUserMessageRow(state: AssemblyState): void {
       ...structuredClone(lastMessage),
       chatId: lastMessage.chatId ?? randomUUID(),
       time: lastMessage.time ?? Date.now(),
-      name: null,
+      name: null as unknown as undefined,
     } as Message
     messages[lastIndex] = message
     state.messageMutations?.push({
@@ -543,7 +544,7 @@ function appendUserMessageRow(state: AssemblyState): void {
     data: userMessage,
     time: Date.now(),
     chatId: randomUUID(),
-    name: null,
+    name: null as unknown as undefined,
   } as Message
   const index = messages.length
   messages.push(message)
@@ -1066,7 +1067,9 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
     return []
   }
   const enabled = shouldSelectPromptMemory(state)
-  const { settings } = normalizeHypaV3Settings(resolveHypaV3PresetSettings(state.database))
+  const { settings } = normalizeHypaV3Settings(
+    resolveHypaV3PresetSettings(state.database) as Partial<HypaV3Settings> | null | undefined,
+  )
   const chatId = state.currentChat.id ?? state.input.chatId
   const embeddingModel = resolvePromptMemoryEmbeddingModel(state.database)
   state.promptMemoryChunkPlanningDiagnostics = planPromptMemoryChunksForAssembly({

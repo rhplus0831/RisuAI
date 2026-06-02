@@ -639,6 +639,7 @@ describe('memory worker lifecycle and dispatch', () => {
         port: 0,
         dataDir,
         bodyLimit: 1024 * 1024,
+        importMaxBytes: Infinity,
         trustProxy: false,
         hubUrl: 'https://sv.risuai.xyz',
       },
