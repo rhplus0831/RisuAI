@@ -1,6 +1,7 @@
 # Normalization-Scope Policy
 
-Status: planned. Codifies Prerequisites 2 and 3 as a written contract.
+Status: implemented (2026-06-03). Codifies Prerequisites 2 and 3 as a written
+contract; the shared assertion helper has landed.
 
 ## Source Anchors
 
@@ -39,10 +40,16 @@ actually changed, exactly as `writeCharacterSelectionRows` writes both rows.
 
 ## Implementation Scope
 
-- Deliverable: this written policy, linked from every tier phase, plus a shared
-  test helper `assertOnlyRowsWritten(before, after, expectedChangedIds)` built on
-  `tableRowidsById` that fails if any unrelated character/chat/collection row was
-  rewritten.
+- Deliverable: this written policy, linked from every tier phase (Phases 2-4),
+  plus a shared test helper
+  `assertOnlyRowsWritten(before, after, expectedChangedIds)` built on
+  `tableRowidsById`, landed in
+  `server/fastify/__tests__/helpers/rowStability.ts`. It fails if any unrelated
+  character/chat/collection row was rewritten (DELETE+reINSERT changes the
+  rowid); `expectedChangedIds` whitelists the rows a create/delete/replace is
+  allowed to churn (empty for the pure-`UPDATE` case). The reference
+  `characters/select` regression in `commands.test.ts` already asserts through
+  it.
 - Each tier slice records, per route, which global normalization it drops to
   validate-only and which settings scalar it conditionally co-writes.
 - Non-scope: scoping the normalization passes themselves into reusable
@@ -60,10 +67,15 @@ actually changed, exactly as `writeCharacterSelectionRows` writes both rows.
 
 ## Done When
 
-- The policy is written and linked from Phases 2-4.
-- `assertOnlyRowsWritten` exists and is used by at least one tier's first slice.
-- Each tier phase's exit criteria reference the validate-only and settings
-  co-write decisions.
+- [x] The policy is written and linked from Phases 2-4 (each phase doc's Source
+  Anchors points here).
+- [x] `assertOnlyRowsWritten` exists (`helpers/rowStability.ts`) and is used by
+  the reference `characters/select` regression — the template every later tier
+  slice's first regression copies.
+- [x] Each tier phase's exit criteria reference the validate-only and settings
+  co-write decisions (Phase 2 lorebooks `ensureAllChildLorebooks` drop; Phase 3
+  fork validate-only + trash/select/folder co-writes; Phase 4 per-family pointer
+  co-writes and scripts/triggers caveat).
 
 ## Validation
 

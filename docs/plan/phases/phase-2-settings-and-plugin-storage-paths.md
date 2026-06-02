@@ -15,6 +15,9 @@ projections are already safe or intentionally sprawling.
 - `server/fastify/src/repository.ts` - `writeSettingsOnly`,
   `writePluginStorageKey` / `deletePluginStorageKey`, `plugin_custom_storage`
   (lines ~167-176).
+- [`slices/phase-0-baseline-foundations/normalization-scope-policy.md`](slices/phase-0-baseline-foundations/normalization-scope-policy.md) -
+  the validate-only / settings co-write contract (Prerequisites 2-3) and the
+  shared `assertOnlyRowsWritten` rowid-stability helper this phase's slices use.
 
 ## Slices
 

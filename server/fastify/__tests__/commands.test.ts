@@ -14,7 +14,11 @@ import {
 import { getSchemaState, openDatabase } from '../src/db.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
-import { activeMessageRowids, tableRowidsById } from './helpers/rowStability.js'
+import {
+  activeMessageRowids,
+  assertOnlyRowsWritten,
+  tableRowidsById,
+} from './helpers/rowStability.js'
 
 const subtle = webcrypto.subtle
 
@@ -3258,8 +3262,10 @@ describe('Phase 9-3a character commands', () => {
     })
 
     expect(selected.statusCode).toBe(200)
-    expect(tableRowidsById(harness.dataDir, 'characters')).toEqual(characterRowsBefore)
-    expect(tableRowidsById(harness.dataDir, 'chats')).toEqual(chatRowsBefore)
+    // Targeted selection UPDATEs only char-b's row + settings, so no character
+    // or chat row is rewritten (every rowid stays put).
+    assertOnlyRowsWritten(characterRowsBefore, tableRowidsById(harness.dataDir, 'characters'))
+    assertOnlyRowsWritten(chatRowsBefore, tableRowidsById(harness.dataDir, 'chats'))
     expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       currentChar: 1,
       characters: [{ chaId: 'char-a' }, { chaId: 'char-b', lastInteraction: 4321 }],

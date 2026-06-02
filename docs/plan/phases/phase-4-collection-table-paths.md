@@ -18,6 +18,9 @@ slice owns one collection family and its projection-field co-fix.
   collection writers.
 - `server/fastify/src/routes/projection.ts` - `prompt`/`promptItem`/`persona`/
   `loadout`/`plugins` resources.
+- [`slices/phase-0-baseline-foundations/normalization-scope-policy.md`](slices/phase-0-baseline-foundations/normalization-scope-policy.md) -
+  the validate-only / settings co-write contract (Prerequisites 2-3) and the
+  shared `assertOnlyRowsWritten` rowid-stability helper this phase's slices use.
 
 ## Slices
 

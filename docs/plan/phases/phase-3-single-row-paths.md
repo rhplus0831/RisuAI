@@ -13,8 +13,11 @@ reads SQLite fresh; Phase 5 adds the narrower refresh shapes.
 - [`../mutation-range-mismatch.md`](../mutation-range-mismatch.md) - Tier 3.
 - `server/fastify/src/routes/commands.ts` - the Tier-3 routes.
 - `server/fastify/src/repository.ts` - `writeSingleCharacterRow`,
-  `writeSingleChatRow` (no `chats` single-row writer exists today).
+  `writeSingleChatRow`.
 - `server/fastify/src/commands/mutations.ts` - targeted paths.
+- [`slices/phase-0-baseline-foundations/normalization-scope-policy.md`](slices/phase-0-baseline-foundations/normalization-scope-policy.md) -
+  the validate-only / settings co-write contract (Prerequisites 2-3) and the
+  shared `assertOnlyRowsWritten` rowid-stability helper this phase's slices use.
 
 ## Slices
 
