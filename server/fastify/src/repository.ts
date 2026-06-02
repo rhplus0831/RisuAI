@@ -9,6 +9,7 @@ import {
   persistRevisionedCommandEvent,
   type CommandEvent,
 } from './commands/events.js'
+import { recordTableWrite } from './protocolMetrics.js'
 import {
   applyChatMessageDiff,
   deleteChatHypaV3,
@@ -156,6 +157,7 @@ function loadCollectionsFromSqlite(
 export function replaceAllCollectionsInTable(db: DatabaseSync, database: unknown): void {
   if (!isRecord(database)) return
   for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
+    recordTableWrite(tableName)
     db.exec(`DELETE FROM ${tableName}`)
     const arr = database[field]
     if (!Array.isArray(arr) || arr.length === 0) continue
@@ -164,6 +166,7 @@ export function replaceAllCollectionsInTable(db: DatabaseSync, database: unknown
       stmt.run(i, JSON.stringify(arr[i]))
     }
   }
+  recordTableWrite('plugin_custom_storage')
   db.exec('DELETE FROM plugin_custom_storage')
   const storage = database.pluginCustomStorage
   if (isRecord(storage)) {
@@ -207,6 +210,7 @@ function extractSettings(database: Record<string, unknown>): Record<string, unkn
 export function replaceAllSettingsInTable(db: DatabaseSync, database: unknown): void {
   if (!isRecord(database)) return
   const settings = extractSettings(database)
+  recordTableWrite('settings')
   db.exec('DELETE FROM settings')
   db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(settings))
 }
@@ -310,6 +314,8 @@ export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown)
   const characters =
     isRecord(database) && Array.isArray(database.characters) ? database.characters : []
 
+  recordTableWrite('characters')
+  recordTableWrite('chats')
   db.exec('DELETE FROM chats')
   db.exec('DELETE FROM characters')
 
@@ -373,10 +379,12 @@ export function loadCharacterSelectionRows(
 }
 
 export function writeCharacterSelectionRows(db: DatabaseSync, rows: CharacterSelectionRows): void {
+  recordTableWrite('characters')
   db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(
     JSON.stringify(rows.character),
     rows.characterId,
   )
+  recordTableWrite('settings')
   db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(rows.settings))
 }
 

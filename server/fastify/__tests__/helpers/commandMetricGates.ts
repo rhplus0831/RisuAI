@@ -1,0 +1,186 @@
+import { expect } from 'vitest'
+
+// Reusable mutation-range review-gate template (Phase 0). A command's
+// `command_mutation` metric is checked against the gate for its `mutationPath`:
+// every timing section is present, db.json is never rewritten on a targeted
+// path, and — the discriminator this workstream turns on — the set of physical
+// tables the command wrote (`writtenTables`) matches what a narrowed write is
+// allowed to touch. Import this from any command/metric test instead of
+// re-deriving the gates inline.
+
+export const COMMAND_METRIC_SECTIONS = [
+  'loadMs',
+  'cloneMutateMs',
+  'sqliteSyncMs',
+  'dbJsonWriteMs',
+  'totalMs',
+] as const
+
+export type CommandMetricSection = (typeof COMMAND_METRIC_SECTIONS)[number]
+
+/**
+ * The 13 physical tables the broad `replaceAll*` writers rewrite for any single
+ * sub-row change — the over-broad baseline every Tier write narrows away from.
+ * Sorted to match `takeTableWrites()` output. A `message-free` mutation rewrites
+ * exactly this set; a `hydrated` mutation additionally loads every chat's
+ * messages and writes the message store (`messages` / `chat_hypa_v3`) only when
+ * a message actually changed.
+ */
+export const BROAD_WRITE_TABLES = [
+  'bot_presets',
+  'characters',
+  'chats',
+  'hypa_v3_presets',
+  'loadouts',
+  'lore_books',
+  'modules',
+  'personas',
+  'plugin_custom_storage',
+  'plugins',
+  'prompt_templates',
+  'settings',
+  'translator_presets',
+] as const
+
+const MESSAGE_STORE_TABLES = ['chat_hypa_v3', 'messages'] as const
+
+export interface CommandMetricGate {
+  reviewGate: string
+  sections: readonly CommandMetricSection[]
+  /** Required exact value of `dbJsonWriteMs` (0 for every targeted path). */
+  dbJsonWriteMs?: number
+  /** Exact set of physical tables the path must write (sorted). */
+  expectedTables?: readonly string[]
+  /** The path's `writtenTables` must be a subset of this set. */
+  maxTables?: readonly string[]
+  /** The path's `writtenTables` must be disjoint from this set. */
+  forbiddenTables?: readonly string[]
+}
+
+export const COMMAND_METRIC_REVIEW_GATES = {
+  // Broad baselines (not yet narrowed). These are the over-broad paths the
+  // workstream measures the before-state of.
+  hydrated: {
+    reviewGate: 'hydrated commands rewrite the full table set and may touch the message store',
+    sections: COMMAND_METRIC_SECTIONS,
+    maxTables: [...BROAD_WRITE_TABLES, ...MESSAGE_STORE_TABLES].sort(),
+  },
+  'message-free': {
+    reviewGate: 'message-free commands should avoid message history synchronization work',
+    sections: COMMAND_METRIC_SECTIONS,
+    expectedTables: BROAD_WRITE_TABLES,
+  },
+  // Already-targeted paths.
+  'targeted-message': {
+    reviewGate: 'targeted message commands should not rewrite db.json',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    maxTables: MESSAGE_STORE_TABLES,
+  },
+  'targeted-generation': {
+    reviewGate: 'targeted generation persistence should not rewrite db.json',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    maxTables: MESSAGE_STORE_TABLES,
+  },
+  'targeted-character-selection': {
+    reviewGate: 'character selection should update only the selected character row and settings',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    expectedTables: ['characters', 'settings'],
+  },
+  // Phase 0 targeted vehicles (Phases 2-5 route the over-broad commands onto
+  // these). Defined here so the metric and review gates can target the new
+  // `mutationPath` labels before any route is narrowed.
+  'targeted-settings': {
+    reviewGate: 'settings-scalar commands should issue one UPDATE settings and nothing else',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    expectedTables: ['settings'],
+  },
+  'targeted-character-row': {
+    reviewGate: 'single character-row edits write that character row plus settings only when a pointer moved',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    maxTables: ['characters', 'settings'],
+    forbiddenTables: ['chats'],
+  },
+  'targeted-chat-row': {
+    reviewGate: 'single chat-row edits write that chat row plus its parent character row only when a pointer moved',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    maxTables: ['characters', 'chats'],
+  },
+  'targeted-collection': {
+    reviewGate: 'collection edits write only the changed collection table plus its pointer scalar',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    forbiddenTables: ['characters', 'chats'],
+  },
+  'targeted-plugin-storage': {
+    reviewGate: 'plugin custom storage writes touch only plugin_custom_storage',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    expectedTables: ['plugin_custom_storage'],
+  },
+} satisfies Record<string, CommandMetricGate>
+
+export type CommandMutationPath = keyof typeof COMMAND_METRIC_REVIEW_GATES
+
+export interface CommandMutationMetric {
+  metric?: string
+  type?: string
+  resource?: string
+  revision?: number
+  status?: string
+  loadMs?: number
+  cloneMutateMs?: number
+  sqliteSyncMs?: number
+  dbJsonWriteMs?: number
+  totalMs?: number
+  mutationPath?: string
+  writtenTables?: string[]
+}
+
+/** Look up the review gate for a metric's `mutationPath`, asserting one exists. */
+export function commandMetricReviewGate(metric: CommandMutationMetric): CommandMetricGate {
+  const mutationPath = metric.mutationPath
+  expect(mutationPath, `missing mutationPath for ${metric.type}`).toBeTruthy()
+  const gate =
+    COMMAND_METRIC_REVIEW_GATES[mutationPath as keyof typeof COMMAND_METRIC_REVIEW_GATES]
+  expect(gate, `missing command metric review gate for ${mutationPath}`).toBeTruthy()
+  return gate
+}
+
+/**
+ * Assert a `command_mutation` metric satisfies the review gate for its
+ * `mutationPath`: every timing section is a non-negative number, `dbJsonWriteMs`
+ * matches when the gate fixes it, and `writtenTables` (when captured) respects
+ * the gate's exact / subset / disjoint table constraints.
+ */
+export function assertCommandMetricGate(metric: CommandMutationMetric): CommandMetricGate {
+  const gate = commandMetricReviewGate(metric)
+  for (const section of gate.sections) {
+    expect(metric[section], `${metric.type}.${section}`).toBeGreaterThanOrEqual(0)
+  }
+  if (typeof gate.dbJsonWriteMs === 'number') {
+    expect(metric.dbJsonWriteMs, `${metric.type}.dbJsonWriteMs`).toBe(gate.dbJsonWriteMs)
+  }
+  const written = metric.writtenTables
+  if (written) {
+    if (gate.expectedTables) {
+      expect(written, `${metric.mutationPath}.writtenTables`).toEqual([...gate.expectedTables])
+    }
+    if (gate.maxTables) {
+      const allowed = new Set(gate.maxTables)
+      const extra = written.filter((table) => !allowed.has(table))
+      expect(extra, `${metric.mutationPath} wrote tables outside maxTables`).toEqual([])
+    }
+    if (gate.forbiddenTables) {
+      const forbidden = new Set(gate.forbiddenTables)
+      const violated = written.filter((table) => forbidden.has(table))
+      expect(violated, `${metric.mutationPath} wrote forbidden tables`).toEqual([])
+    }
+  }
+  return gate
+}

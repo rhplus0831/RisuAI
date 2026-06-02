@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
+import { recordTableWrite } from './protocolMetrics.js'
 
 // Chat messages live in their own SQLite table, one row per message, instead of
 // being embedded in `data/db.json`. This module is the pure CRUD layer over that
@@ -79,6 +80,7 @@ export function setChatHypaV3(db: DatabaseSync, chatId: string, value: unknown):
     deleteChatHypaV3(db, chatId)
     return
   }
+  recordTableWrite('chat_hypa_v3')
   db.prepare(
     'INSERT INTO chat_hypa_v3 (chat_id, json) VALUES (?, ?) ' +
       'ON CONFLICT(chat_id) DO UPDATE SET json = excluded.json',
@@ -86,6 +88,7 @@ export function setChatHypaV3(db: DatabaseSync, chatId: string, value: unknown):
 }
 
 export function deleteChatHypaV3(db: DatabaseSync, chatId: string): void {
+  recordTableWrite('chat_hypa_v3')
   db.prepare('DELETE FROM chat_hypa_v3 WHERE chat_id = ?').run(chatId)
 }
 
@@ -135,6 +138,7 @@ export function replaceAllChatHypaV3(
   db: DatabaseSync,
   chats: ReadonlyArray<{ chatId: string; hypaV3Data: unknown }>,
 ): void {
+  recordTableWrite('chat_hypa_v3')
   db.exec('DELETE FROM chat_hypa_v3')
   for (const { chatId, hypaV3Data } of chats) {
     if (hypaV3Data !== undefined && hypaV3Data !== null) setChatHypaV3(db, chatId, hypaV3Data)
@@ -186,6 +190,7 @@ export function replaceChatMessages(
   chatId: string,
   messages: readonly unknown[],
 ): void {
+  recordTableWrite('messages')
   db.prepare('DELETE FROM messages WHERE chat_id = ? AND alternate = 0').run(chatId)
   insertChatMessages(db, chatId, messages)
 }
@@ -238,6 +243,7 @@ export function appendChatMessage(db: DatabaseSync, chatId: string, raw: unknown
     .prepare('SELECT MAX(seq) AS maxSeq FROM messages WHERE chat_id = ? AND alternate = 0')
     .get(chatId) as { maxSeq: number | null } | undefined
   const seq = (tail?.maxSeq ?? -1) + 1
+  recordTableWrite('messages')
   db.prepare(
     'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
   ).run(chatId, seq, row.uid, row.role, row.data, row.disabled, row.json)
@@ -253,6 +259,7 @@ export function updateActiveMessageById(
 
   const next = { ...location.message, ...patch, chatId: messageId }
   const row = toRow(next)
+  recordTableWrite('messages')
   db.prepare(
     'UPDATE messages SET uid = ?, role = ?, data = ?, disabled = ?, json = ? WHERE chat_id = ? AND seq = ? AND alternate = 0',
   ).run(row.uid, row.role, row.data, row.disabled, row.json, location.chatId, location.seq)
@@ -342,6 +349,7 @@ export function writeGenerationChatMessage(
     return { ok: true, messageId: row.uid }
   }
 
+  recordTableWrite('messages')
   db.prepare(
     'UPDATE messages SET uid = ?, role = ?, data = ?, disabled = ?, json = ? WHERE chat_id = ? AND seq = ? AND alternate = 0',
   ).run(row.uid, row.role, row.data, row.disabled, row.json, chatId, existing.seq)
@@ -350,6 +358,7 @@ export function writeGenerationChatMessage(
 
 function insertChatMessages(db: DatabaseSync, chatId: string, messages: readonly unknown[]): void {
   if (messages.length === 0) return
+  recordTableWrite('messages')
   const insert = db.prepare(
     'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
   )
@@ -369,6 +378,7 @@ export function replaceAllChatMessages(
   db: DatabaseSync,
   chats: ReadonlyArray<{ chatId: string; messages: readonly unknown[] }>,
 ): void {
+  recordTableWrite('messages')
   db.exec('DELETE FROM messages')
   for (const { chatId, messages } of chats) {
     insertChatMessages(db, chatId, messages)
@@ -377,6 +387,7 @@ export function replaceAllChatMessages(
 
 /** Delete one chat's messages (logical cascade — db.json owns chat lifecycle). */
 export function deleteChatMessages(db: DatabaseSync, chatId: string): void {
+  recordTableWrite('messages')
   db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId)
 }
 
@@ -407,6 +418,7 @@ export function applyChatMessageDiff(
 
   if (prefix === base.length && prefix === next.length) return // unchanged
 
+  recordTableWrite('messages')
   if (prefix < base.length) {
     // Active rows only: alternate rows carry a negative `seq` (`seq >= prefix`
     // already excludes them); `alternate = 0` makes that explicit and robust.
@@ -513,6 +525,7 @@ export function addAlternateMessage(db: DatabaseSync, chatId: string, message: u
     .prepare('SELECT MIN(seq) AS minSeq FROM messages WHERE chat_id = ? AND alternate = 1')
     .get(chatId) as { minSeq: number | null } | undefined
   const seq = (min?.minSeq ?? 0) - 1 // -1, -2, -3, … (first alternate is -1)
+  recordTableWrite('messages')
   db.prepare(
     'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
   ).run(chatId, seq, row.uid, row.role, row.data, row.disabled, row.json)
@@ -552,6 +565,7 @@ export function getAlternateMessagesGroupedByIds(
 
 /** Drop a chat's reroll buffer (the confirm boundary: send / continue). */
 export function clearAlternateMessages(db: DatabaseSync, chatId: string): void {
+  recordTableWrite('messages')
   db.prepare('DELETE FROM messages WHERE chat_id = ? AND alternate = 1').run(chatId)
 }
 

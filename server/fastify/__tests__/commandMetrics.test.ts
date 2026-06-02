@@ -5,64 +5,19 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
+import {
+  BROAD_WRITE_TABLES,
+  assertCommandMetricGate,
+  commandMetricReviewGate,
+  type CommandMutationMetric,
+} from './helpers/commandMetricGates.js'
 
 interface Harness {
   app: FastifyInstance
   dataDir: string
 }
 
-interface ProtocolMetric {
-  metric: string
-  type?: string
-  resource?: string
-  revision?: number
-  status?: string
-  loadMs?: number
-  cloneMutateMs?: number
-  sqliteSyncMs?: number
-  dbJsonWriteMs?: number
-  totalMs?: number
-  mutationPath?: string
-}
-
-const COMMAND_METRIC_SECTIONS = [
-  'loadMs',
-  'cloneMutateMs',
-  'sqliteSyncMs',
-  'dbJsonWriteMs',
-  'totalMs',
-] as const
-
-type CommandMetricSection = (typeof COMMAND_METRIC_SECTIONS)[number]
-
-const COMMAND_METRIC_REVIEW_GATES = {
-  'message-free': {
-    reviewGate: 'message-free commands should avoid message history synchronization work',
-    sections: COMMAND_METRIC_SECTIONS,
-  },
-  'targeted-message': {
-    reviewGate: 'targeted message commands should not rewrite db.json',
-    sections: COMMAND_METRIC_SECTIONS,
-    dbJsonWriteMs: 0,
-  },
-  'targeted-generation': {
-    reviewGate: 'targeted generation persistence should not rewrite db.json',
-    sections: COMMAND_METRIC_SECTIONS,
-    dbJsonWriteMs: 0,
-  },
-  'targeted-character-selection': {
-    reviewGate: 'character selection should update only the selected character row and settings',
-    sections: COMMAND_METRIC_SECTIONS,
-    dbJsonWriteMs: 0,
-  },
-} satisfies Record<
-  string,
-  {
-    reviewGate: string
-    sections: readonly CommandMetricSection[]
-    dbJsonWriteMs?: number
-  }
->
+type ProtocolMetric = CommandMutationMetric
 
 interface CommandRequest {
   method: 'DELETE' | 'PATCH' | 'POST' | 'PUT'
@@ -196,14 +151,6 @@ function makeLargeCommandDatabase(): Record<string, unknown> {
   }
 }
 
-function commandMetricReviewGate(metric: ProtocolMetric) {
-  const mutationPath = metric.mutationPath
-  expect(mutationPath, `missing mutationPath for ${metric.type}`).toBeTruthy()
-  const gate = COMMAND_METRIC_REVIEW_GATES[mutationPath as keyof typeof COMMAND_METRIC_REVIEW_GATES]
-  expect(gate, `missing command metric review gate for ${mutationPath}`).toBeTruthy()
-  return gate
-}
-
 describe('command protocol metrics', () => {
   it('records comparable command-family timings on a message-heavy save', async () => {
     let revision = await importDatabase(makeLargeCommandDatabase())
@@ -317,13 +264,7 @@ describe('command protocol metrics', () => {
     for (const metric of measured) {
       expect(metric.resource).toBeTruthy()
       expect(metric.revision).toBeGreaterThan(1)
-      const gate = commandMetricReviewGate(metric)
-      for (const section of gate.sections) {
-        expect(metric[section], `${metric.type}.${section}`).toBeGreaterThanOrEqual(0)
-      }
-      if ('dbJsonWriteMs' in gate && typeof gate.dbJsonWriteMs === 'number') {
-        expect(metric.dbJsonWriteMs).toBe(gate.dbJsonWriteMs)
-      }
+      assertCommandMetricGate(metric)
     }
 
     const noMessageFamilies = measured.filter(
@@ -349,6 +290,25 @@ describe('command protocol metrics', () => {
     }
     expect(generation.metric.mutationPath).toBe('targeted-generation')
 
+    // Written-table baseline: the three over-broad `message-free` commands each
+    // physically rewrite the full 13-table set for a single sub-row change —
+    // the mutation-range mismatch this workstream narrows. The targeted paths
+    // already touch only their own rows.
+    for (const metric of [settings.metric, pluginStorage.metric, chat.metric]) {
+      expect(metric.writtenTables, `${metric.type}.writtenTables`).toEqual([...BROAD_WRITE_TABLES])
+    }
+    expect(characterSelect.metric.writtenTables).toEqual(['characters', 'settings'])
+    for (const metric of [
+      messageAppend.metric,
+      messageUpdate.metric,
+      messageDelete.metric,
+      messageTruncate.metric,
+      messageReplace.metric,
+      generation.metric,
+    ]) {
+      expect(metric.writtenTables, `${metric.type}.writtenTables`).toEqual(['messages'])
+    }
+
     if (process.env.RISU_COMMAND_METRIC_SUMMARY === '1') {
       console.log(
         JSON.stringify(
@@ -357,6 +317,7 @@ describe('command protocol metrics', () => {
             resource: metric.resource,
             mutationPath: metric.mutationPath,
             reviewGate: commandMetricReviewGate(metric).reviewGate,
+            writtenTables: metric.writtenTables,
             loadMs: metric.loadMs,
             cloneMutateMs: metric.cloneMutateMs,
             sqliteSyncMs: metric.sqliteSyncMs,

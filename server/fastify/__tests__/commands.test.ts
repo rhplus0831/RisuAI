@@ -14,6 +14,7 @@ import {
 import { getSchemaState, openDatabase } from '../src/db.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
+import { activeMessageRowids, tableRowidsById } from './helpers/rowStability.js'
 
 const subtle = webcrypto.subtle
 
@@ -145,30 +146,6 @@ async function persistedChatMessages(
   })
   expect(res.statusCode).toBe(200)
   return res.json().message as Array<Record<string, unknown>>
-}
-
-function activeMessageRowids(dataDir: string, chatId: string): { seq: number; rowid: number }[] {
-  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
-  try {
-    return db
-      .prepare('SELECT rowid, seq FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq')
-      .all(chatId) as { seq: number; rowid: number }[]
-  } finally {
-    db.close()
-  }
-}
-
-function tableRowidsById(dataDir: string, table: 'characters' | 'chats'): Record<string, number> {
-  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
-  try {
-    const rows = db.prepare(`SELECT id, rowid FROM ${table} ORDER BY id`).all() as Array<{
-      id: string
-      rowid: number
-    }>
-    return Object.fromEntries(rows.map((row) => [row.id, row.rowid]))
-  } finally {
-    db.close()
-  }
 }
 
 async function uploadAsset(

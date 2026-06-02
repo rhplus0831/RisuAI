@@ -21,7 +21,13 @@ import {
   type CommandEventOrigin,
   type CommandEventSink,
 } from './events.js'
-import { emitProtocolMetric, protocolDurationMs, protocolNowMs } from '../protocolMetrics.js'
+import {
+  beginTableWriteCapture,
+  emitProtocolMetric,
+  protocolDurationMs,
+  protocolNowMs,
+  takeTableWrites,
+} from '../protocolMetrics.js'
 
 export interface JsonCommandMutationResult<TExtra extends Record<string, unknown>> {
   revision: number
@@ -121,6 +127,9 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     const persisted = loadPersisted(args.db, args.dataDir)
     loadMs = protocolDurationMs(loadStartedAt)
 
+    // The callback owns its targeted SQLite writes (kit writers); capture which
+    // physical tables it — and any broad fallback — actually touched.
+    beginTableWriteCapture()
     const cloneMutateStartedAt = protocolNowMs()
     const mutation = args.mutate(persisted.database, args.db)
     cloneMutateMs = protocolDurationMs(cloneMutateStartedAt)
@@ -136,6 +145,7 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     const event: CommandEvent = { ...mutation.event, revision }
     persistCommandEvent(args.db, event)
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
+    const writtenTables = takeTableWrites()
 
     args.db.exec('COMMIT')
     transactionOpen = false
@@ -154,6 +164,7 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
       totalMs: protocolDurationMs(totalStartedAt),
       status: 'ok',
       mutationPath: args.mutationPath,
+      ...(writtenTables ? { writtenTables } : {}),
     })
 
     return {
@@ -165,6 +176,7 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     if (transactionOpen) {
       args.db.exec('ROLLBACK')
     }
+    takeTableWrites()
     emitProtocolMetric('command_mutation', {
       loadMs,
       cloneMutateMs,
@@ -210,6 +222,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     const mutation = args.mutate(persisted.database)
     cloneMutateMs = protocolDurationMs(cloneMutateStartedAt)
 
+    beginTableWriteCapture()
     const sqliteSyncStartedAt = protocolNowMs()
     stripChatMessages(persisted)
     replaceAllCharactersInTable(args.db, persisted.database)
@@ -219,6 +232,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     const event: CommandEvent = { ...mutation.event, revision }
     persistCommandEvent(args.db, event)
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
+    const writtenTables = takeTableWrites()
 
     args.db.exec('COMMIT')
     transactionOpen = false
@@ -237,6 +251,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
       totalMs: protocolDurationMs(totalStartedAt),
       status: 'ok',
       mutationPath: 'message-free',
+      ...(writtenTables ? { writtenTables } : {}),
     })
 
     return {
@@ -248,6 +263,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     if (transactionOpen) {
       args.db.exec('ROLLBACK')
     }
+    takeTableWrites()
     emitProtocolMetric('command_mutation', {
       loadMs,
       cloneMutateMs,
@@ -292,6 +308,7 @@ export function applyCharacterSelectionCommandMutation(
     rows.settings.currentChar = rows.position
     cloneMutateMs = protocolDurationMs(cloneMutateStartedAt)
 
+    beginTableWriteCapture()
     const sqliteSyncStartedAt = protocolNowMs()
     writeCharacterSelectionRows(args.db, rows)
     const revision = bumpRevision(args.db)
@@ -302,6 +319,7 @@ export function applyCharacterSelectionCommandMutation(
     }
     persistCommandEvent(args.db, event)
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
+    const writtenTables = takeTableWrites()
 
     args.db.exec('COMMIT')
     transactionOpen = false
@@ -320,6 +338,7 @@ export function applyCharacterSelectionCommandMutation(
       totalMs: protocolDurationMs(totalStartedAt),
       status: 'ok',
       mutationPath: 'targeted-character-selection',
+      ...(writtenTables ? { writtenTables } : {}),
     })
 
     return {
@@ -331,6 +350,7 @@ export function applyCharacterSelectionCommandMutation(
     if (transactionOpen) {
       args.db.exec('ROLLBACK')
     }
+    takeTableWrites()
     emitProtocolMetric('command_mutation', {
       loadMs,
       cloneMutateMs,
@@ -378,6 +398,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     // Persist only chats whose messages changed: a message append is one row
     // insert, unrelated chats are not rewritten, and non-message commands write
     // nothing to the messages table. The db.json write is deferred until COMMIT.
+    beginTableWriteCapture()
     const sqliteSyncStartedAt = protocolNowMs()
     syncChatMessages(args.db, hydrated.database, nextDatabase)
     // Extra SQLite-only writes, such as the reroll buffer, commit or roll back
@@ -392,6 +413,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     const event: CommandEvent = { ...mutation.event, revision }
     persistCommandEvent(args.db, event)
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
+    const writtenTables = takeTableWrites()
 
     args.db.exec('COMMIT')
     transactionOpen = false
@@ -410,6 +432,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
       totalMs: protocolDurationMs(totalStartedAt),
       status: 'ok',
       mutationPath: 'hydrated',
+      ...(writtenTables ? { writtenTables } : {}),
     })
 
     return {
@@ -421,6 +444,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     if (transactionOpen) {
       args.db.exec('ROLLBACK')
     }
+    takeTableWrites()
     emitProtocolMetric('command_mutation', {
       loadMs,
       cloneMutateMs,
