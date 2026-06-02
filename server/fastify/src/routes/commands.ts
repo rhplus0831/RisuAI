@@ -1111,7 +1111,7 @@ export function registerCommandRoutes(
       const preset = createPresetRecord(readJsonObject(body.preset, 'preset'), 'New Preset', {
         assetDb: db,
       })
-      const result = applyJsonCommandMutation<{ presetId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1151,7 +1151,7 @@ export function registerCommandRoutes(
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== presetId) {
         throw new ValidationError('patch.id must match presetId')
       }
-      const result = applyJsonCommandMutation<{ presetId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1193,7 +1193,7 @@ export function registerCommandRoutes(
         body.presetId === undefined ? undefined : readPresetId(body.presetId, 'presetId')
       const apply = readOptionalBoolean(body.apply, 'apply', false)
       const saveCurrent = readOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
-      const result = applyJsonCommandMutation<{
+      const result = applyMessageFreeJsonCommandMutation<{
         presetId: string
         selectedPresetId: string | null
       }>({
@@ -1258,7 +1258,7 @@ export function registerCommandRoutes(
       const newPresetId = readPresetId(body.newPresetId, 'newPresetId')
       const name = readOptionalString(body.name, 'name')
       const saveCurrent = readOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
-      const result = applyJsonCommandMutation<{ presetId: string; sourcePresetId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ presetId: string; sourcePresetId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1305,7 +1305,7 @@ export function registerCommandRoutes(
       const presetId = readPresetId(body.presetId, 'presetId')
       const apply = readOptionalBoolean(body.apply, 'apply', true)
       const saveCurrent = readOptionalBoolean(body.saveCurrent, 'saveCurrent', true)
-      const result = applyJsonCommandMutation<{ presetId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1347,7 +1347,7 @@ export function registerCommandRoutes(
       const preset = createPresetRecord(readJsonObject(body.preset, 'preset'), 'Imported', {
         assetDb: db,
       })
-      const result = applyJsonCommandMutation<{ presetId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1386,7 +1386,7 @@ export function registerCommandRoutes(
         throw new ValidationError('presetIds must be an array')
       }
       const presetIds = body.presetIds
-      const result = applyJsonCommandMutation<{ selectedPresetId: string | null }>({
+      const result = applyMessageFreeJsonCommandMutation<{ selectedPresetId: string | null }>({
         db,
         dataDir,
         baseRevision,
@@ -1428,7 +1428,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readPromptSettingsPatch(body.patch)
-      const result = applyJsonCommandMutation({
+      const result = applyMessageFreeJsonCommandMutation({
         db,
         dataDir,
         baseRevision,
@@ -1457,7 +1457,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
       const promptItem = createPromptItemRecord(body.promptItem)
-      const result = applyJsonCommandMutation<{ itemId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ itemId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1494,7 +1494,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = createPromptItemRecord({ ...readJsonObject(body.patch, 'patch'), id: itemId })
-      const result = applyJsonCommandMutation<{ itemId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ itemId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1532,7 +1532,7 @@ export function registerCommandRoutes(
       const itemId = readPromptItemId((req.params as { itemId?: unknown }).itemId)
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyJsonCommandMutation<{ itemId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ itemId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1569,7 +1569,7 @@ export function registerCommandRoutes(
         throw new ValidationError('enabled must be a boolean')
       }
       const enabled = body.enabled
-      const result = applyJsonCommandMutation<{ enabled: boolean }>({
+      const result = applyMessageFreeJsonCommandMutation<{ enabled: boolean }>({
         db,
         dataDir,
         baseRevision,
@@ -1608,7 +1608,7 @@ export function registerCommandRoutes(
         throw new ValidationError('itemIds must be an array')
       }
       const itemIds = body.itemIds
-      const result = applyJsonCommandMutation({
+      const result = applyMessageFreeJsonCommandMutation({
         db,
         dataDir,
         baseRevision,
@@ -1646,7 +1646,7 @@ export function registerCommandRoutes(
         'mirrorLegacyProfile',
         false,
       )
-      const result = applyJsonCommandMutation<{ personaId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ personaId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1695,7 +1695,7 @@ export function registerCommandRoutes(
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== personaId) {
         throw new ValidationError('patch.id must match personaId')
       }
-      const result = applyJsonCommandMutation<{ personaId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ personaId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1746,7 +1746,7 @@ export function registerCommandRoutes(
         true,
       )
       const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
-      const result = applyJsonCommandMutation<{
+      const result = applyMessageFreeJsonCommandMutation<{
         personaId: string
         selectedPersonaId: string | null
       }>({
@@ -1814,7 +1814,7 @@ export function registerCommandRoutes(
         true,
       )
       const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', true)
-      const result = applyJsonCommandMutation<{ personaId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ personaId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1857,7 +1857,7 @@ export function registerCommandRoutes(
         throw new ValidationError('personaIds must be an array')
       }
       const personaIds = body.personaIds
-      const result = applyJsonCommandMutation<{ selectedPersonaId: string | null }>({
+      const result = applyMessageFreeJsonCommandMutation<{ selectedPersonaId: string | null }>({
         db,
         dataDir,
         baseRevision,
@@ -1900,7 +1900,7 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const preset = createTranslatorPresetRecord(body.preset)
       const select = readTranslatorPresetOptionalBoolean(body.select, 'select', false)
-      const result = applyJsonCommandMutation<{ presetId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1947,7 +1947,7 @@ export function registerCommandRoutes(
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== presetId) {
         throw new ValidationError('patch.id must match presetId')
       }
-      const result = applyJsonCommandMutation<{ presetId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -1995,7 +1995,7 @@ export function registerCommandRoutes(
         body.selectPresetId === undefined
           ? undefined
           : readTranslatorPresetId(body.selectPresetId, 'selectPresetId')
-      const result = applyJsonCommandMutation<{
+      const result = applyMessageFreeJsonCommandMutation<{
         presetId: string
         selectedPresetId: string | null
       }>({
@@ -2054,7 +2054,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as TranslatorPresetCommandBody
       const baseRevision = readBaseRevision(body)
       const presetId = readTranslatorPresetId(body.presetId, 'presetId')
-      const result = applyJsonCommandMutation<{ presetId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2089,7 +2089,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as LoadoutCommandBody
       const baseRevision = readBaseRevision(body)
       const loadout = createLoadoutRecord(body.loadout)
-      const result = applyJsonCommandMutation<{ loadoutId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ loadoutId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2129,7 +2129,7 @@ export function registerCommandRoutes(
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== loadoutId) {
         throw new ValidationError('patch.id must match loadoutId')
       }
-      const result = applyJsonCommandMutation<{ loadoutId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ loadoutId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2167,7 +2167,7 @@ export function registerCommandRoutes(
       const loadoutId = readLoadoutId((req.params as { loadoutId?: unknown }).loadoutId)
       const body = (req.body ?? {}) as LoadoutCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyJsonCommandMutation<{ loadoutId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ loadoutId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2202,7 +2202,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as LoadoutCommandBody
       const baseRevision = readBaseRevision(body)
       const favorite = readLoadoutOptionalBoolean(body.favorite, 'favorite', true)
-      const result = applyJsonCommandMutation<{ loadoutId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ loadoutId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2238,7 +2238,7 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const lastUsed = readOptionalTimestamp(body.lastUsed, 'lastUsed')
       const characterId = readOptionalCharacterId(body.characterId)
-      const result = applyJsonCommandMutation<{ loadoutId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ loadoutId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2277,7 +2277,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
       const character = createCharacterRecord(body.character, { assetDb: db })
-      const result = applyJsonCommandMutation<{ characterId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2316,7 +2316,7 @@ export function registerCommandRoutes(
       const character = createCharacterRecord(body.character, { assetDb: db })
       const lastInteraction = readSelectionLastInteraction(body.lastInteraction)
       character.lastInteraction = lastInteraction
-      const result = applyJsonCommandMutation<{ characterId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2355,7 +2355,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readCharacterPatch(body.patch, { assetDb: db })
-      const result = applyJsonCommandMutation<{ characterId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2465,7 +2465,7 @@ export function registerCommandRoutes(
           ? readCharacterOrder(body.characterOrder)
           : readCharacterOrder(body.characterIds)
       validateCharacterOrderAssetRefs(db, order)
-      const result = applyJsonCommandMutation<{ selectedCharacterId: string | null }>({
+      const result = applyMessageFreeJsonCommandMutation<{ selectedCharacterId: string | null }>({
         db,
         dataDir,
         baseRevision,
@@ -2768,7 +2768,7 @@ export function registerCommandRoutes(
         body.selectedChatId === undefined
           ? undefined
           : readChatId(body.selectedChatId, 'selectedChatId')
-      const result = applyJsonCommandMutation<{ selectedChatId: string | null }>({
+      const result = applyMessageFreeJsonCommandMutation<{ selectedChatId: string | null }>({
         db,
         dataDir,
         baseRevision,
@@ -2816,7 +2816,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ChatFolderCommandBody
       const baseRevision = readBaseRevision(body)
       const folder = createChatFolderRecord(body.folder)
-      const result = applyJsonCommandMutation<{ folderId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ folderId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2858,7 +2858,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ChatFolderCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readChatFolderPatch(body.patch)
-      const result = applyJsonCommandMutation<{ folderId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ folderId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2900,7 +2900,7 @@ export function registerCommandRoutes(
       const folderId = readChatFolderId((req.params as { folderId?: unknown }).folderId)
       const body = (req.body ?? {}) as ChatFolderCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyJsonCommandMutation<{ folderId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ folderId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -2948,7 +2948,7 @@ export function registerCommandRoutes(
         body.selectedChatId === undefined
           ? undefined
           : readChatId(body.selectedChatId, 'selectedChatId')
-      const result = applyJsonCommandMutation<{ selectedChatId: string | null }>({
+      const result = applyMessageFreeJsonCommandMutation<{ selectedChatId: string | null }>({
         db,
         dataDir,
         baseRevision,
@@ -2990,7 +2990,7 @@ export function registerCommandRoutes(
       const patch = readChatScriptstatePatch(body.patch)
       const deleteKeys = readChatScriptstateDeleteKeys(body.deleteKeys)
       validateChatScriptstateCommand(patch, deleteKeys)
-      const result = applyJsonCommandMutation<{ chatId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ chatId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3311,7 +3311,7 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       // Validate-only constructor rejects missing entry ids rather than minting them.
       const lorebook = validateGlobalLorebookCreate(body.lorebook)
-      const result = applyJsonCommandMutation<{ lorebookId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ lorebookId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3348,7 +3348,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; patch?: unknown }
       const baseRevision = readBaseRevision(body)
       const patch = readGlobalLorebookPatch(body.patch)
-      const result = applyJsonCommandMutation<{ lorebookId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ lorebookId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3382,7 +3382,7 @@ export function registerCommandRoutes(
       const lorebookId = readLorebookId((req.params as { lorebookId?: unknown }).lorebookId)
       const body = (req.body ?? {}) as { baseRevision?: unknown }
       const baseRevision = readBaseRevision(body)
-      const result = applyJsonCommandMutation<{ lorebookId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ lorebookId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3420,7 +3420,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; lorebookIds?: unknown }
       const baseRevision = readBaseRevision(body)
       const lorebookIds = readLorebookIdList(body.lorebookIds)
-      const result = applyJsonCommandMutation<{ selectedLorebookId: string | null }>({
+      const result = applyMessageFreeJsonCommandMutation<{ selectedLorebookId: string | null }>({
         db,
         dataDir,
         baseRevision,
@@ -3463,7 +3463,7 @@ export function registerCommandRoutes(
       const lorebookId = readLorebookId((req.params as { lorebookId?: unknown }).lorebookId)
       const body = (req.body ?? {}) as { baseRevision?: unknown }
       const baseRevision = readBaseRevision(body)
-      const result = applyJsonCommandMutation<{ selectedLorebookId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ selectedLorebookId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3498,7 +3498,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
       const entries = validateLorebookEntries(body.entries)
-      const result = applyJsonCommandMutation<{ lorebookId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ lorebookId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3535,7 +3535,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
       const entries = validateLorebookEntries(body.entries)
-      const result = applyJsonCommandMutation<{ characterId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3569,7 +3569,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
       const entries = validateLorebookEntries(body.entries)
-      const result = applyJsonCommandMutation<{ chatId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ chatId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3606,7 +3606,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
       const module = createModuleRecord(body.module, 'module', {}, { assetDb: db })
-      const result = applyJsonCommandMutation<{ moduleId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3643,7 +3643,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readModulePatch(body.patch, { assetDb: db })
-      const result = applyJsonCommandMutation<{ moduleId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3677,7 +3677,7 @@ export function registerCommandRoutes(
       const moduleId = readCommandModuleId((req.params as { moduleId?: unknown }).moduleId)
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyJsonCommandMutation<{ moduleId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3713,7 +3713,7 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const moduleId = readCommandModuleId(body.moduleId)
       const enabled = readModuleEnabled(body.enabled)
-      const result = applyJsonCommandMutation<{ moduleId: string; enabled: boolean }>({
+      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string; enabled: boolean }>({
         db,
         dataDir,
         baseRevision,
@@ -3752,7 +3752,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
       const moduleIds = readModuleIdList(body.moduleIds)
-      const result = applyJsonCommandMutation({
+      const result = applyMessageFreeJsonCommandMutation({
         db,
         dataDir,
         baseRevision,
@@ -3789,7 +3789,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
       const moduleIds = readModuleIdList(body.moduleIds)
-      const result = applyJsonCommandMutation<{ characterId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3827,7 +3827,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
       const plugin = createPluginRecord(body.plugin)
-      const result = applyJsonCommandMutation<{ pluginId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ pluginId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3864,7 +3864,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readPluginPatch(body.patch)
-      const result = applyJsonCommandMutation<{ pluginId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ pluginId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3898,7 +3898,7 @@ export function registerCommandRoutes(
       const pluginId = readPluginId((req.params as { pluginId?: unknown }).pluginId)
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyJsonCommandMutation<{ pluginId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ pluginId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -3936,7 +3936,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
       const enabled = readPluginEnabled(body.enabled)
-      const result = applyJsonCommandMutation<{ pluginId: string; enabled: boolean }>({
+      const result = applyMessageFreeJsonCommandMutation<{ pluginId: string; enabled: boolean }>({
         db,
         dataDir,
         baseRevision,
@@ -3970,7 +3970,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
       const provider = readPluginProvider(body.provider)
-      const result = applyJsonCommandMutation<{ provider: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ provider: string }>({
         db,
         dataDir,
         baseRevision,
@@ -4002,7 +4002,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
       const pluginIds = readPluginIdList(body.pluginIds)
-      const result = applyJsonCommandMutation({
+      const result = applyMessageFreeJsonCommandMutation({
         db,
         dataDir,
         baseRevision,
@@ -4142,7 +4142,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
       const entries = validateLorebookEntries(body.entries)
-      const result = applyJsonCommandMutation<{ moduleId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -4176,7 +4176,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ScriptDefinitionCommandBody
       const baseRevision = readBaseRevision(body)
       const scripts = readScriptDefinitions(body.scripts)
-      const result = applyJsonCommandMutation<{ characterId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -4210,7 +4210,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ScriptDefinitionCommandBody
       const baseRevision = readBaseRevision(body)
       const triggers = readTriggerDefinitions(body.triggers)
-      const result = applyJsonCommandMutation<{ characterId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -4244,7 +4244,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ScriptDefinitionCommandBody
       const baseRevision = readBaseRevision(body)
       const scripts = readScriptDefinitions(body.scripts)
-      const result = applyJsonCommandMutation<{ moduleId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
@@ -4278,7 +4278,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ScriptDefinitionCommandBody
       const baseRevision = readBaseRevision(body)
       const triggers = readTriggerDefinitions(body.triggers)
-      const result = applyJsonCommandMutation<{ moduleId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
