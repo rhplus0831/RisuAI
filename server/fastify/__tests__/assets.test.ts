@@ -10,6 +10,29 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { loadPersisted } from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
 
+interface AssetByteReadMetric {
+  metric: string
+  assetId?: string
+  found?: boolean
+  contentType?: string
+  size?: number
+}
+
+// Capture opt-in protocol metrics regardless of the logger sink so the
+// asset-byte fanout measurement can count per-id byte reads at the route.
+const capturedMetrics = vi.hoisted((): AssetByteReadMetric[] => [])
+
+vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
+  return {
+    ...actual,
+    emitProtocolMetric: (name: string, fields: Record<string, unknown>) => {
+      if (!actual.protocolMetricsEnabled()) return
+      capturedMetrics.push({ metric: name, ...fields } as AssetByteReadMetric)
+    },
+  }
+})
+
 const subtle = webcrypto.subtle
 
 interface Harness {
@@ -663,5 +686,113 @@ describe('Phase 2C assets', () => {
     expect(onDisk.assets).toEqual([
       { id: PNG_SHA, ext: 'png', size: PNG_BYTES.length, contentType: 'image/png' },
     ])
+  })
+})
+
+// Phase 3 asset-byte fanout measurement (server side). Every single-asset byte
+// read lands on `GET /api/v1/assets/:id`, so the opt-in `asset_byte_read` metric
+// gives a per-id byte-read baseline for fanout analysis. Route behavior (bytes,
+// headers, missing-id) is unchanged.
+describe('asset byte read fanout measurement', () => {
+  const PREVIOUS_PROTOCOL_METRICS = process.env.RISU_PROTOCOL_METRICS
+
+  beforeEach(() => {
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    capturedMetrics.length = 0
+  })
+
+  afterEach(() => {
+    if (PREVIOUS_PROTOCOL_METRICS === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = PREVIOUS_PROTOCOL_METRICS
+    }
+  })
+
+  async function uploadPng(assertion: string): Promise<void> {
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+  }
+
+  function byteReads(): AssetByteReadMetric[] {
+    return capturedMetrics.filter((entry) => entry.metric === 'asset_byte_read')
+  }
+
+  it('emits one found byte-read metric per GET, including repeated ids', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await uploadPng(assertion)
+    capturedMetrics.length = 0
+
+    // Two GETs of the same id model the repeated-id fanout a bulk route or
+    // browser cache would collapse.
+    await harness.app.inject({ method: 'GET', url: `/api/v1/assets/${PNG_SHA}` })
+    await harness.app.inject({ method: 'GET', url: `/api/v1/assets/${PNG_SHA}` })
+
+    const reads = byteReads()
+    expect(reads).toHaveLength(2)
+    for (const read of reads) {
+      expect(read.assetId).toBe(PNG_SHA)
+      expect(read.found).toBe(true)
+      expect(read.contentType).toBe('image/png')
+      expect(read.size).toBe(PNG_BYTES.length)
+    }
+
+    // The repeated-id fanout is visible as duplicate ids across the metrics.
+    const uniqueIds = new Set(reads.map((read) => read.assetId))
+    expect(uniqueIds.size).toBe(1)
+    expect(reads.length - uniqueIds.size).toBe(1)
+  })
+
+  it('emits a not-found byte-read metric for a missing id', async () => {
+    await setupAuthedClient(harness.app)
+    capturedMetrics.length = 0
+    const missing = 'a'.repeat(64)
+
+    const res = await harness.app.inject({ method: 'GET', url: `/api/v1/assets/${missing}` })
+    expect(res.statusCode).toBe(404)
+
+    const reads = byteReads()
+    expect(reads).toHaveLength(1)
+    expect(reads[0].assetId).toBe(missing)
+    expect(reads[0].found).toBe(false)
+    expect(reads[0].size).toBeUndefined()
+  })
+
+  it('summarizes byte-read fanout when RISU_ASSET_BYTE_SUMMARY=1', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await uploadPng(assertion)
+    capturedMetrics.length = 0
+
+    const ids = [PNG_SHA, PNG_SHA, PNG_SHA, 'b'.repeat(64)]
+    for (const id of ids) {
+      await harness.app.inject({ method: 'GET', url: `/api/v1/assets/${id}` })
+    }
+
+    const reads = byteReads()
+    expect(reads).toHaveLength(ids.length)
+    const counts = new Map<string, number>()
+    for (const read of reads) {
+      counts.set(read.assetId ?? '', (counts.get(read.assetId ?? '') ?? 0) + 1)
+    }
+    const summary = {
+      requests: reads.length,
+      uniqueIds: counts.size,
+      repeatedReads: reads.length - counts.size,
+      maxReadsForSingleId: Math.max(...counts.values()),
+    }
+    expect(summary).toEqual({
+      requests: 4,
+      uniqueIds: 2,
+      repeatedReads: 2,
+      maxReadsForSingleId: 3,
+    })
+
+    if (process.env.RISU_ASSET_BYTE_SUMMARY === '1') {
+      console.log(JSON.stringify(summary, null, 2))
+    }
   })
 })

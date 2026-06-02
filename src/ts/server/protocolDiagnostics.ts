@@ -19,6 +19,21 @@ interface HydrationDiagnostics {
   staleResponseDrops: number
 }
 
+interface AssetByteReadDiagnostics {
+  // Total JS-driven asset byte reads (`readServerAsset`), i.e. byte fetches
+  // outside one server-side generation request. Browser-native `<img src>`
+  // fetches go straight to `GET /api/v1/assets/:id` and are counted by the
+  // server-side `asset_byte_read` metric instead.
+  requests: number
+  // Distinct asset ids read this session.
+  uniqueIds: number
+  // Reads that hit an id already read this session — the repeated-id fanout
+  // signal a bulk-byte route or browser cache would remove.
+  repeatedReads: number
+  // Worst single-id read count this session.
+  maxReadsForSingleId: number
+}
+
 interface ProtocolDiagnostics {
   fullBootstrapResync: Record<string, number>
   unexpectedFullBootstrapResync: Record<string, number>
@@ -29,6 +44,7 @@ interface ProtocolDiagnostics {
   // and replay-unavailable resyncs have no single resource and are omitted.
   fullBootstrapResyncResources: Record<string, number>
   hydration: Record<HydrationKind, HydrationDiagnostics>
+  assetByteReads: AssetByteReadDiagnostics
 }
 
 const diagnostics: ProtocolDiagnostics = {
@@ -39,7 +55,18 @@ const diagnostics: ProtocolDiagnostics = {
     chat: emptyHydrationDiagnostics(),
     characterLorebook: emptyHydrationDiagnostics(),
   },
+  assetByteReads: {
+    requests: 0,
+    uniqueIds: 0,
+    repeatedReads: 0,
+    maxReadsForSingleId: 0,
+  },
 }
+
+// Per-id read counts back the asset-byte-read aggregates. Kept outside the
+// snapshot so the full id list is never exposed or cloned; only the aggregate
+// counters above are reported.
+const assetByteReadCounts = new Map<string, number>()
 
 const expectedFullBootstrapResyncReasons = new Set<string>(EXPECTED_FULL_BOOTSTRAP_RESYNC_REASONS)
 
@@ -104,6 +131,28 @@ export function beginHydrationRequest(kind: HydrationKind): () => void {
 export function recordHydrationStaleDrop(kind: HydrationKind, reason: string): void {
   diagnostics.hydration[kind].staleResponseDrops += 1
   debugProtocol('hydration-stale-drop', { kind, reason })
+}
+
+/**
+ * Records one JS-driven asset byte read so the measurement can attribute
+ * request fanout and repeated-id reads to client workflows that fetch many
+ * asset bytes outside one generation request.
+ */
+export function recordAssetByteRead(assetId: string): void {
+  const reads = diagnostics.assetByteReads
+  reads.requests += 1
+  const previous = assetByteReadCounts.get(assetId) ?? 0
+  const next = previous + 1
+  assetByteReadCounts.set(assetId, next)
+  if (previous === 0) {
+    reads.uniqueIds += 1
+  } else {
+    reads.repeatedReads += 1
+  }
+  if (next > reads.maxReadsForSingleId) {
+    reads.maxReadsForSingleId = next
+  }
+  debugProtocol('asset-byte-read', { assetId, reads: next })
 }
 
 export function getProtocolDiagnosticsSnapshot(): ProtocolDiagnostics {

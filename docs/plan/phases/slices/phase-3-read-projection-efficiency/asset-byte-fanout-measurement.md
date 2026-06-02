@@ -1,6 +1,6 @@
 # Asset Byte Fanout Measurement
 
-Status: candidate; analysis only, not implemented.
+Status: implemented measurement; no runtime narrowing yet.
 
 ## Source Anchors
 
@@ -28,6 +28,35 @@ Measurement-only first pass:
 - Compare browser cache behavior against any proposed bulk-byte endpoint.
 - Keep `GET` and `HEAD /api/v1/assets/:id` behavior unchanged.
 
+## Implemented Scope
+
+The measurement is opt-in and changes no route or read behavior:
+
+- The server `GET /api/v1/assets/:id` route emits an opt-in `asset_byte_read`
+  metric per request (`assetId`, `found`, and `contentType`/`size` when found).
+  Every single-asset byte read lands here, including browser-native `<img src>`
+  fetches, so the metric is a per-id byte-read baseline at the actual byte
+  boundary. Bytes, headers, and missing-id behavior are unchanged.
+- The client protocol diagnostics gained an `assetByteReads` aggregate
+  (`requests`, `uniqueIds`, `repeatedReads`, `maxReadsForSingleId`), recorded
+  through `recordAssetByteRead(assetId)` from `readServerAsset`. This captures
+  the JS-driven byte reads (the explicit `readImage`/inlay path) and their
+  in-session repeated-id fanout. The per-id counts are kept outside the
+  diagnostics snapshot so the full id list is never cloned or exposed.
+
+### Findings
+
+- Repeated-id reads are visible on both sides: the server metric shows duplicate
+  `assetId`s across requests, and the client aggregate reports `repeatedReads`
+  and `maxReadsForSingleId` directly. A focused four-request fixture
+  (three reads of one id, one of another) summarizes as
+  `requests=4, uniqueIds=2, repeatedReads=2, maxReadsForSingleId=3`.
+- The single-asset route already sets `immutable` cache headers, so the browser
+  HTTP cache collapses most repeated `<img src>` fetches. No bulk-byte route is
+  justified until a real asset-heavy workflow shows high `repeatedReads` that the
+  browser cache does not already absorb; the per-id baseline now exists to prove
+  or refute that before any route is added.
+
 ## Protocol Behavior
 
 - Existing immutable single-asset byte routes remain the compatibility baseline.
@@ -54,3 +83,4 @@ the existing Phase 5 transaction protocol.
 
 - `pnpm api:test -- server/fastify/__tests__/assets.test.ts server/fastify/__tests__/assetMetadataIndex.test.ts`
 - `pnpm test -- src/ts/server`
+- `RISU_PROTOCOL_METRICS=1 RISU_ASSET_BYTE_SUMMARY=1 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/assets.test.ts --reporter verbose`

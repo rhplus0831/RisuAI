@@ -1,4 +1,5 @@
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
+import { recordAssetByteRead } from './protocolDiagnostics'
 
 const SERVER_ASSET_ID_RE = /^[a-f0-9]{64}$/
 const LOCAL_ASSET_PATH_RE = /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i
@@ -119,6 +120,10 @@ export async function readServerAsset(
   if (!assetUrl) {
     throw new Error(`Unsupported server asset reference: ${loc}`)
   }
+  // Measurement-only: attribute this byte read to the asset-byte-read fanout
+  // diagnostic. `serverAssetUrl` already proved the reference resolves to an id.
+  const assetId = serverAssetIdFromReference(loc)
+  if (assetId) recordAssetByteRead(assetId)
   const auth = await resolveServerAssetAuth(options.auth)
   const fetchImpl = options.fetchImpl ?? fetch
   const response = await fetchImpl(assetUrl, {

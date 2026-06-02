@@ -17,6 +17,7 @@ import {
   type AddAssetResult,
 } from '../repository.js'
 import { assetBulkUploadRateLimit, assetUploadRateLimit } from '../routeRateLimits.js'
+import { emitProtocolMetric } from '../protocolMetrics.js'
 
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable'
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
@@ -104,6 +105,25 @@ async function validateAssetExistsEnvelope(
   if (!Array.isArray(body.ids)) {
     reply.code(400).send({ error: 'ids: string[] required' })
   }
+}
+
+function emitAssetByteReadMetric(
+  logger: FastifyInstance['log'],
+  assetId: string,
+  found: boolean,
+  contentType?: string,
+  size?: number,
+): void {
+  emitProtocolMetric(
+    'asset_byte_read',
+    {
+      assetId,
+      found,
+      ...(contentType !== undefined ? { contentType } : {}),
+      ...(size !== undefined ? { size } : {}),
+    },
+    logger,
+  )
 }
 
 function readBulkAssets(body: BulkAssetsBody): { bytes: Buffer; contentType: string }[] {
@@ -212,14 +232,20 @@ export function registerAssetsRoutes(
     async (req, reply) => {
       const entry = assetById(dataDir, req.params.id)
       if (!entry) {
+        emitAssetByteReadMetric(req.log, req.params.id, false)
         reply.code(404).send({ error: 'not found' })
         return
       }
       const file = assetPath(dataDir, entry)
       if (!fs.existsSync(file)) {
+        emitAssetByteReadMetric(req.log, req.params.id, false)
         reply.code(404).send({ error: 'not found' })
         return
       }
+      // Measurement-only: every single-asset byte read (JS-driven or a browser
+      // `<img src>` fetch) lands here, so the opt-in metric counts per-id byte
+      // read fanout at the actual byte boundary. Route behavior is unchanged.
+      emitAssetByteReadMetric(req.log, req.params.id, true, entry.contentType, entry.size)
       applyAssetHeaders(reply, entry.contentType, entry.size)
       return reply.send(fs.createReadStream(file))
     },
