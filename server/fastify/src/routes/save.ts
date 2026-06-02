@@ -55,7 +55,10 @@ interface ExportQuery {
 
 const EXPORT_FILENAME = 'database.risu'
 const BUNDLE_EXPORT_FILENAME = 'database.risu.zip'
-const DEFAULT_IMPORT_MAX_BYTES = 2 * 1024 * 1024 * 1024
+// Unlimited by default: the upload streams to a temp file and decodes in bounded
+// batches, so size is constrained by disk, not memory. A finite ceiling is opt-in
+// via RISU_API_IMPORT_MAX_BYTES (see config.ts).
+const DEFAULT_IMPORT_MAX_BYTES = Number.POSITIVE_INFINITY
 
 export function registerSaveRoutes(
   app: FastifyInstance,

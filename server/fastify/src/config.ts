@@ -10,7 +10,12 @@ export interface AppConfig {
    * Max upload size for device backup imports (`.risu.zip` / legacy `.bin`).
    * Decoupled from `bodyLimit` because full backups (database + all assets) are
    * routinely far larger than ordinary request bodies; the import streams the
-   * upload to disk rather than buffering it.
+   * upload to disk and decodes it in bounded batches rather than buffering it.
+   *
+   * Defaults to unlimited (`Number.POSITIVE_INFINITY`) so multi-GB backups (large
+   * assets push real backups well past 4 GiB) import without per-deployment
+   * tuning — peak memory stays bounded regardless of file size. Set
+   * `RISU_API_IMPORT_MAX_BYTES` to a positive byte count to impose a ceiling.
    */
   importMaxBytes: number
   trustProxy: boolean | number | string
@@ -43,6 +48,17 @@ function parseBodyLimit(raw: string | undefined, fallback: number): number {
 
 function parseImportMaxBytes(raw: string | undefined, fallback: number): number {
   if (!raw) return fallback
+  // Explicit opt-out: the import streams to disk with bounded memory, so a
+  // self-host owner can lift the ceiling entirely for very large backups.
+  const normalized = raw.trim().toLowerCase()
+  if (
+    normalized === '0' ||
+    normalized === 'unlimited' ||
+    normalized === 'none' ||
+    normalized === 'infinity'
+  ) {
+    return Number.POSITIVE_INFINITY
+  }
   const n = Number(raw)
   if (!Number.isFinite(n) || n <= 0) {
     throw new Error(`Invalid RISU_API_IMPORT_MAX_BYTES: ${raw}`)
@@ -90,7 +106,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: parsePort(env.RISU_API_PORT, 6002),
     dataDir,
     bodyLimit: parseBodyLimit(env.RISU_API_BODY_LIMIT, 100 * 1024 * 1024),
-    importMaxBytes: parseImportMaxBytes(env.RISU_API_IMPORT_MAX_BYTES, 2 * 1024 * 1024 * 1024),
+    importMaxBytes: parseImportMaxBytes(env.RISU_API_IMPORT_MAX_BYTES, Number.POSITIVE_INFINITY),
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
     staticRoot: parseStaticRoot(env.RISU_API_STATIC_ROOT, path.join(repoRoot(), 'dist')),
     hubUrl: parseHubUrl(env.RISU_HUB_URL, 'https://sv.risuai.xyz'),

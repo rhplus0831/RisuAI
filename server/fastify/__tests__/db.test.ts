@@ -190,6 +190,68 @@ describe('schema migrations', () => {
     }
   })
 
+  it('rebuilds a command_events table that still carries the removed payload_json column (v9)', () => {
+    const dataDir = makeDataDir()
+    // Reconstruct a database whose `command_events` predates the table's final
+    // shape: it still has a NOT NULL `payload_json` column (and a bare
+    // `revision INTEGER PRIMARY KEY` without the `revision >= 0` check). The
+    // canonical INSERT omits `payload_json`, so without the v9 rebuild every
+    // command-event write fails with "NOT NULL constraint failed:
+    // command_events.payload_json" — the failure seen on the first asset batch
+    // of a device-backup import.
+    const seed = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      seed.exec(`
+        CREATE TABLE schema_version (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          version INTEGER NOT NULL,
+          revision INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO schema_version (id, version, revision) VALUES (1, 8, 15);
+        CREATE TABLE command_events (
+          revision INTEGER PRIMARY KEY,
+          type TEXT NOT NULL,
+          resource TEXT NOT NULL,
+          id TEXT,
+          parent_id TEXT,
+          payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+        INSERT INTO command_events (revision, type, resource, payload_json)
+          VALUES (15, 'settings.updated', 'settings', '{"legacy":true}');
+      `)
+    } finally {
+      seed.close()
+    }
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 15 })
+
+      // The vestigial column is gone from the rebuilt table.
+      const columns = (
+        db.prepare('PRAGMA table_info(command_events)').all() as Array<{ name: string }>
+      ).map((row) => row.name)
+      expect(columns).not.toContain('payload_json')
+
+      // The durable replay row survived the rebuild (minus the dropped column).
+      expect(
+        db
+          .prepare('SELECT revision, type, resource FROM command_events WHERE revision = 15')
+          .get(),
+      ).toEqual({ revision: 15, type: 'settings.updated', resource: 'settings' })
+
+      // The canonical INSERT — the write that used to 500 on import — now works.
+      expect(() =>
+        db
+          .prepare('INSERT INTO command_events (revision, type, resource) VALUES (16, ?, ?)')
+          .run('asset.created', 'asset'),
+      ).not.toThrow()
+    } finally {
+      db.close()
+    }
+  })
+
   it('is safe to reopen and reapply after migrations are current', () => {
     const dataDir = makeDataDir()
     seedSchemaVersion(dataDir, 0, 3)

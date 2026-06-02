@@ -4,7 +4,7 @@ import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
 import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
 
-export const CURRENT_SCHEMA_VERSION = 8
+export const CURRENT_SCHEMA_VERSION = 9
 
 export interface MigrationStep {
   version: number
@@ -75,6 +75,16 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     name: 'generation-finalization-retry-queue',
     up: (db) => {
       createGenerationFinalizationRetryTable(db)
+    },
+  },
+  {
+    version: 9,
+    name: 'command-event-drop-legacy-payload',
+    up: (db) => {
+      // Reconcile databases whose `command_events` table predates the durable
+      // replay table's final shape and still carries a removed
+      // `payload_json TEXT NOT NULL` column. See the helper for details.
+      reconcileLegacyCommandEventTable(db)
     },
   },
 ]
@@ -325,6 +335,41 @@ function createCommandEventTable(db: DatabaseSync): void {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );
 
+    CREATE INDEX IF NOT EXISTS idx_command_events_created_at
+      ON command_events (created_at);
+  `)
+}
+
+/**
+ * Some databases predate the durable-replay table's final shape and still carry
+ * a `command_events` table created with a now-removed
+ * `payload_json TEXT NOT NULL` column (and a `revision INTEGER PRIMARY KEY`
+ * without the `revision >= 0` check). The canonical INSERT omits `payload_json`,
+ * so every command-event write on such a database fails with "NOT NULL
+ * constraint failed: command_events.payload_json" — surfacing, for example, on
+ * the first asset batch of a device-backup import.
+ *
+ * Rebuild the table to the canonical shape, preserving the durable replay rows.
+ * No table references `command_events` (no inbound foreign keys, triggers, or
+ * views), so a create-copy-drop-rename rebuild is safe inside the migration's
+ * transaction even with `PRAGMA foreign_keys = ON`. Idempotent: a no-op once the
+ * table already matches the canonical schema.
+ */
+function reconcileLegacyCommandEventTable(db: DatabaseSync): void {
+  if (!hasColumn(db, 'command_events', 'payload_json')) return
+  db.exec(`
+    CREATE TABLE command_events_canonical (
+      revision INTEGER PRIMARY KEY CHECK (revision >= 0),
+      type TEXT NOT NULL,
+      resource TEXT NOT NULL,
+      id TEXT,
+      parent_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+    INSERT INTO command_events_canonical (revision, type, resource, id, parent_id, created_at)
+      SELECT revision, type, resource, id, parent_id, created_at FROM command_events;
+    DROP TABLE command_events;
+    ALTER TABLE command_events_canonical RENAME TO command_events;
     CREATE INDEX IF NOT EXISTS idx_command_events_created_at
       ON command_events (created_at);
   `)

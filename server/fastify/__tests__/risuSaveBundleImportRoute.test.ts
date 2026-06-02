@@ -286,6 +286,43 @@ describe('repository .risu bundle import route', () => {
     }
   })
 
+  it('rejects a device-backup upload larger than a configured finite ceiling', async () => {
+    // The import ceiling defaults to unlimited (multi-GB backups stream in with
+    // bounded memory), but an operator can still cap it via importMaxBytes. With
+    // a tiny cap, an over-limit upload is truncated mid-stream and rejected
+    // rather than silently saved.
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-import-cap-'))
+    const { app } = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir,
+        bodyLimit: 4 * 1024 * 1024,
+        importMaxBytes: 1024,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      memoryWorker: false,
+      commandEvents: createCommandEventSink(),
+    })
+    try {
+      const { assertion: capAssertion } = await setupAuthedClient(app)
+      const oversized = buildLegacyBin([{ name: 'database.risudat', data: Buffer.alloc(4096, 1) }])
+      const upload = multipartBundle(oversized, 'backup.bin')
+      const imported = await app.inject({
+        method: 'POST',
+        url: '/api/v1/import/bundle',
+        headers: { 'risu-auth': capAssertion, 'content-type': upload.contentType },
+        payload: upload.payload,
+      })
+      expect(imported.statusCode).toBe(400)
+      expect((imported.json() as { error: string }).error).toContain('exceeds size limit')
+    } finally {
+      await app.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
   it('rejects unauthenticated bundle imports once a password is set', async () => {
     persistDatabaseWithAsset(harness.dataDir)
     const zip = await exportBundleZip()

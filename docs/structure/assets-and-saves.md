@@ -91,10 +91,12 @@ blocks are rejected.
 
 `POST /api/v1/import/bundle` ingests an uploaded device backup and is the
 round-trip behind the browser's "Save/Load Backup Locally". It streams the
-upload to a temp file (bounded by `RISU_API_IMPORT_MAX_BYTES`, default 2 GiB,
-decoupled from `bodyLimit`), sniffs the format, and stream-decodes it with
-bounded memory, registering assets in batches as they are read and then applying
-the embedded database through the shared import path. Two formats are accepted:
+upload to a temp file (size capped by `RISU_API_IMPORT_MAX_BYTES`, default
+unlimited so multi-GB backups import without tuning — set a positive byte count
+to impose a ceiling, or `0`/`unlimited` to opt out explicitly; decoupled from
+`bodyLimit`), sniffs the format, and stream-decodes it with bounded memory,
+registering assets in batches as they are read and then applying the embedded
+database through the shared import path. Two formats are accepted:
 
 - a `database.risu.zip` bundle produced by `GET /api/v1/export/bundle` (zip
   entries are verified against their content-addressed ids), and
