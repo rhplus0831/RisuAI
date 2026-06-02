@@ -11,7 +11,7 @@ routing. Concrete slice definitions live under
 | 0 | Implemented | [`phase-0-baseline-foundations.md`](phase-0-baseline-foundations.md) | [`slices/phase-0-baseline-foundations/`](slices/phase-0-baseline-foundations/) |
 | 1 | Implemented | [`phase-1-message-free-floor.md`](phase-1-message-free-floor.md) | [`slices/phase-1-message-free-floor/`](slices/phase-1-message-free-floor/) |
 | 2 | Implemented | [`phase-2-settings-and-plugin-storage-paths.md`](phase-2-settings-and-plugin-storage-paths.md) | [`slices/phase-2-settings-and-plugin-storage-paths/`](slices/phase-2-settings-and-plugin-storage-paths/) |
-| 3 | Planned | [`phase-3-single-row-paths.md`](phase-3-single-row-paths.md) | [`slices/phase-3-single-row-paths/`](slices/phase-3-single-row-paths/) |
+| 3 | Implemented | [`phase-3-single-row-paths.md`](phase-3-single-row-paths.md) | [`slices/phase-3-single-row-paths/`](slices/phase-3-single-row-paths/) |
 | 4 | Planned | [`phase-4-collection-table-paths.md`](phase-4-collection-table-paths.md) | [`slices/phase-4-collection-table-paths/`](slices/phase-4-collection-table-paths/) |
 | 5 | Planned | [`phase-5-projection-range-narrowing.md`](phase-5-projection-range-narrowing.md) | [`slices/phase-5-projection-range-narrowing/`](slices/phase-5-projection-range-narrowing/) |
 | 6 | Planned | [`phase-6-message-free-ceiling.md`](phase-6-message-free-ceiling.md) | [`slices/phase-6-message-free-ceiling/`](slices/phase-6-message-free-ceiling/) |

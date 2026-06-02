@@ -1,7 +1,14 @@
 # Single Character-Row Paths
 
-Status: planned. Tier 3. Depends on the Phase 0 writer kit
-(`writeSingleCharacterRow`, `writeSingleChatRow`).
+Status: implemented (`fastify`: stages a `07971179`, c `7b735e8a`, d `65e57c0a`).
+Tier 3. All nine routes report `targeted-character-row`: the six pure
+character-row edits write one `UPDATE characters` (PATCH characters/:id co-writes
+settings on `trashTime`; modules/reorder drops the module-collection repair as
+validate-only); chat-folders DELETE and chats/reorder also write that character's
+own chat rows (via `writeSingleChatRow` / `writeCharacterChatRows`); fork inserts
+the forked chat (`insertCharacterChatRow`) + its messages
+(`replaceActiveChatMessages`) and validates message ids via the targeted
+`activeMessageIdExists`.
 
 ## Source Anchors
 

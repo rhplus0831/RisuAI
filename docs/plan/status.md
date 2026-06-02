@@ -7,17 +7,27 @@ Use it first, then open only the phase or slice needed for the next task.
 
 Current status reflects the seed audit
 [`mutation-range-mismatch.md`](mutation-range-mismatch.md), audited 2026-06-03.
-Phase 0 (baseline foundations), Phase 1 (the message-free floor), and Phase 2
-(settings + plugin-storage paths) have landed. The narrow runtime paths are now
-the reference fix `b57df5cd` (`characters/select`), the six targeted message
-commands, the six `targeted-settings` routes, and the three
-`targeted-plugin-storage` routes; the remaining floor routes still rewrite the
+Phase 0 (baseline foundations), Phase 1 (the message-free floor), Phase 2
+(settings + plugin-storage paths), and Phase 3 (single character/chat-row paths)
+have landed. The narrow runtime paths now include the reference fix `b57df5cd`
+(`characters/select`), the six targeted message commands, the six
+`targeted-settings` routes, the three `targeted-plugin-storage` routes, and the
+twelve Tier-3 `targeted-character-row` / `targeted-chat-row` routes; the
+remaining floor routes (Tier-4 collections, Tier-5 blocked) still rewrite the
 broad table set.
 
 ## Current Snapshot
 
-Analysis is complete. Phases 0-2 have landed; the first per-row character/chat
-narrowing tier (Phase 3) has not started.
+Analysis is complete. Phases 0-3 have landed; the Tier-4 collection-table tier
+(Phase 4) has not started.
+
+- Phase 3 landed (`07971179`→`65e57c0a`, four stages): all 12 Tier-3 routes write
+  only their target character/chat row(s) + documented co-writes. Pure
+  character-row edits and the chat-folder/reorder cascades report
+  `targeted-character-row`; scriptstate (the hot path), chats/:id, and
+  chats/:id/lorebooks report `targeted-chat-row`; fork does surgical
+  character/chat/message writes. New writer-kit entries: `writeCharacterChatRows`,
+  `insertCharacterChatRow`. Proven by `commandSingleRowPaths.test.ts` (15 tests).
 
 - Phase 2 landed (`56ddd865`): the six Tier-1 settings-scalar routes
   (settings/:group, prompt-settings, characters/reorder, plugins/provider,
@@ -56,8 +66,8 @@ narrowing tier (Phase 3) has not started.
   (`prompt`/`promptItem` ship `botPresets`, `persona` omits legacy mirror
   scalars, `loadout` omits `lastLoadedLoadoutName`).
 
-Phases 0, 1, and 2 are implemented; every per-row tier phase below (Phase 3
-onward) is still planned.
+Phases 0, 1, 2, and 3 are implemented; the collection-table and later tier
+phases below (Phase 4 onward) are still planned.
 
 ## Phase Router
 
@@ -66,7 +76,7 @@ onward) is still planned.
 | [Phase 0](phases/phase-0-baseline-foundations.md) | Implemented | Writer kit, targeted mutation paths, mutation-range metric, review gates, normalization-scope policy. |
 | [Phase 1](phases/phase-1-message-free-floor.md) | Implemented | The mechanical `hydrated` to `message-free` sweep across the 62 non-message routes. |
 | [Phase 2](phases/phase-2-settings-and-plugin-storage-paths.md) | Implemented | Tier-1 settings/pointer-only writes and Tier-2 plugin custom storage writes. |
-| [Phase 3](phases/phase-3-single-row-paths.md) | Planned | Tier-3 single character-row and single chat-row metadata edits. |
+| [Phase 3](phases/phase-3-single-row-paths.md) | Implemented | Tier-3 single character-row and single chat-row metadata edits. |
 | [Phase 4](phases/phase-4-collection-table-paths.md) | Planned | Tier-4 single collection-table edits across the eight collection families. |
 | [Phase 5](phases/phase-5-projection-range-narrowing.md) | Planned | Narrow projection resources, the `lorebook` resource split, and the projection-field bug fixes. |
 | [Phase 6](phases/phase-6-message-free-ceiling.md) | Planned | Tier-5 routes blocked at the `message-free` floor and their unblock conditions. |
@@ -83,10 +93,11 @@ Headlines, in priority order:
 - Tier 2: DONE (Phase 2). The three plugin-storage routes now write only
   `plugin_custom_storage` (upsert/delete/clear) instead of all characters + nine
   collection tables.
-- Tier 3 (next): one character row or one chat row, often `hydrated` despite
-  touching no messages. The scriptstate write (`2983`) is the hot one.
-- Tier 4: one element of one of nine collection tables rewrites all nine plus
-  all characters. Plugins family is the lowest-risk fix (projection already
+- Tier 3: DONE (Phase 3). All 12 single character/chat-row routes write only
+  their target row(s); the hot scriptstate write (`2983`) no longer hydrates
+  messages or rewrites every character.
+- Tier 4 (next): one element of one of nine collection tables rewrites all nine
+  plus all characters. Plugins family is the lowest-risk fix (projection already
   narrow).
 - Tier 5: deeper narrowing blocked by cross-table spans or load-bearing
   message/normalization dependencies; the `message-free` floor is the ceiling.

@@ -1,7 +1,10 @@
 # Single Chat-Row Paths
 
-Status: planned. Tier 3. Depends on the Phase 0 writer kit (`writeSingleChatRow`
-— no `chats` single-row writer exists today).
+Status: implemented (`fastify`: stage b `90c6df95`). Tier 3. All three routes
+report `targeted-chat-row` and write one `UPDATE chats` via `writeSingleChatRow`:
+scriptstate (the hot path — no longer hydrates messages or rewrites every
+character), chats/:id (+ the parent character row only when `select:true` moves
+`chatPage`), and chats/:id/lorebooks (`localLore`).
 
 ## Source Anchors
 

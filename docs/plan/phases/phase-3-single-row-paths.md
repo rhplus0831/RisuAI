@@ -1,7 +1,14 @@
 # Phase 3: Single Row Paths
 
-Status: planned. Depends on the Phase 0 writer kit (`writeSingleCharacterRow`,
-`writeSingleChatRow`) and review gates.
+Status: implemented (`07971179`→`65e57c0a` on `fastify`, four stages). All 12
+Tier-3 routes now write only their target character/chat row(s) and the
+documented co-writes: stage a = six pure single-character-row routes, stage b =
+three single-chat-row routes (incl. the hot scriptstate path), stage c = the two
+character+chat-row cascade routes (chat-folders DELETE, chats/reorder), stage d =
+fork (surgical character/chat/message writes). The `targeted-character-row` gate
+was widened to {characters, chats, settings} (+ message-store tables for fork)
+while forbidding the nine other-collection tables; `writeCharacterChatRows` and
+`insertCharacterChatRow` were added to the writer kit.
 
 Goal: narrow Tier-3 character/chat metadata edits to
 `UPDATE ... WHERE id=?`. Most are `hydrated` despite touching no messages, so
