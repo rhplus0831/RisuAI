@@ -1,6 +1,6 @@
 # Targeted Writer Kit
 
-Status: planned. Realizes Prerequisite 1.
+Status: implemented (2026-06-03). Realizes Prerequisite 1.
 
 ## Source Anchors
 
@@ -50,14 +50,23 @@ leaves every other rowid stable.
 
 ## Done When
 
-- All seven writers exist with unit tests proving each touches exactly its rows.
-- A rowid-stability unit test (`tableRowidsById` template) shows unrelated
-  character/chat/collection rowids are unchanged after each writer.
-- No existing broad-path caller's behavior changed (the kit is additive).
+- [x] All seven writers exist in `repository.ts` (`writeSettingsOnly`,
+  `writeSingleCharacterRow`, `writeSingleChatRow`, `writeSingleCollectionTable`,
+  `writeSingleCollectionRow`, `writePluginStorageKey`, `deletePluginStorageKey`)
+  with unit tests (`__tests__/repositoryWriterKit.test.ts`) proving each touches
+  exactly its rows.
+- [x] A rowid-stability unit test (the `position→rowid` / `id→rowid` snapshot
+  template) shows unrelated character/chat/collection rowids are unchanged after
+  each writer.
+- [x] No existing broad-path caller's behavior changed (the kit is additive; the
+  single-row writers strip `chats` / `message` / `hypaV3Data` to match the
+  storage contract, and each writer reports its table to the mutation-range
+  metric).
 
 ## Validation
 
-- `pnpm api:test -- server/fastify/__tests__/db.test.ts server/fastify/__tests__/commands.test.ts`
+- `pnpm api:test server/fastify/__tests__/repositoryWriterKit.test.ts` (filter:
+  `pnpm api:test repositoryWriterKit`)
 - `pnpm exec tsc -p tsconfig.client-lib.json` then
   `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`
 - `pnpm api:test`

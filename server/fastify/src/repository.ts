@@ -411,6 +411,102 @@ export function loadCharacterSelectionProjection(
   }
 }
 
+// --- Targeted writer kit (Phase 0) ------------------------------------------
+// Narrow SQLite writers that touch exactly the rows a single command changed,
+// the building blocks the Tier write slices route the over-broad commands onto.
+// Each writer performs only its `UPDATE`/`DELETE`+`INSERT` and reports its table
+// to the mutation-range metric; it owns no revision/event emission and runs
+// inside the caller's open `BEGIN IMMEDIATE` transaction. None of them touch the
+// message store, `hypaV3Data`, or alternates. They leave every unrelated rowid
+// stable (the rowid-stability contract `writeCharacterSelectionRows` set).
+
+/** One `UPDATE settings` (id=1). Drop-in for the settings half of
+ *  `writeCharacterSelectionRows`; the caller passes the (already-extracted)
+ *  settings record to persist. */
+export function writeSettingsOnly(db: DatabaseSync, settings: JsonRecord): void {
+  recordTableWrite('settings')
+  db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+}
+
+/** `UPDATE characters WHERE id=?` for one character row. `chats` is stripped to
+ *  match the storage contract (chats live in the `chats` table). */
+export function writeSingleCharacterRow(
+  db: DatabaseSync,
+  characterId: string,
+  character: JsonRecord,
+): void {
+  const { chats: _chats, ...charWithoutChats } = character
+  recordTableWrite('characters')
+  db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(
+    JSON.stringify(charWithoutChats),
+    characterId,
+  )
+}
+
+/** `UPDATE chats WHERE id=?` for one chat row. `message` / `hypaV3Data` are
+ *  stripped to match the storage contract (they live in the message store). */
+export function writeSingleChatRow(db: DatabaseSync, chatId: string, chat: JsonRecord): void {
+  const { message: _msg, hypaV3Data: _hypa, ...chatClean } = chat
+  recordTableWrite('chats')
+  db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chatClean), chatId)
+}
+
+function collectionTableForField(field: string): string {
+  const tableName = COLLECTION_TABLE_MAP[field]
+  if (!tableName) {
+    throw new ValidationError(`Unknown collection field: ${field}`)
+  }
+  return tableName
+}
+
+/** Rebuild one collection table (DELETE + ordered reinsert) for
+ *  create/delete/reorder. Leaves the other eight tables untouched. */
+export function writeSingleCollectionTable(
+  db: DatabaseSync,
+  field: string,
+  array: readonly unknown[],
+): void {
+  const tableName = collectionTableForField(field)
+  recordTableWrite(tableName)
+  db.exec(`DELETE FROM ${tableName}`)
+  if (array.length === 0) return
+  const stmt = db.prepare(`INSERT INTO ${tableName} (position, data_json) VALUES (?, ?)`)
+  for (let i = 0; i < array.length; i++) {
+    stmt.run(i, JSON.stringify(array[i]))
+  }
+}
+
+/** `UPDATE <collection> WHERE position=?` for a single pure field edit. Keeps
+ *  the row's rowid stable (no delete+reinsert). */
+export function writeSingleCollectionRow(
+  db: DatabaseSync,
+  field: string,
+  position: number,
+  value: unknown,
+): void {
+  const tableName = collectionTableForField(field)
+  recordTableWrite(tableName)
+  db.prepare(`UPDATE ${tableName} SET data_json = ? WHERE position = ?`).run(
+    JSON.stringify(value),
+    position,
+  )
+}
+
+/** Single-key upsert on `plugin_custom_storage`. */
+export function writePluginStorageKey(db: DatabaseSync, key: string, value: unknown): void {
+  recordTableWrite('plugin_custom_storage')
+  db.prepare(
+    'INSERT INTO plugin_custom_storage (key, value_json) VALUES (?, ?) ' +
+      'ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json',
+  ).run(key, JSON.stringify(value ?? null))
+}
+
+/** Single-key delete on `plugin_custom_storage`. */
+export function deletePluginStorageKey(db: DatabaseSync, key: string): void {
+  recordTableWrite('plugin_custom_storage')
+  db.prepare('DELETE FROM plugin_custom_storage WHERE key = ?').run(key)
+}
+
 export function createAssetMetadataTable(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS assets (
