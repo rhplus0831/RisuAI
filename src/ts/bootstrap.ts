@@ -9,7 +9,6 @@ import {
   getDatabase,
   setServerProjectionWriteGuardEnabled,
   type Database,
-  withTrustedServerProjectionWrite,
 } from './storage/database.svelte'
 import {
   MobileGUI,
@@ -68,7 +67,6 @@ import {
   triggerOpenChatGenerationReattach,
 } from './process/reattach'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
-import { isFastifyServer } from './platform'
 
 // Delay before re-subscribing to the command-event stream after it drops. On
 // reconnect we full-bootstrap to recover any events missed while disconnected.
@@ -93,9 +91,6 @@ export async function loadData() {
         await loadPlugins()
       } catch (error) {}
       LoadingStatusState.text = 'Checking For Format Update...'
-      if (!isFastifyServer) {
-        await withTrustedServerProjectionWrite(() => checkNewFormat())
-      }
       const db = getDatabase()
 
       LoadingStatusState.text = 'Updating States...'
@@ -127,9 +122,6 @@ export async function loadData() {
       loadedStore.set(true)
       selectedCharID.set(-1)
       startObserveDom()
-      if (!isFastifyServer) {
-        withTrustedServerProjectionWrite(assignIds)
-      }
       registerModelDynamic()
       moduleUpdate()
       alertTOS().then((a) => {

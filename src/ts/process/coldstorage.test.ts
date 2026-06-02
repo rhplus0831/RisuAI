@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({
-  isFastifyServer: true,
-}))
 const alertState = vi.hoisted(() => ({
   alertError: vi.fn(),
 }))
@@ -18,9 +15,7 @@ vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
@@ -61,7 +56,6 @@ import {
 } from './coldstorage.svelte'
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   alertState.alertError.mockClear()
   storeState.DBState.db = {
     characters: [],
@@ -107,7 +101,7 @@ describe('Fastify cold-storage gates', () => {
     await preLoadChat(0, 0)
 
     expect(alertState.alertError).toHaveBeenCalledWith(
-      'Cold-storage chat hydration is not supported in server-backed web mode yet',
+      'Cold-storage chat hydration is not supported in server-backed web mode',
     )
     expect(navigator.storage.getDirectory).not.toHaveBeenCalled()
   })

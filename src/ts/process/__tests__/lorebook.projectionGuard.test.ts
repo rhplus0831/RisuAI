@@ -6,19 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // stale alias and threw. The writes must run against the freshly-cloned mutable
 // projection and still dispatch the matching global-lorebook command.
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
-vi.mock('../../storage/nodeStorage', () => ({
+vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'lorebook-projection-token',
 }))
 
@@ -116,7 +112,6 @@ const isGlobalEntries = (call: CapturedFetch) =>
   /\/api\/v1\/commands\/lorebooks\/lore-1\/entries$/.test(call.url) && call.method === 'PUT'
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
   fileSelection.data = null
   clearCachedServerCommandRevision()

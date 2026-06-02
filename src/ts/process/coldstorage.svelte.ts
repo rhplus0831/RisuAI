@@ -1,4 +1,3 @@
-import { isFastifyServer } from 'src/ts/platform'
 import { DBState } from '../stores.svelte'
 import { compress as fflateCompress, decompress as fflateDecompress } from 'fflate'
 import { alertClear, alertError, alertWait } from '../alert'
@@ -19,123 +18,25 @@ async function decompress(data: Uint8Array) {
 }
 
 export async function getColdStorageItem(key: string) {
-  if (isFastifyServer) {
-    return null
-  }
-
-  try {
-    const opfs = await navigator.storage.getDirectory()
-    const file = await opfs.getFileHandle('coldstorage_' + key + '.json')
-    if (!file) {
-      return null
-    }
-    const d = await file.getFile()
-    if (!d) {
-      return null
-    }
-    const buf = await d.arrayBuffer()
-    const text = new TextDecoder().decode(await decompress(new Uint8Array(buf)))
-    return JSON.parse(text)
-  } catch (error) {
-    return null
-  }
+  return null
 }
 
 export async function setColdStorageItem(key: string, value: any): Promise<boolean> {
-  if (isFastifyServer) {
-    return false
-  }
-
-  console.log('setting cold storage item', key, value)
-
-  let compressed: Uint8Array
-  try {
-    const json = JSON.stringify(value)
-    compressed = await new Promise<Uint8Array>((resolve, reject) => {
-      fflateCompress(new TextEncoder().encode(json), (err, result) => {
-        if (err) {
-          return reject(err)
-        }
-        resolve(result)
-      })
-    })
-  } catch (error) {
-    console.error('Cold storage compression failed:', error)
-    return false
-  }
-
-  try {
-    const opfs = await navigator.storage.getDirectory()
-    const file = await opfs.getFileHandle('coldstorage_' + key + '.json', { create: true })
-    const writable = await file.createWritable()
-    await writable.write(compressed as any)
-    await writable.close()
-    return true
-  } catch (error) {
-    console.error('Cold storage OPFS write failed:', error)
-    return false
-  }
+  return false
 }
 
 export async function listColdStorageItems(): Promise<{ items: string[] }> {
-  if (isFastifyServer) {
-    return {
-      items: [],
-    }
-  }
-
-  const opfs = await navigator.storage.getDirectory()
-  const entries = opfs.entries()
-  const keys = []
-  for await (const [name] of entries) {
-    if (name.startsWith('coldstorage_') && name.endsWith('.json')) {
-      keys.push(name.slice(12, -5))
-    }
-  }
   return {
-    items: keys,
+    items: [],
   }
 }
 
 export async function cleanColdStorage() {
-  if (isFastifyServer) {
-    return
-  }
-
-  const actualUsedKeys = await listColdDataKeys()
-  const allKeys = (await listColdStorageItems()).items
-  const unusedKeys = allKeys.filter((k) => !actualUsedKeys.includes(k))
-  console.log(
-    'Cleaning cold storage, actual used keys:',
-    actualUsedKeys,
-    'all keys:',
-    allKeys,
-    'unused keys:',
-    unusedKeys,
-  )
-
-  for (let i = 0; i < unusedKeys.length; i++) {
-    const key = unusedKeys[i]
-    alertWait(`Removing unused cold storage item: ${key} (${i + 1} / ${unusedKeys.length})`)
-    await removeColdStorageItems([key])
-  }
-
-  alertClear()
+  return
 }
 
 async function removeColdStorageItems(keys: string[]) {
-  if (isFastifyServer) {
-    return
-  }
-
-  try {
-    const opfs = await navigator.storage.getDirectory()
-    for (let i = 0; i < keys.length; i++) {
-      await opfs.removeEntry('coldstorage_' + keys[i] + '.json')
-    }
-  } catch (error) {
-    console.error(error)
-  }
+  return
 }
 
 export async function listColdDataKeys(): Promise<string[]> {
@@ -296,40 +197,7 @@ async function makeColdDataForChat(i: number, j: number, coldTime: number) {
 }
 
 export async function makeColdData() {
-  if (isFastifyServer) {
-    return
-  }
-
-  if (!DBState.db.coldstorage) {
-    return
-  }
-
-  const currentTime = Date.now()
-  const coldTime = currentTime - 1000 * 60 * 60 * 24 * 10 //10 days before now
-  const queue: Function[] = []
-  for (let i = 0; i < DBState.db.characters.length; i++) {
-    queue.push(() => makeColdDataForCharacter(i, coldTime))
-  }
-
-  while (queue.length > 0) {
-    const batch = queue.splice(0, 5) //process 5 at a time to avoid blocking
-    alertWait(`Creating character cold storage data... ${queue.length} items left`)
-    await Promise.all(batch.map((fn) => fn()))
-  }
-
-  for (let i = 0; i < DBState.db.characters.length; i++) {
-    for (let j = 0; j < DBState.db.characters[i].chats.length; j++) {
-      queue.push(() => makeColdDataForChat(i, j, coldTime))
-    }
-  }
-
-  while (queue.length > 0) {
-    const batch = queue.splice(0, 5) //process 5 at a time to avoid blocking
-    alertWait(`Creating chat cold storage data... ${queue.length} items left`)
-    await Promise.all(batch.map((fn) => fn()))
-  }
-
-  alertClear()
+  return
 }
 
 export async function preLoadChat(characterIndex: number, chatIndex: number) {
@@ -340,37 +208,7 @@ export async function preLoadChat(characterIndex: number, chatIndex: number) {
   }
 
   if (chat.message?.[0]?.data?.startsWith(coldStorageHeader)) {
-    if (isFastifyServer) {
-      alertError('Cold-storage chat hydration is not supported in server-backed web mode yet')
-      return
-    }
-
-    //bring back from cold storage
-    const coldDataKey = chat.message[0].data.slice(coldStorageHeader.length)
-    const coldData = await getColdStorageItem(coldDataKey)
-    if (coldData && Array.isArray(coldData)) {
-      chat.message = coldData
-      chat.lastDate = Date.now()
-    } else if (coldData?.message) {
-      chat.message = coldData.message
-      chat.hypaV3Data = coldData.hypaV3Data
-      chat.scriptstate = coldData.scriptstate
-      chat.localLore = coldData.localLore
-      chat.lastDate = Date.now()
-    } else {
-      // Cold storage data is missing or corrupted.
-      // Replace with an error message so the user knows what happened
-      // instead of silently showing a broken pointer.
-      console.error(`Cold storage data not found for key: ${coldDataKey}`)
-      chat.message = [
-        {
-          time: Date.now(),
-          data: `[Cold storage data could not be loaded. Key: ${coldDataKey}]`,
-          role: 'char',
-        },
-      ]
-      chat.lastDate = Date.now()
-      return
-    }
+    alertError('Cold-storage chat hydration is not supported in server-backed web mode')
+    return
   }
 }

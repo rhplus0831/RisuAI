@@ -1,6 +1,5 @@
 import type { Database } from '../storage/database.svelte'
-import { isFastifyServer } from '../platform'
-import { getNodeServerProxyAuth } from '../storage/nodeStorage'
+import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { setCachedServerCommandRevision } from './commands'
 
@@ -38,7 +37,7 @@ export type ServerBootstrapResult =
   | { status: 'unavailable' }
 
 export function canUseServerBootstrap(): boolean {
-  return isFastifyServer
+  return true
 }
 
 export async function fetchServerBootstrapProjection(

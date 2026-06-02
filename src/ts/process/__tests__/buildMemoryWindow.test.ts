@@ -1,14 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: false }))
-
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
@@ -139,7 +135,6 @@ function fakeTokenizer(): ChatTokenizer {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = false
   hypaState.next = null
   hypaState.throws = null
   hypaState.calls = 0
@@ -179,8 +174,8 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
     expect(hypaState.calls).toBe(1)
     expect(result.currentTokens).toBe(11)
     expect(rec.stages).toEqual([2, 1])
-    expect(currentChat.hypaV3Data).toEqual(memory)
-    expect(DBState.db.characters[0].chats[0].hypaV3Data).toEqual(memory)
+    expect(currentChat.hypaV3Data).toBeUndefined()
+    expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
     expect(stageTimings.stage1Duration).toBeGreaterThanOrEqual(0)
     expect(stageTimings.stage2Start).toBeGreaterThan(0)
     expect(stageTimings.stage2Duration).toBeGreaterThanOrEqual(0)
@@ -219,8 +214,8 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
 
     expect(result.stopSending).toBe(true)
     expect(rec.errors).toEqual(['hypa boom'])
-    expect(currentChat.hypaV3Data).toEqual(memory)
-    expect(DBState.db.characters[0].chats[0].hypaV3Data).toEqual(memory)
+    expect(currentChat.hypaV3Data).toBeUndefined()
+    expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
     // We stopped before the stage-1 set on the happy path.
     expect(rec.stages).toEqual([2])
   })
@@ -260,7 +255,6 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
   })
 
   it('does not write legacy hypaV3Data into DBState in server-backed web mode', async () => {
-    platformState.isFastifyServer = true
     seedDb({ hypaV3: true })
     const rec = makeRecorder()
     const memory = { summaries: ['server-owned'] } as unknown
@@ -354,7 +348,7 @@ describe('buildMemoryWindow - fallback budget trim', () => {
 
     assertNotStopped(result)
     expect(result.chats.length).toBe(2)
-    expect(currentChat.lastMemory).toBe('leadingMemo')
+    expect(DBState.db.characters[0].chats[0].lastMemory).toBe('leadingMemo')
     expect(result.currentTokens).toBe(50)
   })
 
@@ -390,7 +384,7 @@ describe('buildMemoryWindow - fallback budget trim', () => {
     // First-shift trims 40 tokens, leaving 15 (under 30).
     expect(result.currentTokens).toBe(15)
     expect(result.chats.length).toBe(2)
-    expect(currentChat.lastMemory).toBe('middle')
+    expect(DBState.db.characters[0].chats[0].lastMemory).toBe('middle')
   })
 
   it('returns stopSending and throws toomuchtoken when chats cannot shrink to fit', async () => {

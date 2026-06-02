@@ -159,19 +159,12 @@ left open, and the evidence checked during the audit.
 
 ## Cross-cutting and audit maintenance
 
-### Fastify-backed Vite dev mode still needs an owner decision
+### ~~Fastify-backed Vite dev mode still needs an owner decision~~ **Resolved**
 
-- What remains: `pnpm dev` proxies `/api`, but Vite does not inject
-  `globalThis.__FASTIFY__`, so `isFastifyServer` is false and the app uses
-  local/dev compatibility paths.
-- Why open: this is documented, but there is no decision on whether true
-  Fastify-backed dev should be provided through marker injection or a documented
-  build-and-serve workflow.
-- Evidence: `vite.config.ts`, `server/fastify/src/app.ts`,
-  `src/ts/platform.ts`, `docs/structure/frontend.md`,
-  `docs/structure/testing-and-operations.md`.
-- Trigger: developers need to exercise production Fastify browser behavior without
-  running a built SPA through Fastify.
+- Resolved: `isFastifyServer` is now unconditionally `true` and
+  `globalThis.__FASTIFY__` injection has been removed. `pnpm dev` proxies
+  `/api` to the Fastify backend and the app uses Fastify paths in all
+  environments.
 
 ### Dead group-chat strings and comments remain
 

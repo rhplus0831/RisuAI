@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const selectedFileState = vi.hoisted(() => ({
   file: null as null | { name: string; data: Uint8Array },
 }))
@@ -42,9 +41,7 @@ const runOptimisticCommandSequence = vi.hoisted(() =>
 )
 
 vi.mock('../platform', () => ({
-  get isFastifyServer() {
-    return platformState.isFastifyServer
-  },
+  isFastifyServer: true,
 }))
 
 vi.mock('../alert', () => ({
@@ -141,7 +138,6 @@ import type { character } from '../storage/database.svelte'
 
 describe('module imports', () => {
   beforeEach(() => {
-    platformState.isFastifyServer = true
     selectedFileState.file = null
     alertError.mockClear()
     saveAsset.mockClear()

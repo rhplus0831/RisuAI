@@ -12,7 +12,6 @@ type ServerBootstrapMockResponse =
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const serverBootstrapState = vi.hoisted(() => ({
   fetch: vi.fn(),
   fetchReadOnly: vi.fn(),
@@ -97,9 +96,7 @@ vi.mock('./platform', async (importActual) => {
   const actual = await importActual<typeof import('./platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
@@ -116,7 +113,7 @@ vi.mock('./server/memoryJobEvents', () => memoryJobEventSpies)
 
 vi.mock('./server/projection', () => ({
   fetchServerProjectionResource: serverProjectionState.fetchResource,
-  canUseServerProjection: () => platformState.isFastifyServer,
+  canUseServerProjection: () => true,
   fetchServerChatMessages: vi.fn(),
 }))
 
@@ -234,7 +231,6 @@ function serverDefaultDatabase() {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   serverBootstrapState.fetch.mockImplementation(async () => serverBootstrapState.response)
   serverBootstrapState.fetchReadOnly.mockImplementation(async () => serverBootstrapState.response)
   serverBootstrapState.response = {

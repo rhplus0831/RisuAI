@@ -1,18 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
 vi.mock('./platform', async (importActual) => {
   const actual = await importActual<typeof import('./platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
-vi.mock('./storage/nodeStorage', () => ({
+vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'chat-command-token',
 }))
 
@@ -142,7 +138,6 @@ async function waitForCallCount(calls: CapturedFetch[], expected: number): Promi
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   selectedCharID.set(0)

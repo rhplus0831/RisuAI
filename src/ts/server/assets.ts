@@ -154,6 +154,6 @@ export async function readServerAssetBytes(
 }
 async function resolveServerAssetAuth(auth: string | undefined): Promise<string> {
   if (auth !== undefined) return auth
-  const { getNodeServerProxyAuth } = await import('../storage/nodeStorage')
+  const { getNodeServerProxyAuth } = await import('../storage/fastifyStorage')
   return getNodeServerProxyAuth()
 }

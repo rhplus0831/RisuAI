@@ -1,18 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
+vi.mock('../platform', () => ({ isFastifyServer: true }))
 
-vi.mock('../platform', async (importActual) => {
-  const actual = await importActual<typeof import('../platform')>()
-  return {
-    ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
-  }
-})
-
-vi.mock('../storage/nodeStorage', () => ({
+vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'plugin-test-auth',
 }))
 
@@ -89,7 +79,6 @@ function seedModule(id: string, patch: Partial<RisuModule> = {}): RisuModule {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
   vi.unstubAllGlobals()
   setServerProjectionWriteGuardEnabled(false)
@@ -486,13 +475,4 @@ describe('plugin database command bridge', () => {
     expect(open).toHaveBeenCalledWith('safe_plugin_device', undefined)
   })
 
-  it('still writes recognized resource families locally when not in server mode', async () => {
-    platformState.isFastifyServer = false
-    const apis = getV2PluginAPIs()
-    DBState.db.characters = [] as any
-
-    apis.setDatabaseLite({ characters: [{ chaId: 'char-c', name: 'Hopper' }] })
-
-    expect(DBState.db.characters).toEqual([{ chaId: 'char-c', name: 'Hopper' }])
-  })
 })

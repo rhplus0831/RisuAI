@@ -1,6 +1,5 @@
 import { language } from 'src/lang'
 import { alertError, alertInput, waitAlert } from '../alert'
-import { isFastifyServer } from '../platform'
 import {
   activeWriterSessionHeader,
   handleActiveWriterStaleResponse,
@@ -23,7 +22,7 @@ type AuthStatus = 'unset' | 'incorrect' | 'success'
 const FASTIFY_BROWSER_SMOKE_PASSWORD = 'risu-fastify-browser-smoke'
 
 function fastifyBrowserSmokePassword(): string | null {
-  return isFastifyServer && import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE'
+  return import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE'
     ? FASTIFY_BROWSER_SMOKE_PASSWORD
     : null
 }
@@ -40,7 +39,7 @@ async function fetchAuthStatus(assertion: string): Promise<AuthStatus> {
   return 'incorrect'
 }
 
-export class NodeStorage {
+export class FastifyStorage {
   authChecked = false
   JSONStringlifyAndbase64Url(obj: any) {
     return base64url(Buffer.from(JSON.stringify(obj), 'utf-8'))
@@ -264,10 +263,10 @@ export class NodeStorage {
   listItem = this.keys
 }
 
-const sharedNodeStorage = new NodeStorage()
+const sharedStorage = new FastifyStorage()
 
 export async function getNodeServerProxyAuth() {
-  return await sharedNodeStorage.getProxyAuth()
+  return await sharedStorage.getProxyAuth()
 }
 
 async function digestPassword(message: string) {

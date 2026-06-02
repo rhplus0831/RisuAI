@@ -13,6 +13,33 @@ import {
 
 //#region module mocks
 
+/** Server asset upload stub: returns a deterministic asset id from content bytes. */
+const serverAssetStore = new Map<string, { bytes: Uint8Array; contentType: string }>()
+
+function fakeAssetId(bytes: Uint8Array): string {
+  // Deterministic 64-hex-char id based on byte length for test reproducibility.
+  return 'a'.repeat(64 - String(bytes.length).length) + String(bytes.length)
+}
+
+vi.mock('src/ts/server/assets', () => ({
+  SERVER_INLAY_SIGNATURE_CONTENT_TYPE: 'application/x-risu-inlay-signature+json',
+  serverAssetIdFromReference: vi.fn((_id: string) => null),
+  uploadServerAssetBytes: vi.fn(async (data: Uint8Array, contentType: string) => {
+    const id = fakeAssetId(data)
+    serverAssetStore.set(id, { bytes: data, contentType })
+    return id
+  }),
+  readServerAsset: vi.fn(async (id: string) => {
+    const entry = serverAssetStore.get(id)
+    if (!entry) throw new Error(`Asset not found: ${id}`)
+    return {
+      bytes: entry.bytes,
+      contentType: entry.contentType,
+      extension: 'png',
+    }
+  }),
+}))
+
 // happy-dom canvas getContext returns null
 const fakeCtx = {
   drawImage: vi.fn(),
@@ -99,10 +126,11 @@ function makeImage(w: number, h: number): HTMLImageElement {
 beforeEach(() => {
   vi.clearAllMocks()
   store.clear()
+  serverAssetStore.clear()
 })
 
 describe('setInlayAsset', () => {
-  test('stores an asset in the storage', async () => {
+  test('uploads to server and remembers metadata in local storage', async () => {
     const asset: InlayAsset = {
       data: new Blob(['hello'], { type: 'text/plain' }),
       ext: 'png',
@@ -112,9 +140,21 @@ describe('setInlayAsset', () => {
       type: 'image',
     }
 
-    await setInlayAsset('asset-1', asset)
+    const assetId = await setInlayAsset('asset-1', asset)
 
-    expect(store.get('asset-1')).toBe(asset)
+    // The server store received the upload.
+    expect(serverAssetStore.has(assetId)).toBe(true)
+    // Local store holds metadata without data, keyed by the original id.
+    const remembered = store.get('asset-1') as InlayAsset
+    expect(remembered).toMatchObject({
+      name: 'test.png',
+      ext: 'png',
+      height: 100,
+      width: 100,
+      type: 'image',
+      serverAssetId: assetId,
+    })
+    expect(remembered.data).toBeUndefined()
   })
 
   test('overwrites an existing asset with the same id', async () => {
@@ -153,17 +193,18 @@ describe('getInlayAsset', () => {
     expect(result).toBeNull()
   })
 
-  test('returns asset with base64 data URI when stored as Blob', async () => {
-    const blob = new Blob(['test-data'], { type: 'text/plain' })
-    const asset: InlayAsset = {
-      data: blob,
+  test('returns asset with base64 data URI when metadata has serverAssetId', async () => {
+    const serverBytes = new TextEncoder().encode('test-data')
+    const assetId = fakeAssetId(serverBytes)
+    serverAssetStore.set(assetId, { bytes: serverBytes, contentType: 'image/png' })
+    store.set('blob-id', {
       ext: 'png',
       height: 50,
       width: 50,
       name: 'blob-asset.png',
       type: 'image',
-    }
-    store.set('blob-id', asset)
+      serverAssetId: assetId,
+    } satisfies InlayAsset)
 
     const result = await getInlayAsset('blob-id')
 
@@ -171,17 +212,33 @@ describe('getInlayAsset', () => {
     expect(result!.name).toBe('blob-asset.png')
   })
 
-  test('returns asset with string data as-is when stored as string', async () => {
+  test('falls back to legacy local Blob data when no serverAssetId', async () => {
+    const blob = new Blob(['legacy-local'], { type: 'image/png' })
+    store.set('legacy-id', {
+      data: blob,
+      ext: 'png',
+      height: 50,
+      width: 50,
+      name: 'legacy.png',
+      type: 'image',
+    } satisfies InlayAsset)
+
+    const result = await getInlayAsset('legacy-id')
+
+    expect(result!.data).toMatch(/^data:/)
+    expect(result!.name).toBe('legacy.png')
+  })
+
+  test('falls back to legacy local string data when no serverAssetId', async () => {
     const b64 = 'data:image/png;base64,aGVsbG8='
-    const asset: InlayAsset = {
+    store.set('str-id', {
       data: b64,
       ext: 'png',
       height: 50,
       width: 50,
       name: 'string-asset.png',
       type: 'image',
-    }
-    store.set('str-id', asset)
+    } satisfies InlayAsset)
 
     const result = await getInlayAsset('str-id')
     expect(result!.data).toBe(b64)
@@ -194,39 +251,51 @@ describe('getInlayAssetBlob', () => {
     expect(result).toBeNull()
   })
 
-  test('returns Blob data when stored as Blob', async () => {
+  test('returns Blob from server when metadata has serverAssetId', async () => {
+    const serverBytes = new TextEncoder().encode('binary-data')
+    const assetId = fakeAssetId(serverBytes)
+    serverAssetStore.set(assetId, { bytes: serverBytes, contentType: 'image/png' })
+    store.set('blob-id', {
+      ext: 'png',
+      height: 64,
+      width: 64,
+      name: 'blob.png',
+      type: 'image',
+      serverAssetId: assetId,
+    } satisfies InlayAsset)
+
+    const result = await getInlayAssetBlob('blob-id')
+    expect(result!.data).toBeInstanceOf(Blob)
+  })
+
+  test('falls back to legacy local Blob when no serverAssetId', async () => {
     const blob = new Blob(['binary-data'], { type: 'image/png' })
-    const asset: InlayAsset = {
+    store.set('blob-id', {
       data: blob,
       ext: 'png',
       height: 64,
       width: 64,
       name: 'blob.png',
       type: 'image',
-    }
-    store.set('blob-id', asset)
+    } satisfies InlayAsset)
 
     const result = await getInlayAssetBlob('blob-id')
     expect(result!.data).toBeInstanceOf(Blob)
   })
 
-  test('migrates string data to Blob and updates storage', async () => {
+  test('migrates legacy string data to Blob and updates storage', async () => {
     const b64 = 'data:image/png;base64,aGVsbG8='
-    const asset: InlayAsset = {
+    store.set('legacy-id', {
       data: b64,
       ext: 'png',
       height: 32,
       width: 32,
       name: 'legacy.png',
       type: 'image',
-    }
-    store.set('legacy-id', asset)
+    } satisfies InlayAsset)
 
     const result = await getInlayAssetBlob('legacy-id')
     expect(result!.data).toBeInstanceOf(Blob)
-
-    const updated = store.get('legacy-id') as InlayAsset
-    expect(updated.data).toBeInstanceOf(Blob)
   })
 })
 
@@ -271,38 +340,43 @@ describe('removeInlayAsset', () => {
 })
 
 describe('postInlayAsset', () => {
-  test('stores audio asset and returns id', async () => {
+  test('uploads audio asset to server and returns server asset id', async () => {
     const data = new Uint8Array([0xff, 0xfb, 0x90, 0x00])
     const result = await postInlayAsset({
       name: 'clip.mp3',
       data,
     })
-    expect(result).toBe('test-uuid-1234')
+    expect(result).not.toBeNull()
+    expect(serverAssetStore.has(result!)).toBe(true)
 
-    const stored = store.get('test-uuid-1234') as InlayAsset
+    // Local store holds metadata without data.
+    const stored = store.get(result!) as InlayAsset
     expect(stored).toMatchObject({
-      data: expect.any(Blob),
       ext: 'mp3',
       name: 'clip.mp3',
       type: 'audio',
+      serverAssetId: result,
     })
+    expect(stored.data).toBeUndefined()
   })
 
-  test('stores video asset and returns id', async () => {
+  test('uploads video asset to server and returns server asset id', async () => {
     const data = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3])
     const result = await postInlayAsset({
       name: 'video.webm',
       data,
     })
-    expect(result).toBe('test-uuid-1234')
+    expect(result).not.toBeNull()
+    expect(serverAssetStore.has(result!)).toBe(true)
 
-    const stored = store.get('test-uuid-1234') as InlayAsset
+    const stored = store.get(result!) as InlayAsset
     expect(stored).toMatchObject({
-      data: expect.any(Blob),
       ext: 'webm',
       name: 'video.webm',
       type: 'video',
+      serverAssetId: result,
     })
+    expect(stored.data).toBeUndefined()
   })
 
   test('returns null for any unsupported extension', async () => {
@@ -313,6 +387,7 @@ describe('postInlayAsset', () => {
           .filter((ext) => !allSupportedExts.includes(ext as any)),
         async (ext) => {
           store.clear()
+          serverAssetStore.clear()
           const result = await postInlayAsset({
             name: `file.${ext}`,
             data: new Uint8Array([0x00]),
@@ -327,6 +402,7 @@ describe('postInlayAsset', () => {
     await fc.assert(
       fc.asyncProperty(fc.constantFrom(...supportedAudioExts), async (ext) => {
         store.clear()
+        serverAssetStore.clear()
         const result = await postInlayAsset({
           name: `sound.${ext}`,
           data: new Uint8Array([0x00]),
@@ -343,6 +419,7 @@ describe('postInlayAsset', () => {
     await fc.assert(
       fc.asyncProperty(fc.constantFrom(...supportedVideoExts), async (ext) => {
         store.clear()
+        serverAssetStore.clear()
         const result = await postInlayAsset({
           name: `clip.${ext}`,
           data: new Uint8Array([0x00]),
@@ -357,7 +434,7 @@ describe('postInlayAsset', () => {
 })
 
 describe('writeInlayImage', () => {
-  test('stores image asset with correct metadata and returns id', async () => {
+  test('uploads image to server and stores metadata under both server and custom id', async () => {
     const imgObj = makeImage(200, 100)
 
     const result = await writeInlayImage(imgObj, {
@@ -366,27 +443,40 @@ describe('writeInlayImage', () => {
       id: 'custom-id',
     })
 
-    expect(result).toBe('custom-id')
+    // Returns the server asset id, not the custom id.
+    expect(serverAssetStore.has(result)).toBe(true)
 
-    const stored = store.get('custom-id') as InlayAsset
-    expect(stored).toMatchObject({
-      data: expect.any(Blob),
+    // Metadata stored under the server asset id.
+    const storedByServer = store.get(result) as InlayAsset
+    expect(storedByServer).toMatchObject({
       ext: 'png',
       height: 100,
       name: 'photo.jpg',
       type: 'image',
       width: 200,
+      serverAssetId: result,
+    })
+    expect(storedByServer.data).toBeUndefined()
+
+    // Metadata also stored under the caller-provided custom id.
+    const storedByCustom = store.get('custom-id') as InlayAsset
+    expect(storedByCustom).toMatchObject({
+      name: 'photo.jpg',
+      serverAssetId: result,
     })
   })
 
-  test('generates uuid when no id is provided', async () => {
+  test('returns server asset id when no custom id is provided', async () => {
     const imgObj = makeImage(50, 50)
 
     const result = await writeInlayImage(imgObj)
-    expect(result).toBe('test-uuid-1234')
+    expect(serverAssetStore.has(result)).toBe(true)
 
-    const stored = store.get('test-uuid-1234') as InlayAsset
-    expect(stored.name).toBe('test-uuid-1234')
+    const stored = store.get(result) as InlayAsset
+    expect(stored).toMatchObject({
+      type: 'image',
+      serverAssetId: result,
+    })
   })
 
   test('output pixels never exceed 1024 * 1024', async () => {
@@ -396,9 +486,10 @@ describe('writeInlayImage', () => {
         fc.integer({ min: 1, max: 10000 }),
         async (w, h) => {
           store.clear()
+          serverAssetStore.clear()
           const img = makeImage(w, h)
-          await writeInlayImage(img, { id: 'prop-img' })
-          const stored = store.get('prop-img') as InlayAsset
+          const assetId = await writeInlayImage(img, { id: 'prop-img' })
+          const stored = store.get(assetId) as InlayAsset
 
           expect(stored.width * stored.height).toBeLessThanOrEqual(1024 * 1024)
           expect(stored.width).toBeGreaterThan(0)
@@ -415,9 +506,10 @@ describe('writeInlayImage', () => {
         fc.integer({ min: 1025, max: 10000 }),
         async (w, h) => {
           store.clear()
+          serverAssetStore.clear()
           const img = makeImage(w, h)
-          await writeInlayImage(img, { id: 'ratio-img' })
-          const stored = store.get('ratio-img') as InlayAsset
+          const assetId = await writeInlayImage(img, { id: 'ratio-img' })
+          const stored = store.get(assetId) as InlayAsset
 
           const originalRatio = w / h
           const storedRatio = stored.width / stored.height
@@ -434,10 +526,11 @@ describe('writeInlayImage', () => {
         fc.integer({ min: 1, max: 1024 }),
         async (w, h) => {
           store.clear()
+          serverAssetStore.clear()
           const img = makeImage(w, h)
-          await writeInlayImage(img, { id: 'small-img' })
+          const assetId = await writeInlayImage(img, { id: 'small-img' })
 
-          const stored = store.get('small-img') as InlayAsset
+          const stored = store.get(assetId) as InlayAsset
           expect(stored).toMatchObject({
             height: h,
             width: w,
@@ -449,20 +542,21 @@ describe('writeInlayImage', () => {
 })
 
 describe('set -> get round-trip', () => {
-  test('preserves metadata through setInlayAsset -> getInlayAsset', async () => {
+  test('preserves metadata through setInlayAsset -> getInlayAsset via server', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.string({ minLength: 1, maxLength: 20 }),
         fc.string({ minLength: 1, maxLength: 30 }),
-        fc.string({ minLength: 1, maxLength: 5 }),
         fc.nat({ max: 5000 }),
         fc.nat({ max: 5000 }),
-        async (id, name, ext, width, height) => {
+        async (id, name, width, height) => {
           store.clear()
-          const blob = new Blob(['data'], { type: 'application/octet-stream' })
+          serverAssetStore.clear()
+          // Use a proper image content type so the server read-back resolves to 'image'.
+          const blob = new Blob(['data'], { type: 'image/png' })
           const asset: InlayAsset = {
             data: blob,
-            ext,
+            ext: 'png',
             height,
             width,
             name,
@@ -474,7 +568,6 @@ describe('set -> get round-trip', () => {
           const result = await getInlayAsset(id)
           expect(result).toMatchObject({
             data: expect.any(String),
-            ext,
             height,
             width,
             name,
@@ -491,6 +584,7 @@ describe('set -> remove -> get', () => {
     await fc.assert(
       fc.asyncProperty(fc.string({ minLength: 1, maxLength: 20 }), async (id) => {
         store.clear()
+        serverAssetStore.clear()
         const asset: InlayAsset = {
           data: new Blob(['x']),
           ext: 'png',

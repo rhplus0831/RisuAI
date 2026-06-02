@@ -1,9 +1,7 @@
 import { Packr, Unpackr, decode } from 'msgpackr/index-no-eval'
 import * as fflate from 'fflate'
 import { getDatabase, presetTemplate, type Database } from './database.svelte'
-import localforage from 'localforage'
 import { forageStorage } from '../globalApi.svelte'
-import { isFastifyServer } from 'src/ts/platform'
 
 const packr = new Packr({
   useRecords: false,
@@ -112,9 +110,6 @@ type EncodeBlockOption = {
   remote: 'none' | 'prefer' | 'force'
 }
 
-const risuSaveCacheForage = localforage.createInstance({
-  name: 'risuSaveCache',
-})
 export class RisuSaveEncoder {
   private blocks: { [key: string]: Uint8Array } = {}
   private compression: boolean = false
@@ -335,7 +330,7 @@ export class RisuSaveEncoder {
   async encodeBlock(arg: EncodeBlockArg, option: EncodeBlockOption = { remote: 'none' }) {
     if (
       option.remote === 'force' ||
-      (option.remote === 'prefer' && isFastifyServer && !disableRemoteSaving())
+      (option.remote === 'prefer' && !disableRemoteSaving())
     ) {
       return await this.encodeRemoteBlock(arg)
     }
@@ -366,13 +361,6 @@ export class RisuSaveEncoder {
     buf.set(nameBuf, 3)
     buf.set(new Uint8Array(lengthBuf), 3 + nameBuf.length)
     buf.set(databuf, 7 + nameBuf.length)
-    if (!isFastifyServer) {
-      await risuSaveCacheForage.setItem(`risuSaveBlock_${arg.name}`, {
-        type: arg.type,
-        data: arg.data,
-        name: arg.name,
-      })
-    }
     return buf
   }
 
@@ -486,27 +474,10 @@ export class RisuSaveDecoder {
                   if (!loadedBlocks.has(dirKey)) {
                     try {
                       console.log(`Loading directory block ${dirKey} from cache`)
-                      if (isFastifyServer) {
-                        console.warn(
-                          `RisuSave cache block ${dirKey} is not available in server-backed web mode.`,
-                        )
-                        continue
-                      }
-                      const dirData: {
-                        type: RisuSaveType
-                        data: string
-                        name: string
-                      } = (await risuSaveCacheForage.getItem(`risuSaveBlock_${dirKey}`)) as any
-
-                      if (dirData) {
-                        this.blocks.push({
-                          name: dirData.name,
-                          type: dirData.type,
-                          compression: false,
-                          content: dirData.data,
-                        })
-                        loadedBlocks.add(dirKey)
-                      }
+                      console.warn(
+                        `RisuSave cache block ${dirKey} is not available in server-backed web mode.`,
+                      )
+                      continue
                     } catch (error) {
                       console.error(`Error loading directory block ${dirKey}:`, error)
                     }
@@ -555,17 +526,10 @@ export class RisuSaveDecoder {
             } = JSON.parse(this.blocks[key].content)
             const fileName = `remotes/${remoteInfo.name}.local.bin`
             let remoteData: Uint8Array | null = null
-            if (isFastifyServer) {
-              console.warn(
-                `RisuSave remote block ${remoteInfo.name} is not available in server-backed web mode.`,
-              )
-              break
-            } else {
-              const stored = await forageStorage.getItem(fileName)
-              if (stored) {
-                remoteData = stored as Uint8Array
-              }
-            }
+            console.warn(
+              `RisuSave remote block ${remoteInfo.name} is not available in server-backed web mode.`,
+            )
+            break
 
             if (!remoteData) {
               console.warn(`Remote file ${fileName} not found.`)

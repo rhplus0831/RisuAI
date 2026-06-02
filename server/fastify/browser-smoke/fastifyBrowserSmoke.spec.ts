@@ -136,7 +136,6 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
 
   await page.goto(harness.baseUrl)
 
-  await expect.poll(() => page.evaluate(() => Boolean(globalThis.__FASTIFY__))).toBe(true)
   await expect.poll(() => page.evaluate(() => Boolean(globalThis.__NODE__))).toBe(false)
   await expect
     .poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__)))

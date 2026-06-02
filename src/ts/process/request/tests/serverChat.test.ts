@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../storage/nodeStorage', () => ({
+vi.mock('../../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
 }))
 

@@ -1,4 +1,3 @@
-import { isFastifyServer } from '../../platform'
 import { getDatabase } from '../../storage/database.svelte'
 import type { character, Chat, triggerscript } from '../../storage/database.svelte'
 import { getModelInfo, LLMFlags } from '../../model/modellist'
@@ -234,26 +233,23 @@ function resolveServerProviderPreflight(): ServerPromptAssemblyRoute | null {
  * provider wire payloads, but prompt assembly still performs this provider
  * preflight so unsupported Fastify sends fail before mutating chat state.
  *
- * Decision order (copying the precedent):
- *   1. `!isFastifyServer` → `local` (legacy web/dev/tests).
- *   2. mode / user-message structural check (subsumes the old, silently-falling
+ * Decision order:
+ *   1. mode / user-message structural check (subsumes the old, silently-falling
  *      `canUseServerAssembly` at `serverBackedSendChat.ts:142`).
- *   3. single, non-group character.
- *   4. server-routable provider (shared provider-capability table).
- *   5. no interactive-Lua / pluginV2 content, and no image/asset/inlay content
+ *   2. single, non-group character.
+ *   3. server-routable provider (shared provider-capability table).
+ *   4. no interactive-Lua / pluginV2 content, and no image/asset/inlay content
  *      on a model without image input. Vision-model image/asset/inlay content,
  *      image-gen / emotion view instructions, and non-interactive Lua hooks are
  *      server-assembled; pluginV2 edit hooks stay a permanent hard fail.
- *   6. otherwise → `server`.
+ *   5. otherwise → `server`.
  *
- * From step 2 on (Fastify mode) the verdict is always `server` or
- * `unsupported` — never a silent local fall-through.
+ * The verdict is always `server` or `unsupported` — never a silent local
+ * fall-through.
  */
 export function resolveServerPromptAssembly(
   input: ServerPromptAssemblyInput,
 ): ServerPromptAssemblyRoute {
-  if (!isFastifyServer) return { type: 'local' }
-
   const mode = deriveMode(input)
   if (mode === 'send') {
     const lastMessage = input.currentChat.message.at(-1)

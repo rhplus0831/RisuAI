@@ -3,15 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Mirrors serverCompletion.test.ts: the platform gate is a hoisted getter so a
 // case can flip Fastify mode, and `../../modules` is mocked so getModuleTriggers
 // is hermetic (no enabled-module state leaks into the content detector).
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
 vi.mock('../../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
@@ -88,7 +84,6 @@ function expectUnsupported(route: ServerPromptAssemblyRoute): string {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   ;(globalThis as Record<string, unknown>).safeStructuredClone = (v: unknown) =>
     v === undefined ? undefined : JSON.parse(JSON.stringify(v))
   seedDb()
@@ -105,13 +100,6 @@ afterEach(() => {
 })
 
 describe('resolveServerPromptAssembly', () => {
-  describe('local — only outside Fastify mode', () => {
-    it('returns local when not in Fastify mode (dev/web/tests)', () => {
-      platformState.isFastifyServer = false
-      expect(resolveServerPromptAssembly(makeInput())).toEqual({ type: 'local' })
-    })
-  })
-
   describe('server — the supported pure-text-send subset', () => {
     it('routes a plain user-message send to server', () => {
       expect(resolveServerPromptAssembly(makeInput())).toEqual({ type: 'server' })

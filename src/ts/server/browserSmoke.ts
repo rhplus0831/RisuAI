@@ -4,7 +4,7 @@ import { getDatabase, type Database } from '../storage/database.svelte'
 import { getRerollBuffer, reroll, unReroll } from '../process/rerollNavigation.svelte'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { patchRuntimeSettings, runServerCommand, type ServerCommandResult } from './commands'
-import { getNodeServerProxyAuth } from '../storage/nodeStorage'
+import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 
 declare global {
   interface Window {

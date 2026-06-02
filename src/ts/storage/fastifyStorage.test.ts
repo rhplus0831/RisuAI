@@ -23,7 +23,7 @@ vi.mock('../util', () => ({
   saveKeypairStore: vi.fn(async () => undefined),
 }))
 
-import { NodeStorage } from './nodeStorage'
+import { FastifyStorage } from './fastifyStorage'
 
 interface CapturedFetch {
   url: string
@@ -64,7 +64,7 @@ function captureFetch(handler: (url: string, init: RequestInit) => Response): Ca
   return calls
 }
 
-describe('Fastify NodeStorage client', () => {
+describe('FastifyStorage client', () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
@@ -78,7 +78,7 @@ describe('Fastify NodeStorage client', () => {
         return jsonResponse({ content: ['database/database.bin'] })
       return jsonResponse({ success: true })
     })
-    const storage = new NodeStorage()
+    const storage = new FastifyStorage()
     storage.authChecked = true
     vi.spyOn(storage, 'createAuth').mockResolvedValue('auth-token')
 
@@ -112,7 +112,7 @@ describe('Fastify NodeStorage client', () => {
       if (url === '/api/v1/auth/crypto') return textResponse('hashed-password')
       return jsonResponse({ success: true })
     })
-    const storage = new NodeStorage()
+    const storage = new FastifyStorage()
     vi.spyOn(storage, 'createAuth').mockResolvedValue('auth-token')
 
     await storage.setItem('database/database.bin', new Uint8Array([1]))

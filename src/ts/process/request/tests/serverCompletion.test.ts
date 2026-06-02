@@ -1,18 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
 vi.mock('../../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
-vi.mock('../../../storage/nodeStorage', () => ({
+vi.mock('../../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
 }))
 
@@ -54,7 +50,6 @@ function makeTarg(
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
 })
 
 afterEach(() => {
@@ -62,11 +57,6 @@ afterEach(() => {
 })
 
 describe('resolveServerCompletionRoute', () => {
-  it('returns local outside Fastify mode', () => {
-    platformState.isFastifyServer = false
-    expect(resolveServerCompletionRoute(makeTarg())).toEqual({ type: 'local' })
-  })
-
   it('routes Fastify completion by server intent without exposing a provider', () => {
     expect(resolveServerCompletionRoute(makeTarg())).toEqual({ type: 'server' })
     expect(getServerCompletionProvider(makeTarg())).toBe('server-intent')

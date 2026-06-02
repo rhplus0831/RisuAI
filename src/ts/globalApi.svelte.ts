@@ -1,5 +1,4 @@
-import { checkNullish, sleep } from './util'
-import { v4 as uuidv4, v4 } from 'uuid'
+import { checkNullish } from './util'
 import { get } from 'svelte/store'
 import {
   type Database,
@@ -12,7 +11,6 @@ import { checkRisuUpdate } from './update'
 import {
   MobileGUI,
   botMakerMode,
-  selectedCharID,
   loadedStore,
   DBState,
   LoadingStatusState,
@@ -25,12 +23,10 @@ import {
   alertError,
   alertMd,
   alertNormal,
-  alertNormalWait,
   alertSelect,
   alertTOS,
   waitAlert,
 } from './alert'
-import { hasher } from './parser/parser.svelte'
 import { characterURLImport } from './characterCards'
 import {
   defaultJailbreak,
@@ -38,26 +34,22 @@ import {
   oldJailbreak,
   oldMainPrompt,
 } from './storage/defaultPrompts'
-import { encodeRisuSaveLegacy, RisuSaveEncoder, type toSaveType } from './storage/risuSave'
 import { AutoStorage } from './storage/autoStorage'
 import { updateAnimationSpeed } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
-import { autoServerBackup, saveDbKei } from './kei/backup'
-import { language } from 'src/lang'
 import { startObserveDom } from './observer.svelte'
 import { updateGuisize } from './gui/guisize'
 import { updateLorebooks } from './characters'
 import { initMobileGesture } from './hotkey'
 import { moduleUpdate } from './process/modules'
 import { makeColdData } from './process/coldstorage.svelte'
-import { isFastifyServer } from './platform'
 import { isLocalNetworkUrl } from './network/localNetwork'
 import {
   decodeProxyJobWsChunk,
   formatProxyStreamErrorMessage,
   parseProxyJobWsEvent,
 } from './network/proxyJobWs'
-import { getNodeServerProxyAuth } from './storage/nodeStorage'
+import { getNodeServerProxyAuth } from './storage/fastifyStorage'
 import {
   activeWriterSessionHeader,
   handleActiveWriterStaleResponse,
@@ -144,41 +136,16 @@ interface PreparedServerAssetUpload {
  * @returns {Promise<string>} - A promise that resolves to the source URL of the file.
  */
 export async function getFileSrc(loc: string) {
-  if (isFastifyServer) {
-    // A4EC7 / B8: in Fastify mode the Fastify branch must only return URLs
-    // for shapes the server-projection asset gate documents. Unknown shapes
-    // (including raw http://https:// values from a poisoned projection) are
-    // rejected with an empty string so an <img src=""> renders broken
-    // instead of fetching the attacker-controlled origin.
-    if (loc.startsWith('/api/v1/assets/') || loc.startsWith('data:') || loc.startsWith('blob:')) {
-      return loc
-    }
-    const resolved = serverAssetUrl(loc)
-    return resolved ?? ''
+  // A4EC7 / B8: in Fastify mode the Fastify branch must only return URLs
+  // for shapes the server-projection asset gate documents. Unknown shapes
+  // (including raw http://https:// values from a poisoned projection) are
+  // rejected with an empty string so an <img src=""> renders broken
+  // instead of fetching the attacker-controlled origin.
+  if (loc.startsWith('/api/v1/assets/') || loc.startsWith('data:') || loc.startsWith('blob:')) {
+    return loc
   }
-  try {
-    let ind = fileCache.origin.indexOf(loc)
-    if (ind === -1) {
-      ind = fileCache.origin.length
-      fileCache.origin.push(loc)
-      fileCache.res.push('loading')
-      const f: Uint8Array = (await forageStorage.getItem(loc)) as unknown as Uint8Array
-      fileCache.res[ind] = f
-      return `data:image/png;base64,${Buffer.from(f).toString('base64')}`
-    } else {
-      const f = fileCache.res[ind]
-      if (f === 'loading') {
-        while (fileCache.res[ind] === 'loading') {
-          await sleep(10)
-        }
-        return `data:image/png;base64,${Buffer.from(fileCache.res[ind]).toString('base64')}`
-      }
-      return `data:image/png;base64,${Buffer.from(f).toString('base64')}`
-    }
-  } catch (error) {
-    console.error(error)
-    return ''
-  }
+  const resolved = serverAssetUrl(loc)
+  return resolved ?? ''
 }
 
 /**
@@ -188,10 +155,7 @@ export async function getFileSrc(loc: string) {
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the image file.
  */
 export async function readImage(data: string) {
-  if (isFastifyServer) {
-    return readServerAssetBytes(data)
-  }
-  return (await forageStorage.getItem(data)) as unknown as Uint8Array
+  return readServerAssetBytes(data)
 }
 
 /**
@@ -204,38 +168,11 @@ export async function readImage(data: string) {
  */
 export async function saveAsset(data: Uint8Array, customId: string = '', fileName: string = '') {
   const fileExtension = assetExtensionFromFileName(fileName)
-  if (isFastifyServer) {
-    return uploadServerAsset(data, fileExtension)
-  }
-
-  let id = ''
-  if (customId !== '') {
-    id = customId
-  } else {
-    try {
-      id = await hasher(data)
-    } catch (error) {
-      id = uuidv4()
-    }
-  }
-  let form = `assets/${id}.${fileExtension}`
-  const replacer = await forageStorage.setItem(form, data)
-  if (replacer) {
-    return replacer
-  }
-  return form
+  return uploadServerAsset(data, fileExtension)
 }
 
 export async function saveAssets(assets: readonly AssetSaveInput[]): Promise<string[]> {
   if (assets.length === 0) return []
-  if (!isFastifyServer) {
-    const saved: string[] = []
-    for (const asset of assets) {
-      saved.push(await saveAsset(asset.data, asset.customId ?? '', asset.fileName ?? ''))
-    }
-    return saved
-  }
-
   const prepared = assets.map((asset) => ({
     data: asset.data,
     contentType: serverAssetContentType(assetExtensionFromFileName(asset.fileName ?? '')),
@@ -363,10 +300,7 @@ function advanceServerAssetRevision(revision: unknown): void {
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the loaded asset file.
  */
 export async function loadAsset(id: string) {
-  if (isFastifyServer) {
-    return readServerAssetBytes(id)
-  }
-  return (await forageStorage.getItem(id)) as unknown as Uint8Array
+  return readServerAssetBytes(id)
 }
 
 let lastSave = ''
@@ -383,195 +317,7 @@ export let requiresFullEncoderReload = $state({
   state: false,
 })
 export async function saveDb() {
-  if (isFastifyServer) {
-    return
-  }
-
-  let changed = false
-  let gotChannel = false
-  const sessionID = v4()
-  let channel: BroadcastChannel
-  if (window.BroadcastChannel) {
-    channel = new BroadcastChannel('risu-db')
-  }
-  if (channel) {
-    channel.onmessage = (ev) => {
-      if (ev.data === sessionID) {
-        return
-      }
-      if (!gotChannel) {
-        gotChannel = true
-        alertNormalWait(language.activeTabChange).then(() => {
-          location.reload()
-        })
-      }
-    }
-  }
-
-  const changeTracker: toSaveType = {
-    character: [],
-    chat: [],
-    botPreset: false,
-    modules: false,
-    loadouts: false,
-    plugins: false,
-    pluginCustomStorage: false,
-  }
-
-  let encoder = new RisuSaveEncoder()
-  await encoder.init(getDatabase(), {
-    compression: false,
-  })
-
-  $effect.root(() => {
-    let selIdState = $state(0)
-
-    const debounceTime = 500 // 500 milliseconds
-    let saveTimeout: ReturnType<typeof setTimeout> | null = null
-
-    selectedCharID.subscribe((v) => {
-      selIdState = v
-    })
-
-    function saveTimeoutExecute() {
-      if (saveTimeout) {
-        clearTimeout(saveTimeout)
-      }
-      saveTimeout = setTimeout(() => {
-        changed = true
-      }, debounceTime)
-    }
-
-    $effect(() => {
-      DBState.db.botPresetsId
-      DBState.db.botPresets.length
-      changeTracker.botPreset = true
-      saveTimeoutExecute()
-    })
-    $effect(() => {
-      $state.snapshot(DBState.db.modules)
-      changeTracker.modules = true
-      saveTimeoutExecute()
-    })
-    $effect(() => {
-      $state.snapshot(DBState.db.loadouts)
-      changeTracker.loadouts = true
-      saveTimeoutExecute()
-    })
-    $effect(() => {
-      $state.snapshot(DBState.db.plugins)
-      changeTracker.plugins = true
-      saveTimeoutExecute()
-    })
-    $effect(() => {
-      $state.snapshot(DBState.db.pluginCustomStorage)
-      changeTracker.pluginCustomStorage = true
-      saveTimeoutExecute()
-    })
-    $effect(() => {
-      for (const key in DBState.db) {
-        if (
-          key !== 'characters' &&
-          key !== 'botPresets' &&
-          key !== 'modules' &&
-          key !== 'loadouts' &&
-          key !== 'plugins' &&
-          key !== 'pluginCustomStorage'
-        ) {
-          $state.snapshot(DBState.db[key])
-        }
-      }
-      if (DBState?.db?.characters?.[selIdState]) {
-        for (const key in DBState.db.characters[selIdState]) {
-          if (key !== 'chats') {
-            $state.snapshot(DBState.db.characters[selIdState][key])
-          }
-        }
-        $state.snapshot(DBState.db.characters[selIdState].chats)
-        if (changeTracker.character[0] !== DBState.db.characters[selIdState]?.chaId) {
-          changeTracker.character.unshift(DBState.db.characters[selIdState]?.chaId)
-        }
-        if (
-          changeTracker.chat[0]?.[0] !== DBState.db.characters[selIdState]?.chaId ||
-          changeTracker.chat[0]?.[1] !==
-            DBState.db.characters[selIdState]?.chats[DBState.db.characters[selIdState]?.chatPage].id
-        ) {
-          changeTracker.chat.unshift([
-            DBState.db.characters[selIdState]?.chaId,
-            DBState.db.characters[selIdState]?.chats[DBState.db.characters[selIdState]?.chatPage]
-              .id,
-          ])
-        }
-      }
-      saveTimeoutExecute()
-    })
-  })
-
-  let savetrys = 0
-  let lastDbData = new Uint8Array(0)
-  await sleep(1000)
-  while (true) {
-    if (!changed) {
-      await sleep(500)
-      continue
-    }
-
-    saving.state = true
-    changed = false
-    try {
-      if (requiresFullEncoderReload.state) {
-        encoder = new RisuSaveEncoder()
-        await encoder.init(getDatabase(), {
-          compression: false,
-          skipRemoteSavingOnCharacters: false,
-        })
-        requiresFullEncoderReload.state = false
-      }
-
-      let toSave = safeStructuredClone(changeTracker)
-      changeTracker.character =
-        changeTracker.character.length === 0 ? [] : [changeTracker.character[0]]
-      changeTracker.chat = changeTracker.chat.length === 0 ? [] : [changeTracker.chat[0]]
-      changeTracker.botPreset = false
-      changeTracker.modules = false
-      if (gotChannel) {
-        //Data is saved in other tab
-        await sleep(1000)
-        continue
-      }
-      if (channel) {
-        channel.postMessage(sessionID)
-      }
-      let db = getDatabase()
-      if (!db.characters) {
-        await sleep(1000)
-        continue
-      }
-
-      await encoder.set(db, toSave)
-      const encoded = encoder.encode()
-      if (!encoded) {
-        await sleep(1000)
-        continue
-      }
-      const dbData = new Uint8Array(encoded)
-      await forageStorage.setItem('database/database.bin', dbData)
-      await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData)
-      await getDbBackups()
-      savetrys = 0
-      await saveDbKei()
-      await sleep(500)
-    } catch (error) {
-      savetrys += 1
-      if (savetrys > 4) {
-        alertError(error)
-      } else {
-        console.error(error)
-      }
-    }
-
-    saving.state = false
-  }
+  return
 }
 
 /**
@@ -580,22 +326,7 @@ export async function saveDb() {
  * @returns {Promise<number[]>} - A promise that resolves to an array of backup timestamps.
  */
 export async function getDbBackups() {
-  if (isFastifyServer) {
-    return []
-  }
-
-  const keys = await forageStorage.keys()
-
-  const backups = keys
-    .filter((key) => key.startsWith('database/dbbackup-'))
-    .map((key) => parseInt(key.slice(18, -4)))
-    .sort((a, b) => b - a)
-
-  while (backups.length > 20) {
-    const last = backups.pop()
-    await forageStorage.removeItem(`database/dbbackup-${last}.bin`)
-  }
-  return backups
+  return []
 }
 
 /**
@@ -614,8 +345,6 @@ export function getFetchData(id: string) {
 }
 
 const knownHostes = ['localhost', '127.0.0.1', '0.0.0.0']
-const webLocalNetworkBlockedMessage =
-  'Direct private network calls are only supported when running under the Fastify server'
 const defaultProxyJobHeartbeatSec = 15
 
 function getProxyFetchUrl() {
@@ -772,19 +501,6 @@ export async function globalFetch(
       !arg.plainFetchDeforce &&
       !useLocalNetworkRoute
 
-    if (useLocalNetworkRoute && !isFastifyServer) {
-      return { ok: false, headers: {}, status: 400, data: webLocalNetworkBlockedMessage }
-    }
-
-    if (knownHostes.includes(urlHost) && !isFastifyServer) {
-      return {
-        ok: false,
-        headers: {},
-        status: 400,
-        data: 'Local network requests from the browser are blocked by browser security policy. Run RisuAI under the Fastify server, or use a tunneling service like ngrok and set the CORS to allow all.',
-      }
-    }
-
     if (arg.interceptor) {
       for (const interceptor of bodyIntercepterStore) {
         try {
@@ -931,7 +647,7 @@ async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<Global
     arg.headers ??= {}
     arg.headers['Content-Type'] ??=
       arg.body instanceof URLSearchParams ? 'application/x-www-form-urlencoded' : 'application/json'
-    const nodeProxyAuth = isFastifyServer ? await getNodeServerProxyAuth() : null
+    const nodeProxyAuth = await getNodeServerProxyAuth()
     const headers = {
       'risu-header': encodeURIComponent(JSON.stringify(arg.headers)),
       'risu-url': encodeURIComponent(url),
@@ -1591,17 +1307,8 @@ export async function fetchNative(
     throw new Error('Invalid body type')
   }
 
-  const db = getDatabase()
   const useLocalNetworkRoute = arg.networkRoute === 'local_network' && isLocalNetworkUrl(url)
-  if (useLocalNetworkRoute && !isFastifyServer) {
-    throw new Error(webLocalNetworkBlockedMessage)
-  }
-  let throughProxy = !isFastifyServer && !db.usePlainFetch
-  if (useLocalNetworkRoute) {
-    if (isFastifyServer) {
-      throughProxy = true
-    }
-  }
+  const throughProxy = useLocalNetworkRoute
   const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs)
   const requestSignal = timeoutSignal.signal
   let fetchLogIndex = addFetchLog({
@@ -1623,11 +1330,10 @@ export async function fetchNative(
       })
     } else if (throughProxy) {
       const useProxyJobWs =
-        isFastifyServer &&
         arg.interceptor === 'openai_streaming' &&
         arg.method === 'POST' &&
         useLocalNetworkRoute
-      const nodeProxyAuth = isFastifyServer ? await getNodeServerProxyAuth() : null
+      const nodeProxyAuth = await getNodeServerProxyAuth()
 
       if (useProxyJobWs) {
         try {
@@ -1893,14 +1599,7 @@ export function getLanguageCodes() {
 }
 
 export function getVersionString(): string {
-  let versionString = appVer
-  if (window.location.hostname === 'nightly.risuai.xyz') {
-    versionString = 'Nightly Build'
-  }
-  if (window.location.hostname === 'stable.risuai.xyz') {
-    versionString += ' (Stable)'
-  }
-  return versionString
+  return appVer
 }
 
 export function toGetter<T extends object>(

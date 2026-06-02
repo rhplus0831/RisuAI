@@ -1,6 +1,30 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, it, vi } from 'vitest'
 
 // vi.mock calls are hoisted; they take effect before any of the imports below.
+
+// With isFastifyServer unconditionally true, resolveServerPromptAssembly always
+// returns 'server' or 'unsupported'. This test suite exercises the local
+// assembly path (mocked requestChatData), so force the classifier to 'local'.
+vi.mock('../request/serverPromptAssembly', async (importActual) => {
+  const actual = await importActual<typeof import('../request/serverPromptAssembly')>()
+  return {
+    ...actual,
+    resolveServerPromptAssembly: () => ({ type: 'local' as const }),
+  }
+})
+vi.mock('../request/durableGeneration', async (importActual) => {
+  const actual = await importActual<typeof import('../request/durableGeneration')>()
+  return {
+    ...actual,
+    resolveDurableGeneration: () => ({ type: 'non-durable' as const, reason: 'test' }),
+  }
+})
+
+// fastifyStorage.getNodeServerProxyAuth touches indexedDB which is unavailable
+// in the jsdom test environment. Stub it to prevent the ReferenceError.
+vi.mock('../../storage/fastifyStorage', () => ({
+  getNodeServerProxyAuth: async () => 'fixture-auth-token',
+}))
 vi.mock('../request/request', () => import('../__fixtures__/mocks/request'))
 vi.mock('../tts', () => import('../__fixtures__/mocks/tts'))
 vi.mock('../inlayScreen', () => import('../__fixtures__/mocks/inlayScreen'))

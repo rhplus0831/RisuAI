@@ -9,24 +9,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // browser-only leaves are stubbed even though the preview short-circuit returns
 // before reaching them.
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
-// Negative-reachability probe: when armed, entering the local assembler throws.
-// Defaults to a passthrough so the non-Fastify local preview test can still run
-// local assembly.
 const localAssemblerState = vi.hoisted(() => ({ throwIfEntered: false }))
 
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
-vi.mock('../../storage/nodeStorage', () => ({
+vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'fixture-auth-token',
 }))
 
@@ -94,7 +87,6 @@ let cleanups: (() => void)[] = []
 
 beforeEach(() => {
   vi.stubGlobal('safeStructuredClone', (v: unknown) => JSON.parse(JSON.stringify(v)))
-  platformState.isFastifyServer = true
   resetServerChatState()
   resetServerCompletionCalls()
   doingChat.set(false)
@@ -175,18 +167,6 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       regenerateMessageId: 'msg-assistant-1',
       userMessage: '',
     })
-  })
-
-  it('does not route to /chat outside Fastify mode', async () => {
-    await seedEcho()
-    platformState.isFastifyServer = false
-    vi.stubGlobal('fetch', serverChatFetch)
-
-    // Outside Fastify mode the local preview path runs; if it happened to hit the
-    // stub it would throw (URL is not /api/v1/generate/chat). We only assert no
-    // /chat call was recorded.
-    await chatModule.sendChat(-1, { preview: true }).catch(() => {})
-    expect(getServerChatCalls()).toHaveLength(0)
   })
 
   it('routes send through /chat assembly, applies patches, and dispatches locally', async () => {

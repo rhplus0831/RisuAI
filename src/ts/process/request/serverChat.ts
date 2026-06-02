@@ -12,7 +12,7 @@
  * `biases`, so previews and the send path can use the server payload directly.
  */
 
-import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
+import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import type { MessageGenerationInfo } from '../../storage/database.svelte'
 import { setCachedServerCommandRevision } from '../../server/commands'
 import {

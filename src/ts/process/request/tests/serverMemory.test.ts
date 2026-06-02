@@ -1,19 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
 vi.mock('../../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
-vi.mock('../../../storage/nodeStorage', () => ({
+vi.mock('../../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
 }))
 
@@ -108,7 +104,6 @@ function makeMemoryFetch(bodyForUrl: (url: string, init: RequestInit) => unknown
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   vi.mocked(handleActiveWriterStaleResponse).mockClear()
   hypaV3ProgressStore.set({
     open: false,
@@ -125,8 +120,6 @@ afterEach(() => {
 describe('server memory API adapter', () => {
   it('reports availability from the Fastify platform gate', () => {
     expect(canUseServerMemoryApi()).toBe(true)
-    platformState.isFastifyServer = false
-    expect(canUseServerMemoryApi()).toBe(false)
   })
 
   it('lists chunks with the auth header and encoded chat id', async () => {
@@ -281,17 +274,6 @@ describe('server memory API adapter', () => {
     expect(handleActiveWriterStaleResponse).toHaveBeenCalledTimes(1)
   })
 
-  it('returns unavailable without fetching when the Fastify gate is closed', async () => {
-    platformState.isFastifyServer = false
-    const memoryFetch = makeMemoryFetch(() => ({ chunks: [baseChunk] }))
-    vi.stubGlobal('fetch', memoryFetch.fetch)
-
-    const result = await listServerMemoryChunks('chat-1')
-
-    expect(result).toEqual({ status: 'unavailable' })
-    expect(memoryFetch.calls).toEqual([])
-  })
-
   it('surfaces JSON route errors without exposing route details to callers', async () => {
     const memoryFetch = makeMemoryFetch(() => jsonResponse({ error: 'chatId is required' }, 400))
     vi.stubGlobal('fetch', memoryFetch.fetch)
@@ -342,22 +324,6 @@ describe('server memory API adapter', () => {
     })
 
     expect(applyServerHypaV3Progress({ open: true, miniMsg: 1, msg: '', subMsg: '' })).toBe(false)
-    expect(get(hypaV3ProgressStore)).toEqual({
-      open: true,
-      miniMsg: '1',
-      msg: 'existing',
-      subMsg: 'existing sub',
-    })
-
-    platformState.isFastifyServer = false
-    expect(
-      applyServerHypaV3Progress({
-        open: false,
-        miniMsg: '',
-        msg: '',
-        subMsg: '',
-      }),
-    ).toBe(false)
     expect(get(hypaV3ProgressStore)).toEqual({
       open: true,
       miniMsg: '1',

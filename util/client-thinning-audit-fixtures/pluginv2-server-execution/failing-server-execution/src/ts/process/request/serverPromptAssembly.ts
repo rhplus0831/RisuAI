@@ -2,7 +2,6 @@
 // comes from the server assembler execution path.
 import { pluginV2 } from '../../../plugins/plugins.svelte'
 
-declare const isFastifyServer: boolean
 type Route = { type: 'local' } | { type: 'server' } | { type: 'unsupported'; reason: string }
 
 function hasPluginV2EditSet(): boolean {
@@ -10,7 +9,6 @@ function hasPluginV2EditSet(): boolean {
 }
 
 export function resolveServerPromptAssembly(): Route {
-  if (!isFastifyServer) return { type: 'local' }
   if (hasPluginV2EditSet()) {
     return { type: 'unsupported', reason: 'Plugin (V2) scripts are not supported.' }
   }

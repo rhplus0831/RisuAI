@@ -1,14 +1,7 @@
-// EC1 fixture: browser Vertex access-token projection writes are unreachable in
-// Fastify mode. The projection write is gated behind `if (!isFastifyServer)` and
-// only runs through withTrustedServerProjectionWrite in browser-local mode.
+// EC1 fixture: google.ts is no longer checked by the audit (isFastifyServer is
+// unconditionally true, so there are no browser-local Vertex access-token paths).
+// This file is a no-op stub kept for fixture structure.
 
-declare const isFastifyServer: boolean
-declare function withTrustedServerProjectionWrite(fn: () => void): void
-
-export function persistVertexAccessToken(token: string): void {
-  if (!isFastifyServer) {
-    withTrustedServerProjectionWrite(() => {
-      void token
-    })
-  }
+export function persistVertexAccessToken(_token: string): void {
+  // No-op: Vertex access tokens are server-owned in Fastify mode.
 }

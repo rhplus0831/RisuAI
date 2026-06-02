@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const fetchNativeMock = vi.hoisted(() => vi.fn())
 const globalFetchMock = vi.hoisted(() => vi.fn())
 
@@ -8,9 +7,7 @@ vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('../../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
@@ -101,7 +98,6 @@ function makeVertexArg(): RequestDataArgumentExtended {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   installCryptoStub()
   seedDb()
   fetchNativeMock.mockReset()

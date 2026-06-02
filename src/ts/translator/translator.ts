@@ -7,7 +7,6 @@ import {
   type TranslatorPreset,
 } from './presets'
 import { globalFetch } from '../globalApi.svelte'
-import { isFastifyServer } from 'src/ts/platform'
 import { alertError } from '../alert'
 import { requestChatData } from '../process/request/request'
 import { doingChat, type OpenAIChat } from '../process/index.svelte'
@@ -212,7 +211,7 @@ async function translateMain(
     return bergamotTranslate(text, arg.from, arg.to, false)
   }
   if (db.useExperimentalGoogleTranslator) {
-    const hqAvailable = isFastifyServer || userScriptFetch
+    const hqAvailable = true
 
     if (hqAvailable) {
       try {

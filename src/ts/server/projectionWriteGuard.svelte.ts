@@ -1,4 +1,3 @@
-import { isFastifyServer } from '../platform'
 import { DBState } from '../stores.svelte'
 import type { Database } from '../storage/database.svelte'
 
@@ -12,19 +11,19 @@ const readOnlyServerProjectionPrototype = {}
 
 export function setServerProjectionWriteGuardEnabled(enabled: boolean) {
   serverProjectionWriteGuardEnabled = enabled
-  if (enabled && isFastifyServer && DBState.db && typeof DBState.db === 'object') {
+  if (enabled && DBState.db && typeof DBState.db === 'object') {
     DBState.db = createReadOnlyServerProjection(snapshotServerProjectionValue(DBState.db))
   }
 }
 
 export function isServerProjectionWriteGuardEnabled() {
   return (
-    serverProjectionWriteGuardEnabled && isFastifyServer && trustedServerProjectionWriteDepth === 0
+    serverProjectionWriteGuardEnabled && trustedServerProjectionWriteDepth === 0
   )
 }
 
 export function withTrustedServerProjectionWrite<T>(callback: () => T): T {
-  if (!serverProjectionWriteGuardEnabled || !isFastifyServer) {
+  if (!serverProjectionWriteGuardEnabled) {
     return callback()
   }
 

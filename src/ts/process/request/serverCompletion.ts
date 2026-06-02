@@ -1,5 +1,4 @@
-import { isFastifyServer } from '../../platform'
-import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
+import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { parseSseEvent } from './sseParse'
 import type { RequestDataArgumentExtended, requestDataResponse } from './request'
 
@@ -23,7 +22,6 @@ export type ServerCompletionRoute =
 export function resolveServerCompletionRoute(
   targ: RequestDataArgumentExtended,
 ): ServerCompletionRoute {
-  if (!isFastifyServer) return { type: 'local' }
   if (targ.previewBody === true) {
     return {
       type: 'unsupported',

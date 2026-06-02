@@ -102,9 +102,11 @@ phase scope docs, and design references.
 
 - Use `pnpm`; the project lockfile is `pnpm-lock.yaml`.
 - Node.js 24+ is required.
-- Fastify is the only supported web runtime. Old native/mobile wrappers,
-  browser-side persistence modes, service worker behavior, peer sync, Drive sync,
-  and removed memory engines are not targets for new work.
+- Fastify is the only runtime. `isFastifyServer` is unconditionally `true`;
+  there are no platform-selection flags or non-Fastify code paths. Old
+  native/mobile wrappers, browser-side persistence modes, service worker
+  behavior, peer sync, Drive sync, and removed memory engines are not targets
+  for new work.
 - There are no Fastify compatibility migrations for legacy web/runtime modes.
   SQLite schema migrations do exist in `server/fastify/src/db.ts`; keep that
   distinction clear when changing persisted server data.
@@ -118,10 +120,9 @@ phase scope docs, and design references.
   mutation path so `baseRevision`, revision bumps, and command events stay in
   sync. Explicit server-owned mutation routes include import/restore, asset
   upload, generation, and memory job creation/cancel.
-- Server-side prompt assembly is the only Fastify chat-send path: a supported
-  send is classified by `resolveServerPromptAssembly` plus the shared
+- Server-side prompt assembly is the only chat-send path: a supported send is
+  classified by `resolveServerPromptAssembly` plus the shared
   `resolveProviderCapability` table and routed to the server assembler;
-  unsupported shapes hard-fail. The browser-local assembler remains only for
-  non-Fastify compatibility.
+  unsupported shapes hard-fail.
 - Root TypeScript is intentionally loose for browser code; `server/fastify` has
   its own strict TypeScript config.

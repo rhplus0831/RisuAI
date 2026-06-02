@@ -6,19 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // server-backed read-only projection guard, and it must still dispatch the
 // matching chat command.
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
-vi.mock('../../storage/nodeStorage', () => ({
+vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'command-projection-token',
 }))
 
@@ -125,7 +121,6 @@ function seedDatabase(messages: unknown[] = []): void {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)

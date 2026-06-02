@@ -62,22 +62,16 @@ describe('Phase 2E static serving', () => {
       expect(res.body).toContain('<title>spa</title>')
     })
 
-    it('injects globalThis.__FASTIFY__ into the served index.html', async () => {
+    it('serves index.html without injecting runtime flags', async () => {
       const root = await harness.app.inject({ method: 'GET', url: '/' })
       expect(root.statusCode).toBe(200)
       expect(root.headers['content-type']).toContain('text/html')
-      expect(root.body).toContain('globalThis.__FASTIFY__ = true')
+      expect(root.body).not.toContain('globalThis.__FASTIFY__')
       expect(root.body).not.toContain('globalThis.__NODE__')
-      // Injected just after the opening <head ...> tag so the flags are
-      // set before any other script the SPA boot would run.
-      expect(root.body.indexOf('globalThis.__FASTIFY__')).toBeLessThan(
-        root.body.indexOf('<title>spa</title>'),
-      )
 
       const spa = await harness.app.inject({ method: 'GET', url: '/character/123' })
       expect(spa.statusCode).toBe(200)
-      expect(spa.body).toContain('globalThis.__FASTIFY__ = true')
-      expect(spa.body).not.toContain('globalThis.__NODE__')
+      expect(spa.body).not.toContain('globalThis.__FASTIFY__')
     })
 
     it('serves nested static files', async () => {

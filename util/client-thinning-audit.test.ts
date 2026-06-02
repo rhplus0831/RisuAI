@@ -528,19 +528,6 @@ describe('client-thinning audit fixtures', () => {
     )
   })
 
-  it('fails a fixture whose prompt-assembly classifier omits the Fastify guard', async () => {
-    const result = await runAuditFixture(
-      'provider-ownership/failing-prompt-assembly-missing-guard',
-      providerOwnershipCheck,
-    )
-
-    expect(result.exitCode).not.toBe(0)
-    expect(result.stderr).toContain(`[${providerOwnershipCheck}]`)
-    expect(result.stderr).toContain(
-      "serverPromptAssembly classifier is missing the Fastify server-mandatory guard: if (!isFastifyServer) return { type: 'local' }",
-    )
-  })
-
   it('allows server-routed provider dispatch with browser fallbacks gated off', async () => {
     const result = await runAuditFixture(
       'provider-ownership/server-routed-bypass',

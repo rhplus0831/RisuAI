@@ -1,19 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
 vi.mock('./platform', async (importActual) => {
   const actual = await importActual<typeof import('./platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
-vi.mock('./storage/nodeStorage', () => ({
+vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'compat-auth-token',
 }))
 
@@ -140,7 +136,6 @@ function seedCharacter(): character {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   vi.unstubAllGlobals()
@@ -346,20 +341,6 @@ describe('Phase 9-3f compatibility adapters', () => {
     const { factories, rollback } = prepareCompatibleChatUpdate(previousChat, nextChat, previous)
     expect(factories).toEqual([])
     expect(typeof rollback).toBe('function')
-  })
-
-  it('does not dispatch compatibility commands outside Fastify mode', async () => {
-    platformState.isFastifyServer = false
-    const calls = stubCommandFetch()
-    const previousCharacter = snapshot(DBState.db.characters[0])
-    const previous = currentCharacterStateSnapshot()
-    DBState.db.characters[0].name = 'Local mode'
-
-    dispatchCompatibleCharacterUpdate(previousCharacter, DBState.db.characters[0], previous)
-
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(calls).toEqual([])
-    expect(get(selectedCharID)).toBe(0)
   })
 
   it('routes character asset helper writes through character commands', async () => {

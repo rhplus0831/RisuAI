@@ -49,7 +49,6 @@ import {
   updateTextThemeAndCSS,
   type ColorScheme,
 } from 'src/ts/gui/colorscheme'
-import { isFastifyServer } from 'src/ts/platform'
 import { get } from 'svelte/store'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
 import { getLLMCache, searchLLMCache } from 'src/ts/translator/translator'
@@ -1261,8 +1260,8 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
     getRuntimeInfo: () => {
       return {
         apiVersion: '3.0',
-        platform: isFastifyServer ? 'fastify' : 'web',
-        saveMethod: isFastifyServer ? 'server' : 'local',
+        platform: 'fastify',
+        saveMethod: 'server',
         deviceLocalPluginStorage: isDeviceLocalPluginStorageEnabled(),
       }
     },

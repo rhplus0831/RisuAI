@@ -1,5 +1,4 @@
 import type { SettingItem } from './types'
-import { isFastifyServer } from '../platform'
 
 export const advancedSettingsItems: SettingItem[] = [
   {
@@ -149,7 +148,7 @@ export const advancedSettingsItems: SettingItem[] = [
     type: 'segmented',
     labelKey: 'requestLocation',
     bindKey: 'requestLocation',
-    condition: () => !isFastifyServer,
+    condition: () => false,
     options: {
       segmentOptions: [
         { value: '', label: 'Default' },
@@ -204,7 +203,6 @@ export const advancedSettingsItems: SettingItem[] = [
       'lorebook entries may not appear or save correctly. Requires validation in the ' +
       'real app — leave this off unless you are testing it.',
     options: { level: 'warning' },
-    condition: () => isFastifyServer,
     classes: 'mt-4',
   },
   {
@@ -213,7 +211,6 @@ export const advancedSettingsItems: SettingItem[] = [
     fallbackLabel: 'Enable lorebook stubs',
     bindKey: 'enableLorebookStubs',
     showExperimental: true,
-    condition: () => isFastifyServer,
   },
   {
     id: 'adv.forceProxy',
@@ -378,7 +375,6 @@ export const advancedSettingsItems: SettingItem[] = [
     type: 'check',
     labelKey: 'promptInfoInsideChat',
     bindKey: 'promptInfoInsideChat',
-    condition: () => isFastifyServer,
     helpKey: 'promptInfoInsideChatDesc',
     classes: 'mt-4',
   },
@@ -387,7 +383,7 @@ export const advancedSettingsItems: SettingItem[] = [
     type: 'check',
     labelKey: 'promptTextInfoInsideChat',
     bindKey: 'promptTextInfoInsideChat',
-    condition: (ctx) => isFastifyServer && ctx.db.promptInfoInsideChat,
+    condition: (ctx) => ctx.db.promptInfoInsideChat,
     classes: 'mt-4',
   },
   {

@@ -698,7 +698,7 @@ function checkPluginStorageGates(): void {
   const v3 = source('src/ts/plugins/apiV3/v3.svelte.ts')
   const v3Text = v3.getFullText()
   for (const needle of [
-    "saveMethod: isFastifyServer ? 'server' : 'local'",
+    "saveMethod: 'server'",
     'deviceLocalPluginStorage: isDeviceLocalPluginStorageEnabled()',
     'getLocalPluginStorage: () =>',
     'assertDeviceLocalPluginStorageEnabled()',
@@ -1175,7 +1175,6 @@ function checkProviderOwnership(): void {
   const serverCompletion = source('src/ts/process/request/serverCompletion.ts')
   const serverCompletionText = serverCompletion.getFullText()
   for (const needle of [
-    "if (!isFastifyServer) return { type: 'local' }",
     'Provider preview bodies are not supported in Fastify server mode',
   ]) {
     if (!serverCompletionText.includes(needle)) {
@@ -1189,14 +1188,12 @@ function checkProviderOwnership(): void {
   }
 
   // The prompt-assembly classifier mirrors the completion route: it must exist
-  // and pin the browser-local verdict to `!isFastifyServer` so the supported
-  // text-send subset is server-mandatory in Fastify mode (no silent local
-  // fall-through). See docs/client-thinning/reference/prompt-assembly-classifier.md.
+  // and enforce server-mandatory assembly for the supported text-send subset
+  // (no silent local fall-through). See docs/client-thinning/reference/prompt-assembly-classifier.md.
   const serverPromptAssembly = source('src/ts/process/request/serverPromptAssembly.ts')
   const serverPromptAssemblyText = serverPromptAssembly.getFullText()
   for (const needle of [
     'export function resolveServerPromptAssembly',
-    "if (!isFastifyServer) return { type: 'local' }",
     'is not supported in Fastify server mode',
   ]) {
     if (!serverPromptAssemblyText.includes(needle)) {
@@ -1214,20 +1211,6 @@ function checkProviderOwnership(): void {
       'useServerPromptAssembly must not route Fastify prompt assembly to the browser-local assembler.',
       undefined,
       serverPromptAssembly,
-    )
-  }
-
-  const google = source('src/ts/process/request/google.ts')
-  const googleText = google.getFullText()
-  if (
-    !googleText.includes('if (!isFastifyServer)') ||
-    !googleText.includes('withTrustedServerProjectionWrite')
-  ) {
-    fail(
-      check,
-      'Browser Vertex token projection writes must be unreachable in Fastify mode.',
-      undefined,
-      google,
     )
   }
 
@@ -1530,9 +1513,10 @@ function valueIsConflictStatus(node: Node, aliases: ReadonlySet<string>): boolea
 // The branch region(s) controlled by a condition sub-expression: the arm taken
 // when that sub-expression is `takeWhenTrue` (after accounting for `!`
 // negations on the path up to the controlling `if` / ternary). Returns the
-// matching branch, plus the statements after an early-return guard. Used both
-// for A4R2 (conflict-status comparison) and A4R7 (the `isFastifyServer` guard),
-// so the branch is located regardless of guard polarity.
+// matching branch, plus the statements after an early-return guard. Used by
+// A4R2 (conflict-status comparison) and optionally by A4R7 when a legacy
+// `isFastifyServer` guard is still present; the branch is located regardless
+// of guard polarity.
 function guardedBranchRegions(conditionNode: Node, takeWhenTrue: boolean): Node[] {
   let current = conditionNode
   let negations = 0
@@ -2155,17 +2139,17 @@ function checkAlpha4WildcardSecretIdentity(): void {
 // ----- A4R7: Asset-URL helpers gate to documented shapes -----
 //
 // Invariant: every helper in `src/ts/` that returns or fetches a server asset
-// URL must, in its Fastify-mode branch, accept only documented shapes (raw
-// 64-char asset id, legacy `assets/<sha>.<ext>`, `data:`, `blob:`, absolute
-// `/api/v1/assets/...`). Unknown shapes must throw or return a documented
-// placeholder. The gate helper `serverAssetUrl` (and the
-// `serverAssetIdFromReference` it may delegate to) must itself restrict `loc`
-// to the documented anchored shapes and reject the rest with `null`.
+// URL must accept only documented shapes (raw 64-char asset id, legacy
+// `assets/<sha>.<ext>`, `data:`, `blob:`, absolute `/api/v1/assets/...`).
+// Unknown shapes must throw or return a documented placeholder. The gate
+// helper `serverAssetUrl` (and the `serverAssetIdFromReference` it may
+// delegate to) must itself restrict `loc` to the documented anchored shapes
+// and reject the rest with `null`.
 //
 // This is an AST invariant, not a branch-text heuristic:
-//   - The Fastify branch is located by guard polarity via `guardedBranchRegions`,
-//     so inverting `if (isFastifyServer)` into `if (!isFastifyServer) { ... }`
-//     no longer makes the finder latch the browser branch and pass.
+//   - The app is Fastify-only, so the entire function body is the Fastify path.
+//     If a legacy `isFastifyServer` guard still exists, the check narrows to
+//     that branch via `guardedBranchRegions`; otherwise the whole body is used.
 //   - The accepted shapes of `serverAssetUrl` are validated rather than
 //     assumed, so a refactor that widens them (e.g. an `http(s)://` passthrough)
 //     cannot slip past unnoticed.
@@ -2368,10 +2352,11 @@ function checkAlpha4AssetUrlGate(): void {
       continue
     }
 
-    // shape-gate mode: locate the Fastify branch by guard polarity so an
-    // inverted `if (!isFastifyServer)` cannot make us scrutinize the browser
-    // branch by mistake. The branch must reject unknown shapes (''/null/throw)
-    // and never fall through to `?? loc`.
+    // shape-gate mode: the function body is the Fastify path (the app is
+    // Fastify-only, so there is no browser branch to exclude). If a legacy
+    // `isFastifyServer` guard still exists, narrow to that branch; otherwise
+    // the entire body is the region to check. The branch must reject unknown
+    // shapes (''/null/throw) and never fall through to `?? loc`.
     const param = fn.getParameters()[0]?.getName() ?? 'loc'
     let regions: Node[] = []
     body.forEachDescendant((descendant, traversal) => {
@@ -2384,12 +2369,8 @@ function checkAlpha4AssetUrlGate(): void {
       if (candidate.length) regions = candidate
     })
     if (!regions.length) {
-      fail(
-        check,
-        `${rule.fn} in ${rule.file} must guard its asset URL handling on isFastifyServer.`,
-        fn,
-      )
-      continue
+      // No isFastifyServer guard — the whole body IS the Fastify path.
+      regions = [body]
     }
     const fastifyBranchText = regions.map((region) => region.getText()).join('\n')
     if (new RegExp(`\\?\\?\\s*${param}\\b`).test(fastifyBranchText)) {

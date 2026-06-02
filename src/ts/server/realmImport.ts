@@ -1,5 +1,4 @@
-import { isFastifyServer } from '../platform'
-import { getNodeServerProxyAuth } from '../storage/nodeStorage'
+import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import {
   getServerCommandBaseRevision,
@@ -41,8 +40,6 @@ export async function importRealmCharacterFromServer(
     onProgress?: (progress: ServerRealmImportProgress) => void
   } = {},
 ): Promise<ServerRealmImportResult> {
-  if (!isFastifyServer) return { status: 'unavailable' }
-
   const baseRevision = await getServerCommandBaseRevision(options.signal)
   if (baseRevision === null) {
     return { status: 'error', error: 'Unable to read server command revision' }

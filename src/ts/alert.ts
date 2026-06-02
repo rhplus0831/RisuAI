@@ -1,7 +1,6 @@
 import { get, writable } from 'svelte/store'
 import { sleep } from './util'
 import { language } from '../lang'
-import { isFastifyServer } from 'src/ts/platform'
 import { getDatabase, type MessageGenerationInfo } from './storage/database.svelte'
 import { alertStore as alertStoreImported } from './stores.svelte'
 
@@ -84,9 +83,7 @@ export function alertError(msg: string | Error) {
   ) {
     submsg = db.usePlainFetch
       ? language.errors.networkFetchPlain
-      : !isFastifyServer
-        ? language.errors.networkFetchWeb
-        : language.errors.networkFetch
+      : language.errors.networkFetch
   }
 
   alertStoreImported.set({

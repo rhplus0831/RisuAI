@@ -1,18 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: false }))
-
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
-vi.mock('../../storage/nodeStorage', () => ({
+vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'context-auth-token',
 }))
 
@@ -121,7 +117,6 @@ function stubCommandFetch(): CapturedFetch[] {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = false
   clearCachedServerCommandRevision()
   vi.unstubAllGlobals()
   toastCalls.calls = []
@@ -166,10 +161,10 @@ describe('setupSendChatContext - preset chain', () => {
 })
 
 describe('setupSendChatContext - DB side effects', () => {
-  it('increments db.statics.messages by 1', () => {
+  it('does not increment db.statics.messages locally in server-backed mode', () => {
     seedDb({ statics: { messages: 4 } as unknown as Database['statics'] })
     setupSendChatContext({ chatProcessIndex: -1 })
-    expect(DBState.db.statics.messages).toBe(5)
+    expect(DBState.db.statics.messages).toBe(4)
   })
 
   it('updates nowChatroom.lastInteraction to roughly now', () => {
@@ -214,7 +209,6 @@ describe('setupSendChatContext - DB side effects', () => {
   })
 
   it('routes server-backed entry-context durable writes through commands', async () => {
-    platformState.isFastifyServer = true
     const calls = stubCommandFetch()
     seedDb({
       statics: { messages: 4 } as unknown as Database['statics'],
@@ -273,7 +267,6 @@ describe('setupSendChatContext - DB side effects', () => {
     // then replaceMessages back-to-back. Pre-fix both ran with the same
     // cached baseRevision and the second 409d; the sequencer must replay
     // the revision returned by the first into the second.
-    platformState.isFastifyServer = true
     let nextRevision = 21
     const captured: { url: string; body: { baseRevision?: number } }[] = []
     vi.stubGlobal(

@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({
-  isFastifyServer: true,
-}))
 const localForageState = vi.hoisted(() => ({
   getItem: vi.fn(async () => undefined),
   setItem: vi.fn(async () => undefined),
@@ -15,9 +12,7 @@ vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
@@ -38,7 +33,6 @@ vi.mock('localforage', () => ({
 import { GoogleSearchClient } from './googlesearchclient'
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   localForageState.getItem.mockClear()
   localForageState.setItem.mockClear()
   alertState.alertInput.mockClear()
@@ -49,7 +43,7 @@ describe('Google Search MCP credentials', () => {
     const client = new GoogleSearchClient()
 
     await expect(client.checkHandshake()).rejects.toThrow(
-      'Google Search MCP credentials are not supported in server-backed web mode yet',
+      'Google Search MCP credentials are not supported in server-backed web mode',
     )
 
     expect(localForageState.getItem).not.toHaveBeenCalled()

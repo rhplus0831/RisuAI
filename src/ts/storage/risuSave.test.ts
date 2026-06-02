@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({
-  isFastifyServer: true,
-}))
 const localForageState = vi.hoisted(() => ({
   setItem: vi.fn(async () => undefined),
   getItem: vi.fn(async () => undefined),
@@ -12,9 +9,7 @@ vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
@@ -46,7 +41,6 @@ vi.mock('../globalApi.svelte', () => ({
 import { RisuSaveEncoder } from './risuSave'
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   localForageState.setItem.mockClear()
   localForageState.getItem.mockClear()
 })

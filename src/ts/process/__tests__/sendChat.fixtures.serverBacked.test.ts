@@ -12,19 +12,15 @@ import type { FastifyInstance } from 'fastify'
 // `/api/v1/generate/chat`, so the browser-local assembler is never used in
 // server-backed mode.
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
-vi.mock('../../storage/nodeStorage', () => ({
+vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'fixture-auth-token',
 }))
 
@@ -394,7 +390,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     vi.stubGlobal('safeStructuredClone', (v: unknown) =>
       v === undefined ? undefined : JSON.parse(JSON.stringify(v)),
     )
-    platformState.isFastifyServer = true
     resetProviderState()
     resetSideEffectCalls()
     resetServerCompletionCalls()
@@ -946,7 +941,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     vi.stubGlobal('safeStructuredClone', (v: unknown) =>
       v === undefined ? undefined : JSON.parse(JSON.stringify(v)),
     )
-    platformState.isFastifyServer = true
     resetProviderState()
     resetSideEffectCalls()
     resetServerChatState()

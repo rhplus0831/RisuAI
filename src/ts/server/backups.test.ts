@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const projectionResyncSpies = vi.hoisted(() => ({
   hydrateActiveCharacterLorebook: vi.fn(async () => undefined),
   hydrateActiveChat: vi.fn(async () => undefined),
@@ -11,17 +10,9 @@ const projectionResyncSpies = vi.hoisted(() => ({
   triggerOpenChatGenerationReattach: vi.fn(),
 }))
 
-vi.mock('../platform', async (importActual) => {
-  const actual = await importActual<typeof import('../platform')>()
-  return {
-    ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
-  }
-})
+vi.mock('../platform', () => ({ isFastifyServer: true }))
 
-vi.mock('../storage/nodeStorage', () => ({
+vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'backup-auth-token',
 }))
 
@@ -108,7 +99,6 @@ const backupManifest = {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   vi.stubGlobal('safeStructuredClone', (value: unknown) => JSON.parse(JSON.stringify(value)))
   clearCachedServerCommandRevision()
   DBState.db = {} as any
@@ -126,16 +116,8 @@ afterEach(() => {
 })
 
 describe('server backup helpers', () => {
-  it('reports availability from the Fastify platform gate', async () => {
+  it('reports availability unconditionally', () => {
     expect(canUseServerBackups()).toBe(true)
-    platformState.isFastifyServer = false
-    expect(canUseServerBackups()).toBe(false)
-
-    const backupFetch = makeBackupFetch(() => backupManifest)
-    vi.stubGlobal('fetch', backupFetch.fetch)
-
-    await expect(listServerBackups()).resolves.toEqual({ status: 'unavailable' })
-    expect(backupFetch.calls).toEqual([])
   })
 
   it('creates and lists backups with auth headers', async () => {
@@ -264,15 +246,6 @@ describe('server backup helpers', () => {
 describe('device backup helpers (Save/Load Backup Locally)', () => {
   const BUNDLE_BYTES = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4])
 
-  it('only downloads the bundle on the Fastify platform', async () => {
-    platformState.isFastifyServer = false
-    const backupFetch = makeBackupFetch(() => new Response(BUNDLE_BYTES))
-    vi.stubGlobal('fetch', backupFetch.fetch)
-
-    await expect(exportServerBundle()).resolves.toEqual({ status: 'unavailable' })
-    expect(backupFetch.calls).toEqual([])
-  })
-
   it('downloads the bundle bytes with an auth header and content-disposition filename', async () => {
     const backupFetch = makeBackupFetch(
       () =>
@@ -375,13 +348,4 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     expect(DBState.db).toEqual({})
   })
 
-  it('gates bundle import behind the Fastify platform', async () => {
-    platformState.isFastifyServer = false
-    const backupFetch = makeBackupFetch(() => ({ revision: 1 }))
-    vi.stubGlobal('fetch', backupFetch.fetch)
-
-    const file = new Blob([BUNDLE_BYTES], { type: 'application/zip' })
-    await expect(importServerBundle({ file })).resolves.toEqual({ status: 'unavailable' })
-    expect(backupFetch.calls).toEqual([])
-  })
 })

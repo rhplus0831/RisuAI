@@ -1,18 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
+vi.mock('../platform', () => ({ isFastifyServer: true }))
 
-vi.mock('../platform', async (importActual) => {
-  const actual = await importActual<typeof import('../platform')>()
-  return {
-    ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
-  }
-})
-
-vi.mock('../storage/nodeStorage', () => ({
+vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'bootstrap-auth-token',
 }))
 
@@ -63,7 +53,6 @@ function stubBootstrapFetch(bodyForUrl: (url: string) => unknown): CapturedFetch
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
 })
 
@@ -72,11 +61,8 @@ afterEach(() => {
 })
 
 describe('server bootstrap projection helper', () => {
-  it('reports availability from the Fastify platform gate', async () => {
+  it('reports availability unconditionally', () => {
     expect(canUseServerBootstrap()).toBe(true)
-    platformState.isFastifyServer = false
-    expect(canUseServerBootstrap()).toBe(false)
-    await expect(fetchServerBootstrapProjection()).resolves.toEqual({ status: 'unavailable' })
   })
 
   it('fetches the projection with auth and caches the command revision', async () => {

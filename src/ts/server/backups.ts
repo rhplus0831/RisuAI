@@ -1,5 +1,4 @@
-import { isFastifyServer } from '../platform'
-import { getNodeServerProxyAuth } from '../storage/nodeStorage'
+import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import type { CommandEvent } from './commands'
 import { forceServerProjectionResync } from './projectionResync'
@@ -24,7 +23,7 @@ export type ServerBackupResult<T> =
   | { status: 'unavailable' }
 
 export function canUseServerBackups(): boolean {
-  return isFastifyServer
+  return true
 }
 
 export async function createServerBackup(

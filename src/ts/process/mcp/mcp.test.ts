@@ -1,18 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
 vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
-vi.mock('../../storage/nodeStorage', () => ({
+vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'mcp-auth-token',
 }))
 
@@ -72,7 +68,6 @@ function stubCommandFetch(commandStatus = 200): CapturedFetch[] {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
   vi.unstubAllGlobals()
   setServerProjectionWriteGuardEnabled(false)

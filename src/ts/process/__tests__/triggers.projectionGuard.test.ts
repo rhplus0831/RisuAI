@@ -5,19 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // directly, so they do not throw under the server-backed read-only projection
 // guard.
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
-vi.mock('../../storage/nodeStorage', () => ({
+vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'trigger-command-token',
 }))
 
@@ -132,7 +128,6 @@ function characterWithTriggers(triggerscript: unknown[]): character {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   // Re-establish the global the SPA bootstrap installs; afterEach's
   // vi.unstubAllGlobals() clears it between tests.
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone

@@ -1,7 +1,7 @@
-import { NodeStorage } from './nodeStorage'
+import { FastifyStorage } from './fastifyStorage'
 
 export class AutoStorage {
-  realStorage: NodeStorage
+  realStorage: FastifyStorage
 
   async setItem(key: string, value: Uint8Array): Promise<string | null> {
     await this.Init()
@@ -24,7 +24,7 @@ export class AutoStorage {
   async Init() {
     if (!this.realStorage) {
       console.log('using fastify storage')
-      this.realStorage = new NodeStorage()
+      this.realStorage = new FastifyStorage()
     }
   }
 

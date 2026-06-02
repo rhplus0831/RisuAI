@@ -16,7 +16,7 @@ vi.mock('../platform', async (importActual) => {
   }
 })
 
-vi.mock('../storage/nodeStorage', () => ({
+vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'realm-auth-token',
 }))
 

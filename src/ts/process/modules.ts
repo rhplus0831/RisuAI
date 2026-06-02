@@ -29,7 +29,6 @@ import { v4 } from 'uuid'
 import { convertExternalLorebook } from './lorebook.svelte'
 import { compressImage } from '../media'
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js'
-import { isFastifyServer } from '../platform'
 import {
   DBState,
   HideIconStore,
@@ -303,18 +302,7 @@ export async function importModule() {
   }
   let fileData = f.data
   if (f.name.endsWith('.risum')) {
-    if (isFastifyServer) {
-      alertError('Module file import is not supported in server-backed web mode yet')
-      return
-    }
-    try {
-      const buf = Buffer.from(fileData)
-      const module = await readModule(buf)
-      createGlobalModule(module)
-    } catch (error) {
-      console.error(error)
-      alertError(language.errors.noData)
-    }
+    alertError('Module file import is not supported in server-backed web mode yet')
     return
   }
   try {

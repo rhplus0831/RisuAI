@@ -1,6 +1,5 @@
 import type { Database } from '../storage/database.svelte'
-import { isFastifyServer } from '../platform'
-import { getNodeServerProxyAuth } from '../storage/nodeStorage'
+import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 
 const PROJECTION_ENDPOINT = '/api/v1/projection'
 
@@ -11,7 +10,7 @@ export type ServerProjectionResourceResult =
   | { status: 'unavailable' }
 
 export function canUseServerProjection(): boolean {
-  return isFastifyServer
+  return true
 }
 
 /**

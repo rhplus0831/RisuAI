@@ -1,18 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
+vi.mock('../platform', () => ({ isFastifyServer: true }))
 
-vi.mock('../platform', async (importActual) => {
-  const actual = await importActual<typeof import('../platform')>()
-  return {
-    ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
-  }
-})
-
-vi.mock('../storage/nodeStorage', () => ({
+vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'events-auth-token',
 }))
 
@@ -66,23 +56,13 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   throw new Error('timed out waiting for condition')
 }
 
-beforeEach(() => {
-  platformState.isFastifyServer = true
-})
-
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
 describe('server command event subscription helper', () => {
-  it('reports availability from the Fastify platform gate', async () => {
+  it('reports availability unconditionally', () => {
     expect(canUseServerEvents()).toBe(true)
-    platformState.isFastifyServer = false
-    expect(canUseServerEvents()).toBe(false)
-
-    await expect(subscribeServerCommandEvents({ onCommandEvent: vi.fn() })).resolves.toEqual({
-      status: 'unavailable',
-    })
   })
 
   it('fetches the event stream with auth and emits command and memory events', async () => {

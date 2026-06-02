@@ -29,7 +29,6 @@
   import Settings from './lib/Setting/Settings.svelte'
   import { showRealmInfoStore, importCharacterProcess } from './ts/characterCards'
   import { importPreset, getDatabase, setDatabase } from './ts/storage/database.svelte'
-  import { readModule } from './ts/process/modules'
   import { alertError, alertNormal } from './ts/alert'
   import { language } from './lang'
   import RealmFrame from './lib/UI/Realm/RealmFrame.svelte'
@@ -54,8 +53,6 @@
   import IrisModal from './lib/Others/IrisModal.svelte'
   import Legal from './lib/Others/Legal.svelte'
   import CustomSidebarConfig from './lib/Others/CustomSidebarConfig.svelte'
-  import { currentModuleStateSnapshot, dispatchCreateModule } from './ts/moduleCommands'
-  import { isFastifyServer } from './ts/platform'
 
   let gridOpen = $state(false)
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
@@ -85,16 +82,8 @@
         await importPreset({ name: file.name, data })
         alertNormal(language.successImport)
       } else if (name.endsWith('.risum')) {
-        if (isFastifyServer) {
-          alertError('Module file import is not supported in server-backed web mode yet')
-          return
-        }
-        const data = new Uint8Array(await file.arrayBuffer())
-        const previous = currentModuleStateSnapshot()
-        const module = await readModule(Buffer.from(data))
-        DBState.db.modules.push(module)
-        dispatchCreateModule(module, previous)
-        alertNormal(language.successImport)
+        alertError('Module file import is not supported in server-backed web mode yet')
+        return
       } else {
         await importCharacterProcess({
           name: file.name,

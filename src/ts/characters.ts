@@ -64,7 +64,6 @@ import {
   dispatchSelectCharacter,
   dispatchUpdateCharacter,
 } from './characterCommands'
-import { isFastifyServer } from './platform'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
 
@@ -975,41 +974,20 @@ export async function changeChar(
   reseter()
   botMakerMode.set(false)
   if (DBState.db.characters?.[index]?.coldstorage) {
-    if (isFastifyServer) {
-      alertError('Cold-storage character hydration is not supported in server-backed web mode yet')
-      return
-    }
-    const coldData = await getColdStorageItem(DBState.db.characters[index].coldstorage!)
-    if (coldData.character && coldData.character.chaId === DBState.db.characters[index].chaId) {
-      DBState.db.characters[index] = coldData.character
-    } else {
-      alertError(language.errors.coldStorageVerifyFailed)
-      return
-    }
-  }
-  if (isFastifyServer) {
-    const previous = currentCharacterStateSnapshot()
-    const characterId = DBState.db.characters?.[index]?.chaId
-    if (!characterId) return
-    const lastInteraction = Date.now()
-    withTrustedServerProjectionWrite(() => {
-      const character = DBState.db.characters?.[index]
-      if (character) {
-        character.lastInteraction = lastInteraction
-      }
-      ;(DBState.db as unknown as { currentChar?: number }).currentChar = index
-      selectedCharID.set(index)
-    })
-    dispatchSelectCharacter(characterId, previous, lastInteraction)
+    alertError('Cold-storage character hydration is not supported in server-backed web mode yet')
     return
   }
-  characterFormatUpdate(index, {
-    updateInteraction: true,
-  })
   const previous = currentCharacterStateSnapshot()
-  selectedCharID.set(index)
   const characterId = DBState.db.characters?.[index]?.chaId
-  if (characterId) {
-    dispatchSelectCharacter(characterId, previous)
-  }
+  if (!characterId) return
+  const lastInteraction = Date.now()
+  withTrustedServerProjectionWrite(() => {
+    const character = DBState.db.characters?.[index]
+    if (character) {
+      character.lastInteraction = lastInteraction
+    }
+    ;(DBState.db as unknown as { currentChar?: number }).currentChar = index
+    selectedCharID.set(index)
+  })
+  dispatchSelectCharacter(characterId, previous, lastInteraction)
 }

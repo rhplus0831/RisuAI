@@ -1,5 +1,4 @@
-import { isFastifyServer } from '../platform'
-import { getNodeServerProxyAuth } from '../storage/nodeStorage'
+import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 
 const COMMAND_ENDPOINT = '/api/v1/commands'
@@ -950,7 +949,7 @@ export interface RunServerPresetCommandInput<T extends Record<string, unknown> =
 let cachedServerCommandRevision: number | null = null
 
 export function canUseServerCommands(): boolean {
-  return isFastifyServer
+  return true
 }
 
 export function settingsGroupForKey(key: string): SettingsGroup | null {

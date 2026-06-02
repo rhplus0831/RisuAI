@@ -9,21 +9,11 @@ type BrowserNavigator = Navigator & {
   userAgentData?: UserAgentDataLike
 }
 
-export type RisuEnvironmentLabel = 'fastify' | 'web(dev)' | 'browser(test)'
+export type RisuEnvironmentLabel = 'fastify'
 
 const browserNavigator = navigator as BrowserNavigator
 
-// Runtime-environment seam (see `RisuEnvironmentLabel` above). True only when the
-// Fastify server injected `globalThis.__FASTIFY__` while serving the SPA; it is
-// `false` under `pnpm dev` (vite / "web(dev)") and in tests, which are supported
-// environments — not legacy. NOT deprecated: this is the live gate that routes
-// provider dispatch, commands, and memory to the server in Fastify mode, and the
-// `!isFastifyServer` branches are the active non-Fastify paths. It may be
-// constant-folded to `true` ONLY if non-Fastify support is formally dropped; until
-// that product decision, do not remove it or its `!isFastifyServer` branches.
-export const isFastifyServer: boolean = !!(
-  globalThis as typeof globalThis & { __FASTIFY__?: boolean }
-).__FASTIFY__
+export const isFastifyServer = true
 export const isMobile: boolean = /Android|iPhone|iPad|iPod|webOS/i.test(browserNavigator.userAgent)
 
 export const isFirefox: boolean = browserNavigator.userAgent.includes('Firefox')
@@ -119,15 +109,7 @@ async function getBrowserHighEntropyOSVersion(): Promise<string | null> {
 }
 
 export function getRisuEnvironmentLabel(): RisuEnvironmentLabel {
-  if (import.meta.env.DEV) {
-    return 'web(dev)'
-  }
-
-  if (isFastifyServer) {
-    return 'fastify'
-  }
-
-  return 'browser(test)'
+  return 'fastify'
 }
 
 export function getFallbackOSLabel(): string {

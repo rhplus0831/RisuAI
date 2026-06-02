@@ -10,7 +10,6 @@ import {
   globalFetch,
   textifyReadableStream,
 } from 'src/ts/globalApi.svelte'
-import { isFastifyServer } from 'src/ts/platform'
 import { simplifySchema } from 'src/ts/util'
 import { isLocalNetworkUrl } from 'src/ts/network/localNetwork'
 
@@ -665,21 +664,6 @@ export async function requestOpenAI(
 
   if (arg.useStreaming) {
     body.stream = true
-    let urlHost = new URL(replacerURL).host
-    if (
-      urlHost.includes('localhost') ||
-      urlHost.includes('172.0.0.1') ||
-      urlHost.includes('0.0.0.0')
-    ) {
-      if (!isFastifyServer) {
-        return {
-          type: 'fail',
-          result:
-            'You are trying local request on streaming. this is not allowed dude to browser/os security policy. turn off streaming.',
-        }
-      }
-    }
-
     if (arg.previewBody) {
       return {
         type: 'success',

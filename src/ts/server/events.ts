@@ -1,5 +1,4 @@
-import { isFastifyServer } from '../platform'
-import { getNodeServerProxyAuth } from '../storage/nodeStorage'
+import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { iterateSseEvents } from '../process/request/sseParse'
 import type { CommandEvent } from './commands'
 import type {
@@ -53,7 +52,7 @@ export type ServerCommandEventSubscriptionResult =
   | { status: 'unavailable' }
 
 export function canUseServerEvents(): boolean {
-  return isFastifyServer
+  return true
 }
 
 export async function subscribeServerCommandEvents(

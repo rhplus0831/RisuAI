@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // `withTrustedServerProjectionWrite` actually freezes/snapshots (the unit suite
 // otherwise runs off-Fastify, where it is a pass-through).
 
-vi.mock('../platform', async (orig) => ({
-  ...(await (orig() as Promise<object>)),
+vi.mock('../platform', async (importActual) => ({
+  ...(await (importActual() as Promise<object>)),
   isFastifyServer: true,
 }))
 

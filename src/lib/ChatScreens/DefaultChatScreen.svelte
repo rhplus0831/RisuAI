@@ -53,7 +53,6 @@
   import { isExpTranslator, translate } from '../../ts/translator/translator'
   import { alertError, alertNormal, alertWait } from '../../ts/alert'
   import sendSound from '../../etc/send.mp3'
-  import { processScript } from 'src/ts/process/scripts'
   import CreatorQuote from './CreatorQuote.svelte'
   import { stopTTS } from 'src/ts/process/tts'
   import MainMenu from '../UI/MainMenu.svelte'
@@ -64,8 +63,6 @@
     chatFoldedStateMessageIndex,
     downloadFile,
   } from 'src/ts/globalApi.svelte'
-  import { runTrigger } from 'src/ts/process/triggers'
-  import { isFastifyServer } from 'src/ts/platform'
   import { v4 } from 'uuid'
   import {
     reroll as rerollNav,
@@ -240,28 +237,13 @@
     } else {
       const char = DBState.db.characters[selectedChar]
       if (char.type === 'character') {
-        // Server prompt assembly owns submit-time input triggers/editinput;
-        // browser-side handling would double-apply them in Fastify mode.
-        if (isFastifyServer) {
-          cha.push({
-            role: 'user',
-            data: messageInput,
-            time: Date.now(),
-            name: null,
-          })
-        } else {
-          let triggerResult = await runTrigger(char, 'input', { chat: char.chats[char.chatPage] })
-          if (triggerResult) {
-            cha = triggerResult.chat.message
-          }
-
-          cha.push({
-            role: 'user',
-            data: await processScript(char, messageInput, 'editinput'),
-            time: Date.now(),
-            name: null,
-          })
-        }
+        // Server prompt assembly owns submit-time input triggers/editinput.
+        cha.push({
+          role: 'user',
+          data: messageInput,
+          time: Date.now(),
+          name: null,
+        })
         transcriptChanged = true
       } else {
         cha.push({

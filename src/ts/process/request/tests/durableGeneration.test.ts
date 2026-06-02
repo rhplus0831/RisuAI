@@ -5,15 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // is hermetic (no enabled-module state leaks into the content detector). The
 // durable gate delegates to `resolveServerPromptAssembly`, so it needs the same
 // hermetic environment.
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
-
 vi.mock('../../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../../platform')>()
   return {
     ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
+    isFastifyServer: true,
   }
 })
 
@@ -87,7 +83,6 @@ function expectNonDurable(route: DurableGenerationRoute): string {
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   moduleState.triggers = []
   ;(globalThis as Record<string, unknown>).safeStructuredClone = (v: unknown) =>
     v === undefined ? undefined : JSON.parse(JSON.stringify(v))
@@ -211,14 +206,6 @@ describe('resolveDurableGeneration', () => {
   })
 
   describe('non-durable — inherited from the assembly gate (never a hard fail)', () => {
-    it('is non-durable when not in Fastify mode (assembly local)', () => {
-      platformState.isFastifyServer = false
-      expect(resolveDurableGeneration(makeInput())).toEqual({
-        type: 'non-durable',
-        reason: 'not server-assembled',
-      })
-    })
-
     it('is non-durable for a non-text send and carries the assembly reason', () => {
       const input = makeInput({ currentChat: makeChat([{ role: 'char', data: 'bot turn' }]) })
       expectNonDurable(resolveDurableGeneration(input))

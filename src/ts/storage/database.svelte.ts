@@ -17,7 +17,6 @@ import {
   createHypaV3Preset,
 } from '../process/memory/hypav3'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
-import { isFastifyServer } from 'src/ts/platform'
 import { safeStructuredClone } from '../polyfill'
 import {
   canUseServerCommands,
@@ -46,7 +45,7 @@ import {
 } from '../server/projectionWriteGuard.svelte'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
-export let appVer = '2026.4.181' //<APP_VERSION_POINT>
+export let appVer = 'Fastify Variant Version: Alpha' //<APP_VERSION_POINT>
 export let webAppSubVer = ''
 
 function createClientPresetId() {
@@ -772,10 +771,6 @@ export function setDatabase(data: Database) {
   data.newMessageButtonStyle ??= 'bottom-center'
   data.echoMessage ??= 'Echo Message'
   data.echoDelay ??= 0
-  if (!isFastifyServer) {
-    //this is intended to forcely reduce the size of the database in web
-    data.promptInfoInsideChat = false
-  }
   data.createFolderOnBranch ??= true
   data.hamburgerButtonBottom ??= false
   data.dynamicModelRegistry ??= true

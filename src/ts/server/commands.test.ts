@@ -1,18 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
+vi.mock('../platform', () => ({ isFastifyServer: true }))
 
-vi.mock('../platform', async (importActual) => {
-  const actual = await importActual<typeof import('../platform')>()
-  return {
-    ...actual,
-    get isFastifyServer() {
-      return platformState.isFastifyServer
-    },
-  }
-})
-
-vi.mock('../storage/nodeStorage', () => ({
+vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
 }))
 
@@ -143,7 +133,6 @@ function makeCommandFetch(bodyForUrl: (url: string, init: RequestInit) => unknow
 }
 
 beforeEach(() => {
-  platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
 })
 
@@ -152,10 +141,8 @@ afterEach(() => {
 })
 
 describe('server command API adapter', () => {
-  it('reports availability from the Fastify platform gate', () => {
+  it('reports availability unconditionally', () => {
     expect(canUseServerCommands()).toBe(true)
-    platformState.isFastifyServer = false
-    expect(canUseServerCommands()).toBe(false)
   })
 
   it('patches runtime settings with the auth header and baseRevision', async () => {
@@ -534,36 +521,6 @@ describe('server command API adapter', () => {
     expect(rollback).toHaveBeenCalledTimes(1)
   })
 
-  it('does not fetch when server commands are unavailable', async () => {
-    platformState.isFastifyServer = false
-    const commandFetch = makeCommandFetch(() => ({ revision: 2 }))
-    vi.stubGlobal('fetch', commandFetch.fetch)
-
-    const result = await patchRuntimeSettings({
-      baseRevision: 1,
-      patch: { streamGeminiThoughts: true },
-    })
-
-    expect(result).toEqual({ status: 'unavailable' })
-    expect(commandFetch.calls).toEqual([])
-  })
-
-  it('does not dispatch server-backed settings patches outside Fastify mode', async () => {
-    platformState.isFastifyServer = false
-    const rollback = vi.fn()
-    const commandFetch = makeCommandFetch(() => ({ revision: 2 }))
-    vi.stubGlobal('fetch', commandFetch.fetch)
-
-    const result = await patchServerBackedSettings({
-      patch: { aiModel: 'openrouter' },
-      rollback,
-    })
-
-    expect(result).toEqual({ status: 'unavailable' })
-    expect(rollback).not.toHaveBeenCalled()
-    expect(commandFetch.calls).toEqual([])
-  })
-
   it('creates presets through the typed command helper', async () => {
     const event = { type: 'preset.created', revision: 2, resource: 'preset', id: 'preset-a' }
     const commandFetch = makeCommandFetch(() => ({ revision: 2, event, presetId: 'preset-a' }))
@@ -723,26 +680,6 @@ describe('server command API adapter', () => {
       null,
       { baseRevision: 5, presetId: 'preset-b' },
     ])
-  })
-
-  it('does not dispatch preset commands outside Fastify mode', async () => {
-    platformState.isFastifyServer = false
-    const rollback = vi.fn()
-    const commandFetch = makeCommandFetch(() => ({ revision: 2 }))
-    vi.stubGlobal('fetch', commandFetch.fetch)
-
-    const result = await runServerPresetCommand({
-      command: (baseRevision) =>
-        selectPresetCommand({
-          baseRevision,
-          presetId: 'preset-b',
-        }),
-      rollback,
-    })
-
-    expect(result).toEqual({ status: 'unavailable' })
-    expect(rollback).not.toHaveBeenCalled()
-    expect(commandFetch.calls).toEqual([])
   })
 
   it('dispatches prompt settings and prompt item commands through typed helpers', async () => {
@@ -2105,21 +2042,6 @@ describe('server command API adapter', () => {
         },
       },
     ])
-  })
-
-  it('does not dispatch chat scriptstate commands outside Fastify mode', async () => {
-    platformState.isFastifyServer = false
-    const commandFetch = makeCommandFetch(() => ({ revision: 7 }))
-    vi.stubGlobal('fetch', commandFetch.fetch)
-
-    const result = await patchChatScriptstateCommand({
-      baseRevision: 6,
-      chatId: 'chat-a',
-      patch: { $score: '9' },
-    })
-
-    expect(result).toEqual({ status: 'unavailable' })
-    expect(commandFetch.calls).toEqual([])
   })
 
   it('dispatches lorebook commands through typed helpers', async () => {

@@ -1,9 +1,7 @@
 import { MCPClientLike } from './internalmcp'
 import type { MCPTool, RPCToolCallContent } from './mcplib'
 import { fetchNative } from '../../globalApi.svelte'
-import { alertInput } from '../../alert'
 import localforage from 'localforage'
-import { isFastifyServer } from 'src/ts/platform'
 
 interface WebSearchArgs {
   query: string
@@ -57,40 +55,9 @@ export class GoogleSearchClient extends MCPClientLike {
   }
 
   private async initializeCredentials(): Promise<void> {
-    if (isFastifyServer) {
-      throw new Error(
-        'Google Search MCP credentials are not supported in server-backed web mode yet',
-      )
-    }
-
-    const storedCredentials =
-      await this.credentialsStorage.getItem<GoogleSearchCredentials>('google-search-creds')
-
-    if (storedCredentials && storedCredentials.apiKey && storedCredentials.searchEngineId) {
-      this.API_KEY = storedCredentials.apiKey
-      this.SEARCH_ENGINE_ID = storedCredentials.searchEngineId
-      return
-    }
-
-    const apiKey = await alertInput('Please enter your Google Custom Search API Key:')
-    if (!apiKey || apiKey.trim() === '') {
-      throw new Error('Google Custom Search API Key is required')
-    }
-
-    const searchEngineId = await alertInput('Please enter your Google Custom Search Engine ID:')
-    if (!searchEngineId || searchEngineId.trim() === '') {
-      throw new Error('Google Custom Search Engine ID is required')
-    }
-
-    const credentials: GoogleSearchCredentials = {
-      apiKey: apiKey.trim(),
-      searchEngineId: searchEngineId.trim(),
-    }
-
-    await this.credentialsStorage.setItem('google-search-creds', credentials)
-
-    this.API_KEY = credentials.apiKey
-    this.SEARCH_ENGINE_ID = credentials.searchEngineId
+    throw new Error(
+      'Google Search MCP credentials are not supported in server-backed web mode',
+    )
   }
 
   async getToolList(): Promise<MCPTool[]> {

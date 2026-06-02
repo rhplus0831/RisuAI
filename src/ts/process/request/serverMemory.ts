@@ -1,9 +1,8 @@
-import { isFastifyServer } from '../../platform'
 import {
   activeWriterSessionHeader,
   handleActiveWriterStaleResponse,
 } from '../../server/activeWriterSession'
-import { getNodeServerProxyAuth } from '../../storage/nodeStorage'
+import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { hypaV3ProgressStore } from '../../stores.svelte'
 
 const MEMORY_ENDPOINT = '/api/v1/memory'
@@ -70,7 +69,7 @@ export type ServerMemoryResult<T> =
   | { status: 'unavailable' }
 
 export function canUseServerMemoryApi(): boolean {
-  return isFastifyServer
+  return true
 }
 
 export function applyServerHypaV3Progress(payload: unknown): boolean {

@@ -44,8 +44,7 @@ import {
   saveAssets,
   VirtualWriter,
 } from './globalApi.svelte'
-import { isFastifyServer } from 'src/ts/platform'
-import { getNodeServerProxyAuth } from './storage/nodeStorage'
+import { getNodeServerProxyAuth } from './storage/fastifyStorage'
 import { compressImage, getImageType } from './media'
 import {
   DBState,
@@ -67,7 +66,6 @@ import {
   dispatchUpdateCharacter,
 } from './characterCommands'
 import { createGlobalModule } from './moduleCommands'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import {
   importRealmCharacterFromServer,
   type ServerRealmImportProgress,
@@ -80,18 +78,9 @@ import {
   resetLorebookHydration,
 } from './server/lorebookBridge.svelte'
 
-const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz'
-const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
-export const hubURL = isFastifyServer
-  ? '/api/v1/hub'
-  : window.location.hostname === 'nightly.risuai.xyz' || localStorage.getItem('hub') === 'nightly'
-    ? NIGHTLY_HUB_URL
-    : EXTERNAL_HUB_URL
+export const hubURL = '/api/v1/hub'
 
 export async function authenticatedHubFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-  if (!isFastifyServer) {
-    return fetch(input, init)
-  }
   const headers = new Headers(init.headers)
   headers.set('risu-auth', await getNodeServerProxyAuth())
   return fetch(input, { ...init, headers })
@@ -101,11 +90,6 @@ function appendImportedCharacter(
   character: character,
   previous: ReturnType<typeof currentCharacterStateSnapshot>,
 ) {
-  if (!isFastifyServer) {
-    withTrustedServerProjectionWrite(() => {
-      DBState.db.characters.push(character)
-    })
-  }
   dispatchCreateCharacter(character, previous)
 }
 
@@ -159,9 +143,6 @@ export async function importCharacterProcess(f: {
     }
   }
   let db = getDatabase()
-  if (!isFastifyServer) {
-    db.statics.imports += 1
-  }
 
   if (f.name.endsWith('charx') || f.name.endsWith('jpg') || f.name.endsWith('jpeg')) {
     console.log('reading charx')
@@ -388,11 +369,11 @@ export async function importCharacterProcess(f: {
     const character = convertOffSpecCards(charaData, imgp)
     appendImportedCharacter(character, previous)
     alertNormal(language.importedCharacter)
-    return isFastifyServer ? undefined : DBState.db.characters.length - 1
+    return undefined
   }
   await importCharacterCardSpec(parsed, img, 'normal', assets)
 
-  return isFastifyServer ? undefined : DBState.db.characters.length - 1
+  return undefined
 }
 
 export const getRealmInfo = async (realmPath: string) => {
@@ -515,16 +496,7 @@ export async function characterURLImport() {
       return
     }
     if (name.endsWith('risum')) {
-      if (isFastifyServer) {
-        alertError('Module file import is not supported in server-backed web mode yet')
-        return
-      }
-      const md = await readModule(Buffer.from(data))
-      md.id = v4()
-      createGlobalModule(md)
-      alertNormal(language.successImport)
-      SettingsMenuIndex.set(14)
-      settingsOpen.set(true)
+      alertError('Module file import is not supported in server-backed web mode yet')
       return
     }
   }
@@ -1817,11 +1789,11 @@ export async function getRisuHub(arg: {
 }): Promise<hubType[]> {
   try {
     arg.search += ' __shared'
-    const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==${isFastifyServer ? 'other' : 'web'}`
+    const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==other`
 
     const da = await fetch(hubURL + '/realm/' + encodeURIComponent(stringArg), {
       headers: {
-        'x-risuai-info': appVer + ';' + (isFastifyServer ? 'fastify' : 'web'),
+        'x-risuai-info': appVer + ';' + 'fastify',
       },
     })
     if (da.status !== 200) {
@@ -1854,37 +1826,35 @@ export async function downloadRisuHub(
         msg: 'Downloading...',
       })
     }
-    if (isFastifyServer) {
-      const onProgress = showRealmImportProgress
-      const imported = await importRealmCharacterFromServer(id, { onProgress })
-      if (imported.status === 'low-level-access') {
-        const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
-        if (!confirmed) {
-          alertStore.set({ type: 'none', msg: '' })
-          return
-        }
-        const retry = await importRealmCharacterFromServer(id, {
-          allowLowLevelAccess: true,
-          onProgress,
-        })
-        if (retry.status !== 'ok') {
-          if (retry.status !== 'unsupported') {
-            alertError(retry.status === 'error' ? retry.error : 'Error while importing')
-            return
-          }
-        } else {
-          await finishServerRealmImport(retry.characterId, arg, onProgress)
-          return
-        }
-      } else if (imported.status !== 'ok') {
-        if (imported.status !== 'unsupported') {
-          alertError(imported.status === 'error' ? imported.error : 'Error while importing')
+    const onProgress = showRealmImportProgress
+    const imported = await importRealmCharacterFromServer(id, { onProgress })
+    if (imported.status === 'low-level-access') {
+      const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
+      if (!confirmed) {
+        alertStore.set({ type: 'none', msg: '' })
+        return
+      }
+      const retry = await importRealmCharacterFromServer(id, {
+        allowLowLevelAccess: true,
+        onProgress,
+      })
+      if (retry.status !== 'ok') {
+        if (retry.status !== 'unsupported') {
+          alertError(retry.status === 'error' ? retry.error : 'Error while importing')
           return
         }
       } else {
-        await finishServerRealmImport(imported.characterId, arg, onProgress)
+        await finishServerRealmImport(retry.characterId, arg, onProgress)
         return
       }
+    } else if (imported.status !== 'ok') {
+      if (imported.status !== 'unsupported') {
+        alertError(imported.status === 'error' ? imported.error : 'Error while importing')
+        return
+      }
+    } else {
+      await finishServerRealmImport(imported.characterId, arg, onProgress)
+      return
     }
     const res = await fetch(
       'https://realm.risuai.net/api/v1/download/dynamic/' + id + '?cors=true',

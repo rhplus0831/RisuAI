@@ -13,7 +13,7 @@ vi.mock('src/ts/platform', async (importActual) => {
   }
 })
 
-vi.mock('src/ts/storage/nodeStorage', () => ({
+vi.mock('src/ts/storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'projection-guard-ui-token',
 }))
 

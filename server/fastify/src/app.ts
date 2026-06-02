@@ -273,12 +273,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     let cachedIndex: string | null = null
     const indexHtml = (): string => {
       if (cachedIndex !== null) return cachedIndex
-      const raw = fs.readFileSync(indexPath, 'utf-8')
-      const tag = '<script>globalThis.__FASTIFY__ = true;</script>'
-      const headMatch = /<head(?:\s[^>]*)?>/i.exec(raw)
-      cachedIndex = headMatch
-        ? `${raw.slice(0, headMatch.index + headMatch[0].length)}\n${tag}${raw.slice(headMatch.index + headMatch[0].length)}`
-        : `${tag}\n${raw}`
+      cachedIndex = fs.readFileSync(indexPath, 'utf-8')
       return cachedIndex
     }
 
