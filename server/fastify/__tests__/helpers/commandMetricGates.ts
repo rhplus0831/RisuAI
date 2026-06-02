@@ -93,10 +93,11 @@ export const COMMAND_METRIC_REVIEW_GATES = {
   // these). Defined here so the metric and review gates can target the new
   // `mutationPath` labels before any route is narrowed.
   'targeted-settings': {
-    reviewGate: 'settings-scalar commands should issue one UPDATE settings and nothing else',
+    reviewGate:
+      'settings-scalar commands should issue one UPDATE settings (plus hypa_v3_presets only for a memory-group hypaV3Presets patch) and never touch characters, chats, or the other collections',
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
-    expectedTables: ['settings'],
+    maxTables: ['hypa_v3_presets', 'settings'],
   },
   'targeted-character-row': {
     reviewGate: 'single character-row edits write that character row plus settings only when a pointer moved',

@@ -197,7 +197,7 @@ function loadSettingsFromSqlite(db: DatabaseSync): Record<string, unknown> | nul
   return isRecord(parsed) ? parsed : null
 }
 
-function extractSettings(database: Record<string, unknown>): Record<string, unknown> {
+export function extractSettings(database: Record<string, unknown>): Record<string, unknown> {
   const settings: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(database)) {
     if (!NON_SETTINGS_FIELDS.has(key)) {
@@ -505,6 +505,21 @@ export function writePluginStorageKey(db: DatabaseSync, key: string, value: unkn
 export function deletePluginStorageKey(db: DatabaseSync, key: string): void {
   recordTableWrite('plugin_custom_storage')
   db.prepare('DELETE FROM plugin_custom_storage WHERE key = ?').run(key)
+}
+
+/** Rewrite the whole `plugin_custom_storage` table (DELETE-all + reinsert) to
+ *  match the given key/value map. The bulk command's clear/replace semantics;
+ *  mirrors the `plugin_custom_storage` tail of `replaceAllCollectionsInTable` but
+ *  touches only that one table. */
+export function replacePluginStorage(db: DatabaseSync, storage: Record<string, unknown>): void {
+  recordTableWrite('plugin_custom_storage')
+  db.exec('DELETE FROM plugin_custom_storage')
+  const keys = Object.keys(storage)
+  if (keys.length === 0) return
+  const stmt = db.prepare('INSERT INTO plugin_custom_storage (key, value_json) VALUES (?, ?)')
+  for (const key of keys) {
+    stmt.run(key, JSON.stringify(storage[key] ?? null))
+  }
 }
 
 export function createAssetMetadataTable(db: DatabaseSync): void {

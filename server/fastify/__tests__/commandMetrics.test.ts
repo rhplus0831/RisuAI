@@ -274,8 +274,8 @@ describe('command protocol metrics', () => {
     for (const metric of noMessageFamilies) {
       expect(metric.sqliteSyncMs).toBeGreaterThanOrEqual(0)
     }
-    expect(settings.metric.mutationPath).toBe('message-free')
-    expect(pluginStorage.metric.mutationPath).toBe('message-free')
+    expect(settings.metric.mutationPath).toBe('targeted-settings')
+    expect(pluginStorage.metric.mutationPath).toBe('targeted-plugin-storage')
     expect(chat.metric.mutationPath).toBe('message-free')
     expect(characterSelect.metric.mutationPath).toBe('targeted-character-selection')
     for (const metric of [
@@ -290,13 +290,15 @@ describe('command protocol metrics', () => {
     }
     expect(generation.metric.mutationPath).toBe('targeted-generation')
 
-    // Written-table baseline: the three over-broad `message-free` commands each
-    // physically rewrite the full 13-table set for a single sub-row change —
-    // the mutation-range mismatch this workstream narrows. The targeted paths
-    // already touch only their own rows.
-    for (const metric of [settings.metric, pluginStorage.metric, chat.metric]) {
-      expect(metric.writtenTables, `${metric.type}.writtenTables`).toEqual([...BROAD_WRITE_TABLES])
-    }
+    // Written-table ranges. `chat.updated` (PATCH chats/:chatId) is still on the
+    // over-broad `message-free` floor: it physically rewrites the full 13-table
+    // set for a single sub-row change. Phase 2 narrowed settings and plugin
+    // storage to their own tables.
+    expect(chat.metric.writtenTables, 'chat.writtenTables').toEqual([...BROAD_WRITE_TABLES])
+    expect(settings.metric.writtenTables, 'settings.writtenTables').toEqual(['settings'])
+    expect(pluginStorage.metric.writtenTables, 'pluginStorage.writtenTables').toEqual([
+      'plugin_custom_storage',
+    ])
     expect(characterSelect.metric.writtenTables).toEqual(['characters', 'settings'])
     for (const metric of [
       messageAppend.metric,

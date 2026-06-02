@@ -13,6 +13,7 @@ import {
   applyMessageFreeJsonCommandMutation,
   applyTargetedCommandMutation,
   readBaseRevision,
+  TARGETED_MUTATION_PATHS,
 } from '../commands/mutations.js'
 import { readActiveWriterSessionId } from '../activeWriter.js'
 import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
@@ -204,10 +205,16 @@ import {
   writeGenerationChatMessage,
 } from '../messageStore.js'
 import {
+  deletePluginStorageKey,
   EntityNotFoundError,
+  extractSettings,
   initializeDefaultDatabase,
+  replacePluginStorage,
   RevisionMismatchError,
   ValidationError,
+  writePluginStorageKey,
+  writeSettingsOnly,
+  writeSingleCollectionTable,
 } from '../repository.js'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
@@ -1080,13 +1087,25 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const patch = readSettingsGroupPatch(group, body.patch)
       validateSettingsAssetRefs(db, patch)
-      const result = applyMessageFreeJsonCommandMutation({
+      const result = applyTargetedCommandMutation({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
           applySettingsPatch(database, patch)
+          writeSettingsOnly(innerDb, extractSettings(database as Record<string, unknown>))
+          // The `memory` group's `hypaV3Presets` is a collection field, not a
+          // settings scalar, so co-write only that one collection table when the
+          // patch carries it; every other settings group is settings-only.
+          if (Object.prototype.hasOwnProperty.call(patch, 'hypaV3Presets')) {
+            writeSingleCollectionTable(
+              innerDb,
+              'hypaV3Presets',
+              (database as Record<string, unknown>).hypaV3Presets as readonly unknown[],
+            )
+          }
           return {
             event: COMMAND_EVENT_CATALOG.settingsUpdated,
           }
@@ -1428,13 +1447,15 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readPromptSettingsPatch(body.patch)
-      const result = applyMessageFreeJsonCommandMutation({
+      const result = applyTargetedCommandMutation({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
           applySettingsPatch(database, patch)
+          writeSettingsOnly(innerDb, extractSettings(database as Record<string, unknown>))
           return {
             event: COMMAND_EVENT_CATALOG.promptSettingsUpdated,
           }
@@ -2465,16 +2486,21 @@ export function registerCommandRoutes(
           ? readCharacterOrder(body.characterOrder)
           : readCharacterOrder(body.characterIds)
       validateCharacterOrderAssetRefs(db, order)
-      const result = applyMessageFreeJsonCommandMutation<{ selectedCharacterId: string | null }>({
+      const result = applyTargetedCommandMutation<{ selectedCharacterId: string | null }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
           validateFullCharacterOrder(characters, order)
+          // `characterOrder` is a settings scalar; reorder edits presentation
+          // order, not `characters` table positions. The `ensureCharacterCollection`
+          // repair on sibling rows is validate-only (dropped, Prerequisite 2).
           target.characterOrder = order
+          writeSettingsOnly(innerDb, extractSettings(target))
           return {
             event: COMMAND_EVENT_CATALOG.characterReordered,
             extra: { selectedCharacterId: selectedCharacterId(target, characters) },
@@ -3463,16 +3489,21 @@ export function registerCommandRoutes(
       const lorebookId = readLorebookId((req.params as { lorebookId?: unknown }).lorebookId)
       const body = (req.body ?? {}) as { baseRevision?: unknown }
       const baseRevision = readBaseRevision(body)
-      const result = applyMessageFreeJsonCommandMutation<{ selectedLorebookId: string }>({
+      const result = applyTargetedCommandMutation<{ selectedLorebookId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          // `loreBookPage` is a settings scalar. This explicitly drops the global
+          // `ensureAllChildLorebooks` repairs the broad path persisted across
+          // characters/chats/modules to validate-only (Prerequisite 2).
           target.loreBookPage = index
+          writeSettingsOnly(innerDb, extractSettings(target))
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookSelected, id: lorebookId },
             extra: { selectedLorebookId: lorebookId },
@@ -3713,12 +3744,13 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const moduleId = readCommandModuleId(body.moduleId)
       const enabled = readModuleEnabled(body.enabled)
-      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string; enabled: boolean }>({
+      const result = applyTargetedCommandMutation<{ moduleId: string; enabled: boolean }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
           const target = ensureModuleCommandDatabase(database)
           requireModuleIndex(ensureModuleRecords(target), moduleId)
           const enabledModules = new Set(ensureEnabledModules(target))
@@ -3727,7 +3759,10 @@ export function registerCommandRoutes(
           } else {
             enabledModules.delete(moduleId)
           }
+          // `enabledModules` is a settings scalar; the `module` projection stays
+          // broad until the Phase 5 narrow `moduleEnabled` resource lands.
           target.enabledModules = Array.from(enabledModules)
+          writeSettingsOnly(innerDb, extractSettings(target))
           return {
             event: { ...COMMAND_EVENT_CATALOG.moduleEnabled, id: moduleId },
             extra: { moduleId, enabled },
@@ -3970,14 +4005,16 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
       const provider = readPluginProvider(body.provider)
-      const result = applyMessageFreeJsonCommandMutation<{ provider: string }>({
+      const result = applyTargetedCommandMutation<{ provider: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           target.currentPluginProvider = provider
+          writeSettingsOnly(innerDb, extractSettings(target))
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginProviderSelected, id: provider },
             extra: { provider },
@@ -4037,15 +4074,14 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginStorageCommandBody
       const baseRevision = readBaseRevision(body)
       const value = readPluginStorageValue(body.value)
-      const result = applyMessageFreeJsonCommandMutation<{ key: string }>({
+      const result = applyTargetedCommandMutation<{ key: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
-          const target = ensurePluginStorageDatabase(database)
-          const storage = ensurePluginCustomStorage(target)
-          storage[key] = value
+        mutationPath: TARGETED_MUTATION_PATHS.pluginStorage,
+        mutate(_database, innerDb) {
+          writePluginStorageKey(innerDb, key, value)
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginStorageUpdated, id: key },
             extra: { key },
@@ -4070,15 +4106,14 @@ export function registerCommandRoutes(
       const key = readPluginStorageKey((req.params as { key?: unknown }).key)
       const body = (req.body ?? {}) as PluginStorageCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyMessageFreeJsonCommandMutation<{ key: string }>({
+      const result = applyTargetedCommandMutation<{ key: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
-          const target = ensurePluginStorageDatabase(database)
-          const storage = ensurePluginCustomStorage(target)
-          delete storage[key]
+        mutationPath: TARGETED_MUTATION_PATHS.pluginStorage,
+        mutate(_database, innerDb) {
+          deletePluginStorageKey(innerDb, key)
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginStorageDeleted, id: key },
             extra: { key },
@@ -4103,21 +4138,22 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginStorageCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readPluginStorageBulkPatch(body)
-      const result = applyMessageFreeJsonCommandMutation({
+      const result = applyTargetedCommandMutation({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.pluginStorage,
+        mutate(database, innerDb) {
           const target = ensurePluginStorageDatabase(database)
-          const storage = patch.clear ? {} : ensurePluginCustomStorage(target)
+          const storage = patch.clear ? {} : { ...ensurePluginCustomStorage(target) }
           for (const key of patch.deleteKeys) {
             delete storage[key]
           }
           for (const [key, value] of Object.entries(patch.values)) {
             storage[key] = value
           }
-          target.pluginCustomStorage = storage
+          replacePluginStorage(innerDb, storage)
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginStorageBulkUpdated },
           }
