@@ -13,7 +13,7 @@ import {
 } from '../src/commands/mutations.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
-import { loadPersisted, writePersisted } from '../src/repository.js'
+import { loadPersisted, writePersisted, insertAssetMetadataBatch } from '../src/repository.js'
 
 const subtle = webcrypto.subtle
 
@@ -167,19 +167,14 @@ async function uploadAsset(
 }
 
 function seedAssetMetadata(dataDir: string, assetId = 'a'.repeat(64)): string {
-  const persisted = loadPersisted(dataDir)
-  writePersisted(dataDir, {
-    ...persisted,
-    assets: [
-      ...persisted.assets,
-      {
-        id: assetId,
-        ext: 'png',
-        size: 1,
-        contentType: 'image/png',
-      },
-    ],
-  })
+  const seedDb = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    insertAssetMetadataBatch(seedDb, [
+      { id: assetId, ext: 'png', size: 1, contentType: 'image/png' },
+    ])
+  } finally {
+    seedDb.close()
+  }
   return assetId
 }
 

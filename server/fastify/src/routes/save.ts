@@ -13,6 +13,7 @@ import {
   ValidationError,
   addAssets,
   applyImport,
+  getAllAssetMetadata,
   loadPersistedWithMessages,
 } from '../repository.js'
 import { replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
@@ -242,6 +243,7 @@ export function registerSaveRoutes(
         const measure = protocolMetricsEnabled()
         const snapshotStart = measure ? protocolNowMs() : 0
         const persisted = loadPersistedWithMessages(db, dataDir)
+        persisted.assets = getAllAssetMetadata(db)
         const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
         const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
         const encodeStart = measure ? protocolNowMs() : 0

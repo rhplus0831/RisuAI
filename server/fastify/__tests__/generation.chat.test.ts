@@ -262,7 +262,7 @@ describe('per-generation stored asset cache', () => {
   it('caches stored asset reads by normalized asset id and purpose', () => {
     const assetId = 'a'.repeat(64)
     const reads: string[] = []
-    const resolver = createRequestScopedStoredAssetResolver('/data', (_dataDir, id, purpose) => {
+    const resolver = createRequestScopedStoredAssetResolver(null as any, '/data', (_db, _dataDir, id, purpose) => {
       reads.push(`${purpose}:${id}`)
       return {
         type: purpose === 'inlay' ? 'audio' : 'image',
@@ -285,7 +285,7 @@ describe('per-generation stored asset cache', () => {
     const assetId = 'b'.repeat(64)
     const reads: string[] = []
     const makeResolver = () =>
-      createRequestScopedStoredAssetResolver('/data', (_dataDir, id, purpose) => {
+      createRequestScopedStoredAssetResolver(null as any, '/data', (_db, _dataDir, id, purpose) => {
         reads.push(`${purpose}:${id}`)
         return undefined
       })

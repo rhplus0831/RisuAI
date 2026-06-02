@@ -32,8 +32,8 @@ import {
   assetPath,
   assetsDir,
   CONTENT_TYPE_EXTENSIONS,
-  loadPersisted,
-  writePersisted,
+  getAssetMetadataById,
+  insertAssetMetadataBatch,
   type AddAssetResult,
   type PersistedAsset,
 } from '../repository.js'
@@ -535,7 +535,7 @@ function appendRealmCharacter(args: {
   character: JsonRecord
 }): JsonCommandMutationResult<{ characterId: string }> {
   const baseRevision = getSchemaState(args.db).revision
-  const characterRecord = createCharacterRecord(args.character, { assetDataDir: args.dataDir })
+  const characterRecord = createCharacterRecord(args.character, { assetDb: args.db })
   return applyJsonCommandMutation<{ characterId: string }>({
     db: args.db,
     dataDir: args.dataDir,
@@ -731,9 +731,6 @@ function saveStagedCharxAssets(args: {
   stagedAssets: StagedCharxAsset[]
   onAssetSaved?: () => void
 }): Record<string, string> {
-  const persisted = loadPersisted(args.dataDir)
-  const nextAssets = [...persisted.assets]
-  const assetById = new Map(nextAssets.map((asset) => [asset.id, asset]))
   const createdAssets: PersistedAsset[] = []
   const createdFiles: Array<{ file: string; existedBefore: boolean }> = []
   const assetDict: Record<string, string> = {}
@@ -755,18 +752,18 @@ function saveStagedCharxAssets(args: {
     }
 
     const id = createHash('sha256').update(bytes).digest('hex')
-    let entry = assetById.get(id)
-    if (entry) {
-      const file = assetPath(args.dataDir, entry)
+    const existing = getAssetMetadataById(args.db, id)
+    if (existing) {
+      const file = assetPath(args.dataDir, existing)
       if (!fs.existsSync(file)) {
         fs.writeFileSync(file, bytes)
       }
-      assetDict[staged.fileName] = entry.id
+      assetDict[staged.fileName] = existing.id
       args.onAssetSaved?.()
       continue
     }
 
-    entry = {
+    const entry: PersistedAsset = {
       id,
       ext,
       size: bytes.length,
@@ -776,19 +773,17 @@ function saveStagedCharxAssets(args: {
     const existedBefore = fs.existsSync(file)
     fs.writeFileSync(file, bytes)
     createdFiles.push({ file, existedBefore })
-    nextAssets.push(entry)
-    assetById.set(id, entry)
     createdAssets.push(entry)
     assetDict[staged.fileName] = entry.id
     args.onAssetSaved?.()
   }
 
   if (createdAssets.length > 0) {
-    writePersisted(args.dataDir, { ...persisted, assets: nextAssets })
     let transactionOpen = false
     args.db.exec('BEGIN IMMEDIATE')
     transactionOpen = true
     try {
+      insertAssetMetadataBatch(args.db, createdAssets)
       const event = persistRevisionedCommandEvent(args.db, {
         ...COMMAND_EVENT_CATALOG.assetCreated,
         ...(createdAssets.length === 1 ? { id: createdAssets[0].id } : {}),
@@ -800,7 +795,6 @@ function saveStagedCharxAssets(args: {
       if (transactionOpen) {
         args.db.exec('ROLLBACK')
       }
-      writePersisted(args.dataDir, persisted)
       for (const { file, existedBefore } of createdFiles) {
         if (!existedBefore) {
           fs.rmSync(file, { force: true })

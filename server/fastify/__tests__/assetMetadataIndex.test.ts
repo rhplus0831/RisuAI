@@ -1,16 +1,23 @@
-import fs, { mkdtempSync, rmSync, writeFileSync, utimesSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   assetById,
+  createAssetMetadataTable,
+  getAllAssetMetadata,
+  getAssetMetadataById,
+  getAssetMetadataCount,
+  insertAssetMetadataBatch,
+  deleteAssetMetadataByIds,
+  getMissingAssetIds,
   missingAssetIds,
-  writePersisted,
-  type Persisted,
   type PersistedAsset,
 } from '../src/repository.js'
 
 const dataDirs: string[] = []
+const dbs: DatabaseSync[] = []
 
 function makeDataDir(): string {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-assets-index-'))
@@ -18,75 +25,98 @@ function makeDataDir(): string {
   return dataDir
 }
 
+function makeDb(): DatabaseSync {
+  const dataDir = makeDataDir()
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  db.exec('PRAGMA journal_mode = WAL')
+  db.exec('PRAGMA foreign_keys = ON')
+  createAssetMetadataTable(db)
+  dbs.push(db)
+  return db
+}
+
 afterEach(() => {
-  vi.restoreAllMocks()
+  for (const db of dbs.splice(0)) {
+    db.close()
+  }
   for (const dataDir of dataDirs.splice(0)) {
     rmSync(dataDir, { recursive: true, force: true })
   }
 })
 
 function asset(id: string, ext = 'png'): PersistedAsset {
-  return {
-    id,
-    ext,
-    size: 10,
-    contentType: 'image/png',
-  }
+  return { id, ext, size: 10, contentType: 'image/png' }
 }
 
-function persisted(assets: PersistedAsset[]): Persisted {
-  return { _version: 1, database: { characters: [] }, assets }
-}
-
-function dbJsonReadCount(spy: ReturnType<typeof vi.spyOn>, dataDir: string): number {
-  const file = path.join(dataDir, 'db.json')
-  return spy.mock.calls.filter((call) => call[0] === file).length
-}
-
-describe('asset metadata index', () => {
-  it('reuses one db.json parse for repeated metadata lookups', () => {
-    const dataDir = makeDataDir()
+describe('SQLite asset metadata', () => {
+  it('inserts and retrieves assets by id', () => {
+    const db = makeDb()
     const known = 'a'.repeat(64)
+    insertAssetMetadataBatch(db, [asset(known)])
+
+    expect(assetById(db, known)).toEqual(asset(known))
+    expect(getAssetMetadataById(db, known)).toEqual(asset(known))
+  })
+
+  it('returns null for unknown assets', () => {
+    const db = makeDb()
     const missing = 'b'.repeat(64)
-    writePersisted(dataDir, persisted([asset(known)]))
-
-    const readSpy = vi.spyOn(fs, 'readFileSync')
-
-    expect(assetById(dataDir, known)).toEqual(asset(known))
-    expect(missingAssetIds(dataDir, [known, missing])).toEqual([missing])
-    expect(assetById(dataDir, known)).toEqual(asset(known))
-
-    expect(dbJsonReadCount(readSpy, dataDir)).toBe(1)
+    expect(assetById(db, missing)).toBeNull()
+    expect(getAssetMetadataById(db, missing)).toBeNull()
   })
 
-  it('refreshes the index after repository writes', () => {
-    const dataDir = makeDataDir()
-    const first = 'a'.repeat(64)
-    const second = 'b'.repeat(64)
-    writePersisted(dataDir, persisted([asset(first)]))
-
-    expect(assetById(dataDir, first)).toEqual(asset(first))
-
-    writePersisted(dataDir, persisted([asset(second, 'webp')]))
-
-    expect(assetById(dataDir, first)).toBeNull()
-    expect(assetById(dataDir, second)).toEqual(asset(second, 'webp'))
+  it('returns null for invalid asset ids', () => {
+    const db = makeDb()
+    expect(assetById(db, 'not-a-sha256')).toBeNull()
   })
 
-  it('refreshes the index after direct db.json replacement', () => {
-    const dataDir = makeDataDir()
-    const first = 'a'.repeat(64)
-    const second = 'b'.repeat(64)
-    writePersisted(dataDir, persisted([asset(first)]))
+  it('lists all assets', () => {
+    const db = makeDb()
+    const a = asset('a'.repeat(64))
+    const b = asset('b'.repeat(64), 'webp')
+    insertAssetMetadataBatch(db, [a, b])
 
-    expect(assetById(dataDir, first)).toEqual(asset(first))
+    const all = getAllAssetMetadata(db)
+    expect(all).toEqual([a, b])
+  })
 
-    const file = path.join(dataDir, 'db.json')
-    writeFileSync(file, JSON.stringify(persisted([asset(second, 'webp')])))
-    const future = new Date(Date.now() + 10_000)
-    utimesSync(file, future, future)
+  it('counts assets', () => {
+    const db = makeDb()
+    expect(getAssetMetadataCount(db)).toBe(0)
+    insertAssetMetadataBatch(db, [asset('a'.repeat(64)), asset('b'.repeat(64))])
+    expect(getAssetMetadataCount(db)).toBe(2)
+  })
 
-    expect(assetById(dataDir, first)).toBeNull()
-    expect(assetById(dataDir, second)).toEqual(asset(second, 'webp'))
+  it('deletes assets by ids', () => {
+    const db = makeDb()
+    const a = 'a'.repeat(64)
+    const b = 'b'.repeat(64)
+    insertAssetMetadataBatch(db, [asset(a), asset(b)])
+
+    deleteAssetMetadataByIds(db, [a])
+    expect(getAssetMetadataById(db, a)).toBeNull()
+    expect(getAssetMetadataById(db, b)).toEqual(asset(b))
+    expect(getAssetMetadataCount(db)).toBe(1)
+  })
+
+  it('reports missing asset ids', () => {
+    const db = makeDb()
+    const known = 'a'.repeat(64)
+    const unknown = 'b'.repeat(64)
+    insertAssetMetadataBatch(db, [asset(known)])
+
+    expect(missingAssetIds(db, [known, unknown])).toEqual([unknown])
+    expect(getMissingAssetIds(db, [known, unknown])).toEqual([unknown])
+  })
+
+  it('INSERT OR IGNORE skips duplicates', () => {
+    const db = makeDb()
+    const id = 'a'.repeat(64)
+    insertAssetMetadataBatch(db, [asset(id)])
+    insertAssetMetadataBatch(db, [asset(id, 'webp')])
+
+    const result = getAssetMetadataById(db, id)
+    expect(result?.ext).toBe('png')
+    expect(getAssetMetadataCount(db)).toBe(1)
   })
 })

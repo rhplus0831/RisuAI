@@ -230,7 +230,7 @@ export function registerAssetsRoutes(
     '/api/v1/assets/:id',
     { exposeHeadRoute: false },
     async (req, reply) => {
-      const entry = assetById(dataDir, req.params.id)
+      const entry = assetById(db, req.params.id)
       if (!entry) {
         emitAssetByteReadMetric(req.log, req.params.id, false)
         reply.code(404).send({ error: 'not found' })
@@ -252,7 +252,7 @@ export function registerAssetsRoutes(
   )
 
   app.head<{ Params: { id: string } }>('/api/v1/assets/:id', async (req, reply) => {
-    const entry = assetById(dataDir, req.params.id)
+    const entry = assetById(db, req.params.id)
     if (!entry) {
       reply.code(404).send()
       return
@@ -292,7 +292,7 @@ export function registerAssetsRoutes(
         }
         validIds.push(id)
       }
-      return { missing: missingAssetIds(dataDir, validIds) }
+      return { missing: missingAssetIds(db, validIds) }
     },
   )
 }

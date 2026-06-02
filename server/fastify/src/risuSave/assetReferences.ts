@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 import {
   type PersistedAsset,
+  getAllAssetMetadata,
   isValidAssetId,
   loadPersisted,
   loadPersistedWithMessages,
@@ -26,10 +27,11 @@ const INLAY_TOKEN_RE = /\{\{(inlay|inlayed|inlayeddata)::(.+?)\}\}/g
 
 export function buildRepositoryRisuSaveAssetReport(
   dataDir: string,
-  db?: DatabaseSync,
+  db: DatabaseSync,
 ): RisuSaveAssetReport {
-  const persisted = db ? loadPersistedWithMessages(db, dataDir) : loadPersisted(dataDir)
-  return buildRisuSaveAssetReport(persisted.database, persisted.assets)
+  const persisted = loadPersistedWithMessages(db, dataDir)
+  const assets = getAllAssetMetadata(db)
+  return buildRisuSaveAssetReport(persisted.database, assets)
 }
 
 export function buildRisuSaveAssetReport(

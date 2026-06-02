@@ -2,7 +2,7 @@
 // ('', '-', and null) and otherwise validate the asset id.
 export const CLEARABLE_ASSET_VALUES = ['', '-']
 
-export function validateOptionalServerAssetRef(dataDir: string, value: unknown, label: string): void {
+export function validateOptionalServerAssetRef(db: string, value: unknown, label: string): void {
   if (value === null) return
   if (typeof value === 'string' && CLEARABLE_ASSET_VALUES.includes(value)) return
   if (typeof value !== 'string') {

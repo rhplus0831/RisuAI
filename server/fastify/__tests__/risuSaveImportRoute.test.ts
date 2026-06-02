@@ -9,7 +9,7 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
-import { writePersisted } from '../src/repository.js'
+import { insertAssetMetadataBatch, writePersisted } from '../src/repository.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
 interface Harness {
@@ -329,14 +329,15 @@ describe('Phase 9-8a multipart .risu import route', () => {
     const present = 'a'.repeat(64)
     const missing = 'b'.repeat(64)
     const orphaned = 'c'.repeat(64)
-    writePersisted(harness.dataDir, {
-      _version: 1,
-      database: null,
-      assets: [
+    const seedDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      insertAssetMetadataBatch(seedDb, [
         { id: present, ext: 'png', size: 12, contentType: 'image/png' },
         { id: orphaned, ext: 'webp', size: 44, contentType: 'image/webp' },
-      ],
-    })
+      ])
+    } finally {
+      seedDb.close()
+    }
 
     const imported = await authedInject({
       method: 'POST',

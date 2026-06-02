@@ -3,8 +3,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
 import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
+import { createAssetMetadataTable } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 9
+export const CURRENT_SCHEMA_VERSION = 10
 
 export interface MigrationStep {
   version: number
@@ -87,6 +88,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       reconcileLegacyCommandEventTable(db)
     },
   },
+  {
+    version: 10,
+    name: 'asset-metadata-table',
+    up: (db) => {
+      createAssetMetadataTable(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -123,6 +131,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
       createChatBlobTable(db)
       createCommandEventTable(db)
       createGenerationFinalizationRetryTable(db)
+      createAssetMetadataTable(db)
     }
     applyMigrations(db, schemaState.version)
   } catch (error) {

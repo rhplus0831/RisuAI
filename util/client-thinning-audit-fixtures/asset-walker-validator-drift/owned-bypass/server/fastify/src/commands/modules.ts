@@ -2,5 +2,5 @@
 //
 // Needles:
 //   'assets' in record
-//   validateAssetTriples(assetOptions.assetDataDir
+//   validateAssetTriples(assetOptions.assetDb
 export const moduleAssetValidatorNeedles = true

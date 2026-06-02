@@ -288,6 +288,7 @@ function multimodalTypeFromContentType(contentType: string): MultiModal['type'] 
 }
 
 type StoredAssetReader = (
+  db: DatabaseSync,
   dataDir: string,
   id: string,
   purpose: StoredAssetPurpose,
@@ -298,11 +299,12 @@ function cloneStoredAssetResult(result: MultiModal | undefined): MultiModal | un
 }
 
 function readStoredAsset(
+  db: DatabaseSync,
   dataDir: string,
   id: string,
   purpose: StoredAssetPurpose,
 ): MultiModal | undefined {
-  const entry = assetById(dataDir, id)
+  const entry = assetById(db, id)
   if (!entry) return undefined
   const file = assetPath(dataDir, entry)
   if (!fs.existsSync(file)) return undefined
@@ -319,6 +321,7 @@ function readStoredAsset(
 }
 
 export function createRequestScopedStoredAssetResolver(
+  db: DatabaseSync,
   dataDir: string,
   read: StoredAssetReader = readStoredAsset,
 ): ResolveStoredAsset {
@@ -330,7 +333,7 @@ export function createRequestScopedStoredAssetResolver(
     if (cache.has(cacheKey)) {
       return cloneStoredAssetResult(cache.get(cacheKey))
     }
-    const resolved = read(dataDir, id, purpose)
+    const resolved = read(db, dataDir, id, purpose)
     cache.set(cacheKey, resolved)
     return cloneStoredAssetResult(resolved)
   }
@@ -342,7 +345,7 @@ function loadDatabaseDeps(
   measurement?: PromptAssemblyMeasurement,
 ): RouteAssembleDeps {
   let database: Database | null = null
-  const resolveStoredAsset = createRequestScopedStoredAssetResolver(dataDir)
+  const resolveStoredAsset = createRequestScopedStoredAssetResolver(db, dataDir)
   return {
     loadDatabase: () => {
       const startedAt = measurement ? protocolNowMs() : 0

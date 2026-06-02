@@ -2,5 +2,5 @@
 //
 // Needles:
 //   'image' in record
-//   validateOptionalServerAssetRef(options.assetDataDir, record.image
+//   validateOptionalServerAssetRef(options.assetDb, record.image
 export const presetAssetValidatorNeedles = true

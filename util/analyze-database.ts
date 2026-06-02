@@ -36,6 +36,7 @@ import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { getSchemaState, openDatabase } from '../server/fastify/src/db.js'
 import {
+  getAllAssetMetadata,
   loadPersisted,
   loadPersistedWithMessages,
   loadStubProjection,
@@ -287,8 +288,7 @@ export function analyzeDataDir(dataDir: string, source: string): DatabaseAnalysi
     const bootstrapBytes = jsonPayloadBytes(bootstrapResponse) ?? 0
 
     // --- Asset inventory + fanout (Phase 3 asset-byte gate) ---
-    const persisted = loadPersisted(dataDir)
-    const storedAssets = persisted.assets
+    const storedAssets = getAllAssetMetadata(db)
     const storedBytes = storedAssets.reduce((sum, asset) => sum + (asset.size ?? 0), 0)
     const byTypeMap = new Map<string, { count: number; bytes: number }>()
     for (const asset of storedAssets) {

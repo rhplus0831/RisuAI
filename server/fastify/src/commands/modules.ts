@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { DatabaseSync } from 'node:sqlite'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { validateAssetTriples } from './assets.js'
 import {
@@ -69,7 +70,7 @@ export function createModuleRecord(
   input: unknown,
   label = 'module',
   options: { allowMcp?: boolean } = {},
-  assetOptions: { assetDataDir?: string } = {},
+  assetOptions: { assetDb?: DatabaseSync } = {},
 ): ModuleRecord {
   const module = readJsonObject(input, label) as ModuleRecord
   module.id = readModuleId(module.id, `${label}.id`)
@@ -83,7 +84,7 @@ function repairModuleRecord(
   input: unknown,
   label = 'module',
   options: { allowMcp?: boolean } = {},
-  assetOptions: { assetDataDir?: string } = {},
+  assetOptions: { assetDb?: DatabaseSync } = {},
 ): ModuleRecord {
   const module = readJsonObject(input, label) as ModuleRecord
   module.id = typeof module.id === 'string' && module.id.trim() ? module.id : randomUUID()
@@ -102,7 +103,7 @@ export function readModuleId(value: unknown, label = 'moduleId'): string {
 
 export function readModulePatch(
   input: unknown,
-  options: { assetDataDir?: string } = {},
+  options: { assetDb?: DatabaseSync } = {},
 ): JsonRecord {
   const patch = readJsonObject(input, 'patch')
   if (Object.keys(patch).length === 0) {
@@ -233,7 +234,7 @@ function validateModuleRecord(
   record: JsonRecord,
   label: string,
   options: { allowMcp?: boolean } = {},
-  assetOptions: { assetDataDir?: string } = {},
+  assetOptions: { assetDb?: DatabaseSync } = {},
 ): void {
   if ('id' in record && (typeof record.id !== 'string' || record.id.trim() === '')) {
     throw new ValidationError(`${label}.id must be a non-empty string`)
@@ -257,7 +258,7 @@ function validateModulePatch(
   record: JsonRecord,
   label: string,
   options: { allowId?: boolean; allowChildren?: boolean; allowMcp?: boolean } = {},
-  assetOptions: { assetDataDir?: string } = {},
+  assetOptions: { assetDb?: DatabaseSync } = {},
 ): void {
   for (const key of Object.keys(record)) {
     if ((!options.allowId || key !== 'id') && MODULE_PATCH_EXCLUDED_KEYS.has(key)) {
@@ -276,8 +277,8 @@ function validateModulePatch(
       throw new ValidationError(`${label}.${key} must be ${describeTypes(allowedTypes)}`)
     }
   }
-  if (assetOptions.assetDataDir && 'assets' in record) {
-    validateAssetTriples(assetOptions.assetDataDir, record.assets, `${label}.assets`)
+  if (assetOptions.assetDb && 'assets' in record) {
+    validateAssetTriples(assetOptions.assetDb, record.assets, `${label}.assets`)
   }
 }
 

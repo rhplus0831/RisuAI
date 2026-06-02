@@ -7,7 +7,8 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
-import { writePersisted, assetsDir } from '../src/repository.js'
+import { DatabaseSync } from 'node:sqlite'
+import { writePersisted, assetsDir, insertAssetMetadataBatch } from '../src/repository.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
 interface ExportMetric {
@@ -100,12 +101,18 @@ function persistBundleDatabase(dataDir: string): void {
       plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
       pluginCustomStorage: {},
     },
-    assets: [
+    assets: [],
+  })
+  const seedDb = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    insertAssetMetadataBatch(seedDb, [
       { id: INCLUDED_ASSET, ext: 'png', size: 12, contentType: 'image/png' },
       { id: MISSING_FILE, ext: 'webp', size: 8, contentType: 'image/webp' },
       { id: ORPHANED_ASSET, ext: 'png', size: 7, contentType: 'image/png' },
-    ],
-  })
+    ])
+  } finally {
+    seedDb.close()
+  }
 
   const dir = assetsDir(dataDir)
   mkdirSync(dir, { recursive: true })
@@ -250,8 +257,16 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
         plugins: [],
         pluginCustomStorage: {},
       },
-      assets: [{ id: INCLUDED_ASSET, ext: 'png', size: 12, contentType: 'image/png' }],
+      assets: [],
     })
+    const legacyDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      insertAssetMetadataBatch(legacyDb, [
+        { id: INCLUDED_ASSET, ext: 'png', size: 12, contentType: 'image/png' },
+      ])
+    } finally {
+      legacyDb.close()
+    }
     const dir = assetsDir(harness.dataDir)
     mkdirSync(dir, { recursive: true })
     writeFileSync(path.join(dir, `${INCLUDED_ASSET}.png`), Buffer.from('legacy-path-png'))

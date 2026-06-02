@@ -726,7 +726,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     owner: 'legacy profile mirror from selected persona icon',
     validatorFile: 'server/fastify/src/commands/personas.ts',
     validatorNeedles: [
-      'validateOptionalServerAssetRef(options.assetDataDir, record.icon',
+      'validateOptionalServerAssetRef(options.assetDb, record.icon',
       'database.userIcon = stringValue(persona.icon)',
     ],
   },
@@ -737,9 +737,9 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     owner: 'display settings command validator',
     validatorFile: 'server/fastify/src/routes/commands.ts',
     validatorNeedles: [
-      'validateSettingsAssetRefs(dataDir, patch)',
+      'validateSettingsAssetRefs(db, patch)',
       "'customBackground' in patch",
-      "validateOptionalServerAssetRef(dataDir, patch.customBackground, 'customBackground')",
+      "validateOptionalServerAssetRef(db, patch.customBackground, 'customBackground')",
     ],
   },
   {
@@ -750,7 +750,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     validatorFile: 'server/fastify/src/commands/personas.ts',
     validatorNeedles: [
       "'icon' in record",
-      'validateOptionalServerAssetRef(options.assetDataDir, record.icon',
+      'validateOptionalServerAssetRef(options.assetDb, record.icon',
     ],
   },
   {
@@ -760,8 +760,8 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     owner: 'character order reorder validator',
     validatorFile: 'server/fastify/src/commands/characters.ts',
     validatorNeedles: [
-      'validateCharacterOrderLegacyImageRef(dataDir, entry.img',
-      'validateOptionalServerAssetRef(dataDir, value, label)',
+      'validateCharacterOrderLegacyImageRef(db, entry.img',
+      'validateOptionalServerAssetRef(db, value, label)',
     ],
   },
   {
@@ -771,7 +771,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     owner: 'character order reorder validator',
     validatorFile: 'server/fastify/src/commands/characters.ts',
     validatorNeedles: [
-      'validateOptionalServerAssetRef(dataDir, entry.imgFile',
+      'validateOptionalServerAssetRef(db, entry.imgFile',
       'validateCharacterOrderAssetRefs',
     ],
   },
@@ -783,7 +783,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     validatorFile: 'server/fastify/src/commands/presets.ts',
     validatorNeedles: [
       "'image' in record",
-      'validateOptionalServerAssetRef(options.assetDataDir, record.image',
+      'validateOptionalServerAssetRef(options.assetDb, record.image',
     ],
   },
   {
@@ -792,7 +792,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     path: 'database.modules[*].assets[*][1]',
     owner: 'module create/patch validators',
     validatorFile: 'server/fastify/src/commands/modules.ts',
-    validatorNeedles: ["'assets' in record", 'validateAssetTriples(assetOptions.assetDataDir'],
+    validatorNeedles: ["'assets' in record", 'validateAssetTriples(assetOptions.assetDb'],
   },
   {
     collector: 'addReference',
@@ -800,7 +800,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     path: 'database.characters[*].image',
     owner: 'character create/patch validators',
     validatorFile: 'server/fastify/src/commands/characters.ts',
-    validatorNeedles: ["'image' in record", 'validateOptionalServerAssetRef(dataDir, record.image'],
+    validatorNeedles: ["'image' in record", 'validateOptionalServerAssetRef(db, record.image'],
   },
   {
     collector: 'addTupleReferences',
@@ -808,7 +808,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     path: 'database.characters[*].emotionImages[*][1]',
     owner: 'character create/patch validators',
     validatorFile: 'server/fastify/src/commands/characters.ts',
-    validatorNeedles: ["'emotionImages' in record", 'validateEmotionImageRefs(dataDir'],
+    validatorNeedles: ["'emotionImages' in record", 'validateEmotionImageRefs(db'],
   },
   {
     collector: 'addTupleReferences',
@@ -816,7 +816,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     path: 'database.characters[*].additionalAssets[*][1]',
     owner: 'character create/patch validators',
     validatorFile: 'server/fastify/src/commands/characters.ts',
-    validatorNeedles: ["'additionalAssets' in record", 'validateAssetTriples(dataDir'],
+    validatorNeedles: ["'additionalAssets' in record", 'validateAssetTriples(db'],
   },
   {
     collector: 'addCcAssetReferences',
@@ -824,7 +824,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     path: 'database.characters[*].ccAssets[*].uri',
     owner: 'character create/patch validators',
     validatorFile: 'server/fastify/src/commands/characters.ts',
-    validatorNeedles: ["'ccAssets' in record", 'validateCcAssetRefs(dataDir'],
+    validatorNeedles: ["'ccAssets' in record", 'validateCcAssetRefs(db'],
   },
   {
     collector: 'addVitsReferences',
@@ -832,7 +832,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     path: 'database.characters[*].vits.files.*',
     owner: 'character create/patch validators',
     validatorFile: 'server/fastify/src/commands/characters.ts',
-    validatorNeedles: ["'vits' in record", 'validateVitsAssetRefs(dataDir'],
+    validatorNeedles: ["'vits' in record", 'validateVitsAssetRefs(db'],
   },
   {
     collector: 'addReferenceList',
@@ -840,7 +840,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     path: 'database.characters[*].prebuiltAssetExclude[*]',
     owner: 'character create/patch validators',
     validatorFile: 'server/fastify/src/commands/characters.ts',
-    validatorNeedles: ["'prebuiltAssetExclude' in record", 'validateAssetIdList(dataDir'],
+    validatorNeedles: ["'prebuiltAssetExclude' in record", 'validateAssetIdList(db'],
   },
   {
     collector: 'addGptSoVitsReference',
@@ -848,7 +848,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     path: 'database.characters[*].gptSoVitsConfig.ref_audio_data.assetId',
     owner: 'character create/patch validators',
     validatorFile: 'server/fastify/src/commands/characters.ts',
-    validatorNeedles: ["'gptSoVitsConfig' in record", 'validateGptSoVitsAssetRefs(dataDir'],
+    validatorNeedles: ["'gptSoVitsConfig' in record", 'validateGptSoVitsAssetRefs(db'],
   },
 ]
 
@@ -1157,8 +1157,8 @@ function checkAssetPersistenceSemantics(): void {
   }
 
   for (const needle of [
-    'validateVitsAssetRefs(dataDir, record.vits',
-    'validateGptSoVitsAssetRefs(dataDir, record.gptSoVitsConfig',
+    'validateVitsAssetRefs(db, record.vits',
+    'validateGptSoVitsAssetRefs(db, record.gptSoVitsConfig',
   ]) {
     if (!characterText.includes(needle)) {
       fail(

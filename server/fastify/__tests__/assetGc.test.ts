@@ -1,9 +1,16 @@
 import { existsSync, mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runAssetGc } from '../src/assetGc.js'
-import { assetsDir, loadPersisted, type PersistedAsset } from '../src/repository.js'
+import {
+  assetsDir,
+  getAllAssetMetadata,
+  insertAssetMetadataBatch,
+  writePersisted,
+  type PersistedAsset,
+} from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { replaceAllChatMessages } from '../src/messageStore.js'
 
@@ -24,6 +31,7 @@ function asset(id: string): PersistedAsset {
 }
 
 let dataDir: string
+let db: DatabaseSync
 
 function writeAssetFile(id: string, mtimeMs: number): string {
   const dir = assetsDir(dataDir)
@@ -35,150 +43,119 @@ function writeAssetFile(id: string, mtimeMs: number): string {
   return file
 }
 
+function seedDatabase(database: unknown, assets: PersistedAsset[]): void {
+  writePersisted(dataDir, { _version: 1, database, assets: [] })
+  insertAssetMetadataBatch(db, assets)
+}
+
 beforeEach(() => {
   dataDir = mkdtempSync(path.join(tmpdir(), 'risu-asset-gc-'))
+  db = openDatabase(dataDir)
 })
 
 afterEach(() => {
+  db.close()
   rmSync(dataDir, { recursive: true, force: true })
 })
 
 describe('runAssetGc', () => {
   it('reclaims only orphaned assets past the grace window; keeps referenced + shared + fresh', () => {
-    // Two characters share SHARED; only char-a references REFERENCED.
     const database = {
       characters: [
         { chaId: 'char-a', image: REFERENCED, emotionImages: [['happy', SHARED]] },
         { chaId: 'char-b', image: SHARED },
       ],
     }
-    writeFileSync(
-      path.join(dataDir, 'db.json'),
-      JSON.stringify({
-        _version: 1,
-        database,
-        assets: [asset(REFERENCED), asset(SHARED), asset(ORPHAN_OLD), asset(ORPHAN_FRESH)],
-      }),
-    )
+    seedDatabase(database, [asset(REFERENCED), asset(SHARED), asset(ORPHAN_OLD), asset(ORPHAN_FRESH)])
     const refFile = writeAssetFile(REFERENCED, OLD_MTIME)
     const sharedFile = writeAssetFile(SHARED, OLD_MTIME)
     const orphanOldFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
     const orphanFreshFile = writeAssetFile(ORPHAN_FRESH, FRESH_MTIME)
 
-    const result = runAssetGc(dataDir, { graceMs: GRACE_MS, now: () => NOW })
+    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
-    // Only the old orphan is reclaimed.
     expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
     expect(result.skippedByGrace).toBe(1)
     expect(existsSync(orphanOldFile)).toBe(false)
 
-    // Referenced, shared (refcount > 0 even though char-b alone references it),
-    // and the freshly-uploaded orphan all survive.
     expect(existsSync(refFile)).toBe(true)
     expect(existsSync(sharedFile)).toBe(true)
     expect(existsSync(orphanFreshFile)).toBe(true)
 
-    // Metadata array drops only the reclaimed entry.
-    const persisted = loadPersisted(dataDir)
-    expect(persisted.assets.map((a) => a.id).sort()).toEqual(
-      [REFERENCED, SHARED, ORPHAN_FRESH].sort(),
-    )
-    // database blob is untouched (no revision-visible change).
-    expect(persisted.database).toEqual(database)
+    expect(
+      getAllAssetMetadata(db)
+        .map((a) => a.id)
+        .sort(),
+    ).toEqual([REFERENCED, SHARED, ORPHAN_FRESH].sort())
   })
 
   it('never deletes a just-uploaded (within-grace) asset even if not yet referenced', () => {
-    writeFileSync(
-      path.join(dataDir, 'db.json'),
-      JSON.stringify({ _version: 1, database: { characters: [] }, assets: [asset(ORPHAN_FRESH)] }),
-    )
+    seedDatabase({ characters: [] }, [asset(ORPHAN_FRESH)])
     const freshFile = writeAssetFile(ORPHAN_FRESH, FRESH_MTIME)
 
-    const result = runAssetGc(dataDir, { graceMs: GRACE_MS, now: () => NOW })
+    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedAssetIds).toEqual([])
     expect(result.skippedByGrace).toBe(1)
     expect(existsSync(freshFile)).toBe(true)
-    expect(loadPersisted(dataDir).assets.map((a) => a.id)).toEqual([ORPHAN_FRESH])
+    expect(getAllAssetMetadata(db).map((a) => a.id)).toEqual([ORPHAN_FRESH])
   })
 
   it('drops a metadata entry whose backing file is already gone', () => {
-    writeFileSync(
-      path.join(dataDir, 'db.json'),
-      JSON.stringify({ _version: 1, database: { characters: [] }, assets: [asset(ORPHAN_OLD)] }),
-    )
-    // No file on disk for ORPHAN_OLD.
+    seedDatabase({ characters: [] }, [asset(ORPHAN_OLD)])
 
-    const result = runAssetGc(dataDir, { graceMs: GRACE_MS, now: () => NOW })
+    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
-    expect(loadPersisted(dataDir).assets).toEqual([])
+    expect(getAllAssetMetadata(db)).toEqual([])
   })
 
   it('sweeps stray, unreferenced, grace-aged files with no metadata entry', () => {
-    writeFileSync(
-      path.join(dataDir, 'db.json'),
-      JSON.stringify({ _version: 1, database: { characters: [] }, assets: [] }),
-    )
+    seedDatabase({ characters: [] }, [])
     const strayOld = writeAssetFile(STRAY_OLD, OLD_MTIME)
     const strayFresh = writeAssetFile(STRAY_FRESH, FRESH_MTIME)
 
-    const result = runAssetGc(dataDir, { graceMs: GRACE_MS, now: () => NOW })
+    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedStrayFiles).toEqual([`${STRAY_OLD}.png`])
     expect(existsSync(strayOld)).toBe(false)
     expect(existsSync(strayFresh)).toBe(true)
   })
 
-  it('does not rewrite db.json when nothing is reclaimed', () => {
+  it('is a no-op when nothing is reclaimed', () => {
     const database = { characters: [{ chaId: 'char-a', image: REFERENCED }] }
-    writeFileSync(
-      path.join(dataDir, 'db.json'),
-      JSON.stringify({ _version: 1, database, assets: [asset(REFERENCED)] }),
-    )
+    seedDatabase(database, [asset(REFERENCED)])
     writeAssetFile(REFERENCED, OLD_MTIME)
 
-    const result = runAssetGc(dataDir, { graceMs: GRACE_MS, now: () => NOW })
+    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedAssetIds).toEqual([])
     expect(result.deletedStrayFiles).toEqual([])
-    expect(loadPersisted(dataDir).assets).toEqual([asset(REFERENCED)])
+    expect(getAllAssetMetadata(db)).toEqual([asset(REFERENCED)])
   })
 
   it('keeps assets referenced only by SQLite chat-message inlay tokens', () => {
     const database = { characters: [{ chaId: 'char-a', chats: [{ id: 'chat-a' }] }] }
-    writeFileSync(
-      path.join(dataDir, 'db.json'),
-      JSON.stringify({
-        _version: 1,
-        database,
-        assets: [asset(REFERENCED), asset(ORPHAN_OLD)],
-      }),
-    )
+    seedDatabase(database, [asset(REFERENCED), asset(ORPHAN_OLD)])
     const referencedFile = writeAssetFile(REFERENCED, OLD_MTIME)
     const orphanFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
-    const db = openDatabase(dataDir)
-    try {
-      replaceAllChatMessages(db, [
-        {
-          chatId: 'chat-a',
-          messages: [
-            {
-              chatId: 'message-a',
-              role: 'user',
-              data: `look {{inlayeddata::${REFERENCED}}}`,
-            },
-          ],
-        },
-      ])
+    replaceAllChatMessages(db, [
+      {
+        chatId: 'chat-a',
+        messages: [
+          {
+            chatId: 'message-a',
+            role: 'user',
+            data: `look {{inlayeddata::${REFERENCED}}}`,
+          },
+        ],
+      },
+    ])
 
-      const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
-      expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
-      expect(existsSync(referencedFile)).toBe(true)
-      expect(existsSync(orphanFile)).toBe(false)
-    } finally {
-      db.close()
-    }
+    expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
+    expect(existsSync(referencedFile)).toBe(true)
+    expect(existsSync(orphanFile)).toBe(false)
   })
 })

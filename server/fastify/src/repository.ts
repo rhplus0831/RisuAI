@@ -67,6 +67,74 @@ export interface PersistedAsset {
   contentType: string
 }
 
+interface AssetMetadataRow {
+  id: string
+  ext: string
+  size: number
+  content_type: string
+}
+
+function rowToPersistedAsset(row: AssetMetadataRow): PersistedAsset {
+  return { id: row.id, ext: row.ext, size: row.size, contentType: row.content_type }
+}
+
+export function createAssetMetadataTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS assets (
+      id TEXT PRIMARY KEY,
+      ext TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      content_type TEXT NOT NULL
+    )
+  `)
+}
+
+export function getAllAssetMetadata(db: DatabaseSync): PersistedAsset[] {
+  const rows = db
+    .prepare('SELECT id, ext, size, content_type FROM assets ORDER BY id')
+    .all() as unknown as AssetMetadataRow[]
+  return rows.map(rowToPersistedAsset)
+}
+
+export function getAssetMetadataById(db: DatabaseSync, id: string): PersistedAsset | null {
+  const row = db
+    .prepare('SELECT id, ext, size, content_type FROM assets WHERE id = ?')
+    .get(id) as unknown as AssetMetadataRow | undefined
+  return row ? rowToPersistedAsset(row) : null
+}
+
+export function insertAssetMetadataBatch(
+  db: DatabaseSync,
+  assets: readonly PersistedAsset[],
+): void {
+  if (assets.length === 0) return
+  const stmt = db.prepare(
+    'INSERT OR IGNORE INTO assets (id, ext, size, content_type) VALUES (?, ?, ?, ?)',
+  )
+  for (const asset of assets) {
+    stmt.run(asset.id, asset.ext, asset.size, asset.contentType)
+  }
+}
+
+export function deleteAssetMetadataByIds(db: DatabaseSync, ids: readonly string[]): void {
+  if (ids.length === 0) return
+  const stmt = db.prepare('DELETE FROM assets WHERE id = ?')
+  for (const id of ids) {
+    stmt.run(id)
+  }
+}
+
+export function getAssetMetadataCount(db: DatabaseSync): number {
+  const row = db.prepare('SELECT COUNT(*) AS count FROM assets').get() as { count: number }
+  return row.count
+}
+
+export function getMissingAssetIds(db: DatabaseSync, ids: readonly string[]): string[] {
+  if (ids.length === 0) return []
+  const stmt = db.prepare('SELECT id FROM assets WHERE id = ?')
+  return ids.filter((id) => !stmt.get(id))
+}
+
 export interface Persisted {
   _version: number
   database: unknown | null
@@ -122,42 +190,6 @@ function dbJsonPath(dataDir: string): string {
   return path.join(dataDir, 'db.json')
 }
 
-interface AssetMetadataIndex {
-  signature: string
-  byId: Map<string, PersistedAsset>
-}
-
-const assetMetadataIndexes = new Map<string, AssetMetadataIndex>()
-
-function dbJsonSignature(dataDir: string): string {
-  try {
-    const stat = fs.statSync(dbJsonPath(dataDir), { bigint: true })
-    return `${stat.mtimeNs}:${stat.size}`
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return 'missing'
-    }
-    throw err
-  }
-}
-
-function invalidateAssetMetadataIndex(dataDir: string): void {
-  assetMetadataIndexes.delete(dataDir)
-}
-
-function getAssetMetadataIndex(dataDir: string): AssetMetadataIndex {
-  const signature = dbJsonSignature(dataDir)
-  const cached = assetMetadataIndexes.get(dataDir)
-  if (cached?.signature === signature) return cached
-
-  const persisted = loadPersisted(dataDir)
-  const next: AssetMetadataIndex = {
-    signature,
-    byId: new Map(persisted.assets.map((asset) => [asset.id, asset])),
-  }
-  assetMetadataIndexes.set(dataDir, next)
-  return next
-}
 
 export function emptyPersisted(): Persisted {
   return { _version: PERSISTED_VERSION, database: null, assets: [] }
@@ -177,8 +209,21 @@ export function loadPersisted(dataDir: string): Persisted {
   return {
     _version: PERSISTED_VERSION,
     database: parsed.database ?? null,
-    assets: Array.isArray(parsed.assets) ? (parsed.assets as PersistedAsset[]) : [],
+    assets: [],
   }
+}
+
+/**
+ * Read any leftover `assets` array still embedded in db.json (pre-migration
+ * data). Returns the raw array without touching the `assets` SQLite table.
+ * Used only by the on-boot extraction helper.
+ */
+function loadLegacyPersistedAssets(dataDir: string): PersistedAsset[] {
+  const file = dbJsonPath(dataDir)
+  if (!fs.existsSync(file)) return []
+  const raw = fs.readFileSync(file, 'utf8')
+  const parsed = JSON.parse(raw) as Partial<Persisted>
+  return Array.isArray(parsed.assets) ? (parsed.assets as PersistedAsset[]) : []
 }
 
 export function loadPersistedDatabaseFields(
@@ -229,14 +274,14 @@ export function writePersisted(dataDir: string, next: Persisted): void {
   fs.mkdirSync(dataDir, { recursive: true })
   const file = dbJsonPath(dataDir)
   const tmp = `${file}.tmp`
+  const stripped = { ...next, assets: [] }
   try {
-    fs.writeFileSync(tmp, JSON.stringify(next))
+    fs.writeFileSync(tmp, JSON.stringify(stripped))
     fs.renameSync(tmp, file)
   } catch (err) {
     fs.rmSync(tmp, { force: true })
     throw err
   }
-  invalidateAssetMetadataIndex(dataDir)
 }
 
 // Chat messages live in SQLite, not in db.json.
@@ -421,6 +466,29 @@ export function stripChatMessages(next: Persisted): Persisted {
     delete chat.hypaV3Data
   })
   return next
+}
+
+/**
+ * One-time proactive extraction: if `db.json` still carries an embedded `assets`
+ * array, move every entry into the SQLite `assets` table and rewrite db.json
+ * without assets. Idempotent and safe to call on every boot.
+ */
+export function ensureAssetsExtracted(db: DatabaseSync, dataDir: string): void {
+  const legacyAssets = loadLegacyPersistedAssets(dataDir)
+  if (legacyAssets.length === 0) return
+  insertAssetMetadataBatch(db, legacyAssets)
+  const file = dbJsonPath(dataDir)
+  const raw = fs.readFileSync(file, 'utf8')
+  const parsed = JSON.parse(raw) as Record<string, unknown>
+  delete parsed.assets
+  const tmp = `${file}.tmp`
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(parsed))
+    fs.renameSync(tmp, file)
+  } catch (err) {
+    fs.rmSync(tmp, { force: true })
+    throw err
+  }
 }
 
 /**
@@ -715,9 +783,9 @@ export function assetPath(dataDir: string, entry: PersistedAsset): string {
   return path.join(assetsDir(dataDir), `${entry.id}.${entry.ext}`)
 }
 
-export function assetById(dataDir: string, id: string): PersistedAsset | null {
+export function assetById(db: DatabaseSync, id: string): PersistedAsset | null {
   if (!isValidAssetId(id)) return null
-  return getAssetMetadataIndex(dataDir).byId.get(id) ?? null
+  return getAssetMetadataById(db, id)
 }
 
 export interface AddAssetResult {
@@ -747,20 +815,16 @@ export function addAssets(
     }
   }
 
-  const persisted = loadPersisted(dataDir)
-  const assetById = new Map(persisted.assets.map((asset) => [asset.id, asset]))
-  const nextAssets = [...persisted.assets]
   const createdResults: AddAssetResult[] = []
   const results: AddAssetResult[] = []
   const currentRevision = getSchemaState(db).revision
   const createdFiles: Array<{ file: string; existedBefore: boolean }> = []
   let transactionOpen = false
-  let metadataWritten = false
   try {
     for (const asset of assets) {
       const ext = CONTENT_TYPE_EXTENSIONS[asset.contentType]
       const sha256 = createHash('sha256').update(asset.bytes).digest('hex')
-      const existing = assetById.get(sha256)
+      const existing = getAssetMetadataById(db, sha256)
       if (existing) {
         const file = assetPath(dataDir, existing)
         if (!fs.existsSync(file)) {
@@ -782,8 +846,6 @@ export function addAssets(
         size: asset.bytes.length,
         contentType: asset.contentType,
       }
-      nextAssets.push(entry)
-      assetById.set(entry.id, entry)
       const result = { entry, created: true, revision: currentRevision }
       createdResults.push(result)
       results.push(result)
@@ -793,11 +855,12 @@ export function addAssets(
       return results
     }
 
-    writePersisted(dataDir, { ...persisted, assets: nextAssets })
-    metadataWritten = true
-
     db.exec('BEGIN IMMEDIATE')
     transactionOpen = true
+    insertAssetMetadataBatch(
+      db,
+      createdResults.map((r) => r.entry),
+    )
     const event = persistRevisionedCommandEvent(db, {
       ...COMMAND_EVENT_CATALOG.assetCreated,
       ...(createdResults.length === 1 ? { id: createdResults[0].entry.id } : {}),
@@ -809,29 +872,17 @@ export function addAssets(
     if (transactionOpen) {
       db.exec('ROLLBACK')
     }
-    let restoreError: unknown
-    try {
-      if (metadataWritten) {
-        writePersisted(dataDir, persisted)
-      }
-    } catch (rollbackErr) {
-      restoreError = rollbackErr
-    }
     for (const { file, existedBefore } of createdFiles) {
       if (!existedBefore) {
         fs.rmSync(file, { force: true })
       }
     }
-    if (restoreError) {
-      throw restoreError
-    }
     throw err
   }
 }
 
-export function missingAssetIds(dataDir: string, ids: string[]): string[] {
-  const index = getAssetMetadataIndex(dataDir)
-  return ids.filter((id) => !index.byId.has(id))
+export function missingAssetIds(db: DatabaseSync, ids: string[]): string[] {
+  return getMissingAssetIds(db, ids)
 }
 
 export const BACKUP_MANIFEST_VERSION = 1
@@ -905,6 +956,7 @@ const SQLITE_BACKUP_TABLES = [
   'memory_jobs',
   'messages',
   'chat_hypa_v3',
+  'assets',
 ] as const
 
 function checkpointWal(db: DatabaseSync): void {
@@ -949,7 +1001,7 @@ export function createBackup(
     label,
     createdAt: new Date().toISOString(),
     revision,
-    assetCount: persisted.assets.length,
+    assetCount: getAssetMetadataCount(db),
   }
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest))
   return manifest
@@ -1112,7 +1164,6 @@ export function restoreBackup(
       fs.renameSync(tmpAssets, liveAssets)
       fs.renameSync(tmpSave, liveSave)
       fs.renameSync(tmp, live)
-      invalidateAssetMetadataIndex(dataDir)
     })
   } catch (err) {
     rmDirectoryIfPresent(liveAssets)

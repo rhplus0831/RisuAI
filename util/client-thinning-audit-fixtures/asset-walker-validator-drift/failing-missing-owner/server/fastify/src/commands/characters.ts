@@ -1,22 +1,22 @@
 // Validator-needle carrier for character and character-order asset refs.
 //
 // Needles:
-//   validateCharacterOrderLegacyImageRef(dataDir, entry.img
-//   validateOptionalServerAssetRef(dataDir, value, label)
-//   validateOptionalServerAssetRef(dataDir, entry.imgFile
+//   validateCharacterOrderLegacyImageRef(db, entry.img
+//   validateOptionalServerAssetRef(db, value, label)
+//   validateOptionalServerAssetRef(db, entry.imgFile
 //   validateCharacterOrderAssetRefs
 //   'image' in record
-//   validateOptionalServerAssetRef(dataDir, record.image
+//   validateOptionalServerAssetRef(db, record.image
 //   'emotionImages' in record
-//   validateEmotionImageRefs(dataDir
+//   validateEmotionImageRefs(db
 //   'additionalAssets' in record
-//   validateAssetTriples(dataDir
+//   validateAssetTriples(db
 //   'ccAssets' in record
-//   validateCcAssetRefs(dataDir
+//   validateCcAssetRefs(db
 //   'vits' in record
-//   validateVitsAssetRefs(dataDir
+//   validateVitsAssetRefs(db
 //   'prebuiltAssetExclude' in record
-//   validateAssetIdList(dataDir
+//   validateAssetIdList(db
 //   'gptSoVitsConfig' in record
-//   validateGptSoVitsAssetRefs(dataDir
+//   validateGptSoVitsAssetRefs(db
 export const characterAssetValidatorNeedles = true

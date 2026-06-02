@@ -8,7 +8,17 @@ import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import * as fflate from 'fflate'
 import { buildApp } from '../src/app.js'
-import { loadPersisted } from '../src/repository.js'
+import { DatabaseSync } from 'node:sqlite'
+import { getAllAssetMetadata, loadPersisted } from '../src/repository.js'
+
+function queryAssets(dataDir: string) {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    return getAllAssetMetadata(db)
+  } finally {
+    db.close()
+  }
+}
 
 const subtle = webcrypto.subtle
 const directRealmImportTestRun = process.env.RISU_DIRECT_REALM_IMPORT_TEST === 'true'
@@ -435,7 +445,7 @@ describe('Realm character import route', () => {
         code: 'low_level_access_confirmation_required',
       },
     })
-    expect(loadPersisted(harness.dataDir).assets).toHaveLength(0)
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
   })
 
   it('streams charx extraction and asset progress', async () => {
@@ -529,14 +539,15 @@ describe('Realm character import route', () => {
       '/resource/voice-wav',
     ])
 
-    const persisted = loadPersisted(harness.dataDir)
-    expect(persisted.assets).toHaveLength(4)
-    expect(persisted.assets.map((asset) => asset.contentType).sort()).toEqual([
+    const assets = queryAssets(harness.dataDir)
+    expect(assets).toHaveLength(4)
+    expect(assets.map((asset) => asset.contentType).sort()).toEqual([
       'audio/wav',
       'image/png',
       'image/png',
       'text/css',
     ])
+    const persisted = loadPersisted(harness.dataDir)
     const character = (persisted.database as { characters: Array<Record<string, unknown>> })
       .characters[0]
     expect(character.name).toBe('Realm Utility')
@@ -573,7 +584,7 @@ describe('Realm character import route', () => {
 
     expect(res.statusCode).toBe(409)
     expect(res.json()).toMatchObject({ code: 'low_level_access_confirmation_required' })
-    expect(loadPersisted(harness.dataDir).assets).toHaveLength(0)
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
     expect(echo.requests.map((req) => req.url)).toEqual([
       '/api/v1/download/dynamic/realm-id?cors=true',
     ])
@@ -605,13 +616,14 @@ describe('Realm character import route', () => {
       '/api/v1/download/dynamic/realm-id?cors=true',
     ])
 
-    const persisted = loadPersisted(harness.dataDir)
-    expect(persisted.assets).toHaveLength(3)
-    expect(persisted.assets.map((asset) => asset.contentType).sort()).toEqual([
+    const assets = queryAssets(harness.dataDir)
+    expect(assets).toHaveLength(3)
+    expect(assets.map((asset) => asset.contentType).sort()).toEqual([
       'image/png',
       'image/png',
       'text/css',
     ])
+    const persisted = loadPersisted(harness.dataDir)
     const character = (persisted.database as { characters: Array<Record<string, unknown>> })
       .characters[0]
     expect(character.name).toBe('Realm CharX')
@@ -645,8 +657,8 @@ describe('Realm character import route', () => {
 
     expect(res.statusCode).toBe(400)
     expect(res.json()).toEqual({ error: 'Realm charx expanded payload exceeds size limit' })
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
     const persisted = loadPersisted(harness.dataDir)
-    expect(persisted.assets).toHaveLength(0)
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
@@ -677,7 +689,7 @@ describe('Realm character import route', () => {
     const character = (persisted.database as { characters: Array<Record<string, unknown>> })
       .characters[0]
     expect(character.name).toBe('Realm CharX')
-    expect(persisted.assets).toHaveLength(3)
+    expect(queryAssets(harness.dataDir)).toHaveLength(3)
   })
 
   directOnlyIt(
@@ -704,8 +716,8 @@ describe('Realm character import route', () => {
       })
 
       expect(res.statusCode).toBe(200)
+      expect(queryAssets(harness.dataDir)).toHaveLength(7001)
       const persisted = loadPersisted(harness.dataDir)
-      expect(persisted.assets).toHaveLength(7001)
       const character = (persisted.database as { characters: Array<Record<string, unknown>> })
         .characters[0]
       expect(character.name).toBe('Realm Many Assets')

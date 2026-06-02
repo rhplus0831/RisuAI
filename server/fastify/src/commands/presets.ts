@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
+import type { DatabaseSync } from 'node:sqlite'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { validateOptionalServerAssetRef } from './assets.js'
 
 type JsonRecord = Record<string, unknown>
-type AssetValidationOptions = { assetDataDir?: string }
+type AssetValidationOptions = { assetDb?: DatabaseSync }
 
 export interface PresetRecord extends JsonRecord {
   id: string
@@ -259,8 +260,8 @@ function validatePresetAssetRefs(
   label: string,
   options: AssetValidationOptions,
 ): void {
-  if (options.assetDataDir && 'image' in record) {
-    validateOptionalServerAssetRef(options.assetDataDir, record.image, `${label}.image`)
+  if (options.assetDb && 'image' in record) {
+    validateOptionalServerAssetRef(options.assetDb, record.image, `${label}.image`)
   }
 }
 

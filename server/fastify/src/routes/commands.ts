@@ -1078,7 +1078,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as RuntimeSettingsCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readSettingsGroupPatch(group, body.patch)
-      validateSettingsAssetRefs(dataDir, patch)
+      validateSettingsAssetRefs(db, patch)
       const result = applyMessageFreeJsonCommandMutation({
         db,
         dataDir,
@@ -1108,7 +1108,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PresetCommandBody
       const baseRevision = readBaseRevision(body)
       const preset = createPresetRecord(readJsonObject(body.preset, 'preset'), 'New Preset', {
-        assetDataDir: dataDir,
+        assetDb: db,
       })
       const result = applyJsonCommandMutation<{ presetId: string }>({
         db,
@@ -1146,7 +1146,7 @@ export function registerCommandRoutes(
       const presetId = readPresetId((req.params as { presetId?: unknown }).presetId)
       const body = (req.body ?? {}) as PresetCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readPresetPatch(readJsonObject(body.patch, 'patch'), { assetDataDir: dataDir })
+      const patch = readPresetPatch(readJsonObject(body.patch, 'patch'), { assetDb: db })
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== presetId) {
         throw new ValidationError('patch.id must match presetId')
       }
@@ -1344,7 +1344,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PresetCommandBody
       const baseRevision = readBaseRevision(body)
       const preset = createPresetRecord(readJsonObject(body.preset, 'preset'), 'Imported', {
-        assetDataDir: dataDir,
+        assetDb: db,
       })
       const result = applyJsonCommandMutation<{ presetId: string }>({
         db,
@@ -1639,7 +1639,7 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as PersonaCommandBody
       const baseRevision = readBaseRevision(body)
-      const persona = createPersonaRecord(body.persona, { assetDataDir: dataDir })
+      const persona = createPersonaRecord(body.persona, { assetDb: db })
       const mirror = readPersonaOptionalBoolean(
         body.mirrorLegacyProfile,
         'mirrorLegacyProfile',
@@ -1685,7 +1685,7 @@ export function registerCommandRoutes(
       const personaId = readPersonaId((req.params as { personaId?: unknown }).personaId)
       const body = (req.body ?? {}) as PersonaCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readPersonaPatch(body.patch, { assetDataDir: dataDir })
+      const patch = readPersonaPatch(body.patch, { assetDb: db })
       const mirror = readPersonaOptionalBoolean(
         body.mirrorLegacyProfile,
         'mirrorLegacyProfile',
@@ -2275,7 +2275,7 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
-      const character = createCharacterRecord(body.character, { assetDataDir: dataDir })
+      const character = createCharacterRecord(body.character, { assetDb: db })
       const result = applyJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
@@ -2312,7 +2312,7 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
-      const character = createCharacterRecord(body.character, { assetDataDir: dataDir })
+      const character = createCharacterRecord(body.character, { assetDb: db })
       const lastInteraction = readSelectionLastInteraction(body.lastInteraction)
       character.lastInteraction = lastInteraction
       const result = applyJsonCommandMutation<{ characterId: string }>({
@@ -2353,7 +2353,7 @@ export function registerCommandRoutes(
       const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readCharacterPatch(body.patch, { assetDataDir: dataDir })
+      const patch = readCharacterPatch(body.patch, { assetDb: db })
       const result = applyJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
@@ -2473,7 +2473,7 @@ export function registerCommandRoutes(
         body.characterOrder !== undefined
           ? readCharacterOrder(body.characterOrder)
           : readCharacterOrder(body.characterIds)
-      validateCharacterOrderAssetRefs(dataDir, order)
+      validateCharacterOrderAssetRefs(db, order)
       const result = applyJsonCommandMutation<{ selectedCharacterId: string | null }>({
         db,
         dataDir,
@@ -3614,7 +3614,7 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
-      const module = createModuleRecord(body.module, 'module', {}, { assetDataDir: dataDir })
+      const module = createModuleRecord(body.module, 'module', {}, { assetDb: db })
       const result = applyJsonCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
@@ -3651,7 +3651,7 @@ export function registerCommandRoutes(
       const moduleId = readCommandModuleId((req.params as { moduleId?: unknown }).moduleId)
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readModulePatch(body.patch, { assetDataDir: dataDir })
+      const patch = readModulePatch(body.patch, { assetDb: db })
       const result = applyJsonCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
@@ -4379,9 +4379,9 @@ function readSelectionLastInteraction(value: unknown): number {
   return value
 }
 
-function validateSettingsAssetRefs(dataDir: string, patch: Record<string, unknown>): void {
+function validateSettingsAssetRefs(db: DatabaseSync, patch: Record<string, unknown>): void {
   if ('customBackground' in patch) {
-    validateOptionalServerAssetRef(dataDir, patch.customBackground, 'customBackground')
+    validateOptionalServerAssetRef(db, patch.customBackground, 'customBackground')
   }
 }
 

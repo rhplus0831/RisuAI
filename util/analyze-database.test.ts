@@ -3,7 +3,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { openDatabase } from '../server/fastify/src/db.js'
-import { writePersistedWithMessages, type Persisted } from '../server/fastify/src/repository.js'
+import {
+  insertAssetMetadataBatch,
+  writePersistedWithMessages,
+  type Persisted,
+} from '../server/fastify/src/repository.js'
 import { analyzeDataDir } from './analyze-database.js'
 
 const ASSET_IMAGE = 'a'.repeat(64)
@@ -64,9 +68,11 @@ let dataDir: string
 
 beforeEach(() => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-analyze-test-'))
+  const fixture = fixturePersisted()
   const db = openDatabase(dataDir)
   try {
-    writePersistedWithMessages(db, dataDir, fixturePersisted())
+    writePersistedWithMessages(db, dataDir, fixture)
+    insertAssetMetadataBatch(db, fixture.assets)
   } finally {
     db.close()
   }

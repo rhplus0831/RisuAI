@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { DatabaseSync } from 'node:sqlite'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import {
   validateAssetIdList,
@@ -110,7 +111,7 @@ export function normalizeCharacterCollection(database: unknown): void {
 
 export function createCharacterRecord(
   input: unknown,
-  options: { assetDataDir?: string } = {},
+  options: { assetDb?: DatabaseSync } = {},
 ): CharacterRecord {
   const character = readJsonObject(input, 'character') as CharacterRecord
   character.chaId = readCharacterId(character.chaId, 'character.chaId')
@@ -120,7 +121,7 @@ export function createCharacterRecord(
 
 function repairCharacterRecord(
   input: unknown,
-  options: { assetDataDir?: string } = {},
+  options: { assetDb?: DatabaseSync } = {},
 ): CharacterRecord {
   const character = readJsonObject(input, 'character') as CharacterRecord
   character.chaId =
@@ -131,7 +132,7 @@ function repairCharacterRecord(
 
 export function readCharacterPatch(
   input: unknown,
-  options: { assetDataDir?: string } = {},
+  options: { assetDb?: DatabaseSync } = {},
 ): JsonRecord {
   const patch = readJsonObject(input, 'patch')
   if (Object.keys(patch).length === 0) {
@@ -225,23 +226,23 @@ export function validateFullCharacterOrder(
 }
 
 export function validateCharacterOrderAssetRefs(
-  dataDir: string,
+  db: DatabaseSync,
   order: readonly CharacterOrderEntry[],
 ): void {
   order.forEach((entry, index) => {
     if (typeof entry === 'string') return
-    validateCharacterOrderLegacyImageRef(dataDir, entry.img, `characterOrder[${index}].img`)
-    validateOptionalServerAssetRef(dataDir, entry.imgFile, `characterOrder[${index}].imgFile`)
+    validateCharacterOrderLegacyImageRef(db, entry.img, `characterOrder[${index}].img`)
+    validateOptionalServerAssetRef(db, entry.imgFile, `characterOrder[${index}].imgFile`)
   })
 }
 
 function validateCharacterOrderLegacyImageRef(
-  dataDir: string,
+  db: DatabaseSync,
   value: unknown,
   label: string,
 ): void {
   if (typeof value !== 'string' || !SERVER_ASSET_ID_RE.test(value)) return
-  validateOptionalServerAssetRef(dataDir, value, label)
+  validateOptionalServerAssetRef(db, value, label)
 }
 
 function normalizeCharacterOrder(
@@ -356,7 +357,7 @@ function validateOrderedCharacterId(
 function validateCharacterRecord(
   record: JsonRecord,
   label: string,
-  options: { assetDataDir?: string } = {},
+  options: { assetDb?: DatabaseSync } = {},
 ): void {
   if ('chaId' in record && (typeof record.chaId !== 'string' || record.chaId.trim() === '')) {
     throw new ValidationError(`${label}.chaId must be a non-empty string`)
@@ -372,15 +373,15 @@ function validateCharacterRecord(
   ) {
     throw new ValidationError(`${label}.trashTime must be a finite number, null, or undefined`)
   }
-  if (options.assetDataDir) {
-    validateCharacterAssetRefs(options.assetDataDir, record, label)
+  if (options.assetDb) {
+    validateCharacterAssetRefs(options.assetDb, record, label)
   }
 }
 
 function validateCharacterPatch(
   record: JsonRecord,
   label: string,
-  options: { assetDataDir?: string } = {},
+  options: { assetDb?: DatabaseSync } = {},
 ): void {
   for (const key of Object.keys(record)) {
     if (EXCLUDED_CHARACTER_PATCH_KEYS.has(key)) {
@@ -390,31 +391,31 @@ function validateCharacterPatch(
   validateCharacterRecord(record, label, options)
 }
 
-function validateCharacterAssetRefs(dataDir: string, record: JsonRecord, label: string): void {
+function validateCharacterAssetRefs(db: DatabaseSync, record: JsonRecord, label: string): void {
   if ('image' in record) {
-    validateOptionalServerAssetRef(dataDir, record.image, `${label}.image`)
+    validateOptionalServerAssetRef(db, record.image, `${label}.image`)
   }
   if ('emotionImages' in record) {
-    validateEmotionImageRefs(dataDir, record.emotionImages, `${label}.emotionImages`)
+    validateEmotionImageRefs(db, record.emotionImages, `${label}.emotionImages`)
   }
   if ('additionalAssets' in record) {
-    validateAssetTriples(dataDir, record.additionalAssets, `${label}.additionalAssets`)
+    validateAssetTriples(db, record.additionalAssets, `${label}.additionalAssets`)
   }
   if ('ccAssets' in record) {
-    validateCcAssetRefs(dataDir, record.ccAssets, `${label}.ccAssets`)
+    validateCcAssetRefs(db, record.ccAssets, `${label}.ccAssets`)
   }
   if ('prebuiltAssetExclude' in record) {
-    validateAssetIdList(dataDir, record.prebuiltAssetExclude, `${label}.prebuiltAssetExclude`)
+    validateAssetIdList(db, record.prebuiltAssetExclude, `${label}.prebuiltAssetExclude`)
   }
   if ('vits' in record) {
-    validateVitsAssetRefs(dataDir, record.vits, `${label}.vits`)
+    validateVitsAssetRefs(db, record.vits, `${label}.vits`)
   }
   if ('gptSoVitsConfig' in record) {
-    validateGptSoVitsAssetRefs(dataDir, record.gptSoVitsConfig, `${label}.gptSoVitsConfig`)
+    validateGptSoVitsAssetRefs(db, record.gptSoVitsConfig, `${label}.gptSoVitsConfig`)
   }
 }
 
-function validateVitsAssetRefs(dataDir: string, value: unknown, label: string): void {
+function validateVitsAssetRefs(db: DatabaseSync, value: unknown, label: string): void {
   if (value === undefined || value === null) return
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new ValidationError(`${label} must be an object`)
@@ -425,11 +426,11 @@ function validateVitsAssetRefs(dataDir: string, value: unknown, label: string): 
     throw new ValidationError(`${label}.files must be an object`)
   }
   for (const [key, assetId] of Object.entries(record.files as JsonRecord)) {
-    validateOptionalServerAssetRef(dataDir, assetId, `${label}.files.${key}`)
+    validateOptionalServerAssetRef(db, assetId, `${label}.files.${key}`)
   }
 }
 
-function validateGptSoVitsAssetRefs(dataDir: string, value: unknown, label: string): void {
+function validateGptSoVitsAssetRefs(db: DatabaseSync, value: unknown, label: string): void {
   if (value === undefined || value === null) return
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new ValidationError(`${label} must be an object`)
@@ -451,7 +452,7 @@ function validateGptSoVitsAssetRefs(dataDir: string, value: unknown, label: stri
   }
   const refAudio = record.ref_audio_data as JsonRecord
   if ('assetId' in refAudio) {
-    validateOptionalServerAssetRef(dataDir, refAudio.assetId, `${label}.ref_audio_data.assetId`)
+    validateOptionalServerAssetRef(db, refAudio.assetId, `${label}.ref_audio_data.assetId`)
   }
 }
 

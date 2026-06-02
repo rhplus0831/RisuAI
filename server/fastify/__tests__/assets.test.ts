@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
-import { loadPersisted } from '../src/repository.js'
+import { getAllAssetMetadata, loadPersisted } from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
 
 interface AssetByteReadMetric {
@@ -326,20 +326,26 @@ describe('Phase 2C assets', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(0)
-    const persisted = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(persisted.assets).toEqual([])
+    const seedDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(getAllAssetMetadata(seedDb)).toEqual([])
+    } finally {
+      seedDb.close()
+    }
     expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(false)
   })
 
-  it('removes staged asset bytes when metadata persistence fails', async () => {
+  it('removes staged asset bytes when command event persistence fails (bulk)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    failWriteFileSyncWhen((file) => file === path.join(harness.dataDir, 'db.json.tmp'))
+    failCommandEventPersistence(harness.dataDir)
 
     const res = await harness.app.inject({
       method: 'POST',
-      url: '/api/v1/assets',
-      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
-      payload: PNG_BYTES,
+      url: '/api/v1/assets/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        assets: [{ contentType: 'image/png', data: PNG_BYTES.toString('base64') }],
+      },
     })
 
     expect(res.statusCode).toBe(500)
@@ -350,8 +356,12 @@ describe('Phase 2C assets', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(0)
-    expect(loadPersisted(harness.dataDir).assets).toEqual([])
-    expect(existsSync(path.join(harness.dataDir, 'db.json.tmp'))).toBe(false)
+    const seedDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(getAllAssetMetadata(seedDb)).toEqual([])
+    } finally {
+      seedDb.close()
+    }
     expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(false)
   })
 
@@ -381,7 +391,12 @@ describe('Phase 2C assets', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(0)
-    expect(loadPersisted(harness.dataDir).assets).toEqual([])
+    const seedDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(getAllAssetMetadata(seedDb)).toEqual([])
+    } finally {
+      seedDb.close()
+    }
     expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(false)
     expect(existsSync(path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`))).toBe(false)
   })
@@ -674,7 +689,7 @@ describe('Phase 2C assets', () => {
     expect(badContentType.statusCode).toBe(400)
   })
 
-  it('uploaded asset appears in bootstrap response', async () => {
+  it('uploaded asset appears in SQLite', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await harness.app.inject({
       method: 'POST',
@@ -682,10 +697,14 @@ describe('Phase 2C assets', () => {
       headers: { 'content-type': 'image/png', 'risu-auth': assertion },
       payload: PNG_BYTES,
     })
-    const onDisk = JSON.parse(readFileSync(path.join(harness.dataDir, 'db.json'), 'utf8'))
-    expect(onDisk.assets).toEqual([
-      { id: PNG_SHA, ext: 'png', size: PNG_BYTES.length, contentType: 'image/png' },
-    ])
+    const seedDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(getAllAssetMetadata(seedDb)).toEqual([
+        { id: PNG_SHA, ext: 'png', size: PNG_BYTES.length, contentType: 'image/png' },
+      ])
+    } finally {
+      seedDb.close()
+    }
   })
 })
 

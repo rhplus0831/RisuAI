@@ -68,6 +68,7 @@ describe('schema migrations', () => {
     try {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 0 })
       expect(listTables(db)).toEqual([
+        'assets',
         'chat_hypa_v3',
         'command_events',
         'generation_finalization_retries',
@@ -91,6 +92,7 @@ describe('schema migrations', () => {
     try {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 7 })
       expect(listTables(db)).toEqual([
+        'assets',
         'chat_hypa_v3',
         'command_events',
         'generation_finalization_retries',

@@ -4,10 +4,11 @@ import type { DatabaseSync } from 'node:sqlite'
 import {
   assetPath,
   assetsDir,
+  deleteAssetMetadataByIds,
+  getAllAssetMetadata,
   isValidAssetId,
   loadPersisted,
   loadPersistedWithMessages,
-  writePersisted,
 } from './repository.js'
 import { buildRisuSaveAssetReport } from './risuSave/assetReferences.js'
 
@@ -77,8 +78,11 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
     scannedOrphans: 0,
   }
 
-  const persisted = opts.db ? loadPersistedWithMessages(opts.db, dataDir) : loadPersisted(dataDir)
-  const report = buildRisuSaveAssetReport(persisted.database, persisted.assets)
+  if (!opts.db) return result
+
+  const persisted = loadPersistedWithMessages(opts.db, dataDir)
+  const assets = getAllAssetMetadata(opts.db)
+  const report = buildRisuSaveAssetReport(persisted.database, assets)
   result.scannedOrphans = report.orphaned.length
 
   const referencedIds = new Set(report.referenced.map((reference) => reference.id))
@@ -89,8 +93,6 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
     const file = assetPath(dataDir, orphan)
     const age = fileAgeMs(file, now)
     if (age === null) {
-      // The metadata entry points at a missing file: it references nothing, so
-      // drop the dangling entry (nothing on disk to grace-protect).
       deletedIds.add(orphan.id)
       result.deletedAssetIds.push(orphan.id)
       continue
@@ -105,12 +107,9 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
   }
 
   if (deletedIds.size > 0) {
-    const nextAssets = persisted.assets.filter((asset) => !deletedIds.has(asset.id))
-    writePersisted(dataDir, { ...persisted, assets: nextAssets })
+    deleteAssetMetadataByIds(opts.db, [...deletedIds])
   }
 
-  // Metadata is already updated; the orphan files are unreferenced so deletion
-  // order does not matter. Best-effort: a failed unlink is reclaimed next sweep.
   for (const file of filesToDelete) {
     try {
       fs.rmSync(file, { force: true })
@@ -119,10 +118,7 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
     }
   }
 
-  // Sweep stray files on disk that have no metadata entry and are not referenced
-  // (e.g. a crash between writing the bytes and recording the entry). Storage
-  // ids stay protected; only unknown, unreferenced, grace-aged files are swept.
-  const storedIds = new Set(persisted.assets.map((asset) => asset.id))
+  const storedIds = new Set(assets.map((asset) => asset.id))
   const dir = assetsDir(dataDir)
   let entries: string[] = []
   try {
