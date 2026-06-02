@@ -65,6 +65,7 @@ projected database no longer references.
 | `server/fastify/src/risuSave/importSnapshot.ts`      | Multipart `.risu` decode and import normalization.                                |
 | `server/fastify/src/risuSave/exportSnapshot.ts`      | Repository export into block or legacy envelopes.                                 |
 | `server/fastify/src/risuSave/bundleExport.ts`        | Zip bundle export with the `.risu` bytes plus asset files.                        |
+| `server/fastify/src/risuSave/localBackupImport.ts`   | Streaming device-backup decode: zip bundle + legacy `.bin`, bounded-memory.       |
 | `server/fastify/src/risuSave/assetReferences.ts`     | Known-field asset-reference walker for referenced, missing, and orphaned reports. |
 | `server/fastify/src/risuSave/blockCodec.ts`          | Current block-based `.risu` envelope codec.                                       |
 | `server/fastify/src/risuSave/legacyEnvelopeCodec.ts` | Legacy raw/compressed/stream envelope compatibility.                              |
@@ -86,17 +87,38 @@ stream envelopes remain available for compatibility.
 
 Block imports support root, character, preset, modules, plugins, loadouts,
 plugin storage, config, and non-reserved root components. Standalone `CHAT`
-blocks are rejected. Bundle export is one-way today: there is no bundle-import
-route that ingests `database.risu.zip` and registers included assets. Importing
-asset-bearing saves requires referenced asset bytes to already exist or to be
-uploaded separately; missing ids are reported by `assetReport`.
+blocks are rejected.
+
+`POST /api/v1/import/bundle` ingests an uploaded device backup and is the
+round-trip behind the browser's "Save/Load Backup Locally". It streams the
+upload to a temp file (bounded by `RISU_API_IMPORT_MAX_BYTES`, default 2 GiB,
+decoupled from `bodyLimit`), sniffs the format, and stream-decodes it with
+bounded memory, registering assets in batches as they are read and then applying
+the embedded database through the shared import path. Two formats are accepted:
+
+- a `database.risu.zip` bundle produced by `GET /api/v1/export/bundle` (zip
+  entries are verified against their content-addressed ids), and
+- the original app's legacy `.bin` local backup (`LocalWriter` record blob):
+  its `database.risudat` is a legacy compressed `.risu`, and its media records
+  are content-addressed by the same sha256 scheme, so they register without any
+  reference remapping. Cold-storage `.json` records are skipped.
+
+A plain `.risu` import (no bundle) still requires referenced asset bytes to
+already exist or to be uploaded separately; missing ids are reported by
+`assetReport`.
 
 Remote/cache-only `.risu` blocks are not resolved server-side. The Fastify
 browser decoder also avoids local cache/remote fallback in server-backed mode;
 unsupported references are skipped and reported.
 
-The Fastify save routes are API/test surfaces today. The browser settings UI
-exposes server backups, not full server `.risu` import/export/bundle controls.
+The browser settings UI exposes server backups (on-server snapshots) plus a
+device backup: "Save Backup Locally" downloads the `.risu.zip` bundle through
+`src/ts/storage/backup.ts` (`saveBackupToDevice` → `exportServerBundle`, streamed
+to disk as a `Blob`), and "Load Backup Locally" uploads a picked backup file —
+either a `.risu.zip` bundle or a legacy `.bin` — to the import route
+(`loadBackupFromDevice` → `importServerBundle`) and then refreshes the
+projection. The remaining `.risu` import/export/legacy-envelope controls are
+still API/test surfaces, not browser UI.
 
 `POST /api/v1/import/realm-character` accepts a Realm id, fetches dynamic Realm
 JSON cards plus referenced hub resources server-side, and also handles Realm

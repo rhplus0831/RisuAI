@@ -211,6 +211,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerProjectionRoutes(app, db, authState, config.dataDir)
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink, {
     maxExpandedImportBytes: config.bodyLimit,
+    importMaxBytes: config.importMaxBytes,
   })
   registerRealmImportRoutes(app, db, authState, config.dataDir, commandEventSink, {
     hubUrl: config.hubUrl,

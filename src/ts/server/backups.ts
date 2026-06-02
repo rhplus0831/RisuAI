@@ -5,6 +5,9 @@ import type { CommandEvent } from './commands'
 import { forceServerProjectionResync } from './projectionResync'
 
 const BACKUPS_ENDPOINT = '/api/v1/backups'
+const BUNDLE_EXPORT_ENDPOINT = '/api/v1/export/bundle'
+const BUNDLE_IMPORT_ENDPOINT = '/api/v1/import/bundle'
+const DEFAULT_BUNDLE_FILENAME = 'database.risu.zip'
 
 export interface ServerBackupManifest {
   _version: number
@@ -107,6 +110,132 @@ export async function deleteServerBackup(input: {
     },
     map: (result) => result,
   })
+}
+
+/**
+ * Download the server's full `.risu.zip` bundle (database + referenced asset
+ * files) so the caller can save it to the user's device. This is the server-
+ * backed replacement for the original "Save Backup Locally" feature: the bytes
+ * are produced by the server's bundle export and never read from browser-local
+ * persistence.
+ */
+export async function exportServerBundle(
+  signal?: AbortSignal | null,
+): Promise<ServerBackupResult<{ blob: Blob; filename: string }>> {
+  if (!canUseServerBackups()) return { status: 'unavailable' }
+
+  const auth = await getNodeServerProxyAuth()
+  let response: Response
+  try {
+    response = await fetch(BUNDLE_EXPORT_ENDPOINT, {
+      method: 'GET',
+      signal: signal ?? undefined,
+      headers: { 'risu-auth': auth },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { status: 'error', error: `Network error: ${message}` }
+  }
+
+  if (!response.ok) {
+    let body: unknown = null
+    try {
+      body = await response.json()
+    } catch {
+      // Fall back to the status code below for non-JSON failures.
+    }
+    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
+  }
+
+  // Read as a Blob (not an ArrayBuffer) so the browser can back large backups
+  // by disk instead of holding the whole bundle in a single buffer.
+  const blob = await response.blob()
+  return {
+    status: 'ok',
+    blob,
+    filename:
+      filenameFromContentDisposition(response.headers.get('content-disposition')) ??
+      DEFAULT_BUNDLE_FILENAME,
+  }
+}
+
+/**
+ * Upload a `.risu.zip` bundle the user selected from their device and restore it
+ * on the server (registers bundled assets, replaces the database), then refresh
+ * the local projection. This is the server-backed replacement for the original
+ * "Load Backup Locally" feature.
+ */
+export async function importServerBundle(input: {
+  file: Blob
+  filename?: string
+  signal?: AbortSignal | null
+}): Promise<ServerBackupResult<{ revision: number; event?: CommandEvent }>> {
+  if (!canUseServerBackups()) return { status: 'unavailable' }
+
+  const auth = await getNodeServerProxyAuth()
+  const form = new FormData()
+  form.append('file', input.file, input.filename ?? DEFAULT_BUNDLE_FILENAME)
+
+  let response: Response
+  try {
+    // Let the browser set the multipart content-type (with boundary) for the
+    // FormData body; an explicit content-type header would break the upload.
+    response = await fetch(BUNDLE_IMPORT_ENDPOINT, {
+      method: 'POST',
+      signal: input.signal ?? undefined,
+      headers: { 'risu-auth': auth, ...activeWriterSessionHeader() },
+      body: form,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { status: 'error', error: `Network error: ${message}` }
+  }
+
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    // HTTP status handling below reports non-JSON failures.
+  }
+
+  if (!response.ok) {
+    handleActiveWriterStaleResponse(response)
+    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
+  }
+
+  const imported = readBundleImportResult(body)
+  if (imported === null) {
+    return { status: 'error', error: 'Invalid bundle import response' }
+  }
+
+  const resync = await forceServerProjectionResync('bundle-restore')
+  if (resync.status !== 'ok') {
+    return {
+      status: 'error',
+      error:
+        resync.status === 'unavailable'
+          ? 'Backup imported, but server bootstrap is unavailable; reload to refresh projection state.'
+          : `Backup imported, but projection refresh failed: ${resync.error}`,
+    }
+  }
+
+  return { status: 'ok', ...imported }
+}
+
+function readBundleImportResult(body: unknown): { revision: number; event?: CommandEvent } | null {
+  if (!body || typeof body !== 'object') return null
+  const record = body as { revision?: unknown; event?: unknown }
+  if (!Number.isInteger(record.revision) || (record.revision as number) < 0) return null
+  return {
+    revision: record.revision as number,
+    ...(isCommandEvent(record.event) ? { event: record.event } : {}),
+  }
+}
+
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null
+  const match = /filename="?([^"]+)"?/i.exec(header)
+  return match ? match[1] : null
 }
 
 async function requestServerBackupJson<T, R extends Record<string, unknown>>(

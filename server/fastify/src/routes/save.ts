@@ -1,3 +1,7 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import type { FastifyInstance } from 'fastify'
 import type { FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
@@ -5,12 +9,18 @@ import type { AuthState } from '../auth.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
-import { ValidationError, applyImport, loadPersistedWithMessages } from '../repository.js'
+import {
+  ValidationError,
+  addAssets,
+  applyImport,
+  loadPersistedWithMessages,
+} from '../repository.js'
 import { replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
 import {
   decodeRisuSaveImportSnapshot,
   normalizeRisuSaveImportDatabase,
 } from '../risuSave/importSnapshot.js'
+import { decodeLocalBackup } from '../risuSave/localBackupImport.js'
 import {
   buildRepositoryRisuSaveExportSnapshot,
   buildRisuSaveExportSnapshotFromPersisted,
@@ -45,6 +55,7 @@ interface ExportQuery {
 
 const EXPORT_FILENAME = 'database.risu'
 const BUNDLE_EXPORT_FILENAME = 'database.risu.zip'
+const DEFAULT_IMPORT_MAX_BYTES = 2 * 1024 * 1024 * 1024
 
 export function registerSaveRoutes(
   app: FastifyInstance,
@@ -52,8 +63,9 @@ export function registerSaveRoutes(
   authState: AuthState,
   dataDir: string,
   eventSink: CommandEventSink,
-  options: { maxExpandedImportBytes?: number } = {},
+  options: { maxExpandedImportBytes?: number; importMaxBytes?: number } = {},
 ): void {
+  const importMaxBytes = options.importMaxBytes ?? DEFAULT_IMPORT_MAX_BYTES
   app.post(
     '/api/v1/import/risusave',
     { config: { rateLimit: importRateLimit } },
@@ -93,6 +105,80 @@ export function registerSaveRoutes(
           return { error: err.message }
         }
         throw err
+      }
+    },
+  )
+
+  app.post(
+    '/api/v1/import/bundle',
+    { config: { rateLimit: importRateLimit } },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      if (!req.isMultipart()) {
+        reply.code(400)
+        return { error: 'backup import requires a multipart .risu.zip or .bin upload' }
+      }
+
+      let uploadPath: string | null = null
+      try {
+        // Stream the (potentially very large) upload to a temp file instead of
+        // buffering it in memory, then stream-decode it; assets register in
+        // bounded batches as they are read.
+        uploadPath = await streamUploadToTempFile(req, importMaxBytes)
+
+        let assetCreated = false
+        const decoded = await decodeLocalBackup(uploadPath, {
+          maxExpandedBytes: importMaxBytes,
+          registerAssets: (assets) => {
+            // Asset ids are content-addressed; `applyImport` (below) preserves
+            // the asset metadata it sees, so registering before the database
+            // makes the imported references resolve immediately. Re-registering
+            // bytes that already exist is idempotent.
+            const results = addAssets(db, dataDir, assets)
+            const event = results.find((result) => result.event)?.event
+            if (event) {
+              eventSink.emit(event)
+              assetCreated = true
+            }
+          },
+        })
+
+        const snapshot = decodeRisuSaveImportSnapshot(decoded.databaseBytes, {
+          maxExpandedBytes: importMaxBytes,
+        })
+        const { revision, event, assetReport } = applyImportedDatabase(
+          db,
+          dataDir,
+          snapshot.database,
+        )
+        eventSink.emit(event)
+        return {
+          revision,
+          event,
+          format: decoded.format,
+          envelope: snapshot.envelope,
+          importReport: {
+            unsupportedReferenceCount: snapshot.unsupportedReferences.length,
+            unsupportedReferences: snapshot.unsupportedReferences,
+          },
+          assetReport,
+          bundleReport: {
+            includedAssetCount: decoded.registeredAssetCount,
+            assetsCreated: assetCreated,
+          },
+        }
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          reply.code(400)
+          return { error: err.message }
+        }
+        throw err
+      } finally {
+        if (uploadPath) {
+          await fs.promises
+            .rm(path.dirname(uploadPath), { recursive: true, force: true })
+            .catch(() => {})
+        }
       }
     },
   )
@@ -267,6 +353,35 @@ async function readUploadedRisuSave(req: FastifyRequest): Promise<Uint8Array> {
     throw new ValidationError('risusave file is empty')
   }
   return bytes
+}
+
+/**
+ * Stream the uploaded multipart file to a temp file under a per-route size
+ * limit (decoupled from the global body limit so large backups are accepted),
+ * returning its path. The caller is responsible for removing the temp dir.
+ */
+async function streamUploadToTempFile(req: FastifyRequest, maxBytes: number): Promise<string> {
+  const file = await req.file({ limits: { fileSize: maxBytes } })
+  if (!file) {
+    throw new ValidationError('backup file missing')
+  }
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'risu-import-'))
+  const target = path.join(dir, 'upload')
+  try {
+    await pipeline(file.file, fs.createWriteStream(target))
+  } catch (err) {
+    await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {})
+    throw err
+  }
+  if (file.file.truncated) {
+    await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {})
+    throw new ValidationError('backup upload exceeds size limit')
+  }
+  if ((await fs.promises.stat(target)).size === 0) {
+    await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {})
+    throw new ValidationError('backup file is empty')
+  }
+  return target
 }
 
 function applyImportedDatabase(

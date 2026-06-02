@@ -3,7 +3,7 @@
 
   import { alertConfirm } from 'src/ts/alert'
   import { loadInternalBackup } from 'src/ts/globalApi.svelte'
-  import { SaveServerBackup } from 'src/ts/storage/backup'
+  import { SaveServerBackup, loadBackupFromDevice, saveBackupToDevice } from 'src/ts/storage/backup'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import { exportAsDataset } from 'src/ts/storage/exportAsDataset'
   import { cleanColdStorage } from 'src/ts/process/coldstorage.svelte'
@@ -34,6 +34,31 @@
   className="mt-2"
 >
   Load Server Backup
+</Button>
+
+<Button
+  onclick={async () => {
+    if (await alertConfirm(language.backupConfirm)) {
+      saveBackupToDevice()
+    }
+  }}
+  className="mt-2"
+>
+  {language.saveBackupLocal}
+</Button>
+
+<Button
+  onclick={async () => {
+    if (
+      (await alertConfirm(language.backupLoadConfirm)) &&
+      (await alertConfirm(language.backupLoadConfirm2))
+    ) {
+      loadBackupFromDevice()
+    }
+  }}
+  className="mt-2"
+>
+  {language.loadBackupLocal}
 </Button>
 
 <Button

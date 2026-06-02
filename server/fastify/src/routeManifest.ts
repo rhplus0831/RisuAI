@@ -194,6 +194,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'risusave-bundle-import',
+    methods: ['POST'],
+    path: '/api/v1/import/bundle',
+    auth: {
+      decision: 'required',
+      reason: 'Bundle import replaces repository state and registers bundled assets.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Bundle import commits server-owned database and asset metadata.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'risusave-export',
     methods: GET_ONLY,
     path: '/api/v1/export/risusave',

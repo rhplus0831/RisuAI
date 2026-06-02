@@ -35,7 +35,7 @@ describe('Fastify-only browser local surface policy', () => {
     expect(globalApi).not.toContain('setUsingSw')
   })
 
-  it('does not keep standalone persistence or local backup runtime paths', () => {
+  it('does not keep standalone persistence or browser-local backup runtime paths', () => {
     const bootstrap = readWorkspaceFile('src/ts/bootstrap.ts')
     const platform = readWorkspaceFile('src/ts/platform.ts')
     const backup = readWorkspaceFile('src/ts/storage/backup.ts')
@@ -47,17 +47,34 @@ describe('Fastify-only browser local surface policy', () => {
     expect(bootstrap).not.toContain('navigator.storage.persist')
     expect(platform).not.toContain('isInStandaloneMode')
     expect(platform).not.toContain('android-app://')
+    // The removed surfaces read/wrote browser-local persistence (forageStorage,
+    // the Tauri filesystem, the LocalWriter `.bin` blob). Those stay gone.
     expect(backup).not.toContain('SaveLocalBackup')
     expect(backup).not.toContain('SavePartialLocalBackup')
     expect(backup).not.toContain('LoadLocalBackup')
     expect(backup).not.toContain('LocalWriter')
     expect(backup).not.toContain('database.risudat')
+    expect(backup).not.toContain('forageStorage')
+    expect(backup).not.toContain('@tauri-apps')
     expect(userSettings).not.toContain('SavePartialLocalBackup')
     expect(userSettings).not.toContain('LoadLocalBackup')
-    expect(userSettings).not.toContain('language.saveBackupLocal')
-    expect(userSettings).not.toContain('language.loadBackupLocal')
     expect(globalApi).not.toContain("key.includes('dbbackup-')")
     expect(globalApi).not.toContain('Loaded backup')
+  })
+
+  it('restores Save/Load Backup Locally as a server-backed device backup', () => {
+    // The user-facing "Save/Load Backup Locally" feature is restored, but as a
+    // round-trip over the server `.risu.zip` bundle endpoints — not over the
+    // removed browser-local persistence. The device backup downloads the
+    // server's bundle export and uploads a picked file to the bundle import
+    // route; it must not reintroduce forageStorage / Tauri-fs reads.
+    const backup = readWorkspaceFile('src/ts/storage/backup.ts')
+    const userSettings = readWorkspaceFile('src/lib/Setting/Pages/UserSettings.svelte')
+
+    expect(backup).toContain('exportServerBundle')
+    expect(backup).toContain('importServerBundle')
+    expect(userSettings).toContain('saveBackupToDevice')
+    expect(userSettings).toContain('loadBackupFromDevice')
   })
 
   it('does not bind DevTool variable editors directly to server scriptstate', () => {
