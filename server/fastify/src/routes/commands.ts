@@ -250,6 +250,21 @@ function asArray(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+/** The shared narrow write for every translator-preset route: a full
+ *  `translator_presets` rewrite plus an unconditional `settings` write.
+ *  `ensureTranslatorPresetCollection` reassigns the whole array and re-syncs the
+ *  `translatorPrompt` / `translatorMaxResponse` / `translatorPresetId` settings
+ *  scalars on every call, so both writes are faithful (not over-broad) for create,
+ *  patch, delete, and select alike. */
+function writeTranslatorPresetMutation(
+  db: DatabaseSync,
+  target: Record<string, unknown>,
+  presets: readonly unknown[],
+): void {
+  writeSingleCollectionTable(db, 'translatorPresets', presets)
+  writeSettingsOnly(db, extractSettings(target))
+}
+
 interface RuntimeSettingsCommandBody {
   baseRevision?: unknown
   patch?: unknown
@@ -2043,12 +2058,13 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const preset = createTranslatorPresetRecord(body.preset)
       const select = readTranslatorPresetOptionalBoolean(body.select, 'select', false)
-      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
+      const result = applyTargetedCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
           if (findTranslatorPresetIndex(presets, preset.id) !== -1) {
@@ -2059,6 +2075,7 @@ export function registerCommandRoutes(
             target.translatorPresetId = presets.length - 1
             syncSelectedTranslatorPresetToLegacyFields(target, presets)
           }
+          writeTranslatorPresetMutation(innerDb, target, presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.translatorPresetCreated, id: preset.id },
             extra: { presetId: preset.id },
@@ -2090,12 +2107,13 @@ export function registerCommandRoutes(
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== presetId) {
         throw new ValidationError('patch.id must match presetId')
       }
-      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
+      const result = applyTargetedCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
           const index = requireTranslatorPresetIndex(presets, presetId)
@@ -2107,6 +2125,7 @@ export function registerCommandRoutes(
           if (target.translatorPresetId === index) {
             syncSelectedTranslatorPresetToLegacyFields(target, presets)
           }
+          writeTranslatorPresetMutation(innerDb, target, presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.translatorPresetUpdated, id: presetId },
             extra: { presetId },
@@ -2138,7 +2157,7 @@ export function registerCommandRoutes(
         body.selectPresetId === undefined
           ? undefined
           : readTranslatorPresetId(body.selectPresetId, 'selectPresetId')
-      const result = applyMessageFreeJsonCommandMutation<{
+      const result = applyTargetedCommandMutation<{
         presetId: string
         selectedPresetId: string | null
       }>({
@@ -2146,7 +2165,8 @@ export function registerCommandRoutes(
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
           if (presets.length <= 1) {
@@ -2169,6 +2189,7 @@ export function registerCommandRoutes(
             : 0
           target.translatorPresetId = selectedIndex
           syncSelectedTranslatorPresetToLegacyFields(target, presets)
+          writeTranslatorPresetMutation(innerDb, target, presets)
 
           return {
             event: { ...COMMAND_EVENT_CATALOG.translatorPresetDeleted, id: presetId },
@@ -2197,17 +2218,19 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as TranslatorPresetCommandBody
       const baseRevision = readBaseRevision(body)
       const presetId = readTranslatorPresetId(body.presetId, 'presetId')
-      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
+      const result = applyTargetedCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
           const index = requireTranslatorPresetIndex(presets, presetId)
           target.translatorPresetId = index
           syncSelectedTranslatorPresetToLegacyFields(target, presets)
+          writeTranslatorPresetMutation(innerDb, target, presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.translatorPresetSelected, id: presetId },
             extra: { presetId },

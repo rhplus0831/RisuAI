@@ -70,6 +70,10 @@ function seedDatabase(): Record<string, unknown> {
     userIcon: '',
     personaPrompt: 'legacy-prompt',
     userNote: 'legacy-note',
+    // Translator legacy scalars (settings) re-synced on every translator command.
+    translatorPresetId: 0,
+    translatorPrompt: 'pa-prompt',
+    translatorMaxResponse: 500,
     hypaV3Presets: [{ name: 'hypa-0' }],
     botPresets: [
       { id: 'preset-0', name: 'P0', temperature: 0.1, promptTemplate: [{ type: 'plain', text: 'pt-0' }] },
@@ -90,7 +94,10 @@ function seedDatabase(): Record<string, unknown> {
       { id: 'lore-0', name: 'lore-0', data: [] },
       { id: 'lore-1', name: 'lore-1', data: [] },
     ],
-    translatorPresets: [{ id: 'tp-a', name: 'TP A' }],
+    translatorPresets: [
+      { id: 'tp-a', name: 'TP A', prompt: 'pa-prompt', maxResponse: 500 },
+      { id: 'tp-b', name: 'TP B', prompt: 'pb-prompt', maxResponse: 800 },
+    ],
     promptTemplate: [{ type: 'plain', text: 'current' }],
     pluginCustomStorage: {},
     characters: [
@@ -836,5 +843,94 @@ describe('Phase 4 personas collection range', () => {
       'persona-a',
     ])
     expect(readSettings().selectedPersona).toBe(1)
+  })
+})
+
+describe('Phase 4 translator-presets collection range', () => {
+  // Every translator route re-syncs the legacy scalars, so all four write the
+  // table + settings unconditionally.
+  const EXPECTED = ['settings', 'translator_presets']
+
+  it('POST translator-presets writes translator_presets + settings', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/translator-presets',
+      payload: {
+        baseRevision: revision,
+        preset: { id: 'tp-c', name: 'TP C', prompt: 'pc', maxResponse: 900 },
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(EXPECTED)
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('translator_presets') as Array<{ id: string }>).map((p) => p.id)).toEqual(
+      ['tp-a', 'tp-b', 'tp-c'],
+    )
+    // No select: pointer + legacy fields still reflect tp-a.
+    expect(readSettings().translatorPresetId).toBe(0)
+    expect(readSettings().translatorPrompt).toBe('pa-prompt')
+  })
+
+  it('PATCH translator-presets/:id rewrites the table + re-syncs settings', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/translator-presets/tp-a',
+      payload: { baseRevision: revision, patch: { prompt: 'pa-edited' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(EXPECTED)
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    // tp-a is selected, so its edited prompt mirrors into the legacy scalar.
+    expect(readSettings().translatorPrompt).toBe('pa-edited')
+  })
+
+  it('DELETE translator-presets/:id writes translator_presets + settings', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric, body } = await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/translator-presets/tp-b',
+      payload: { baseRevision: revision },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(EXPECTED)
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('translator_presets') as Array<{ id: string }>).map((p) => p.id)).toEqual(
+      ['tp-a'],
+    )
+    expect(body.selectedPresetId).toBe('tp-a')
+  })
+
+  it('POST translator-presets/select writes translator_presets + settings', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/translator-presets/select',
+      payload: { baseRevision: revision, presetId: 'tp-b' },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(EXPECTED)
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    const settings = readSettings()
+    expect(settings.translatorPresetId).toBe(1)
+    expect(settings.translatorPrompt).toBe('pb-prompt')
+    expect(settings.translatorMaxResponse).toBe(800)
   })
 })

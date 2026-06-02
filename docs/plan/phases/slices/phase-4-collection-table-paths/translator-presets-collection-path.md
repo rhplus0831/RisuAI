@@ -1,6 +1,6 @@
 # Translator Presets Collection Path
 
-Status: planned. Tier 4 (includes the Tier-1-listed select route). Depends on the
+Status: implemented. Tier 4 (includes the Tier-1-listed select route). Uses the
 Phase 0 writer kit.
 
 ## Source Anchors
@@ -29,6 +29,18 @@ fields on every call, so even pure field edits become a full one-table
 rewrite + an unconditional settings write (not a single-row `UPDATE`). select
 (2050) is included here rather than in the Phase 2 settings-only slice for exactly
 this reason.
+
+Implemented: all four routes moved to `applyTargetedCommandMutation` with
+`mutationPath: targeted-collection`, each ending in the shared
+`writeTranslatorPresetMutation` helper — a full `writeSingleCollectionTable(db,
+'translatorPresets', …)` rewrite plus an unconditional `writeSettingsOnly`.
+Because `ensureTranslatorPresetCollection` always re-runs
+`syncSelectedTranslatorPresetToLegacyFields` (re-syncing `translatorPrompt` /
+`translatorMaxResponse` from the selected preset and normalizing
+`translatorPresetId`), the settings write is faithful, not over-broad. Proven by
+`commandCollectionRange.test.ts` (4 translator tests: targeted path + exact
+`writtenTables` `['settings','translator_presets']` + character/chat rowid
+stability + the legacy-scalar re-sync on patch/select).
 
 ## Implementation Scope
 
