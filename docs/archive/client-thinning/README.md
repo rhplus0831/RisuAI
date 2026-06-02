@@ -11,7 +11,7 @@
 > persistence, and a single shared provider-capability table. The browser keeps B1
 > effects, B2 orchestration/command-issuance, and renders the projection. Group chat's
 > dead UI branches were removed (`A4R-group-chat-removed`). Remaining decisions and
-> deferrals live in [`../../leftover.md`](../../leftover.md); the current architecture
+> deferrals live in [`../../leftover.md`](../leftover.md); the current architecture
 > is summarized in [`../../../STRUCTURE.md`](../../../STRUCTURE.md). These docs are kept
 > as the design/decision record.
 

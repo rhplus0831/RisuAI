@@ -9,7 +9,7 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
 
 ## Source Anchors
 
-- [`../../../AUDIT.md`](../../../AUDIT.md)
+- [`../../../AUDIT.md`](../../AUDIT.md)
 - `server/fastify/src/routes/projection.ts`
 - `server/fastify/src/repository.ts`
 - `src/ts/server/chatMessageHydration.svelte.ts`

@@ -3,7 +3,7 @@
 Completed workstreams. These are the design/decision records, kept after the work
 landed. They are **historical**: prefer the present-tense map in
 [`../../STRUCTURE.md`](../../STRUCTURE.md) and the live open-items list in
-[`../leftover.md`](../leftover.md) for current state. The codebase is the source of
+[`../leftover.md`](leftover.md) for current state. The codebase is the source of
 truth.
 
 | Workstream                                                                                                | Archived   | What it delivered                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -20,7 +20,7 @@ truth.
 The archived workstreams have intentionally-deferred items and follow-ups (e.g.
 durable-generation Milestone 2 / server-restart durability, multi-tenant Lua
 hardening, and evidence-gated protocol runtime narrowing). The single live tracker is
-[`../leftover.md`](../leftover.md).
+[`../leftover.md`](leftover.md).
 
 ## Note on `fastify/client-thinning/`
 

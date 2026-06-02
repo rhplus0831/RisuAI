@@ -7,8 +7,8 @@ replay history, and route manifest work that later phases depend on.
 
 ## Source Anchors
 
-- [`../../../AUDIT.md`](../../../AUDIT.md)
-- [`../../../SERVER-AND-CLIENT-PROTOCOL.md`](../../../SERVER-AND-CLIENT-PROTOCOL.md)
+- [`../../../AUDIT.md`](../../AUDIT.md)
+- [`../../../SERVER-AND-CLIENT-PROTOCOL.md`](../../SERVER-AND-CLIENT-PROTOCOL.md)
 - `server/fastify/src/protocolMetrics.ts`
 - `src/ts/server/protocolDiagnostics.ts`
 - `src/ts/server/chatMessageHydration.svelte.ts`

@@ -10,7 +10,7 @@ explicit.
 
 ## Source Anchors
 
-- [`../../../AUDIT.md`](../../../AUDIT.md)
+- [`../../../AUDIT.md`](../../AUDIT.md)
 - `server/fastify/src/routes/save.ts`
 - `server/fastify/src/risuSave/`
 - `server/fastify/src/routes/assets.ts`

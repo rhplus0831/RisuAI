@@ -10,7 +10,7 @@
 > `DELETE …/:id` (writer-gated); and a bootstrap `activeGenerationJobs` projection
 > surfaces running jobs. **EC-D1/D2/D4 are end-to-end; EC-D3's browser half was
 > completed later by lazy projection.** Beyond M1: **Milestone 2** (survive a
-> server _restart_) is deferred. Open items: [`../../leftover.md`](../../leftover.md).
+> server _restart_) is deferred. Open items: [`../../leftover.md`](../leftover.md).
 > These docs are kept as the design/decision record (the step specs retain their
 > original DRAFT framing).
 >
@@ -92,7 +92,7 @@ Owner decisions refining this draft:
 Resolved during the docs audit: the `/chat` writer/423 gate is already the global
 active-writer guard in `server/fastify/src/activeWriter.ts`; `isServerOwnedMutation`
 includes `POST /api/v1/generate/chat` and `/api/v1/generate/preview-prompt`.
-Remaining open/ambiguous tasks live in [`../../leftover.md`](../../leftover.md).
+Remaining open/ambiguous tasks live in [`../../leftover.md`](../leftover.md).
 
 ## Goal
 
@@ -268,7 +268,7 @@ of scope until Milestone 1 lands.
   this work until SSE reconnect + replay semantics are specified.
 
 The canonical, current list of open items across both workstreams lives in
-[`../../leftover.md`](../../leftover.md).
+[`../../leftover.md`](../leftover.md).
 
 ---
 

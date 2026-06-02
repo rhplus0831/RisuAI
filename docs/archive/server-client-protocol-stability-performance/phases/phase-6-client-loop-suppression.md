@@ -7,7 +7,7 @@ controls from echoing into repeated commands or overlapping requests.
 
 ## Source Anchors
 
-- [`../../../AUDIT.md`](../../../AUDIT.md)
+- [`../../../AUDIT.md`](../../AUDIT.md)
 - `src/lib/Others/HypaV3Modal/server-memory-jobs.svelte`
 - `src/ts/server/settingsBridge.svelte.ts`
 - `src/ts/server/chatBridge.svelte.ts`

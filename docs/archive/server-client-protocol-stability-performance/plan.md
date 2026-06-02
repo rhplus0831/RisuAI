@@ -21,11 +21,11 @@ End state:
 
 ## Boundary Sources
 
-- [`../../AUDIT.md`](../../AUDIT.md) seeded the risk inventory and priority order for
+- [`../../AUDIT.md`](../AUDIT.md) seeded the risk inventory and priority order for
   this plan; [`status.md`](status.md) records which items have since closed.
-- [`../../SERVER-AND-CLIENT.md`](../../SERVER-AND-CLIENT.md) owns the server/client
+- [`../../SERVER-AND-CLIENT.md`](../SERVER-AND-CLIENT.md) owns the server/client
   responsibility split.
-- [`../../SERVER-AND-CLIENT-PROTOCOL.md`](../../SERVER-AND-CLIENT-PROTOCOL.md) owns
+- [`../../SERVER-AND-CLIENT-PROTOCOL.md`](../SERVER-AND-CLIENT-PROTOCOL.md) owns
   the current protocol model and earlier performance plan inputs.
 - [`../../structure/server-projection-and-bridges.md`](../../structure/server-projection-and-bridges.md)
   and [`../../structure/data-and-events.md`](../../structure/data-and-events.md) own
