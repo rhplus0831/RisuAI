@@ -2435,7 +2435,7 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const characterId = readCharacterId(body.characterId)
       const lastInteraction = readSelectionLastInteraction(body.lastInteraction)
-      const result = applyJsonCommandMutation<{ characterId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,

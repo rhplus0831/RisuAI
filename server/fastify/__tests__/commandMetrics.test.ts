@@ -224,6 +224,17 @@ describe('command protocol metrics', () => {
     })
     revision = chat.revision
 
+    const characterSelect = await commandMetric('character.selected', {
+      method: 'POST',
+      url: '/api/v1/commands/characters/select',
+      payload: {
+        baseRevision: revision,
+        characterId: 'char-1',
+        lastInteraction: 123456,
+      },
+    })
+    revision = characterSelect.revision
+
     const messageAppend = await commandMetric('message.appended', {
       method: 'POST',
       url: '/api/v1/commands/chats/chat-0-0/messages',
@@ -289,6 +300,7 @@ describe('command protocol metrics', () => {
       settings,
       pluginStorage,
       chat,
+      characterSelect,
       messageAppend,
       messageUpdate,
       messageDelete,
@@ -318,6 +330,7 @@ describe('command protocol metrics', () => {
     expect(settings.metric.mutationPath).toBe('message-free')
     expect(pluginStorage.metric.mutationPath).toBe('message-free')
     expect(chat.metric.mutationPath).toBe('message-free')
+    expect(characterSelect.metric.mutationPath).toBe('message-free')
     for (const metric of [
       messageAppend.metric,
       messageUpdate.metric,
