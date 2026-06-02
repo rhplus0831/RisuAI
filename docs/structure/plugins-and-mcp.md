@@ -90,10 +90,10 @@ module import route rather than a direct browser mutation.
 OAuth refresh token persistence for remote MCP servers writes
 `Database.authRefreshes` through server-backed settings patches in Fastify mode.
 
-Google Search MCP credentials and other browser-only tool details remain
-client-side. Remote MCP tool results may contain text, image/audio base64, or
-resource payloads, but they are not server-persisted unless a later command
-explicitly stores them.
+Google Search MCP credentials are currently unsupported in server-backed web
+mode. Remote MCP tool results may contain text, image/audio base64, or resource
+payloads, but they are not server-persisted unless a later command explicitly
+stores them.
 
 ## UI Surfaces
 

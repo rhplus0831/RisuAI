@@ -1,216 +1,149 @@
 # Data And Events
 
-Fastify owns durable state. The browser sees a projected copy and sends
-revision-checked commands when it needs persistence.
+Fastify owns durable state. The browser receives a projected copy and sends
+revision-checked commands or explicit server-owned mutation requests when it
+needs persistence.
 
 ## Persistence Split
 
-| Store          | Path                                                     | Owner  | Contents                                                                                                                                                                                                              |
-| -------------- | -------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite         | `data/risu.db`                                           | Server | Schema version, global revision, command-event replay history, chat messages plus reroll alternates, per-chat `hypaV3Data`, Hypa V3 memory chunks/summaries/embeddings/jobs, durable generation finalization retries. |
-| Domain JSON    | `data/db.json`                                           | Server | The main Risu `Database` blob minus chat message arrays / per-chat `hypaV3Data`, plus the asset manifest.                                                                                                             |
-| Assets         | `data/assets/<sha256>.<ext>`                             | Server | Content-addressed images, audio, video, fonts, CSS, and other supported asset bytes.                                                                                                                                  |
-| Backups        | `data/backups/<id>/`                                     | Server | Snapshot `db.json`, `assets/`, `risu.db`, `save/`, plus `manifest.json`.                                                                                                                                              |
-| Legacy storage | `data/save/<hex-key>`                                    | Server | Compatibility byte store used by active `/api/v1/storage/*` routes; read/list are authenticated, write/remove are active-writer guarded, and these writes do not bump the domain revision.                            |
-| Auth files     | `data/__password`, `data/__known_public_key_hashes.json` | Server | Single-user stored password value (normally client-digested via `/api/v1/auth/crypto`) and registered browser public key hashes.                                                                                      |
+| Store            | Path                                                     | Contents                                                                                                                                                                                                                                                                                     |
+| ---------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQLite           | `data/risu.db`                                           | `schema_version` with current domain revision; settings; characters/chats; collection tables; plugin storage; asset metadata; chat messages and reroll alternates; per-chat `hypaV3Data`; Hypa V3 memory tables/jobs; command-event replay history; durable generation finalization retries. |
+| Asset bytes      | `data/assets/<sha256>.<ext>`                             | Content-addressed bytes for images, audio, video, fonts, CSS, ONNX, inlay signatures, and other supported asset types. Metadata is in SQLite `assets`.                                                                                                                                       |
+| Backups          | `data/backups/<id>/`                                     | Snapshot `risu.db`, `assets/`, `save/`, and `manifest.json`. Older backups may carry `db.json`; restore imports it for compatibility.                                                                                                                                                        |
+| Legacy `db.json` | `data/db.json`                                           | Not current storage. On boot, `ensureDbJsonImported()` imports a legacy file into SQLite and renames it to `db.json.migrated`.                                                                                                                                                               |
+| Legacy storage   | `data/save/<hex-key>`                                    | Compatibility byte store for active `/api/v1/storage/*` routes. Writes/removes are active-writer guarded but do not bump the domain revision.                                                                                                                                                |
+| Auth files       | `data/__password`, `data/__known_public_key_hashes.json` | Single-user password data and registered browser public-key hashes.                                                                                                                                                                                                                          |
 
-`server/fastify/src/repository.ts` is the main file for `db.json`, assets, backups,
-the message-table join/split boundary, and the stub projection. `server/fastify/src/db.ts`
-owns SQLite schema setup and revision bumps. `server/fastify/src/messageStore.ts`
-is the CRUD layer for chat messages, per-chat `hypaV3Data`, and persisted
-reroll alternates.
+Primary boundaries:
+
+- `server/fastify/src/db.ts` owns schema setup, migrations, `schema_version`,
+  and revision bumps.
+- `server/fastify/src/repository.ts` loads/writes SQLite-backed domain state,
+  handles legacy `db.json` import, asset metadata, projections, import/export,
+  and backup/restore.
+- `server/fastify/src/messageStore.ts` owns `messages`, `chat_hypa_v3`, and
+  reroll alternates.
+- `server/fastify/src/commands/mutations.ts` owns revision-checked command
+  transactions.
 
 ## Revision Contract
 
-The normal command mutation contract is revision-checked optimistic concurrency.
-The SQLite `schema_version` row contains both schema version and current domain
-revision. Normal revision-tracked command mutations should:
+Normal command mutations use optimistic concurrency:
 
-1. Read `baseRevision` from the request body.
-2. Load and mutate the domain JSON.
-3. Bump the SQLite revision exactly once.
-4. Persist exactly one command event for that revision.
-5. Emit the command event to live subscribers.
-6. Return the new revision.
+1. Read `baseRevision` from the request.
+2. Compare it with `schema_version.revision`.
+3. Load the needed SQLite-backed database shape.
+4. Mutate through server validators/helpers.
+5. Write changed SQLite table families in one transaction.
+6. Bump the revision exactly once.
+7. Persist one command event for that revision.
+8. Commit, then emit the live event.
 
-Stale clients receive 409. On the browser side, command helpers cache the latest
-revision from bootstrap and command responses.
+Stale clients receive 409. Browser command helpers cache the latest revision
+from bootstrap, command responses, and event reconciliation.
 
-Live command events emitted from active-writer command routes may include a
-transient `origin.writerSessionId` matching the request's
-`risu-writer-session` header. This origin is not part of the persisted command
-event history; it lets the originating browser skip its own SSE echo even when
-the stream frame arrives before the command response advances the cached
-revision.
+Command-event resources should be narrow. For example, `character.selected`
+emits `resource: "characterSelection"` so the client refreshes only selected
+character fields instead of replacing the full character array.
 
-The split-store write path hydrates messages from SQLite, mutates a cloned
-database, synchronizes changed chat messages / `hypaV3Data` / reroll alternates
-back into SQLite, bumps the revision, persists the command event, commits, and
-then writes message-free `db.json`. Crash ordering can leave SQLite ahead of
-`db.json`, but `db.json` must not land ahead of message rows plus the revision
-bump.
+Server-owned exceptions still need explicit auth and active-writer decisions:
 
-Command-event resources should be as narrow as the changed state allows.
-`character.selected` is emitted as `resource: "characterSelection"` rather than
-the broad `character` resource; its projection returns only the active character
-index and selected character `lastInteraction`, avoiding a whole-character-array
-refresh for sidebar selection.
+- First-run `POST /api/v1/commands/state/initialize` creates default server
+  state and does not accept a browser database payload.
+- Asset upload writes asset metadata/bytes and emits `asset.created`; duplicate
+  uploads can be idempotent without a new revision.
+- `.risu` import, bundle import, Realm import, backup restore, and generation
+  result persistence use repository/server-owned paths rather than ordinary
+  resource commands.
+- Memory job create/cancel writes durable SQLite memory-job state and emits
+  memory events without a domain revision.
+- Backup create/delete mutate backup files without a domain revision; restore
+  replaces repository state and emits `state.restored`.
 
-There are command-adjacent server-owned exceptions:
+## Auth And Active Writer
 
-- `/api/v1/commands/state/initialize` creates the server-owned default database
-  for a never-initialized server and does not take `baseRevision` or accept a
-  browser-provided database payload.
-- Asset upload writes asset metadata and bumps revision directly, then emits
-  `asset.created`; asset GC can remove unreferenced asset metadata without a
-  revision/event because no projected database field references it.
-- `.risu` import, Realm character import, backup restore, and server-owned
-  generation persistence write through repository/server-owned paths rather than
-  ordinary resource commands. They still need explicit auth and active-writer
-  decisions. Realm import validates `baseRevision` before upstream downloads;
-  asset writes during import may bump revision before the final
-  `character.created` event.
-- Active-writer guarded does not always mean revision-tracked. Memory job
-  create/cancel mutate durable SQLite memory-job state and emit memory events
-  without bumping the domain revision. Backup create/delete mutate backup
-  storage without a domain revision; backup restore replaces repository state
-  and emits `state.restored`. Durable generation finalization retries are
-  queued in SQLite before a result persist attempt and retried by a server timer
-  if a non-terminal persist failure occurs.
+Auth is single-user and route-local:
 
-## Auth Contract
-
-Auth is single-user and explicit per route.
-
-- `server/fastify/src/auth.ts` loads and stores the password and known browser
-  public keys in the data directory. Known public-key hashes are LRU-capped at
-  4096 entries.
+- `server/fastify/src/auth.ts` stores password/public-key state.
 - `server/fastify/src/http.ts` exposes `requireAuth()`.
 - Route handlers call `requireAuth()` manually unless intentionally public.
-- The browser creates short-lived ES256 assertion tokens in
-  `src/ts/storage/fastifyStorage.ts` and sends them in the `risu-auth` header.
+- Browser auth assertions are sent in `risu-auth`.
 - `/api/v1/auth/crypto` is a public compatibility hashing helper registered
-  from `routes/legacyStorage.ts`, not from `routes/auth.ts`.
+  from `routes/legacyStorage.ts`.
 
-Because there is no global auth hook, check new routes carefully for an explicit
-auth decision.
+The active-writer guard is separate. Writer-intent bootstrap latches the latest
+`risu-writer-session`; guarded mutations from stale sessions receive
+`423 active_writer_stale`. Read-only bootstrap/projection/event routes do not
+need writer ownership.
 
-## Active Writer Guard
-
-Fastify also has a global active-writer `preHandler` guard registered from
-`server/fastify/src/app.ts`. The browser registers writer ownership through the
-writer-intent bootstrap request and sends `risu-writer-session` on server-owned
-mutations. Read-only bootstrap intentionally omits the writer header for passive
-resync. If no writer has been latched yet, guarded mutations pass; after a newer
-session claims ownership, stale writer sessions receive `423 active_writer_stale`
-and the browser schedules an alert plus reload.
-
-`server/fastify/src/routeManifest.ts` is the route/protocol inventory for auth,
-active-writer decisions, streaming shape, and public exceptions. The active-writer
-guard in `server/fastify/src/activeWriter.ts`, route-protection tests, and the
-EC5 architecture audit all read from that manifest. It classifies command
-routes, asset uploads, backups, imports, chat generation, prompt preview,
-durable-generation cancel, memory job create/cancel, and legacy storage
-writes/removes as guarded server-owned mutations. The durable-generation
-reattach route `GET /api/v1/generate/chat/:id/stream` is read-only (observe) and
-intentionally **not** gated. When you add an API route, add the manifest decision;
-the tests/audit fail on unclassified routes. Rate-limited routes also choose a
-preset from `server/fastify/src/routeRateLimits.ts`.
+`server/fastify/src/routeManifest.ts` is the source of truth for auth,
+active-writer, streaming, public exceptions, and read-only POST decisions. Add
+a manifest entry when adding any route.
 
 ## Bootstrap And Projection
 
-`/api/v1/bootstrap` returns the current revision, schema version, database
-projection, asset base URL, and `activeGenerationJobs`. Browser startup loads this
-projection before the app is marked ready.
+`GET /api/v1/bootstrap` returns revision, schema version, asset base URL,
+`activeGenerationJobs`, and a lean database projection. If no database exists,
+the browser calls `commands/state/initialize` and refetches bootstrap read-only.
 
-On a never-initialized server, bootstrap can return `database: null`; the
-browser seeds the default database through `commands/state/initialize` and then
-refetches bootstrap with the read-only helper.
+Projection is intentionally lean:
 
-`activeGenerationJobs` is a **transient, server-memory-only** projection (shape
-`{ chatId, jobId, mode?, regenerateMessageId? }[]`, empty when none) sourced from
-`GenerationJobRegistry.activeJobs()`. It is not a persisted `Database` field — it lets a
-returning client, even after a full reload, discover and reattach to an in-flight
-durable generation.
+- Bootstrap and broad targeted projections ship chat metadata with empty
+  `message[]`; the active chat hydrates through
+  `GET /api/v1/projection/chatMessages?id=...`.
+- That hydration response includes messages, per-chat `hypaV3Data`, and reroll
+  alternates.
+- If `enableLorebookStubs` is on, character `globalLore` hydrates through
+  `GET /api/v1/projection/characterLorebook?id=...`.
+- Read-many flows use bulk POST endpoints:
+  `/api/v1/projection/chatMessages/bulk` and
+  `/api/v1/projection/characterLorebooks/bulk`.
 
-The projected database is lean: chat `message[]` arrays are stubs in bootstrap /
-targeted projection responses, and the browser hydrates the active chat through
-`GET /api/v1/projection/chatMessages?id=...`.
-
-That chat hydration response also returns per-chat `hypaV3Data` and persisted
-reroll `alternates`. When `enableLorebookStubs` is enabled, character
-`globalLore` is stubbed too and hydrated through
-`GET /api/v1/projection/characterLorebook?id=...`; this remains an experimental
-lazy-projection path.
-
-Read-many flows use bulk read-only POST endpoints:
-`/api/v1/projection/chatMessages/bulk` and
-`/api/v1/projection/characterLorebooks/bulk`. Browser wrappers live in
-`src/ts/server/projection.ts` and bulk hydration helpers in
-`src/ts/server/chatMessageHydration.svelte.ts`.
-
-Projection writes are intentionally guarded in Fastify mode:
-
-- Trusted server refresh paths can apply a new projection.
-- Ordinary UI code should use server commands rather than mutating `DBState.db`.
-- If a projection guard error appears, it usually means a browser feature still
-  needs a command-backed write path.
+Browser wrappers live in `src/ts/server/projection.ts`; hydration/cache logic
+lives in `src/ts/server/chatMessageHydration.svelte.ts`.
 
 ## SSE Events
 
-`GET /api/v1/events` is the long-lived event stream.
+`GET /api/v1/events` streams:
 
-Event kinds:
+- `command` events with revision, resource, and optional ids.
+- `memory` events for live Hypa V3 job/progress updates.
 
-- `command`: domain command event with revision, resource, and optional ids.
-- `memory`: memory job event, optionally carrying Hypa V3 progress side effects.
+Command events are persisted in SQLite `command_events` and retained for
+`COMMAND_EVENT_HISTORY_LIMIT` revisions. Clients subscribe with `sinceRevision`
+or `Last-Event-ID`; replay gaps return `409 event_replay_unavailable`, after
+which the browser performs a read-only full bootstrap before resubscribing.
 
-The browser keeps a cached revision cursor. Own echoes / already-applied events are
-skipped, contiguous foreign events fetch a targeted projection slice through
-`GET /api/v1/projection/:resource`, and revision gaps fall back to a full bootstrap
-refresh. Command events are sent with SSE `id: <revision>`; reconnects send
-`sinceRevision` / `Last-Event-ID` so the server can replay retained command events
-from SQLite-backed history before resuming live fanout. If replay is unavailable
-(history truncated or cursor is ahead), the server returns `409 event_replay_unavailable`
-and the browser full-bootstraps before subscribing again. Memory events are live
-progress signals only and are not replayed.
-`characters` slices are message-free, so the client resets chat hydration and
-rehydrates the open chat after a re-stub.
+Browser reconcile rules:
 
-Replay covers persisted command events only. Live-only command-shaped events such
-as `state.exported` are emitted to current subscribers without revision bumps or
-SQLite event-history persistence; they are no-op projection notifications.
+- Own echoes and already-applied revisions are skipped.
+- Contiguous foreign events fetch `GET /api/v1/projection/:resource`.
+- Gaps, unknown/sprawling resources, replay-unavailable responses, or projection
+  errors fall back to full bootstrap.
+- Memory events bypass projection refresh and update memory-job UI state.
 
-## Binary And Streaming Surfaces
+Live-only command-shaped events such as `state.exported` are no-op projection
+notifications and are not replayed.
 
-Most routes use Fastify's normal JSON parsing. Single asset uploads use the
-supported asset content-type buffer parser registered in `buildApp()`, while
-bulk asset upload is JSON/base64. Multipart `.risu` import uses
-`@fastify/multipart`. Device-backup bundle imports stream to disk and are capped
-separately by `RISU_API_IMPORT_MAX_BYTES` instead of the normal body limit.
-Binary passthrough routes use a scoped parser setup with
-`removeAllContentTypeParsers()` and a buffer parser. Check `routes/assets.ts`,
-`routes/save.ts`, `routes/proxy.ts`, `routes/hub.ts`, and
-`routes/legacyStorage.ts` before changing body parser behavior.
+## Binary And Streaming
 
-Streaming surfaces write directly to raw replies or WebSockets:
+Most routes use normal JSON parsing. Special cases:
 
-- `routes/generation.ts` resolves browser `server-intent` completion requests
-  into server-owned provider dispatch and writes completion SSE (`chunk`,
-  `error`, `done`) for streaming `/api/v1/generate/completion` requests.
-- `routes/generationChat.ts` writes chat SSE frames. On the **non-durable** (inline)
-  path it aborts the provider call on client close. On the **durable** path a client
-  close only _detaches_ the viewer — the detached `GenerationJobRegistry` job keeps
-  running and buffers its frames for a 30s reattach grace; cancel is the explicit
-  `DELETE .../:id`, not a disconnect. See backend.md "Durable Generation".
-- `routes/realmImport.ts` can write Realm import progress SSE (`progress`,
-  `done`, `conflict`, `low_level_access`, `unsupported`, `error`) when the
-  browser requests `text/event-stream`.
-- `routes/events.ts` hijacks the response for command/memory SSE.
-- `routes/streamJobs.ts` creates proxy stream jobs and attaches WebSockets
-  (the reusable `JobRegistry` that durable generation wraps); it also exposes an
-  authenticated cancel route. Fastify auto-`HEAD` read companions in the route
-  manifest are not separate SSE/WebSocket client surfaces.
+- Raw asset uploads use the supported asset content-type parser registered in
+  `buildApp()`.
+- Multipart `.risu` import uses `@fastify/multipart`.
+- Device-backup bundle import streams to disk and is capped by
+  `RISU_API_IMPORT_MAX_BYTES`, separate from normal body limit.
+- Proxy/hub/storage binary routes use scoped parser behavior.
+
+Streaming surfaces:
+
+- `/api/v1/events` command/memory SSE.
+- `/api/v1/generate/chat` chat SSE, including durable detach/reattach behavior.
+- `/api/v1/generate/completion` completion SSE when requested.
+- `/api/v1/import/realm-character` optional progress SSE.
+- `/api/v1/proxy/stream-jobs/:id/ws` WebSocket proxy stream attachment.
 
 SSE/raw writers use `server/fastify/src/streamBackpressure.ts` to cap buffered
-bytes for slow clients before they can accumulate unbounded memory.
+bytes for slow clients.
