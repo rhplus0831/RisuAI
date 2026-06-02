@@ -15,10 +15,10 @@ the route surface consumed by the Svelte client.
   and optionally serves the built SPA.
 - `server/fastify/src/config.ts` loads most server env vars:
   `RISU_API_HOST`, `RISU_API_PORT`, `RISU_API_DATA_DIR`,
-  `RISU_API_BODY_LIMIT`, `TRUST_PROXY`, `RISU_API_STATIC_ROOT`, and
-  `RISU_HUB_URL`, and `RISU_REALM_URL`. `LOG_LEVEL` is read directly in
-  `server/fastify/src/app.ts`; protocol metrics read `RISU_PROTOCOL_METRICS` in
-  `server/fastify/src/protocolMetrics.ts`.
+  `RISU_API_BODY_LIMIT`, `RISU_API_IMPORT_MAX_BYTES`, `TRUST_PROXY`,
+  `RISU_API_STATIC_ROOT`, `RISU_HUB_URL`, and `RISU_REALM_URL`. `LOG_LEVEL` is
+  read directly in `server/fastify/src/app.ts`; protocol metrics read
+  `RISU_PROTOCOL_METRICS` in `server/fastify/src/protocolMetrics.ts`.
 
 The app factory is test-friendly: many pieces are injectable through
 `BuildAppOptions`, including generation chat dispatch, memory worker behavior,
@@ -38,9 +38,10 @@ memory event sinks, command event sinks, and asset-GC behavior.
   messages and per-chat `hypaV3Data` converge into SQLite.
 - Runtime registries: command-event live subscribers, memory events, proxy stream
   jobs, and detached generation jobs are process-local. Command-event replay
-  history is persisted in SQLite.
-- Timers: proxy stream jobs and generation jobs share a GC tick; asset GC runs on
-  its own interval unless tests disable it.
+  history and durable-generation finalization retries are persisted in SQLite.
+- Timers: proxy stream jobs and generation jobs share a GC tick; durable
+  generation finalization retries run on a short sweep; asset GC runs on its own
+  interval unless tests disable it.
 - Hooks: the active-writer guard is a global `preHandler` registered after
   bootstrap/auth and before the server-owned mutation routes.
 - `onClose` stops the memory worker, clears timers, deletes process-local jobs,
@@ -56,8 +57,8 @@ Route modules export `registerXRoutes(app, ...)` and register concrete
 | ------------------ | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Health             | `routes/health.ts`         | Public health and schema revision surface.                                                                                                                                                                                        |
 | Auth               | `routes/auth.ts`           | Password setup, login, auth status. The public `/api/v1/auth/crypto` compatibility hashing helper is registered from `routes/legacyStorage.ts`.                                                                                   |
-| Bootstrap          | `routes/bootstrap.ts`      | Returns current projection and revision.                                                                                                                                                                                          |
-| Projection         | `routes/projection.ts`     | Targeted projection refresh plus chat/global-lore hydration.                                                                                                                                                                      |
+| Bootstrap          | `routes/bootstrap.ts`      | Returns current projection, revision, schema version, asset base URL, and active generation jobs.                                                                                                                                 |
+| Projection         | `routes/projection.ts`     | Targeted projection refresh plus single and bulk chat/global-lore hydration.                                                                                                                                                      |
 | Save/import/export | `routes/save.ts`           | `.risu` import/export and bundle export.                                                                                                                                                                                          |
 | Realm import       | `routes/realmImport.ts`    | Server-side RisuRealm JSON/`charx` import, asset persistence, progress SSE, and character creation.                                                                                                                               |
 | Commands           | `routes/commands.ts`       | Large command registrar for state initialization, settings, presets, prompts, personas, translators, loadouts, characters/chats/messages, lorebooks, modules, plugins, plugin storage, scripts, triggers, and generation results. |
@@ -78,6 +79,19 @@ no global auth middleware. Public routes are intentional and include health,
 auth status/setup/login, auth crypto, some asset reads/existence checks, and
 hub `GET`/`HEAD`/`OPTIONS` passthrough when no `x-risu-node-path` override is
 used.
+
+Route-specific rate limits live in `server/fastify/src/routeRateLimits.ts`.
+`@fastify/rate-limit` is registered with `global: false`, so adding a high-risk
+route usually means choosing an explicit route config.
+
+Useful non-route helpers:
+
+- `server/fastify/src/databaseDefaults.ts` creates/normalizes first-run and
+  imported database defaults.
+- `server/fastify/src/proxy.ts` owns shared proxy/hub/stream-job header and body
+  helpers.
+- `server/fastify/src/realmImport/characterCard.ts` converts Realm card payloads
+  and handles low-level-access decisions.
 
 ## Commands
 
@@ -170,8 +184,8 @@ Persistence and cancel behavior differs by path:
 | Inline success            | Server persists the final text and scriptstate delta; browser suppresses its old generation-result command. |
 | Inline derivation failure | Server best-effort persists raw provider text and warns.                                                    |
 | Inline persist failure    | Error is swallowed after streaming; the browser keeps its optimistic UI and the next sync reconciles.       |
-| Durable success           | Detached job persists the derived result itself, idempotent on `generationId`.                              |
-| Durable persist failure   | Job emits terminal `error`; browser observation fails and projection later catches up if possible.          |
+| Durable success           | Detached job persists the derived result itself, idempotent on `generationId`, then removes its retry row.  |
+| Durable persist failure   | Persist attempt remains queued for retry; the job emits `error` to observers while later sweeps may finish. |
 | Streaming cancel          | Explicit cancel can persist streamed-so-far raw text.                                                       |
 | Non-streaming cancel      | No partial result is persisted.                                                                             |
 
@@ -191,8 +205,9 @@ Instead the route hands off to a detached job so the generation survives the bro
 - At completion the job runs the same A2 post-generation pass and **persists the
   derived assistant message + scriptstate delta itself** (one `applyJsonCommandMutation`,
   `generation.persisted` event, idempotent on `generationId`) — so the result is durable
-  with no browser command-replay. Failure policy: derivation throw → persist raw +
-  `warning`; persist throw (chat gone) → job `error`.
+  with no browser command-replay. Persist attempts are queued before write;
+  success deletes the retry row, non-terminal failures remain pending for retry
+  sweeps, and terminal failures emit job `error` and stop retrying.
 - `GET /api/v1/generate/chat/:id/stream` reattaches (read-only observe, open to any
   authed client). `DELETE /api/v1/generate/chat/:id` cancels (authorized by the current
   active writer; the browser stop button calls it — a bare disconnect does not cancel).
@@ -273,8 +288,9 @@ See [`assets-and-saves.md`](assets-and-saves.md) for the focused map.
 
 If `RISU_API_STATIC_ROOT` resolves to an existing directory, `buildApp()`
 registers `@fastify/static`, serves `/`, and falls back to the SPA shell for
-non-API GETs. It injects `globalThis.__FASTIFY__ = true` into `index.html` so
-the browser can switch into Fastify-backed mode.
+non-API GETs. The browser runtime is already Fastify-only
+(`src/ts/platform.ts` sets `isFastifyServer = true`), so there is no
+`__FASTIFY__` marker injection path.
 
 Set `RISU_API_STATIC_ROOT=off`, `none`, or an empty string to disable static SPA
 serving. If the configured static root does not exist, static SPA serving is

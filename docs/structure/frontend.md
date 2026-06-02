@@ -1,6 +1,6 @@
 # Frontend Map
 
-The frontend is a Svelte 5 SPA. It is now server-backed: Fastify owns persisted
+The frontend is a Svelte 5 SPA. It is server-backed: Fastify owns persisted
 state and many side effects, while the browser owns rendering, input handling,
 SSE application, display state, TTS playback, image previews, and plugin runtime.
 
@@ -41,47 +41,49 @@ SSE application, display state, TTS playback, image previews, and plugin runtime
 
 Useful `src/ts` subdirectories:
 
-| Path                      | Purpose                                                                                                                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/server/`          | Browser adapters for Fastify bootstrap, commands, events, backups, assets, active-writer headers, projection/hydration, bridge watchers, settings bridge, Realm import, and smoke hooks. |
-| `src/ts/storage/`         | Client database state, server-backed storage, `.risu` import/export.                                                                                                                     |
-| `src/ts/process/`         | Request flow (`index.svelte.ts` = `sendChat`), prompt/client-side helpers, memory client adapters, post-generation.                                                                      |
-| `src/ts/process/request/` | Server-vs-local routing: `serverPromptAssembly.ts` + `durableGeneration.ts` classifiers, the `providerCapability.ts` table, and the `/chat` SSE adapter (`serverChat.ts`).               |
-| `src/ts/model/`           | Client model lists and provider-related browser logic.                                                                                                                                   |
-| `src/ts/horde/`           | Horde model catalog helper used by model-selection UI.                                                                                                                                   |
-| `src/ts/parser/`          | Chat/parser utilities and tests.                                                                                                                                                         |
-| `src/ts/plugins/`         | Plugin loading and browser-side plugin runtime.                                                                                                                                          |
-| `src/ts/media/`           | Image/media helpers and compression.                                                                                                                                                     |
-| `src/ts/gui/`             | Theme, GUI size, color scheme, and display helpers.                                                                                                                                      |
-| `src/ts/setting/`         | Data-driven settings metadata and custom setting component helpers.                                                                                                                      |
-| `src/ts/translator/`      | Translator presets and browser-side translation helpers.                                                                                                                                 |
-| `src/ts/network/`         | Local-network and proxy-stream WebSocket helpers.                                                                                                                                        |
-| `src/ts/kei/`             | Risu-Kei backup integration.                                                                                                                                                             |
-| `src/ts/rpack/`           | Vendored rpack codec used by encrypted translator preset files; see generated/legacy notes.                                                                                              |
-| `src/ts/util/`            | Extracted utility helpers re-exported or consumed by older `src/ts/util.ts` code.                                                                                                        |
+| Path                      | Purpose                                                                                                                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/ts/server/`          | Browser adapters for Fastify bootstrap, commands, events, backups, assets, active-writer headers, projection/hydration/resync, memory job events, bridge watchers, settings bridge, Realm import, and smoke hooks. |
+| `src/ts/storage/`         | Client database state, server-backed storage, `.risu` import/export.                                                                                                                                               |
+| `src/ts/process/`         | Request flow (`index.svelte.ts` = `sendChat`), prompt/client-side helpers, memory client adapters, post-generation.                                                                                                |
+| `src/ts/process/request/` | Server request/generation routing: `serverPromptAssembly.ts` + `durableGeneration.ts` classifiers, the `providerCapability.ts` table, and the `/chat` SSE adapter (`serverChat.ts`).                               |
+| `src/ts/model/`           | Client model lists and provider-related browser logic.                                                                                                                                                             |
+| `src/ts/horde/`           | Horde model catalog helper used by model-selection UI.                                                                                                                                                             |
+| `src/ts/parser/`          | Chat/parser utilities and tests.                                                                                                                                                                                   |
+| `src/ts/plugins/`         | Plugin loading and browser-side plugin runtime.                                                                                                                                                                    |
+| `src/ts/media/`           | Image/media helpers and compression.                                                                                                                                                                               |
+| `src/ts/gui/`             | Theme, GUI size, color scheme, and display helpers.                                                                                                                                                                |
+| `src/ts/setting/`         | Data-driven settings metadata and custom setting component helpers.                                                                                                                                                |
+| `src/ts/translator/`      | Translator presets and browser-side translation helpers.                                                                                                                                                           |
+| `src/ts/network/`         | Local-network and proxy-stream WebSocket helpers.                                                                                                                                                                  |
+| `src/ts/kei/`             | Risu-Kei backup integration.                                                                                                                                                                                       |
+| `src/ts/rpack/`           | Vendored rpack codec used by encrypted translator preset files; see generated/legacy notes.                                                                                                                        |
+| `src/ts/util/`            | Extracted utility helpers re-exported or consumed by older `src/ts/util.ts` code.                                                                                                                                  |
 
 Useful `src/ts/process` subdirectories:
 
-| Path                             | Purpose                                                                                                                |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/process/request/`        | Server/local request routing, prompt-assembly provider preflight, server chat/completion/memory adapters, SSE parsing. |
-| `src/ts/process/dispatch/`       | Local provider dispatch helper used by `sendChat` when the Fastify server path is not selected.                        |
-| `src/ts/process/models/`         | Request-time model string and provider-specific prompt string helpers retained for local paths.                        |
-| `src/ts/process/embedding/`      | Additional-information semantic search helpers retained for local prompt assembly.                                     |
-| `src/ts/process/dynamicutils/`   | Dynamic file utilities such as PDF-to-image/text extraction, including filesystem MCP use.                             |
-| `src/ts/process/promptAssembly/` | Browser-side prompt assembly helpers retained for local/non-Fastify paths and parity tests.                            |
-| `src/ts/process/promptBudget/`   | Token-budget preflight/finalization helpers.                                                                           |
-| `src/ts/process/postGeneration/` | Browser-side post-generation helpers used by local paths and tests.                                                    |
-| `src/ts/process/mcp/`            | MCP clients, internal MCP tools, and Risu access wrappers.                                                             |
-| `src/ts/process/memory/`         | Browser-side memory engines/helpers retained around Hypa flows and local code paths.                                   |
-| `src/ts/process/files/`          | File/inlay/multisend helpers.                                                                                          |
-| `src/ts/process/templates/`      | Prompt/template rendering helpers.                                                                                     |
+| Path                             | Purpose                                                                                                                     |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `src/ts/process/request/`        | Server request routing, prompt-assembly provider preflight, server chat/completion/memory adapters, SSE parsing.            |
+| `src/ts/process/dispatch/`       | Retained browser-local provider dispatch helper used by parity tests and non-live compatibility code.                       |
+| `src/ts/process/models/`         | Request-time model string and provider-specific prompt string helpers retained for parity/test paths.                       |
+| `src/ts/process/embedding/`      | Additional-information semantic search helpers retained around prompt-assembly parity and compatibility code.               |
+| `src/ts/process/dynamicutils/`   | Dynamic file utilities such as PDF-to-image/text extraction, including filesystem MCP use.                                  |
+| `src/ts/process/promptAssembly/` | Browser-side prompt assembly helpers retained for parity tests and legacy compatibility scaffolding.                        |
+| `src/ts/process/promptBudget/`   | Token-budget preflight/finalization helpers.                                                                                |
+| `src/ts/process/postGeneration/` | Browser-side post-generation helpers retained for parity/tests; server-dispatch paths persist post-gen results server-side. |
+| `src/ts/process/mcp/`            | MCP clients, internal MCP tools, and Risu access wrappers.                                                                  |
+| `src/ts/process/memory/`         | Browser-side memory engines/helpers retained around Hypa flows and parity/compatibility code.                               |
+| `src/ts/process/files/`          | File/inlay/multisend helpers.                                                                                               |
+| `src/ts/process/templates/`      | Prompt/template rendering helpers.                                                                                          |
+| `src/ts/process/__tests__/`      | Generation/request/projection parity and regression tests.                                                                  |
+| `src/ts/process/__fixtures__/`   | Prompt/generation fixture corpus and expected outputs; update with `UPDATE_FIXTURES=1`.                                     |
 
 ## Server Projection Flow
 
 See [`server-projection-and-bridges.md`](server-projection-and-bridges.md) for
-the focused map. Startup is server-backed only when the SPA is served by
-Fastify and `globalThis.__FASTIFY__` is injected.
+the focused map. Startup is Fastify-backed in both Vite dev and production
+because `src/ts/platform.ts` makes `isFastifyServer` unconditionally `true`.
 
 1. `src/main.ts` calls `loadData()`.
 2. `src/ts/bootstrap.ts` calls `fetchServerBootstrapProjection()` with
@@ -100,7 +102,8 @@ Fastify and `globalThis.__FASTIFY__` is injected.
    own echoes / already-applied revisions are skipped, contiguous foreign events
    fetch `GET /api/v1/projection/:resource`, and gaps, replay-unavailable
    responses, or projection errors fall back to a full bootstrap refresh.
-9. Memory events can update Hypa V3 progress UI directly.
+9. Memory events update Hypa V3 progress UI and publish memory-job refresh
+   notifications directly.
 
 When debugging stale UI, check command success revision, the SSE event stream,
 targeted projection responses, and the full-bootstrap fallback before assuming a
@@ -129,8 +132,9 @@ mode the **server owns prompt assembly and the provider call**:
 
 1. The send is classified by `resolveServerPromptAssembly`
    (`src/ts/process/request/serverPromptAssembly.ts`) + the shared
-   `resolveProviderCapability` table — `local | server | unsupported`. `unsupported`
-   throws (no silent fallback); `local` only happens when `!isFastifyServer`.
+   `resolveProviderCapability` table — `server | unsupported` in the current
+   runtime. `unsupported` throws; dormant local-return branches are retained for
+   tests and old compatibility code, not for a selectable runtime mode.
 2. For a `server` send the browser POSTs raw inputs to `/api/v1/generate/chat` and
    parses the SSE stream via `src/ts/process/request/serverChat.ts`. Chat streams
    may include durable `job_accepted`, stage, prompt, `message_patch`, info,
@@ -191,17 +195,17 @@ for durable scriptstate changes; form controls should not bind directly into
 
 ## Fastify SPA Integration
 
-Vite dev mode and production Fastify serving differ:
+Vite dev mode and production Fastify serving differ only in how the SPA is
+served:
 
 - `pnpm dev` starts Vite on `0.0.0.0:5174` and proxies `/api` to
-  `RISU_API_PROXY_TARGET` or `http://localhost:6002`, but it does not inject the
-  Fastify marker. `isFastifyServer` is false in this mode, so the app uses local
-  compatibility paths and server adapters report unavailable unless called by a
-  feature that explicitly targets `/api`.
+  `RISU_API_PROXY_TARGET` or `http://localhost:6002`; run `pnpm api:dev` in a
+  second terminal for the API.
 - Production/static serving uses `dist/` by default through
   `RISU_API_STATIC_ROOT`.
-- Fastify injects `globalThis.__FASTIFY__ = true` into served `index.html`.
-- `src/ts/platform.ts` reads `__FASTIFY__` to enable Fastify-backed behavior.
+- `src/ts/platform.ts` hard-codes the Fastify runtime label and
+  `isFastifyServer = true`; there is no `__FASTIFY__` injection or
+  browser-local persistence mode switch.
 
 ## Assets And Storage
 
@@ -213,9 +217,9 @@ Realm character imports use `src/ts/server/realmImport.ts`, which can consume th
 server's progress SSE and reconcile the command revision after the imported
 character is committed.
 
-`src/ts/storage/nodeStorage.ts` still backs active `/api/v1/storage/*` endpoints.
-Despite the route filename `legacyStorage.ts`, this bridge is part of the current
-Fastify web runtime.
+`src/ts/storage/fastifyStorage.ts` backs active `/api/v1/storage/*` endpoints,
+and `src/ts/storage/autoStorage.ts` instantiates it. Despite the route filename
+`legacyStorage.ts`, this bridge is part of the current Fastify web runtime.
 
 `.risum` module import remains unsupported in Fastify-backed browser mode; adding
 it needs a server import/command route rather than reviving direct browser

@@ -24,6 +24,9 @@ server-owned mutation routes.
 `src/ts/server/bootstrap.ts` validates bootstrap payloads and exposes the
 writer-intent and read-only variants. `src/ts/server/projection.ts` wraps
 targeted projection, chat-message hydration, and character-lorebook hydration.
+`src/ts/server/projectionResync.ts` is the shared full-bootstrap recovery path
+used by event replay misses, projection gaps, backup restore, and other
+partial-success repairs.
 
 ## Event Reconcile
 
@@ -41,8 +44,10 @@ Server replay is backed by SQLite command-event history and is retained for
 `COMMAND_EVENT_HISTORY_LIMIT` revisions. Live-only command-shaped events such as
 `state.exported` are not replayable and do not require a projection refresh.
 Memory events are live progress notifications. Bootstrap applies their Hypa V3
-progress side effect and republishes parsed `memory.job` events to browser UI
-subscribers so memory-job panels can refresh without polling continuously.
+progress side effect through `src/ts/process/request/serverMemory.ts` and
+republishes parsed `memory.job` events through
+`src/ts/server/memoryJobEvents.ts`; `src/ts/server/memoryJobRefresh.ts` uses
+those events so memory-job panels can refresh without polling continuously.
 
 ## Hydration
 
@@ -116,6 +121,9 @@ These are separate protections:
 Read-only bootstrap, projection fetches, event streams, durable-generation
 reattach, and ordinary asset reads do not require writer ownership.
 
+Browser-side writer-session header creation and stale-session reload handling
+live in `src/ts/server/activeWriterSession.ts`.
+
 ## Diagnostics
 
 Server protocol metrics are opt-in with `RISU_PROTOCOL_METRICS=1` (also accepts
@@ -127,3 +135,4 @@ Relevant files:
 - `server/fastify/src/protocolMetrics.ts`
 - `src/ts/server/protocolDiagnostics.ts`
 - `src/ts/server/chatMessageHydration.svelte.ts`
+- `src/ts/server/projectionResync.ts`

@@ -29,9 +29,9 @@ treat those files as source documentation.
 copy. Edit `public/` when changing a static source asset; rebuild to refresh
 `dist/`.
 
-`public/functions/` is currently absent after removed public worker/OAuth
-surfaces. Do not reintroduce old Google Drive public workers without a new
-explicit roadmap.
+No tracked files live under `public/functions/`; in some workspaces the empty
+directory may exist. Do not reintroduce old public worker/OAuth surfaces without
+a new explicit roadmap.
 
 `tsconfig.json` still includes `public/sw.js`, but the service worker file is
 absent and guarded by `src/ts/browserLocalSurface.test.ts`. Treat the include as a
@@ -51,11 +51,14 @@ guidance. Prefer the present-tense root [`../../STRUCTURE.md`](../../STRUCTURE.m
 and companion docs in `docs/structure/` for current state, and treat the
 workstream records under `docs/archive/` (the Fastify migration,
 `docs/archive/client-thinning/`, `docs/archive/durable-generation/`, and
-`docs/archive/lazy-projection/`) as historical design/decision references.
+`docs/archive/lazy-projection/`, plus
+`docs/archive/server-client-protocol-stability-performance/`) as historical
+design/decision references.
 Two large server-owned subsystems landed via those workstreams and are now core
 runtime, not legacy: **server prompt assembly** (`resolveServerPromptAssembly` +
-`server/fastify/src/prompt/`, with local assembly only outside Fastify mode) and
-**durable generation** (`server/fastify/src/generationJobs.ts`; see backend.md).
+`server/fastify/src/prompt/`; browser-local assembly code is retained for parity
+tests and compatibility scaffolding) and **durable generation**
+(`server/fastify/src/generationJobs.ts`; see backend.md).
 
 `src/LiteMain.svelte` is currently an unwired legacy/lite shell. The real browser
 entrypoint is `src/main.ts`, and the live lite mode is `VITE_RISU_LITE` driving
@@ -74,7 +77,8 @@ imports it in the current shell.
 Some files retain legacy names because they bridge current behavior:
 
 - `server/fastify/src/routes/legacyStorage.ts` backs active
-  `/api/v1/storage/*` routes used by `src/ts/storage/nodeStorage.ts`.
+  `/api/v1/storage/*` routes used by `src/ts/storage/fastifyStorage.ts` and
+  `src/ts/storage/autoStorage.ts`.
 - `server/fastify/src/routes/hub.ts` backs retained hub passthrough behavior.
 - Browser plugin runtime remains in `src/ts/plugins/`; server command routes
   store plugin records and plugin storage but do not execute plugin code.

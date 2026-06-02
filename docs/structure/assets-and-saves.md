@@ -66,6 +66,7 @@ projected database no longer references.
 | `server/fastify/src/risuSave/exportSnapshot.ts`      | Repository export into block or legacy envelopes.                                 |
 | `server/fastify/src/risuSave/bundleExport.ts`        | Zip bundle export with the `.risu` bytes plus asset files.                        |
 | `server/fastify/src/risuSave/localBackupImport.ts`   | Streaming device-backup decode: zip bundle + legacy `.bin`, bounded-memory.       |
+| `server/fastify/src/risuSave/importLimits.ts`        | Expanded-payload guard shared by `.risu` and Realm import decoding.               |
 | `server/fastify/src/risuSave/assetReferences.ts`     | Known-field asset-reference walker for referenced, missing, and orphaned reports. |
 | `server/fastify/src/risuSave/blockCodec.ts`          | Current block-based `.risu` envelope codec.                                       |
 | `server/fastify/src/risuSave/legacyEnvelopeCodec.ts` | Legacy raw/compressed/stream envelope compatibility.                              |
@@ -141,7 +142,10 @@ for long downloads/imports.
 Backups live under `data/backups/<id>/` and snapshot `db.json`, `assets/`,
 `risu.db`, `save/`, and `manifest.json`. Create, restore, and delete are
 authenticated and active-writer guarded; list is authenticated read-only. Restore
-swaps the persisted files and SQLite tables, then emits `state.restored`.
+swaps persisted files and the SQLite tables listed in
+`repository.ts`'s `SQLITE_BACKUP_TABLES` (`schema_version`, command events,
+memory tables, messages, and `chat_hypa_v3`), then emits `state.restored`.
+Transient durable-generation finalization retry rows are not restored.
 
 Module `.risum` import remains unsupported in Fastify-backed browser mode. If it
 returns, it should be implemented as a server import/command route.

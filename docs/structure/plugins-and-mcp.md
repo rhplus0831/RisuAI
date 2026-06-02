@@ -13,8 +13,12 @@ Core files:
 | `src/ts/plugins/plugins.svelte.ts`             | Plugin import/update/load, V2 compatibility, custom providers, and command-backed state dispatch. |
 | `src/ts/plugins/apiV3/v3.svelte.ts`            | Plugin API V3 surface exposed to sandboxed plugins.                                               |
 | `src/ts/plugins/apiV3/factory.ts`              | `SandboxHost` iframe/RPC bridge between the app and plugin guest code.                            |
+| `src/ts/plugins/apiV3/transpiler.ts`           | Plugin V3 transpilation helper.                                                                   |
+| `src/ts/plugins/apiV3/developMode.ts`          | Plugin V3 development-mode loader support.                                                        |
+| `src/ts/plugins/apiV3/risuai.d.ts`             | Plugin V3 TypeScript declarations exposed to plugin authors.                                      |
 | `src/ts/plugins/pluginSafeClass.ts`            | Safe storage, DOM/document wrappers, and device-local storage gates.                              |
 | `src/ts/plugins/pluginSafety.ts`               | Static safety rewrite/check for imported plugin code.                                             |
+| `src/ts/plugins/migrationGuide.md`             | Plugin migration notes for V3 authors.                                                            |
 | `src/ts/pluginCommands.ts`                     | Browser command wrappers for plugin records and plugin custom storage.                            |
 | `server/fastify/src/commands/plugins.ts`       | Server validation for plugin records and provider selection.                                      |
 | `server/fastify/src/commands/pluginStorage.ts` | Server validation for plugin key/value JSON storage.                                              |
@@ -28,9 +32,10 @@ and return serializable data, callback functions, marked remote class instances,
 or abort signals. The host exposes aliases and properties during initialization.
 
 Plugin V2 records can still be loaded for browser-side compatibility warnings,
-but Plugin V2 edit/replacer hooks are intentionally not executed by the Fastify
-server prompt assembler. Do not treat server Lua scripting as a replacement for
-browser plugin execution; they are separate systems.
+but Plugin V2 edit/replacer hooks make server prompt assembly return
+`unsupported`; the Fastify server never executes browser plugin code. Do not
+treat server Lua scripting as a replacement for browser plugin execution; they
+are separate systems.
 
 ## Plugin Storage
 
@@ -50,7 +55,8 @@ read-only projection.
 
 ## MCP Runtime
 
-MCP and tool orchestration lives under `src/ts/process/mcp/`.
+MCP and tool orchestration mostly lives under `src/ts/process/mcp/`. Module
+runtime wiring that resolves MCP URLs starts from `src/ts/process/modules.ts`.
 
 | Path                                                                                    | Purpose                                                                                                         |
 | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |

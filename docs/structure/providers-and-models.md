@@ -8,13 +8,13 @@ shape can run on the server.
 
 Important files:
 
-| Path                                                                                           | Purpose                                                                            |
-| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `src/ts/model/types.ts`                                                                        | `LLMProvider`, `LLMFormat`, `LLMTokenizer`, `LLMFlags`, and `LLMModel` vocabulary. |
-| `src/ts/model/modellist.ts`                                                                    | Static model registry, dynamic registration, custom models, and `getModelInfo()`.  |
-| `src/ts/model/providers/`                                                                      | Provider-specific static model lists.                                              |
-| `src/ts/model/openrouter.ts`, `nanogpt.ts`, `ollama.ts`, `ooba.ts`, `horde/getModels.ts`       | Browser-side model/provider catalog helpers.                                       |
-| `src/lib/UI/ModelList.svelte`, `ModelGrid.svelte`, `NanoGPT*`, `OpenrouterProviderList.svelte` | Model-picker and provider UI surfaces.                                             |
+| Path                                                                                            | Purpose                                                                            |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `src/ts/model/types.ts`                                                                         | `LLMProvider`, `LLMFormat`, `LLMTokenizer`, `LLMFlags`, and `LLMModel` vocabulary. |
+| `src/ts/model/modellist.ts`                                                                     | Static model registry, dynamic registration, custom models, and `getModelInfo()`.  |
+| `src/ts/model/providers/`                                                                       | Provider-specific static model lists.                                              |
+| `src/ts/model/openrouter.ts`, `nanogpt.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser-side model/provider catalog helpers.                                       |
+| `src/lib/UI/ModelList.svelte`, `ModelGrid.svelte`, `NanoGPT*`, `OpenrouterProviderList.svelte`  | Model-picker and provider UI surfaces.                                             |
 
 `Database.aiModel` and related fields select model strings for main, auxiliary,
 fallback, translator, memory, and provider-specific flows. Custom and dynamic
@@ -26,7 +26,9 @@ browser model registry.
 Fastify dispatch is centered in `server/fastify/src/prompt/chatDispatch.ts`.
 Provider-specific adapters live in `server/fastify/src/generation/`:
 
-- OpenAI, OpenAI Responses, OpenAI-compatible, and legacy instruct.
+- OpenAI, OpenAI Responses, OpenAI-compatible, and legacy instruct. OpenRouter
+  and NanoGPT are routed as OpenAI-compatible variants rather than separate
+  adapter files.
 - Anthropic, Gemini, Vertex auth, Bedrock/SigV4, Cohere, Mistral, Ollama,
   Kobold, Horde, Ooba legacy, and Echo.
 - Shared frame/SSE helpers and additional-parameter handling.
@@ -43,7 +45,7 @@ overwrite real credentials.
 paths. It decides which provider/content shapes are:
 
 - `server`: supported by the Fastify server assembly/dispatch path.
-- `local`: allowed only outside Fastify mode.
+- `local`: retained legacy/test arm; not selected by the live Fastify runtime.
 - `unsupported`: hard-failed in Fastify mode.
 
 Do not fork this table in server-only code. It is the contract that keeps
@@ -72,14 +74,14 @@ server-dispatch paths.
 Fastify mode hard-fails shapes that cannot be represented safely on the server.
 Major unsupported gates include:
 
-| Gate                                                        | Reason                                                             |
-| ----------------------------------------------------------- | ------------------------------------------------------------------ |
-| Non-text send tail for unsupported content classes          | The server will not silently drop browser-only content.            |
-| Group chat                                                  | Removed/no-port.                                                   |
-| Non-server-routable provider or plugin/WebLLM-only provider | No Fastify provider adapter.                                       |
-| Non-vision image-caption fallback                           | Browser-only captioning pipeline has no server equivalent.         |
-| Interactive Lua dialogs                                     | Server prompt assembly cannot drive browser dialogs mid-request.   |
-| Plugin V2 edit/replacer hooks                               | Browser plugin execution is not ported to Fastify prompt assembly. |
+| Gate                                                        | Reason                                                                                   |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Non-text send tail for unsupported content classes          | The server will not silently drop browser-only content.                                  |
+| Group chat                                                  | Removed/no-port.                                                                         |
+| Non-server-routable provider or plugin/WebLLM-only provider | No Fastify provider adapter.                                                             |
+| Non-vision image-caption fallback                           | Browser-only captioning pipeline has no server equivalent.                               |
+| Interactive Lua dialogs                                     | Server prompt assembly cannot drive browser dialogs mid-request.                         |
+| Plugin V2 edit/replacer hooks                               | Browser plugin execution is no-port; their presence makes server assembly `unsupported`. |
 
 Supported multimodal/image/asset/inlay inputs are routed through server asset
 ids where possible. Fastify-mode inlay bytes are uploaded to `/api/v1/assets`

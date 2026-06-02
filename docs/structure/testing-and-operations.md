@@ -16,6 +16,7 @@ Use `pnpm` for all package scripts.
 | `pnpm test`                  | Run root/browser Vitest tests.                                                                                                                                                                                 |
 | `pnpm api:test`              | Run Fastify/server Vitest tests.                                                                                                                                                                               |
 | `pnpm client-thinning:audit` | Run the ts-morph architecture audit (`util/client-thinning-audit.ts`, 26 AST/invariant checks). Exits non-zero on any finding; regression-tested by `util/client-thinning-audit.test.ts` under the root suite. |
+| `pnpm analyze:db <path>`     | Run `util/analyze-database.ts` against a `.risu`, `db.json`, raw database JSON, or `data/` dir; add `--json` for machine-readable output.                                                                      |
 | `pnpm smoke:fastify-browser` | Build site, then run Playwright Fastify browser smoke.                                                                                                                                                         |
 | `pnpm format`                | Prettier write.                                                                                                                                                                                                |
 | `pnpm format:check`          | Prettier check.                                                                                                                                                                                                |
@@ -32,8 +33,9 @@ pnpm dev
 ```
 
 Vite proxies `/api` to `RISU_API_PROXY_TARGET` or `http://localhost:6002`.
-Fastify defaults to `0.0.0.0:6002`. This is Vite `web(dev)` mode, not true
-Fastify-backed browser mode, because Vite does not inject `globalThis.__FASTIFY__`.
+Fastify defaults to `0.0.0.0:6002`. The browser code is still Fastify-backed in
+Vite dev because `src/ts/platform.ts` hard-codes `isFastifyServer = true`; Vite
+only changes how the SPA bundle is served.
 
 To build the SPA and serve it through Fastify:
 
@@ -83,18 +85,19 @@ Browser smoke uses Playwright Chromium. On a fresh machine, run
 
 Server:
 
-| Variable                | Default                    | Notes                                                                        |
-| ----------------------- | -------------------------- | ---------------------------------------------------------------------------- |
-| `RISU_API_HOST`         | `0.0.0.0`                  | Fastify listen host.                                                         |
-| `RISU_API_PORT`         | `6002`                     | Fastify listen port.                                                         |
-| `RISU_API_DATA_DIR`     | `<repo>/data`              | SQLite, `db.json`, assets, backups, auth files.                              |
-| `RISU_API_BODY_LIMIT`   | `104857600`                | Body and multipart file limit.                                               |
-| `TRUST_PROXY`           | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string.            |
-| `RISU_API_STATIC_ROOT`  | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                           |
-| `RISU_HUB_URL`          | `https://sv.risuai.xyz`    | Hub passthrough target.                                                      |
-| `RISU_REALM_URL`        | `https://realm.risuai.net` | Realm character import target.                                               |
-| `LOG_LEVEL`             | `info`                     | Use `silent` to disable Fastify logger.                                      |
-| `RISU_PROTOCOL_METRICS` | unset                      | Enables structured protocol metrics when set to `1`, `true`, `yes`, or `on`. |
+| Variable                    | Default                    | Notes                                                                                                                            |
+| --------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `RISU_API_HOST`             | `0.0.0.0`                  | Fastify listen host.                                                                                                             |
+| `RISU_API_PORT`             | `6002`                     | Fastify listen port.                                                                                                             |
+| `RISU_API_DATA_DIR`         | `<repo>/data`              | SQLite, `db.json`, assets, backups, auth files.                                                                                  |
+| `RISU_API_BODY_LIMIT`       | `104857600`                | Body and multipart file limit.                                                                                                   |
+| `RISU_API_IMPORT_MAX_BYTES` | unlimited                  | Separate streamed device-backup import limit; set a positive byte count to cap, or `0`/`unlimited`/`none`/`infinity` to opt out. |
+| `TRUST_PROXY`               | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string.                                                                |
+| `RISU_API_STATIC_ROOT`      | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                                                                               |
+| `RISU_HUB_URL`              | `https://sv.risuai.xyz`    | Hub passthrough target.                                                                                                          |
+| `RISU_REALM_URL`            | `https://realm.risuai.net` | Realm character import target.                                                                                                   |
+| `LOG_LEVEL`                 | `info`                     | Use `silent` to disable Fastify logger.                                                                                          |
+| `RISU_PROTOCOL_METRICS`     | unset                      | Enables structured protocol metrics when set to `1`, `true`, `yes`, or `on`.                                                     |
 
 Client/build:
 
@@ -113,6 +116,11 @@ Test/audit:
 | `CLIENT_THINNING_AUDIT_CHECK_IDS` | Optional comma-separated architecture-audit check-id selector.               |
 | `UPDATE_FIXTURES`                 | Set to `1` to rewrite prompt/generation fixture snapshots.                   |
 | `RISU_DIRECT_REALM_IMPORT_TEST`   | Auto-set by server Vitest config when `realmImport.test.ts` is run directly. |
+| `RISU_COMMAND_METRIC_SUMMARY`     | Set to `1` for command metric review output in focused server tests.         |
+| `RISU_PROJECTION_FULL_SUMMARY`    | Set to `1` for full-projection payload summary output in projection tests.   |
+| `RISU_ASSET_BYTE_SUMMARY`         | Set to `1` for asset byte fanout summary output in asset tests.              |
+| `RISU_EXPORT_MATERIALIZE_SUMMARY` | Set to `1` for export materialization summary output in save/export tests.   |
+| `RISU_GENERATION_METRIC_SUMMARY`  | Set to `1` for generation metric summary output in chat generation tests.    |
 
 ## CI
 
