@@ -101,10 +101,10 @@ export const COMMAND_METRIC_REVIEW_GATES = {
   },
   'targeted-character-row': {
     reviewGate:
-      'character-scoped edits write that character row (+ its own chat rows on folder-cascade / chats-reorder, + settings only when a pointer moved) and never another collection table',
+      'character-scoped edits write that character row (+ its own chat rows on folder-cascade / chats-reorder / fork, + the forked chat\'s messages, + settings only when a pointer moved) and never another collection table',
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
-    maxTables: ['characters', 'chats', 'settings'],
+    maxTables: ['chat_hypa_v3', 'characters', 'chats', 'messages', 'settings'],
     forbiddenTables: [
       'bot_presets',
       'hypa_v3_presets',

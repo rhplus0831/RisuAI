@@ -177,6 +177,19 @@ function readChatOrder(characterId: string): string[] {
   }
 }
 
+/** Active (alternate=0) message uids for one chat in `seq` order. */
+function readChatMessageIds(chatId: string): string[] {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    const rows = db
+      .prepare('SELECT uid FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq')
+      .all(chatId) as Array<{ uid: string }>
+    return rows.map((r) => r.uid)
+  } finally {
+    db.close()
+  }
+}
+
 function rowidSnapshot(): { characters: Record<string, number>; chats: Record<string, number> } {
   return {
     characters: tableRowidsById(harness.dataDir, 'characters'),
@@ -485,5 +498,86 @@ describe('Phase 3 character + chat-row cascade paths', () => {
     expect(readChatOrder('char-a')).toEqual(['chat-a-2', 'chat-a-1'])
     // char-b's single chat is untouched.
     expect(readChatOrder('char-b')).toEqual(['chat-b-1'])
+  })
+})
+
+describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
+  it('forks a chat: inserts the new chat + its messages, preserves the source messages', async () => {
+    const revision = await importDatabase(seedDatabase())
+    // Give the source chat an existing message so we can prove it survives.
+    const appended = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a-1/messages',
+      payload: {
+        baseRevision: revision,
+        message: { role: 'user', data: 'source message', chatId: 'src-msg-1' },
+      },
+    })
+    expect(readChatMessageIds('chat-a-1')).toEqual(['src-msg-1'])
+    const before = rowidSnapshot()
+
+    const { metric, body } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a-1/fork',
+      payload: {
+        baseRevision: appended.revision,
+        select: true,
+        chat: {
+          id: 'fork-1',
+          name: 'Forked',
+          message: [
+            { role: 'user', data: 'forked 1', chatId: 'fork-msg-1' },
+            { role: 'char', data: 'forked 2', chatId: 'fork-msg-2' },
+          ],
+        },
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters', 'chats', 'messages'])
+    assertCommandMetricGate(metric)
+    // Existing character/chat rows are UPDATEd in place (rowids stable); the
+    // forked chat is a new row, ignored by the before-snapshot.
+    expectNoChurn(before)
+    expect(body.chatId).toBe('fork-1')
+    // The forked chat lands at the head; the source chat shifts down.
+    expect(readChatOrder('char-a')).toEqual(['fork-1', 'chat-a-1', 'chat-a-2'])
+    expect(readCharacter('char-a').chatPage).toBe(0)
+    // The forked chat's messages persisted; the source chat's message survived.
+    expect(readChatMessageIds('fork-1')).toEqual(['fork-msg-1', 'fork-msg-2'])
+    expect(readChatMessageIds('chat-a-1')).toEqual(['src-msg-1'])
+  })
+
+  it('rejects a forked message whose id already exists', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const appended = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a-1/messages',
+      payload: {
+        baseRevision: revision,
+        message: { role: 'user', data: 'source message', chatId: 'dup-msg' },
+      },
+    })
+
+    const inject = harness.app.inject as unknown as (
+      request: CommandRequest,
+    ) => Promise<CommandResponse>
+    const res = await inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a-1/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: appended.revision,
+        chat: {
+          id: 'fork-2',
+          message: [{ role: 'user', data: 'dup', chatId: 'dup-msg' }],
+        },
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect((res.json() as { error: string }).error).toContain('Duplicate message id')
+    // The rejected fork wrote nothing: no new chat row.
+    expect(readChatOrder('char-a')).toEqual(['chat-a-1', 'chat-a-2'])
   })
 })

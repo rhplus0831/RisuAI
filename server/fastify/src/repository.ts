@@ -473,6 +473,29 @@ export function writeCharacterChatRows(
   }
 }
 
+/** INSERT one brand-new chat row for a character at `position` (e.g. fork's
+ *  head `unshift`). The new chat's messages persist separately via the message
+ *  store; `message` / `hypaV3Data` are stripped here. */
+export function insertCharacterChatRow(
+  db: DatabaseSync,
+  characterId: string,
+  position: number,
+  chat: JsonRecord,
+): void {
+  const chatId = chat.id
+  if (typeof chatId !== 'string') {
+    throw new ValidationError('chat.id must be a non-empty string')
+  }
+  const { message: _msg, hypaV3Data: _hypa, ...chatClean } = chat
+  recordTableWrite('chats')
+  db.prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)').run(
+    chatId,
+    characterId,
+    position,
+    JSON.stringify(chatClean),
+  )
+}
+
 function collectionTableForField(field: string): string {
   const tableName = COLLECTION_TABLE_MAP[field]
   if (!tableName) {

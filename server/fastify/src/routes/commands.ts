@@ -209,6 +209,7 @@ import {
   EntityNotFoundError,
   extractSettings,
   initializeDefaultDatabase,
+  insertCharacterChatRow,
   replacePluginStorage,
   RevisionMismatchError,
   ValidationError,
@@ -2714,7 +2715,7 @@ export function registerCommandRoutes(
         body.sourcePatch === undefined ? {} : readChatPatch(body.sourcePatch, { allowEmpty: true })
       const folder = body.folder === undefined ? null : createChatFolderRecord(body.folder)
       const selectFork = readChatOptionalBoolean(body.select, 'select') ?? true
-      const result = applyJsonCommandMutation<{
+      const result = applyTargetedCommandMutation<{
         chatId: string
         sourceChatId: string
         selectedChatId: string | null
@@ -2723,7 +2724,8 @@ export function registerCommandRoutes(
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
           const target = ensureModuleCommandDatabase(database)
           const characters = normalizeAllCharacterChats(target)
           const modules = ensureModuleRecords(target)
@@ -2759,8 +2761,11 @@ export function registerCommandRoutes(
           if (chatIdExists(characters, nextChat.id)) {
             throw new ValidationError(`Duplicate chat id: ${nextChat.id}`)
           }
+          // Message-id uniqueness is checked directly against the message store
+          // (a targeted query) instead of a corpus-wide `chat.message[]` scan, so
+          // this no longer needs the all-message hydrate.
           for (const message of forkedMessages) {
-            if (messageIdExists(characters, message.chatId)) {
+            if (activeMessageIdExists(innerDb, message.chatId as string)) {
               throw new ValidationError(`Duplicate message id: ${message.chatId}`)
             }
           }
@@ -2778,6 +2783,17 @@ export function registerCommandRoutes(
           } else {
             ensureCharacterChats(character)
           }
+          // Surgical fork persistence, scoped to the source character: re-stamp
+          // its existing chat-row positions (source chat's `sourcePatch` rides
+          // along) — the `unshift`ed new chat is a no-op UPDATE until it is
+          // INSERTed at position 0 — then persist the forked chat's messages to
+          // the message store and write the character row (`chatPage`/folder).
+          // Existing chats' messages are untouched (UPDATE, not DELETE+reINSERT).
+          const characterId = character.chaId as string
+          writeCharacterChatRows(innerDb, characterId, character.chats as Record<string, unknown>[])
+          insertCharacterChatRow(innerDb, characterId, 0, nextChat as Record<string, unknown>)
+          replaceActiveChatMessages(innerDb, nextChat.id, forkedMessages)
+          writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.chatForked,
