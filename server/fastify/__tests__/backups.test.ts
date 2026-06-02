@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
-import { assetsDir } from '../src/repository.js'
+import { assetsDir, getAllAssetMetadata, loadPersistedWithMessages } from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
 
 const subtle = webcrypto.subtle
@@ -461,6 +461,93 @@ describe('Phase 2D backups', () => {
     })
     expect(asset.statusCode).toBe(200)
     expect(Buffer.from(asset.rawPayload)).toEqual(PNG_BYTES)
+  })
+
+  it('restores a legacy db.json backup into SQLite tables', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'live-before-legacy-restore' })
+
+    const backupId = '2026-06-03-01-02-03-abcdef'
+    const backupRoot = path.join(harness.dataDir, 'backups', backupId)
+    mkdirSync(path.join(backupRoot, 'assets'), { recursive: true })
+    writeFileSync(path.join(backupRoot, 'assets', `${PNG_SHA}.png`), PNG_BYTES)
+
+    const legacyAsset = {
+      id: PNG_SHA,
+      ext: 'png',
+      size: PNG_BYTES.length,
+      contentType: 'image/png',
+    }
+    const legacyDatabase = {
+      tag: 'legacy-db-json',
+      modules: [{ id: 'module-a', name: 'Legacy module', assets: [['icon.png', PNG_SHA, 'png']] }],
+      pluginCustomStorage: { 'plugin-a': { enabled: true } },
+      characters: [
+        {
+          chaId: 'legacy-char',
+          name: 'Legacy',
+          chats: [
+            {
+              id: 'legacy-chat',
+              name: 'Legacy chat',
+              note: '',
+              localLore: [],
+              message: [{ role: 'user', data: 'from legacy', chatId: 'legacy-msg' }],
+            },
+          ],
+        },
+      ],
+    }
+    writeFileSync(
+      path.join(backupRoot, 'db.json'),
+      JSON.stringify({ _version: 1, database: legacyDatabase, assets: [legacyAsset] }),
+    )
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+    expect(existsSync(path.join(harness.dataDir, 'db.json.migrated'))).toBe(true)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().database).toMatchObject({
+      tag: 'legacy-db-json',
+      modules: [{ id: 'module-a', name: 'Legacy module' }],
+      pluginCustomStorage: { 'plugin-a': { enabled: true } },
+      characters: [{ chaId: 'legacy-char', chats: [{ id: 'legacy-chat', message: [] }] }],
+    })
+
+    const hydration = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/chatMessages?id=legacy-chat',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(hydration.statusCode).toBe(200)
+    expect(hydration.json().message).toEqual([
+      { role: 'user', data: 'from legacy', chatId: 'legacy-msg' },
+    ])
+
+    const asset = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/assets/${PNG_SHA}`,
+    })
+    expect(asset.statusCode).toBe(200)
+    expect(Buffer.from(asset.rawPayload)).toEqual(PNG_BYTES)
+
+    const verify = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(getAllAssetMetadata(verify)).toEqual([legacyAsset])
+      expect(loadPersistedWithMessages(verify, harness.dataDir).assets).toEqual([legacyAsset])
+    } finally {
+      verify.close()
+    }
   })
 
   it('restore of an unknown id returns 404', async () => {

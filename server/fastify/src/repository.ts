@@ -463,7 +463,7 @@ export function loadPersisted(db: DatabaseSync, _dataDir: string): Persisted {
   return {
     _version: PERSISTED_VERSION,
     database,
-    assets: [],
+    assets: getAllAssetMetadata(db),
   }
 }
 

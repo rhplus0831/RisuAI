@@ -403,10 +403,24 @@ describe('repository message-aware load/write', () => {
     // and the file is renamed to db.json.migrated.
     const dataDir = makeDataDir()
     const db = makeDb(dataDir)
-    const database = {
-      characters: [{ chaId: 'c', chats: [{ id: 'chat-1', name: 'Legacy chat', message: [msg('m1', 'user', 'hi')] }] }],
+    const legacyAsset = {
+      id: 'a'.repeat(64),
+      ext: 'png',
+      size: 123,
+      contentType: 'image/png',
     }
-    writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ _version: 1, database, assets: [] }))
+    const database = {
+      characters: [
+        {
+          chaId: 'c',
+          chats: [{ id: 'chat-1', name: 'Legacy chat', message: [msg('m1', 'user', 'hi')] }],
+        },
+      ],
+    }
+    writeFileSync(
+      path.join(dataDir, 'db.json'),
+      JSON.stringify({ _version: 1, database, assets: [legacyAsset] }),
+    )
 
     ensureDbJsonImported(db, dataDir)
 
@@ -416,6 +430,7 @@ describe('repository message-aware load/write', () => {
     }
     expect(hydrated.characters[0].chats[0].id).toBe('chat-1')
     expect(hydrated.characters[0].chats[0].message).toEqual([msg('m1', 'user', 'hi')])
+    expect(loadPersisted(db, dataDir).assets).toEqual([legacyAsset])
   })
 
   it('reclaims rows for chats removed from the database', () => {
