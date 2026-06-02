@@ -20,3 +20,10 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 # Collaboration Guideline
 
 When writing commit titles, use conventional prefixes such as `feat:`, `fix:`, and `refactor:`.
+
+# In Progress
+
+The Fastify variation has not been released yet, so there are currently no real users using it. This means:
+
+* We do not need to worry about DB migrations.
+* The `data` folder is only a copied backup brought over from the original Risuai project, and it is acceptable if that data is lost.
