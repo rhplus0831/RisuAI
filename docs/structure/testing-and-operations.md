@@ -15,6 +15,7 @@ Use `pnpm` for all package scripts.
 | `pnpm check`                 | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                                                 |
 | `pnpm test`                  | Run root/browser Vitest tests.                                                                                                                                                                                 |
 | `pnpm api:test`              | Run Fastify/server Vitest tests.                                                                                                                                                                               |
+| `pnpm api:dev:flag`          | Start Fastify through `util/api-flag-dev.ts`; restart only when `.risu-api-restart` is touched/created, then delete the consumed flag.                                                                         |
 | `pnpm client-thinning:audit` | Run the ts-morph architecture audit (`util/client-thinning-audit.ts`, 26 AST/invariant checks). Exits non-zero on any finding; regression-tested by `util/client-thinning-audit.test.ts` under the root suite. |
 | `pnpm analyze:db <path>`     | Run `util/analyze-database.ts` against a `.risu`, `db.json`, raw database JSON, or `data/` dir; add `--json` for machine-readable output.                                                                      |
 | `pnpm smoke:fastify-browser` | Build site, then run Playwright Fastify browser smoke.                                                                                                                                                         |
@@ -31,6 +32,26 @@ Run API and client in separate terminals:
 pnpm api:dev
 pnpm dev
 ```
+
+For agent-driven work where source edits should not automatically restart the
+API, use the flag-gated runner instead:
+
+```sh
+pnpm api:dev:flag
+```
+
+It starts the same Fastify entrypoint as `api:start`, removes any stale
+`.risu-api-restart` on startup, and restarts only after that file is created or
+edited. Touch the flag file whenever the API process should reset:
+
+```sh
+touch .risu-api-restart
+```
+
+The runner deletes the flag after consuming it, so agents can wait for the file
+to disappear before assuming the restart request was handled.
+
+Set `RISU_API_RESTART_FLAG=/path/to/file` to use a different sentinel.
 
 Vite proxies `/api` to `RISU_API_PROXY_TARGET` or `http://localhost:6002`.
 Fastify defaults to `0.0.0.0:6002`. The browser code is still Fastify-backed in

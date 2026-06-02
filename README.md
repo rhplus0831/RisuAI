@@ -61,6 +61,15 @@ pnpm api:dev
 pnpm dev
 ```
 
+For an agent-controlled API server that does not restart on every source edit,
+run `pnpm api:dev:flag` instead of `pnpm api:dev`. It restarts only when
+`.risu-api-restart` is created or touched, then deletes that flag after the
+restart request is consumed:
+
+```
+touch .risu-api-restart
+```
+
 The Vite dev server proxies `/api/*` requests to the Fastify server at `http://localhost:6002`.
 
 To build the web client with the self-host legal flag and serve it through Fastify:
