@@ -218,6 +218,7 @@ import {
   writeSettingsOnly,
   writeSingleCharacterRow,
   writeSingleChatRow,
+  writeSingleCollectionRow,
   writeSingleCollectionTable,
 } from '../repository.js'
 
@@ -3946,18 +3947,20 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
       const plugin = createPluginRecord(body.plugin)
-      const result = applyMessageFreeJsonCommandMutation<{ pluginId: string }>({
+      const result = applyTargetedCommandMutation<{ pluginId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
           if (plugins.some((candidate) => candidate.name === plugin.name)) {
             throw new ValidationError(`Plugin already exists: ${plugin.name}`)
           }
           plugins.push(plugin)
+          writeSingleCollectionTable(innerDb, 'plugins', plugins)
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginCreated, id: plugin.name },
             extra: { pluginId: plugin.name },
@@ -3983,16 +3986,18 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readPluginPatch(body.patch)
-      const result = applyMessageFreeJsonCommandMutation<{ pluginId: string }>({
+      const result = applyTargetedCommandMutation<{ pluginId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
           const index = requirePluginIndex(plugins, pluginId)
           Object.assign(plugins[index], patch)
+          writeSingleCollectionRow(innerDb, 'plugins', index, plugins[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginUpdated, id: pluginId },
             extra: { pluginId },
@@ -4017,18 +4022,24 @@ export function registerCommandRoutes(
       const pluginId = readPluginId((req.params as { pluginId?: unknown }).pluginId)
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyMessageFreeJsonCommandMutation<{ pluginId: string }>({
+      const result = applyTargetedCommandMutation<{ pluginId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
           const index = requirePluginIndex(plugins, pluginId)
           plugins.splice(index, 1)
+          // The deleted plugin shifts later positions, so rewrite the one table.
+          writeSingleCollectionTable(innerDb, 'plugins', plugins)
+          // `currentPluginProvider` is a settings scalar; co-write settings only
+          // when deleting the active provider clears the pointer.
           if (target.currentPluginProvider === pluginId) {
             target.currentPluginProvider = ''
+            writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginDeleted, id: pluginId },
@@ -4055,16 +4066,18 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
       const enabled = readPluginEnabled(body.enabled)
-      const result = applyMessageFreeJsonCommandMutation<{ pluginId: string; enabled: boolean }>({
+      const result = applyTargetedCommandMutation<{ pluginId: string; enabled: boolean }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
           const index = requirePluginIndex(plugins, pluginId)
           plugins[index].enabled = enabled
+          writeSingleCollectionRow(innerDb, 'plugins', index, plugins[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginEnabled, id: pluginId },
             extra: { pluginId, enabled },
@@ -4123,17 +4136,20 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PluginCommandBody
       const baseRevision = readBaseRevision(body)
       const pluginIds = readPluginIdList(body.pluginIds)
-      const result = applyMessageFreeJsonCommandMutation({
+      const result = applyTargetedCommandMutation({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
           validateFullPluginOrder(plugins, pluginIds)
           const byId = new Map(plugins.map((plugin) => [plugin.name, plugin]))
-          target.plugins = pluginIds.map((id) => byId.get(id))
+          const reordered = pluginIds.map((id) => byId.get(id))
+          target.plugins = reordered
+          writeSingleCollectionTable(innerDb, 'plugins', reordered)
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginReordered },
           }

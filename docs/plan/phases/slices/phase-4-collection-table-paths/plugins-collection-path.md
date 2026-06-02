@@ -1,7 +1,7 @@
 # Plugins Collection Path
 
-Status: planned. Tier 4 — do first (projection already narrow, lowest risk).
-Depends on the Phase 0 writer kit (`writeSingleCollectionTable` /
+Status: implemented. Tier 4 — done first (projection already narrow, lowest
+risk). Uses the Phase 0 writer kit (`writeSingleCollectionTable` /
 `writeSingleCollectionRow`).
 
 ## Source Anchors
@@ -29,6 +29,17 @@ all nine collection tables + all characters. Narrow to the `plugins` table only.
 `patch`/`enable` are clean single-row writes; create/delete/reorder are one-table
 rewrites. The projection is already narrow, so no Phase 5 co-fix is needed — this
 is the lowest-risk Tier-4 family and the audit confirms all routes.
+
+Implemented: all five routes moved from `applyMessageFreeJsonCommandMutation` to
+`applyTargetedCommandMutation` with `mutationPath: targeted-collection`. `patch`
+and `enable` call `writeSingleCollectionRow(db, 'plugins', index, plugins[index])`
+(index == position because `loadCollectionsFromSqlite` orders by position);
+`create`/`delete`/`reorder` call `writeSingleCollectionTable(db, 'plugins', …)`.
+`delete` co-writes settings via `writeSettingsOnly` only when the deleted plugin
+was the active `currentPluginProvider` (the pointer clears). Proven by
+`commandCollectionRange.test.ts` (6 plugins tests: targeted path + exact `writtenTables`
++ character/chat rowid stability + plugins-table rowid stability for the
+single-row edits + the conditional settings co-write).
 
 ## Implementation Scope
 
