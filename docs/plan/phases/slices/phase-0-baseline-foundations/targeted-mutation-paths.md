@@ -1,6 +1,7 @@
 # Targeted Mutation Paths
 
-Status: planned. Depends on [`targeted-writer-kit.md`](targeted-writer-kit.md).
+Status: implemented (2026-06-03). Depends on
+[`targeted-writer-kit.md`](targeted-writer-kit.md).
 
 ## Source Anchors
 
@@ -29,7 +30,11 @@ tier:
 Define the new `mutationPath` labels so the metric and review gates can target
 them: `targeted-settings`, `targeted-character-row`, `targeted-chat-row`,
 `targeted-collection`, `targeted-plugin-storage`. Keep names aligned with the
-existing `targeted-*` family.
+existing `targeted-*` family. As landed, these are the `TARGETED_MUTATION_PATHS`
+constant in `mutations.ts`; Phases 2-5 pass one of them to
+`applyTargetedCommandMutation` and do the narrow write in the callback via the
+writer kit (leaving `writeDatabase` off). Each label also has a review-gate entry
+in `commandMetricGates.ts`.
 
 ## Implementation Scope
 
@@ -53,13 +58,18 @@ existing `targeted-*` family.
 
 ## Done When
 
-- Each `mutationPath` label exists and is reachable from a helper.
-- A focused test routes a sample command through each path and asserts the
-  revision/event shape matches the generic path.
-- The helpers report their `mutationPath` to the metric (Phase 0 metric slice).
+- [x] Each `mutationPath` label exists (`TARGETED_MUTATION_PATHS`) and is reachable
+  from a helper (`applyTargetedCommandMutation` + the writer kit; the fixed-shape
+  `targeted-character-selection` keeps its bespoke helper).
+- [x] A focused test (`__tests__/targetedMutationPaths.test.ts`) routes a sample
+  command through each path and asserts the revision/event shape matches the
+  generic path (one bump, one persisted + one live event, narrow return) and that
+  the targeted write rolls back atomically on a callback error.
+- [x] The helper reports the `mutationPath` and narrow `writtenTables` to the
+  metric, verified against each label's review gate (`assertCommandMetricGate`).
 
 ## Validation
 
-- `pnpm api:test -- server/fastify/__tests__/commands.test.ts server/fastify/__tests__/commandMetrics.test.ts`
-- `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`
+- `pnpm api:test targetedMutationPaths`
+- `pnpm api:test commandMetrics`
 - `pnpm api:test`

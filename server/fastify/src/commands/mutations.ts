@@ -103,6 +103,26 @@ export function readBaseRevision(body: unknown): number {
   return baseRevision as number
 }
 
+/**
+ * The targeted-write `mutationPath` labels (Phase 0). Each Tier write slice
+ * (Phases 2-5) routes its over-broad command onto one of these by passing the
+ * label to `applyTargetedCommandMutation` and doing the narrow write in the
+ * callback via the repository writer kit (leaving `writeDatabase` off), so the
+ * metric and review gates can target the narrowed path. The fixed-shape
+ * `targeted-character-selection` reference path keeps its own bespoke helper;
+ * these labels cover the remaining single-row / single-collection shapes.
+ */
+export const TARGETED_MUTATION_PATHS = {
+  settings: 'targeted-settings',
+  characterRow: 'targeted-character-row',
+  chatRow: 'targeted-chat-row',
+  collection: 'targeted-collection',
+  pluginStorage: 'targeted-plugin-storage',
+} as const
+
+export type TargetedMutationPath =
+  (typeof TARGETED_MUTATION_PATHS)[keyof typeof TARGETED_MUTATION_PATHS]
+
 export function applyTargetedCommandMutation<TExtra extends Record<string, unknown> = {}>(
   args: TargetedCommandMutationArgs<TExtra>,
 ): JsonCommandMutationResult<TExtra> {
