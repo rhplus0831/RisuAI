@@ -551,3 +551,118 @@ describe('Phase 4 presets collection range', () => {
     expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'pt-1' }])
   })
 })
+
+describe('Phase 4 prompt-items collection range', () => {
+  // Seed prompt items (with stable ids so per-id routes resolve them).
+  async function importWithPromptItems(): Promise<number> {
+    const seed = seedDatabase()
+    seed.promptTemplate = [
+      { id: 'item-0', type: 'plain', text: 'i0' },
+      { id: 'item-1', type: 'plain', text: 'i1' },
+      { id: 'item-2', type: 'plain', text: 'i2' },
+    ]
+    return importDatabase(seed)
+  }
+
+  it('POST prompt-items rewrites only the prompt_templates table', async () => {
+    const revision = await importWithPromptItems()
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items',
+      payload: { baseRevision: revision, promptItem: { id: 'item-3', type: 'plain', text: 'i3' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_templates'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('prompt_templates') as Array<{ id: string }>).map((i) => i.id)).toEqual([
+      'item-0',
+      'item-1',
+      'item-2',
+      'item-3',
+    ])
+  })
+
+  it('PATCH prompt-items/:id updates one row in place', async () => {
+    const revision = await importWithPromptItems()
+    const before = rowidSnapshot()
+    const beforeRowids = collectionRowidsByPosition('prompt_templates')
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-items/item-1',
+      payload: { baseRevision: revision, patch: { text: 'patched' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_templates'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(collectionRowidsByPosition('prompt_templates')).toEqual(beforeRowids)
+    const items = readCollection('prompt_templates') as Array<{ id: string; text: string }>
+    expect(items[1]).toMatchObject({ id: 'item-1', text: 'patched' })
+    expect(items[0].text).toBe('i0')
+  })
+
+  it('DELETE prompt-items/:id rewrites only the prompt_templates table', async () => {
+    const revision = await importWithPromptItems()
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/prompt-items/item-1',
+      payload: { baseRevision: revision },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_templates'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('prompt_templates') as Array<{ id: string }>).map((i) => i.id)).toEqual([
+      'item-0',
+      'item-2',
+    ])
+  })
+
+  it('POST prompt-items/enable=false clears only the prompt_templates table', async () => {
+    const revision = await importWithPromptItems()
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items/enable',
+      payload: { baseRevision: revision, enabled: false },
+    })
+
+    // Disabling clears the whole collection — still one table, no characters/chats.
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_templates'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readCollection('prompt_templates')).toEqual([])
+  })
+
+  it('POST prompt-items/reorder rewrites only the prompt_templates table', async () => {
+    const revision = await importWithPromptItems()
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items/reorder',
+      payload: { baseRevision: revision, itemIds: ['item-2', 'item-0', 'item-1'] },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_templates'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('prompt_templates') as Array<{ id: string }>).map((i) => i.id)).toEqual([
+      'item-2',
+      'item-0',
+      'item-1',
+    ])
+  })
+})

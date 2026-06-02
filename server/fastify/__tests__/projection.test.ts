@@ -201,6 +201,25 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields).not.toHaveProperty('language')
   })
 
+  it('reships promptTemplate (not botPresets) for a promptItem refresh', async () => {
+    // Phase 4 prompt-items slice co-fix: a foreign client refreshing on a
+    // promptItem event must see the changed prompt-items collection, not the
+    // unrelated botPresets the resource used to point at.
+    await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      promptTemplate: [{ type: 'plain', text: 'item-0' }],
+      botPresets: [{ id: 'p1', name: 'P1' }],
+      language: 'en',
+    })
+
+    const res = await getProjection('promptItem')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields)).toEqual(['promptTemplate'])
+    expect(body.fields.promptTemplate[0]).toMatchObject({ type: 'plain', text: 'item-0' })
+    expect(body.fields).not.toHaveProperty('botPresets')
+  })
+
   it('returns mode "full" for a sprawling resource (settings)', async () => {
     const revision = await importDatabase({ characters: [], language: 'en' })
     const res = await getProjection('settings')
@@ -256,6 +275,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       'loreBookPage',
     ])
     expect(resourceProjectionFields('asset')).toEqual([])
+    expect(resourceProjectionFields('promptItem')).toEqual(['promptTemplate'])
     expect(resourceProjectionFields('settings')).toBeNull()
     expect(resourceProjectionFields('state')).toBeNull()
   })

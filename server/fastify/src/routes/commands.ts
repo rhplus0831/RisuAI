@@ -216,6 +216,7 @@ import {
   ValidationError,
   writeCharacterChatRows,
   writePluginStorageKey,
+  writePromptTemplateRow,
   writePromptTemplatesTable,
   writeSettingsOnly,
   writeSingleCharacterRow,
@@ -1542,18 +1543,20 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
       const promptItem = createPromptItemRecord(body.promptItem)
-      const result = applyMessageFreeJsonCommandMutation<{ itemId: string }>({
+      const result = applyTargetedCommandMutation<{ itemId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const items = ensurePromptTemplateCollection(target)
           if (items.some((item) => item.id === promptItem.id)) {
             throw new ValidationError(`Duplicate prompt item id: ${promptItem.id}`)
           }
           items.push(promptItem)
+          writePromptTemplatesTable(innerDb, items)
           return {
             event: { ...COMMAND_EVENT_CATALOG.promptItemCreated, id: promptItem.id },
             extra: { itemId: promptItem.id },
@@ -1579,12 +1582,13 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = createPromptItemRecord({ ...readJsonObject(body.patch, 'patch'), id: itemId })
-      const result = applyMessageFreeJsonCommandMutation<{ itemId: string }>({
+      const result = applyTargetedCommandMutation<{ itemId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const items = ensurePromptTemplateCollection(target)
           const index = requirePromptItemIndex(items, itemId)
@@ -1593,6 +1597,7 @@ export function registerCommandRoutes(
             ...patch,
             id: itemId,
           }
+          writePromptTemplateRow(innerDb, index, items[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.promptItemUpdated, id: itemId },
             extra: { itemId },
@@ -1617,16 +1622,18 @@ export function registerCommandRoutes(
       const itemId = readPromptItemId((req.params as { itemId?: unknown }).itemId)
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyMessageFreeJsonCommandMutation<{ itemId: string }>({
+      const result = applyTargetedCommandMutation<{ itemId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const items = ensurePromptTemplateCollection(target)
           const index = requirePromptItemIndex(items, itemId)
           items.splice(index, 1)
+          writePromptTemplatesTable(innerDb, items)
           return {
             event: { ...COMMAND_EVENT_CATALOG.promptItemDeleted, id: itemId },
             extra: { itemId },
@@ -1654,17 +1661,23 @@ export function registerCommandRoutes(
         throw new ValidationError('enabled must be a boolean')
       }
       const enabled = body.enabled
-      const result = applyMessageFreeJsonCommandMutation<{ enabled: boolean }>({
+      const result = applyTargetedCommandMutation<{ enabled: boolean }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
+          // enable toggles whether the prompt-items collection exists at all:
+          // enabling ensures the array, disabling clears it. Either way it is a
+          // single-table write — the `prompt_templates` rows, never another table.
           if (enabled) {
-            ensurePromptTemplateCollection(target)
+            const items = ensurePromptTemplateCollection(target)
+            writePromptTemplatesTable(innerDb, items)
           } else {
             delete target.promptTemplate
+            writePromptTemplatesTable(innerDb, [])
           }
           return {
             event: COMMAND_EVENT_CATALOG.promptItemsEnabled,
@@ -1693,17 +1706,20 @@ export function registerCommandRoutes(
         throw new ValidationError('itemIds must be an array')
       }
       const itemIds = body.itemIds
-      const result = applyMessageFreeJsonCommandMutation({
+      const result = applyTargetedCommandMutation({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const items = ensurePromptTemplateCollection(target)
           validateFullPromptItemIdList(items, itemIds)
           const byId = new Map(items.map((item) => [item.id, item]))
-          target.promptTemplate = itemIds.map((id) => byId.get(id)!)
+          const reordered = itemIds.map((id) => byId.get(id)!)
+          target.promptTemplate = reordered
+          writePromptTemplatesTable(innerDb, reordered)
           return {
             event: COMMAND_EVENT_CATALOG.promptItemReordered,
           }

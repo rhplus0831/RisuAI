@@ -1,6 +1,6 @@
 # Prompt Items Collection Path
 
-Status: planned. Tier 4. Depends on the Phase 0 writer kit. Carries a Phase 5
+Status: implemented. Tier 4. Uses the Phase 0 writer kit. Carried the Phase 5
 projection-field co-fix.
 
 ## Source Anchors
@@ -26,10 +26,23 @@ rewrite all nine collection tables + all characters. Narrow to the
 | `POST prompt-items/enable` (1562) | single-row `prompt_templates`. |
 | `POST prompt-items/reorder` (1601) | `prompt_templates` table. |
 
-No pointer scalar rides along. Projection-field bug: `promptItem` maps to
-`['botPresets']`, so a foreign refresh never reflects the changed `promptTemplate`
-— fix it to `['promptTemplate']` in this slice (see
+No pointer scalar rides along. Projection-field bug: `promptItem` mapped to
+`['botPresets']`, so a foreign refresh never reflected the changed `promptTemplate`
+— fixed to `['promptTemplate']` in this slice (see
 [`../phase-5-projection-range-narrowing/projection-field-bug-fixes.md`](../phase-5-projection-range-narrowing/projection-field-bug-fixes.md)).
+
+Implemented: all five routes moved to `applyTargetedCommandMutation` with
+`mutationPath: targeted-collection`, writing only `prompt_templates` through the
+named `writePromptTemplatesTable` / `writePromptTemplateRow` repository wrappers
+(so the `'promptTemplate'` literal stays out of `routes/commands.ts`, keeping the
+EC4 audit scan valid). `patch` is a single-row `writePromptTemplateRow`;
+`create`/`delete`/`reorder` rewrite the table. `enable` is a **full-table** toggle,
+not the single-row write the table above guessed: `enabled:false` deletes the
+whole collection (clears the table) and `enabled:true` ensures it exists, so it
+rewrites `prompt_templates` either way. The `promptItem` projection now maps to
+`['promptTemplate']`. Proven by `commandCollectionRange.test.ts` (5 prompt-items
+tests) plus two `projection.test.ts` assertions (a `promptItem` refresh reships
+`promptTemplate`, and the resource-field map check).
 
 ## Implementation Scope
 

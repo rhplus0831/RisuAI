@@ -43,7 +43,10 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   lorebook: ['characters', 'modules', 'loreBook', 'loreBookPage'],
   preset: ['botPresets', 'botPresetsId'],
   prompt: ['botPresets'],
-  promptItem: ['botPresets'],
+  // Prompt-item commands edit the `promptTemplate` collection, so a foreign
+  // refresh must reship that field — not `botPresets` (the prior bug never
+  // reflected the changed prompt items).
+  promptItem: ['promptTemplate'],
   persona: ['personas', 'selectedPersona'],
   module: ['modules', 'enabledModules', 'loadouts', 'characters'],
   plugin: ['plugins', 'currentPluginProvider'],
