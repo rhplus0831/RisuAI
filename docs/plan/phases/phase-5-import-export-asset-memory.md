@@ -2,8 +2,8 @@
 
 Status: implemented. Revision/event audit, event atomicity, expanded import
 limits, bundle export streaming, per-generation asset caching, and asset
-mutation durability are complete. A candidate measurement slice exists for
-ordinary `.risu` export materialization.
+mutation durability are complete. The ordinary `.risu` export materialization
+measurement is implemented; a streaming envelope writer remains evidence-gated.
 
 Goal: reduce large-payload memory pressure and make asset mutation durability
 explicit.
@@ -36,8 +36,9 @@ explicit.
   implemented; repeated stored-asset references in one prompt assembly share a
   request-scoped read/base64 cache.
 - [`ordinary-risu-export-materialization.md`](slices/phase-5-import-export-asset-memory/ordinary-risu-export-materialization.md) -
-  candidate; measure ordinary `.risu` export peak materialization before
-  changing the envelope encoder.
+  measurement implemented; the ordinary and bundle export routes emit a
+  `risusave_export` snapshot/encode/output split. A streaming envelope writer
+  remains gated on large-export evidence.
 
 ## Exit Criteria
 

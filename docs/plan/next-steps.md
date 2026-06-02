@@ -19,31 +19,36 @@ not a broad cleanup pass.
 
 ## Current Best Targets
 
-All original numbered-phase implementation slices are implemented. The Phase 2
-prompt-construction measurement is now implemented for focused review runs. The
-2026-06-02 active-risk analysis added candidate measurement slices for the
-remaining performance risks; use
-[`active-risk-analysis.md`](active-risk-analysis.md) for the evidence and
-[`latest-verification.md`](latest-verification.md) for the most recent
+All original numbered-phase implementation slices are implemented, and all four
+remaining performance risks now have an implemented opt-in measurement (Phase 2
+prompt-construction stages, Phase 3 sprawling-resource fallback and asset-byte
+fanout, Phase 5 export materialization). Use
+[`active-risk-analysis.md`](active-risk-analysis.md) for the per-risk findings
+and [`latest-verification.md`](latest-verification.md) for the most recent
 maintained verification.
 
-Prefer one of these next:
+The next work is **evidence-gated runtime narrowing**, not more measurement
+scaffolding. Each runtime slice must be driven by one of these measurements on
+representative or real user corpora; the focused fixtures did not justify any
+narrowing on their own. Prefer one of these only once real-corpus evidence
+names a concrete dominant cost:
 
-1. Run the Phase 2
+1. Phase 2 prompt construction: run the
    [`generation-prompt-construction-pass-measurement.md`](phases/slices/phase-2-command-write-cost/generation-prompt-construction-pass-measurement.md)
-   metric summary against lorebook-heavy, asset-heavy, memory-enabled, or real
-   user corpora before changing runtime behavior. A follow-up implementation
-   slice should name the single stage that dominates.
-2. Run a Phase 3 candidate only after diagnostics show a concrete expensive
-   fallback or fanout workflow:
+   summary on lorebook-heavy, asset-heavy, memory-enabled, or real user corpora;
+   a follow-up slice should name the single dominant stage.
+2. Phase 3 targeted resource: only after the per-resource full-bootstrap counts
+   in
    [`sprawling-resource-full-bootstrap-measurement.md`](phases/slices/phase-3-read-projection-efficiency/sprawling-resource-full-bootstrap-measurement.md)
-   or
-   [`asset-byte-fanout-measurement.md`](phases/slices/phase-3-read-projection-efficiency/asset-byte-fanout-measurement.md).
-3. Run the Phase 5 candidate
+   show one frequent, expensive resource family — then name its exact field
+   projection contract.
+3. Phase 3 bulk-byte route: only after the per-id baseline in
+   [`asset-byte-fanout-measurement.md`](phases/slices/phase-3-read-projection-efficiency/asset-byte-fanout-measurement.md)
+   shows high `repeatedReads` the browser cache does not already absorb.
+4. Phase 5 streaming writer: only after the snapshot/encode/output split in
    [`ordinary-risu-export-materialization.md`](phases/slices/phase-5-import-export-asset-memory/ordinary-risu-export-materialization.md)
-   only after export-size or memory evidence justifies a streaming-compatible
-   `.risu` encoder.
-4. Refresh [`latest-verification.md`](latest-verification.md) after the next
+   shows a large materialized-buffer peak on a real export.
+5. Refresh [`latest-verification.md`](latest-verification.md) after the next
    full or focused verification run.
 
 ## Not First

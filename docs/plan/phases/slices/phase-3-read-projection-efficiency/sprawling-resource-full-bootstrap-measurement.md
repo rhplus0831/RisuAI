@@ -55,7 +55,7 @@ The measurement is opt-in and changes no route behavior:
 
 ### Findings
 
-- The `mode: 'full'` projection *response* payload is tiny (47-56 bytes for
+- The `mode: 'full'` projection _response_ payload is tiny (47-56 bytes for
   `settings`/`state`/`pluginStorage`/unknown in the focused fixture): it only
   tells the client to bootstrap. The real cost of a sprawling-resource fallback
   is the subsequent full bootstrap the client performs, not the projection

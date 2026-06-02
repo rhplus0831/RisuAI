@@ -1,8 +1,8 @@
 # Phase 3: Read Projection Efficiency
 
 Status: read optimizations implemented; full-resync reason budget implemented.
-Candidate measurement slices exist for sprawling-resource full-bootstrap
-fallbacks and general asset-byte fanout.
+The sprawling-resource full-bootstrap and general asset-byte fanout measurements
+are implemented; runtime narrowing for both remains evidence-gated.
 
 Goal: reduce repeated REST reads and full-projection work for targeted
 projection, asset metadata, bulk hydration, and full resync fallbacks.
@@ -23,9 +23,9 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
 - [`bulk-chat-lorebook-reads.md`](slices/phase-3-read-projection-efficiency/bulk-chat-lorebook-reads.md)
 - [`full-bootstrap-resync-budget.md`](slices/phase-3-read-projection-efficiency/full-bootstrap-resync-budget.md)
 - [`sprawling-resource-full-bootstrap-measurement.md`](slices/phase-3-read-projection-efficiency/sprawling-resource-full-bootstrap-measurement.md) -
-  candidate
+  measurement implemented
 - [`asset-byte-fanout-measurement.md`](slices/phase-3-read-projection-efficiency/asset-byte-fanout-measurement.md) -
-  candidate
+  measurement implemented
 
 ## Exit Criteria
 
@@ -67,8 +67,16 @@ projection, asset metadata, bulk hydration, and full resync fallbacks.
   plus an unexpected-reason counter, and bootstrap tests cover replay
   unavailable, no baseline, projection error, projection full mode, and revision
   gap fallbacks.
+- Sprawling-resource full-bootstrap fallbacks are now measured: the
+  `projection_response` metric records `mode`/`fallbackClass` (sprawling vs
+  unknown) and the client diagnostic attributes each fallback per resource. The
+  full-mode response is tiny; the cost is the downstream full bootstrap.
+- General asset-byte fanout is now measured: the `asset_byte_read` route metric
+  and client `assetByteReads` aggregate give a per-id request/repeat baseline at
+  the byte boundary. The route's `immutable` cache headers already collapse most
+  repeated `<img src>` fetches.
 
 ## Validation
 
-- `pnpm api:test -- server/fastify/__tests__/projection.test.ts`
-- `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/chatMessageHydration.test.ts`
+- `pnpm api:test -- server/fastify/__tests__/projection.test.ts server/fastify/__tests__/assets.test.ts`
+- `pnpm test -- src/ts/bootstrap.test.ts src/ts/server/chatMessageHydration.test.ts src/ts/server/assets.test.ts`
