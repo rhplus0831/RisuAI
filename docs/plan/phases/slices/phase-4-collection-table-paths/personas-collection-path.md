@@ -1,6 +1,6 @@
 # Personas Collection Path
 
-Status: planned. Tier 4. Depends on the Phase 0 writer kit. Carries a Phase 5
+Status: implemented. Tier 4. Uses the Phase 0 writer kit. Carried the Phase 5
 projection-field co-fix.
 
 ## Source Anchors
@@ -29,6 +29,20 @@ select/delete also write the legacy mirror scalars (`username`, `userIcon`,
 `personaPrompt`, `userNote`) via `mirrorLegacyProfile` — these are not in the
 persona projection field set. Projection-field fix: add them to the `persona`
 resource (they read straight off the settings row).
+
+Implemented: all five routes moved to `applyTargetedCommandMutation` with
+`mutationPath: targeted-collection`. `patch` is a single-row
+`writeSingleCollectionRow`; create/delete/reorder rewrite the `personas` table;
+`select` rewrites it only when the `saveCurrent` snapshot edits it. Settings are
+co-written via `writeSettingsOnly` only when the `selectedPersona` pointer moved
+or `mirrorLegacyProfile` rewrote the four legacy scalars — so a no-mirror create
+or a pointer-stable patch stays `personas`-only, and a `saveCurrent:false,
+mirrorLegacyProfile:false` select narrows to `settings`-only. create reaches a
+single-table write (no `message-free-downgrade` floor needed). The `persona`
+projection now reships `['personas','selectedPersona','username','userIcon',
+'personaPrompt','userNote']`. Proven by `commandCollectionRange.test.ts` (7
+personas tests, including the mirror/no-mirror and pointer-only shapes) plus two
+`projection.test.ts` assertions.
 
 ## Implementation Scope
 

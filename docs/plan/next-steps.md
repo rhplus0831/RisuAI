@@ -23,12 +23,15 @@ batch. Avoid broad cleanup passes.
 
 Phase 0 (baseline foundations), Phase 1 (the message-free floor sweep,
 `208e538a`), Phase 2 (settings + plugin storage, `56ddd865`), and Phase 3 (single
-character/chat-row paths, `07971179`→`65e57c0a`) are implemented. Recommended
-order from here:
+character/chat-row paths, `07971179`→`65e57c0a`) are implemented, and Phase 4 is
+in progress: the plugins, bot_presets, prompt_templates, and personas families
+have landed (with the `promptItem`→`promptTemplate` and `persona` mirror-scalar
+projection co-fixes). Recommended order from here:
 
-1. Phase 4 collection families, plugins first (projection already narrow),
-   then the rest with their pointer-settings co-writes and the Phase 5
-   projection-field bug co-fixes.
+1. The remaining Phase 4 collection families — translator-presets, loadouts,
+   lorebooks, modules — each with its pointer-settings co-write and any Phase 5
+   projection-field co-fix (`loadout`→`lastLoadedLoadoutName`,
+   `lorebook`→`loreBookPage`, the modules scripts/triggers caveat).
 2. Phase 5 `lorebook` resource split once a global-lorebook command is
    narrowed, plus the Phase 5 character/chat projection branches that pair with
    the Phase 3 writes already landed.
@@ -52,8 +55,10 @@ order from here:
 2. Phase 1 floor — done (`208e538a`).
 3. Phase 2 settings + plugin storage — done (`56ddd865`).
 4. Phase 3 single character/chat-row paths — done (`07971179`→`65e57c0a`).
-5. Phase 4 (next, plugins first) with Phase 5 co-fixes, then the Phase 5
-   `lorebook` split + character/chat projection branches.
+5. Phase 4 collection families — plugins, presets, prompt-items, personas done
+   (with their Phase 5 projection co-fixes); translator-presets, loadouts,
+   lorebooks, modules remain, then the Phase 5 `lorebook` split + character/chat
+   projection branches.
 6. Refresh [`latest-verification.md`](latest-verification.md) after each tier's
    focused and full run.
 

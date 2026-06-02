@@ -47,7 +47,16 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // refresh must reship that field — not `botPresets` (the prior bug never
   // reflected the changed prompt items).
   promptItem: ['promptTemplate'],
-  persona: ['personas', 'selectedPersona'],
+  // persona select/delete also mirror the legacy profile scalars into settings
+  // (when mirrorLegacyProfile is on), so a foreign refresh must reship them too.
+  persona: [
+    'personas',
+    'selectedPersona',
+    'username',
+    'userIcon',
+    'personaPrompt',
+    'userNote',
+  ],
   module: ['modules', 'enabledModules', 'loadouts', 'characters'],
   plugin: ['plugins', 'currentPluginProvider'],
   loadout: ['loadouts'],

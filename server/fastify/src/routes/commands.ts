@@ -1747,21 +1747,26 @@ export function registerCommandRoutes(
         'mirrorLegacyProfile',
         false,
       )
-      const result = applyMessageFreeJsonCommandMutation<{ personaId: string }>({
+      const result = applyTargetedCommandMutation<{ personaId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
           if (findPersonaIndex(personas, persona.id) !== -1) {
             throw new ValidationError(`Duplicate persona id: ${persona.id}`)
           }
           personas.push(persona)
+          writeSingleCollectionTable(innerDb, 'personas', personas)
+          // Mirroring moves the selected pointer + the 4 legacy profile scalars,
+          // all settings; co-write settings only when the request mirrors.
           if (mirror) {
             target.selectedPersona = personas.length - 1
             mirrorLegacyProfile(target, persona)
+            writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.personaCreated, id: persona.id },
@@ -1796,12 +1801,13 @@ export function registerCommandRoutes(
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== personaId) {
         throw new ValidationError('patch.id must match personaId')
       }
-      const result = applyMessageFreeJsonCommandMutation<{ personaId: string }>({
+      const result = applyTargetedCommandMutation<{ personaId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
           const index = requirePersonaIndex(personas, personaId)
@@ -1810,8 +1816,12 @@ export function registerCommandRoutes(
             ...patch,
             id: personaId,
           }
+          writeSingleCollectionRow(innerDb, 'personas', index, personas[index])
+          // Editing the selected persona with mirroring refreshes the legacy
+          // profile scalars; co-write settings only then.
           if (mirror && target.selectedPersona === index) {
             mirrorLegacyProfile(target, personas[index])
+            writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.personaUpdated, id: personaId },
@@ -1847,7 +1857,7 @@ export function registerCommandRoutes(
         true,
       )
       const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
-      const result = applyMessageFreeJsonCommandMutation<{
+      const result = applyTargetedCommandMutation<{
         personaId: string
         selectedPersonaId: string | null
       }>({
@@ -1855,12 +1865,14 @@ export function registerCommandRoutes(
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
           if (personas.length <= 1) {
             throw new ValidationError('Cannot delete the only persona')
           }
+          const beforeSelected = target.selectedPersona
           if (saveCurrent) {
             saveSelectedPersonaSnapshot(target, personas)
           }
@@ -1878,8 +1890,18 @@ export function registerCommandRoutes(
 
           const selectedIndex = nextSelectedId ? requirePersonaIndex(personas, nextSelectedId) : -1
           target.selectedPersona = selectedIndex
+          let mirrored = false
           if (mirror && selectedIndex >= 0) {
             mirrorLegacyProfile(target, personas[selectedIndex])
+            mirrored = true
+          }
+
+          // The splice shifts positions, so the persona table is always rewritten.
+          writeSingleCollectionTable(innerDb, 'personas', personas)
+          // `selectedPersona` + the mirror scalars are settings; co-write settings
+          // when the pointer moved or mirroring rewrote the legacy profile.
+          if (mirrored || target.selectedPersona !== beforeSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
           }
 
           return {
@@ -1915,21 +1937,33 @@ export function registerCommandRoutes(
         true,
       )
       const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', true)
-      const result = applyMessageFreeJsonCommandMutation<{ personaId: string }>({
+      const result = applyTargetedCommandMutation<{ personaId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
+          const beforeSelected = target.selectedPersona
           if (saveCurrent) {
             saveSelectedPersonaSnapshot(target, personas)
           }
           const index = requirePersonaIndex(personas, personaId)
           target.selectedPersona = index
+          let mirrored = false
           if (mirror) {
             mirrorLegacyProfile(target, personas[index])
+            mirrored = true
+          }
+          // The persona table is rewritten only when save-current snapshotted the
+          // outgoing persona into it; the pointer + mirror scalars live in settings.
+          if (saveCurrent) {
+            writeSingleCollectionTable(innerDb, 'personas', personas)
+          }
+          if (mirrored || target.selectedPersona !== beforeSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.personaSelected, id: personaId },
@@ -1958,14 +1992,16 @@ export function registerCommandRoutes(
         throw new ValidationError('personaIds must be an array')
       }
       const personaIds = body.personaIds
-      const result = applyMessageFreeJsonCommandMutation<{ selectedPersonaId: string | null }>({
+      const result = applyTargetedCommandMutation<{ selectedPersonaId: string | null }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
+          const beforeSelected = target.selectedPersona
           const currentSelectedId = selectedPersonaId(target, personas)
           validateFullPersonaIdList(personas, personaIds)
           const byId = new Map(personas.map((persona) => [persona.id, persona]))
@@ -1976,6 +2012,12 @@ export function registerCommandRoutes(
             : reordered.length > 0
               ? 0
               : -1
+          writeSingleCollectionTable(innerDb, 'personas', reordered)
+          // `selectedPersona` is a settings scalar; co-write settings only when
+          // the reorder moved the selected persona to a new index.
+          if (target.selectedPersona !== beforeSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
+          }
           return {
             event: COMMAND_EVENT_CATALOG.personaReordered,
             extra: { selectedPersonaId: selectedPersonaId(target, reordered) },

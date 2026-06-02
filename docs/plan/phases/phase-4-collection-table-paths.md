@@ -1,6 +1,7 @@
 # Phase 4: Collection-Table Paths
 
-Status: planned. Depends on the Phase 0 writer kit
+Status: in progress (4 of 8 slices landed: plugins, presets, prompt-items,
+personas). Depends on the Phase 0 writer kit
 (`writeSingleCollectionTable` / `writeSingleCollectionRow`, `writeSettingsOnly`)
 and review gates.
 
@@ -27,18 +28,19 @@ slice owns one collection family and its projection-field co-fix.
 Ordered easiest/lowest-risk first.
 
 - [`plugins-collection-path.md`](slices/phase-4-collection-table-paths/plugins-collection-path.md) -
-  `plugins` (create 3823, patch 3859, delete 3894, enable 3931, reorder 3998).
-  Projection already narrow → lowest risk; do first.
+  IMPLEMENTED. `plugins` create/patch/delete/enable/reorder.
+  Projection already narrow → lowest risk; done first.
 - [`presets-collection-path.md`](slices/phase-4-collection-table-paths/presets-collection-path.md) -
-  `bot_presets` (create 1105, patch 1143, delete 1185, copy 1251, select 1299,
-  import 1341, reorder 1379). select/delete with `apply=true` also write
-  `prompt_templates` + ~73 settings scalars.
+  IMPLEMENTED. `bot_presets` create/patch/delete/copy/select/import/reorder.
+  select/delete with `apply=true` also write `prompt_templates` + ~73 settings
+  scalars (via the named `writePromptTemplatesTable` wrapper).
 - [`prompt-items-collection-path.md`](slices/phase-4-collection-table-paths/prompt-items-collection-path.md) -
-  `prompt_templates` (create 1453, patch 1489, delete 1528, enable 1562, reorder
-  1601) + the `promptItem` projection-field fix.
+  IMPLEMENTED. `prompt_templates` create/patch/delete/enable/reorder + the
+  `promptItem` projection-field fix (`['botPresets']`→`['promptTemplate']`).
 - [`personas-collection-path.md`](slices/phase-4-collection-table-paths/personas-collection-path.md) -
-  `personas` (create 1637, patch 1682, delete 1732, select 1804, reorder 1850) +
-  `selectedPersona` + the legacy mirror scalars.
+  IMPLEMENTED. `personas` create/patch/delete/select/reorder +
+  `selectedPersona` + the legacy mirror scalars (added to the `persona`
+  projection).
 - [`translator-presets-collection-path.md`](slices/phase-4-collection-table-paths/translator-presets-collection-path.md) -
   `translator_presets` (create 1895, patch 1936, delete 1984) and select (2050,
   reclassified here from Tier 1) + unconditional settings write.

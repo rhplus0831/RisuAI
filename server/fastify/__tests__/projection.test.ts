@@ -220,6 +220,37 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields).not.toHaveProperty('botPresets')
   })
 
+  it('includes the legacy mirror scalars for a persona refresh', async () => {
+    // Phase 4 personas slice co-fix: select/delete mirror the profile into the
+    // username/userIcon/personaPrompt/userNote settings scalars, so a foreign
+    // refresh must reship them alongside personas + selectedPersona.
+    await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      personas: [{ id: 'persona-a', name: 'Persona A' }],
+      selectedPersona: 0,
+      username: 'Persona A',
+      userIcon: '',
+      personaPrompt: 'pa-prompt',
+      userNote: 'pa-note',
+      language: 'en',
+    })
+
+    const res = await getProjection('persona')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields).sort()).toEqual([
+      'personaPrompt',
+      'personas',
+      'selectedPersona',
+      'userIcon',
+      'userNote',
+      'username',
+    ])
+    expect(body.fields.username).toBe('Persona A')
+    expect(body.fields.personaPrompt).toBe('pa-prompt')
+    expect(body.fields).not.toHaveProperty('language')
+  })
+
   it('returns mode "full" for a sprawling resource (settings)', async () => {
     const revision = await importDatabase({ characters: [], language: 'en' })
     const res = await getProjection('settings')
@@ -276,6 +307,14 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     ])
     expect(resourceProjectionFields('asset')).toEqual([])
     expect(resourceProjectionFields('promptItem')).toEqual(['promptTemplate'])
+    expect(resourceProjectionFields('persona')).toEqual([
+      'personas',
+      'selectedPersona',
+      'username',
+      'userIcon',
+      'personaPrompt',
+      'userNote',
+    ])
     expect(resourceProjectionFields('settings')).toBeNull()
     expect(resourceProjectionFields('state')).toBeNull()
   })
