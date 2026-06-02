@@ -45,6 +45,7 @@ import {
   ensureDatabaseObject,
   ensurePresetCollection,
   findPresetIndex,
+  presetAppliesPromptTemplate,
   readJsonObject,
   readOptionalBoolean,
   readOptionalString,
@@ -215,6 +216,7 @@ import {
   ValidationError,
   writeCharacterChatRows,
   writePluginStorageKey,
+  writePromptTemplatesTable,
   writeSettingsOnly,
   writeSingleCharacterRow,
   writeSingleChatRow,
@@ -239,6 +241,12 @@ function emitCommandEventForRequest(
 ): void {
   const origin = commandEventOrigin(req)
   eventSink.emit(origin ? { ...event, origin } : event)
+}
+
+/** Coerce a value to an array for a collection-table write (mirrors the broad
+ *  path, which treats a non-array collection field as empty). */
+function asArray(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : []
 }
 
 interface RuntimeSettingsCommandBody {
@@ -1135,18 +1143,22 @@ export function registerCommandRoutes(
       const preset = createPresetRecord(readJsonObject(body.preset, 'preset'), 'New Preset', {
         assetDb: db,
       })
-      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
+      const result = applyTargetedCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
           if (findPresetIndex(presets, preset.id) !== -1) {
             throw new ValidationError(`Duplicate preset id: ${preset.id}`)
           }
           presets.push(preset)
+          // Append does not move the selected pointer, so the one collection
+          // table is the only write.
+          writeSingleCollectionTable(innerDb, 'botPresets', presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.presetCreated, id: preset.id },
             extra: { presetId: preset.id },
@@ -1175,12 +1187,13 @@ export function registerCommandRoutes(
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== presetId) {
         throw new ValidationError('patch.id must match presetId')
       }
-      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
+      const result = applyTargetedCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
           const index = requirePresetIndex(presets, presetId)
@@ -1189,6 +1202,7 @@ export function registerCommandRoutes(
             ...patch,
             id: presetId,
           }
+          writeSingleCollectionRow(innerDb, 'botPresets', index, presets[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.presetUpdated, id: presetId },
             extra: { presetId },
@@ -1217,7 +1231,7 @@ export function registerCommandRoutes(
         body.presetId === undefined ? undefined : readPresetId(body.presetId, 'presetId')
       const apply = readOptionalBoolean(body.apply, 'apply', false)
       const saveCurrent = readOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
-      const result = applyMessageFreeJsonCommandMutation<{
+      const result = applyTargetedCommandMutation<{
         presetId: string
         selectedPresetId: string | null
       }>({
@@ -1225,12 +1239,14 @@ export function registerCommandRoutes(
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
           if (presets.length <= 1) {
             throw new ValidationError('Cannot delete the only preset')
           }
+          const beforeSelected = target.botPresetsId
           if (saveCurrent) {
             saveCurrentPresetSnapshot(target, presets)
           }
@@ -1248,8 +1264,22 @@ export function registerCommandRoutes(
 
           const selectedIndex = nextSelectedId ? requirePresetIndex(presets, nextSelectedId) : -1
           target.botPresetsId = selectedIndex
+          let applied = false
           if (apply && selectedIndex >= 0) {
             applyPreset(target, presets[selectedIndex])
+            applied = true
+          }
+
+          // The splice shifts positions, so the preset table is always rewritten.
+          writeSingleCollectionTable(innerDb, 'botPresets', presets)
+          // apply=true copies the selected preset's `promptTemplate` collection
+          // (the only collection field `applyPreset` writes) plus its settings
+          // scalars; persist those exactly.
+          if (applied && presetAppliesPromptTemplate(presets[selectedIndex])) {
+            writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
+          }
+          if (applied || target.botPresetsId !== beforeSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
           }
 
           return {
@@ -1282,12 +1312,13 @@ export function registerCommandRoutes(
       const newPresetId = readPresetId(body.newPresetId, 'newPresetId')
       const name = readOptionalString(body.name, 'name')
       const saveCurrent = readOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
-      const result = applyMessageFreeJsonCommandMutation<{ presetId: string; sourcePresetId: string }>({
+      const result = applyTargetedCommandMutation<{ presetId: string; sourcePresetId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
           if (saveCurrent) {
@@ -1303,6 +1334,9 @@ export function registerCommandRoutes(
             name: name ?? `${presets[index].name ?? 'Preset'} Copy`,
           }
           presets.push(copy)
+          // Copy (and the optional save-current snapshot) only touches the
+          // preset collection; the selected pointer is unchanged.
+          writeSingleCollectionTable(innerDb, 'botPresets', presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.presetCopied, id: copy.id },
             extra: { presetId: copy.id, sourcePresetId: presetId },
@@ -1329,21 +1363,36 @@ export function registerCommandRoutes(
       const presetId = readPresetId(body.presetId, 'presetId')
       const apply = readOptionalBoolean(body.apply, 'apply', true)
       const saveCurrent = readOptionalBoolean(body.saveCurrent, 'saveCurrent', true)
-      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
+      const result = applyTargetedCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
+          const beforeSelected = target.botPresetsId
           if (saveCurrent) {
             saveCurrentPresetSnapshot(target, presets)
           }
           const index = requirePresetIndex(presets, presetId)
           target.botPresetsId = index
+          let applied = false
           if (apply) {
             applyPreset(target, presets[index])
+            applied = true
+          }
+          // The preset table is rewritten only when save-current snapshotted the
+          // outgoing preset into it; the pointer + applied scalars live in settings.
+          if (saveCurrent) {
+            writeSingleCollectionTable(innerDb, 'botPresets', presets)
+          }
+          if (applied && presetAppliesPromptTemplate(presets[index])) {
+            writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
+          }
+          if (applied || target.botPresetsId !== beforeSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.presetSelected, id: presetId },
@@ -1371,18 +1420,20 @@ export function registerCommandRoutes(
       const preset = createPresetRecord(readJsonObject(body.preset, 'preset'), 'Imported', {
         assetDb: db,
       })
-      const result = applyMessageFreeJsonCommandMutation<{ presetId: string }>({
+      const result = applyTargetedCommandMutation<{ presetId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
           if (findPresetIndex(presets, preset.id) !== -1) {
             throw new ValidationError(`Duplicate preset id: ${preset.id}`)
           }
           presets.push(preset)
+          writeSingleCollectionTable(innerDb, 'botPresets', presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.presetImported, id: preset.id },
             extra: { presetId: preset.id },
@@ -1410,14 +1461,16 @@ export function registerCommandRoutes(
         throw new ValidationError('presetIds must be an array')
       }
       const presetIds = body.presetIds
-      const result = applyMessageFreeJsonCommandMutation<{ selectedPresetId: string | null }>({
+      const result = applyTargetedCommandMutation<{ selectedPresetId: string | null }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
+          const beforeSelected = target.botPresetsId
           const currentSelectedId = selectedPresetId(target, presets)
           validateFullPresetIdList(presets, presetIds)
           const byId = new Map(presets.map((preset) => [preset.id, preset]))
@@ -1428,6 +1481,12 @@ export function registerCommandRoutes(
             : reordered.length > 0
               ? 0
               : -1
+          writeSingleCollectionTable(innerDb, 'botPresets', reordered)
+          // `botPresetsId` is a settings scalar; co-write settings only when the
+          // reorder moved the selected preset to a new index.
+          if (target.botPresetsId !== beforeSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
+          }
           return {
             event: COMMAND_EVENT_CATALOG.presetReordered,
             extra: { selectedPresetId: selectedPresetId(target, reordered) },

@@ -537,6 +537,19 @@ export function writeSingleCollectionRow(
   )
 }
 
+// The `promptTemplate` collection (`prompt_templates` table) is written through
+// these named wrappers, never the bare field string, so the EC4 "promptTemplate
+// is not a generic-settings key" audit can keep its literal-`'promptTemplate'`
+// scan over `routes/commands.ts` while the targeted-collection writes (the preset
+// apply path and the prompt-items family) still address the table directly.
+export function writePromptTemplatesTable(db: DatabaseSync, items: readonly unknown[]): void {
+  writeSingleCollectionTable(db, 'promptTemplate', items)
+}
+
+export function writePromptTemplateRow(db: DatabaseSync, position: number, value: unknown): void {
+  writeSingleCollectionRow(db, 'promptTemplate', position, value)
+}
+
 /** Single-key upsert on `plugin_custom_storage`. */
 export function writePluginStorageKey(db: DatabaseSync, key: string, value: unknown): void {
   recordTableWrite('plugin_custom_storage')

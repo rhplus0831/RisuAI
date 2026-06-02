@@ -61,11 +61,16 @@ function seedDatabase(): Record<string, unknown> {
     loreBookPage: 0,
     currentPluginProvider: 'plugin-a',
     enabledModules: [],
-    botPresetsId: 'preset-0',
+    botPresetsId: 0,
+    // A "current" settings scalar + prompt items that `applyPreset` overwrites.
+    temperature: 0.5,
     selectedPersona: 0,
     mirrorLegacyProfile: false,
     hypaV3Presets: [{ name: 'hypa-0' }],
-    botPresets: [{ name: 'preset-0' }, { name: 'preset-1' }],
+    botPresets: [
+      { id: 'preset-0', name: 'P0', temperature: 0.1, promptTemplate: [{ type: 'plain', text: 'pt-0' }] },
+      { id: 'preset-1', name: 'P1', temperature: 0.9, promptTemplate: [{ type: 'plain', text: 'pt-1' }] },
+    ],
     modules: [{ id: 'mod-a', name: 'Module A' }],
     plugins: [
       pluginRecord('plugin-a'),
@@ -79,7 +84,7 @@ function seedDatabase(): Record<string, unknown> {
       { id: 'lore-1', name: 'lore-1', data: [] },
     ],
     translatorPresets: [{ id: 'tp-a', name: 'TP A' }],
-    promptTemplate: [{ type: 'plain', text: 'hi' }],
+    promptTemplate: [{ type: 'plain', text: 'current' }],
     pluginCustomStorage: {},
     characters: [
       {
@@ -364,5 +369,185 @@ describe('Phase 4 plugins collection range', () => {
       'plugin-a',
       'plugin-b',
     ])
+  })
+})
+
+describe('Phase 4 presets collection range', () => {
+  it('POST presets rewrites only the bot_presets table', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/presets',
+      payload: { baseRevision: revision, preset: { id: 'preset-2', name: 'P2' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['bot_presets'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readCollection('bot_presets').map((p) => (p as { id: string }).id)).toEqual([
+      'preset-0',
+      'preset-1',
+      'preset-2',
+    ])
+    expect(readSettings().botPresetsId).toBe(0)
+  })
+
+  it('PATCH presets/:id updates one row in place', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+    const beforeRowids = collectionRowidsByPosition('bot_presets')
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/preset-1',
+      payload: { baseRevision: revision, patch: { name: 'Renamed P1' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['bot_presets'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(collectionRowidsByPosition('bot_presets')).toEqual(beforeRowids)
+    const presets = readCollection('bot_presets') as Array<{ id: string; name: string }>
+    expect(presets[1]).toMatchObject({ id: 'preset-1', name: 'Renamed P1' })
+    expect(presets[0].name).toBe('P0')
+  })
+
+  it('POST presets/:id/copy rewrites only the bot_presets table', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/presets/preset-0/copy',
+      payload: { baseRevision: revision, newPresetId: 'preset-0-copy', saveCurrent: false },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['bot_presets'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readCollection('bot_presets').map((p) => (p as { id: string }).id)).toEqual([
+      'preset-0',
+      'preset-1',
+      'preset-0-copy',
+    ])
+    expect(readSettings().botPresetsId).toBe(0)
+  })
+
+  it('POST presets/import rewrites only the bot_presets table', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/presets/import',
+      payload: { baseRevision: revision, preset: { id: 'preset-imp', name: 'Imported' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['bot_presets'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readCollection('bot_presets').map((p) => (p as { id: string }).id)).toEqual([
+      'preset-0',
+      'preset-1',
+      'preset-imp',
+    ])
+  })
+
+  it('POST presets/reorder co-writes settings when the selected index moves', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    // Selected preset-0 (index 0) moves to index 1, so botPresetsId must update.
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/presets/reorder',
+      payload: { baseRevision: revision, presetIds: ['preset-1', 'preset-0'] },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['bot_presets', 'settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readCollection('bot_presets').map((p) => (p as { id: string }).id)).toEqual([
+      'preset-1',
+      'preset-0',
+    ])
+    expect(readSettings().botPresetsId).toBe(1)
+  })
+
+  it('DELETE presets/:id (no apply) co-writes settings when the pointer shifts', async () => {
+    // Select preset-1 (index 1); deleting preset-0 shifts it to index 0.
+    const seed = seedDatabase()
+    seed.botPresetsId = 1
+    const revision = await importDatabase(seed)
+    const before = rowidSnapshot()
+
+    const { metric, body } = await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/presets/preset-0',
+      payload: { baseRevision: revision },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['bot_presets', 'settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readCollection('bot_presets').map((p) => (p as { id: string }).id)).toEqual(['preset-1'])
+    expect(readSettings().botPresetsId).toBe(0)
+    expect(body.selectedPresetId).toBe('preset-1')
+    // No apply, so the prompt-items table is untouched (still the "current" item;
+    // import stamps each prompt item with a normalization id).
+    const promptItems = readCollection('prompt_templates') as Array<{ text: string }>
+    expect(promptItems).toHaveLength(1)
+    expect(promptItems[0].text).toBe('current')
+  })
+
+  it('DELETE presets/:id with apply=true also writes prompt_templates + settings', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    // Delete preset-1, re-select + apply preset-0 (carries its promptTemplate +
+    // settings scalars). This is the documented two-table + settings case.
+    const { metric } = await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/presets/preset-1',
+      payload: { baseRevision: revision, apply: true, presetId: 'preset-0' },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['bot_presets', 'prompt_templates', 'settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readCollection('bot_presets').map((p) => (p as { id: string }).id)).toEqual(['preset-0'])
+    // applyPreset copied preset-0's promptTemplate + temperature scalar.
+    expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'pt-0' }])
+    expect(readSettings().temperature).toBe(0.1)
+  })
+
+  it('POST presets/select writes bot_presets + prompt_templates + settings (apply)', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    // Default saveCurrent + apply: snapshot the outgoing preset into bot_presets,
+    // move the pointer, and apply preset-1's promptTemplate + scalars.
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      payload: { baseRevision: revision, presetId: 'preset-1' },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['bot_presets', 'prompt_templates', 'settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readSettings().botPresetsId).toBe(1)
+    expect(readSettings().temperature).toBe(0.9)
+    expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'pt-1' }])
   })
 })

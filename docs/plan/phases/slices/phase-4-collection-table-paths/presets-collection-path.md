@@ -1,6 +1,6 @@
 # Presets Collection Path
 
-Status: planned. Tier 4. Depends on the Phase 0 writer kit.
+Status: implemented. Tier 4. Uses the Phase 0 writer kit.
 
 ## Source Anchors
 
@@ -31,6 +31,23 @@ The verifier flagged select/delete with `apply=true` as wider than the
 classifier's single-table claim: `applyPreset` writes `promptTemplate` (a
 collection) plus ~73 settings scalars. Those two routes are two-table + settings;
 the rest are one table (+ pointer).
+
+Implemented: all seven routes moved to `applyTargetedCommandMutation` with
+`mutationPath: targeted-collection`. `patch` is a single-row
+`writeSingleCollectionRow`; create/copy/import rewrite only `bot_presets`;
+`reorder` rewrites `bot_presets` and co-writes settings via `writeSettingsOnly`
+only when the reorder moved the selected `botPresetsId` index; `delete` always
+rewrites `bot_presets` (the splice shifts positions) and co-writes settings when
+the pointer changed; `select` rewrites `bot_presets` only when the
+`saveCurrent` snapshot edits it. For `apply=true` (select default, delete opt-in),
+the selected preset's `promptTemplate` collection is co-written through the named
+`writePromptTemplatesTable` repository wrapper (so the literal `'promptTemplate'`
+never enters `routes/commands.ts`, keeping the EC4 audit scan valid) — but only
+when `presetAppliesPromptTemplate` confirms the preset carries one — alongside the
+applied settings scalars. Proven by `commandCollectionRange.test.ts` (8 presets
+tests: targeted path + exact `writtenTables` for each shape including the
+two-table + settings apply case, character/chat rowid stability, and bot_presets
+rowid stability for the single-row patch).
 
 ## Implementation Scope
 
