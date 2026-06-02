@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -16,6 +16,32 @@ interface Harness {
   dataDir: string
   commandEvents: CommandEventSink
 }
+
+interface ExportMetric {
+  metric: string
+  bundle?: boolean
+  envelope?: string
+  compression?: boolean
+  snapshotLoadMs?: number
+  encodeMs?: number
+  outputBytes?: number
+}
+
+// Capture opt-in protocol metrics regardless of the logger sink so the ordinary
+// `.risu` export materialization measurement can separate snapshot hydration
+// from encode/output-buffer cost.
+const capturedMetrics = vi.hoisted((): ExportMetric[] => [])
+
+vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
+  return {
+    ...actual,
+    emitProtocolMetric: (name: string, fields: Record<string, unknown>) => {
+      if (!actual.protocolMetricsEnabled()) return
+      capturedMetrics.push({ metric: name, ...fields } as ExportMetric)
+    },
+  }
+})
 
 const ASSET_ID = 'c'.repeat(64)
 const EXPORT_REQUIRED_ARRAY_FAMILIES = [
@@ -281,5 +307,99 @@ describe('Phase 9-8b repository .risu export route', () => {
       error: 'message[0].role must be user or char',
     })
     expect(harness.commandEvents.list()).toEqual([])
+  })
+})
+
+// Phase 5 ordinary `.risu` export materialization measurement. The export route
+// behavior (bytes, headers, event) is unchanged; the opt-in `risusave_export`
+// metric separates snapshot hydration cost from encode/output-buffer cost.
+describe('ordinary .risu export materialization measurement', () => {
+  const PREVIOUS_PROTOCOL_METRICS = process.env.RISU_PROTOCOL_METRICS
+
+  beforeEach(() => {
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    capturedMetrics.length = 0
+  })
+
+  afterEach(() => {
+    if (PREVIOUS_PROTOCOL_METRICS === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = PREVIOUS_PROTOCOL_METRICS
+    }
+  })
+
+  function exportMetric(): ExportMetric {
+    const metric = [...capturedMetrics]
+      .reverse()
+      .find((entry) => entry.metric === 'risusave_export')
+    expect(metric, 'missing risusave_export metric').toBeTruthy()
+    return metric as ExportMetric
+  }
+
+  it('records snapshot/encode split and output size for block exports', async () => {
+    persistExportableDatabase(harness.dataDir)
+    capturedMetrics.length = 0
+
+    const exported = await authedInject({
+      method: 'GET',
+      url: '/api/v1/export/risusave?envelope=risusave-blocks',
+    })
+    expect(exported.statusCode).toBe(200)
+
+    const metric = exportMetric()
+    expect(metric.bundle).toBe(false)
+    expect(metric.envelope).toBe('risusave-blocks')
+    expect(metric.compression).toBe(false)
+    expect(metric.snapshotLoadMs).toBeGreaterThanOrEqual(0)
+    expect(metric.encodeMs).toBeGreaterThanOrEqual(0)
+    // Output size matches the materialized bytes actually sent.
+    expect(metric.outputBytes).toBe(exported.rawPayload.length)
+  })
+
+  it('records the legacy envelope and compression flag', async () => {
+    persistExportableDatabase(harness.dataDir)
+    capturedMetrics.length = 0
+
+    const exported = await authedInject({
+      method: 'GET',
+      url: '/api/v1/export/risusave?envelope=legacy-raw',
+    })
+    expect(exported.statusCode).toBe(200)
+
+    const metric = exportMetric()
+    expect(metric.bundle).toBe(false)
+    expect(metric.envelope).toBe('legacy-raw')
+    expect(metric.outputBytes).toBe(exported.rawPayload.length)
+  })
+
+  it('summarizes export materialization when RISU_EXPORT_MATERIALIZE_SUMMARY=1', async () => {
+    persistExportableDatabase(harness.dataDir)
+
+    for (const url of [
+      '/api/v1/export/risusave?envelope=risusave-blocks',
+      '/api/v1/export/risusave?envelope=risusave-blocks&compression=true',
+      '/api/v1/export/risusave?envelope=legacy-raw',
+    ]) {
+      capturedMetrics.length = 0
+      const exported = await authedInject({ method: 'GET', url })
+      expect(exported.statusCode).toBe(200)
+      const metric = exportMetric()
+      if (process.env.RISU_EXPORT_MATERIALIZE_SUMMARY === '1') {
+        console.log(
+          JSON.stringify(
+            {
+              envelope: metric.envelope,
+              compression: metric.compression,
+              snapshotLoadMs: metric.snapshotLoadMs,
+              encodeMs: metric.encodeMs,
+              outputBytes: metric.outputBytes,
+            },
+            null,
+            2,
+          ),
+        )
+      }
+    }
   })
 })

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -9,6 +9,30 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { writePersisted, assetsDir } from '../src/repository.js'
 import { setupAuthedClient } from './helpers/auth.js'
+
+interface ExportMetric {
+  metric: string
+  bundle?: boolean
+  envelope?: string
+  snapshotLoadMs?: number
+  encodeMs?: number
+  outputBytes?: number
+}
+
+// Capture opt-in protocol metrics so the bundle export measurement can confirm
+// the embedded `.risu` materialization is attributed without changing behavior.
+const capturedMetrics = vi.hoisted((): ExportMetric[] => [])
+
+vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
+  return {
+    ...actual,
+    emitProtocolMetric: (name: string, fields: Record<string, unknown>) => {
+      if (!actual.protocolMetricsEnabled()) return
+      capturedMetrics.push({ metric: name, ...fields } as ExportMetric)
+    },
+  }
+})
 
 interface Harness {
   app: FastifyInstance
@@ -294,5 +318,49 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     expect(exported.statusCode).toBe(400)
     expect(exported.json()).toEqual({ error: 'database payload missing' })
     expect(harness.commandEvents.list()).toEqual([])
+  })
+})
+
+// Phase 5 ordinary `.risu` export materialization measurement (bundle side).
+// Bundle export still materializes the embedded `.risu` bytes before streaming
+// assets; the opt-in `risusave_export` metric attributes that materialization
+// with `bundle: true`. Asset streaming is unchanged.
+describe('bundle export materialization measurement', () => {
+  const PREVIOUS_PROTOCOL_METRICS = process.env.RISU_PROTOCOL_METRICS
+
+  beforeEach(() => {
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    capturedMetrics.length = 0
+  })
+
+  afterEach(() => {
+    if (PREVIOUS_PROTOCOL_METRICS === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = PREVIOUS_PROTOCOL_METRICS
+    }
+  })
+
+  it('records the embedded .risu materialization with bundle:true', async () => {
+    persistBundleDatabase(harness.dataDir)
+    capturedMetrics.length = 0
+
+    const exported = await authedInject({
+      method: 'GET',
+      url: '/api/v1/export/bundle?envelope=risusave-blocks',
+    })
+    expect(exported.statusCode).toBe(200)
+
+    const metric = [...capturedMetrics]
+      .reverse()
+      .find((entry) => entry.metric === 'risusave_export')
+    expect(metric, 'missing risusave_export metric').toBeTruthy()
+    expect(metric?.bundle).toBe(true)
+    expect(metric?.envelope).toBe('risusave-blocks')
+    expect(metric?.snapshotLoadMs).toBeGreaterThanOrEqual(0)
+    expect(metric?.encodeMs).toBeGreaterThanOrEqual(0)
+    // The metric measures the embedded `.risu` bytes, not the final (compressed,
+    // multi-entry) zip, so only its presence and positivity are asserted here.
+    expect(metric?.outputBytes).toBeGreaterThan(0)
   })
 })

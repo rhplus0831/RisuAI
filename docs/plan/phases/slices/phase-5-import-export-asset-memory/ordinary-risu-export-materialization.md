@@ -1,6 +1,6 @@
 # Ordinary Risu Export Materialization
 
-Status: candidate; analysis only, not implemented.
+Status: implemented measurement; no streaming writer yet.
 
 ## Source Anchors
 
@@ -33,6 +33,38 @@ Measurement-only first pass:
   surface.
 - Keep bundle export's streamed asset entries and shared persisted snapshot.
 
+## Implemented Scope
+
+The measurement is opt-in and changes no exported bytes:
+
+- The ordinary export route now builds the export snapshot and encodes it as two
+  explicit steps (`buildRepositoryRisuSaveExportSnapshot` then
+  `encodeRisuSaveExportSnapshot`), which is byte-identical to the prior combined
+  `encodeRepositoryRisuSaveExport` call. The opt-in `risusave_export` metric
+  records `envelope`, `compression`, `snapshotLoadMs`, `encodeMs`, and
+  `outputBytes`, separating hydrated-snapshot cost from encode/output-buffer
+  cost.
+- The bundle export route emits the same metric with `bundle: true` for the
+  embedded `.risu` materialization; its streamed asset entries and shared
+  persisted snapshot are unchanged.
+- The dead `encodeRepositoryRisuSaveExport` route helper (and its now-unused
+  imports) were removed; both routes share `encodeRisuSaveExportSnapshot`.
+
+### Findings
+
+- On a small fixture, snapshot hydration and encode are both sub-millisecond for
+  uncompressed exports (e.g. block uncompressed: `snapshotLoadMs≈0.7`,
+  `encodeMs≈0.4`, `outputBytes≈15k`; legacy-raw: `encodeMs≈1.1`).
+- Compression is the dominant encode cost when enabled (block + `compression`:
+  `encodeMs≈3.8` for `outputBytes≈6.7k` vs `encodeMs≈0.4` uncompressed),
+  confirming gzip — not snapshot hydration or final concatenation — is the cost
+  that a streaming writer would have to interleave.
+- A streaming block-envelope writer is only worth its compatibility surface for
+  large message-heavy exports where the materialized `Uint8Array` peak is the
+  real pressure. The metric now gives the snapshot/encode/output split needed to
+  prove that on a real corpus before changing the envelope path; no runtime
+  narrowing is justified from the focused fixtures alone.
+
 ## Protocol Behavior
 
 - Exported `.risu` bytes must remain import-compatible.
@@ -60,3 +92,4 @@ behavior, or revision state.
 ## Proof Commands
 
 - `pnpm api:test -- server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveBundleExportRoute.test.ts`
+- `RISU_PROTOCOL_METRICS=1 RISU_EXPORT_MATERIALIZE_SUMMARY=1 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveExportRoute.test.ts --reporter verbose`

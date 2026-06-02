@@ -12,10 +12,9 @@ import {
   normalizeRisuSaveImportDatabase,
 } from '../risuSave/importSnapshot.js'
 import {
+  buildRepositoryRisuSaveExportSnapshot,
   buildRisuSaveExportSnapshotFromPersisted,
   encodeRisuSaveBlockExportSnapshot,
-  encodeRepositoryRisuSaveBlockExport,
-  encodeRepositoryRisuSaveLegacyExport,
   encodeRisuSaveLegacyExportSnapshot,
   type RisuSaveExportSnapshot,
 } from '../risuSave/exportSnapshot.js'
@@ -26,6 +25,12 @@ import {
 } from '../risuSave/assetReferences.js'
 import type { LegacyRisuSaveEnvelopeKind } from '../risuSave/legacyEnvelopeCodec.js'
 import { importRateLimit } from '../routeRateLimits.js'
+import {
+  emitProtocolMetric,
+  protocolDurationMs,
+  protocolMetricsEnabled,
+  protocolNowMs,
+} from '../protocolMetrics.js'
 
 interface ImportBody {
   database?: unknown
@@ -98,8 +103,25 @@ export function registerSaveRoutes(
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
       try {
-        const options = parseExportQuery(req.query)
-        const bytes = encodeRepositoryRisuSaveExport(db, dataDir, options)
+        const exportOptions = parseExportQuery(req.query)
+        // Split the snapshot hydration from the encode/output-buffer step so the
+        // opt-in metric can attribute ordinary `.risu` materialization cost. The
+        // snapshot→encode path is byte-identical to the prior combined call.
+        const measure = protocolMetricsEnabled()
+        const snapshotStart = measure ? protocolNowMs() : 0
+        const snapshot = buildRepositoryRisuSaveExportSnapshot(db, dataDir)
+        const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
+        const encodeStart = measure ? protocolNowMs() : 0
+        const bytes = encodeRisuSaveExportSnapshot(snapshot, exportOptions)
+        const encodeMs = measure ? protocolDurationMs(encodeStart) : undefined
+        emitRisuSaveExportMetric(req.log, {
+          bundle: false,
+          envelope: exportOptions.envelope,
+          compression: exportOptions.compression,
+          snapshotLoadMs,
+          encodeMs,
+          outputBytes: bytes.byteLength,
+        })
         eventSink.emit({
           ...COMMAND_EVENT_CATALOG.stateExported,
           revision: getSchemaState(db).revision,
@@ -123,16 +145,33 @@ export function registerSaveRoutes(
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
       try {
-        const options = parseExportQuery(req.query)
+        const exportOptions = parseExportQuery(req.query)
+        // Bundle export still materializes the embedded `.risu` bytes before
+        // streaming the asset entries; measure that materialization the same way
+        // as ordinary export. Asset streaming and the shared snapshot are
+        // unchanged.
+        const measure = protocolMetricsEnabled()
+        const snapshotStart = measure ? protocolNowMs() : 0
         const persisted = loadPersistedWithMessages(db, dataDir)
         const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
-        const risuBytes = encodeRisuSaveExportSnapshot(snapshot, options)
+        const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
+        const encodeStart = measure ? protocolNowMs() : 0
+        const risuBytes = encodeRisuSaveExportSnapshot(snapshot, exportOptions)
+        const encodeMs = measure ? protocolDurationMs(encodeStart) : undefined
+        emitRisuSaveExportMetric(req.log, {
+          bundle: true,
+          envelope: exportOptions.envelope,
+          compression: exportOptions.compression,
+          snapshotLoadMs,
+          encodeMs,
+          outputBytes: risuBytes.byteLength,
+        })
         const bundle = buildRepositoryRisuSaveBundleExport({
           dataDir,
           persisted,
           risuBytes,
-          envelope: options.envelope,
-          compression: options.compression,
+          envelope: exportOptions.envelope,
+          compression: exportOptions.compression,
         })
         eventSink.emit({
           ...COMMAND_EVENT_CATALOG.stateExported,
@@ -152,14 +191,29 @@ export function registerSaveRoutes(
   )
 }
 
-function encodeRepositoryRisuSaveExport(
-  db: DatabaseSync,
-  dataDir: string,
-  options: ReturnType<typeof parseExportQuery>,
-): Uint8Array {
-  return options.envelope === 'risusave-blocks'
-    ? encodeRepositoryRisuSaveBlockExport(db, dataDir, { compression: options.compression })
-    : encodeRepositoryRisuSaveLegacyExport(db, dataDir, options.envelope)
+function emitRisuSaveExportMetric(
+  logger: FastifyInstance['log'],
+  fields: {
+    bundle: boolean
+    envelope: ExportEnvelope
+    compression: boolean
+    snapshotLoadMs?: number
+    encodeMs?: number
+    outputBytes: number
+  },
+): void {
+  emitProtocolMetric(
+    'risusave_export',
+    {
+      bundle: fields.bundle,
+      envelope: fields.envelope,
+      compression: fields.compression,
+      ...(fields.snapshotLoadMs !== undefined ? { snapshotLoadMs: fields.snapshotLoadMs } : {}),
+      ...(fields.encodeMs !== undefined ? { encodeMs: fields.encodeMs } : {}),
+      outputBytes: fields.outputBytes,
+    },
+    logger,
+  )
 }
 
 function encodeRisuSaveExportSnapshot(
