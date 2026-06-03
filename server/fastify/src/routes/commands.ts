@@ -2645,7 +2645,8 @@ export function registerCommandRoutes(
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
           const index = requireCharacterIndex(characters, characterId)
-          const removedChatIds = ensureCharacterChats(characters[index]).map((chat) => chat.id)
+          const character = characters[index]
+          const removedChatIds = ensureCharacterChats(character).map((chat) => chat.id)
           characters.splice(index, 1)
           ensureCharacterCollection(target)
           deleteCharacterRow(innerDb, characterId)
