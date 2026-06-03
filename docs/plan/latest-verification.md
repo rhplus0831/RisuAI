@@ -7,34 +7,37 @@ latest-run section on each full or focused run; do not append history.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 7 (verification budgets, gate-completeness
-  pass) on `fastify`, on top of Phase 6 (`8e9e10bf`).
-- Scope: verification only. No runtime write/projection range changed. Closed the
-  one gate-map hole — the runtime emitted `targeted-assembly` (the `/generate/chat`
-  scriptstate + transcript persistence path) with no review gate — by adding its
-  gate (`dbJsonWriteMs: 0`, `maxTables` = broad set + message store, since it does a
-  full rewrite only when a chat-var write rides along). Added
-  `server/fastify/__tests__/commandMutationBudget.test.ts` (6 tests) — static
-  invariants that scan the server source for every emittable `mutationPath` label
-  and require the gate set and the emitted set to be exactly equal, every
-  `targeted-*` gate to fix `dbJsonWriteMs: 0` and declare a written-table budget,
-  the broad baselines to keep their table budget, and no budget to name a table
-  outside the physical universe. Exercised the new gate against its real runtime
-  metric in `generation.chat.test.ts` (the three `targeted-assembly` samples now
-  assert their budget, not just the label).
-- Result: green. The gate map and the runtime's emittable label set are now
-  exactly equal (11 labels), so a new route, a renamed label, or a loosened narrow
-  gate fails before it can silently widen a write. The per-family written-table +
-  rowid-stability budgets from Phases 2-4 remain in
-  `commandCollectionRange`/`commandSingleRowPaths`/`commandSettingsAndPluginStorageRange`.
+- Runtime/code change under test: Phase 8 (scoped Tier-5 floor unblocks) on
+  `fastify`, on top of Phase 7 (`e3887777`).
+- Scope: runtime write-range narrowing for the high-value Tier-5 subset; no
+  projection change (emitted events/resources unchanged). 8a — `PUT
+  characters/:id/scripts` + `/triggers` moved off the `message-free` 13-table floor
+  onto `targeted-character-row`, writing only the target character row
+  (`writeSingleCharacterRow`); the normalization still runs but its sibling repairs
+  mutate the in-memory clone only and are discarded (validate-only via discard).
+  8b — `DELETE chats/:id` moved off the `hydrated` corpus-wide message load onto
+  `targeted-character-row` + the targeted `deleteChatMessages`/`deleteChatHypaV3`
+  orphan cleanup; new `deleteCharacterChatRow` writer removes the one chat row.
+- Before/after written-table set: scripts/triggers `message-free` (all 13 broad
+  tables) → `['characters']`; `DELETE chats/:id` `hydrated` (whole-corpus message
+  load + 13-table rewrite) → `['characters', 'chat_hypa_v3', 'chats', 'messages']`
+  with no message hydration. `DELETE characters/:id` (reuses 8b's helper), the
+  `message-free` creates, and `DELETE modules/:id` stay at the floor by choice.
+- Result: green. New `server/fastify/__tests__/commandFloorUnblock.test.ts`
+  (5 tests) proves the targeted paths + `writtenTables` + rowid stability + the
+  deleted chat's orphan message/hypa cleanup + preserved selection semantics. The
+  Phase 6 ceiling proof (`commandMessageFreeCeiling.test.ts`) was updated to track
+  the three graduated routes. The gate-completeness invariant
+  (`commandMutationBudget.test.ts`) still passes (these routes reuse the existing
+  `targeted-character-row` gate, so the emittable-label set is unchanged).
 
 | Command | Result |
 | --- | --- |
-| `pnpm api:test` | 1626 passed, 1 skipped. |
+| `pnpm api:test` | 1631 passed, 1 skipped. |
 | `pnpm test` | 951 passed, 4 skipped. |
 | `pnpm client-thinning:audit` | Passed. |
-| `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandMutationBudget.test.ts` | 6 passed; the Phase 7 gate-completeness proof. |
-| `RISU_COMMAND_METRIC_SUMMARY=1` focused command suite (`commandMetrics` + `commandMutationBudget` + the four `command*Range`/ceiling + `targetedMutationPaths`) | 92 passed. |
+| `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandFloorUnblock.test.ts` | 5 passed; the Phase 8 narrowing proof. |
+| `commandMessageFreeCeiling.test.ts` (Phase 6 ceiling, updated) | 9 passed. |
 | Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | Passed (zero errors). |
 
 ## Notes
@@ -51,11 +54,11 @@ latest-run section on each full or focused run; do not append history.
   deeper per-route narrowing is gated on the deferred unblock prerequisites
   (wiring `deleteChatMessages`/`deleteChatHypaV3` into the deletes, scoping
   `normalizeScriptDefinitionDatabase`/`ensureCharacterCollection` to validate-only).
-- Phase 7 exit criteria are met: every emittable `mutationPath` has a
+- Phase 7 exit criteria remain met: every emittable `mutationPath` has a
   `dbJsonWriteMs: 0` (for `targeted-*`) review gate with a written-table budget,
-  every narrowed family has its written-table + rowid-stability assertions, and
-  `commandMutationBudget.test.ts` fails on any gate-map drift. The
-  `latest-verification-log` maintenance rule (replace, don't append, on each run)
-  stays standing.
-- Next: only the optional, gated Tier-5 unblock prerequisites remain (Phase 6
-  deferred work). Refresh this file after any new focused or full verification run.
+  and `commandMutationBudget.test.ts` fails on any gate-map drift.
+- Phase 8 landed the scoped Tier-5 floor unblocks (8a scripts/triggers, 8b chat
+  delete). Remaining deferred-by-choice: `DELETE characters/:id` (a trivial
+  follow-up reusing `deleteCharacterChatRow`), the `message-free` creates, and
+  `DELETE modules/:id` (separate cross-table blocker) — all rare actions left at
+  the floor. Refresh this file after any new focused or full verification run.

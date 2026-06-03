@@ -1,6 +1,8 @@
 # Slice 8a: Script/Trigger PUTs → targeted-character-row
 
-Status: in progress.
+Status: implemented (`ad5f3cde`). Both PUTs report `targeted-character-row` /
+`writtenTables: ['characters']` / `dbJsonWriteMs: 0`; proven by
+`commandFloorUnblock.test.ts`.
 
 ## Scope
 

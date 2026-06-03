@@ -24,10 +24,25 @@ the broad table set by design until their prerequisites land.
 
 ## Current Snapshot
 
-Analysis is complete. Phases 0-7 have landed. The write-side tiers are at their
-floor and the verification budgets are gate-complete; the only remaining work is
-the deferred (optional, gated) Tier-5 unblock prerequisites and the standing
-verification-log upkeep.
+Analysis is complete. Phases 0-8 have landed. The write-side tiers are at their
+floor, the verification budgets are gate-complete, and Phase 8 has narrowed the
+high-value Tier-5 routes below the floor. The only remaining work is the
+deferred-by-choice low-value Tier-5 routes and the standing verification-log
+upkeep.
+
+- Phase 8 implemented (scoped Tier-5 floor unblocks): the two highest-cost Tier-5
+  routes graduated below their floor onto `targeted-character-row`. 8a (`ad5f3cde`)
+  — `PUT characters/:id/scripts` + `/triggers` (a 250 ms debounced client watcher
+  fires them per edit) now write only the target character row; the normalization
+  still runs but its sibling repairs mutate the clone only and are discarded
+  (validate-only via discard). 8b (`a83c474a`) — `DELETE chats/:id` drops the
+  corpus-wide message hydration and cleans the deleted chat's orphans with the
+  targeted `deleteChatMessages`/`deleteChatHypaV3` (+ new `deleteCharacterChatRow`
+  writer). No projection change. Deferred by choice (rare actions): `DELETE
+  characters/:id` (a trivial follow-up reusing `deleteCharacterChatRow`), the
+  `message-free` creates, and `DELETE modules/:id`. Proven by
+  `commandFloorUnblock.test.ts` (5); the Phase 6 ceiling proof was updated for the
+  graduations.
 
 - Phase 7 implemented (verification budgets, gate-completeness pass): the gate map
   (`__tests__/helpers/commandMetricGates.ts`) now carries one review gate per
@@ -130,9 +145,10 @@ verification-log upkeep.
 - The seed audit catalogued the projection-range mismatches; Phase 5 closed the
   field bugs and broad-resource splits now described above.
 
-Phases 0-7 are implemented. Phase 7's only ongoing piece is the
-verification-log maintenance rule (replace the `latest-verification.md` "Latest
-Run" section on each subsequent run).
+Phases 0-8 are implemented. The only ongoing piece is the verification-log
+maintenance rule (replace the `latest-verification.md` "Latest Run" section on
+each subsequent run); the deferred-by-choice low-value Tier-5 routes remain
+optional.
 
 ## Phase Router
 
@@ -146,7 +162,7 @@ Run" section on each subsequent run).
 | [Phase 5](phases/phase-5-projection-range-narrowing.md) | Implemented | Narrow projection resources, the `lorebook` resource split, and the projection-field bug fixes. |
 | [Phase 6](phases/phase-6-message-free-ceiling.md) | Implemented | Tier-5 routes held at their safe floor (`hydrated`/`message-free`) with blockers + unblock conditions recorded. |
 | [Phase 7](phases/phase-7-verification-budgets.md) | Implemented (log upkeep ongoing) | Written-table-set, rowid-stability, and `dbJsonWriteMs: 0` gates, the gate-completeness invariants, and the verification log. |
-| [Phase 8](phases/phase-8-floor-unblocks.md) | In progress | The scoped Tier-5 floor unblocks: the script/trigger PUTs and `DELETE chats/:id` narrowed onto `targeted-character-row` (normalization validate-only + targeted message delete). |
+| [Phase 8](phases/phase-8-floor-unblocks.md) | Implemented | The scoped Tier-5 floor unblocks: the script/trigger PUTs and `DELETE chats/:id` narrowed onto `targeted-character-row` (normalization validate-only + targeted message delete). |
 
 ## Active Risk Summary
 
@@ -167,20 +183,21 @@ Headlines, in priority order:
   own table (+ pointer/mirror settings, and for preset apply the prompt_templates
   co-write); lore_books child-lorebook and modules scripts/triggers
   cross-character repairs are dropped to validate-only.
-- Tier 5: DONE at floor (Phase 6). All nine routes are verified at their safe
-  floor — `hydrated` where the message load is a real dependency (the two deletes'
-  orphan cleanup, chats-create's corpus-wide validation), else the `message-free`
-  broad-set floor. Deeper narrowing stays blocked by cross-table spans or
-  load-bearing message/normalization dependencies; the unblock prerequisites are
-  recorded per route but deferred.
+- Tier 5: floors verified (Phase 6); high-value subset narrowed below the floor
+  (Phase 8). The script/trigger PUTs and `DELETE chats/:id` now run on
+  `targeted-character-row` (8a/8b). The remaining routes stay at their floor by
+  choice — `DELETE characters/:id` (a trivial follow-up reusing
+  `deleteCharacterChatRow`), the `message-free` creates, and `DELETE modules/:id`
+  (separate cross-table blocker) — all rare actions where the broad write is
+  acceptable.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). Phase 7 (verification
-budgets, gate-completeness pass) is the latest change; it adds the missing
-`targeted-assembly` gate and the self-checking `commandMutationBudget.test.ts`
-(6 tests) — no runtime write range changed. api:test 1626/1, test 951/4, both
-typechecks + the client-thinning audit green.
+See [`latest-verification.md`](latest-verification.md). Phase 8 (scoped Tier-5
+floor unblocks) is the latest change; the script/trigger PUTs and `DELETE
+chats/:id` narrowed onto `targeted-character-row`, proven by
+`commandFloorUnblock.test.ts` (5 tests) with the Phase 6 ceiling proof updated.
+api:test 1631/1, test 951/4, both typechecks + the client-thinning audit green.
 
 ## Start Here
 

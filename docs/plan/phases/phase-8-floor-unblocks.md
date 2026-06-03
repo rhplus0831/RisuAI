@@ -1,10 +1,10 @@
 # Phase 8: Tier-5 Floor Unblocks (Scoped Subset)
 
-Status: in progress. Phase 6 held the nine Tier-5 routes at their safe floor and
-recorded the unblock prerequisites. Phase 8 lands the two prerequisites that gate
-the **high-value subset** and narrows those routes below the floor onto the
-existing `targeted-character-row` path. The low-value Tier-5 routes stay at their
-floor by choice (see Non-Scope).
+Status: implemented. Phase 6 held the nine Tier-5 routes at their safe floor and
+recorded the unblock prerequisites. Phase 8 landed the two prerequisites that gate
+the **high-value subset** and narrowed those routes below the floor onto the
+existing `targeted-character-row` path (8a `ad5f3cde`, 8b `a83c474a`). The
+low-value Tier-5 routes stay at their floor by choice (see Non-Scope).
 
 Goal: narrow the Tier-5 routes whose write range actually hurts — the
 script/trigger PUTs (a 250 ms debounced watcher fires them repeatedly while a user
@@ -86,14 +86,16 @@ as before; the narrowed writes update the same SQLite rows the projection reads.
 
 - `PUT characters/:id/scripts` and `PUT characters/:id/triggers` report
   `mutationPath: targeted-character-row` with `writtenTables: ['characters']` and
-  `dbJsonWriteMs: 0`; unrelated character/chat/collection rowids stay stable.
+  `dbJsonWriteMs: 0`; unrelated character/chat/collection rowids stay stable. (Met.)
 - `DELETE chats/:id` reports `mutationPath: targeted-character-row`, loads no
   messages, writes only the parent character row + that character's chat rows +
-  the deleted chat's message/hypa rows, and leaves no orphan message/hypa rows;
-  unrelated rows stay stable.
+  the deleted chat's message/hypa rows (`writtenTables: ['characters',
+  'chat_hypa_v3', 'chats', 'messages']`), and leaves no orphan message/hypa rows;
+  unrelated rows stay stable. (Met.)
 - The normalization-drop decision (validate-only via discard) is recorded; no
-  global repair is silently dropped without it.
+  global repair is silently dropped without it. (Met — recorded in both slices.)
 - Each slice lands with a rowid-stability regression test and the metric gate.
+  (Met — `commandFloorUnblock.test.ts`, 5 tests.)
 
 ## Validation
 

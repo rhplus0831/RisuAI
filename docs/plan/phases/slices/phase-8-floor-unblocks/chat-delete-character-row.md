@@ -1,6 +1,10 @@
 # Slice 8b: DELETE chats/:id → targeted-character-row
 
-Status: in progress.
+Status: implemented (`a83c474a`). Reports `targeted-character-row` /
+`writtenTables: ['characters', 'chat_hypa_v3', 'chats', 'messages']` with no
+message hydration; the new `deleteCharacterChatRow` writer removes the chat row
+and the targeted message/hypa deletes clean the orphans. Proven by
+`commandFloorUnblock.test.ts`.
 
 ## Scope
 
