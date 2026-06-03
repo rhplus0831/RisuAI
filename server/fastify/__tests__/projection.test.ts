@@ -338,6 +338,14 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       'loadouts',
       'characters',
     ])
+    // Narrowed module-family resources (Phase 5 collection-projection slice).
+    expect(resourceProjectionFields('moduleUpdated')).toEqual(['modules'])
+    expect(resourceProjectionFields('moduleReordered')).toEqual(['modules'])
+    expect(resourceProjectionFields('moduleEnabled')).toEqual(['enabledModules'])
+    expect(resourceProjectionFields('scriptDefinition')).toEqual(['characters'])
+    expect(resourceProjectionFields('triggerDefinition')).toEqual(['characters'])
+    expect(resourceProjectionFields('moduleScriptDefinition')).toEqual(['modules'])
+    expect(resourceProjectionFields('moduleTriggerDefinition')).toEqual(['modules'])
     expect(resourceProjectionFields('lorebook')).toEqual([
       'characters',
       'modules',
@@ -423,6 +431,118 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields.characters[0].chats[0].modules).toEqual(['mod-a'])
     expect(body.fields.characters[0].chats[0].message).toEqual([])
     expect(body.fields.characters[0].chats[0]).not.toHaveProperty('hypaV3Data')
+  })
+
+  it('narrows module enable/update/reorder refreshes to their own fields', async () => {
+    // Phase 5 collection-projection slice: an enable/update/reorder edit no
+    // longer re-ships every character + loadout via the broad `module` resource.
+    const seed = () =>
+      importDatabase({
+        enabledModules: [],
+        loadouts: [{ id: 'load-a', modules: ['mod-a'] }],
+        modules: [
+          { id: 'mod-a', name: 'Module A', description: '' },
+          { id: 'mod-b', name: 'Module B', description: '' },
+        ],
+        characters: [
+          {
+            chaId: 'char-a',
+            chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hello' }] }],
+          },
+        ],
+      })
+
+    const enableRevision = await seed()
+    const enabled = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/enable',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: enableRevision, moduleId: 'mod-a', enabled: true },
+    })
+    expect(enabled.statusCode).toBe(200)
+    expect(enabled.json().event.resource).toBe('moduleEnabled')
+    const enabledBody = (await getProjection('moduleEnabled')).json()
+    expect(enabledBody.mode).toBe('fields')
+    expect(Object.keys(enabledBody.fields)).toEqual(['enabledModules'])
+    expect(enabledBody.fields.enabledModules).toEqual(['mod-a'])
+
+    const updateRevision = await seed()
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: updateRevision, patch: { name: 'Renamed B' } },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().event.resource).toBe('moduleUpdated')
+    const updatedBody = (await getProjection('moduleUpdated')).json()
+    expect(updatedBody.mode).toBe('fields')
+    expect(Object.keys(updatedBody.fields)).toEqual(['modules'])
+    expect(updatedBody.fields.modules.find((m: { id: string }) => m.id === 'mod-b').name).toBe(
+      'Renamed B',
+    )
+
+    const reorderRevision = await seed()
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: reorderRevision, moduleIds: ['mod-b', 'mod-a'] },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json().event.resource).toBe('moduleReordered')
+    const reorderedBody = (await getProjection('moduleReordered')).json()
+    expect(reorderedBody.mode).toBe('fields')
+    expect(Object.keys(reorderedBody.fields)).toEqual(['modules'])
+    expect(reorderedBody.fields.modules.map((m: { id: string }) => m.id)).toEqual(['mod-b', 'mod-a'])
+  })
+
+  it('narrows script/trigger refreshes to the affected character or module table', async () => {
+    // Phase 5 collection-projection slice: character scripts ship `characters`
+    // (no modules); module scripts ship `modules` (no characters).
+    const seed = () =>
+      importDatabase({
+        modules: [{ id: 'mod-a', name: 'Module A', description: '', regex: [], trigger: [] }],
+        characters: [
+          {
+            chaId: 'char-a',
+            customscript: [],
+            triggerscript: [],
+            chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hello' }] }],
+          },
+        ],
+        characterOrder: ['char-a'],
+      })
+
+    const charRevision = await seed()
+    const charScripts = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: charRevision, scripts: [{ id: 's1', type: 'regex', in: 'a', out: 'b' }] },
+    })
+    expect(charScripts.statusCode).toBe(200)
+    expect(charScripts.json().event.resource).toBe('scriptDefinition')
+    const charBody = (await getProjection('scriptDefinition')).json()
+    expect(charBody.mode).toBe('fields')
+    expect(Object.keys(charBody.fields)).toEqual(['characters'])
+    expect(charBody.fields.characters[0].customscript[0].id).toBe('s1')
+    // Messages stay stubbed and modules are not re-shipped.
+    expect(charBody.fields.characters[0].chats[0].message).toEqual([])
+
+    const moduleRevision = await seed()
+    const moduleScripts = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: moduleRevision, scripts: [{ id: 'ms1', type: 'regex', in: 'a', out: 'b' }] },
+    })
+    expect(moduleScripts.statusCode).toBe(200)
+    expect(moduleScripts.json().event.resource).toBe('moduleScriptDefinition')
+    const moduleBody = (await getProjection('moduleScriptDefinition')).json()
+    expect(moduleBody.mode).toBe('fields')
+    expect(Object.keys(moduleBody.fields)).toEqual(['modules'])
+    expect(moduleBody.fields.modules[0].regex[0].id).toBe('ms1')
   })
 
   it('returns lorebook page and mixed lorebook fields with stubs', async () => {

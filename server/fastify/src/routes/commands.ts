@@ -4049,8 +4049,8 @@ export function registerCommandRoutes(
           } else {
             enabledModules.delete(moduleId)
           }
-          // `enabledModules` is a settings scalar; the `module` projection stays
-          // broad until the Phase 5 narrow `moduleEnabled` resource lands.
+          // `enabledModules` is a settings scalar; the event carries the narrow
+          // `moduleEnabled` resource so a foreign refresh ships only it.
           target.enabledModules = Array.from(enabledModules)
           writeSettingsOnly(innerDb, extractSettings(target))
           return {
@@ -4613,7 +4613,13 @@ export function registerCommandRoutes(
           // repairs are dropped to validate-only (Prerequisite 2) — not persisted.
           writeSingleCollectionTable(innerDb, 'modules', asArray(target.modules))
           return {
-            event: { ...COMMAND_EVENT_CATALOG.scriptDefinitionsReplaced, id: moduleId },
+            // Only the `modules` table is rewritten (character repairs are
+            // validate-only), so emit a module-scoped resource shipping `modules`.
+            event: {
+              ...COMMAND_EVENT_CATALOG.scriptDefinitionsReplaced,
+              id: moduleId,
+              resource: 'moduleScriptDefinition',
+            },
             extra: { moduleId },
           }
         },
@@ -4652,7 +4658,13 @@ export function registerCommandRoutes(
           // repairs are dropped to validate-only (Prerequisite 2) — not persisted.
           writeSingleCollectionTable(innerDb, 'modules', asArray(target.modules))
           return {
-            event: { ...COMMAND_EVENT_CATALOG.triggerDefinitionsReplaced, id: moduleId },
+            // Only the `modules` table is rewritten (character repairs are
+            // validate-only), so emit a module-scoped resource shipping `modules`.
+            event: {
+              ...COMMAND_EVENT_CATALOG.triggerDefinitionsReplaced,
+              id: moduleId,
+              resource: 'moduleTriggerDefinition',
+            },
             extra: { moduleId },
           }
         },

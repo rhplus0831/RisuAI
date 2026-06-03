@@ -418,19 +418,25 @@ export const COMMAND_EVENT_CATALOG = {
   },
   moduleUpdated: {
     type: 'module.updated',
-    resource: 'module',
+    // A field edit rewrites only the `modules` table; a foreign refresh ships
+    // just the `modules` collection (not enabledModules/loadouts/characters).
+    resource: 'moduleUpdated',
   },
   moduleDeleted: {
     type: 'module.deleted',
+    // Deletion cross-writes characters/chats/loadouts via removeModuleReferences,
+    // so it keeps the broad `module` resource.
     resource: 'module',
   },
   moduleEnabled: {
     type: 'module.enabled',
-    resource: 'module',
+    // Enable/disable writes only the `enabledModules` settings scalar.
+    resource: 'moduleEnabled',
   },
   moduleReordered: {
     type: 'module.reordered',
-    resource: 'module',
+    // Reorder rewrites only the `modules` table.
+    resource: 'moduleReordered',
   },
   characterModulesReordered: {
     type: 'character.modules.reordered',

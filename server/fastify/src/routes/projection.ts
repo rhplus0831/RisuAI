@@ -38,8 +38,16 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   chatFolder: ['characters'],
   message: ['characters'],
   generation: ['characters'],
-  scriptDefinition: ['characters', 'modules'],
-  triggerDefinition: ['characters', 'modules'],
+  // Character scripts/triggers write only a character row's
+  // customscript/triggerscript; the cross-module repair is validate-only, so a
+  // foreign refresh ships `characters` (not `modules`). The module
+  // scripts/triggers routes emit the module-scoped resources below.
+  scriptDefinition: ['characters'],
+  triggerDefinition: ['characters'],
+  // Module scripts/triggers rewrite only the `modules` table (character repairs
+  // validate-only), so a foreign refresh ships just `modules`.
+  moduleScriptDefinition: ['modules'],
+  moduleTriggerDefinition: ['modules'],
   lorebook: ['characters', 'modules', 'loreBook', 'loreBookPage'],
   preset: ['botPresets', 'botPresetsId'],
   // `prompt` (prompt-settings) writes ~21 scattered settings scalars, not a
@@ -61,7 +69,14 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
     'personaPrompt',
     'userNote',
   ],
+  // `module` (create/delete) stays broad: create can normalize sibling arrays
+  // and delete cross-writes characters/chats/loadouts via removeModuleReferences.
+  // The narrower update/enable/reorder commands emit the module-scoped resources
+  // below so a one-row edit no longer re-ships every character + loadout.
   module: ['modules', 'enabledModules', 'loadouts', 'characters'],
+  moduleUpdated: ['modules'],
+  moduleReordered: ['modules'],
+  moduleEnabled: ['enabledModules'],
   plugin: ['plugins', 'currentPluginProvider'],
   // loadout touch/delete also write the `lastLoadedLoadoutName` settings scalar,
   // so a foreign refresh must reship it alongside the loadouts collection.
@@ -95,8 +110,13 @@ const NARROW_STUBBED_PROJECTION_RESOURCES = new Set([
   'generation',
   'scriptDefinition',
   'triggerDefinition',
+  'moduleScriptDefinition',
+  'moduleTriggerDefinition',
   'lorebook',
   'module',
+  'moduleUpdated',
+  'moduleReordered',
+  'moduleEnabled',
 ])
 
 // Resources whose projected state intentionally sprawls across many top-level

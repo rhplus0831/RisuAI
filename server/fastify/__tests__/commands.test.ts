@@ -6287,7 +6287,9 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     expect(moduleTriggers.statusCode).toBe(200)
     expect(moduleTriggers.json().event).toMatchObject({
       type: 'triggerDefinitions.replaced',
-      resource: 'triggerDefinition',
+      // Module scripts/triggers rewrite only the `modules` table, so they emit
+      // a module-scoped resource (distinct from the character `triggerDefinition`).
+      resource: 'moduleTriggerDefinition',
       id: 'mod-a',
     })
 
