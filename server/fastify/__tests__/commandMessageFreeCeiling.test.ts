@@ -12,26 +12,30 @@ import {
   type CommandMutationMetric,
 } from './helpers/commandMetricGates.js'
 
-// Phase 6 (the message-free ceiling) regression. Tier-5 routes cannot be
-// narrowed below their safe floor in this plan; each test here PROVES the floor
-// is correct and the documented blocker is load-bearing rather than narrowing
-// the write:
+// Phase 6 (the message-free ceiling) regression. Each test PROVES a Tier-5
+// route's floor was correct and the documented blocker is load-bearing. Phase 8
+// has since landed the two unblock prerequisites for the high-value subset, so
+// three of these routes have graduated below the floor (asserted here at their
+// new range; the detailed proof is in commandFloorUnblock.test.ts):
 //
-//   * DELETE characters/:id and DELETE chats/:id stay `hydrated` because the
-//     message store has no FK cascade and there is no message GC — only the
-//     hydrated `syncChatMessages` diff deletes a vanished chat's message rows.
-//     Dropping to `message-free` would leak them permanently. (This corrects the
-//     seed slice's optimistic "message-free floor now" for chats delete.)
+//   * DELETE characters/:id stays `hydrated` (Phase 8 deferred it): the message
+//     store has no FK cascade and no GC, so only the hydrated `syncChatMessages`
+//     diff deletes a vanished character's chats' message rows.
+//   * DELETE chats/:id GRADUATED to `targeted-character-row` (Phase 8b): the
+//     orphan cleanup now uses the targeted deleteChatMessages/deleteChatHypaV3
+//     instead of a corpus-wide message load.
 //   * DELETE modules/:id stays `message-free`: `removeModuleReferences` strips
 //     the id across characters, chats, the loadouts collection, and settings, so
 //     no single-table lever applies and it writes the full broad set.
 //   * POST characters/:id/chats stays `hydrated`: the duplicate-message-id
 //     validation scans every chat's messages corpus-wide, a real message-load
 //     dependency.
-//   * POST characters, POST characters/create-and-select, POST modules, PUT
-//     characters/:id/scripts and PUT characters/:id/triggers stay `message-free`
-//     (their dropped id-repair / normalization side effects are the recorded
+//   * POST characters, POST characters/create-and-select, POST modules stay
+//     `message-free` (their dropped id-repair side effects are the recorded
 //     unblock conditions, not done here).
+//   * PUT characters/:id/scripts and PUT characters/:id/triggers GRADUATED to
+//     `targeted-character-row` (Phase 8a): the normalization is validate-only via
+//     discard, so only the target character row is written.
 
 interface Harness {
   app: FastifyInstance
@@ -286,7 +290,7 @@ describe('Phase 6 message-dependent delete floors', () => {
     expect(messageRowCount('chat-a-1')).toBe(0)
   })
 
-  it('DELETE chats/:id stays hydrated and cleans up the deleted chat\'s message rows', async () => {
+  it('DELETE chats/:id narrows to targeted-character-row (Phase 8b) and still cleans the deleted chat\'s message rows', async () => {
     const revision = await importDatabase(seedDatabase())
     expect(messageRowCount('chat-a-1')).toBe(1)
 
@@ -296,7 +300,10 @@ describe('Phase 6 message-dependent delete floors', () => {
       payload: { baseRevision: revision },
     })
 
-    expect(metric.mutationPath).toBe('hydrated')
+    // Phase 8b graduated this off the hydrated floor: the orphan cleanup now uses
+    // the targeted deleteChatMessages/deleteChatHypaV3 instead of a corpus-wide
+    // message load. Detailed proof lives in commandFloorUnblock.test.ts.
+    expect(metric.mutationPath).toBe('targeted-character-row')
     expect(metric.writtenTables).toContain('messages')
     assertCommandMetricGate(metric)
     // The deleted chat's messages are gone; the sibling chat survives untouched.
@@ -423,7 +430,7 @@ describe('Phase 6 message-free create + normalization floors', () => {
     ])
   })
 
-  it('PUT characters/:id/scripts replaces customscript at the message-free floor', async () => {
+  it('PUT characters/:id/scripts replaces customscript at the targeted-character-row range (Phase 8a)', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const script = {
@@ -441,13 +448,16 @@ describe('Phase 6 message-free create + normalization floors', () => {
       payload: { baseRevision: revision, scripts: [script] },
     })
 
-    expect(metric.mutationPath).toBe('message-free')
-    expect(metric.writtenTables).toEqual([...BROAD_WRITE_TABLES])
+    // Phase 8a graduated this off the message-free floor onto one character row
+    // (normalization is validate-only via discard). Detailed proof lives in
+    // commandFloorUnblock.test.ts.
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters'])
     assertCommandMetricGate(metric)
     expect(readCharacter('char-a').customscript).toEqual([script])
   })
 
-  it('PUT characters/:id/triggers replaces triggerscript at the message-free floor', async () => {
+  it('PUT characters/:id/triggers replaces triggerscript at the targeted-character-row range (Phase 8a)', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const trigger = { id: 'trigger-a', comment: 'Start', type: 'start', conditions: [], effect: [] }
@@ -457,8 +467,9 @@ describe('Phase 6 message-free create + normalization floors', () => {
       payload: { baseRevision: revision, triggers: [trigger] },
     })
 
-    expect(metric.mutationPath).toBe('message-free')
-    expect(metric.writtenTables).toEqual([...BROAD_WRITE_TABLES])
+    // Phase 8a graduated this off the message-free floor onto one character row.
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters'])
     assertCommandMetricGate(metric)
     expect(readCharacter('char-a').triggerscript).toEqual([trigger])
   })
