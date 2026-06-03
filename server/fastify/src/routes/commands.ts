@@ -4548,15 +4548,22 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ScriptDefinitionCommandBody
       const baseRevision = readBaseRevision(body)
       const scripts = readScriptDefinitions(body.scripts)
-      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
+      const result = applyTargetedCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
+          // Phase 8a: write only the target character row. The normalization
+          // still runs (it validates + locates the target), but its sibling
+          // repairs mutate the in-memory clone only and are discarded since we
+          // persist just this row. The incoming payload is already strictly
+          // validated by `readScriptDefinitions`, so the target needs no repair.
           const target = normalizeScriptDefinitionDatabase(database)
           const character = readCharacterScriptParent(target, characterId)
           character.customscript = scripts
+          writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: { ...COMMAND_EVENT_CATALOG.scriptDefinitionsReplaced, id: characterId },
             extra: { characterId },
@@ -4582,15 +4589,18 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ScriptDefinitionCommandBody
       const baseRevision = readBaseRevision(body)
       const triggers = readTriggerDefinitions(body.triggers)
-      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
+      const result = applyTargetedCommandMutation<{ characterId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
+          // Phase 8a: write only the target character row (see scripts route).
           const target = normalizeScriptDefinitionDatabase(database)
           const character = readCharacterScriptParent(target, characterId)
           character.triggerscript = triggers
+          writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: { ...COMMAND_EVENT_CATALOG.triggerDefinitionsReplaced, id: characterId },
             extra: { characterId },

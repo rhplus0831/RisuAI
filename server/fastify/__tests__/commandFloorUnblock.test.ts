@@ -1,0 +1,325 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import type { FastifyInstance } from 'fastify'
+import { DatabaseSync } from 'node:sqlite'
+import { buildApp } from '../src/app.js'
+import { setupAuthedClient } from './helpers/auth.js'
+import {
+  assertCommandMetricGate,
+  type CommandMutationMetric,
+} from './helpers/commandMetricGates.js'
+import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
+
+// Phase 8 (scoped Tier-5 floor unblocks) regression. The high-value Tier-5 routes
+// now write only the target character's row(s) instead of the broad floor:
+//   8a: PUT characters/:id/scripts + /triggers — off the `message-free` 13-table
+//       rewrite onto one `characters` row (normalization is validate-only via
+//       discard).
+//   8b: DELETE chats/:id — off the `hydrated` corpus-wide message load onto the
+//       parent character's rows + a targeted message/hypa delete.
+// Each test proves the narrowing via the `command_mutation` metric (targeted path
+// + `writtenTables`) and `tableRowidsById` (no unrelated row churn).
+
+interface Harness {
+  app: FastifyInstance
+  dataDir: string
+}
+
+const PREVIOUS_PROTOCOL_METRICS = process.env.RISU_PROTOCOL_METRICS
+
+let harness: Harness
+let assertion: string
+let infoSpy: ReturnType<typeof vi.spyOn>
+let metrics: CommandMutationMetric[]
+
+async function startHarness(): Promise<Harness> {
+  process.env.LOG_LEVEL = 'silent'
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-phase8-unblock-'))
+  const { app } = await buildApp({
+    config: {
+      host: '127.0.0.1',
+      port: 0,
+      dataDir,
+      bodyLimit: 20 * 1024 * 1024,
+      importMaxBytes: Infinity,
+      trustProxy: false,
+      hubUrl: 'https://sv.risuai.xyz',
+    },
+    assetGc: false,
+    memoryWorker: false,
+  })
+  return { app, dataDir }
+}
+
+function seedDatabase(): Record<string, unknown> {
+  return {
+    currentChar: 0,
+    theme: 'dark',
+    // A couple of collection rows so a broad-floor regression (a return to
+    // rewriting everything) would churn collection tables the gate forbids.
+    botPresets: [{ name: 'preset-0' }, { name: 'preset-1' }],
+    modules: [{ id: 'mod-a', name: 'Module A' }],
+    enabledModules: [],
+    characters: [
+      {
+        type: 'character',
+        chaId: 'char-a',
+        name: 'A',
+        chatPage: 1,
+        globalLore: [],
+        customscript: [{ id: 'rx-old', comment: 'old', in: 'a', out: 'b', type: 'editdisplay' }],
+        triggerscript: [{ id: 'tr-old', comment: '', type: 'start', conditions: [], effect: [] }],
+        chats: [
+          {
+            id: 'chat-a-1',
+            name: 'A1',
+            scriptstate: {},
+            localLore: [],
+            message: [
+              { role: 'user', data: 'a1-m0', chatId: 'msg-a1-0' },
+              { role: 'char', data: 'a1-m1', chatId: 'msg-a1-1' },
+            ],
+          },
+          {
+            id: 'chat-a-2',
+            name: 'A2',
+            scriptstate: {},
+            localLore: [],
+            message: [{ role: 'user', data: 'a2-m0', chatId: 'msg-a2-0' }],
+          },
+          {
+            id: 'chat-a-3',
+            name: 'A3',
+            scriptstate: {},
+            localLore: [],
+            message: [{ role: 'user', data: 'a3-m0', chatId: 'msg-a3-0' }],
+          },
+        ],
+      },
+      {
+        type: 'character',
+        chaId: 'char-b',
+        name: 'B',
+        chatPage: 0,
+        globalLore: [],
+        customscript: [{ id: 'rx-b', comment: 'b', in: 'x', out: 'y', type: 'editdisplay' }],
+        chats: [
+          {
+            id: 'chat-b-1',
+            name: 'B1',
+            scriptstate: {},
+            localLore: [],
+            message: [{ role: 'user', data: 'b1-m0', chatId: 'msg-b1-0' }],
+          },
+        ],
+      },
+    ],
+  }
+}
+
+async function importDatabase(database: unknown): Promise<number> {
+  const res = await harness.app.inject({
+    method: 'POST',
+    url: '/api/v1/import/risusave',
+    headers: { 'risu-auth': assertion },
+    payload: { database },
+  })
+  expect(res.statusCode, JSON.stringify(res.json())).toBe(200)
+  return (res.json() as { revision: number }).revision
+}
+
+interface CommandRequest {
+  method: 'DELETE' | 'PATCH' | 'POST' | 'PUT'
+  url: string
+  headers?: Record<string, string>
+  payload?: unknown
+}
+
+interface CommandResponse {
+  statusCode: number
+  json(): unknown
+}
+
+async function runCommand(
+  request: CommandRequest,
+): Promise<{ revision: number; metric: CommandMutationMetric; body: Record<string, unknown> }> {
+  const before = metrics.length
+  const inject = harness.app.inject as unknown as (
+    request: CommandRequest,
+  ) => Promise<CommandResponse>
+  const res = await inject({
+    ...request,
+    headers: { 'risu-auth': assertion, ...(request.headers ?? {}) },
+  })
+  expect(res.statusCode, JSON.stringify(res.json())).toBe(200)
+  const body = res.json() as Record<string, unknown>
+  const metric = metrics
+    .slice(before)
+    .find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
+  expect(metric, `missing command_mutation metric for ${request.url}`).toBeTruthy()
+  return { revision: body.revision as number, metric: metric as CommandMutationMetric, body }
+}
+
+function readCharacter(id: string): Record<string, unknown> {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    const row = db.prepare('SELECT data_json FROM characters WHERE id = ?').get(id) as {
+      data_json: string
+    }
+    return JSON.parse(row.data_json) as Record<string, unknown>
+  } finally {
+    db.close()
+  }
+}
+
+/** Chat ids for one character in stored `position` order. */
+function readChatOrder(characterId: string): string[] {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    const rows = db
+      .prepare('SELECT id FROM chats WHERE character_id = ? ORDER BY position')
+      .all(characterId) as Array<{ id: string }>
+    return rows.map((r) => r.id)
+  } finally {
+    db.close()
+  }
+}
+
+/** Total message rows for a chat (active + every alternate). */
+function countChatMessages(chatId: string): number {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    const row = db
+      .prepare('SELECT COUNT(*) AS n FROM messages WHERE chat_id = ?')
+      .get(chatId) as { n: number }
+    return row.n
+  } finally {
+    db.close()
+  }
+}
+
+function countChatHypa(chatId: string): number {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    const row = db
+      .prepare('SELECT COUNT(*) AS n FROM chat_hypa_v3 WHERE chat_id = ?')
+      .get(chatId) as { n: number }
+    return row.n
+  } finally {
+    db.close()
+  }
+}
+
+function rowidSnapshot(): { characters: Record<string, number>; chats: Record<string, number> } {
+  return {
+    characters: tableRowidsById(harness.dataDir, 'characters'),
+    chats: tableRowidsById(harness.dataDir, 'chats'),
+  }
+}
+
+function expectNoChurn(
+  before: { characters: Record<string, number>; chats: Record<string, number> },
+  options: { characters?: string[]; chats?: string[] } = {},
+): void {
+  assertOnlyRowsWritten(
+    before.characters,
+    tableRowidsById(harness.dataDir, 'characters'),
+    options.characters ?? [],
+  )
+  assertOnlyRowsWritten(before.chats, tableRowidsById(harness.dataDir, 'chats'), options.chats ?? [])
+}
+
+beforeEach(async () => {
+  process.env.RISU_PROTOCOL_METRICS = '1'
+  metrics = []
+  infoSpy = vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
+    if (typeof message !== 'string' || !message.startsWith('[protocol-metric] ')) return
+    metrics.push(JSON.parse(message.slice('[protocol-metric] '.length)) as CommandMutationMetric)
+  })
+  harness = await startHarness()
+  ;({ assertion } = await setupAuthedClient(harness.app))
+})
+
+afterEach(async () => {
+  infoSpy.mockRestore()
+  if (PREVIOUS_PROTOCOL_METRICS === undefined) {
+    delete process.env.RISU_PROTOCOL_METRICS
+  } else {
+    process.env.RISU_PROTOCOL_METRICS = PREVIOUS_PROTOCOL_METRICS
+  }
+  await harness.app.close()
+  rmSync(harness.dataDir, { recursive: true, force: true })
+})
+
+describe('Phase 8a script/trigger PUTs → targeted-character-row', () => {
+  it('PUT characters/:id/scripts writes only the target character row', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      payload: {
+        baseRevision: revision,
+        scripts: [
+          { id: 'rx-new-1', comment: 'n1', in: 'p', out: 'q', type: 'editdisplay' },
+          { id: 'rx-new-2', comment: 'n2', in: 'r', out: 's', type: 'editinput' },
+        ],
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters'])
+    expect(metric.dbJsonWriteMs).toBe(0)
+    assertCommandMetricGate(metric)
+
+    // Only char-a's row may have been rewritten; char-b and every chat row stay.
+    expectNoChurn(before)
+
+    const updated = readCharacter('char-a').customscript as Array<{ id: string }>
+    expect(updated.map((s) => s.id)).toEqual(['rx-new-1', 'rx-new-2'])
+    // Sibling character untouched (its row was never written).
+    expect((readCharacter('char-b').customscript as Array<{ id: string }>)[0].id).toBe('rx-b')
+  })
+
+  it('PUT characters/:id/triggers writes only the target character row', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/triggers',
+      payload: {
+        baseRevision: revision,
+        triggers: [{ id: 'tr-new', comment: 'c', type: 'start', conditions: [], effect: [] }],
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters'])
+    expect(metric.dbJsonWriteMs).toBe(0)
+    assertCommandMetricGate(metric)
+    expectNoChurn(before)
+
+    const updated = readCharacter('char-a').triggerscript as Array<{ id: string }>
+    expect(updated.map((t) => t.id)).toEqual(['tr-new'])
+    // The character's other fields (customscript, chatPage) are preserved.
+    expect((readCharacter('char-a').customscript as Array<{ id: string }>)[0].id).toBe('rx-old')
+    expect(readCharacter('char-a').chatPage).toBe(1)
+  })
+
+  it('a malformed scripts payload is rejected without any write', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const res = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, scripts: [{ comment: 'no id' }] },
+    })
+    expect(res.statusCode).toBe(400)
+    // Unchanged target row.
+    expect((readCharacter('char-a').customscript as Array<{ id: string }>)[0].id).toBe('rx-old')
+  })
+})
