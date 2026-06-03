@@ -269,6 +269,27 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields).not.toHaveProperty('language')
   })
 
+  it('falls back to full for a prompt-settings refresh (not botPresets)', async () => {
+    // Projection field-bug fix: prompt-settings writes ~21 scattered settings
+    // scalars, so a foreign refresh must full-bootstrap. The prior
+    // `prompt → ['botPresets']` mapping pointed at an unrelated field, so a
+    // foreign refresh never reflected the changed prompt settings.
+    const revision = await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      botPresets: [{ id: 'p1', name: 'P1' }],
+      language: 'en',
+    })
+
+    const res = await getProjection('prompt')
+    const body = res.json()
+    expect(body.revision).toBe(revision)
+    expect(body.mode).toBe('full')
+    expect(body.fields).toBeUndefined()
+    // Must not point at the unrelated botPresets field any more.
+    expect(resourceProjectionFields('prompt')).toBeNull()
+    expect(fullBootstrapFallbackClass('prompt')).toBe('sprawling')
+  })
+
   it('returns mode "full" for a sprawling resource (settings)', async () => {
     const revision = await importDatabase({ characters: [], language: 'en' })
     const res = await getProjection('settings')
@@ -347,6 +368,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(fullBootstrapFallbackClass('settings')).toBe('sprawling')
     expect(fullBootstrapFallbackClass('state')).toBe('sprawling')
     expect(fullBootstrapFallbackClass('pluginStorage')).toBe('sprawling')
+    expect(fullBootstrapFallbackClass('prompt')).toBe('sprawling')
     // Anything else is an unknown/foreign resource fallback.
     expect(fullBootstrapFallbackClass('does-not-exist')).toBe('unknown')
   })

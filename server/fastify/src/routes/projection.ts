@@ -42,7 +42,11 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   triggerDefinition: ['characters', 'modules'],
   lorebook: ['characters', 'modules', 'loreBook', 'loreBookPage'],
   preset: ['botPresets', 'botPresetsId'],
-  prompt: ['botPresets'],
+  // `prompt` (prompt-settings) writes ~21 scattered settings scalars, not a
+  // single owned field, so it falls back to a full bootstrap (listed in
+  // SPRAWLING_FULL_PROJECTION_RESOURCES). The old `['botPresets']` mapping was a
+  // bug: it pointed at an unrelated field, so a foreign refresh never reflected
+  // the changed prompt settings.
   // Prompt-item commands edit the `promptTemplate` collection, so a foreign
   // refresh must reship that field — not `botPresets` (the prior bug never
   // reflected the changed prompt items).
@@ -76,7 +80,6 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
 
 const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
   'preset',
-  'prompt',
   'promptItem',
   'persona',
   'translatorPreset',
@@ -103,7 +106,14 @@ const NARROW_STUBBED_PROJECTION_RESOURCES = new Set([
 // resource rather than a known sprawling one. The measurement distinguishes the
 // two so a later targeted-resource slice can tell an expected sprawling
 // fallback from an unexpected unknown-resource fallback.
-const SPRAWLING_FULL_PROJECTION_RESOURCES = new Set(['settings', 'state', 'pluginStorage'])
+const SPRAWLING_FULL_PROJECTION_RESOURCES = new Set([
+  'settings',
+  'state',
+  'pluginStorage',
+  // `prompt` (prompt-settings) writes ~21 scattered settings scalars; a foreign
+  // refresh must full-bootstrap rather than enumerate them.
+  'prompt',
+])
 
 export type FullBootstrapFallbackClass = 'sprawling' | 'unknown'
 
