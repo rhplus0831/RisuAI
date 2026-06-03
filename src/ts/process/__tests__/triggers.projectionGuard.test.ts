@@ -96,6 +96,12 @@ async function waitForCommand(
   throw new Error(`command not dispatched; saw: ${JSON.stringify(calls)}`)
 }
 
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 40 && !predicate(); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+}
+
 function seedDatabase(): void {
   selectedCharID.set(0)
   DBState.db = {
@@ -369,5 +375,86 @@ describe('trigger durable writes under the projection guard', () => {
       (call) => call.url === '/api/v1/commands/chats/chat-1' && call.method === 'PATCH',
     )
     expect(cmd.body.patch.note).toBe('author note text')
+  })
+})
+
+describe('Phase 2 trigger lorebook scoped rollback', () => {
+  it('restores only the one character globalLore when the lorebook command fails', async () => {
+    // two characters with distinct globalLore; a whole-array rollback would clone
+    // and re-write both, the scoped rollback touches only the edited character.
+    selectedCharID.set(0)
+    DBState.db = {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chatPage: 0,
+          chats: [{ id: 'chat-1', message: [], note: '', name: 'main', localLore: [], scriptstate: {} }],
+          triggerscript: [],
+          globalLore: [['k', 'old content']],
+          type: 'character',
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          chatPage: 0,
+          chats: [],
+          triggerscript: [],
+          globalLore: [['sib', 'sibling content']],
+          type: 'character',
+        },
+      ],
+      characterOrder: [],
+    } as any
+
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url.includes('/lorebooks')) return jsonResponse({ error: 'nope' }, 500)
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setServerProjectionWriteGuardEnabled(true)
+
+    const char = characterWithTriggers([
+      {
+        comment: 'lore',
+        type: 'manual',
+        conditions: [],
+        effect: [
+          {
+            type: 'v2ModifyLorebook',
+            targetType: 'value',
+            target: 'k',
+            valueType: 'value',
+            value: 'new content',
+          },
+        ],
+      },
+    ])
+    char.globalLore = [['k', 'old content']] as any
+
+    await expect(
+      runTrigger(char, 'manual', { chat: char.chats[char.chatPage], manualName: 'lore' }),
+    ).resolves.not.toThrow()
+
+    // the optimistic edit is applied to the selected character's row
+    expect((DBState.db.characters[0].globalLore as any)[0][1]).toBe('new content')
+
+    // the lorebook PUT fires then fails, restoring only char-a's globalLore
+    await waitForCommand(calls, (c) => c.url.includes('/lorebooks') && c.method === 'PUT')
+    await waitFor(() => (DBState.db.characters[0].globalLore as any)?.[0]?.[1] === 'old content')
+
+    expect((DBState.db.characters[0].globalLore as any)[0][1]).toBe('old content')
+    // the sibling character's lorebook was never part of the scoped rollback
+    expect((DBState.db.characters[1].globalLore as any)[0][1]).toBe('sibling content')
   })
 })

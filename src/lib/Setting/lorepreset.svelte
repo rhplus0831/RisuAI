@@ -7,7 +7,7 @@
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { canUseServerCommands } from 'src/ts/server/commands'
   import {
-    currentLorebookStateSnapshot,
+    currentGlobalLorebookStateSnapshot,
     dispatchCreateGlobalLorebook,
     dispatchDeleteGlobalLorebook,
     dispatchSelectGlobalLorebook,
@@ -28,7 +28,7 @@
   function selectLorebook(index) {
     const lorebookId = DBState.db.loreBook?.[index]?.id
     if (canUseServerCommands() && lorebookId) {
-      dispatchSelectGlobalLorebook(lorebookId, currentLorebookStateSnapshot())
+      dispatchSelectGlobalLorebook(lorebookId, currentGlobalLorebookStateSnapshot())
       return
     }
 
@@ -88,7 +88,7 @@
               }
               const d = await alertConfirm(`${language.removeConfirm}${lore.name}`)
               if (d) {
-                const previous = currentLorebookStateSnapshot()
+                const previous = currentGlobalLorebookStateSnapshot()
                 const lorebookId = lore.id
                 withTrustedServerProjectionWrite(() => {
                   DBState.db.loreBookPage = 0
@@ -116,7 +116,7 @@
       <button
         class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
         onclick={() => {
-          const previous = currentLorebookStateSnapshot()
+          const previous = currentGlobalLorebookStateSnapshot()
           let newLoreBook = {
             name: `New LoreBook`,
             data: [],

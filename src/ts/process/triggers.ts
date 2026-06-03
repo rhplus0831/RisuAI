@@ -38,8 +38,8 @@ import {
   type ChatScriptstateSnapshot,
 } from '../chatCommands'
 import {
-  currentLorebookStateSnapshot,
   dispatchReplaceCharacterLorebooks,
+  scopedLorebookStateSnapshot,
 } from '../server/lorebookBridge.svelte'
 
 export interface triggerscript {
@@ -1180,6 +1180,23 @@ async function collectStreamingText(
   return lastChunk
 }
 
+// Persist an in-place `char.globalLore` edit from a v2 lorebook trigger effect.
+// Writes the mutated character back into the local projection WITHOUT capturing a
+// character-row snapshot or dispatching a character update (the lorebook is
+// excluded from character patches, so that dispatch was always an empty no-op),
+// then persists only the character's lorebook with a single-character scoped
+// rollback (`prevGlobalLore` is the entry list captured before the edit). Replaces
+// the former `currentLorebookStateSnapshot()` whole characters + modules clone.
+function persistCharacterLorebookEdit(char: character, prevGlobalLore: string): void {
+  setCurrentCharacter(char, { dispatchServerCommand: false })
+  dispatchReplaceCharacterLorebooks(
+    char.chaId,
+    char.globalLore ?? [],
+    scopedLorebookStateSnapshot('character:' + char.chaId, prevGlobalLore),
+    0,
+  )
+}
+
 export async function runTrigger(
   char: character,
   mode: triggerMode,
@@ -2214,14 +2231,13 @@ export async function runTrigger(
               ? risuChatParser(effect.value, { chara: char })
               : getVar(risuChatParser(effect.value, { chara: char }))
 
+          const prevGlobalLoreModify = JSON.stringify(char.globalLore ?? [])
           const index = char.globalLore.findIndex((v) => v[0] === target)
           if (index !== -1) {
             char.globalLore[index][1] = value
           }
 
-          const lorebookSnapshotModify = currentLorebookStateSnapshot()
-          setCurrentCharacter(char)
-          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotModify, 0)
+          persistCharacterLorebookEdit(char, prevGlobalLoreModify)
           break
         }
         case 'v2GetLorebook': {
@@ -2267,11 +2283,10 @@ export async function runTrigger(
               ? Number(risuChatParser(effect.index, { chara: char }))
               : Number(getVar(risuChatParser(effect.index, { chara: char })))
           let value = effect.value
+          const prevGlobalLoreActivation = JSON.stringify(char.globalLore ?? [])
           char.globalLore[index][2] = value
 
-          const lorebookSnapshotActivation = currentLorebookStateSnapshot()
-          setCurrentCharacter(char)
-          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotActivation, 0)
+          persistCharacterLorebookEdit(char, prevGlobalLoreActivation)
 
           break
         }
@@ -2928,6 +2943,7 @@ export async function runTrigger(
               ? Number(risuChatParser(effect.insertOrder, { chara: char }))
               : Number(getVar(risuChatParser(effect.insertOrder, { chara: char })))
 
+          const prevGlobalLoreCreate = JSON.stringify(char.globalLore ?? [])
           char.globalLore.push({
             key: key,
             comment: name,
@@ -2939,9 +2955,7 @@ export async function runTrigger(
             selective: false,
           })
 
-          const lorebookSnapshotCreate = currentLorebookStateSnapshot()
-          setCurrentCharacter(char)
-          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotCreate, 0)
+          persistCharacterLorebookEdit(char, prevGlobalLoreCreate)
           break
         }
         case 'v2ModifyLorebookByIndex': {
@@ -2961,6 +2975,7 @@ export async function runTrigger(
           }
 
           const currentLore = char.globalLore[index]
+          const prevGlobalLoreModifyByIndex = JSON.stringify(char.globalLore ?? [])
 
           let name =
             effect.nameType === 'value'
@@ -2996,9 +3011,7 @@ export async function runTrigger(
             char.globalLore[index].insertorder = insertOrderNum
           }
 
-          const lorebookSnapshotModifyByIndex = currentLorebookStateSnapshot()
-          setCurrentCharacter(char)
-          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotModifyByIndex, 0)
+          persistCharacterLorebookEdit(char, prevGlobalLoreModifyByIndex)
           break
         }
         case 'v2DeleteLorebookByIndex': {
@@ -3017,11 +3030,10 @@ export async function runTrigger(
             break
           }
 
+          const prevGlobalLoreDelete = JSON.stringify(char.globalLore ?? [])
           char.globalLore.splice(index, 1)
 
-          const lorebookSnapshotDelete = currentLorebookStateSnapshot()
-          setCurrentCharacter(char)
-          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotDelete, 0)
+          persistCharacterLorebookEdit(char, prevGlobalLoreDelete)
           break
         }
         case 'v2GetLorebookCountNew': {
@@ -3048,11 +3060,10 @@ export async function runTrigger(
             break
           }
 
+          const prevGlobalLoreAlwaysActive = JSON.stringify(char.globalLore ?? [])
           char.globalLore[index].alwaysActive = effect.value
 
-          const lorebookSnapshotAlwaysActive = currentLorebookStateSnapshot()
-          setCurrentCharacter(char)
-          dispatchReplaceCharacterLorebooks(char.chaId, char.globalLore ?? [], lorebookSnapshotAlwaysActive, 0)
+          persistCharacterLorebookEdit(char, prevGlobalLoreAlwaysActive)
           break
         }
         case 'v2RegexTest': {

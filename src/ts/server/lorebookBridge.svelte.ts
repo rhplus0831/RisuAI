@@ -182,9 +182,14 @@ export function ensureAllClientLorebookIds(): void {
   })
 }
 
+// Global-lorebook select/create/delete only touch `loreBook` / `loreBookPage`, so
+// they take the narrow `GlobalLorebookStateSnapshot` and roll back via
+// `restoreGlobalLorebookState` — never the whole characters + modules clone the
+// `LorebookStateSnapshot` carries. The full snapshot stays for the entry-replace
+// dispatchers (which can mutate character/module/chat lore).
 export function dispatchCreateGlobalLorebook(
   lorebook: GlobalLorebook,
-  previous: LorebookStateSnapshot,
+  previous: GlobalLorebookStateSnapshot,
 ): void {
   if (!canUseServerCommands()) return
   lorebook.id = typeof lorebook.id === 'string' && lorebook.id.trim() ? lorebook.id : v4()
@@ -195,7 +200,7 @@ export function dispatchCreateGlobalLorebook(
         baseRevision,
         lorebook: cloneJsonValue(lorebook) as GlobalLorebookSnapshot,
       }),
-    rollback: () => restoreLorebookState(previous),
+    rollback: () => restoreGlobalLorebookState(previous),
   })
 }
 
@@ -218,7 +223,7 @@ export function dispatchUpdateGlobalLorebook(
 
 export function dispatchDeleteGlobalLorebook(
   lorebookId: string,
-  previous: LorebookStateSnapshot,
+  previous: GlobalLorebookStateSnapshot,
 ): void {
   if (!canUseServerCommands()) return
   void runServerCommand({
@@ -227,7 +232,7 @@ export function dispatchDeleteGlobalLorebook(
         baseRevision,
         lorebookId,
       }),
-    rollback: () => restoreLorebookState(previous),
+    rollback: () => restoreGlobalLorebookState(previous),
   })
 }
 
@@ -248,7 +253,7 @@ export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot):
 
 export function dispatchSelectGlobalLorebook(
   lorebookId: string,
-  previous: LorebookStateSnapshot,
+  previous: GlobalLorebookStateSnapshot,
 ): void {
   if (!canUseServerCommands()) return
   void runServerCommand({
@@ -257,7 +262,7 @@ export function dispatchSelectGlobalLorebook(
         baseRevision,
         lorebookId,
       }),
-    rollback: () => restoreLorebookState(previous),
+    rollback: () => restoreGlobalLorebookState(previous),
   })
 }
 

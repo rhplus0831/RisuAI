@@ -1,13 +1,24 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../platform', async (importActual) => {
+  const actual = await importActual<typeof import('../platform')>()
+  return { ...actual, isFastifyServer: true }
+})
+
+vi.mock('../storage/fastifyStorage', () => ({
+  getNodeServerProxyAuth: async () => 'lorebook-command-token',
+}))
 
 import { DBState, selectedCharID } from '../stores.svelte'
 import { setServerProjectionWriteGuardEnabled } from './projectionWriteGuard.svelte'
 import {
   currentGlobalLorebookStateSnapshot,
+  dispatchSelectGlobalLorebook,
   restoreGlobalLorebookState,
   restoreScopedLorebookState,
   scopedLorebookStateSnapshot,
 } from './lorebookBridge.svelte'
+import { clearCachedServerCommandRevision } from './commands'
 import {
   assertRollbackRestoresOnly,
   assertSnapshotOmitsCollections,
@@ -15,7 +26,21 @@ import {
   withCloneInstrumentation,
 } from '../__tests__/cloneCostHarness'
 
+interface CapturedFetch {
+  url: string
+  method: string
+  body: unknown
+}
+
+async function waitForCallCount(calls: CapturedFetch[], expected: number): Promise<void> {
+  for (let attempt = 0; attempt < 20 && calls.length < expected; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  expect(calls).toHaveLength(expected)
+}
+
 beforeEach(() => {
+  clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   selectedCharID.set(0)
   DBState.db = seedCloneCostDb() as any
@@ -25,6 +50,7 @@ beforeEach(() => {
 
 afterEach(() => {
   setServerProjectionWriteGuardEnabled(false)
+  vi.unstubAllGlobals()
 })
 
 describe('Phase 0 global-lorebook snapshot kit', () => {
@@ -89,5 +115,49 @@ describe('Phase 0 exported scoped-lorebook pair', () => {
 
     expect(DBState.db.characters[0].globalLore).toEqual([{ key: 'orig', content: 'original' }])
     expect(DBState.db.characters[1].globalLore).toEqual([{ key: 'sibling', content: 'sibling' }])
+  })
+})
+
+describe('Phase 2 global-lorebook scoped dispatch', () => {
+  it('dispatchSelectGlobalLorebook restores only the lorebook pointer on failure', async () => {
+    DBState.db.loreBook = [
+      { id: 'g1', name: 'Global', data: [] },
+      { id: 'g2', name: 'Second', data: [] },
+    ] as any
+    DBState.db.loreBookPage = 0
+
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return new Response(JSON.stringify({ revision: 10 }))
+        if (url === '/api/v1/commands/lorebooks/g2/select') {
+          return new Response(JSON.stringify({ error: 'nope' }), { status: 500 })
+        }
+        return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 404 })
+      }) as unknown as typeof fetch,
+    )
+
+    const previous = currentGlobalLorebookStateSnapshot()
+    // the snapshot must not carry the whole characters / modules collections
+    assertSnapshotOmitsCollections(previous)
+
+    // optimistic local select + a concurrent, unrelated character edit a whole-array
+    // rollback would have wiped
+    DBState.db.loreBookPage = 1
+    DBState.db.characters[0].name = 'Concurrent edit'
+
+    dispatchSelectGlobalLorebook('g2', previous)
+    await waitForCallCount(calls, 2)
+
+    // only the lorebook pointer is restored; the sibling character edit survives
+    expect(DBState.db.loreBookPage).toBe(0)
+    expect(DBState.db.characters[0].name).toBe('Concurrent edit')
   })
 })
