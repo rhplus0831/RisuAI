@@ -1,12 +1,13 @@
 import { untrack } from 'svelte'
 import { get } from 'svelte/store'
 import {
+  CHAT_PATCH_ALLOWED_KEYS,
   cloneJsonValue,
-  currentChatStateSnapshot,
-  dispatchUpdateChat,
-  dispatchUpdateChatFolder,
+  dispatchUpdateChatFolderRow,
+  dispatchUpdateChatRow,
   restoreChatState,
-  sanitizeChatPatch,
+  type ChatFolderRowMetadataSnapshot,
+  type ChatRowMetadataSnapshot,
   type ChatStateSnapshot,
 } from '../chatCommands'
 import { canUseServerCommands, type ChatFolderSnapshot, type ChatSnapshot } from './commands'
@@ -17,14 +18,14 @@ import { getServerProjectionApplyEpoch } from './projectionWriteGuard.svelte'
 interface PendingChatPatch {
   chatId: string
   patch: ChatSnapshot
-  previous: ChatStateSnapshot
+  rollback: ChatRowMetadataSnapshot
   timer: ReturnType<typeof setTimeout> | null
 }
 
 interface PendingFolderPatch {
   folderId: string
   patch: ChatFolderSnapshot
-  previous: ChatStateSnapshot
+  rollback: ChatFolderRowMetadataSnapshot
   timer: ReturnType<typeof setTimeout> | null
 }
 
@@ -58,14 +59,14 @@ export function watchServerBackedChatMetadata(
   let initialized = false
   let previousChats = new Map<string, ChatSnapshot>()
   let previousFolders = new Map<string, ChatFolderSnapshot>()
-  let previousState = currentChatStateSnapshot()
   let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
   activeStop = $effect.root(() => {
     $effect(() => {
       const projectionApplyEpoch = getServerProjectionApplyEpoch()
-      const character = DBState.db.characters?.[get(selectedCharID)]
-      const currentState = currentChatStateSnapshot()
+      const selectedChar = get(selectedCharID)
+      const character = DBState.db.characters?.[selectedChar]
+      const characterId = character?.chaId
       const currentChats = new Map(
         (character?.chats ?? [])
           .filter((chat) => typeof chat.id === 'string' && chat.id)
@@ -86,7 +87,6 @@ export function watchServerBackedChatMetadata(
         previousProjectionApplyEpoch = projectionApplyEpoch
         previousChats = currentChats
         previousFolders = currentFolders
-        previousState = currentState
         return
       }
 
@@ -95,7 +95,16 @@ export function watchServerBackedChatMetadata(
         if (!previous) continue
         const patch = changedFields(previous, current)
         if (Object.keys(patch).length > 0) {
-          untrack(() => queueChatPatch(chatId, patch, previousState, delayMs))
+          // Capture the rollback lazily, only when there is a real change: the
+          // per-row scalar baseline (`previous`) is exactly what a failed patch
+          // must restore. No whole-characters clone.
+          const rollback: ChatRowMetadataSnapshot = {
+            selectedCharID: selectedChar,
+            characterId,
+            chatId,
+            metadata: previous,
+          }
+          untrack(() => queueChatPatch(chatId, patch, rollback, delayMs))
         }
       }
 
@@ -104,13 +113,18 @@ export function watchServerBackedChatMetadata(
         if (!previous) continue
         const patch = changedFields(previous, current)
         if (Object.keys(patch).length > 0) {
-          untrack(() => queueFolderPatch(folderId, patch, previousState, delayMs))
+          const rollback: ChatFolderRowMetadataSnapshot = {
+            selectedCharID: selectedChar,
+            characterId,
+            folderId,
+            metadata: previous,
+          }
+          untrack(() => queueFolderPatch(folderId, patch, rollback, delayMs))
         }
       }
 
       previousChats = currentChats
       previousFolders = currentFolders
-      previousState = currentState
     })
   })
 
@@ -128,12 +142,14 @@ export function watchServerBackedChatMetadata(
 function queueChatPatch(
   chatId: string,
   patch: ChatSnapshot,
-  previous: ChatStateSnapshot,
+  rollback: ChatRowMetadataSnapshot,
   delay: number,
 ): void {
   const pendingChatPatch = pendingChatPatches.get(chatId)
   if (pendingChatPatch?.timer) clearTimeout(pendingChatPatch.timer)
 
+  // Keep the earliest pending rollback so a debounced merge still restores the
+  // metadata as it was before the first queued change.
   const nextPatch: PendingChatPatch = pendingChatPatch
     ? {
         ...pendingChatPatch,
@@ -143,7 +159,7 @@ function queueChatPatch(
     : {
         chatId,
         patch,
-        previous,
+        rollback,
         timer: null,
       }
 
@@ -151,7 +167,7 @@ function queueChatPatch(
     const commandPatch = pendingChatPatches.get(chatId)
     pendingChatPatches.delete(chatId)
     if (!commandPatch) return
-    dispatchUpdateChat(commandPatch.chatId, commandPatch.patch, commandPatch.previous)
+    dispatchUpdateChatRow(commandPatch.chatId, commandPatch.patch, commandPatch.rollback)
   }, delay)
   pendingChatPatches.set(chatId, nextPatch)
 }
@@ -159,7 +175,7 @@ function queueChatPatch(
 function queueFolderPatch(
   folderId: string,
   patch: ChatFolderSnapshot,
-  previous: ChatStateSnapshot,
+  rollback: ChatFolderRowMetadataSnapshot,
   delay: number,
 ): void {
   const pendingFolderPatch = pendingFolderPatches.get(folderId)
@@ -174,7 +190,7 @@ function queueFolderPatch(
     : {
         folderId,
         patch,
-        previous,
+        rollback,
         timer: null,
       }
 
@@ -182,13 +198,25 @@ function queueFolderPatch(
     const commandPatch = pendingFolderPatches.get(folderId)
     pendingFolderPatches.delete(folderId)
     if (!commandPatch) return
-    dispatchUpdateChatFolder(commandPatch.folderId, commandPatch.patch, commandPatch.previous)
+    dispatchUpdateChatFolderRow(commandPatch.folderId, commandPatch.patch, commandPatch.rollback)
   }, delay)
   pendingFolderPatches.set(folderId, nextPatch)
 }
 
+// Build the scalar metadata snapshot for one chat without ever serializing its
+// `message` history or `localLore`: iterate only the allowed scalar keys and
+// clone the small bounded values. The previous implementation
+// `sanitizeChatPatch(cloneJsonValue(chat))` deep-cloned the whole chat (message
+// history included) on every watcher fire, which also made the effect track the
+// message array and re-run on every streaming chunk.
 function scalarChatMetadata(chat: ChatSnapshot): ChatSnapshot {
-  return sanitizeChatPatch(cloneJsonValue(chat))
+  const metadata: ChatSnapshot = {}
+  for (const key of CHAT_PATCH_ALLOWED_KEYS) {
+    const value = (chat as Record<string, unknown>)[key]
+    if (value === undefined) continue
+    metadata[key] = cloneJsonValue(value)
+  }
+  return metadata
 }
 
 function scalarChatFolderMetadata(folder: ChatFolder): ChatFolderSnapshot {

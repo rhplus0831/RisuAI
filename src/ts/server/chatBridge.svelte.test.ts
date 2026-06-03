@@ -25,14 +25,24 @@ vi.mock('../chatCommands', () => {
     value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T)
   return {
     cloneJsonValue,
-    currentChatStateSnapshot: () => ({
-      characters: cloneJsonValue(chatCommandState.getDb?.().characters ?? []),
-      selectedCharID: chatCommandState.getSelectedCharId?.() ?? -1,
-    }),
-    dispatchUpdateChat: (chatId: string, patch: Record<string, unknown>) => {
+    CHAT_PATCH_ALLOWED_KEYS: new Set([
+      'name',
+      'note',
+      'sdData',
+      'lastMemory',
+      'suggestMessages',
+      'bindedPersona',
+      'fmIndex',
+      'folderId',
+      'lastDate',
+      'bookmarks',
+      'bookmarkNames',
+      'modules',
+    ]),
+    dispatchUpdateChatRow: (chatId: string, patch: Record<string, unknown>) => {
       recorded.chatUpdates.push({ chatId, patch: cloneJsonValue(patch) })
     },
-    dispatchUpdateChatFolder: (folderId: string, patch: Record<string, unknown>) => {
+    dispatchUpdateChatFolderRow: (folderId: string, patch: Record<string, unknown>) => {
       recorded.folderUpdates.push({ folderId, patch: cloneJsonValue(patch) })
     },
     restoreChatState: (snapshot: { characters: unknown[]; selectedCharID: number }) => {
@@ -42,14 +52,11 @@ vi.mock('../chatCommands', () => {
       }
       chatCommandState.setSelectedCharId?.(snapshot.selectedCharID)
     },
-    sanitizeChatPatch: (patch: Record<string, unknown>) => {
-      const { id: _id, message: _message, chatFolders: _chatFolders, ...rest } = patch
-      return cloneJsonValue(rest)
-    },
   }
 })
 
 import { DBState, selectedCharID } from '../stores.svelte'
+import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
   rollbackServerBackedChatMetadata,
   watchServerBackedChatMetadata,
@@ -150,6 +157,85 @@ describe('watchServerBackedChatMetadata baselines', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
+    expect(recorded.chatUpdates).toEqual([])
+    stop()
+  })
+})
+
+const BIG_BODY = 'x'.repeat(5000)
+
+function setupHydratedChat(): void {
+  ;(DBState as { db: unknown }).db = {
+    characters: [
+      {
+        chaId: 'char-1',
+        chats: [
+          {
+            id: 'chat-1',
+            name: 'Initial',
+            note: 'note',
+            message: Array.from({ length: 50 }, (_unused, index) => ({
+              role: index % 2 === 0 ? 'user' : 'char',
+              data: BIG_BODY,
+              chatId: `msg-${index}`,
+            })),
+            localLore: [{ content: BIG_BODY }],
+          },
+        ],
+        chatFolders: [{ id: 'folder-1', name: 'Folder', color: '#fff', folded: false }],
+      },
+    ],
+  }
+  selectedCharID.set(0)
+}
+
+describe('watchServerBackedChatMetadata clone cost (Phase 2)', () => {
+  it('builds scalar metadata without serializing the chat message history', () => {
+    setupHydratedChat()
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+
+    // The first effect run captures the baseline (scalarChatMetadata per chat).
+    // It must never serialize the 50-message history (~250 KB) or localLore.
+    const instrumented = withCloneInstrumentation(() => flushSync())
+
+    expect(instrumented.maxClonedSize).toBeLessThan(BIG_BODY.length)
+    expect(recorded.chatUpdates).toEqual([])
+    stop()
+  })
+
+  it('does not re-clone or wake on a streaming message append', async () => {
+    setupHydratedChat()
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+
+    // A streaming chunk only mutates message[], which is no longer a metadata
+    // dependency: the watcher must neither clone the transcript nor queue a patch.
+    const instrumented = withCloneInstrumentation(() => {
+      DBState.db.characters[0].chats[0].message.push({
+        role: 'char',
+        data: BIG_BODY,
+        chatId: 'msg-stream',
+      })
+      flushSync()
+    })
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(instrumented.maxClonedSize).toBeLessThan(BIG_BODY.length)
+    expect(recorded.chatUpdates).toEqual([])
+    stop()
+  })
+
+  it('rebuilds baselines on a projection epoch advance without a whole-chat clone', () => {
+    setupHydratedChat()
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+
+    projectionGuardState.epoch += 1
+    DBState.db.characters[0].chats[0].name = 'Server Renamed'
+
+    const instrumented = withCloneInstrumentation(() => flushSync())
+
+    expect(instrumented.maxClonedSize).toBeLessThan(BIG_BODY.length)
     expect(recorded.chatUpdates).toEqual([])
     stop()
   })

@@ -186,6 +186,57 @@ function locateScriptstateChat(snapshot: ChatScriptstateSnapshot): Chat | undefi
   return character?.chats?.[character.chatPage]
 }
 
+// Narrow chat-metadata-row rollback for the server-backed chat-metadata watcher.
+// The watcher pushes only the small allowed scalar keys
+// (`CHAT_PATCH_ALLOWED_KEYS`) of one chat row to the server, so its rollback only
+// needs that one row's scalar metadata — not a JSON clone of every character's
+// whole chat history (the heavy `ChatStateSnapshot`). `metadata` is exactly the
+// scalar baseline the watcher already diffs, so restoring it re-writes only those
+// scalars on the located chat and leaves message history, `localLore`,
+// `scriptstate`, and every other chat/character row untouched.
+export interface ChatRowMetadataSnapshot {
+  selectedCharID: number
+  characterId: string | undefined
+  chatId: string
+  metadata: ChatSnapshot
+}
+
+export function restoreChatRowMetadata(snapshot: ChatRowMetadataSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
+    const chat = character?.chats?.find((candidate) => candidate.id === snapshot.chatId)
+    if (!chat) return
+    const row = chat as unknown as Record<string, unknown>
+    for (const key of CHAT_PATCH_ALLOWED_KEYS) {
+      if (key in snapshot.metadata) {
+        row[key] = cloneJsonValue(snapshot.metadata[key])
+      } else {
+        // The optimistic change added this allowed key; remove it so the failed
+        // command does not leave a stray scalar behind.
+        delete row[key]
+      }
+    }
+  })
+}
+
+export interface ChatFolderRowMetadataSnapshot {
+  selectedCharID: number
+  characterId: string | undefined
+  folderId: string
+  metadata: ChatFolderSnapshot
+}
+
+export function restoreChatFolderRowMetadata(snapshot: ChatFolderRowMetadataSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
+    const folder = character?.chatFolders?.find((candidate) => candidate.id === snapshot.folderId)
+    if (!folder) return
+    folder.name = snapshot.metadata.name as string | undefined
+    folder.color = snapshot.metadata.color as string | undefined
+    folder.folded = (snapshot.metadata.folded as boolean | undefined) ?? false
+  })
+}
+
 export function runChatCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,
@@ -264,6 +315,28 @@ export function dispatchUpdateChat(
         select,
       }),
     () => restoreChatState(previous),
+  )
+}
+
+// Narrow-rollback variant of `dispatchUpdateChat` for the chat-metadata watcher.
+// Identical command, but the rollback restores one chat row's scalar metadata
+// instead of cloning the whole characters array.
+export function dispatchUpdateChatRow(
+  chatId: string,
+  patch: ChatSnapshot,
+  rollback: ChatRowMetadataSnapshot,
+): void {
+  const commandPatch = sanitizeChatPatch(patch)
+  if (Object.keys(commandPatch).length === 0) return
+  runChatCommand(
+    (baseRevision) =>
+      updateChatCommand({
+        baseRevision,
+        chatId,
+        patch: commandPatch,
+        select: false,
+      }),
+    () => restoreChatRowMetadata(rollback),
   )
 }
 
@@ -436,6 +509,25 @@ export function dispatchUpdateChatFolder(
         patch,
       }),
     () => restoreChatState(previous),
+  )
+}
+
+// Narrow-rollback variant of `dispatchUpdateChatFolder` for the chat-metadata
+// watcher. The rollback restores one folder row's scalar metadata instead of the
+// whole characters array.
+export function dispatchUpdateChatFolderRow(
+  folderId: string,
+  patch: ChatFolderSnapshot,
+  rollback: ChatFolderRowMetadataSnapshot,
+): void {
+  runChatCommand(
+    (baseRevision) =>
+      updateChatFolderCommand({
+        baseRevision,
+        folderId,
+        patch,
+      }),
+    () => restoreChatFolderRowMetadata(rollback),
   )
 }
 

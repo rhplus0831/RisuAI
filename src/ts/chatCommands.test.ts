@@ -33,6 +33,8 @@ import {
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
   dispatchUpdateChat,
+  restoreChatFolderRowMetadata,
+  restoreChatRowMetadata,
   restoreChatScopedState,
   restoreChatScriptstate,
 } from './chatCommands'
@@ -543,6 +545,111 @@ describe('Phase 0 chat-scriptstate snapshot kit', () => {
       expectUntouched: () => {
         // a whole-chat restore would have wiped this concurrent message
         expect(DBState.db.characters[0].chats[0].message).toHaveLength(41)
+      },
+    })
+  })
+})
+
+describe('Phase 2 chat-metadata-row rollback', () => {
+  function scalarMetadata(chatIndex: number): ChatSnapshot {
+    const chat = DBState.db.characters[0].chats[chatIndex] as Record<string, unknown>
+    const metadata: ChatSnapshot = {}
+    // mirror the watcher's allowed scalar metadata keys for the seeded fields
+    for (const key of ['name', 'note', 'folderId', 'bindedPersona'] as const) {
+      if (chat[key] !== undefined) metadata[key] = chat[key]
+    }
+    return metadata
+  }
+
+  it('restores only the one chat row, preserving message history and unrelated chats', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+
+    assertRollbackRestoresOnly({
+      capture: () => ({
+        selectedCharID: 0,
+        characterId: 'char-0',
+        chatId: 'chat-0',
+        metadata: scalarMetadata(0),
+      }),
+      mutate: () => {
+        // optimistic metadata change the failing command must undo
+        DBState.db.characters[0].chats[0].name = 'Optimistic Name'
+        // unrelated concurrent edits a whole-array restore would have clobbered
+        DBState.db.characters[0].chats[0].message.push({
+          role: 'char',
+          data: 'concurrent',
+          chatId: 'msg-concurrent',
+        })
+        DBState.db.characters[1].chats[0].note = 'sibling concurrent note'
+      },
+      expectMutated: () => {
+        expect(DBState.db.characters[0].chats[0].name).toBe('Optimistic Name')
+      },
+      restore: (snapshot) => restoreChatRowMetadata(snapshot),
+      expectRestored: () => {
+        expect(DBState.db.characters[0].chats[0].name).toBe('Chat 0')
+      },
+      expectUntouched: () => {
+        expect(DBState.db.characters[0].chats[0].message).toHaveLength(41)
+        expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent note')
+      },
+    })
+  })
+
+  it('drops an allowed key the optimistic change added but the baseline lacked', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+    // baseline has no bindedPersona
+    const snapshot = {
+      selectedCharID: 0,
+      characterId: 'char-0',
+      chatId: 'chat-0',
+      metadata: scalarMetadata(0),
+    }
+    expect(snapshot.metadata).not.toHaveProperty('bindedPersona')
+
+    DBState.db.characters[0].chats[0].bindedPersona = 'persona-x'
+    restoreChatRowMetadata(snapshot)
+
+    expect(DBState.db.characters[0].chats[0].bindedPersona).toBeUndefined()
+  })
+
+  it('restores only the one folder row by stable id', () => {
+    DBState.db = seedCloneCostDb() as any
+    DBState.db.characters[0].chatFolders = [
+      { id: 'folder-0', name: 'Folder Zero', color: '#111', folded: false },
+    ]
+    DBState.db.characters[1].chatFolders = [
+      { id: 'folder-1', name: 'Folder One', color: '#222', folded: false },
+    ]
+    selectedCharID.set(0)
+
+    assertRollbackRestoresOnly({
+      capture: () => ({
+        selectedCharID: 0,
+        characterId: 'char-0',
+        folderId: 'folder-0',
+        metadata: { name: 'Folder Zero', color: '#111', folded: false } as ChatFolderSnapshot,
+      }),
+      mutate: () => {
+        DBState.db.characters[0].chatFolders[0].folded = true
+        DBState.db.characters[0].chatFolders[0].name = 'Optimistic Folder'
+        DBState.db.characters[1].chatFolders[0].name = 'Sibling Folder Edit'
+      },
+      expectMutated: () => {
+        expect(DBState.db.characters[0].chatFolders[0].folded).toBe(true)
+      },
+      restore: (snapshot) => restoreChatFolderRowMetadata(snapshot),
+      expectRestored: () => {
+        expect(DBState.db.characters[0].chatFolders[0]).toMatchObject({
+          name: 'Folder Zero',
+          color: '#111',
+          folded: false,
+        })
+      },
+      expectUntouched: () => {
+        expect(DBState.db.characters[1].chatFolders[0].name).toBe('Sibling Folder Edit')
       },
     })
   })

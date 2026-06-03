@@ -1,6 +1,18 @@
 # Chat-Metadata Watcher
 
-Status: planned. Phase 2. Always-on watcher. Depends on the Phase 0 kit.
+Status: implemented. Phase 2. Always-on watcher. Depends on the Phase 0 kit.
+
+Landed: the watcher no longer captures a `currentChatStateSnapshot()` per fire.
+`scalarChatMetadata` iterates `CHAT_PATCH_ALLOWED_KEYS` and clones only the small
+allowed scalars (never `chat.message`/`chat.localLore`), so the effect also stops
+tracking the message array and no longer wakes on streaming chunks. Each changed
+row queues a narrow `ChatRowMetadataSnapshot` / `ChatFolderRowMetadataSnapshot`
+rollback (the per-row scalar baseline the watcher already diffs), dispatched via
+new `dispatchUpdateChatRow` / `dispatchUpdateChatFolderRow` variants that restore
+through `restoreChatRowMetadata` / `restoreChatFolderRowMetadata` instead of
+`restoreChatState`. Proofs: clone-cost + streaming-no-wake + epoch-rebuild tests
+in `chatBridge.svelte.test.ts`, and row-restore correctness (incl. added-key
+delete + sibling-row isolation) in `chatCommands.test.ts`.
 
 ## Scope
 
