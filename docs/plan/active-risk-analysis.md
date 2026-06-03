@@ -1,6 +1,6 @@
 # Active Risk Analysis
 
-Date: 2026-06-03
+Date: 2026-06-04
 
 This file routes each finding area to its target clone range and phase. It is
 not a verification log. Keep proof runs in
@@ -9,8 +9,9 @@ not a verification log. Keep proof runs in
 
 ## Summary
 
-All findings are analyzed; nothing is implemented. Severity comes from the seed
-audit: 4 critical, 13 high, 6 medium, 6 low, plus the clone-site inventory.
+All findings are analyzed. Phase 0 and the primary Phase 1 guard fix are
+implemented; Phase 2-8 remain planned. Severity comes from the seed audit:
+4 critical, 13 high, 6 medium, 6 low, plus the clone-site inventory.
 
 Principle: do not clone the whole characters array, whole `Database`, or full
 message history for scalar-only hot paths. Keep full clones for real
@@ -18,13 +19,13 @@ restructures.
 
 ## Risk Map
 
-- Projection write guard: `withTrustedServerProjectionWrite` clones the whole
-  `Database` twice per guarded write, about 255 ms on a 61 MB DB. Target: O(1)
-  proxy unwrap/rewrap with no value clone. Phase:
-  [Phase 1](phases/phase-1-projection-write-guard.md).
-- Streaming, completion, SSE, and chat-open writes: each guarded write pays the
-  full-DB clone. Target: closed by the guard fix; optional batching can reduce
-  guard scope count. Phase: [Phase 1](phases/phase-1-projection-write-guard.md).
+- Projection write guard: implemented in Phase 1. Guarded writes now unwrap to a
+  writable pass-through proxy and refreeze with a fresh read-only proxy tree, so
+  the former two whole-`Database` clones per guarded write are gone. The rare
+  full-projection replacement path may still snapshot once.
+- Streaming, completion, SSE, and chat-open writes: the per-write full-DB clone
+  cost is closed by the Phase 1 guard fix. The optional batching slice is
+  deferred; reopen only if proxy wrap transitions show up in profiling.
 - `currentChatStateSnapshot` message paths: send, message edit, swipe/reroll,
   slash var, and chat-metadata watcher clone all characters. Target:
   `currentChatScopedSnapshot`, with full clone kept for create/delete/reorder/fork.
@@ -61,9 +62,10 @@ restructures.
   while the config/module panel is open. Target: keep per-key string snapshots;
   build rollback lazily in `dispatchWatchedReplacement`. Phase:
   [Phase 4](phases/phase-4-script-definition-watcher.md).
-- Prompt-template editor: each keystroke clones the whole prompt template, pays
-  the guard clone, and double-stringifies for change detection. Target: debounce
-  the projection write, mutate one item, and use a revision discriminator. Phase:
+- Prompt-template editor: Phase 1 removed the guard clone, but each keystroke
+  still clones the whole prompt template and double-stringifies for change
+  detection. Target: debounce the projection write, mutate one item, and use a
+  revision discriminator. Phase:
   [Phase 5](phases/phase-5-prompt-template-keystroke.md).
 - Lorebook watcher: rebuilds a DB-wide lore stringify map per fire. Target:
   scope the collector to the mounted panel's collection. Phase:
@@ -92,11 +94,12 @@ restructures.
 
 ## Decision
 
-Land Phase 0 (kit + harness) and Phase 1 (guard) first. Then narrow the
-Critical/High snapshot call sites in Phase 2. Phases 3-7 are independent
+Phase 0 (kit + harness) and the Phase 1 primary guard fix are done. Next narrow
+the Critical/High snapshot call sites in Phase 2. Phases 3-7 are independent
 cleanups. Phase 8 is the standing gate.
 
-- The guard fix is highest leverage; the snapshot kit is the shared dependency.
+- The highest-leverage guard fix has landed; the Phase 0 snapshot kit is the
+  shared dependency for the remaining narrowing work.
 - Every narrowing keeps the full-collection snapshot for genuine restructures and
   proves the hot path no longer reaches it (clone-cost regression test).
 - A narrowed rollback restores exactly what the command mutates; correctness is

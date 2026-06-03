@@ -32,6 +32,10 @@ paths with lorebook-only or single-character snapshots.
 - `selectLorebook` / delete / create: use
   `currentGlobalLorebookStateSnapshot()` and restore only `loreBook` /
   `loreBookPage`.
+- First update `dispatchCreateGlobalLorebook`, `dispatchDeleteGlobalLorebook`,
+  and `dispatchSelectGlobalLorebook` to accept `GlobalLorebookStateSnapshot` plus
+  `restoreGlobalLorebookState()` or add narrow variants. The current dispatchers
+  still require `LorebookStateSnapshot` and call `restoreLorebookState()`.
 - The 6 lorebook trigger sites: capture `globalLore` before the in-place edit via
   `scopedLorebookStateSnapshot('character:'+char.chaId, prevGlobalLore)`.
   Drop the redundant `setCurrentCharacter(char)` re-clone, or use a no-snapshot

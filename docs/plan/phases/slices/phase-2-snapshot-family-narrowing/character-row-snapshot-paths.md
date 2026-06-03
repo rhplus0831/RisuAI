@@ -30,6 +30,10 @@ target character row.
 
 - Add rollback through `currentCharacterRowSnapshot(index/characterId)` /
   `restoreCharacterRow()` from Phase 0.
+- First update `dispatchUpdateCharacter` /
+  `dispatchCompatibleCharacterUpdate` to accept a narrow snapshot+rollback pair,
+  or add narrow variants. The current compatible-update path still takes
+  `CharacterStateSnapshot` and defaults to `restoreCharacterState()`.
 - Route `setCurrentCharacter` / `setCharacterByIndex` /
   `dispatchCompatibleCharacterUpdate` (character-FIELD updates) through it.
 - Keep `currentCharacterStateSnapshot` only for

@@ -29,24 +29,17 @@ cloning full chats.
 - Remove the effect's full-array `previousState` / `currentState` snapshots.
 - Capture rollback lazily in `queueChatPatch` / `queueFolderPatch`, only when
   `changedFields()` finds a real change.
+- Update `queueChatPatch` / `queueFolderPatch` and the underlying
+  `dispatchUpdateChat` / `dispatchUpdateChatFolder` path to carry a narrow
+  row-level rollback, or add narrow dispatch variants. The current queue entries
+  still store `ChatStateSnapshot` and restore through `restoreChatState()`.
 - Do not only gate the old snapshot behind `Object.keys(patch).length > 0`.
   `previousState` is reassigned every run, so the diff baseline itself must be
   per-row.
 - Rewrite `scalarChatMetadata` to build the scalar snapshot without serializing
-  `chat.message`/`chat.localLore`: iterate `CHAT_PATCH_ALLOWED_KEYS` and
-  `cloneJsonValue` only the small allowed values
-  (`bookmarks`/`bookmarkNames`/`modules` are bounded).
-
-```ts
-function scalarChatMetadata(chat) {
-  const out = {}
-  for (const key of CHAT_PATCH_ALLOWED_KEYS) {
-    const v = chat[key]
-    if (v !== undefined) out[key] = cloneJsonValue(v)
-  }
-  return out
-}
-```
+  `chat.message`/`chat.localLore`: iterate `CHAT_PATCH_ALLOWED_KEYS`, and clone
+  only the small allowed values (`bookmarks`/`bookmarkNames`/`modules` are
+  bounded).
 
 ## Behavior / Invariants
 

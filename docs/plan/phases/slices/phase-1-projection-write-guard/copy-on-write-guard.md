@@ -24,39 +24,27 @@ re-wrap it in a fresh proxy on refreeze. Both transitions become O(1).
 - [`../../../../frontend-performance-audit.md`](../../../../frontend-performance-audit.md) -
   the Critical guard finding and recommended-remediation step 1.
 - `src/ts/server/projectionWriteGuard.svelte.ts` -
-  `withTrustedServerProjectionWrite` (depth-1 entry at `:43`, refreeze at `:35`),
-  `snapshotServerProjectionValue` (`:115` `$state.snapshot` branch, `:119`
-  `structuredClone(source)` branch), `createReadOnlyServerProjection` /
-  `createReadOnlyServerProjectionProxy`, `readOnlyServerProjectionSources`
-  (proxy->source WeakMap), `readOnlyServerProjectionTargets` (source->proxy memo).
+  `withTrustedServerProjectionWrite`, `createReadOnlyServerProjection`,
+  `createTrustedServerProjectionWorkingCopy`, `resolveServerProjectionSource`,
+  `readOnlyServerProjectionSources`, and `trustedServerProjectionWorkingCopies`.
 
-## Current Behavior
+## Former Behavior
 
-- On entry `DBState.db` is the read-only proxy.
-  `readOnlyServerProjectionSources.get` hits, then `structuredClone(source)`
-  performs full clone #1.
-- On refreeze `DBState.db` is the plain cloned object. The WeakMap misses, then
-  `$state.snapshot(value)` performs full clone #2.
-- Each guarded write = two full-`Database` deep clones, no field narrowing,
-  including all hydrated `message[]`.
+Before Phase 1, a top-level guarded write cloned the whole projection twice:
+entry used `structuredClone(source)` and refreeze fell back to
+`$state.snapshot(value)`. Every guarded scalar write therefore scaled with the
+whole hydrated `Database`.
 
-## Target Implementation
+## Implemented Shape
 
-- On depth-1 entry: unwrap the proxy source with
-  `readOnlyServerProjectionSources.get(DBState.db)` and assign that source to
-  `DBState.db` with no clone.
-- On refreeze: re-wrap the same source in a fresh read-only proxy. Evict or
-  bypass `readOnlyServerProjectionTargets` first so Svelte observes a new
-  `DBState.db` identity.
-- Verify no consumer reads `DBState.db` reactively mid-write expecting a fresh
-  `$state` proxy per write; the source is a stable identity between entry and
-  refreeze (that is the point), so any such consumer must tolerate it.
-
-## Interim Mitigation
-
-If the full proxy swap is risky, first drop only the second clone: on refreeze,
-wrap the already-cloned object as-is instead of running `$state.snapshot` again.
-That halves the per-write cost.
+- Depth-1 entry resolves the plain source behind `DBState.db` and assigns a
+  writable pass-through working proxy over that source.
+- Refreeze resolves the same mutated source and wraps it in a fresh read-only
+  proxy tree. `createReadOnlyServerProjection` uses a per-wrap memo, so every
+  guarded write gets fresh nested proxy identities without cloning data.
+- `resolveServerProjectionSource` handles working proxies, read-only proxies, and
+  rare raw/full-replacement values; only the raw replacement path still snapshots
+  to unwrap a Svelte proxy.
 
 ## Behavior / Invariants
 

@@ -19,9 +19,9 @@ memoization, an algorithmic rewrite, and a stray render-path log.
 - `src/ts/process/scripts.ts:215` - per-token `RegExp` recompile.
 - `src/ts/parser/risuChatParser.ts:638` - the `{{#each}}` per-element splice +
   re-scan.
-- `src/lib/ChatScreens/ChatBody.svelte:208` - per-render `console.log` of the full
-  assets array.
-- `src/lib/SideBars/SideChatList.svelte:444` - O(folders*chats) + O(chats^2) scan.
+- `src/lib/ChatScreens/ChatBody.svelte:208/216` - per-render image lookup
+  `console.log`s, including the full assets array.
+- `src/lib/SideBars/SideChatList.svelte:444` - O(folders\*chats) + O(chats^2) scan.
 - `src/lib/Setting/Pages/PersonaSettings.svelte:68` - personas double clone per
   keystroke (downgraded-to-low config-editor cleanup).
 
@@ -35,10 +35,10 @@ memoization, an algorithmic rewrite, and a stray render-path log.
 ## Exit Criteria
 
 - [ ] Each item is shallow-spread / scoped / memoized per the audit's per-finding
-  fix; output (CBS render text, prompt assembly, persisted state) is
-  byte-identical.
+      fix; output (CBS render text, prompt assembly, persisted state) is
+      byte-identical.
 - [ ] The per-render `console.log` is removed; the `SideChatList` scan is single
-  pass with identical ordering.
+      pass with identical ordering.
 - [ ] `pnpm test` is green; no behavioral change is observable.
 
 ## Validation

@@ -1,7 +1,7 @@
 # Phase 0: Baseline Foundations
 
-Status: implemented. Two slices landed, no call site narrowed (that starts in
-Phase 2).
+Status: implemented. Two slices landed, no snapshot-family production call site
+rewired (that starts in Phase 2).
 
 Goal: add the shared snapshot kit and clone-cost harness. This phase makes later
 narrowing reusable and provable; it does not change hot-path behavior.
@@ -63,15 +63,16 @@ narrowing reusable and provable; it does not change hot-path behavior.
 ## Exit Criteria
 
 - [x] Unit tests prove each `current*Snapshot` captures only its narrow slice and
-  each `restore*` writes back only that slice.
+      each `restore*` writes back only that slice.
 - [x] The clone-cost regression harness exists and is importable from a single
-  place (`src/ts/__tests__/cloneCostHarness.ts`), exposing both the structural
-  snapshot assertions and the clone-primitive instrumentation.
+      place (`src/ts/__tests__/cloneCostHarness.ts`), exposing both the structural
+      snapshot assertions and the clone-primitive instrumentation.
 - [x] The reference fix's existing tests still pass; the new kit tests reuse the
-  harness's structural and rollback-correctness assertions (no behavior change).
-- [x] No hot-path call site is changed; `pnpm test` (975 passed / 4 skipped) and
-  `pnpm api:test` (1632 passed / 1 skipped) are green, plus the audit and both
-  type checks.
+      harness's structural and rollback-correctness assertions (no behavior change).
+- [x] At Phase 0 landing, no hot-path call site was changed; `pnpm test`
+      (975 passed / 4 skipped) and `pnpm api:test` (1632 passed / 1 skipped) were
+      green, plus the audit and both type checks. Later current verification is in
+      [`../latest-verification.md`](../latest-verification.md).
 
 ## Validation
 

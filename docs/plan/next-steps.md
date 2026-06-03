@@ -1,23 +1,23 @@
 # Next Steps
 
-Date: 2026-06-03
+Date: 2026-06-04
 
-Read this when choosing the next batch. Pick one narrow snapshot path, one guard
-fix, or one proof batch. Avoid broad cleanup passes.
+Read this when choosing the next batch. Pick one narrow snapshot path, optional
+guard follow-up, or one proof batch. Avoid broad cleanup passes.
 
 ## Start Point
 
 - Start with the per-area findings in
   [`active-risk-analysis.md`](active-risk-analysis.md) and the per-finding detail
-  + clone-site inventory in
+  and clone-site inventory in
   [`../frontend-performance-audit.md`](../frontend-performance-audit.md).
 - Before editing runtime code, add a compact scope to the active slice: location,
   cloned data, hot-path trigger, target snapshot, rollback property, and proof
   command.
-- Phases 3-7 are independent cleanups; the snapshot-dependent ones (Phase 2, and
-  the character-row reuse in Phase 7) need the Phase 0 kit first. The guard
-  (Phase 1) and the cheap wins (Phase 3) do not depend on the Phase 0 snapshot
-  kit, but they do want the Phase 0 clone-cost harness so the win is provable.
+- Phases 3-7 are independent cleanups. The snapshot-dependent ones (Phase 2, and
+  the character-row reuse in Phase 7) should use the Phase 0 kit; guard
+  follow-ups and cheap wins should still use the Phase 0 clone-cost harness when
+  proving a win.
 
 ## Current Best Targets
 
@@ -36,8 +36,8 @@ following the audit order. Phases 3-7 are independent and can land in any order.
 
 ## Not First
 
-- Do not narrow any hot-path snapshot before the Phase 0 kit and the clone-cost
-  harness exist; a narrow path without a regression test cannot prove it stopped
+- Use the Phase 0 kit and clone-cost harness for every new hot-path snapshot
+  narrowing; a narrow path without a regression test cannot prove it stopped
   cloning every character.
 - Do not delete the full-collection `current*StateSnapshot`; create/delete/
   reorder/fork still need it. Only stop the hot path from reaching it.
@@ -64,7 +64,7 @@ following the audit order. Phases 3-7 are independent and can land in any order.
    global-lorebook.
 4. Phase 3 cheap wins - not started. Independent; can land alongside Phase 1.
 5. Phase 4 script-definition watcher - not started.
-6. Phase 5 prompt-template keystroke - not started (the guard half closes with
+6. Phase 5 prompt-template keystroke - not started (the guard half closed in
    Phase 1).
 7. Phase 6 lorebook watcher scope - not started.
 8. Phase 7 opportunistic cleanups - not started.
@@ -81,12 +81,12 @@ matching suite.
 - `pnpm test -- src/ts/compatibilityAdapters.test.ts` (the reference-fix
   snapshot/rollback proof; the new snapshot tests extend this pattern).
 - `pnpm test -- src/ts/chatCommands.test.ts` (chat-scoped snapshot/rollback).
-- `pnpm test -- src/ts/server/projectionGuard` / the guard suite (the
-  copy-on-write proof: a guarded one-field write stays O(1), reactivity still
-  fires).
+- `pnpm test -- src/ts/server/projectionWriteGuard.test.ts src/ts/server/chatMessageHydration.reactivity.svelte.test.ts`
+  (the copy-on-write proof: a guarded one-field write stays O(1), reactivity
+  still fires).
 - `pnpm test -- src/ts/process/rerollNavigation` (reroll tail-clone reorder and
   rollback scope).
-- `pnpm test -- src/ts/process/triggers` (setVar/v2Set* scriptstate scope,
+- `pnpm test -- src/ts/process/triggers` (setVar/v2Set\* scriptstate scope,
   `runTrigger` early-return).
 - `pnpm test` (full client suite).
 - `pnpm api:test` (server suite - run when a change can affect projection/event

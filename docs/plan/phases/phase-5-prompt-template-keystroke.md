@@ -1,6 +1,6 @@
 # Phase 5: Prompt-Template Editor Keystroke Costs
 
-Status: planned. One slice. The whole-DB guard half closes with Phase 1; this
+Status: planned. One slice. The whole-DB guard half closed in Phase 1; this
 phase closes the template-specific per-keystroke costs.
 
 Goal: stop the prompt-template editor from cloning the whole `promptTemplate`
@@ -18,7 +18,8 @@ array and stringifying the whole template twice per keystroke.
   server command (the timer to coalesce into).
 - `src/lib/Setting/Pages/PromptSettings.svelte:358` - the change-detection
   `$effect` doing two `snapshotJson` passes (server + draft) per flush.
-- `src/ts/server/commands.ts` - `cachedServerCommandRevision` (the discriminator).
+- `src/ts/server/commands.ts` - `peekCachedServerCommandRevision()` (the exported
+  revision discriminator).
 - `src/lib/UI/PromptDataItem.svelte:49` - the per-keystroke single-PromptItem
   stringify + double `clonePromptItem` (bounded, low - co-fix here).
 
@@ -31,13 +32,13 @@ array and stringifying the whole template twice per keystroke.
 ## Exit Criteria
 
 - [ ] A keystroke in a prompt-item textarea no longer clones the whole
-  `promptTemplate` array (only the edited item) and no longer runs two
-  whole-template `JSON.stringify` passes.
+      `promptTemplate` array (only the edited item) and no longer runs two
+      whole-template `JSON.stringify` passes.
 - [ ] The optimistic write coalesces into the debounce window; the server still
-  receives the same final patch; external server pushes still reconcile into the
-  draft.
+      receives the same final patch; external server pushes still reconcile into the
+      draft.
 - [ ] Editing remains correct (draft <-> server reconciliation unchanged on a real
-  revision advance); `pnpm test` is green.
+      revision advance); `pnpm test` is green.
 
 ## Validation
 

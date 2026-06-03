@@ -1,6 +1,6 @@
 # Frontend Performance Deep-Clone Narrowing Plan
 
-Date: 2026-06-03
+Date: 2026-06-04
 
 This directory tracks frontend hot paths that clone too much state. The common
 bug is simple: a path mutates a scalar, one row, or one chat, but clones the whole
@@ -44,8 +44,9 @@ seed inventory. The code remains the source of truth.
   audit that seeded this plan (4 critical, 13 high, 6 medium, 6 low, plus the
   full clone-site inventory).
 - `src/ts/server/projectionWriteGuard.svelte.ts` -
-  `withTrustedServerProjectionWrite` / `snapshotServerProjectionValue`; the
-  full-`Database` clone amplifier behind ~100 guarded writes.
+  `withTrustedServerProjectionWrite`, `createReadOnlyServerProjection`, and
+  `resolveServerProjectionSource`; the Phase 1 copy-on-write guard that removed
+  the former full-`Database` clone amplifier behind ~100 guarded writes.
 - `src/ts/chatCommands.ts` - `currentChatStateSnapshot` / `restoreChatState`,
   the whole-characters rollback baseline on every message path.
 - `src/ts/characterCommands.ts` - the reference fix

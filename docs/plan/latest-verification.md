@@ -25,11 +25,11 @@ latest-run section on each full or focused run; do not append history.
   correctly, and supports the apply path. `chatMessageHydration.reactivity.svelte.test.ts`
   guards that nested `$derived` chains still re-run (the per-wrap-memo fix).
 
-| Command | Result |
-| --- | --- |
-| `pnpm test` | green - 982 passed / 4 skipped (103 files). |
-| `pnpm api:test` | green - 1632 passed / 1 skipped (93 files). |
-| `pnpm client-thinning:audit` | green - audit passed. |
+| Command                                                                                     | Result                                                                                                      |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `pnpm test`                                                                                 | green - 982 passed / 4 skipped (103 files).                                                                 |
+| `pnpm api:test`                                                                             | green - 1632 passed / 1 skipped (93 files).                                                                 |
+| `pnpm client-thinning:audit`                                                                | green - audit passed.                                                                                       |
 | Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | green - both zero errors (clean client-lib rebuild required: remove `dist/client-types` if TS6305 appears). |
 
 ## Notes

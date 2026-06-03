@@ -20,9 +20,11 @@ map self-checking against the audit inventory.
 
 - Maintain one list of narrowed hot paths: file:line plus the snapshot/guard
   helper used.
-- For each entry assert: (a) the snapshot it captures omits the full collection
-  (`assertSnapshotIsScalar`), and (b) the path does not invoke the whole-DB /
-  whole-characters clone primitive (`withCloneInstrumentation`).
+- For each entry assert: (a) the snapshot matches its shape
+  (`assertSnapshotIsScalar` for scalar-only snapshots, or
+  `assertSnapshotOmitsCollections` for single-chat/single-row snapshots), and
+  (b) the path does not invoke the whole-DB / whole-characters clone primitive
+  (`withCloneInstrumentation`).
 - Add a self-checking test that fails if a narrowed inventory entry lacks a gate.
 - Record intentionally broad paths with the reason, so "no gate" is never
   ambiguous.

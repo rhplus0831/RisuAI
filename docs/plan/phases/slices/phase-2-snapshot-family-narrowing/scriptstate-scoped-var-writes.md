@@ -27,6 +27,10 @@ chat's `scriptstate` map plus optional `note`.
 
 - Route these paths through `currentChatScriptstateSnapshot()` /
   `restoreChatScriptstate()`. For `v2SetAuthorNote`, include the prior `note`.
+- First update `dispatchPatchChatScriptstate` /
+  `dispatchCurrentChatScriptstatePatch` to accept a narrow snapshot+rollback pair
+  or add narrow variants. The current dispatchers still require
+  `ChatStateSnapshot` and roll back through `restoreChatState()`.
 - Hoist a single `ChatScriptstateSnapshot` to the start of the `runTrigger` pass
   and reuse it across all `setVar` calls in that pass (`setVar` can fire many
   times per pass, one per non-local `v2SetVar`/array/dict/regex effect).

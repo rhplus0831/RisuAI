@@ -25,11 +25,11 @@ narrow new paths; it makes the gate map self-checking.
 ## Exit Criteria
 
 - [ ] Every Critical/High narrowed path has a clone-cost regression test and a
-  rollback-correctness test.
+      rollback-correctness test.
 - [ ] A self-checking test asserts the gate set covers the inventory's
-  hot-path entries (no narrowed path is left ungated), and fails on drift.
+      hot-path entries (no narrowed path is left ungated), and fails on drift.
 - [ ] `latest-verification.md` records the latest before/after clone range; the
-  maintenance rule (replace, do not append) is followed.
+      maintenance rule (replace, do not append) is followed.
 - [ ] `pnpm test`, `pnpm api:test`, and `pnpm client-thinning:audit` are green.
 
 ## Validation

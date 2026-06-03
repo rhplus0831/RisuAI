@@ -1,6 +1,6 @@
 # Frontend Performance Deep-Clone Narrowing Plan
 
-Date: 2026-06-03
+Date: 2026-06-04
 
 ## Goal
 
@@ -27,9 +27,9 @@ End state:
 - [`../frontend-performance-audit.md`](../frontend-performance-audit.md) seeded
   the findings, costs, hot-path frequency, severity, fixes, and clone-site
   inventory. [`status.md`](status.md) records current phase state.
-- `src/ts/server/projectionWriteGuard.svelte.ts` owns the guard
-  (`withTrustedServerProjectionWrite`, `snapshotServerProjectionValue`,
-  `createReadOnlyServerProjection`, `readOnlyServerProjectionSources`).
+- `src/ts/server/projectionWriteGuard.svelte.ts` owns the Phase 1 guard
+  (`withTrustedServerProjectionWrite`, `createReadOnlyServerProjection`,
+  `resolveServerProjectionSource`, and the read-only/working-copy WeakMaps).
 - `src/ts/chatCommands.ts`, `src/ts/characterCommands.ts` own the
   `current*StateSnapshot` / `restore*State` families and the reference
   `CharacterSelectionSnapshot`.
@@ -55,7 +55,7 @@ End state:
 
 ## Current Baseline
 
-The audit found two clone patterns and one amplifier:
+The seed audit found two clone patterns and one amplifier:
 
 - `cloneJsonValue` = `JSON.parse(JSON.stringify(...))` is redefined per file
   (`chatCommands.ts`, `characterCommands.ts`, `lorebookBridge.svelte.ts`,
@@ -64,24 +64,26 @@ The audit found two clone patterns and one amplifier:
   rollback that is usually discarded.
 - `safeStructuredClone` clones full transcripts or full characters on reroll,
   swipe, and `runTrigger` paths, even when only a tail or active chat is needed.
-- `withTrustedServerProjectionWrite` adds two whole-`Database` clones to every
-  guarded write (`projectionWriteGuard.svelte.ts:115/119`). This affects about
-  100 sites, including streaming, completion, SSE apply, chat open, and
-  prompt-template editing.
+- Before Phase 1, `withTrustedServerProjectionWrite` added two whole-`Database`
+  clones to every guarded write. The current code has removed that amplifier via
+  copy-on-write proxy unwrap/rewrap; the remaining broad clones are the snapshot
+  families and lower-priority transcript/editor clones below.
 
-Empirical baseline (from the audit, reproduced on a 61 MB hydrated DB): one
-guarded write takes about 255 ms (entry clone ~125 ms + refreeze clone ~130 ms);
-a few-MB DB is still tens of ms per call. `currentChatStateSnapshot()` /
-`currentCharacterStateSnapshot()` scale with total hydrated history across all
-opened characters, not the single row mutated.
+Empirical seed baseline (from the audit, reproduced on a 61 MB hydrated DB):
+before Phase 1, one guarded write took about 255 ms (entry clone ~125 ms +
+refreeze clone ~130 ms). The current guard proof shows zero clone-primitive calls
+for a one-field guarded write. `currentChatStateSnapshot()` /
+`currentCharacterStateSnapshot()` still scale with total hydrated history across
+all opened characters until Phase 2 rewires their hot callers.
 
-The reference fix `c9e728b1` narrowed character select to a scalar snapshot. This
-plan applies the same shape to message, send, streaming, trigger, reroll,
-watcher, and editor paths, then removes the guard amplifier beneath them.
+The reference fix `c9e728b1` narrowed character select to a scalar snapshot. With
+the guard amplifier already removed by Phase 1, the remaining phases apply that
+same shape to message, send, trigger, reroll, watcher, and editor paths.
 
 ## Prerequisites
 
-Phase 0 lands the shared prerequisites before any hot-path call site is narrowed:
+Phase 0 has landed the shared prerequisites before any Phase 2 hot-path call
+site is narrowed:
 
 1. Snapshot kit: scalar, single-row, and single-chat snapshot+restore pairs in
    `chatCommands.ts`, `characterCommands.ts`, and `lorebookBridge.svelte.ts`,
@@ -142,9 +144,9 @@ Phase 0 lands the shared prerequisites before any hot-path call site is narrowed
 
 ## Execution Cursor
 
-Nothing is implemented yet. Start with Phase 0, then Phase 1, then Phase 2.
-Phases 3-7 can land in any order once their prerequisites exist. Phase 8 is the
-standing verification layer.
+Phase 0 and the Phase 1 primary guard fix are implemented. Start the next batch
+with Phase 2 snapshot-family narrowing; Phases 3-7 can land in any order once
+their prerequisites exist. Phase 8 is the standing verification layer.
 
 For every narrowed path: capture a narrow rollback, restore only mutated fields,
 keep full clones for restructures, and add a regression test proving the path

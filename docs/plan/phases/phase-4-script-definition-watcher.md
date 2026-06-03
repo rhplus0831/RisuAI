@@ -33,13 +33,13 @@ streaming tokens should not trigger full clones.
 ## Exit Criteria
 
 - [ ] The watcher effect no longer reads `DBState.db.characters` / `modules`
-  deeply; a streaming token while the panel is open triggers no full
-  characters+modules clone.
+      deeply; a streaming token while the panel is open triggers no full
+      characters+modules clone.
 - [ ] Change detection still fires the same dispatches (per-key stringify
-  unchanged); the rollback restores only the changed character's
-  scripts/triggers (or the changed module).
+      unchanged); the rollback restores only the changed character's
+      scripts/triggers (or the changed module).
 - [ ] A clone-cost regression test proves the effect fire is O(scripts) not
-  O(hydrated corpus); `pnpm test` is green.
+      O(hydrated corpus); `pnpm test` is green.
 
 ## Validation
 

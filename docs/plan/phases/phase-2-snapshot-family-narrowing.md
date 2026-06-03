@@ -55,16 +55,26 @@ Each slice keeps the full-collection snapshot for genuine restructures
   the 6 lorebook trigger sites -> `scopedLorebookStateSnapshot`; drop the redundant
   `setCurrentCharacter` re-clone.
 
+## Implementation Notes
+
+- The Phase 0 helpers are exported but not wired into production call sites yet.
+  Several dispatch helpers still accept broad snapshots and call broad restores:
+  message/scriptstate dispatchers in `chatCommands.ts`, character update
+  dispatchers in `characterCommands.ts`, and global-lorebook dispatchers in
+  `lorebookBridge.svelte.ts`. Each slice must either widen those signatures to
+  accept a snapshot+rollback pair, or add narrow dispatch variants, before
+  switching call sites to the Phase 0 snapshots.
+
 ## Exit Criteria
 
 - [ ] Each listed call site captures a narrow snapshot; none materializes the
-  whole characters array on the hot path.
+      whole characters array on the hot path.
 - [ ] Each narrowed rollback restores exactly the mutated slice and a failed
-  command does not clobber unrelated concurrent edits (rollback-correctness test).
+      command does not clobber unrelated concurrent edits (rollback-correctness test).
 - [ ] `scalarChatMetadata` never serializes `chat.message` / `chat.localLore`.
 - [ ] The full-collection snapshots remain in use for create/delete/reorder/fork.
 - [ ] Clone-cost regression tests prove the hot paths stay O(slice); `pnpm test`,
-  `pnpm api:test`, and `pnpm client-thinning:audit` are green.
+      `pnpm api:test`, and `pnpm client-thinning:audit` are green.
 
 ## Validation
 

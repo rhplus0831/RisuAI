@@ -6,12 +6,13 @@ changes.
 Landed at `src/ts/__tests__/cloneCostHarness.ts` (test-only, excluded from the
 client-lib build). Surface: `assertSnapshotIsScalar` and
 `assertSnapshotOmitsCollections` (structural), `assertRollbackRestoresOnly`
-(rollback-correctness driver), `withCloneInstrumentation` (spies
-`JSON.stringify` for `cloneJsonValue` and `structuredClone` for
-`safeStructuredClone`, returns clone counts + max cloned payload size), and
-`seedCloneCostDb` (multi-character, one multi-message hydrated chat). Imported by
-the Phase 0 kit tests; the sanity baseline shows the selection snapshot performs
-zero whole-characters clones while the legacy snapshot performs one.
+(rollback-correctness driver), `withCloneInstrumentation` (temporarily patches
+global `JSON.stringify` and `globalThis.structuredClone`, returning clone counts
+
+- max cloned payload size), and `seedCloneCostDb` (multi-character, one
+  multi-message hydrated chat). Imported by the Phase 0 kit tests; the sanity
+  baseline shows the selection snapshot performs zero whole-characters clones
+  while the legacy snapshot performs one.
 
 ## Scope
 
@@ -36,9 +37,9 @@ structural snapshot assertion and rollback-correctness assertion.
   `characterOrder`, `modules`, and `message` / `localLore` payloads.
 - `assertRollbackRestoresOnly(setup, mutate, restore, expectations)`: drives an
   optimistic-write failure and checks that only the mutated slice is restored.
-- `withCloneInstrumentation(fn)`: spies on `safeStructuredClone` and relevant
-  `cloneJsonValue` exports, returning clone count and max cloned collection size.
-  If spies are awkward, use a seeded multi-MB DB plus a size threshold.
+- `withCloneInstrumentation(fn)`: patches `JSON.stringify` and
+  `globalThis.structuredClone`, returning clone count and max cloned collection
+  size.
 
 ## Implementation Notes
 
@@ -53,8 +54,8 @@ structural snapshot assertion and rollback-correctness assertion.
 ## Done When
 
 - The helper module exists and is imported by the Phase 0 snapshot-kit tests.
-- The reference-fix tests pass through the harness's structural and
-  rollback-correctness assertions (no behavior change).
+- The existing reference-fix tests remain green, and the Phase 0 snapshot-kit
+  suites use the harness's structural and rollback-correctness assertions.
 - The harness can demonstrate, on a seeded multi-chat DB, that
   `currentCharacterSelectionSnapshot` performs zero whole-characters clones while
   the legacy `currentCharacterStateSnapshot` performs one (a sanity baseline).

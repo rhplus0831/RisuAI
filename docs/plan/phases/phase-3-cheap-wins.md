@@ -28,14 +28,14 @@ Goal: land small behavior-preserving clone wins: reroll clone reorder/removal an
 ## Exit Criteria
 
 - [ ] `recordGeneratedReroll` clones O(tail) not O(transcript); the stored reroll
-  is byte-identical.
+      is byte-identical.
 - [ ] The redundant `:105` clone is removed and `reroll()` no longer clones the
-  whole transcript when only the trailing group is reshaped; dispatch payloads are
-  unchanged.
+      whole transcript when only the trailing group is reshaped; dispatch payloads are
+      unchanged.
 - [ ] A zero-trigger character pays no `char`/`chat` clone in `runTrigger`;
-  trigger-bearing paths clone only the active chat once.
+      trigger-bearing paths clone only the active chat once.
 - [ ] Trigger results, reroll navigation, and persisted messages are
-  byte-identical; `pnpm test` is green.
+      byte-identical; `pnpm test` is green.
 
 ## Validation
 

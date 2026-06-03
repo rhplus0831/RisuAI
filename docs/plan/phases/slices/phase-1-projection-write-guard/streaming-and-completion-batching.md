@@ -26,9 +26,10 @@ cost once per response or message append, not per chunk.
 - `src/ts/process/postGeneration/nonStreamResponse.ts:98/111/116/130/138` - the
   2-3 non-nested guarded calls per appended message (~4-6 clone pairs per
   completion).
-- `src/ts/process/orchestrateResponse.ts:98/157` - `consumeStreamResponse` /
-  `applyNonStreamResponse` callers (the streaming call is awaited and not wrapped
-  in an outer trusted write, so each inner call runs at guard depth 0).
+- `src/ts/process/postGeneration/orchestrateResponse.ts` -
+  `consumeStreamResponse` / `applyNonStreamResponse` callers (the streaming call
+  is awaited and not wrapped in an outer trusted write, so each inner call runs
+  at guard depth 0).
 
 ## Target Implementation
 

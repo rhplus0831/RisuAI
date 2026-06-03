@@ -11,15 +11,15 @@ instead of rebuilding a DB-wide lore stringify map on each fire.
 
 - [`../../../../frontend-performance-audit.md`](../../../../frontend-performance-audit.md) -
   the Medium lorebook watcher finding.
-- `src/ts/server/lorebookBridge.svelte.ts:427` -
+- `src/ts/server/lorebookBridge.svelte.ts` -
   `collectLorebookCollectionSnapshots` (the all-chats-of-all-characters
-  `snapshotJson` loop; the `delayMs` debounce wraps only the dispatch).
-- `src/ts/server/lorebookBridge.svelte.ts:355` - `watchServerBackedLorebooks` the
-  mounting `$effect`.
+  `snapshotJson` loop; the `delayMs` debounce wraps only the dispatch) and
+  `watchServerBackedLorebooks` (the mounting `$effect`).
 - `src/lib/Setting/lorepreset.svelte:24`, `src/lib/.../ModuleMenu.svelte:41`,
   `src/lib/.../LoreBookSetting.svelte:41` - the mounting panels.
-- `src/lib/Setting/LoreBookData.svelte` - the draft `$effect` that writes
-  `cloneJsonValue(draft)` per keystroke (the dependency the collector reacts to).
+- `src/lib/SideBars/LoreBook/LoreBookData.svelte` - the draft `$effect` that
+  writes `cloneJsonValue(draft)` per keystroke (the dependency the collector
+  reacts to).
 
 ## Target Implementation
 

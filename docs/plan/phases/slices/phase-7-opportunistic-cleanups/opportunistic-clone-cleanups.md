@@ -13,7 +13,7 @@ one parser rewrite, one render-path log, and one folder/chat scan reduction.
   the Low findings and the clone-site inventory.
 - `src/ts/cbs.ts:364/376/399/1687`, `src/ts/observer.svelte.ts:118`,
   `src/ts/characters.ts:138/195/220/242/259`, `src/ts/process/scripts.ts:215`,
-  `src/ts/parser/risuChatParser.ts:638`, `src/lib/ChatScreens/ChatBody.svelte:208`,
+  `src/ts/parser/risuChatParser.ts:638`, `src/lib/ChatScreens/ChatBody.svelte:208/216`,
   `src/lib/SideBars/SideChatList.svelte:444`,
   `src/lib/Setting/Pages/PersonaSettings.svelte:68`.
 
@@ -29,7 +29,8 @@ one parser rewrite, one render-path log, and one folder/chat scan reduction.
   source.
 - `{{#each}}` reinjection (`risuChatParser.ts:638`): avoid per-element
   splice-into-source plus re-scan.
-- Render log (`ChatBody.svelte:208`): remove the full-assets `console.log`.
+- Render logs (`ChatBody.svelte:208/216`): remove the image lookup logs,
+  including the full-assets `console.log`.
 - `SideChatList` scan (`:444`): reduce folder/chat scans to one pass with the
   same ordering.
 - Personas clone (`PersonaSettings.svelte:68`): optional; drop one bounded

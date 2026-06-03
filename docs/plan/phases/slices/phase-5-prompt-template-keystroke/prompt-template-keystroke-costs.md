@@ -1,6 +1,6 @@
 # Prompt-Template Keystroke Costs
 
-Status: planned. Phase 5. The whole-DB guard half closes with Phase 1.
+Status: planned. Phase 5. The whole-DB guard half closed in Phase 1.
 
 ## Scope
 
@@ -20,7 +20,7 @@ double-stringifying it on each keystroke.
 - `src/lib/Setting/Pages/PromptSettings.svelte:358` - the change-detection
   `$effect` (two `snapshotJson` passes per flush; tracks both
   `DBState.db.promptTemplate` and `promptTemplateDraft.value`).
-- `src/ts/server/commands.ts` - `cachedServerCommandRevision`.
+- `src/ts/server/commands.ts` - `peekCachedServerCommandRevision()`.
 - `src/lib/UI/PromptDataItem.svelte:49` - the per-keystroke single-PromptItem
   stringify + double `clonePromptItem` (bounded; optional co-fix).
 
@@ -31,10 +31,11 @@ double-stringifying it on each keystroke.
 2. Mutate only the edited item. Inside the guarded write, set
    `DBState.db.promptTemplate[index] = cloneJsonValue(promptItem)` (the `index` is
    already computed) instead of replacing the whole array.
-3. Cheap change detection. Replace the double `JSON.stringify` at `:358` with a
-   server-revision discriminator. Only re-pull `serverValue` when
-   `cachedServerCommandRevision` advances. A pure reference check will not work
-   because `queuePromptItemUpdate` reassigns `DBState.db.promptTemplate`.
+3. Cheap change detection. Replace the double `JSON.stringify` at `:358` with
+   the exported server-revision discriminator
+   (`peekCachedServerCommandRevision()`). Only re-pull `serverValue` when that
+   revision advances. A pure reference check will not work because
+   `queuePromptItemUpdate` reassigns `DBState.db.promptTemplate`.
 4. (Optional) `PromptDataItem.svelte:49`: drop one of the two `clonePromptItem`
    passes; bounded, low.
 

@@ -40,14 +40,15 @@ are unchanged; only the snapshot strategy changed. Proof:
 - [`../../frontend-performance-audit.md`](../../frontend-performance-audit.md) -
   the two Critical guard/streaming findings and recommended-remediation step 1.
 - `src/ts/server/projectionWriteGuard.svelte.ts` -
-  `withTrustedServerProjectionWrite`, `snapshotServerProjectionValue` (`:115`,
-  `:119`), `createReadOnlyServerProjection`/`createReadOnlyServerProjectionProxy`,
-  `readOnlyServerProjectionSources`, `readOnlyServerProjectionTargets`.
+  `withTrustedServerProjectionWrite`, `createReadOnlyServerProjection`,
+  `createTrustedServerProjectionWorkingCopy`, `resolveServerProjectionSource`,
+  `readOnlyServerProjectionSources`, and `trustedServerProjectionWorkingCopies`.
 - `src/ts/bootstrap.ts` - `setServerProjectionWriteGuardEnabled(true)` (default in
   fastify/web mode).
-- `src/ts/process/postGeneration/streamResponse.ts:129`,
-  `nonStreamResponse.ts:116`, `src/ts/storage/database.svelte.ts:803/886` - the
-  amplified call sites this phase relieves.
+- `src/ts/process/postGeneration/streamResponse.ts`,
+  `src/ts/process/postGeneration/nonStreamResponse.ts`, and
+  `src/ts/storage/database.svelte.ts` - representative guarded write call sites
+  this phase relieves.
 
 ## Slices
 
@@ -65,19 +66,19 @@ are unchanged; only the snapshot strategy changed. Proof:
 ## Exit Criteria
 
 - [x] A guarded write of a single field on a multi-chat hydrated DB performs no
-  full-`Database` `structuredClone` and no full `$state.snapshot` (proven by the
-  clone-cost harness: `structuredCloneCount === 0`, `maxClonedSize` below the
-  characters-array size).
+      full-`Database` `structuredClone` and no full `$state.snapshot` (proven by the
+      clone-cost harness: `structuredCloneCount === 0`, `maxClonedSize` below the
+      characters-array size).
 - [x] After a guarded write, `DBState.db` is still a read-only projection (writes
-  outside the guard throw), and Svelte reactivity fires (a new identity is
-  observed; the `DefaultChatScreen` loading-overlay derived chain flips).
+      outside the guard throw), and Svelte reactivity fires (a new identity is
+      observed; the `DefaultChatScreen` loading-overlay derived chain flips).
 - [x] Nothing that reads `DBState.db` reactively mid-write breaks — the
-  per-wrap-memo fix restores fresh nested proxy identities so no consumer that
-  depended on a fresh proxy per write regresses (the hydration reactivity test
-  caught and now guards this).
+      per-wrap-memo fix restores fresh nested proxy identities so no consumer that
+      depended on a fresh proxy per write regresses (the hydration reactivity test
+      caught and now guards this).
 - [x] `pnpm test` (982 passed / 4 skipped), `pnpm api:test` (1632 passed /
-  1 skipped), and `pnpm client-thinning:audit` are green; the optimistic-write
-  guard invariants still hold.
+      1 skipped), and `pnpm client-thinning:audit` are green; the optimistic-write
+      guard invariants still hold.
 
 ## Validation
 

@@ -30,6 +30,12 @@ affected chat's `message[]`.
 - Route message-replace and per-message dispatch call sites through
   `currentChatScopedSnapshot()` / `restoreChatScopedState()`. Do not change the
   shared `currentChatStateSnapshot` / `restoreChatState` globally.
+- Before switching call sites, update the message dispatch surface
+  (`dispatchAppendMessage`, `dispatchUpdateMessage`, `dispatchDeleteMessage`,
+  `dispatchTruncateMessages`, `dispatchReplaceMessages`, and compatible chat
+  update paths) to accept a narrow snapshot+rollback pair or add parallel narrow
+  dispatch helpers. The current helpers still require `ChatStateSnapshot` and
+  call `restoreChatState()`.
 - `sendMain`: collapse the double current-chat clone. `:218` already clones into
   `cha`; `:275` can assign `liveChat.message = cha`.
 - `cloneMessagesWithIds`: make it fallback-only and lazy. For targeted edits,

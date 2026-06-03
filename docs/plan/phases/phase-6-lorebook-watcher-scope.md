@@ -10,10 +10,9 @@ not read `chat.message`, but it still re-fires per lorebook keystroke.
 
 - [`../../frontend-performance-audit.md`](../../frontend-performance-audit.md) -
   the Medium lorebook watcher finding; recommended-remediation step 7.
-- `src/ts/server/lorebookBridge.svelte.ts:427` -
-  `collectLorebookCollectionSnapshots` (the DB-wide `snapshotJson` loop).
-- `src/ts/server/lorebookBridge.svelte.ts:355` - `watchServerBackedLorebooks` the
-  mounting `$effect`.
+- `src/ts/server/lorebookBridge.svelte.ts` -
+  `collectLorebookCollectionSnapshots` (the DB-wide `snapshotJson` loop) and
+  `watchServerBackedLorebooks` (the mounting `$effect`).
 - `src/lib/Setting/lorepreset.svelte:24`, `src/lib/.../ModuleMenu.svelte:41`,
   `src/lib/.../LoreBookSetting.svelte:41` - the mounting panels (each needs a
   different scope).
@@ -27,11 +26,11 @@ not read `chat.message`, but it still re-fires per lorebook keystroke.
 ## Exit Criteria
 
 - [ ] The collector no longer iterates every chat of every character / every
-  module per fire; it covers only the mounting panel's collection.
+      module per fire; it covers only the mounting panel's collection.
 - [ ] Change detection still fires the same dispatches for edits within the
-  panel's scope (no missed lorebook change for the open collection).
+      panel's scope (no missed lorebook change for the open collection).
 - [ ] A clone-cost regression test proves the collector is O(panel scope) not
-  O(all lore in the DB); `pnpm test` is green.
+      O(all lore in the DB); `pnpm test` is green.
 
 ## Validation
 
