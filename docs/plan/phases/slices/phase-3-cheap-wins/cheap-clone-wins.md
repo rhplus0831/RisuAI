@@ -13,11 +13,10 @@ reroll dispatch clones, and return early in `runTrigger` before char/chat clones
 - [`../../../../frontend-performance-audit.md`](../../../../frontend-performance-audit.md) -
   the High `recordGeneratedReroll`, the High reroll redundant-clone, and the
   Medium `runTrigger` clone-before-early-return findings.
-- `src/ts/process/rerollNavigation.svelte.ts:60` - `recordGeneratedReroll`.
-- `src/ts/process/rerollNavigation.svelte.ts:105/147` - the redundant
-  `safeStructuredClone(record.message)` and the full-transcript clone in
-  `reroll()`.
-- `src/ts/process/triggers.ts:1198` - `runTrigger` char/chat clones before the
+- `src/ts/process/rerollNavigation.svelte.ts` - `recordGeneratedReroll`, the
+  redundant `safeStructuredClone(record.message)`, and the full-transcript clone
+  in `reroll()`.
+- `src/ts/process/triggers.ts` - `runTrigger` char/chat clones before the
   `triggers.length === 0` return.
 - `src/ts/process/sendChatCompletion.ts:25` - the `recordGeneratedReroll` caller.
 
@@ -31,8 +30,9 @@ reroll dispatch clones, and return early in `runTrigger` before char/chat clones
    and pass `record.message` by reference. At `:147`, operate on a small tail copy
    instead of cloning the full transcript.
 3. `runTrigger` early return: compute `triggers` first and `return null` before
-   any `safeStructuredClone` when empty. Then clone only the active chat once and
-   use a shallow char copy for `triggerscript`.
+   any `safeStructuredClone` when empty. For trigger-bearing paths, clone/map the
+   trigger definitions before mutating their `lowLevelAccess` flag, and clone
+   only the active chat once.
 
 ## Behavior / Invariants
 
@@ -40,8 +40,8 @@ reroll dispatch clones, and return early in `runTrigger` before char/chat clones
   byte-identical.
 - A zero-trigger character now pays no `char`/`chat` clone; non-`displayMode`
   trigger characters clone only the active chat once.
-- `request.ts:278` and `scripts.ts:137` already pass `displayMode:true` and stay
-  on the clone-free path.
+- `src/ts/process/request/request.ts` and `src/ts/process/scripts.ts` already pass
+  `displayMode:true` and stay on the clone-free path.
 
 ## Done When
 
@@ -54,6 +54,7 @@ reroll dispatch clones, and return early in `runTrigger` before char/chat clones
 
 ## Validation
 
-- `pnpm test -- src/ts/process/rerollNavigation` and `pnpm test -- src/ts/process/triggers`
+- `pnpm test -- src/ts/process/rerollNavigation.test.ts src/ts/process/rerollNavigation.rollback.test.ts src/ts/process/rerollNavigation.guard.test.ts`
+- `pnpm test -- src/ts/process/__tests__/triggers.projectionGuard.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`

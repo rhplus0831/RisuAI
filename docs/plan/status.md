@@ -5,18 +5,19 @@ Date: 2026-06-04
 This is the router for the frontend deep-clone / hot-path narrowing workstream.
 Use it first, then open only the phase or slice needed for the next task.
 
-Current status reflects the code and commit history through `9547ba3e`
-(`perf: narrow global-lorebook + lorebook-trigger rollback (Phase 2)`). Phase 0
-foundations, the Phase 1 primary guard fix, and all six Phase 2 slices have
-landed; Phase 2 is complete and the next work is Phases 3-7 (independent).
+Current status reflects HEAD `fd560a77` (`docs: mark Phase 2 complete (all 6
+slices landed)`), with runtime code through `9547ba3e` (`perf: narrow
+global-lorebook + lorebook-trigger rollback (Phase 2)`). Phase 0 foundations, the
+Phase 1 primary guard fix, and all six Phase 2 slices have landed; Phase 2 is
+complete and the next work is Phases 3-7 (independent).
 
 ## Current Snapshot
 
 Analysis is complete. Phase 0 foundations are implemented, Phase 1 removed the
 guard clone amplifier, and Phase 2 is complete (all 6 slices landed). The
 reference fix `c9e728b1` already narrowed character select; Phase 2 applied that
-pattern to the remaining message, send, trigger, reroll, watcher, and editor
-paths.
+pattern to message-edit, send/continue, trigger, reroll/swipe, chat-metadata
+watcher, character-row, and global-lorebook paths.
 
 Phase 2 slices landed: chat-metadata watcher (`e5e183da`), chat-scoped message
 paths (`2070df02`), scriptstate-scoped var writes (`727a28c0`), reroll/swipe

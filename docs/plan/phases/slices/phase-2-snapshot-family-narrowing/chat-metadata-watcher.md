@@ -25,33 +25,20 @@ cloning full chats.
 - [`../../../../frontend-performance-audit.md`](../../../../frontend-performance-audit.md) -
   the Critical chat-metadata-watcher finding and the High `scalarChatMetadata`
   finding.
-- `src/ts/server/chatBridge.svelte.ts:68` - the tracked `$effect` calling
-  `currentChatStateSnapshot()` (full-array) before the early-return guard at
-  `:80-91`; `previousState`/`currentState` at `:61/68/89/113`.
-- `src/ts/server/chatBridge.svelte.ts:190` - `scalarChatMetadata` =
-  `sanitizeChatPatch(cloneJsonValue(chat))`.
-- `src/ts/server/chatBridge.svelte.ts` - `dispatchUpdateChat` /
-  `dispatchUpdateChatFolder`, `queueChatPatch`/`queueFolderPatch`,
-  `CHAT_PATCH_ALLOWED_KEYS`, `sanitizeChatPatch`.
+- `src/ts/server/chatBridge.svelte.ts` - `watchServerBackedChatMetadata`,
+  `collectChatCollectionSnapshots`, `scalarChatMetadata`, `queueChatPatch`,
+  `queueFolderPatch`, and the narrow chat/folder row dispatch variants.
 - `src/lib/SideBars/SideChatList.svelte:75`, `ChatList.svelte:34`,
   `CharConfig.svelte:156` - the mounting sites.
 
-## Target Implementation
+## Implemented Shape
 
-- Remove the effect's full-array `previousState` / `currentState` snapshots.
-- Capture rollback lazily in `queueChatPatch` / `queueFolderPatch`, only when
-  `changedFields()` finds a real change.
-- Update `queueChatPatch` / `queueFolderPatch` and the underlying
-  `dispatchUpdateChat` / `dispatchUpdateChatFolder` path to carry a narrow
-  row-level rollback, or add narrow dispatch variants. The current queue entries
-  still store `ChatStateSnapshot` and restore through `restoreChatState()`.
-- Do not only gate the old snapshot behind `Object.keys(patch).length > 0`.
-  `previousState` is reassigned every run, so the diff baseline itself must be
-  per-row.
-- Rewrite `scalarChatMetadata` to build the scalar snapshot without serializing
-  `chat.message`/`chat.localLore`: iterate `CHAT_PATCH_ALLOWED_KEYS`, and clone
-  only the small allowed values (`bookmarks`/`bookmarkNames`/`modules` are
-  bounded).
+- The effect keeps per-row scalar baselines instead of full-chat snapshots.
+- `queueChatPatch` / `queueFolderPatch` capture rollback only after a real diff
+  and dispatch through narrow chat/folder row variants.
+- `scalarChatMetadata` iterates `CHAT_PATCH_ALLOWED_KEYS`, never serializing
+  `chat.message` or `chat.localLore`; bounded scalar arrays such as bookmarks are
+  still cloned.
 
 ## Behavior / Invariants
 
@@ -60,18 +47,14 @@ cloning full chats.
 - Per-chat/per-folder rollback restores only that row's scalar metadata.
 - A failed metadata patch rolls back only the affected chat/folder row.
 
-## Done When
+## Proven
 
-- The effect performs zero full-characters clones on a no-change re-trigger and on
-  a streaming-chunk re-trigger (clone-cost harness).
-- `scalarChatMetadata` never serializes `chat.message`/`chat.localLore`; the
-  per-chat `.map` over `character.chats` is O(scalar keys) not O(messages).
-- A failed `dispatchUpdateChat`/`dispatchUpdateChatFolder` restores only the one
-  row; unrelated chats keep their values.
-- `pnpm test` and `pnpm client-thinning:audit` are green.
+- Clone-cost tests cover no-change and streaming-chunk re-triggers.
+- `scalarChatMetadata` is O(scalar keys), not O(messages).
+- Failed chat/folder metadata dispatch restores only the affected row.
 
 ## Validation
 
-- `pnpm test -- src/ts/server/chatBridge` (or the bridge suite)
+- `pnpm test -- src/ts/server/chatBridge.svelte.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`

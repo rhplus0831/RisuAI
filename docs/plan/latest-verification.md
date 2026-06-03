@@ -40,9 +40,10 @@ latest-run section on each full or focused run; do not append history.
 - The proof template is `src/ts/compatibilityAdapters.test.ts`: snapshot omits
   `characters`, and failed commands roll back only the mutated slice. Phase 0
   turns this into a reusable helper.
-- The clone-cost regression gate (Phase 8) asserts each narrowed hot path never
-  invokes the whole-`Database` / whole-characters clone primitive; add the gate
-  as each slice lands so the narrowing cannot silently regress.
+- Phase 8 keeps the clone-cost gate map self-checking: each narrowed hot path
+  should have a proof that it avoids whole-`Database` / whole-characters clone
+  primitives, and new slices should add that proof before being marked
+  implemented.
 - The guard fix (Phase 1) is verified by a guarded one-field write staying O(1)
   on a multi-chat hydrated DB (no full-DB clone) while Svelte reactivity still
   fires and readers still receive a read-only projection.

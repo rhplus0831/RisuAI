@@ -15,16 +15,19 @@ instead of rebuilding a DB-wide lore stringify map on each fire.
   `collectLorebookCollectionSnapshots` (the all-chats-of-all-characters
   `snapshotJson` loop; the `delayMs` debounce wraps only the dispatch) and
   `watchServerBackedLorebooks` (the mounting `$effect`).
-- `src/lib/Setting/lorepreset.svelte:24`, `src/lib/.../ModuleMenu.svelte:41`,
-  `src/lib/.../LoreBookSetting.svelte:41` - the mounting panels.
+- `src/lib/Setting/lorepreset.svelte`,
+  `src/lib/Setting/Pages/Module/ModuleMenu.svelte`, and
+  `src/lib/SideBars/LoreBook/LoreBookSetting.svelte` - the mounting panels.
 - `src/lib/SideBars/LoreBook/LoreBookData.svelte` - the draft `$effect` that
   writes `cloneJsonValue(draft)` per keystroke (the dependency the collector
   reacts to).
 
 ## Target Implementation
 
-- Tie the watcher's tracked scope to the mounted panel. `LoreBookSetting` /
-  `lorepreset` need global lorebooks plus the selected character/open chat lore.
+- Add an explicit scope option/API to `watchServerBackedLorebooks` (it currently
+  only accepts `delayMs`) and pass the scope from each mounting panel.
+- Scope by panel: `lorepreset` needs the global `DBState.db.loreBook` list;
+  `LoreBookSetting` needs the selected character/open chat lore it is editing;
   `ModuleMenu` needs only the open module's lorebook.
 - Lowest-risk minimal change: cut the unbounded all-chats-of-all-characters
   `localLore` loop down to the chats of the selected character, and the open
@@ -41,9 +44,9 @@ instead of rebuilding a DB-wide lore stringify map on each fire.
 
 ## Done When
 
-- The collector covers only the mounting panel's collection (selected character's
-  chats + open module, or the panel's narrower scope); it no longer iterates every
-  chat of every character / every module per fire (clone-cost harness measuring
+- The collector covers only the mounting panel's collection (global list,
+  selected character/open chat, or open module); it no longer iterates every chat
+  of every character / every module per fire (clone-cost harness measuring
   entries/bytes per fire).
 - An edit within the panel's scope still dispatches; nothing within scope is
   missed.
@@ -51,6 +54,6 @@ instead of rebuilding a DB-wide lore stringify map on each fire.
 
 ## Validation
 
-- `pnpm test -- src/ts/server/lorebookBridge` (or the bridge suite)
+- `pnpm test -- src/ts/server/lorebookBridge.test.ts src/ts/server/lorebookBridge.svelte.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`

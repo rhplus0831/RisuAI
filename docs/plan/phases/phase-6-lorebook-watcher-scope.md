@@ -13,15 +13,18 @@ not read `chat.message`, but it still re-fires per lorebook keystroke.
 - `src/ts/server/lorebookBridge.svelte.ts` -
   `collectLorebookCollectionSnapshots` (the DB-wide `snapshotJson` loop) and
   `watchServerBackedLorebooks` (the mounting `$effect`).
-- `src/lib/Setting/lorepreset.svelte:24`, `src/lib/.../ModuleMenu.svelte:41`,
-  `src/lib/.../LoreBookSetting.svelte:41` - the mounting panels (each needs a
-  different scope).
+- `src/lib/Setting/lorepreset.svelte`,
+  `src/lib/Setting/Pages/Module/ModuleMenu.svelte`, and
+  `src/lib/SideBars/LoreBook/LoreBookSetting.svelte` - the mounting panels (each
+  needs a different scope).
 
 ## Slices
 
 - [`scope-lorebook-collector.md`](slices/phase-6-lorebook-watcher-scope/scope-lorebook-collector.md) -
-  track only the mounted panel's collection: selected character/open chat lore for
-  lorebook panels, or the open module's lorebook for module panels.
+  add a scope option/API to `watchServerBackedLorebooks` and track only the
+  mounted panel's collection: global lorebooks for `lorepreset`, selected
+  character/open chat lore for `LoreBookSetting`, or the open module's lorebook
+  for `ModuleMenu`.
 
 ## Exit Criteria
 
@@ -34,6 +37,6 @@ not read `chat.message`, but it still re-fires per lorebook keystroke.
 
 ## Validation
 
-- `pnpm test -- src/ts/server/lorebookBridge` (or the bridge suite)
+- `pnpm test -- src/ts/server/lorebookBridge.test.ts src/ts/server/lorebookBridge.svelte.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`

@@ -12,14 +12,9 @@ double-stringifying it on each keystroke.
 - [`../../../../frontend-performance-audit.md`](../../../../frontend-performance-audit.md) -
   the High per-keystroke `promptTemplate` clone and the Medium double-stringify
   findings; the Low `PromptDataItem` finding.
-- `src/lib/Setting/Pages/PromptSettings.svelte:196` - `queuePromptItemUpdate` (the
-  per-keystroke `cloneJsonValue(promptTemplateDraft.value)` write inside
-  `withTrustedServerProjectionWrite`; `index` already computed at `:198`).
-- `src/lib/Setting/Pages/PromptSettings.svelte:200-202/213` - the optimistic write
-  vs the already-250ms-debounced server command.
-- `src/lib/Setting/Pages/PromptSettings.svelte:358` - the change-detection
-  `$effect` (two `snapshotJson` passes per flush; tracks both
-  `DBState.db.promptTemplate` and `promptTemplateDraft.value`).
+- `src/lib/Setting/Pages/PromptSettings.svelte` - `queuePromptItemUpdate`, the
+  optimistic write, the already-250ms-debounced server command, and the
+  change-detection `$effect`.
 - `src/ts/server/commands.ts` - `peekCachedServerCommandRevision()`.
 - `src/lib/UI/PromptDataItem.svelte:49` - the per-keystroke single-PromptItem
   stringify + double `clonePromptItem` (bounded; optional co-fix).
@@ -31,8 +26,8 @@ double-stringifying it on each keystroke.
 2. Mutate only the edited item. Inside the guarded write, set
    `DBState.db.promptTemplate[index] = cloneJsonValue(promptItem)` (the `index` is
    already computed) instead of replacing the whole array.
-3. Cheap change detection. Replace the double `JSON.stringify` at `:358` with
-   the exported server-revision discriminator
+3. Cheap change detection. Replace the double whole-template `JSON.stringify`
+   with the exported server-revision discriminator
    (`peekCachedServerCommandRevision()`). Only re-pull `serverValue` when that
    revision advances. A pure reference check will not work because
    `queuePromptItemUpdate` reassigns `DBState.db.promptTemplate`.
@@ -57,6 +52,7 @@ double-stringifying it on each keystroke.
 
 ## Validation
 
-- `pnpm test -- src/lib/Setting/Pages/PromptSettings` (or the settings suite)
+- Add focused tests for `PromptSettings.svelte` / `PromptDataItem.svelte` behavior
+  touched by the slice.
 - `pnpm test`
 - `pnpm client-thinning:audit`

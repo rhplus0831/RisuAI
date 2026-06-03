@@ -76,8 +76,7 @@ narrowing reusable and provable; it does not change hot-path behavior.
 
 ## Validation
 
-- `pnpm test -- src/ts/compatibilityAdapters.test.ts`
-- `pnpm test -- src/ts/chatCommands.test.ts`
+- `pnpm test -- src/ts/chatCommands.test.ts src/ts/characterCommands.test.ts src/ts/server/lorebookBridge.test.ts src/ts/compatibilityAdapters.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`
 - Type check: `pnpm exec tsc -p tsconfig.client-lib.json` then

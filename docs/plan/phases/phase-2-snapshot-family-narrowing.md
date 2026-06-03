@@ -15,8 +15,8 @@ Each slice keeps the full-collection snapshot for genuine restructures
 - [`../../frontend-performance-audit.md`](../../frontend-performance-audit.md) -
   the Critical/High `currentChatStateSnapshot` / `currentCharacterStateSnapshot`
   / `currentLorebookStateSnapshot` findings and recommended-remediation step 3.
-- `src/ts/server/chatBridge.svelte.ts` - the chat-metadata watcher (`:68`) and
-  `scalarChatMetadata` (`:190`).
+- `src/ts/server/chatBridge.svelte.ts` - `watchServerBackedChatMetadata`,
+  `collectChatCollectionSnapshots`, and `scalarChatMetadata`.
 - `src/ts/chatCommands.ts`, `src/lib/ChatScreens/Chat.svelte`,
   `src/lib/ChatScreens/DefaultChatScreen.svelte` - the message-edit / send paths.
 - `src/ts/process/triggers.ts`, `src/ts/parser/chatVar.svelte.ts`,
@@ -57,15 +57,16 @@ Each slice keeps the full-collection snapshot for genuine restructures
   the 6 lorebook trigger sites -> `scopedLorebookStateSnapshot` via
   `persistCharacterLorebookEdit`; the redundant `setCurrentCharacter` re-clone is dropped.
 
-## Implementation Notes
+## Implemented Shape
 
-- The Phase 0 helpers are exported but not wired into production call sites yet.
-  Several dispatch helpers still accept broad snapshots and call broad restores:
-  message/scriptstate dispatchers in `chatCommands.ts`, character update
-  dispatchers in `characterCommands.ts`, and global-lorebook dispatchers in
-  `lorebookBridge.svelte.ts`. Each slice must either widen those signatures to
-  accept a snapshot+rollback pair, or add narrow dispatch variants, before
-  switching call sites to the Phase 0 snapshots.
+- `chatCommands.ts` now keeps the broad dispatch helpers for restructures and adds
+  scoped message/scriptstate variants that roll back through
+  `restoreChatScopedState` or `restoreChatScriptstate`.
+- `characterCommands.ts` keeps broad character dispatch for create/delete/reorder
+  and adds scoped update variants that roll back through `restoreCharacterRow`.
+- `lorebookBridge.svelte.ts` routes global-lorebook select/create/delete through
+  `restoreGlobalLorebookState`, while trigger lorebook edits use the existing
+  scoped lorebook rollback.
 
 ## Exit Criteria
 
@@ -81,14 +82,16 @@ Each slice keeps the full-collection snapshot for genuine restructures
 All six slices landed: chat-metadata watcher (`e5e183da`), chat-scoped message
 paths (`2070df02`), scriptstate var writes (`727a28c0`), reroll/swipe rollback
 (`f1558e39`), character-row snapshot paths (`458458a7`), and global-lorebook
-snapshot paths (`9547ba3e`). The image/emotion handlers (Phase 7) and the
-lower-frequency character/lorebook field-edit callers still hold the broad
-snapshot; they reuse the same kit when narrowed.
+snapshot paths (`9547ba3e`). Broad snapshots remain for genuine restructures and
+lower-frequency callers such as image/emotion edits, trash/Realm/import/card
+paths, and LoreBook sidebar/MCP/process callers; narrow those only when their
+phase/slice is picked up.
 
 ## Validation
 
-- `pnpm test -- src/ts/chatCommands.test.ts src/ts/compatibilityAdapters.test.ts`
-- `pnpm test -- src/ts/server/chatBridge` (watcher) and the per-area suites.
+- `pnpm test -- src/ts/chatCommands.test.ts src/ts/characterCommands.test.ts src/ts/compatibilityAdapters.test.ts`
+- `pnpm test -- src/ts/server/chatBridge.svelte.test.ts src/ts/server/lorebookBridge.test.ts src/ts/server/lorebookBridge.svelte.test.ts`
+- `pnpm test -- src/ts/process/rerollNavigation.test.ts src/ts/process/rerollNavigation.rollback.test.ts src/ts/process/rerollNavigation.guard.test.ts src/ts/process/__tests__/triggers.projectionGuard.test.ts src/ts/parser/tests/chatVar.svelte.test.ts`
 - `pnpm test`
 - `pnpm api:test`
 - `pnpm client-thinning:audit`

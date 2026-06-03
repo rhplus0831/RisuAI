@@ -3,8 +3,8 @@
 Status: planned. One slice grouping the low-priority items. Each item is small and
 independent; land them opportunistically.
 
-Goal: land Low-severity cleanups: shallow-spread clones, scalar baselines, regex
-memoization, an algorithmic rewrite, and a stray render-path log.
+Goal: land Low-severity cleanups: shallow-spread clones, scoped row baselines,
+regex memoization, parser string-work reduction, and a stray render-path log.
 
 ## Source Anchors
 
@@ -17,11 +17,10 @@ memoization, an algorithmic rewrite, and a stray render-path log.
 - `src/ts/characters.ts:138/195/220/242/259` - image/emotion edits cloning the
   full characters array + full target character.
 - `src/ts/process/scripts.ts:215` - per-token `RegExp` recompile.
-- `src/ts/parser/risuChatParser.ts:638` - the `{{#each}}` per-element splice +
-  re-scan.
+- `src/ts/parser/risuChatParser.ts` - `{{#each}}` block expansion string work.
 - `src/lib/ChatScreens/ChatBody.svelte:208/216` - per-render image lookup
   `console.log`s, including the full assets array.
-- `src/lib/SideBars/SideChatList.svelte:444` - O(folders\*chats) + O(chats^2) scan.
+- `src/lib/SideBars/SideChatList.svelte` - O(folders\*chats) + O(chats^2) scan.
 - `src/lib/Setting/Pages/PersonaSettings.svelte:68` - personas double clone per
   keystroke (downgraded-to-low config-editor cleanup).
 
@@ -43,6 +42,6 @@ memoization, an algorithmic rewrite, and a stray render-path log.
 
 ## Validation
 
-- `pnpm test -- src/ts/cbs` and the per-file suites for the touched items.
+- Add focused tests for the touched item(s), then run the nearest existing suites.
 - `pnpm test`
 - `pnpm client-thinning:audit`

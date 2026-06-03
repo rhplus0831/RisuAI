@@ -36,19 +36,15 @@ chat's `scriptstate` map plus optional `note`.
 - `src/ts/process/command.ts:200/219` (and `:213/234`) - `/setvar`/`/addvar`
   scriptstate writes.
 
-## Target Implementation
+## Implemented Shape
 
-- Route these paths through `currentChatScriptstateSnapshot()` /
-  `restoreChatScriptstate()`. For `v2SetAuthorNote`, include the prior `note`.
-- First update `dispatchPatchChatScriptstate` /
-  `dispatchCurrentChatScriptstatePatch` to accept a narrow snapshot+rollback pair
-  or add narrow variants. The current dispatchers still require
-  `ChatStateSnapshot` and roll back through `restoreChatState()`.
-- Hoist a single `ChatScriptstateSnapshot` to the start of the `runTrigger` pass
-  and reuse it across all `setVar` calls in that pass (`setVar` can fire many
-  times per pass, one per non-local `v2SetVar`/array/dict/regex effect).
-- `setChatVar` keeps its existing `runVar` short-circuit; only the snapshot
-  source changes.
+- `setVar`, `setChatVar`, `/setvar`, `/addvar`, and `v2SetAuthorNote` use
+  `currentChatScriptstateSnapshot()` / `restoreChatScriptstate()`.
+- Scoped dispatch helpers sit beside the broad chat helpers and restore only the
+  scriptstate map plus optional `note`.
+- `runTrigger` lazily captures one `ChatScriptstateSnapshot` per pass and reuses
+  it across every non-local var/note write; display/local-var short-circuits are
+  unchanged.
 
 ## Behavior / Invariants
 
@@ -60,18 +56,15 @@ chat's `scriptstate` map plus optional `note`.
 - A failed scriptstate/note patch restores only that chat's `scriptstate`/`note`,
   not the whole array.
 
-## Done When
+## Proven
 
-- `setVar`, `setChatVar`, `/setvar`, `/addvar`, and `v2SetAuthorNote` capture a
-  scriptstate-scoped (or note-scalar) snapshot; none clones every character
-  (clone-cost harness).
-- One snapshot is reused across a multi-`setVar` `runTrigger` pass.
+- Clone-cost tests cover the scriptstate/note paths and the one-snapshot-per-pass
+  `runTrigger` behavior.
 - Rollback-correctness tests prove a failed var/note write restores only the
   target chat's scriptstate/note.
-- `pnpm test` and `pnpm client-thinning:audit` are green.
 
 ## Validation
 
-- `pnpm test -- src/ts/process/triggers` and `pnpm test -- src/ts/parser/chatVar`
+- `pnpm test -- src/ts/process/__tests__/triggers.projectionGuard.test.ts src/ts/parser/tests/chatVar.svelte.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`

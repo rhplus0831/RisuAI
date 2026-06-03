@@ -6,10 +6,11 @@ Landed: `setCurrentCharacter` / `setCharacterByIndex` (`database.svelte.ts`) cap
 `currentCharacterRowSnapshot(index)` instead of `currentCharacterStateSnapshot()`
 and persist through the new `dispatchCompatibleCharacterUpdateScoped`, so a failed
 character-field update restores only the target character row (plus the selection
-scalars), never the whole characters array. Because the `v2Set*` lorebook/desc/note
-trigger effects all route through `setCurrentCharacter(char)`, they inherit the
-narrow rollback automatically (the global-lorebook slice additionally drops the
-redundant re-clone). `characterCommands.ts` adds `*With(rollback)` cores plus the
+scalars), never the whole characters array. Desc/note `v2Set*` trigger effects
+that route through `setCurrentCharacter(char)` inherit the row rollback; lorebook
+trigger effects now use the global-lorebook slice's scoped lorebook rollback and
+skip the redundant character re-clone. `characterCommands.ts` adds
+`*With(rollback)` cores plus the
 scoped exports `dispatchUpdateCharacterScoped` / `dispatchCompatibleCharacterUpdateScoped`
 (rolling back via `restoreCharacterRow`); the broad
 `dispatchUpdateCharacter` / `dispatchCompatibleCharacterUpdate` stay for the
@@ -39,30 +40,23 @@ target character row.
 - `src/ts/storage/database.svelte.ts:968/995` - `setCurrentCharacter` /
   `setCharacterByIndex` (both guarded by `canUseServerCommands()` === true, so the
   clone always fires).
-- `src/ts/process/triggers.ts:2409/2445/2212/2262/2932/2989/3012/3043` - the
-  `v2SetCharacterDesc`/`v2SetReplaceGlobalNote`/`v2SetLorebook*` callers of
-  `setCurrentCharacter` (per-send when the character's trigger uses these
-  effects).
+- `src/ts/process/triggers.ts` - `v2SetCharacterDesc` and
+  `v2SetReplaceGlobalNote` callers of `setCurrentCharacter`; lorebook triggers
+  are covered by the global-lorebook slice.
 - Lower-frequency callers: `setCharacterSupaMemory`,
   `characterCards.ts:136/369/648/1752`, plugins/MCP, `characters.ts:904`
   (trashTime).
 
-## Target Implementation
+## Implemented Shape
 
-- Add rollback through `currentCharacterRowSnapshot(index/characterId)` /
-  `restoreCharacterRow()` from Phase 0.
-- First update `dispatchUpdateCharacter` /
-  `dispatchCompatibleCharacterUpdate` to accept a narrow snapshot+rollback pair,
-  or add narrow variants. The current compatible-update path still takes
-  `CharacterStateSnapshot` and defaults to `restoreCharacterState()`.
-- Route `setCurrentCharacter` / `setCharacterByIndex` /
-  `dispatchCompatibleCharacterUpdate` (character-FIELD updates) through it.
-- Keep `currentCharacterStateSnapshot` only for
-  `dispatchCreateCharacter` / `dispatchDeleteCharacter` /
-  `dispatchReorderCharacters`.
-- The lower-frequency callers share the same fix (mechanical reuse); the
-  image/emotion handlers (`characters.ts:138...`) are narrowed in Phase 7 reusing
-  this same `CharacterRowSnapshot`.
+- `setCurrentCharacter` and `setCharacterByIndex` capture
+  `currentCharacterRowSnapshot(index)` and dispatch via
+  `dispatchCompatibleCharacterUpdateScoped`.
+- `dispatchUpdateCharacterScoped` / `dispatchCompatibleCharacterUpdateScoped`
+  roll back through `restoreCharacterRow`; broad dispatch remains for
+  create/delete/reorder and deferred lower-frequency callers.
+- Trigger `v2Set*` callers inherit the row snapshot through
+  `setCurrentCharacter(char)`.
 
 ## Behavior / Invariants
 
@@ -71,19 +65,16 @@ target character row.
   `chats`); only the rollback baseline narrows.
 - A failed character-field command restores only that character row and scalars.
 
-## Done When
+## Proven
 
-- `setCurrentCharacter`/`setCharacterByIndex` and the `v2Set*` trigger callers
-  capture a single-character-row snapshot; none clones every character (clone-cost
-  harness).
-- The full-array snapshot remains only on create/delete/reorder.
-- Rollback-correctness test proves a failed field edit restores only the target
-  character.
-- `pnpm test` and `pnpm client-thinning:audit` are green.
+- Clone-cost coverage proves `setCharacterByIndex` does not serialize a large
+  sibling transcript.
+- Rollback-correctness coverage proves a failed scoped character update restores
+  only the target row.
 
 ## Validation
 
-- `pnpm test -- src/ts/compatibilityAdapters.test.ts`
-- `pnpm test -- src/ts/process/triggers`
+- `pnpm test -- src/ts/characterCommands.test.ts src/ts/compatibilityAdapters.test.ts`
+- `pnpm test -- src/ts/process/__tests__/triggers.projectionGuard.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`

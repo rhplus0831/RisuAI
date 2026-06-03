@@ -26,7 +26,7 @@ under `withTrustedServerProjectionWrite`.
 - `src/ts/server/lorebookBridge.svelte.ts` - `currentLorebookStateSnapshot`,
   the existing `scopedLorebookStateSnapshot`/`restoreScopedLorebookState`.
 
-## Helpers To Add
+## Helpers Added
 
 - `currentChatScopedSnapshot()` / `restoreChatScopedState()`
   (`chatCommands.ts`)
@@ -69,7 +69,7 @@ under `withTrustedServerProjectionWrite`.
 - Do not modify the heavy `current*StateSnapshot` / `restore*State`; they stay for
   create/delete/reorder/fork (Prerequisite 4).
 
-## Done When
+## Done
 
 - The five helper pairs exist and are exported. Unit tests prove each snapshot
   omits full collections and each restore writes only the intended slice.
@@ -77,7 +77,7 @@ under `withTrustedServerProjectionWrite`.
 
 ## Validation
 
-- `pnpm test -- src/ts/chatCommands.test.ts src/ts/compatibilityAdapters.test.ts`
+- `pnpm test -- src/ts/chatCommands.test.ts src/ts/characterCommands.test.ts src/ts/server/lorebookBridge.test.ts src/ts/compatibilityAdapters.test.ts`
 - `pnpm test`
 - Type check: `pnpm exec tsc -p tsconfig.client-lib.json` then
   `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`.

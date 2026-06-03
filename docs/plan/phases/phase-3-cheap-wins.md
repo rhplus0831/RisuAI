@@ -1,7 +1,7 @@
 # Phase 3: Cheap High-Confidence Wins
 
-Status: planned. One slice. Independent of the Phase 0 snapshot kit; can land
-alongside Phase 1.
+Status: planned. One slice. Independent of the Phase 0 snapshot kit; ready to
+land next.
 
 Goal: land small behavior-preserving clone wins: reroll clone reorder/removal and
 `runTrigger` early return before cloning. No snapshot API changes.
@@ -11,13 +11,11 @@ Goal: land small behavior-preserving clone wins: reroll clone reorder/removal an
 - [`../../frontend-performance-audit.md`](../../frontend-performance-audit.md) -
   the `recordGeneratedReroll`, reroll-redundant-clone, and `runTrigger`
   clone-before-early-return findings; recommended-remediation step 4.
-- `src/ts/process/rerollNavigation.svelte.ts:60` - `recordGeneratedReroll`
-  (`safeStructuredClone(message).slice(previousLength)`).
-- `src/ts/process/rerollNavigation.svelte.ts:105/147` - the redundant
-  `safeStructuredClone(record.message)` (the dispatch re-clones) and the full
-  transcript clone in `reroll()`.
-- `src/ts/process/triggers.ts:1198` - `runTrigger` `safeStructuredClone(char)` +
-  `safeStructuredClone(chat)` before the `triggers.length === 0` early return.
+- `src/ts/process/rerollNavigation.svelte.ts` - `recordGeneratedReroll`, the
+  redundant `safeStructuredClone(record.message)`, and the full-transcript clone
+  in `reroll()`.
+- `src/ts/process/triggers.ts` - `runTrigger` clones `char` / active `chat`
+  before the `triggers.length === 0` early return.
 
 ## Slices
 
@@ -39,7 +37,7 @@ Goal: land small behavior-preserving clone wins: reroll clone reorder/removal an
 
 ## Validation
 
-- `pnpm test -- src/ts/process/rerollNavigation` (or the reroll suite)
-- `pnpm test -- src/ts/process/triggers` (or the triggers suite)
+- `pnpm test -- src/ts/process/rerollNavigation.test.ts src/ts/process/rerollNavigation.rollback.test.ts src/ts/process/rerollNavigation.guard.test.ts`
+- `pnpm test -- src/ts/process/__tests__/triggers.projectionGuard.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`

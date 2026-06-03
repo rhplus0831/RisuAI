@@ -8,11 +8,10 @@ client-lib build). Surface: `assertSnapshotIsScalar` and
 `assertSnapshotOmitsCollections` (structural), `assertRollbackRestoresOnly`
 (rollback-correctness driver), `withCloneInstrumentation` (temporarily patches
 global `JSON.stringify` and `globalThis.structuredClone`, returning clone counts
-
-- max cloned payload size), and `seedCloneCostDb` (multi-character, one
-  multi-message hydrated chat). Imported by the Phase 0 kit tests; the sanity
-  baseline shows the selection snapshot performs zero whole-characters clones
-  while the legacy snapshot performs one.
+and max cloned payload size), and `seedCloneCostDb` (multi-character, one
+multi-message hydrated chat). Imported by the Phase 0 kit tests; the sanity
+baseline shows the selection snapshot performs zero whole-characters clones
+while the legacy snapshot performs one.
 
 ## Scope
 
@@ -51,7 +50,7 @@ structural snapshot assertion and rollback-correctness assertion.
 - Keep the harness independent of any specific snapshot helper so Phase 2-7
   slices can import it directly.
 
-## Done When
+## Done
 
 - The helper module exists and is imported by the Phase 0 snapshot-kit tests.
 - The existing reference-fix tests remain green, and the Phase 0 snapshot-kit
@@ -62,5 +61,5 @@ structural snapshot assertion and rollback-correctness assertion.
 
 ## Validation
 
-- `pnpm test -- src/ts/compatibilityAdapters.test.ts`
+- `pnpm test -- src/ts/chatCommands.test.ts src/ts/characterCommands.test.ts src/ts/server/lorebookBridge.test.ts src/ts/compatibilityAdapters.test.ts`
 - `pnpm test`

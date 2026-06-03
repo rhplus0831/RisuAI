@@ -10,16 +10,17 @@ narrow new paths; it makes the gate map self-checking.
 - [`../../frontend-performance-audit.md`](../../frontend-performance-audit.md) -
   the clone-site inventory (the universe of hot paths a gate must cover) and the
   "General principle" closeout.
-- `src/ts/compatibilityAdapters.test.ts` - the reference fix's snapshot +
-  rollback proof (the per-slice gate template).
-- [`slices/phase-0-baseline-foundations/clone-cost-regression-harness.md`](slices/phase-0-baseline-foundations/clone-cost-regression-harness.md) -
-  the harness this phase keeps complete.
+- `src/ts/__tests__/cloneCostHarness.ts` - the reusable structural,
+  rollback-correctness, and clone-instrumentation helper.
+- Existing Phase 0-2 coverage lives across `chatCommands.test.ts`,
+  `characterCommands.test.ts`, `lorebookBridge*.test.ts`,
+  `chatBridge.svelte.test.ts`, and `rerollNavigation*.test.ts`.
 
 ## Slices
 
 - [`clone-cost-gate-completeness.md`](slices/phase-8-verification-budgets/clone-cost-gate-completeness.md) -
-  list narrowed hot paths, assert each has a clone-cost test, and add a
-  self-check that fails when an inventory entry lacks a gate. Keep
+  list narrowed hot paths, map them to their existing or new clone-cost tests, and
+  add a self-check that fails when an inventory entry lacks a gate. Keep
   [`../latest-verification.md`](../latest-verification.md) current.
 
 ## Exit Criteria

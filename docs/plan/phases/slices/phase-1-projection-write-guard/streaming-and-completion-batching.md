@@ -61,6 +61,6 @@ cost once per response or message append, not per chunk.
 
 ## Validation
 
-- `pnpm test -- src/ts/process/postGeneration` (or the generation suite)
+- `pnpm test -- src/ts/process/__tests__/streamResponse.test.ts src/ts/process/__tests__/nonStreamResponse.test.ts src/ts/process/__tests__/orchestrateResponse.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`

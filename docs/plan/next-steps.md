@@ -2,8 +2,8 @@
 
 Date: 2026-06-04
 
-Read this when choosing the next batch. Pick one narrow snapshot path, optional
-guard follow-up, or one proof batch. Avoid broad cleanup passes.
+Read this when choosing the next batch. Pick one focused Phase 3-7 cleanup or one
+Phase 8 proof batch. Avoid broad cleanup passes.
 
 ## Start Point
 
@@ -14,32 +14,24 @@ guard follow-up, or one proof batch. Avoid broad cleanup passes.
 - Before editing runtime code, add a compact scope to the active slice: location,
   cloned data, hot-path trigger, target snapshot, rollback property, and proof
   command.
-- Phases 3-7 are independent cleanups. The snapshot-dependent ones (Phase 2, and
-  the character-row reuse in Phase 7) should use the Phase 0 kit; guard
-  follow-ups and cheap wins should still use the Phase 0 clone-cost harness when
-  proving a win.
+- Phases 3-7 are independent cleanups. The remaining snapshot-dependent item is
+  the Phase 7 image/emotion narrowing, which should reuse the Phase 0 character
+  row kit; cheap wins and watcher/editor changes should still use the clone-cost
+  harness when proving a win.
 
 ## Current Best Targets
 
 Phases 0, 1, and 2 have landed. Phase 2 (snapshot-family narrowing) is complete;
 the next work is Phases 3-7 (independent, any order).
 
-1. Phase 0 (DONE): snapshot kit + clone-cost harness.
-2. Phase 1 (DONE, primary slice): copy-on-write projection guard — a guarded
-   write no longer clones the whole `Database` (entry hands the callback a
-   writable pass-through working copy; refreeze re-wraps the same mutated source
-   in a fresh read-only proxy tree). The optional streaming/completion batching
-   slice is deferred (low value now that each transition is O(1)).
-3. Phase 2 (DONE, 6 of 6 slices): chat-metadata watcher (`e5e183da`), chat-scoped
-   message paths (`2070df02`), scriptstate-scoped var writes (`727a28c0`),
-   reroll/swipe rollback (`f1558e39`), character-row snapshot paths (`458458a7`),
-   global-lorebook snapshot paths (`9547ba3e`). The broad
-   `dispatchReplaceMessages`/`dispatchUpdateMessage`/`currentLorebookStateSnapshot`
-   and `currentCharacterStateSnapshot` paths remain only for the restructure
-   call sites (create/delete/reorder/fork) and the deferred image/emotion (Phase 7)
-   and sidebar/MCP lorebook callers.
-4. NEXT: Phase 3 (reroll clone reorder/removal + `runTrigger` early return) and
-   Phases 4-7 — independent cleanups, any order.
+- DONE: Phase 0 snapshot kit + clone-cost harness; Phase 1 primary guard
+  copy-on-write fix; Phase 2 all six snapshot-family slices
+  (`e5e183da` -> `9547ba3e`). Broad snapshots still exist for restructures plus
+  lower-frequency or deferred callers.
+- NEXT: Phase 3 (`recordGeneratedReroll`, redundant reroll clones,
+  `runTrigger` early return) or any focused Phase 4-7 cleanup.
+- STANDING: Phase 8 verification budgets; refresh
+  [`latest-verification.md`](latest-verification.md) after focused/full runs.
 
 ## Not First
 
@@ -55,29 +47,6 @@ the next work is Phases 3-7 (independent, any order).
 - Do not change the guard's immutability contract: the unwrap-rewrap must still
   hand readers a read-only projection and mint a new identity for reactivity.
 
-## Selection Order
-
-1. Phase 0 snapshot kit + clone-cost harness - DONE (kit in
-   `chatCommands.ts`/`characterCommands.ts`/`lorebookBridge.svelte.ts`, harness in
-   `src/ts/__tests__/cloneCostHarness.ts`; proofs in the three command suites).
-2. Phase 1 projection write guard (copy-on-write / proxy unwrap-rewrap) - DONE
-   (primary slice). `src/ts/server/projectionWriteGuard.svelte.ts` now uses a
-   writable pass-through working copy on entry and a fresh per-wrap read-only
-   proxy tree on refreeze; proof in `src/ts/server/projectionWriteGuard.test.ts`.
-   Secondary streaming/completion batching slice deferred (optional).
-3. Phase 2 snapshot-family narrowing - DONE (all 6 slices). Order landed:
-   chat-metadata watcher -> chat-scoped message/send paths -> scriptstate-scoped
-   var writes -> reroll/swipe -> character-row -> global-lorebook.
-4. Phase 3 cheap wins - not started. Independent; can land alongside Phase 1.
-5. Phase 4 script-definition watcher - not started.
-6. Phase 5 prompt-template keystroke - not started (the guard half closed in
-   Phase 1).
-7. Phase 6 lorebook watcher scope - not started.
-8. Phase 7 opportunistic cleanups - not started.
-9. Phase 8 verification budgets - standing; refresh
-   [`latest-verification.md`](latest-verification.md) after each focused and full
-   run, and add the clone-cost gate as each slice lands.
-
 ## Proof Commands
 
 Use the smallest focused command first. Broaden only when the change touches
@@ -90,10 +59,10 @@ matching suite.
 - `pnpm test -- src/ts/server/projectionWriteGuard.test.ts src/ts/server/chatMessageHydration.reactivity.svelte.test.ts`
   (the copy-on-write proof: a guarded one-field write stays O(1), reactivity
   still fires).
-- `pnpm test -- src/ts/process/rerollNavigation` (reroll tail-clone reorder and
-  rollback scope).
-- `pnpm test -- src/ts/process/triggers` (setVar/v2Set\* scriptstate scope,
-  `runTrigger` early-return).
+- `pnpm test -- src/ts/process/rerollNavigation.test.ts src/ts/process/rerollNavigation.rollback.test.ts src/ts/process/rerollNavigation.guard.test.ts`
+  (reroll tail-clone reorder and rollback scope).
+- `pnpm test -- src/ts/process/__tests__/triggers.projectionGuard.test.ts src/ts/parser/tests/chatVar.svelte.test.ts`
+  (scriptstate scope and `runTrigger` early-return).
 - `pnpm test` (full client suite).
 - `pnpm api:test` (server suite - run when a change can affect projection/event
   payloads).

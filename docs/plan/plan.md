@@ -72,13 +72,16 @@ The seed audit found two clone patterns and one amplifier:
 Empirical seed baseline (from the audit, reproduced on a 61 MB hydrated DB):
 before Phase 1, one guarded write took about 255 ms (entry clone ~125 ms +
 refreeze clone ~130 ms). The current guard proof shows zero clone-primitive calls
-for a one-field guarded write. `currentChatStateSnapshot()` /
-`currentCharacterStateSnapshot()` still scale with total hydrated history across
-all opened characters until Phase 2 rewires their hot callers.
+for a one-field guarded write. The legacy full-state snapshot helpers still scale
+with total hydrated history, but Phase 2 has moved the Critical/High message,
+scriptstate, reroll, character, and global-lorebook hot callers onto scoped
+snapshots. Remaining broad callers are lower-frequency restructure, import,
+sidebar/MCP, and image-emotion paths tracked in Phases 3-7.
 
 The reference fix `c9e728b1` narrowed character select to a scalar snapshot. With
-the guard amplifier already removed by Phase 1, the remaining phases apply that
-same shape to message, send, trigger, reroll, watcher, and editor paths.
+the guard amplifier already removed by Phase 1, Phase 2 applied the same shape to
+the main snapshot-family hot paths. The remaining phases are independent clone
+cleanups, watcher scope reductions, editor-keystroke work, and gate completeness.
 
 ## Prerequisites
 
@@ -144,9 +147,8 @@ site is narrowed:
 
 ## Execution Cursor
 
-Phase 0 and the Phase 1 primary guard fix are implemented. Start the next batch
-with Phase 2 snapshot-family narrowing; Phases 3-7 can land in any order once
-their prerequisites exist. Phase 8 is the standing verification layer.
+Phases 0, 1 (primary guard), and 2 are implemented. Start the next batch with any
+focused Phase 3-7 cleanup; Phase 8 is the standing verification layer.
 
 For every narrowed path: capture a narrow rollback, restore only mutated fields,
 keep full clones for restructures, and add a regression test proving the path
@@ -159,23 +161,7 @@ does not clone every character.
 - Re-architecting how hydrated `message[]` histories accumulate into
   `DBState.db.characters`; the plan reduces what is cloned, not where state
   lives.
-- The candidates the audit investigated and rejected or downgraded - they are
-  recorded under "Investigated but not flagged" in
-  [`active-risk-analysis.md`](active-risk-analysis.md) so future readers do not
-  re-open them:
-  - `buildMemoryWindow.ts:139` full-characters clone - the heavy branch is the
-    local assembler, dead on the default `server` send route (latent foot-gun,
-    not a live freeze).
-  - `request.ts:247` full-prompt double clone - skipped on the default server
-    route; the hot callers carry small bounded prompts.
-  - `lorebook.svelte.ts:166` combined-lorebook clone - local-assembler only; a
-    by-reference fix would be a correctness regression.
-  - `chatTemplate.ts:40` instruct-template prompt clone - context-bounded text,
-    single-digit ms, opt-in provider.
-  - `ChatBody.svelte:79` `isEqual` over the simpleCharacter arrays - shared
-    references hit the `===` fast path; benchmarked at 0.20 ms.
-  - `PersonaSettings.svelte:68` personas double clone - bounded config; sub-ms,
-    a cheap cleanup carried as a Phase 7 optional, not a freeze.
-  - `protocolDiagnostics.ts:159` `structuredClone` - small bounded counters
-    object.
+- Re-opening candidates the audit already rejected or downgraded. The canonical
+  list lives under "Investigated But Not Flagged" in
+  [`active-risk-analysis.md`](active-risk-analysis.md).
 - Changing message-store, `hypaV3Data`, or alternate split-store semantics.

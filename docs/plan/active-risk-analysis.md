@@ -10,8 +10,9 @@ not a verification log. Keep proof runs in
 ## Summary
 
 All findings are analyzed. Phase 0, the primary Phase 1 guard fix, and all six
-Phase 2 slices are implemented; Phases 3-8 remain planned. Severity comes from the
-seed audit: 4 critical, 13 high, 6 medium, 6 low, plus the clone-site inventory.
+Phase 2 slices are implemented; Phases 3-7 remain planned and Phase 8 is the
+standing gate. Severity comes from the seed audit: 4 critical, 13 high, 6 medium,
+6 low, plus the clone-site inventory.
 
 Principle: do not clone the whole characters array, whole `Database`, or full
 message history for scalar-only hot paths. Keep full clones for real
@@ -31,8 +32,9 @@ restructures.
   `currentChatScopedSnapshot`, with full clone kept for create/delete/reorder/fork.
   Phase: [Phase 0](phases/phase-0-baseline-foundations.md) kit +
   [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
-- Chat-metadata watcher (`chatBridge.svelte.ts:68/190`): the effect snapshotted all
-  chats before its early return, and `scalarChatMetadata` cloned each full chat.
+- Chat-metadata watcher (`chatBridge.svelte.ts` watcher +
+  `scalarChatMetadata`): the effect snapshotted all chats before its early
+  return, and `scalarChatMetadata` cloned each full chat.
   DONE (Phase 2): rollback captured lazily per changed row, only allowed scalar
   keys copied. Phase: [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
 - Character paths: `currentCharacterStateSnapshot` cloned all characters for

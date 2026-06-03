@@ -11,16 +11,11 @@ array and stringifying the whole template twice per keystroke.
 - [`../../frontend-performance-audit.md`](../../frontend-performance-audit.md) -
   the High per-keystroke `promptTemplate` clone and the Medium double-stringify
   change-detection findings; recommended-remediation step 6.
-- `src/lib/Setting/Pages/PromptSettings.svelte:196` - `queuePromptItemUpdate`
-  (the per-keystroke `cloneJsonValue(promptTemplateDraft.value)` into
-  `DBState.db.promptTemplate` inside `withTrustedServerProjectionWrite`).
-- `src/lib/Setting/Pages/PromptSettings.svelte:213` - the already-250ms-debounced
-  server command (the timer to coalesce into).
-- `src/lib/Setting/Pages/PromptSettings.svelte:358` - the change-detection
-  `$effect` doing two `snapshotJson` passes (server + draft) per flush.
+- `src/lib/Setting/Pages/PromptSettings.svelte` - `queuePromptItemUpdate`, the
+  already-250ms-debounced server command, and the change-detection `$effect`.
 - `src/ts/server/commands.ts` - `peekCachedServerCommandRevision()` (the exported
   revision discriminator).
-- `src/lib/UI/PromptDataItem.svelte:49` - the per-keystroke single-PromptItem
+- `src/lib/UI/PromptDataItem.svelte` - the per-keystroke single-PromptItem
   stringify + double `clonePromptItem` (bounded, low - co-fix here).
 
 ## Slices
@@ -42,6 +37,7 @@ array and stringifying the whole template twice per keystroke.
 
 ## Validation
 
-- `pnpm test -- src/lib/Setting/Pages/PromptSettings` (or the settings suite)
+- Add focused tests for `PromptSettings.svelte` / `PromptDataItem.svelte`
+  behavior touched by the slice.
 - `pnpm test`
 - `pnpm client-thinning:audit`

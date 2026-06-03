@@ -32,31 +32,32 @@ chat.
 - `src/lib/ChatScreens/DefaultChatScreen.svelte:949/950/1202/701/830` -
   `reroll()`/`unReroll()` swipe/gesture/side-menu bindings.
 
-## Target Implementation
+## Implemented Shape
 
-- Replace `currentChatStateSnapshot()` in `applyTailDataSwap`, `applyTailSlice`,
-  and `applyTranscript` with the Phase 0 chat-scoped snapshot.
-- Leave the redundant `safeStructuredClone(record.message)` and full transcript
-  clone to Phase 3 if this slice lands separately.
+- `applyTailDataSwap`, `applyTailSlice`, and `applyTranscript` use
+  `currentChatScopedSnapshot()`.
+- Persistence goes through `dispatchUpdateMessageScoped` /
+  `dispatchReplaceMessagesScoped`, so rollback restores only the active chat.
+- The redundant `safeStructuredClone(record.message)` and reroll full-transcript
+  clone are intentionally left for Phase 3.
 
 ## Behavior / Invariants
 
 - Swipe navigation (cycling buffered candidates through `applyTailSlice`) stays
   synchronous and correct; the buffered-candidate tail clones at `:139/187` are
   bounded and untouched.
-- A failed `dispatchReplaceMessages` restores only the active chat's `message[]`.
+- A failed `dispatchReplaceMessagesScoped` restores only the active chat's
+  `message[]`.
 - Rerolled/persisted message bytes are identical.
 
-## Done When
+## Proven
 
-- The three `apply*` helpers capture a chat-scoped rollback; none clones every
-  character (clone-cost harness).
-- Rollback-correctness test proves a failed swipe/replace restores only the active
-  chat.
-- `pnpm test` is green.
+- Clone-cost coverage proves swipe does not serialize a large sibling transcript.
+- Rollback-correctness coverage proves a failed swipe/replace restores only the
+  active chat.
 
 ## Validation
 
-- `pnpm test -- src/ts/process/rerollNavigation` (or the reroll suite)
+- `pnpm test -- src/ts/process/rerollNavigation.test.ts src/ts/process/rerollNavigation.rollback.test.ts src/ts/process/rerollNavigation.guard.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`

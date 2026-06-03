@@ -1,6 +1,6 @@
 # Frontend Performance Deep-Clone Narrowing Phases
 
-Date: 2026-06-03
+Date: 2026-06-04
 
 Use these files for phase status, scope, exit criteria, and slice routing.
 Concrete slices live under `slices/[phase]/[slice-name].md`.
@@ -11,7 +11,7 @@ Concrete slices live under `slices/[phase]/[slice-name].md`.
 - Phase 1, implemented (primary slice; batching slice deferred):
   [`phase-1-projection-write-guard.md`](phase-1-projection-write-guard.md),
   [`slices/phase-1-projection-write-guard/`](slices/phase-1-projection-write-guard/).
-- Phase 2, planned:
+- Phase 2, implemented:
   [`phase-2-snapshot-family-narrowing.md`](phase-2-snapshot-family-narrowing.md),
   [`slices/phase-2-snapshot-family-narrowing/`](slices/phase-2-snapshot-family-narrowing/).
 - Phase 3, planned: [`phase-3-cheap-wins.md`](phase-3-cheap-wins.md),
