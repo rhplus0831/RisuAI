@@ -82,8 +82,9 @@
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import {
     cloneJsonValue,
+    currentChatScopedSnapshot,
     currentChatStateSnapshot,
-    dispatchReplaceMessages,
+    dispatchReplaceMessagesScoped,
     dispatchUpdateChat,
   } from 'src/ts/chatCommands'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
@@ -212,7 +213,7 @@
     }
     resetRerollOnCharChange()
 
-    const previous = currentChatStateSnapshot()
+    const previous = currentChatScopedSnapshot()
     const currentChatRecord =
       DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
     let cha: Message[] = cloneJsonValue(currentChatRecord.message ?? [])
@@ -272,11 +273,13 @@
         const liveCharacter = DBState.db.characters[selectedChar]
         const liveChat = liveCharacter?.chats[liveCharacter.chatPage]
         if (liveChat && (!currentChatRecord.id || liveChat.id === currentChatRecord.id)) {
-          liveChat.message = cloneJsonValue(cha)
+          // `cha` is already a fresh clone built above; assign it directly
+          // instead of cloning the whole transcript a second time.
+          liveChat.message = cha
         }
       })
       if (currentChatRecord.id) {
-        dispatchReplaceMessages(currentChatRecord.id, cha, previous)
+        dispatchReplaceMessagesScoped(currentChatRecord.id, cha, previous)
       }
     }
     await sleep(10)
@@ -780,7 +783,7 @@
         {:else}
           <div
             onclick={(e) => {
-              const previous = currentChatStateSnapshot()
+              const previous = currentChatScopedSnapshot()
               const selectedChar = $selectedCharID
               const currentChatRecord =
                 DBState.db.characters[selectedChar].chats[
@@ -799,7 +802,7 @@
                 }
               })
               if (currentChatRecord.id) {
-                dispatchReplaceMessages(currentChatRecord.id, nextMessages, previous)
+                dispatchReplaceMessagesScoped(currentChatRecord.id, nextMessages, previous)
               }
             }}
             class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"

@@ -32,6 +32,7 @@ import {
   dispatchPatchChatScriptstate,
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
+  dispatchReplaceMessagesScoped,
   dispatchUpdateChat,
   restoreChatFolderRowMetadata,
   restoreChatRowMetadata,
@@ -552,13 +553,13 @@ describe('Phase 0 chat-scriptstate snapshot kit', () => {
 
 describe('Phase 2 chat-metadata-row rollback', () => {
   function scalarMetadata(chatIndex: number): ChatSnapshot {
-    const chat = DBState.db.characters[0].chats[chatIndex] as Record<string, unknown>
-    const metadata: ChatSnapshot = {}
+    const chat = DBState.db.characters[0].chats[chatIndex] as unknown as Record<string, unknown>
+    const metadata: Record<string, unknown> = {}
     // mirror the watcher's allowed scalar metadata keys for the seeded fields
     for (const key of ['name', 'note', 'folderId', 'bindedPersona'] as const) {
       if (chat[key] !== undefined) metadata[key] = chat[key]
     }
-    return metadata
+    return metadata as ChatSnapshot
   }
 
   it('restores only the one chat row, preserving message history and unrelated chats', () => {
@@ -652,5 +653,57 @@ describe('Phase 2 chat-metadata-row rollback', () => {
         expect(DBState.db.characters[1].chatFolders[0].name).toBe('Sibling Folder Edit')
       },
     })
+  })
+})
+
+describe('Phase 2 chat-scoped message dispatch', () => {
+  it('dispatchReplaceMessagesScoped rolls back only the active chat on failure', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a/messages') {
+          return jsonResponse({ error: 'nope' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    // a sibling character to prove the scoped rollback never touches it
+    DBState.db.characters.push({
+      chaId: 'char-b',
+      name: 'Other',
+      chatPage: 0,
+      chats: [{ id: 'chat-c', name: 'C', message: [{ role: 'user', data: 'sib', chatId: 'm-sib' }] }],
+      chatFolders: [],
+    } as any)
+
+    const scoped = currentChatScopedSnapshot()
+    expect(scoped.chatId).toBe('chat-a')
+
+    // optimistic local edits: the active chat plus an unrelated sibling edit
+    DBState.db.characters[0].chats[0].message.push({
+      role: 'char',
+      data: 'optimistic',
+      chatId: 'm-opt',
+    })
+    DBState.db.characters[1].chats[0].note = 'sibling concurrent'
+
+    dispatchReplaceMessagesScoped('chat-a', [{ role: 'user', data: 'x', chatId: 'm-x' }], scoped)
+    await waitForCallCount(calls, 2)
+
+    // only the active chat row is restored
+    expect(DBState.db.characters[0].chats[0].message).toEqual([])
+    // sibling character/chat untouched; the active character's other chat too
+    expect(DBState.db.characters[0].chats[1].id).toBe('chat-b')
+    expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent')
   })
 })

@@ -340,13 +340,47 @@ export function dispatchUpdateChatRow(
   )
 }
 
+// Chat-scoped-rollback variant of `dispatchUpdateChat` for paths that mutate the
+// active chat row alongside its message history (e.g. bookmark toggles): a failed
+// command restores that one chat row, not the whole characters array.
+export function dispatchUpdateChatScoped(
+  chatId: string,
+  patch: ChatSnapshot,
+  previous: ChatScopedSnapshot,
+): void {
+  const commandPatch = sanitizeChatPatch(patch)
+  if (Object.keys(commandPatch).length === 0) return
+  runChatCommand(
+    (baseRevision) =>
+      updateChatCommand({
+        baseRevision,
+        chatId,
+        patch: commandPatch,
+        select: false,
+      }),
+    () => restoreChatScopedState(previous),
+  )
+}
+
 export function dispatchCompatibleChatUpdate(
   previousChat: Chat | undefined,
   nextChat: Chat | undefined,
   previous: ChatStateSnapshot,
 ): void {
-  const { factories, rollback } = prepareCompatibleChatUpdate(previousChat, nextChat, previous)
-  if (factories.length > 0) runChatCommandSequence(factories, rollback)
+  const factories = buildCompatibleChatUpdateFactories(previousChat, nextChat)
+  if (factories.length > 0) runChatCommandSequence(factories, () => restoreChatState(previous))
+}
+
+// Narrow-rollback variant of `dispatchCompatibleChatUpdate` for the slash-command
+// message mutation path. Same per-resource factories, but a failed sequence
+// restores only the one active chat row instead of the whole characters array.
+export function dispatchCompatibleChatUpdateScoped(
+  previousChat: Chat | undefined,
+  nextChat: Chat | undefined,
+  previous: ChatScopedSnapshot,
+): void {
+  const factories = buildCompatibleChatUpdateFactories(previousChat, nextChat)
+  if (factories.length > 0) runChatCommandSequence(factories, () => restoreChatScopedState(previous))
 }
 
 // Factory-list form of dispatchCompatibleChatUpdate so the V3 plugin API can
@@ -360,6 +394,19 @@ export function prepareCompatibleChatUpdate(
   factories: Array<(baseRevision: number) => Promise<ServerCommandResult>>
   rollback: () => void
 } {
+  return {
+    factories: buildCompatibleChatUpdateFactories(previousChat, nextChat),
+    rollback: () => restoreChatState(previous),
+  }
+}
+
+// Build the per-resource command factories for a compatible chat update. Shared
+// by the broad and chat-scoped dispatch variants and the V3 plugin path; the
+// rollback strategy is the caller's choice.
+function buildCompatibleChatUpdateFactories(
+  previousChat: Chat | undefined,
+  nextChat: Chat | undefined,
+): Array<(baseRevision: number) => Promise<ServerCommandResult>> {
   const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
   const chatId = nextChat?.id ?? previousChat?.id
   if (chatId && previousChat && nextChat) {
@@ -401,7 +448,7 @@ export function prepareCompatibleChatUpdate(
       )
     }
   }
-  return { factories, rollback: () => restoreChatState(previous) }
+  return factories
 }
 
 export function dispatchDeleteChat(chatId: string, previous: ChatStateSnapshot): void {
@@ -604,7 +651,7 @@ export async function appendCurrentChatUserMessageForSend(
   data: string,
 ): Promise<AppendCurrentChatUserMessageResult> {
   const selectedChar = get(selectedCharID)
-  const previous = currentChatStateSnapshot()
+  const previous = currentChatScopedSnapshot()
   const message: Message = {
     role: 'user',
     data,
@@ -633,7 +680,7 @@ export async function appendCurrentChatUserMessageForSend(
   }
 
   if (!chatId) {
-    restoreChatState(previous)
+    restoreChatScopedState(previous)
     return { status: 'error', error: 'The current chat has no server id.' }
   }
 
@@ -644,7 +691,7 @@ export async function appendCurrentChatUserMessageForSend(
         chatId,
         message: toMessageSnapshot(message),
       }),
-    rollback: () => restoreChatState(previous),
+    rollback: () => restoreChatScopedState(previous),
   })
 
   if (result.status === 'ok') {
@@ -659,10 +706,15 @@ export async function appendCurrentChatUserMessageForSend(
   return { status: 'error', error: result.error }
 }
 
-export function dispatchUpdateMessage(
+// Each message-dispatch helper has a `*With(... rollback)` core plus a broad
+// (`ChatStateSnapshot`) and a chat-scoped (`ChatScopedSnapshot`) export. The
+// scoped variants restore only the active chat row on failure; the broad ones
+// remain for the reroll/swipe path (narrowed separately) and any caller that
+// still holds a whole-collection snapshot.
+function dispatchUpdateMessageWith(
   messageId: string,
   patch: MessageSnapshot,
-  previous: ChatStateSnapshot,
+  rollback: () => void,
 ): void {
   const commandPatch = sanitizeMessagePatch(patch)
   if (Object.keys(commandPatch).length === 0) return
@@ -673,25 +725,49 @@ export function dispatchUpdateMessage(
         messageId,
         patch: commandPatch,
       }),
-    () => restoreChatState(previous),
+    rollback,
   )
 }
 
-export function dispatchDeleteMessage(messageId: string, previous: ChatStateSnapshot): void {
+export function dispatchUpdateMessage(
+  messageId: string,
+  patch: MessageSnapshot,
+  previous: ChatStateSnapshot,
+): void {
+  dispatchUpdateMessageWith(messageId, patch, () => restoreChatState(previous))
+}
+
+export function dispatchUpdateMessageScoped(
+  messageId: string,
+  patch: MessageSnapshot,
+  previous: ChatScopedSnapshot,
+): void {
+  dispatchUpdateMessageWith(messageId, patch, () => restoreChatScopedState(previous))
+}
+
+function dispatchDeleteMessageWith(messageId: string, rollback: () => void): void {
   runMessageCommand(
     (baseRevision) =>
       deleteMessageCommand({
         baseRevision,
         messageId,
       }),
-    () => restoreChatState(previous),
+    rollback,
   )
 }
 
-export function dispatchTruncateMessages(
+export function dispatchDeleteMessage(messageId: string, previous: ChatStateSnapshot): void {
+  dispatchDeleteMessageWith(messageId, () => restoreChatState(previous))
+}
+
+export function dispatchDeleteMessageScoped(messageId: string, previous: ChatScopedSnapshot): void {
+  dispatchDeleteMessageWith(messageId, () => restoreChatScopedState(previous))
+}
+
+function dispatchTruncateMessagesWith(
   chatId: string,
   afterMessageId: string | null,
-  previous: ChatStateSnapshot,
+  rollback: () => void,
 ): void {
   runMessageCommand(
     (baseRevision) =>
@@ -700,14 +776,30 @@ export function dispatchTruncateMessages(
         chatId,
         afterMessageId,
       }),
-    () => restoreChatState(previous),
+    rollback,
   )
 }
 
-export function dispatchReplaceMessages(
+export function dispatchTruncateMessages(
+  chatId: string,
+  afterMessageId: string | null,
+  previous: ChatStateSnapshot,
+): void {
+  dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatState(previous))
+}
+
+export function dispatchTruncateMessagesScoped(
+  chatId: string,
+  afterMessageId: string | null,
+  previous: ChatScopedSnapshot,
+): void {
+  dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatScopedState(previous))
+}
+
+function dispatchReplaceMessagesWith(
   chatId: string,
   messages: Message[],
-  previous: ChatStateSnapshot,
+  rollback: () => void,
 ): void {
   for (const message of messages) {
     ensureMessageId(message)
@@ -719,8 +811,24 @@ export function dispatchReplaceMessages(
         chatId,
         messages: messages.map(toMessageSnapshot),
       }),
-    () => restoreChatState(previous),
+    rollback,
   )
+}
+
+export function dispatchReplaceMessages(
+  chatId: string,
+  messages: Message[],
+  previous: ChatStateSnapshot,
+): void {
+  dispatchReplaceMessagesWith(chatId, messages, () => restoreChatState(previous))
+}
+
+export function dispatchReplaceMessagesScoped(
+  chatId: string,
+  messages: Message[],
+  previous: ChatScopedSnapshot,
+): void {
+  dispatchReplaceMessagesWith(chatId, messages, () => restoreChatScopedState(previous))
 }
 
 export function dispatchPatchChatScriptstate(

@@ -1,6 +1,23 @@
 # Chat-Scoped Message Paths
 
-Status: planned. Phase 2. Depends on the Phase 0 `currentChatScopedSnapshot`.
+Status: implemented. Phase 2. Depends on the Phase 0 `currentChatScopedSnapshot`.
+
+Landed: the message-edit/send paths capture `currentChatScopedSnapshot()` instead
+of `currentChatStateSnapshot()`. The dispatch surface gained chat-scoped
+parallel variants sharing a rollback core: `dispatchUpdateMessageScoped`,
+`dispatchDeleteMessageScoped`, `dispatchTruncateMessagesScoped`,
+`dispatchReplaceMessagesScoped`, `dispatchUpdateChatScoped`, and
+`dispatchCompatibleChatUpdateScoped` — each rolling back via
+`restoreChatScopedState`. The broad helpers stay for the reroll/swipe path
+(Phase 2 reroll slice) and the `database.svelte.ts`/V3-plugin callers.
+`Chat.svelte` (rm/edit/partial-edit/bookmark/disable/scissors/role),
+`DefaultChatScreen.svelte` (sendMain — double clone collapsed to
+`liveChat.message = cha` — and the empty-slot button), `command.ts`
+(`mutateCurrentChatMessages` reuses `previousChat` as the scoped rollback,
+dropping the full-corpus snapshot), and `appendCurrentChatUserMessageForSend`
+all narrowed; the fork handler keeps the full snapshot (restructure). Proof:
+`dispatchReplaceMessagesScoped` sibling-isolation rollback test in
+`chatCommands.test.ts`.
 
 ## Scope
 

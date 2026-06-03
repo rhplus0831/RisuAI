@@ -74,14 +74,15 @@
   import PartialEditController from './PartialEditController.svelte'
   import { getLLMCache, setLLMCache } from '../../ts/translator/translator'
   import {
+    currentChatScopedSnapshot,
     currentChatStateSnapshot,
     cloneJsonValue,
-    dispatchDeleteMessage,
+    dispatchDeleteMessageScoped,
     dispatchForkChat,
-    dispatchReplaceMessages,
-    dispatchTruncateMessages,
-    dispatchUpdateChat,
-    dispatchUpdateMessage,
+    dispatchReplaceMessagesScoped,
+    dispatchTruncateMessagesScoped,
+    dispatchUpdateChatScoped,
+    dispatchUpdateMessageScoped,
     ensureMessageId,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
@@ -152,10 +153,10 @@
   function dispatchReplaceMessagesForChat(
     chat: Chat,
     messages: Message[],
-    previous: ReturnType<typeof currentChatStateSnapshot>,
+    previous: ReturnType<typeof currentChatScopedSnapshot>,
   ) {
     if (chat.id) {
-      dispatchReplaceMessages(chat.id, messages, previous)
+      dispatchReplaceMessagesScoped(chat.id, messages, previous)
     }
   }
 
@@ -166,7 +167,7 @@
   }
 
   async function rm(e: MouseEvent, rec?: boolean) {
-    const previous = currentChatStateSnapshot()
+    const previous = currentChatScopedSnapshot()
     const chat =
       DBState.db.characters[selIdState.selId].chats[
         DBState.db.characters[selIdState.selId].chatPage
@@ -175,7 +176,7 @@
       if (canUseServerCommands()) {
         const afterMessageId = idx > 0 ? chat.message[idx - 1]?.chatId : null
         if (chat.id && (idx === 0 || afterMessageId)) {
-          dispatchTruncateMessages(chat.id, afterMessageId, previous)
+          dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
         } else {
           dispatchReplaceMessagesForChat(chat, cloneMessagesWithIds(chat).slice(0, idx), previous)
         }
@@ -185,7 +186,7 @@
         msg = msg.slice(0, idx)
         chat.message = msg
         if (chat.id) {
-          dispatchTruncateMessages(chat.id, afterMessageId, previous)
+          dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
         }
       }
       return
@@ -200,7 +201,7 @@
           if (canUseServerCommands()) {
             const afterMessageId = idx > 0 ? chat.message[idx - 1]?.chatId : null
             if (chat.id && (idx === 0 || afterMessageId)) {
-              dispatchTruncateMessages(chat.id, afterMessageId, previous)
+              dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
             } else {
               dispatchReplaceMessagesForChat(
                 chat,
@@ -213,14 +214,14 @@
             msg = msg.slice(0, idx)
             chat.message = msg
             if (chat.id) {
-              dispatchTruncateMessages(chat.id, afterMessageId, previous)
+              dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
             }
           }
         } else {
           if (canUseServerCommands()) {
             const messageId = chat.message[idx]?.chatId
             if (messageId) {
-              dispatchDeleteMessage(messageId, previous)
+              dispatchDeleteMessageScoped(messageId, previous)
             } else {
               const nextMessages = cloneMessagesWithIds(chat)
               nextMessages.splice(idx, 1)
@@ -230,14 +231,14 @@
             const messageId = ensureMessageId(msg[idx])
             msg.splice(idx, 1)
             chat.message = msg
-            dispatchDeleteMessage(messageId, previous)
+            dispatchDeleteMessageScoped(messageId, previous)
           }
         }
       } else {
         if (canUseServerCommands()) {
           const messageId = chat.message[idx]?.chatId
           if (messageId) {
-            dispatchDeleteMessage(messageId, previous)
+            dispatchDeleteMessageScoped(messageId, previous)
           } else {
             const nextMessages = cloneMessagesWithIds(chat)
             nextMessages.splice(idx, 1)
@@ -248,14 +249,14 @@
           const messageId = ensureMessageId(msg[idx])
           msg.splice(idx, 1)
           chat.message = msg
-          dispatchDeleteMessage(messageId, previous)
+          dispatchDeleteMessageScoped(messageId, previous)
         }
       }
     }
   }
 
   async function edit() {
-    const previous = currentChatStateSnapshot()
+    const previous = currentChatScopedSnapshot()
     const chat =
       DBState.db.characters[selIdState.selId].chats[
         DBState.db.characters[selIdState.selId].chatPage
@@ -263,7 +264,7 @@
     const messageId = chat.message[idx]?.chatId
     if (canUseServerCommands()) {
       if (messageId) {
-        dispatchUpdateMessage(messageId, { data: message }, previous)
+        dispatchUpdateMessageScoped(messageId, { data: message }, previous)
       } else {
         const nextMessages = cloneMessagesWithIds(chat)
         if (nextMessages[idx]) {
@@ -276,12 +277,12 @@
 
     const localMessageId = ensureMessageId(chat.message[idx])
     chat.message[idx].data = message
-    dispatchUpdateMessage(localMessageId, { data: message }, previous)
+    dispatchUpdateMessageScoped(localMessageId, { data: message }, previous)
   }
 
   function handlePartialEditSave(e: CustomEvent<{ newData: string }>) {
     if (idx >= 0) {
-      const previous = currentChatStateSnapshot()
+      const previous = currentChatScopedSnapshot()
       const chat =
         DBState.db.characters[selIdState.selId].chats[
           DBState.db.characters[selIdState.selId].chatPage
@@ -290,7 +291,7 @@
       const messageId = chat.message[idx]?.chatId
       if (canUseServerCommands()) {
         if (messageId) {
-          dispatchUpdateMessage(messageId, { data: e.detail.newData }, previous)
+          dispatchUpdateMessageScoped(messageId, { data: e.detail.newData }, previous)
         } else {
           const nextMessages = cloneMessagesWithIds(chat)
           if (nextMessages[idx]) {
@@ -301,7 +302,7 @@
       } else {
         const localMessageId = ensureMessageId(chat.message[idx])
         chat.message[idx].data = e.detail.newData
-        dispatchUpdateMessage(localMessageId, { data: e.detail.newData }, previous)
+        dispatchUpdateMessageScoped(localMessageId, { data: e.detail.newData }, previous)
       }
       displaya(e.detail.newData)
     }
@@ -468,7 +469,7 @@
   )
 
   async function toggleBookmark() {
-    const previous = currentChatStateSnapshot()
+    const previous = currentChatScopedSnapshot()
     const chat =
       DBState.db.characters[selIdState.selId].chats[
         DBState.db.characters[selIdState.selId].chatPage
@@ -565,14 +566,14 @@
       chat.bookmarkNames = bookmarkNames
     })
     if (!hadMessageId && chat.id) {
-      dispatchReplaceMessages(
+      dispatchReplaceMessagesScoped(
         chat.id,
         canUseServerCommands() && nextMessages ? nextMessages : chat.message,
         previous,
       )
     }
     if (chat.id) {
-      dispatchUpdateChat(
+      dispatchUpdateChatScoped(
         chat.id,
         {
           bookmarks,
@@ -1276,12 +1277,12 @@
         DBState.db.characters[selIdState.selId].chats[
           DBState.db.characters[selIdState.selId].chatPage
         ].message[idx]
-      const previous = currentChatStateSnapshot()
+      const previous = currentChatScopedSnapshot()
       const disabled = !currentMessage.disabled
       const messageId = currentMessage.chatId
       if (canUseServerCommands()) {
         if (messageId) {
-          dispatchUpdateMessage(messageId, { disabled }, previous)
+          dispatchUpdateMessageScoped(messageId, { disabled }, previous)
         } else {
           const chat =
             DBState.db.characters[selIdState.selId].chats[
@@ -1298,7 +1299,7 @@
         DBState.db.characters[selIdState.selId].chats[
           DBState.db.characters[selIdState.selId].chatPage
         ].message[idx].disabled = disabled
-        dispatchUpdateMessage(localMessageId, { disabled }, previous)
+        dispatchUpdateMessageScoped(localMessageId, { disabled }, previous)
       }
     }}
   >
@@ -1316,12 +1317,12 @@
         DBState.db.characters[selIdState.selId].chats[
           DBState.db.characters[selIdState.selId].chatPage
         ].message[idx]
-      const previous = currentChatStateSnapshot()
+      const previous = currentChatScopedSnapshot()
       const disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
       const messageId = currentMessage.chatId
       if (canUseServerCommands()) {
         if (messageId) {
-          dispatchUpdateMessage(messageId, { disabled }, previous)
+          dispatchUpdateMessageScoped(messageId, { disabled }, previous)
         } else {
           const chat =
             DBState.db.characters[selIdState.selId].chats[
@@ -1338,7 +1339,7 @@
         DBState.db.characters[selIdState.selId].chats[
           DBState.db.characters[selIdState.selId].chatPage
         ].message[idx].disabled = disabled
-        dispatchUpdateMessage(localMessageId, { disabled }, previous)
+        dispatchUpdateMessageScoped(localMessageId, { disabled }, previous)
       }
     }}
   >
@@ -1653,7 +1654,7 @@
               <button
                 class="ml-2 text-textcolor2 hover:text-textcolor"
                 onclick={() => {
-                  const previous = currentChatStateSnapshot()
+                  const previous = currentChatScopedSnapshot()
                   const chat =
                     DBState.db.characters[selIdState.selId].chats[
                       DBState.db.characters[selIdState.selId].chatPage
@@ -1662,7 +1663,7 @@
                   const messageId = chat.message[idx].chatId
                   if (canUseServerCommands()) {
                     if (messageId) {
-                      dispatchUpdateMessage(messageId, { role }, previous)
+                      dispatchUpdateMessageScoped(messageId, { role }, previous)
                     } else {
                       const nextMessages = cloneMessagesWithIds(chat)
                       if (nextMessages[idx]) {
@@ -1673,7 +1674,7 @@
                   } else {
                     const localMessageId = ensureMessageId(chat.message[idx])
                     chat.message[idx].role = role
-                    dispatchUpdateMessage(localMessageId, { role }, previous)
+                    dispatchUpdateMessageScoped(localMessageId, { role }, previous)
                   }
                   ReloadChatPointer.update((v) => {
                     v[idx] = (v[idx] ?? 0) + 1

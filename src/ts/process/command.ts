@@ -15,8 +15,9 @@ import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { runTrigger } from './triggers'
 import {
   currentChatStateSnapshot,
-  dispatchCompatibleChatUpdate,
+  dispatchCompatibleChatUpdateScoped,
   dispatchPatchChatScriptstate,
+  type ChatScopedSnapshot,
 } from '../chatCommands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import type { Chat } from '../storage/database.svelte'
@@ -333,9 +334,17 @@ function snapshotChat(chat: Chat): Chat {
 // change is forwarded to the server through the compatible chat-update command.
 function mutateCurrentChatMessages(mutate: (chat: Chat) => void): void {
   const selectedChar = get(selectedCharID)
-  const previous = currentChatStateSnapshot()
   const beforeChar = getDatabase().characters[selectedChar]
+  // `previousChat` already clones the one active chat for the diff; reuse it as
+  // the chat-scoped rollback payload instead of cloning the whole characters
+  // array via currentChatStateSnapshot().
   const previousChat = snapshotChat(beforeChar.chats[beforeChar.chatPage])
+  const scopedRollback: ChatScopedSnapshot = {
+    selectedCharID: selectedChar,
+    characterId: beforeChar.chaId,
+    chatId: previousChat.id,
+    chat: previousChat,
+  }
   withTrustedServerProjectionWrite(() => {
     const db = getDatabase()
     const char = db.characters[selectedChar]
@@ -345,7 +354,7 @@ function mutateCurrentChatMessages(mutate: (chat: Chat) => void): void {
   })
   const afterChar = getDatabase().characters[selectedChar]
   const nextChat = snapshotChat(afterChar.chats[afterChar.chatPage])
-  dispatchCompatibleChatUpdate(previousChat, nextChat, previous)
+  dispatchCompatibleChatUpdateScoped(previousChat, nextChat, scopedRollback)
 }
 
 function commandParser(command: string, pipe: string) {
