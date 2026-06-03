@@ -1,6 +1,23 @@
 # Character And Chat Projection Branches
 
-Status: planned. Co-scheduled with Phase 3.
+Status: implemented (`608de26c`). Two narrow bespoke branches landed:
+
+- `generation.persisted` (the one foreign-firing command under the single-writer
+  invariant) → `generation-chat` mode shipping only the changed chat's message
+  tail, keyed by the event `parentId` (chatId); the client applies it via
+  `applyServerChatMessagesProjection` and re-arms the open-chat reattach. Without
+  a chat id it falls back to the broad fields path.
+- `characterUpdated` / `characterModulesReordered` / `chatUpdated` /
+  `chatFolderUpdated` (each a single character-row write) → `characterRow` mode
+  shipping just that character (message-free, masked); the client merges by
+  chaId via `mergeServerProjectionCharacterRow`, preserving already-hydrated chat
+  messages / globalLore, and full-bootstraps on an unknown character.
+
+`character` create/delete/reorder and the chat create/delete/reorder/scriptstate
++ message events keep the broad resource (multi-row writes / hot path /
+recovery-only — they never fire foreign under the single-writer invariant).
+Proven by `projection.test.ts` (character-row + generation-chat narrowing) and
+`bootstrap.test.ts` (character-row preserve-messages + generation-chat apply).
 
 ## Source Anchors
 

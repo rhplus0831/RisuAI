@@ -21,22 +21,19 @@ batch. Avoid broad cleanup passes.
 
 ## Current Best Targets
 
-Phase 0 (baseline foundations), Phase 1 (the message-free floor sweep,
-`208e538a`), Phase 2 (settings + plugin storage, `56ddd865`), and Phase 3 (single
-character/chat-row paths, `07971179`→`65e57c0a`) are implemented, and Phase 4
-(all eight collection families) is implemented — each route writes only its own
-collection table (+ pointer/mirror settings only when moved), with the
-`promptItem`→`promptTemplate`, `persona` mirror-scalar, and
-`loadout`→`lastLoadedLoadoutName` projection co-fixes done inline and the
-lore_books/modules cross-table repairs dropped to validate-only. Recommended
-order from here:
+Phases 0-4 (the write-side tiers) are implemented, and Phase 5
+(projection-range narrowing, all four slices) is implemented — the read/refresh
+side now narrows each event's projection resource to its write range: the
+`prompt` field-bug fallback (`314af90f`), the module + script/trigger resources
+(`f94e51ab`), the `globalLorebook`/`characterLorebook` lorebook split
+(`c3fff925`), and the `generation-chat` + `characterRow` per-row branches
+(`608de26c`). Recommended order from here:
 
-1. Phase 5 projection-range narrowing: the `lorebook` resource split (the
-   global-lorebook writes are now narrowed, so the resource can drop to
-   `['loreBook','loreBookPage']`), the collection-projection narrowing for the
-   shared `module` resource, and the character/chat projection branches that pair
-   with the Phase 3 writes already landed.
-2. Phase 6 Tier-5 floor routes and their unblock conditions.
+1. Phase 6 Tier-5 floor routes (2273, 2310, 2390, 2495, 2617, 3673, 4171, 4205)
+   and their unblock conditions — the deepest narrowing, blocked by cross-table
+   spans or load-bearing message/normalization dependencies.
+2. Phase 7 verification budgets — the written-table-set, rowid-stability, and
+   `dbJsonWriteMs: 0` gates plus the verification log.
 
 ## Not First
 
@@ -60,9 +57,12 @@ order from here:
 5. Phase 4 collection families — all eight done (plugins, presets, prompt-items,
    personas, translator-presets, loadouts, lorebooks, modules), with the
    `promptItem`/`persona`/`loadout` projection co-fixes inline.
-6. Phase 5 projection-range narrowing — the `lorebook` resource split, the shared
-   `module` collection-projection narrowing, and the character/chat branches.
-7. Refresh [`latest-verification.md`](latest-verification.md) after each tier's
+6. Phase 5 projection-range narrowing — done (`314af90f`, `f94e51ab`,
+   `c3fff925`, `608de26c`): the `prompt` field-bug fallback, the module +
+   script/trigger resources, the `globalLorebook`/`characterLorebook` lorebook
+   split, and the `generation-chat` + `characterRow` per-row branches.
+7. Phase 6 Tier-5 floor routes — next.
+8. Refresh [`latest-verification.md`](latest-verification.md) after each tier's
    focused and full run.
 
 ## Proof Commands

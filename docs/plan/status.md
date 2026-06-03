@@ -8,19 +8,33 @@ Use it first, then open only the phase or slice needed for the next task.
 Current status reflects the seed audit
 [`mutation-range-mismatch.md`](mutation-range-mismatch.md), audited 2026-06-03.
 Phase 0 (baseline foundations), Phase 1 (the message-free floor), Phase 2
-(settings + plugin-storage paths), Phase 3 (single character/chat-row paths), and
-Phase 4 (collection-table paths, all eight families) have landed. The narrow
-runtime paths now include the reference fix `b57df5cd` (`characters/select`), the
-six targeted message commands, the six `targeted-settings` routes, the three
-`targeted-plugin-storage` routes, the twelve Tier-3
-`targeted-character-row` / `targeted-chat-row` routes, and all the Tier-4
-`targeted-collection` family routes; the remaining floor routes (Tier-5 blocked)
+(settings + plugin-storage paths), Phase 3 (single character/chat-row paths),
+Phase 4 (collection-table paths, all eight families), and Phase 5
+(projection-range narrowing) have landed. The narrow runtime paths now include
+the reference fix `b57df5cd` (`characters/select`), the six targeted message
+commands, the six `targeted-settings` routes, the three `targeted-plugin-storage`
+routes, the twelve Tier-3 `targeted-character-row` / `targeted-chat-row` routes,
+and all the Tier-4 `targeted-collection` family routes; the read side now narrows
+the projection resources to match. The remaining floor routes (Tier-5 blocked)
 still rewrite the broad table set.
 
 ## Current Snapshot
 
-Analysis is complete. Phases 0-4 have landed; Phase 5 (projection-range
-narrowing) is the next tier.
+Analysis is complete. Phases 0-5 have landed; Phase 6 (the Tier-5
+`message-free` ceiling) is the next tier.
+
+- Phase 5 implemented (projection-range narrowing, four slices): the read/refresh
+  side now narrows each event's projection resource to its write range. The
+  `prompt` field-bug now falls back to full (`314af90f`); the shared `module`
+  resource split into `moduleEnabled`/`moduleUpdated`/`moduleReordered` and the
+  script/trigger resources into character (`['characters']`) vs module
+  (`moduleScriptDefinition`/`moduleTriggerDefinition`, `['modules']`) (`f94e51ab`);
+  the broad `lorebook` resource split into `globalLorebook` (global commands) +
+  per-row `characterLorebook`/`chat`/`moduleUpdated` (`c3fff925`); and the
+  foreign-firing `generation.persisted` got a per-chat `generation-chat` branch
+  while characterUpdated/modules-reorder/chatUpdated/chatFolderUpdated got a
+  per-character `characterRow` branch (`608de26c`). Proven by `projection.test.ts`
+  and `bootstrap.test.ts`.
 
 - Phase 4 implemented (all 8 collection families): every Tier-4 collection route
   now runs on `applyTargetedCommandMutation` with
@@ -84,8 +98,8 @@ narrowing) is the next tier.
   (`prompt`/`promptItem` ship `botPresets`, `persona` omits legacy mirror
   scalars, `loadout` omits `lastLoadedLoadoutName`).
 
-Phases 0, 1, 2, 3, and 4 are implemented; the later tier phases below (Phase 5
-onward) are still planned.
+Phases 0-5 are implemented; the later tier phases below (Phase 6 onward) are
+still planned.
 
 ## Phase Router
 
@@ -96,7 +110,7 @@ onward) are still planned.
 | [Phase 2](phases/phase-2-settings-and-plugin-storage-paths.md) | Implemented | Tier-1 settings/pointer-only writes and Tier-2 plugin custom storage writes. |
 | [Phase 3](phases/phase-3-single-row-paths.md) | Implemented | Tier-3 single character-row and single chat-row metadata edits. |
 | [Phase 4](phases/phase-4-collection-table-paths.md) | Implemented | Tier-4 single collection-table edits across all eight collection families. |
-| [Phase 5](phases/phase-5-projection-range-narrowing.md) | Planned | Narrow projection resources, the `lorebook` resource split, and the projection-field bug fixes. |
+| [Phase 5](phases/phase-5-projection-range-narrowing.md) | Implemented | Narrow projection resources, the `lorebook` resource split, and the projection-field bug fixes. |
 | [Phase 6](phases/phase-6-message-free-ceiling.md) | Planned | Tier-5 routes blocked at the `message-free` floor and their unblock conditions. |
 | [Phase 7](phases/phase-7-verification-budgets.md) | Planned | Written-table-set, rowid-stability, and `dbJsonWriteMs: 0` gates and the verification log. |
 
@@ -124,10 +138,10 @@ Headlines, in priority order:
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). The Phase 1 floor sweep
-(`208e538a`) is the latest runtime change; it is behavior-preserving, so the
-`writtenTables` broad-set baseline still stands and the per-row gates remain
-unpopulated until Phase 2.
+See [`latest-verification.md`](latest-verification.md). Phase 5 (the
+projection-range narrowing, `608de26c`) is the latest runtime change; it narrows
+the read/refresh side only (no write range changed). api:test 1611/1, test
+951/4, both typechecks + the client-thinning audit green.
 
 ## Start Here
 

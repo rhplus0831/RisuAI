@@ -1,6 +1,13 @@
 # Collection Projection Resources
 
-Status: planned. Co-scheduled with Phases 2 and 4.
+Status: implemented (`f94e51ab`). `modules/enable` emits `moduleEnabled`
+(`['enabledModules']`); module update/reorder emit `moduleUpdated`/
+`moduleReordered` (`['modules']`); `module` create/delete keep the broad
+resource. Character scripts/triggers ship `['characters']` (the module repair is
+validate-only); module scripts/triggers emit `moduleScriptDefinition`/
+`moduleTriggerDefinition` (`['modules']`). All `mode: 'fields'`, so the generic
+client merge handles them with no client change. Proven by `projection.test.ts`
+("narrows module enable/update/reorder…", "narrows script/trigger refreshes…").
 
 ## Source Anchors
 

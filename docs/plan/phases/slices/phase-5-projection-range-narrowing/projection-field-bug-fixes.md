@@ -1,8 +1,11 @@
 # Projection Field-Bug Fixes
 
-Status: planned. Independent of write range — broken today. The `promptItem`,
-`persona`, and `loadout` fixes land in their Phase 4 family slices; the `prompt`
-fix is standalone.
+Status: implemented (`314af90f`). The `promptItem`/`persona`/`loadout` fixes
+landed inline in Phase 4; the standalone `prompt` fix landed here — `prompt` no
+longer maps to `['botPresets']` and is routed to the sprawling full-bootstrap
+path (`SPRAWLING_FULL_PROJECTION_RESOURCES`), classified `sprawling`. Proven by
+`projection.test.ts` ("falls back to full for a prompt-settings refresh" + the
+classifier assertion).
 
 ## Source Anchors
 

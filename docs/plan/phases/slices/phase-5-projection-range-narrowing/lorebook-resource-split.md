@@ -1,7 +1,15 @@
 # Lorebook Resource Split
 
-Status: planned. Unblocks the Phase 4 lorebooks family and the
-character/chat/module lorebook projections.
+Status: implemented (`c3fff925`). The broad `lorebook` resource is split by
+write range: global-lorebook commands (create/patch/delete/reorder/select/
+entries) emit `globalLorebook` (`['loreBook','loreBookPage']`); character
+globalLore edits emit the per-character `characterLorebook` resource (client
+parses the `character-lorebook` mode in `fetchServerProjectionResource` and
+applies it via `hydrateServerCharacterLorebook`); chat localLore emits `chat`;
+module lorebook emits `moduleUpdated`. The legacy `lorebook` resource is kept
+broad only as a replay/recovery path (no live command emits it). Proven by
+`projection.test.ts` (globalLorebook + characterLorebook narrowing) and
+`bootstrap.test.ts` (character-lorebook apply).
 
 ## Source Anchors
 

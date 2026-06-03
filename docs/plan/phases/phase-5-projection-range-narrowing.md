@@ -1,8 +1,11 @@
 # Phase 5: Projection-Range Narrowing
 
-Status: planned. Co-scheduled with Phases 2-4 (a projection branch lands in the
-same batch as the write it serves); the field-bug fixes are independent and can
-land anytime.
+Status: implemented (`314af90f` field-bug, `f94e51ab` collection resources,
+`c3fff925` lorebook split, `608de26c` character/chat branches). All four slices
+landed: the `prompt` field-bug fallback, the narrow module + script/trigger
+resources, the `globalLorebook`/`characterLorebook` lorebook split, and the
+`generation-chat` + `characterRow` per-row branches. api:test 1611/1, test
+951/4, both typechecks + the client-thinning audit green.
 
 Goal: narrow the read/refresh side. `RESOURCE_PROJECTION_FIELDS` maps each event
 resource to the fields a foreign or recovery refresh ships. These refreshes are
