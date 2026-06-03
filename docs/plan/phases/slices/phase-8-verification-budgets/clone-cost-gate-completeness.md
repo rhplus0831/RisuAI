@@ -1,13 +1,11 @@
 # Clone-Cost Gate Completeness
 
-Status: planned. Phase 8. The standing verification-gate layer.
+Status: planned. Phase 8. Standing verification-gate layer.
 
 ## Scope
 
-Ensure every narrowed hot path keeps a clone-cost regression gate, and make the
-gate map self-checking against the audit's clone-site inventory so a future edit
-cannot silently reintroduce the whole-characters / whole-`Database` clone or leave
-a narrowed path ungated.
+Ensure every narrowed hot path keeps a clone-cost regression gate. Make the gate
+map self-checking against the audit inventory.
 
 ## Source Anchors
 
@@ -20,25 +18,20 @@ a narrowed path ungated.
 
 ## Target Implementation
 
-- Maintain a single list of the narrowed hot paths (file:line + the snapshot/guard
-  helper each uses), derived from the inventory's critical/high/medium rows that
-  this plan narrows.
+- Maintain one list of narrowed hot paths: file:line plus the snapshot/guard
+  helper used.
 - For each entry assert: (a) the snapshot it captures omits the full collection
   (`assertSnapshotIsScalar`), and (b) the path does not invoke the whole-DB /
   whole-characters clone primitive (`withCloneInstrumentation`).
-- Add a self-checking test that fails if an inventory hot-path entry this plan
-  claims to have narrowed lacks a gate (the analog of the mutation-range plan's
-  "gate set == emitted set" budget test).
-- Record any path intentionally left broad (e.g. a downgraded/benign item, or a
-  genuine restructure that keeps the full clone) with the reason, so "no gate" is
-  never silently ambiguous.
+- Add a self-checking test that fails if a narrowed inventory entry lacks a gate.
+- Record intentionally broad paths with the reason, so "no gate" is never
+  ambiguous.
 
 ## Maintenance
 
-- Keep [`../../../latest-verification.md`](../../../latest-verification.md) current
-  after each focused or full run, recording the before/after clone range for the slice
-  under test (the analog of the before/after written-table set). Replace the
-  latest-run section; do not append history.
+- Keep [`../../../latest-verification.md`](../../../latest-verification.md)
+  current after each focused or full run. Record the before/after clone range for
+  the slice under test. Replace the latest-run section; do not append history.
 - Add the matching gate as each Phase 2-7 slice lands; do not mark a slice
   implemented without it.
 

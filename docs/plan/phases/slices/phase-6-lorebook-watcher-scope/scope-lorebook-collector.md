@@ -4,10 +4,8 @@ Status: planned. Phase 6. Independent.
 
 ## Scope
 
-Scope the lorebook bridge watcher's change-detection snapshot to the mounting
-panel's collection instead of rebuilding a DB-wide `JSON.stringify` map of every
-character's `globalLore` + every chat's `localLore` across all characters + every
-module lorebook on each reactive fire.
+Scope the lorebook watcher's change-detection snapshot to the mounted panel
+instead of rebuilding a DB-wide lore stringify map on each fire.
 
 ## Source Anchors
 
@@ -25,15 +23,13 @@ module lorebook on each reactive fire.
 
 ## Target Implementation
 
-- Tie the watcher's tracked scope to the mounting panel:
-  - `LoreBookSetting` / `lorepreset` session: global lorebooks + the selected
-    character's `globalLore` + the open chat's `localLore` only.
-  - `ModuleMenu` session: the open module's lorebook only.
+- Tie the watcher's tracked scope to the mounted panel. `LoreBookSetting` /
+  `lorepreset` need global lorebooks plus the selected character/open chat lore.
+  `ModuleMenu` needs only the open module's lorebook.
 - Lowest-risk minimal change: cut the unbounded all-chats-of-all-characters
   `localLore` loop down to the chats of the selected character, and the open
   module instead of all modules, in `collectLorebookCollectionSnapshots`.
-- Keep `snapshotJson` (no message read); the goal is fewer entries per fire, not a
-  cheaper per-entry primitive.
+- Keep `snapshotJson`; this slice reduces entries per fire, not per-entry cost.
 
 ## Behavior / Invariants
 

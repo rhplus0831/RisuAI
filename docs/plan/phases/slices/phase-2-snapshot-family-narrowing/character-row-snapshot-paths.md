@@ -4,10 +4,9 @@ Status: planned. Phase 2. Depends on the Phase 0 `CharacterRowSnapshot`.
 
 ## Scope
 
-Replace the full-characters `currentCharacterStateSnapshot()` rollback baseline on
-the character-field-edit paths with the single-character-row snapshot, so a
-character field edit or a lorebook-mutating trigger clones only the one character
-row, not every character's hydrated history.
+Replace full-characters rollback on character field edits with a single-row
+snapshot. Character edits and lorebook-mutating triggers should clone only the
+target character row.
 
 ## Source Anchors
 
@@ -29,18 +28,15 @@ row, not every character's hydrated history.
 
 ## Target Implementation
 
-- Add the rollback through `currentCharacterRowSnapshot(index/characterId)` /
-  `restoreCharacterRow()` (Phase 0): `{ index, characterId, character:
-  cloneJsonValue(thatOneRow), currentChar?, selectedCharID }`, restoring just
-  `DBState.db.characters[index]` (+ the `currentChar`/`selectedCharID` scalars)
-  under `withTrustedServerProjectionWrite`.
+- Add rollback through `currentCharacterRowSnapshot(index/characterId)` /
+  `restoreCharacterRow()` from Phase 0.
 - Route `setCurrentCharacter` / `setCharacterByIndex` /
   `dispatchCompatibleCharacterUpdate` (character-FIELD updates) through it.
-- Keep the full-array `currentCharacterStateSnapshot` ONLY for
+- Keep `currentCharacterStateSnapshot` only for
   `dispatchCreateCharacter` / `dispatchDeleteCharacter` /
   `dispatchReorderCharacters`.
 - The lower-frequency callers share the same fix (mechanical reuse); the
-  image/emotion handlers (`characters.ts:138…`) are narrowed in Phase 7 reusing
+  image/emotion handlers (`characters.ts:138...`) are narrowed in Phase 7 reusing
   this same `CharacterRowSnapshot`.
 
 ## Behavior / Invariants
@@ -48,9 +44,7 @@ row, not every character's hydrated history.
 - `dispatchCompatibleCharacterUpdate` keeps its `prepareCompatibleCharacterUpdate`
   diff over the single character (`CHARACTER_PATCH_EXCLUDED_KEYS` already excludes
   `chats`); only the rollback baseline narrows.
-- A failed character-field command restores only that one character row + scalars,
-  preserving an unrelated character's concurrent edit (the reference fix's
-  correctness property, applied to field edits).
+- A failed character-field command restores only that character row and scalars.
 
 ## Done When
 

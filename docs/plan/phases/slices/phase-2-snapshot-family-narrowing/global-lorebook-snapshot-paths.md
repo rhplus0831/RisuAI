@@ -5,10 +5,8 @@ Status: planned. Phase 2. Depends on the Phase 0
 
 ## Scope
 
-Replace the full characters + modules `currentLorebookStateSnapshot()` rollback
-baseline on the global-lorebook select/create/delete path and the lorebook-trigger
-path with narrow lorebook-only / single-character snapshots, since neither
-operation broadly touches characters or modules.
+Replace full characters+modules rollback on global-lorebook and lorebook-trigger
+paths with lorebook-only or single-character snapshots.
 
 ## Source Anchors
 
@@ -31,18 +29,13 @@ operation broadly touches characters or modules.
 
 ## Target Implementation
 
-- `selectLorebook` / delete / create: use `currentGlobalLorebookStateSnapshot()`
-  (Phase 0) returning `{ loreBook, loreBookPage, selectedCharID }` with
-  characters/modules omitted, restored by `restoreGlobalLorebookState` (only
-  `loreBook` + `loreBookPage`). The select command only POSTs `{ baseRevision }`,
-  so this rollback is sufficient.
-- The 6 lorebook trigger sites: capture `globalLore` BEFORE the in-place edit via
-  `scopedLorebookStateSnapshot('character:'+char.chaId, prevGlobalLore)` (handled
-  by `restoreScopedLorebookState` without touching characters/modules/messages);
-  export a small `characterLorebookRollbackSnapshot(chaId, previousGlobalLore)`
-  helper if it reads cleaner. Drop the redundant `setCurrentCharacter(char)` (or
-  use a no-snapshot variant) since the per-character `globalLore` replacement is
-  already dispatched.
+- `selectLorebook` / delete / create: use
+  `currentGlobalLorebookStateSnapshot()` and restore only `loreBook` /
+  `loreBookPage`.
+- The 6 lorebook trigger sites: capture `globalLore` before the in-place edit via
+  `scopedLorebookStateSnapshot('character:'+char.chaId, prevGlobalLore)`.
+  Drop the redundant `setCurrentCharacter(char)` re-clone, or use a no-snapshot
+  variant.
 - Gate `ensureAllClientLorebookIds()` behind an init flag instead of running the
   full-tree walk per trigger call.
 
@@ -53,8 +46,7 @@ operation broadly touches characters or modules.
   narrows.
 - A failed select/create/delete restores only `loreBook`/`loreBookPage`; a failed
   lorebook trigger restores only that character's `globalLore`.
-- Lorebook ids are still ensured (once, via the init flag) — no id-minting
-  regression.
+- Lorebook ids are still ensured once via the init flag.
 
 ## Done When
 

@@ -2,14 +2,10 @@
 
 Date: 2026-06-03
 
-This directory tracks the frontend deep-clone / hot-path narrowing work. A
-deep-clone mismatch is a hot path (sidebar click, chat open, send loop,
-per-token streaming, per-keystroke editing, per-render reactive effect, trigger
-or CBS evaluation) that captures an optimistic-rollback baseline, a
-change-detection snapshot, or a working copy by deep-cloning far more state than
-it logically touches — typically the whole `DBState.db.characters` array (with
-every hydrated chat's `message[]` history), the whole `Database`, or a full
-transcript — when only a scalar, a single row, or a single chat is mutated.
+This directory tracks frontend hot paths that clone too much state. The common
+bug is simple: a path mutates a scalar, one row, or one chat, but clones the whole
+`DBState.db.characters` array, the whole `Database`, or a full transcript for
+rollback or change detection.
 
 Use `status.md` for the current state. Use
 [`../frontend-performance-audit.md`](../frontend-performance-audit.md) as the
@@ -18,11 +14,9 @@ seed inventory. The code remains the source of truth.
 ## Read Order
 
 1. [`status.md`](status.md) - current snapshot and navigation router.
-2. [`next-steps.md`](next-steps.md) - tactical entry point for selecting the
-   next coherent task batch.
-3. [`active-risk-analysis.md`](active-risk-analysis.md) - per-area analysis of
-   the over-broad clone cost and its target (scalar / single-row / single-chat)
-   range.
+2. [`next-steps.md`](next-steps.md) - next task batch and proof commands.
+3. [`active-risk-analysis.md`](active-risk-analysis.md) - per-area current vs
+   target clone range.
 4. [`plan.md`](plan.md) - goal, sources, invariants, prerequisites, and phase
    order.
 5. [`phases/README.md`](phases/README.md) - phase index.
@@ -40,10 +34,9 @@ seed inventory. The code remains the source of truth.
 - Phase-level scope and exit criteria live in [`phases/`](phases/).
 - Slice definitions live in `phases/slices/[phase]/[slice-name].md`.
 - The seed audit is
-  [`../frontend-performance-audit.md`](../frontend-performance-audit.md); it has
-  the per-finding location, cost analysis, hot-path frequency, recommended fix,
-  the clone-site inventory, and the "investigated but not flagged" rejections
-  this plan was split from.
+  [`../frontend-performance-audit.md`](../frontend-performance-audit.md). It has
+  finding locations, costs, frequency, fixes, clone-site inventory, and rejected
+  candidates.
 
 ## Source Anchors
 
@@ -76,28 +69,17 @@ seed inventory. The code remains the source of truth.
 ## Reference Fix
 
 `c9e728b1` ("perf: stop deep-cloning the whole characters array on sidebar
-character clicks") is the template this plan generalizes:
+character clicks") is the template:
 
-- The old `changeChar` path captured its optimistic-rollback baseline via
-  `currentCharacterStateSnapshot()`, which `JSON.parse(JSON.stringify(...))`-
-  deep-cloned the entire `DBState.db.characters` array — every hydrated chat's
-  full `message[]` included — synchronously on the UI thread on every sidebar
-  click, freezing it 1-3s before the select + hydration requests could fire.
+- The old `changeChar` path used `currentCharacterStateSnapshot()`, cloning all
+  characters and every hydrated `message[]` on each sidebar click.
 - Selecting a character only mutates three scalars
-  (`lastInteraction`/`currentChar`/`selectedCharID`), so the new path captures a
-  scalar-only `CharacterSelectionSnapshot` via
-  `currentCharacterSelectionSnapshot` and rolls back via
-  `restoreCharacterSelection`.
-- The heavy full-array snapshot stays in use only for create/delete/reorder,
-  which genuinely restructure the array.
-- The regression proof
-  (`src/ts/compatibilityAdapters.test.ts`) asserts the snapshot "captures only
-  scalar selection state, never a deep clone of every character"
-  (`expect(snapshot).not.toHaveProperty('characters')`) and that a failed select
-  rolls back the selection only, without clobbering an unrelated character's
-  `lastInteraction`/`name`.
+  (`lastInteraction`, `currentChar`, `selectedCharID`), so it now captures a
+  scalar-only `CharacterSelectionSnapshot`.
+- The full-array snapshot remains only for create/delete/reorder.
+- `src/ts/compatibilityAdapters.test.ts` proves the snapshot omits `characters`
+  and failed selects do not clobber unrelated character fields.
 
-Every slice in this plan reproduces that shape: a scalar / single-row /
-single-chat snapshot+restore pair on the hot path, the full-collection clone
-reserved for genuine restructures, and a regression test that asserts the hot
-path never materializes the whole-characters / whole-`Database` clone.
+Every slice follows that shape: use a scalar, single-row, or single-chat
+snapshot on the hot path; keep the full clone for real restructures; add a
+regression test proving the hot path does not clone the whole collection.

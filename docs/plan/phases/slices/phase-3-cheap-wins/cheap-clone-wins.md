@@ -5,9 +5,8 @@ edits.
 
 ## Scope
 
-Land the audit's high-confidence one-liners: clone only the reroll tail, drop the
-redundant reroll dispatch clones, and hoist the `runTrigger` early-return above its
-char/chat clones. Each is byte-identical and needs only a focused proof.
+Land the high-confidence clone wins: clone only the reroll tail, drop redundant
+reroll dispatch clones, and return early in `runTrigger` before char/chat clones.
 
 ## Source Anchors
 
@@ -24,24 +23,16 @@ char/chat clones. Each is byte-identical and needs only a focused proof.
 
 ## Target Implementation
 
-1. **Reroll tail clone** — swap the slice/clone order so only the tail is
+1. Reroll tail clone: swap the slice/clone order so only the tail is
    deep-cloned:
    `rerolls.push(safeStructuredClone(message.slice(previousLength)))`.
-   `message.slice(previousLength)` builds a short array sharing the tail element
-   references (cheap), then `safeStructuredClone` deep-clones just those 1-2
-   messages. Byte-identical, O(tail) instead of O(full transcript).
-2. **Redundant reroll clones** — drop `safeStructuredClone(record.message)` at
-   `:105` and pass `record.message` by reference (`dispatchReplaceMessages` deep-
-   clones each message via `messages.map(toMessageSnapshot)` internally); at
-   `:147` operate on a small tail copy (only the trailing assistant group is
-   popped) rather than cloning the entire transcript. The candidate-tail clones at
-   `:139/187/244` are bounded and untouched.
-3. **`runTrigger` early return** — compute `triggers` first and `return null`
-   before any `safeStructuredClone` when empty; then clone only the active chat
-   once and use a shallow `{ ...char, triggerscript: char.triggerscript.map(v =>
-   ({ ...v, lowLevelAccess })) }` instead of `safeStructuredClone(char)`; for
-   recursive `manual` calls thread the already-cloned char/chat through rather
-   than re-deep-cloning per level.
+   This is byte-identical and O(tail).
+2. Redundant reroll clones: drop `safeStructuredClone(record.message)` at `:105`
+   and pass `record.message` by reference. At `:147`, operate on a small tail copy
+   instead of cloning the full transcript.
+3. `runTrigger` early return: compute `triggers` first and `return null` before
+   any `safeStructuredClone` when empty. Then clone only the active chat once and
+   use a shallow char copy for `triggerscript`.
 
 ## Behavior / Invariants
 
@@ -50,7 +41,7 @@ char/chat clones. Each is byte-identical and needs only a focused proof.
 - A zero-trigger character now pays no `char`/`chat` clone; non-`displayMode`
   trigger characters clone only the active chat once.
 - `request.ts:278` and `scripts.ts:137` already pass `displayMode:true` and stay
-  on the clone-free path — unchanged.
+  on the clone-free path.
 
 ## Done When
 

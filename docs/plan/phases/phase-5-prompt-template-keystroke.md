@@ -3,11 +3,8 @@
 Status: planned. One slice. The whole-DB guard half closes with Phase 1; this
 phase closes the template-specific per-keystroke costs.
 
-Goal: stop the prompt-template editor cloning the whole `promptTemplate` array
-into `DBState.db` on every keystroke and re-stringifying the whole template twice
-per keystroke for change detection. Confined to the Prompt Settings page, but
-every keystroke there clones the whole DB twice (the guard, Phase 1) plus the
-template once and stringifies it twice.
+Goal: stop the prompt-template editor from cloning the whole `promptTemplate`
+array and stringifying the whole template twice per keystroke.
 
 ## Source Anchors
 
@@ -23,18 +20,13 @@ template once and stringifies it twice.
   `$effect` doing two `snapshotJson` passes (server + draft) per flush.
 - `src/ts/server/commands.ts` - `cachedServerCommandRevision` (the discriminator).
 - `src/lib/UI/PromptDataItem.svelte:49` - the per-keystroke single-PromptItem
-  stringify + double `clonePromptItem` (bounded, low — co-fix here).
+  stringify + double `clonePromptItem` (bounded, low - co-fix here).
 
 ## Slices
 
 - [`prompt-template-keystroke-costs.md`](slices/phase-5-prompt-template-keystroke/prompt-template-keystroke-costs.md) -
-  (1) coalesce the optimistic projection write into the same 250 ms debounce as
-  the server command so the guarded write runs at most once per idle window;
-  (2) inside the guarded write, mutate only the edited item
-  (`DBState.db.promptTemplate[index] = cloneJsonValue(promptItem)`) instead of
-  replacing the whole array; (3) replace the double `JSON.stringify`
-  change-detection with a server-revision discriminator (only re-pull
-  `serverValue` into the draft when `cachedServerCommandRevision` advanced).
+  debounce the optimistic projection write, mutate only the edited item, and
+  replace double-stringify change detection with a server-revision discriminator.
 
 ## Exit Criteria
 
@@ -44,7 +36,7 @@ template once and stringifies it twice.
 - [ ] The optimistic write coalesces into the debounce window; the server still
   receives the same final patch; external server pushes still reconcile into the
   draft.
-- [ ] Editing remains correct (draft ↔ server reconciliation unchanged on a real
+- [ ] Editing remains correct (draft <-> server reconciliation unchanged on a real
   revision advance); `pnpm test` is green.
 
 ## Validation

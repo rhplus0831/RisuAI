@@ -1,17 +1,12 @@
 # Clone-Cost Regression Harness
 
-Status: planned. Phase 0. Adds the reusable proof the later narrowings assert
-against. No runtime code changes.
+Status: planned. Phase 0. Adds reusable proof helpers. No runtime code changes.
 
 ## Scope
 
-Provide one importable test helper that makes "this hot path no longer clones the
-whole characters array / whole `Database`" assertable, generalizing the reference
-fix's two tests
-(`src/ts/compatibilityAdapters.test.ts`: the structural `not.toHaveProperty`
-assertion and the failed-command rollback-correctness assertion). This is the
-frontend analog of the mutation-range plan's `writtenTables` / `tableRowidsById`
-gate template.
+Provide one importable test helper that proves a hot path no longer clones the
+whole characters array or whole `Database`. Generalize the reference fix's
+structural snapshot assertion and rollback-correctness assertion.
 
 ## Source Anchors
 
@@ -21,24 +16,18 @@ gate template.
 - `src/ts/compatibilityAdapters.test.ts` - the reference-fix tests to generalize.
 - `src/ts/polyfill.ts:19` - `safeStructuredClone` (the clone primitive to
   instrument).
-- `src/ts/chatCommands.ts:68`, `src/ts/characterCommands.ts:52`, … - the per-file
+- `src/ts/chatCommands.ts:68`, `src/ts/characterCommands.ts:52`, ... - the per-file
   `cloneJsonValue` definitions (the JSON-round-trip primitive to instrument).
 
 ## Harness Surface
 
-- `assertSnapshotIsScalar(snapshot)` — asserts a snapshot object omits
-  `characters`, `characterOrder`, `modules`, and any `message`/`localLore`
-  payload; the cheap structural gate every narrowed snapshot passes.
-- `assertRollbackRestoresOnly(setup, mutate, restore, expectations)` — drives the
-  optimistic-write-then-failure flow and asserts only the mutated slice is
-  restored while a seeded unrelated row keeps its values (the reference fix's
-  second test, parameterized).
-- `withCloneInstrumentation(fn)` — spies on `safeStructuredClone` and the relevant
-  `cloneJsonValue` exports, returning the number of clone calls and the max cloned
-  collection size, so a test can assert a hot path performed zero whole-DB /
-  whole-characters clones. Implemented by spying the exported primitives (or a
-  seeded multi-MB DB + a size threshold) — pick whichever the existing test setup
-  supports without a runtime hook.
+- `assertSnapshotIsScalar(snapshot)`: asserts a snapshot omits `characters`,
+  `characterOrder`, `modules`, and `message` / `localLore` payloads.
+- `assertRollbackRestoresOnly(setup, mutate, restore, expectations)`: drives an
+  optimistic-write failure and checks that only the mutated slice is restored.
+- `withCloneInstrumentation(fn)`: spies on `safeStructuredClone` and relevant
+  `cloneJsonValue` exports, returning clone count and max cloned collection size.
+  If spies are awkward, use a seeded multi-MB DB plus a size threshold.
 
 ## Implementation Notes
 

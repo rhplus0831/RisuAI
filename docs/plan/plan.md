@@ -4,38 +4,29 @@ Date: 2026-06-03
 
 ## Goal
 
-Remove the deep-clone / full-state-serialize costs the audit found on the
-frontend hot paths so that each path clones only the state it logically touches.
-Preserve optimistic-write behavior, optimistic-rollback correctness, projection
-guard immutability, the command/event/revision contract, and rendered output
-byte-for-byte.
+Remove deep-clone and full-state-serialize costs from frontend hot paths. Each
+path should clone only the state it mutates, while preserving optimistic writes,
+rollback correctness, projection immutability, command/event/revision behavior,
+and rendered output.
 
 End state:
 
-- The trusted projection write guard no longer deep-clones the whole `Database`
-  on every guarded write; the per-token streaming write, non-stream completion,
-  SSE apply, chat-open hydration, and prompt-template keystroke stop paying the
-  full-DB clone.
-- Hot-path optimistic-rollback baselines are scalar / single-row / single-chat
-  snapshots (the `c9e728b1` pattern), with the full-characters clone reserved for
-  genuine restructures (create/delete/reorder/fork).
-- Reactive watchers (chat-metadata, script-definition, lorebook) stop
-  materializing full-characters / full-modules clones on every fire; the rollback
-  baseline is captured lazily and scoped only when a real change is detected.
-- The cheap one-line wins land (reroll slice/clone reorder, redundant transcript
-  clones removed, `runTrigger` early-return-before-clone).
-- The prompt-template editor stops cloning the whole DB and re-stringifying the
-  whole template on every keystroke.
-- Opportunistic low-priority clones are shallow-copied or scoped.
-- Every narrowed hot path has a regression test asserting it never deep-clones
-  the whole characters array or the whole `Database`.
+- The projection write guard stops cloning the whole `Database` per write.
+- Hot-path rollbacks use scalar, single-row, or single-chat snapshots.
+- Watchers capture rollback lazily and only for changed rows.
+- Cheap wins land: reroll tail clone, redundant clone removal, and
+  `runTrigger` early return before cloning.
+- Prompt-template editing stops cloning/stringifying the whole template per
+  keystroke.
+- Low-priority clone sites are shallow-copied, scoped, memoized, or removed.
+- Every narrowed path has a regression test proving it does not clone the whole
+  characters array or whole `Database`.
 
 ## Boundary Sources
 
 - [`../frontend-performance-audit.md`](../frontend-performance-audit.md) seeded
-  the finding inventory, per-finding cost analysis, hot-path frequency, severity,
-  recommended fix, and the clone-site inventory; [`status.md`](status.md) records
-  which items have since closed.
+  the findings, costs, hot-path frequency, severity, fixes, and clone-site
+  inventory. [`status.md`](status.md) records current phase state.
 - `src/ts/server/projectionWriteGuard.svelte.ts` owns the guard
   (`withTrustedServerProjectionWrite`, `snapshotServerProjectionValue`,
   `createReadOnlyServerProjection`, `readOnlyServerProjectionSources`).
@@ -64,60 +55,50 @@ End state:
 
 ## Current Baseline
 
-The hot-path clone cost has two anti-patterns and one amplifier (the audit's
-shared root-cause note):
+The audit found two clone patterns and one amplifier:
 
-- **`cloneJsonValue` = `JSON.parse(JSON.stringify(...))`** is redefined per file
+- `cloneJsonValue` = `JSON.parse(JSON.stringify(...))` is redefined per file
   (`chatCommands.ts`, `characterCommands.ts`, `lorebookBridge.svelte.ts`,
-  `scriptDefinitionBridge.svelte.ts`, `CharConfig.svelte`, …). Each
-  `current*StateSnapshot()` built on it deep-clones a whole collection
-  (characters / modules / lorebook), with all hydrated `message[]` histories, as
-  an optimistic-rollback baseline consumed only on rare server-command failure —
-  captured-and-discarded on the happy path.
-- **`safeStructuredClone` of full transcripts / full characters** on reroll,
-  swipe, and `runTrigger` paths clones O(chat) or O(corpus) to keep 1-2 tail
-  messages or to guard a no-trigger early return.
-- **`withTrustedServerProjectionWrite`'s full-`Database` `structuredClone` +
-  `$state.snapshot`** (`projectionWriteGuard.svelte.ts:115/119`) is the
-  amplifier: two whole-`Database` deep clones on top of every guarded write,
-  including the per-token streaming write. Enabled by default in fastify/web mode
-  (`bootstrap.ts` `setServerProjectionWriteGuardEnabled(true)`); called from ~100
-  sites. Fixing it benefits the streaming, non-stream, SSE-apply, chat-open, and
-  prompt-template paths at once.
+  `scriptDefinitionBridge.svelte.ts`, `CharConfig.svelte`, ...). The
+  `current*StateSnapshot()` helpers built on it often clone whole collections for
+  rollback that is usually discarded.
+- `safeStructuredClone` clones full transcripts or full characters on reroll,
+  swipe, and `runTrigger` paths, even when only a tail or active chat is needed.
+- `withTrustedServerProjectionWrite` adds two whole-`Database` clones to every
+  guarded write (`projectionWriteGuard.svelte.ts:115/119`). This affects about
+  100 sites, including streaming, completion, SSE apply, chat open, and
+  prompt-template editing.
 
 Empirical baseline (from the audit, reproduced on a 61 MB hydrated DB): one
-guarded write ≈ 255 ms (entry clone ~125 ms + refreeze clone ~130 ms); a
-few-MB DB is still tens of ms per call. `currentChatStateSnapshot()` /
+guarded write takes about 255 ms (entry clone ~125 ms + refreeze clone ~130 ms);
+a few-MB DB is still tens of ms per call. `currentChatStateSnapshot()` /
 `currentCharacterStateSnapshot()` scale with total hydrated history across all
 opened characters, not the single row mutated.
 
-The reference fix `c9e728b1` already narrowed the **character-select** path to a
-scalar `CharacterSelectionSnapshot`; this plan narrows the surviving twins on the
-message, send, streaming, trigger, reroll, watcher, and editor paths, and removes
-the guard amplifier underneath all of them.
+The reference fix `c9e728b1` narrowed character select to a scalar snapshot. This
+plan applies the same shape to message, send, streaming, trigger, reroll,
+watcher, and editor paths, then removes the guard amplifier beneath them.
 
 ## Prerequisites
 
 Phase 0 lands the shared prerequisites before any hot-path call site is narrowed:
 
-1. Snapshot kit: scalar / single-row / single-chat snapshot+restore pairs in
-   `chatCommands.ts` / `characterCommands.ts` / `lorebookBridge.svelte.ts`,
+1. Snapshot kit: scalar, single-row, and single-chat snapshot+restore pairs in
+   `chatCommands.ts`, `characterCommands.ts`, and `lorebookBridge.svelte.ts`,
    mirroring `CharacterSelectionSnapshot` / `restoreCharacterSelection`
    (`currentChatScopedSnapshot`/`restoreChatScopedState`,
    `ChatScriptstateSnapshot`/`restoreChatScriptstate`,
    `CharacterRowSnapshot`/`restoreCharacterRow`,
    `currentGlobalLorebookStateSnapshot`/`restoreGlobalLorebookState`, plus reuse
    of the existing `scopedLorebookStateSnapshot`).
-2. Clone-cost regression harness: a reusable test helper that asserts a snapshot
-   omits `characters`/`message`/full-array payload and that a hot path does not
-   invoke the whole-DB / whole-characters clone primitive, generalizing the
-   `c9e728b1` "captures only scalar selection state" assertion.
+2. Clone-cost regression harness: a reusable test helper that asserts snapshots
+   omit full collections and hot paths do not invoke whole-DB or
+   whole-characters clone primitives.
 3. Rollback-correctness rule: a narrowed rollback must restore exactly what the
    command mutates and must not clobber unrelated concurrent edits the
    full-array restore would have wiped (the reference fix's second test).
-4. Reserve-the-full-clone rule: the full-collection snapshot stays only for
-   genuine restructures (create/delete/reorder/fork); narrowing a hot path never
-   deletes the heavy snapshot, only stops the hot path from reaching it.
+4. Reserve-the-full-clone rule: keep full-collection snapshots for
+   create/delete/reorder/fork. Narrowing stops hot paths from reaching them.
 
 ## Invariants
 
@@ -140,33 +121,34 @@ Phase 0 lands the shared prerequisites before any hot-path call site is narrowed
 
 ## Phase Overview
 
-| Phase | Goal |
-| --- | --- |
-| [0. Baseline Foundations](phases/phase-0-baseline-foundations.md) | Add the scalar/single-row/single-chat snapshot kit and the clone-cost regression harness. |
-| [1. Projection Write Guard](phases/phase-1-projection-write-guard.md) | Stop the guard deep-cloning the whole `Database` per guarded write (the amplifier). |
-| [2. Snapshot-Family Hot-Path Narrowing](phases/phase-2-snapshot-family-narrowing.md) | Route the Critical/High `current*StateSnapshot` call sites through the narrow kit. |
-| [3. Cheap High-Confidence Wins](phases/phase-3-cheap-wins.md) | Reorder/remove redundant reroll clones and the `runTrigger` clone-before-early-return. |
-| [4. Script-Definition Watcher](phases/phase-4-script-definition-watcher.md) | Stop the watcher deep-reading characters/modules per fire; scope the rollback at dispatch. |
-| [5. Prompt-Template Editor Keystroke Costs](phases/phase-5-prompt-template-keystroke.md) | Debounce the projection write, mutate only the edited item, replace double-stringify change detection. |
-| [6. Lorebook Watcher Scope](phases/phase-6-lorebook-watcher-scope.md) | Scope the lorebook collector to the mounting panel's collection. |
-| [7. Opportunistic Cleanups](phases/phase-7-opportunistic-cleanups.md) | Shallow-spread the CBS/observer/image-emotion clones and the small algorithmic costs. |
-| [8. Verification Budgets](phases/phase-8-verification-budgets.md) | Keep a clone-cost regression gate on every narrowed hot path; make the harness self-checking. |
+- [0. Baseline Foundations](phases/phase-0-baseline-foundations.md): add the
+  snapshot kit and clone-cost harness.
+- [1. Projection Write Guard](phases/phase-1-projection-write-guard.md): stop
+  whole-`Database` clones per guarded write.
+- [2. Snapshot-Family Hot-Path Narrowing](phases/phase-2-snapshot-family-narrowing.md):
+  route Critical/High `current*StateSnapshot` call sites through the narrow kit.
+- [3. Cheap High-Confidence Wins](phases/phase-3-cheap-wins.md): reorder/remove
+  reroll clones and return early in `runTrigger`.
+- [4. Script-Definition Watcher](phases/phase-4-script-definition-watcher.md):
+  avoid full characters/modules reads per watcher fire.
+- [5. Prompt-Template Editor Keystroke Costs](phases/phase-5-prompt-template-keystroke.md):
+  debounce projection writes and avoid whole-template stringify checks.
+- [6. Lorebook Watcher Scope](phases/phase-6-lorebook-watcher-scope.md): scope
+  lorebook collection to the mounted panel.
+- [7. Opportunistic Cleanups](phases/phase-7-opportunistic-cleanups.md):
+  shallow-spread, memoize, or remove low-priority clone sites.
+- [8. Verification Budgets](phases/phase-8-verification-budgets.md): keep
+  clone-cost gates complete and self-checking.
 
 ## Execution Cursor
 
-Nothing is implemented yet. The audit (the seed inventory) is complete; this plan
-is the remediation split. Start at Phase 0 (the snapshot kit + the clone-cost
-harness), then Phase 1 (the guard — the single highest-leverage fix), then Phase
-2 (apply the narrow snapshots to the Critical/High sites). Phases 3-7 are
-independent cleanups that can land in any order once their prerequisite phase
-(0 for the snapshot-dependent ones) exists. Phase 8 is the standing
-verification-gate layer.
+Nothing is implemented yet. Start with Phase 0, then Phase 1, then Phase 2.
+Phases 3-7 can land in any order once their prerequisites exist. Phase 8 is the
+standing verification layer.
 
-For every narrowed path: capture a scalar/single-row/single-chat rollback,
-restore only what the command mutates (Prerequisite 3), keep the full clone for
-genuine restructures (Prerequisite 4), and add a regression test asserting the
-hot path never clones every character (the reference fix's
-`not.toHaveProperty('characters')` assertion is the template).
+For every narrowed path: capture a narrow rollback, restore only mutated fields,
+keep full clones for restructures, and add a regression test proving the path
+does not clone every character.
 
 ## Not In This Plan
 
@@ -175,23 +157,23 @@ hot path never clones every character (the reference fix's
 - Re-architecting how hydrated `message[]` histories accumulate into
   `DBState.db.characters`; the plan reduces what is cloned, not where state
   lives.
-- The candidates the audit investigated and rejected or downgraded — they are
+- The candidates the audit investigated and rejected or downgraded - they are
   recorded under "Investigated but not flagged" in
   [`active-risk-analysis.md`](active-risk-analysis.md) so future readers do not
   re-open them:
-  - `buildMemoryWindow.ts:139` full-characters clone — the heavy branch is the
+  - `buildMemoryWindow.ts:139` full-characters clone - the heavy branch is the
     local assembler, dead on the default `server` send route (latent foot-gun,
     not a live freeze).
-  - `request.ts:247` full-prompt double clone — skipped on the default server
+  - `request.ts:247` full-prompt double clone - skipped on the default server
     route; the hot callers carry small bounded prompts.
-  - `lorebook.svelte.ts:166` combined-lorebook clone — local-assembler only; a
+  - `lorebook.svelte.ts:166` combined-lorebook clone - local-assembler only; a
     by-reference fix would be a correctness regression.
-  - `chatTemplate.ts:40` instruct-template prompt clone — context-bounded text,
+  - `chatTemplate.ts:40` instruct-template prompt clone - context-bounded text,
     single-digit ms, opt-in provider.
-  - `ChatBody.svelte:79` `isEqual` over the simpleCharacter arrays — shared
+  - `ChatBody.svelte:79` `isEqual` over the simpleCharacter arrays - shared
     references hit the `===` fast path; benchmarked at 0.20 ms.
-  - `PersonaSettings.svelte:68` personas double clone — bounded config; sub-ms,
+  - `PersonaSettings.svelte:68` personas double clone - bounded config; sub-ms,
     a cheap cleanup carried as a Phase 7 optional, not a freeze.
-  - `protocolDiagnostics.ts:159` `structuredClone` — small bounded counters
+  - `protocolDiagnostics.ts:159` `structuredClone` - small bounded counters
     object.
 - Changing message-store, `hypaV3Data`, or alternate split-store semantics.

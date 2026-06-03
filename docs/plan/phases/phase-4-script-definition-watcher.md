@@ -3,11 +3,9 @@
 Status: planned. One slice. Independent; reuses the Phase 0 scoped-rollback
 pattern.
 
-Goal: stop the script-definition bridge watcher deep-reading the whole characters
-array + modules on every reactive fire. The watcher is panel-gated (character
-config / module editor), but while open it re-clones full characters+modules on
-every debounced script/trigger keystroke and on every streaming token (the effect
-deeply reads `DBState.db.characters`).
+Goal: stop the script-definition watcher from deep-reading characters and modules
+on every reactive fire. While the panel is open, script/trigger edits and
+streaming tokens should not trigger full clones.
 
 ## Source Anchors
 
@@ -29,11 +27,8 @@ deeply reads `DBState.db.characters`).
 ## Slices
 
 - [`scoped-script-rollback.md`](slices/phase-4-script-definition-watcher/scoped-script-rollback.md) -
-  drop `currentScriptDefinitionStateSnapshot()` / `previousState` from the
-  effect; keep only `collectScriptDefinitionCollectionSnapshots()` (small per-key
-  strings) for change detection; build the rollback lazily and scoped inside
-  `dispatchWatchedReplacement` (snapshot only `{ characterId, scripts, triggers }`
-  or the module equivalent), restoring only that one row.
+  keep per-key string snapshots for change detection, and build scoped rollback
+  inside `dispatchWatchedReplacement`.
 
 ## Exit Criteria
 

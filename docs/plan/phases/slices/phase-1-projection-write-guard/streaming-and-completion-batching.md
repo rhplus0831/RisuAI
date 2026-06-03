@@ -1,13 +1,11 @@
 # Streaming & Completion Write Batching
 
-Status: planned. Phase 1. Secondary and independent; worthwhile even with the
-copy-on-write guard, and a safety net if the guard fix is staged.
+Status: planned. Phase 1. Secondary and independent.
 
 ## Scope
 
-Reduce the number of guard enter/refreeze transitions on the two generation write
-paths so the per-write cost (whatever it is after the copy-on-write guard) is paid
-at most once per response / per message-append rather than per chunk.
+Reduce guard enter/refreeze transitions in generation write paths. Pay the guard
+cost once per response or message append, not per chunk.
 
 ## Source Anchors
 
@@ -27,15 +25,13 @@ at most once per response / per message-append rather than per chunk.
 
 ## Target Implementation
 
-- Streaming: wrap the whole `while`-loop region in one
-  `withTrustedServerProjectionWrite` so depth stays ≥1 across chunks and the
-  enter/refreeze transition happens at most once for the streaming tail; or add a
-  dedicated narrow mutator that updates `message[msgIndex].data` + `reloadKeys` on
-  the live reactive object without re-entering the guard per chunk. Preserve the
-  per-chunk render cadence (`reloadKeys` bump) and abort handling.
+- Streaming: wrap the whole `while` loop in one
+  `withTrustedServerProjectionWrite`, or add a narrow mutator for
+  `message[msgIndex].data` + `reloadKeys`. Preserve per-chunk render cadence and
+  abort handling.
 - Non-stream: batch the 2-3 separate `withTrustedServerProjectionWrite` calls per
   message-append into a single guarded scope. The awaited `inlayResult.promise`
-  blocks may force a separate scope — resolve inlay text before opening the
+  blocks may force a separate scope - resolve inlay text before opening the
   guarded scope, or accept one extra scope.
 
 ## Behavior / Invariants
@@ -44,8 +40,7 @@ at most once per response / per message-append rather than per chunk.
   cadence); abort mid-stream behaves identically.
 - The final persisted message and the `serverOwnsPostGeneration` path are
   unchanged.
-- This slice is purely about scope count; with the copy-on-write guard it removes
-  residual per-chunk overhead, and without it (interim) it bounds the clone count.
+- This slice only changes guard scope count.
 
 ## Done When
 

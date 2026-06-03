@@ -3,10 +3,8 @@
 Status: planned. One slice grouping the low-priority items. Each item is small and
 independent; land them opportunistically.
 
-Goal: land the audit's Low-severity cleanups — shallow-spread clones, scalar
-baselines, regex memoization, an algorithmic rewrite, and a stray render-path log.
-None is a freeze risk; they are cheap, safe reductions recorded so they are not
-lost.
+Goal: land Low-severity cleanups: shallow-spread clones, scalar baselines, regex
+memoization, an algorithmic rewrite, and a stray render-path log.
 
 ## Source Anchors
 
@@ -23,21 +21,16 @@ lost.
   re-scan.
 - `src/lib/ChatScreens/ChatBody.svelte:208` - per-render `console.log` of the full
   assets array.
-- `src/lib/SideBars/SideChatList.svelte:444` - O(folders×chats) + O(chats²) scan.
+- `src/lib/SideBars/SideChatList.svelte:444` - O(folders*chats) + O(chats^2) scan.
 - `src/lib/Setting/Pages/PersonaSettings.svelte:68` - personas double clone per
   keystroke (downgraded-to-low config-editor cleanup).
 
 ## Slices
 
 - [`opportunistic-clone-cleanups.md`](slices/phase-7-opportunistic-cleanups/opportunistic-clone-cleanups.md) -
-  the batch: shallow-spread the CBS history clones
-  (`{ ...v, data: risuChatParser(v.data, matcherArg) }`); shallow-spread the
-  Claude observer body (`{ ...arg.body, max_tokens: 10 }`); narrow the
-  character image/emotion snapshots to a scalar baseline (reuse the Phase 0
-  `CharacterRowSnapshot`); memoize compiled regexes in `scripts.ts`; rewrite the
-  `{{#each}}` re-injection to avoid O(da.length) re-scan; remove the per-render
-  `console.log`; and reduce the `SideChatList` folder/chat scan to a single pass.
-  The personas double clone is an optional sub-item (sub-ms; cheap cleanup).
+  shallow-spread CBS and observer payloads, scope image/emotion rollback, memoize
+  regexes, rewrite `{{#each}}` reinjection, remove the render log, and make
+  `SideChatList` scan once.
 
 ## Exit Criteria
 

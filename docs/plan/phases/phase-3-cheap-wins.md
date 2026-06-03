@@ -3,9 +3,8 @@
 Status: planned. One slice. Independent of the Phase 0 snapshot kit; can land
 alongside Phase 1.
 
-Goal: land the small, behavior-preserving reorder/remove/early-return wins the
-audit flags as high-confidence one-liners. These reduce clone cost without any
-snapshot-API change, so they carry low risk and need only a focused proof.
+Goal: land small behavior-preserving clone wins: reroll clone reorder/removal and
+`runTrigger` early return before cloning. No snapshot API changes.
 
 ## Source Anchors
 
@@ -23,13 +22,8 @@ snapshot-API change, so they carry low risk and need only a focused proof.
 ## Slices
 
 - [`cheap-clone-wins.md`](slices/phase-3-cheap-wins/cheap-clone-wins.md) -
-  (1) reorder `recordGeneratedReroll` to clone only the tail
-  (`safeStructuredClone(message.slice(previousLength))`); (2) drop the redundant
-  `safeStructuredClone(record.message)` at `:105` (pass by reference — the
-  dispatch deep-clones internally) and operate on a small tail copy at `:147`;
-  (3) hoist the `runTrigger` early return above the clones and replace
-  `safeStructuredClone(char)` with a shallow `{ ...char, triggerscript: [...] }`,
-  cloning only the active chat once and threading it through recursion.
+  clone only the reroll tail, remove redundant reroll dispatch clones, and hoist
+  `runTrigger`'s no-trigger return above char/chat clones.
 
 ## Exit Criteria
 
@@ -38,9 +32,8 @@ snapshot-API change, so they carry low risk and need only a focused proof.
 - [ ] The redundant `:105` clone is removed and `reroll()` no longer clones the
   whole transcript when only the trailing group is reshaped; dispatch payloads are
   unchanged.
-- [ ] A zero-trigger character pays no `char`/`chat` clone in `runTrigger`; a
-  trigger-bearing character clones only the active chat once (plus a shallow char
-  copy), and recursive `runtrigger` does not re-deep-clone per level.
+- [ ] A zero-trigger character pays no `char`/`chat` clone in `runTrigger`;
+  trigger-bearing paths clone only the active chat once.
 - [ ] Trigger results, reroll navigation, and persisted messages are
   byte-identical; `pnpm test` is green.
 

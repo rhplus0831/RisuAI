@@ -1,15 +1,12 @@
 # Chat-Metadata Watcher
 
-Status: planned. Phase 2. The always-on, per-render Critical. Depends on the Phase
-0 kit.
+Status: planned. Phase 2. Always-on watcher. Depends on the Phase 0 kit.
 
 ## Scope
 
-Stop the chat-metadata bridge watcher materializing a full-array
-`ChatStateSnapshot` on every reactive fire, and stop `scalarChatMetadata` cloning
-each full chat (incl. `message[]`) before stripping to scalar keys. The watcher is
-mounted by the default chat sidebar, so it re-fires per streaming chunk and per
-message edit.
+Stop the chat-metadata watcher from materializing a full `ChatStateSnapshot` on
+each fire. Also make `scalarChatMetadata` copy only scalar patch keys instead of
+cloning full chats.
 
 ## Source Anchors
 
@@ -29,16 +26,12 @@ message edit.
 
 ## Target Implementation
 
-- Remove the `previousState`/`currentState` full-array
-  `currentChatStateSnapshot()` from the effect. Capture the rollback baseline
-  lazily and per-row **only when `changedFields()` detects an actual change**,
-  inside `queueChatPatch`/`queueFolderPatch`, materializing just the affected
-  chat/folder row (a scalar/single-row snapshot from the Phase 0 kit). Nothing is
-  cloned on the common no-change re-trigger.
-  - Note: a minimal "gate `currentChatStateSnapshot` behind
-    `Object.keys(patch).length>0`" is **not** sufficient — `previousState` is
-    reassigned every run as the diff baseline, so the baseline itself must be made
-    cheap (per-row), not merely deferred.
+- Remove the effect's full-array `previousState` / `currentState` snapshots.
+- Capture rollback lazily in `queueChatPatch` / `queueFolderPatch`, only when
+  `changedFields()` finds a real change.
+- Do not only gate the old snapshot behind `Object.keys(patch).length > 0`.
+  `previousState` is reassigned every run, so the diff baseline itself must be
+  per-row.
 - Rewrite `scalarChatMetadata` to build the scalar snapshot without serializing
   `chat.message`/`chat.localLore`: iterate `CHAT_PATCH_ALLOWED_KEYS` and
   `cloneJsonValue` only the small allowed values
@@ -57,10 +50,9 @@ function scalarChatMetadata(chat) {
 
 ## Behavior / Invariants
 
-- The metadata-diff maps (`scalarChatMetadata`/`sanitizeChatPatch`) produce the
-  same scalar patches and the same dispatch decisions; only their cost changes.
-- The 300 ms-debounced dispatch is unchanged; the rollback for a per-chat/per-folder
-  metadata patch restores only that row's scalar metadata.
+- Metadata diffs produce the same scalar patches and dispatch decisions.
+- The 300 ms debounced dispatch is unchanged.
+- Per-chat/per-folder rollback restores only that row's scalar metadata.
 - A failed metadata patch rolls back only the affected chat/folder row.
 
 ## Done When

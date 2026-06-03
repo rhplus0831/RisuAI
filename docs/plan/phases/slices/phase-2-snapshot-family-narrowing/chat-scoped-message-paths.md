@@ -4,10 +4,9 @@ Status: planned. Phase 2. Depends on the Phase 0 `currentChatScopedSnapshot`.
 
 ## Scope
 
-Replace the full-array `currentChatStateSnapshot()` rollback baseline on the
-message-edit and send paths with the chat-scoped snapshot, so a per-message action
-or a send clones only the affected chat's `message[]`, not every character's
-hydrated history.
+Replace full-array `currentChatStateSnapshot()` rollback on message-edit and send
+paths with a chat-scoped snapshot. A per-message action should clone only the
+affected chat's `message[]`.
 
 ## Source Anchors
 
@@ -28,33 +27,20 @@ hydrated history.
 
 ## Target Implementation
 
-- Route the message-replace / per-message dispatch helpers and their call sites
-  through `currentChatScopedSnapshot()` / `restoreChatScopedState()` (Phase 0):
-  capture `{ selectedCharID, charIndex/chaId, chatPage/chatId, chat:
-  cloneJsonValue(activeChat) }` and restore only that one chat row inside
-  `withTrustedServerProjectionWrite`. Do **not** change the shared
-  `currentChatStateSnapshot`/`restoreChatState` globally — narrow only the
-  message paths.
-- `sendMain`: collapse the double current-chat clone — `:218` already clones into
-  `cha`; `:275` can assign by reference (`liveChat.message = cha`) rather than
-  re-cloning.
-- `cloneMessagesWithIds`: make it fallback-only and lazy — in `toggleBookmark`
-  (`:479`) assign a `chatId` to only the single target message and dispatch via
-  `messageId`; for the 10 fallback sites ensure a `chatId` on the single needed
-  message and dispatch the targeted command rather than cloning the whole
-  `chat.message`. Fix the unconditional `currentChatStateSnapshot()` first.
+- Route message-replace and per-message dispatch call sites through
+  `currentChatScopedSnapshot()` / `restoreChatScopedState()`. Do not change the
+  shared `currentChatStateSnapshot` / `restoreChatState` globally.
+- `sendMain`: collapse the double current-chat clone. `:218` already clones into
+  `cha`; `:275` can assign `liveChat.message = cha`.
+- `cloneMessagesWithIds`: make it fallback-only and lazy. For targeted edits,
+  assign `chatId` only on the needed message and dispatch by `messageId`.
 - `command.ts`: remove the redundant full-corpus `currentChatStateSnapshot()` at
-  `:336` (use the chat-scoped rollback); `previousChat` is genuinely needed for
-  the diff, but `nextChat` does not need a separate clone (the mutated live chat
-  is already a fresh object). Prefer routing `/send`-class commands to the scoped
-  dispatch helpers to avoid the message-array stringify-diff. The per-chat
-  `snapshotChat` used by `prepareCompatibleChatUpdate` is bounded and may stay.
+  `:336`. `previousChat` is needed for the diff; `nextChat` does not need a
+  separate clone. The per-chat `snapshotChat` may stay.
 
 ## Behavior / Invariants
 
-- A failed `dispatchReplaceMessages`/`dispatchUpdateMessage`/… restores only the
-  affected chat's message list (not the whole array), preserving any unrelated
-  concurrent edit.
+- A failed message command restores only the affected chat's message list.
 - `prepareCompatibleChatUpdate`'s per-chat diff (`snapshotChat`, one chat) is
   acceptable and unchanged; only the full-array clone is removed.
 - Sent/edited message bytes and chat ids are identical.

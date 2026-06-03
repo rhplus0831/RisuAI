@@ -4,10 +4,9 @@ Status: planned. Phase 4. Independent.
 
 ## Scope
 
-Stop the script-definition bridge watcher reading the whole characters array +
-modules deeply on every fire. Keep only the small per-key script/trigger stringify
-for change detection; build the rollback baseline lazily and scoped at dispatch,
-where the changed `characterId`/`moduleId` is already known.
+Stop the script-definition watcher from deep-reading characters and modules on
+every fire. Keep per-key script/trigger strings for change detection and build
+rollback only at dispatch.
 
 ## Source Anchors
 
@@ -23,24 +22,17 @@ where the changed `characterId`/`moduleId` is already known.
 - `src/ts/server/scriptDefinitionBridge.svelte.ts:257-298` -
   `dispatchWatchedReplacement` (knows `characterId`/`moduleId`).
 - `src/ts/server/scriptDefinitionBridge.svelte.ts:300` -
-  `collectScriptDefinitionCollectionSnapshots` (per-key stringify — keep).
+  `collectScriptDefinitionCollectionSnapshots` (per-key stringify - keep).
 
 ## Target Implementation
 
-- Drop `currentScriptDefinitionStateSnapshot()` / `previousState` from the effect
-  body. The effect's only change-detection input becomes
-  `collectScriptDefinitionCollectionSnapshots()` (small per-key script/trigger
-  JSON strings), which does not read `chat.message`.
-- Build the rollback baseline lazily and scoped inside
-  `dispatchWatchedReplacement`: snapshot only
-  `{ characterId, scripts: clone(character.customscript), triggers:
-  clone(character.triggerscript) }` (or `{ moduleId, … }` for the module
-  equivalent) at dispatch time, restoring only that one row's scripts/triggers on
-  failure.
-- The effect must stop *deeply reading* `DBState.db.characters` so a streaming
-  token write does not re-invalidate it into another full clone. Tracking the
-  per-key snapshot map (strings) instead of the deep array is what removes that
-  dependency.
+- Drop `currentScriptDefinitionStateSnapshot()` / `previousState` from the effect.
+- Use `collectScriptDefinitionCollectionSnapshots()` as the effect's only
+  change-detection input.
+- Build rollback inside `dispatchWatchedReplacement`, snapshotting only the
+  changed character or module scripts/triggers.
+- Ensure the effect stops deeply reading `DBState.db.characters`, so streaming
+  token writes do not re-trigger full clones.
 - Optional (the Low finding): cache the per-key snapshot strings and only
   re-stringify the key whose source changed, or move the snapshot into the 250 ms
   debounce window.

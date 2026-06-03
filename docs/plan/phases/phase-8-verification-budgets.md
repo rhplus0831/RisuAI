@@ -1,12 +1,9 @@
 # Phase 8: Verification Budgets
 
-Status: planned. The standing verification-gate layer; analogous to the
-mutation-range plan's "verification budgets" phase.
+Status: planned. Standing verification-gate layer.
 
-Goal: ensure every narrowed hot path keeps a clone-cost regression gate so a
-future edit cannot silently reintroduce the whole-characters / whole-`Database`
-clone. This phase does not narrow a new path; it makes the narrowings durable and
-the gate map self-checking.
+Goal: ensure every narrowed hot path keeps a clone-cost gate. This phase does not
+narrow new paths; it makes the gate map self-checking.
 
 ## Source Anchors
 
@@ -21,13 +18,9 @@ the gate map self-checking.
 ## Slices
 
 - [`clone-cost-gate-completeness.md`](slices/phase-8-verification-budgets/clone-cost-gate-completeness.md) -
-  enumerate the narrowed hot paths from the inventory, assert each has a
-  clone-cost regression test (snapshot omits the full collection AND the path does
-  not invoke the whole-DB/whole-characters clone primitive), and add a
-  self-checking test that fails if a narrowed path in the inventory lacks a gate.
-  Keep [`../latest-verification.md`](../latest-verification.md) current after each
-  focused or full run, recording the before/after clone range for the slice under
-  test.
+  list narrowed hot paths, assert each has a clone-cost test, and add a
+  self-check that fails when an inventory entry lacks a gate. Keep
+  [`../latest-verification.md`](../latest-verification.md) current.
 
 ## Exit Criteria
 

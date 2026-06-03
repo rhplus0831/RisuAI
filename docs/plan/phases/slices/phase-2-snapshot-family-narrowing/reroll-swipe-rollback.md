@@ -1,15 +1,13 @@
 # Reroll / Swipe Rollback
 
-Status: planned. Phase 2. Depends on the Phase 0 `currentChatScopedSnapshot`. The
-redundant-clone and tail-clone reorder are Phase 3 (cheap wins); this slice is the
-rollback-baseline narrowing.
+Status: planned. Phase 2. Depends on the Phase 0 `currentChatScopedSnapshot`.
+Phase 3 handles redundant clone removal.
 
 ## Scope
 
-Replace the full-characters `currentChatStateSnapshot()` rollback baseline in the
-reroll/swipe `apply*` helpers with a chat-scoped active-chat rollback, so a
-navigation swipe (the common case, fully synchronous, blocking the gesture) clones
-only the active chat, not every character's hydrated history.
+Replace full-characters rollback in reroll/swipe `apply*` helpers with a
+chat-scoped active-chat rollback. Swipe navigation should clone only the active
+chat.
 
 ## Source Anchors
 
@@ -25,14 +23,10 @@ only the active chat, not every character's hydrated history.
 
 ## Target Implementation
 
-- Replace `currentChatStateSnapshot()` in `applyTailDataSwap` / `applyTailSlice` /
-  `applyTranscript` with the chat-scoped snapshot (Phase 0): capture only the
-  active chat's prior `message[]` (plus indices) and restore just that chat inside
-  `withTrustedServerProjectionWrite` (`restoreActiveChatMessages` / the kit's
-  `restoreChatScopedState`).
-- The redundant `safeStructuredClone(record.message)` at `:105` and the full
-  transcript clone at `:147` are removed in Phase 3 (cheap wins); cross-reference
-  them but keep this slice scoped to the rollback baseline if landed separately.
+- Replace `currentChatStateSnapshot()` in `applyTailDataSwap`, `applyTailSlice`,
+  and `applyTranscript` with the Phase 0 chat-scoped snapshot.
+- Leave the redundant `safeStructuredClone(record.message)` and full transcript
+  clone to Phase 3 if this slice lands separately.
 
 ## Behavior / Invariants
 

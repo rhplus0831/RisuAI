@@ -2,10 +2,8 @@
 
 Status: planned. Two slices, no call site narrowed (that starts in Phase 2).
 
-Goal: add the shared scaffolding the later phases need — the scalar / single-row
-/ single-chat snapshot+restore kit, and the clone-cost regression harness — so
-that each narrowing is reusable and provable. This phase makes narrowing possible
-and provable; it does not change any hot path's behavior.
+Goal: add the shared snapshot kit and clone-cost harness. This phase makes later
+narrowing reusable and provable; it does not change hot-path behavior.
 
 ## Source Anchors
 
@@ -24,26 +22,22 @@ and provable; it does not change any hot path's behavior.
 ## Slices
 
 - [`snapshot-helper-kit.md`](slices/phase-0-baseline-foundations/snapshot-helper-kit.md) -
-  add the scalar/single-row/single-chat snapshot+restore pairs:
+  add these narrow snapshot+restore pairs:
   `currentChatScopedSnapshot`/`restoreChatScopedState` (one chat's `message[]`),
   `ChatScriptstateSnapshot` + `currentChatScriptstateSnapshot`/
   `restoreChatScriptstate` (one chat's `scriptstate`, + the note scalar),
   `CharacterRowSnapshot` + `currentCharacterRowSnapshot`/`restoreCharacterRow`
-  (one character row), and `currentGlobalLorebookStateSnapshot`/
-  `restoreGlobalLorebookState` (`loreBook`+`loreBookPage`). No call site rewired.
+  (one character row), and `currentGlobalLorebookStateSnapshot` /
+  `restoreGlobalLorebookState` (`loreBook` + `loreBookPage`). No call site is
+  rewired.
 - [`clone-cost-regression-harness.md`](slices/phase-0-baseline-foundations/clone-cost-regression-harness.md) -
-  a reusable test helper that asserts (a) a snapshot omits
-  `characters`/`characterOrder`/`message`/`modules` payload (structural) and (b)
-  a hot path does not invoke the whole-`Database` / whole-characters clone
-  primitive (instrumented count or seeded multi-MB DB), generalizing the
-  reference fix's two tests.
+  add a reusable test helper that checks snapshots omit full collections and hot
+  paths do not invoke whole-DB or whole-characters clone primitives.
 
 ## Exit Criteria
 
-- [ ] The snapshot kit exists with unit tests proving each `current*Snapshot`
-  captures only its scalar/single-row/single-chat slice
-  (`not.toHaveProperty('characters')`) and each `restore*` writes back only that
-  slice under `withTrustedServerProjectionWrite`, leaving unrelated rows intact.
+- [ ] Unit tests prove each `current*Snapshot` captures only its narrow slice and
+  each `restore*` writes back only that slice.
 - [ ] The clone-cost regression harness exists and is importable from a single
   place (`__tests__` helper), exposing both the structural snapshot assertion and
   the clone-primitive instrumentation.

@@ -3,18 +3,14 @@
 Status: planned. The single highest-leverage fix; one primary slice plus an
 optional secondary batching slice.
 
-Goal: stop `withTrustedServerProjectionWrite` deep-cloning the whole `Database`
-twice per guarded write. The guard is the amplifier behind the streaming,
-non-stream, SSE-apply, chat-open-hydration, and prompt-template-keystroke
-findings; one fix benefits ~100 call sites at once.
+Goal: stop `withTrustedServerProjectionWrite` cloning the whole `Database` twice
+per guarded write. This removes the amplifier behind streaming, completion, SSE
+apply, chat-open hydration, and prompt-template editing.
 
-The guard runs at depth-1 entry
-(`DBState.db = snapshotServerProjectionValue(DBState.db)`) and on refreeze
-(`DBState.db = createReadOnlyServerProjection(snapshotServerProjectionValue(...))`).
-On entry the proxy WeakMap hits and returns `structuredClone(source)` — a full
-deep clone of the entire `Database`. On refreeze the WeakMap misses and it falls
-to `$state.snapshot(value)` — a second full deep clone. Both traverse every
-character, every hydrated chat, every `message[]`.
+Current behavior: depth-1 entry unwraps the read-only proxy by returning
+`structuredClone(source)`. Refreeze misses the WeakMap and falls back to
+`$state.snapshot(value)`. Together they clone every character, hydrated chat, and
+`message[]`.
 
 ## Source Anchors
 
@@ -33,19 +29,13 @@ character, every hydrated chat, every `message[]`.
 ## Slices
 
 - [`copy-on-write-guard.md`](slices/phase-1-projection-write-guard/copy-on-write-guard.md) -
-  keep one persistent mutable working copy (the source the proxy wraps); on
-  depth-1 entry, unwrap `DBState.db` to that source via
-  `readOnlyServerProjectionSources.get(proxy)` and assign the bare source (no
-  clone); on refreeze, re-wrap the same source in a freshly-minted read-only
-  proxy, evicting it from `readOnlyServerProjectionTargets` first so Svelte sees a
-  new identity. Interim fallback if the proxy swap is risky: drop the
-  refreeze-time `$state.snapshot` (wrap the already-cloned object as-is), which
-  alone halves the cost.
+  keep one mutable working copy. On entry, assign the proxy source with no clone.
+  On refreeze, wrap the same source in a fresh read-only proxy so Svelte sees a
+  new identity. Fallback: skip only the refreeze-time `$state.snapshot`, which
+  halves the cost.
 - [`streaming-and-completion-batching.md`](slices/phase-1-projection-write-guard/streaming-and-completion-batching.md) -
-  (secondary, independent) hold one trusted-write scope across the streaming tail
-  (`streamResponse.ts` `while` loop) and batch the 2-3 non-nested guarded calls
-  per message-append in `nonStreamResponse.ts`, so the enter/refreeze transition
-  happens at most once per response rather than per chunk.
+  secondary: hold one trusted-write scope across streaming tails and batch the
+  non-stream guarded calls per message append.
 
 ## Exit Criteria
 
@@ -58,7 +48,7 @@ character, every hydrated chat, every `message[]`.
 - [ ] Nothing that reads `DBState.db` reactively mid-write breaks (no consumer
   depends on receiving a fresh `$state` proxy per write).
 - [ ] `pnpm test`, `pnpm api:test`, and `pnpm client-thinning:audit` are green;
-  the Phase 9 optimistic-write guard invariants still hold.
+  the optimistic-write guard invariants still hold.
 
 ## Validation
 

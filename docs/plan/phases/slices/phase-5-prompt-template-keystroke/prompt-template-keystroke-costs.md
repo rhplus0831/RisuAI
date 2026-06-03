@@ -4,9 +4,8 @@ Status: planned. Phase 5. The whole-DB guard half closes with Phase 1.
 
 ## Scope
 
-Stop the prompt-template editor cloning the whole `promptTemplate` array into
-`DBState.db` on every keystroke and re-stringifying the whole template twice per
-keystroke for external-change detection.
+Stop prompt-template editing from cloning the whole `promptTemplate` array and
+double-stringifying it on each keystroke.
 
 ## Source Anchors
 
@@ -27,20 +26,16 @@ keystroke for external-change detection.
 
 ## Target Implementation
 
-1. **Debounce the projection write.** Coalesce the optimistic projection write
-   (`:200-202`) into the same 250 ms debounced timer as the server command so the
-   heavy guarded write runs at most once per idle window, not per keystroke.
-2. **Mutate only the edited item.** Inside the guarded write, set
+1. Debounce the projection write. Coalesce the optimistic write into the existing
+   250 ms server-command timer.
+2. Mutate only the edited item. Inside the guarded write, set
    `DBState.db.promptTemplate[index] = cloneJsonValue(promptItem)` (the `index` is
    already computed) instead of replacing the whole array.
-3. **Cheap change detection.** Replace the double `JSON.stringify` (`:358`) with a
-   server-revision discriminator: only re-pull `serverValue` into the draft when
-   `cachedServerCommandRevision` advanced; skip both stringify passes otherwise. A
-   pure reference check won't work (`queuePromptItemUpdate` reassigns
-   `DBState.db.promptTemplate` per keystroke). Lighter alternative: have the local
-   writer set `previousPromptTemplateServerSnapshot` to what it just wrote and stop
-   tracking `promptTemplateDraft.value` in this effect.
-4. (Optional) `PromptDataItem.svelte:49` — drop one of the two `clonePromptItem`
+3. Cheap change detection. Replace the double `JSON.stringify` at `:358` with a
+   server-revision discriminator. Only re-pull `serverValue` when
+   `cachedServerCommandRevision` advances. A pure reference check will not work
+   because `queuePromptItemUpdate` reassigns `DBState.db.promptTemplate`.
+4. (Optional) `PromptDataItem.svelte:49`: drop one of the two `clonePromptItem`
    passes; bounded, low.
 
 ## Behavior / Invariants
@@ -56,7 +51,7 @@ keystroke for external-change detection.
 - A keystroke clones only the edited item (not the whole array) and runs zero
   whole-template `JSON.stringify` passes; the guarded write fires at most once per
   idle window (clone-cost harness + a debounce assertion).
-- Draft ↔ server reconciliation still works on a revision advance.
+- Draft <-> server reconciliation still works on a revision advance.
 - `pnpm test` and `pnpm client-thinning:audit` are green.
 
 ## Validation

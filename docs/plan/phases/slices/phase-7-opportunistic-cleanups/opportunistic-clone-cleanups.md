@@ -1,14 +1,11 @@
 # Opportunistic Clone Cleanups
 
-Status: planned. Phase 7. A batch of small, independent, behavior-preserving
-cleanups; land them opportunistically.
+Status: planned. Phase 7. Small independent cleanups.
 
 ## Scope
 
-The audit's Low-severity items: shallow-spread clones, a scalar character
-baseline, regex memoization, an algorithmic rewrite, a stray render-path log, and
-a folder/chat scan reduction. None is a freeze risk; each is a cheap, safe
-reduction recorded so it is not lost.
+Low-severity items: shallow-spread clones, scalar baselines, regex memoization,
+one parser rewrite, one render-path log, and one folder/chat scan reduction.
 
 ## Source Anchors
 
@@ -22,16 +19,21 @@ reduction recorded so it is not lost.
 
 ## Items
 
-| Item | Fix |
-| --- | --- |
-| CBS `{{history}}`/`{{charhistory}}`/`{{userhistory}}` (`cbs.ts:376/399/1687`) | Shallow-copy + reparse only `.data`: `JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })`; drops the `structuredClone`/rfdc overhead. The live `DBState` Message must not be mutated — the spread preserves that. No memo cache. |
-| Claude observer body (`observer.svelte.ts:118`) | Shallow spread: `lastClaudeObserverPayload = { ...arg.body, max_tokens: 10 }` (drop the separate clone + assignment). Gated behind the OFF-by-default experimental flag; trivial. |
-| Character image/emotion (`characters.ts:138/195/220/242/259`) | Replace `currentCharacterStateSnapshot()` + `cloneCharacterSnapshot(full character)` with a single-character scalar baseline keyed by `chaId` (reuse the Phase 0 `CharacterRowSnapshot`), capturing only `image`/`ccAssets`/`emotionImages`/`extentions.pngExif`; `CHARACTER_PATCH_EXCLUDED_KEYS` already excludes `chats`. |
-| Per-token regex recompile (`scripts.ts:215`) | Memoize compiled `RegExp` per regex-script source instead of recompiling per `executeScript`. |
-| `{{#each}}` re-injection (`risuChatParser.ts:638`) | Rewrite the per-element splice-into-source + re-scan to avoid the O(da.length) re-injection (template-bounded, opt-in). |
-| Per-render `console.log` (`ChatBody.svelte:208`) | Remove the `console.log` of the full assets array for every `<img>` in every rendered message. |
-| `SideChatList` folder/chat scan (`:444`) | Reduce the O(folders×chats) + O(chats²) `filter`/`indexOf` to a single pass with identical ordering. |
-| Personas double clone (`PersonaSettings.svelte:68`) | (Optional, sub-ms) drop one of the two per-keystroke `cloneJsonValue(DBState.db.personas)` passes. |
+- CBS history (`cbs.ts:376/399/1687`): shallow-copy and reparse only `.data` with
+  `JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })`.
+- Claude observer (`observer.svelte.ts:118`): shallow-spread body into
+  `{ ...arg.body, max_tokens: 10 }`.
+- Character image/emotion (`characters.ts:138/195/220/242/259`): reuse
+  `CharacterRowSnapshot` and capture only image/emotion fields.
+- Per-token regex (`scripts.ts:215`): memoize compiled `RegExp` per regex-script
+  source.
+- `{{#each}}` reinjection (`risuChatParser.ts:638`): avoid per-element
+  splice-into-source plus re-scan.
+- Render log (`ChatBody.svelte:208`): remove the full-assets `console.log`.
+- `SideChatList` scan (`:444`): reduce folder/chat scans to one pass with the
+  same ordering.
+- Personas clone (`PersonaSettings.svelte:68`): optional; drop one bounded
+  `cloneJsonValue(DBState.db.personas)` pass.
 
 ## Behavior / Invariants
 
@@ -43,7 +45,7 @@ reduction recorded so it is not lost.
 
 ## Done When
 
-- Each item is shallow-spread / scoped / memoized / removed per the table; no
+- Each item is shallow-spread, scoped, memoized, or removed as listed; no
   behavioral change is observable.
 - The per-render `console.log` is gone; the `SideChatList` scan is single-pass.
 - `pnpm test` is green.

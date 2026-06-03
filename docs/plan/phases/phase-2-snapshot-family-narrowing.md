@@ -3,10 +3,9 @@
 Status: planned. Six slices, one per call-site family. Depends on the Phase 0
 snapshot kit.
 
-Goal: route the Critical/High `current*StateSnapshot` call sites through the
-Phase 0 narrow kit so each hot path captures a scalar/single-row/single-chat
-rollback baseline instead of the whole characters array. This is the bulk of the
-audit's findings and the direct generalization of the reference fix `c9e728b1`.
+Goal: route Critical/High `current*StateSnapshot` call sites through the Phase 0
+kit. Each hot path should capture a scalar, single-row, or single-chat rollback
+instead of the whole characters array.
 
 Each slice keeps the full-collection snapshot for genuine restructures
 (create/delete/reorder/fork) and proves the hot path no longer reaches it.
@@ -34,35 +33,32 @@ Each slice keeps the full-collection snapshot for genuine restructures
 ## Slices
 
 - [`chat-metadata-watcher.md`](slices/phase-2-snapshot-family-narrowing/chat-metadata-watcher.md) -
-  the always-on, per-render Critical: drop the full-array
-  `currentChatStateSnapshot()` from the tracked `$effect`, capture the rollback
-  lazily and per-row only when a change is detected, and rewrite
-  `scalarChatMetadata` to pick `CHAT_PATCH_ALLOWED_KEYS` without serializing
-  `message`.
+  drop full-array snapshots from the watcher, capture rollback lazily per row,
+  and make `scalarChatMetadata` skip `message`.
 - [`chat-scoped-message-paths.md`](slices/phase-2-snapshot-family-narrowing/chat-scoped-message-paths.md) -
   `chatCommands.ts` message-replace rollback, `Chat.svelte` per-message
   edit/delete/bookmark/partial-edit, `DefaultChatScreen.svelte` send/continue and
-  the empty-slot button, and the `command.ts` slash-command message mutation →
+  the empty-slot button, and the `command.ts` slash-command message mutation ->
   `currentChatScopedSnapshot`.
 - [`scriptstate-scoped-var-writes.md`](slices/phase-2-snapshot-family-narrowing/scriptstate-scoped-var-writes.md) -
   `triggers.ts` `setVar` / `v2SetAuthorNote`, `chatVar.svelte.ts` `setChatVar`,
-  and `command.ts` `/setvar` `/addvar` → `ChatScriptstateSnapshot`; hoist one
+  and `command.ts` `/setvar` `/addvar` -> `ChatScriptstateSnapshot`; hoist one
   snapshot per `runTrigger` pass.
 - [`reroll-swipe-rollback.md`](slices/phase-2-snapshot-family-narrowing/reroll-swipe-rollback.md) -
-  the `apply*` helpers' `currentChatStateSnapshot()` → a chat-scoped active-chat
-  rollback (the redundant transcript clones are Phase 3).
+  replace the `apply*` helpers' full snapshot with chat-scoped rollback. Phase 3
+  handles redundant transcript clones.
 - [`character-row-snapshot-paths.md`](slices/phase-2-snapshot-family-narrowing/character-row-snapshot-paths.md) -
   `currentCharacterStateSnapshot()` at `setCurrentCharacter`/`setCharacterByIndex`
-  and the trigger `v2Set*` callers → `CharacterRowSnapshot`/`restoreCharacterRow`.
+  and the trigger `v2Set*` callers -> `CharacterRowSnapshot`/`restoreCharacterRow`.
 - [`global-lorebook-snapshot-paths.md`](slices/phase-2-snapshot-family-narrowing/global-lorebook-snapshot-paths.md) -
-  `lorepreset.svelte` select/create/delete → `currentGlobalLorebookStateSnapshot`;
-  the 6 lorebook trigger sites → `scopedLorebookStateSnapshot`; drop the redundant
+  `lorepreset.svelte` select/create/delete -> `currentGlobalLorebookStateSnapshot`;
+  the 6 lorebook trigger sites -> `scopedLorebookStateSnapshot`; drop the redundant
   `setCurrentCharacter` re-clone.
 
 ## Exit Criteria
 
-- [ ] Each listed call site captures a scalar/single-row/single-chat snapshot;
-  none materializes the whole characters array on the hot path.
+- [ ] Each listed call site captures a narrow snapshot; none materializes the
+  whole characters array on the hot path.
 - [ ] Each narrowed rollback restores exactly the mutated slice and a failed
   command does not clobber unrelated concurrent edits (rollback-correctness test).
 - [ ] `scalarChatMetadata` never serializes `chat.message` / `chat.localLore`.

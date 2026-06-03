@@ -1,14 +1,13 @@
 # Snapshot Helper Kit
 
-Status: planned. Phase 0. Adds the scalar/single-row/single-chat snapshot+restore
-pairs the later phases import. No call site is rewired here.
+Status: planned. Phase 0. Adds narrow snapshot+restore pairs for later phases.
+No call site is rewired here.
 
 ## Scope
 
-Generalize the reference fix's `CharacterSelectionSnapshot` /
-`currentCharacterSelectionSnapshot` / `restoreCharacterSelection` into a small
-family of narrow snapshot+restore pairs, each cloning only the slice a hot path
-mutates and restoring only that slice under `withTrustedServerProjectionWrite`.
+Generalize `CharacterSelectionSnapshot` into a small family of helpers. Each
+helper clones only the slice a hot path mutates and restores only that slice
+under `withTrustedServerProjectionWrite`.
 
 ## Source Anchors
 
@@ -23,13 +22,32 @@ mutates and restoring only that slice under `withTrustedServerProjectionWrite`.
 
 ## Helpers To Add
 
-| Helper | Captures | Restores | For |
-| --- | --- | --- | --- |
-| `currentChatScopedSnapshot()` / `restoreChatScopedState()` (`chatCommands.ts`) | `{ selectedCharID, charIndex/chaId, chatPage/chatId, chat: cloneJsonValue(activeChat) }` — only the active chat row (its `message[]`, `scriptstate`, metadata) | only that one chat row | message edit/delete/bookmark/replace/send, slash-command message mutation, reroll/swipe |
-| `ChatScriptstateSnapshot` + `currentChatScriptstateSnapshot()` / `restoreChatScriptstate()` (`chatCommands.ts`) | `{ chatId, selectedCharID, scriptstate: shallowClone(chat.scriptstate) }` (+ optional `note` scalar) | only that chat's `scriptstate` (+ `note`), located by id | `setVar`/`setChatVar`/`/setvar`/`/addvar`, `v2SetAuthorNote` |
-| `CharacterRowSnapshot` + `currentCharacterRowSnapshot()` / `restoreCharacterRow()` (`characterCommands.ts`) | `{ index, characterId, character: cloneJsonValue(thatOneRow), currentChar?, selectedCharID }` | only `DBState.db.characters[index]` (+ `selectedCharID`/`currentChar` scalars) | `setCurrentCharacter`/`setCharacterByIndex`, character field edits, image/emotion |
-| `currentGlobalLorebookStateSnapshot()` / `restoreGlobalLorebookState()` (`lorebookBridge.svelte.ts`) | `{ loreBook: cloneJsonValue(DBState.db.loreBook ?? []), loreBookPage, selectedCharID }` — characters/modules omitted | only `loreBook` + `loreBookPage` | global-lorebook select/create/delete |
-| (reuse) `scopedLorebookStateSnapshot('character:'+chaId, prevGlobalLore)` / `restoreScopedLorebookState` | one character's `globalLore` captured before the in-place edit | only that character's `globalLore` | the 6 lorebook trigger effects |
+- `currentChatScopedSnapshot()` / `restoreChatScopedState()`
+  (`chatCommands.ts`)
+  Captures: selected character/chat ids plus `cloneJsonValue(activeChat)`.
+  Restores: that one chat row.
+  Used for: message edit/delete/bookmark/replace/send, slash-command message
+  mutation, reroll/swipe.
+- `ChatScriptstateSnapshot`, `currentChatScriptstateSnapshot()`, and
+  `restoreChatScriptstate()` (`chatCommands.ts`)
+  Captures: `{ chatId, selectedCharID, scriptstate }`, plus optional `note`.
+  Restores: that chat's `scriptstate` and optional `note`.
+  Used for: `setVar`, `setChatVar`, `/setvar`, `/addvar`, `v2SetAuthorNote`.
+- `CharacterRowSnapshot`, `currentCharacterRowSnapshot()`, and
+  `restoreCharacterRow()` (`characterCommands.ts`)
+  Captures: index/id, one cloned character row, and selection scalars.
+  Restores: that character row plus `selectedCharID` / `currentChar`.
+  Used for: `setCurrentCharacter`, `setCharacterByIndex`, character field edits,
+  image/emotion.
+- `currentGlobalLorebookStateSnapshot()` / `restoreGlobalLorebookState()`
+  (`lorebookBridge.svelte.ts`)
+  Captures: `loreBook`, `loreBookPage`, and `selectedCharID`.
+  Restores: `loreBook` and `loreBookPage`.
+  Used for: global-lorebook select/create/delete.
+- Reuse `scopedLorebookStateSnapshot('character:'+chaId, prevGlobalLore)` /
+  `restoreScopedLorebookState`.
+  Captures and restores one character's `globalLore`.
+  Used for: the 6 lorebook trigger effects.
 
 ## Implementation Notes
 
@@ -47,11 +65,8 @@ mutates and restoring only that slice under `withTrustedServerProjectionWrite`.
 
 ## Done When
 
-- The five helper pairs exist and are exported, each with a unit test proving the
-  snapshot omits `characters`/`characterOrder`/`modules`/`message` payload
-  (`not.toHaveProperty('characters')`) and the restore writes back only the
-  intended slice while unrelated rows keep their values (the reference fix's two
-  tests, per helper).
+- The five helper pairs exist and are exported. Unit tests prove each snapshot
+  omits full collections and each restore writes only the intended slice.
 - No existing call site changed; `pnpm test` and the type checks are green.
 
 ## Validation
