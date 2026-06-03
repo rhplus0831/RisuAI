@@ -23,7 +23,7 @@ any recorded normalization-drop decisions).
 
 ## Implementation Scope
 
-- Source files: `docs/plan/latest-verification.md` (content only).
+- Source files: `docs/archive/mutation-range-mismatch/latest-verification.md` (content only).
 - The gate set is stable across phases: `pnpm api:test`, `pnpm test`,
   `pnpm client-thinning:audit`, the `RISU_COMMAND_METRIC_SUMMARY` command metric
   run, the focused `commands.test.ts` / `projection.test.ts` runs, and the

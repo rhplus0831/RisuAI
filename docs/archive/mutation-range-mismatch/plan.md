@@ -36,8 +36,8 @@ End state:
   `replaceAll*` writers, and the reference `writeCharacterSelectionRows`.
 - `server/fastify/src/routes/projection.ts` owns `RESOURCE_PROJECTION_FIELDS`
   and the per-resource projection loaders.
-- [`../structure/server-projection-and-bridges.md`](../structure/server-projection-and-bridges.md)
-  and [`../structure/data-and-events.md`](../structure/data-and-events.md) own
+- [`../../structure/server-projection-and-bridges.md`](../../structure/server-projection-and-bridges.md)
+  and [`../../structure/data-and-events.md`](../../structure/data-and-events.md) own
   projection, hydration, revision, event, and active-writer references.
 - The codebase remains the source of truth when docs drift.
 

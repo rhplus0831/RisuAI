@@ -216,6 +216,26 @@ left open, and the evidence checked during the audit.
   `docs/archive/server-client-protocol-stability-performance/active-risk-analysis.md`.
 - Trigger: large message-heavy exports show materialized-buffer memory pressure.
 
+### Remaining Tier-5 command writes stay at the `message-free` floor by choice
+
+- What remains: `POST characters`, `POST characters/create-and-select`,
+  `POST modules`, and `DELETE modules/:id` still run on the broad `message-free`
+  floor (a full 13-table rewrite for one create/delete). The
+  command-mutation-range workstream (Phases 0–8) narrowed every other over-broad
+  command, including the character-scoped Tier-5 routes (script/trigger PUTs,
+  `DELETE chats/:id`, `DELETE characters/:id`) onto `targeted-character-row`.
+- Why open: deferred by maintainer decision after a frequency × cost review — the
+  creates are rare one-shot button clicks, and `DELETE modules/:id` carries a
+  separate cross-table `removeModuleReferences` blocker (it strips the id across
+  characters, chats, the loadouts collection, and settings, so no single-table
+  lever applies). The broad write is acceptable at this frequency.
+- Evidence: `server/fastify/src/routes/commands.ts` (the four routes);
+  `docs/archive/mutation-range-mismatch/phases/phase-6-message-free-ceiling.md`;
+  `docs/archive/mutation-range-mismatch/active-risk-analysis.md` (Tier 5).
+- Trigger: real-session metrics show one of these routes firing often enough that
+  its broad write is a measurable cost, or the `modules` create's `ensure*` and
+  the module delete's `removeModuleReferences` get scoped to validate-only.
+
 ## Cross-cutting and audit maintenance
 
 ### ~~Fastify-backed Vite dev mode still needs an owner decision~~ **Resolved**

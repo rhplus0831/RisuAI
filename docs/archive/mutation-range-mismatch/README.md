@@ -1,6 +1,21 @@
-# Command Mutation-Range Narrowing Plan
+# Command Mutation-Range Narrowing Plan (ARCHIVED 2026-06-03)
 
 Date: 2026-06-03
+
+> **ARCHIVED — workstream complete.** Moved from `docs/plan/` to
+> `docs/archive/mutation-range-mismatch/` on 2026-06-03 after Phases 0–8 landed.
+> Every over-broad command write was narrowed to its target range, or held at a
+> documented safe floor: the Tier 1–4 settings/plugin-storage/single-row/collection
+> paths, the projection-range splits (Phase 5), the gate-complete verification
+> budgets (Phase 7), and the character-scoped Tier-5 routes — the script/trigger
+> PUTs, `DELETE chats/:id`, and `DELETE characters/:id` — narrowed onto
+> `targeted-character-row` (Phase 8). The only routes left at their broad
+> `message-free` floor by choice are the rare creates (`POST characters`,
+> `create-and-select`, `POST modules`) and `DELETE modules/:id` (separate
+> cross-table blocker), tracked in [`../leftover.md`](../leftover.md). These docs
+> are kept as the historical plan, verification record, and phase/slice detail;
+> prefer [`../../../STRUCTURE.md`](../../../STRUCTURE.md) and the code for current
+> state.
 
 This directory tracks the command mutation-range narrowing work. A
 mutation-range mismatch is a command that changes a small slice of state but
@@ -49,10 +64,10 @@ inventory. The code remains the source of truth.
   fix `writeCharacterSelectionRows`.
 - `server/fastify/src/routes/projection.ts` - `RESOURCE_PROJECTION_FIELDS` and
   the narrow `characterSelection` projection.
-- [`../structure/server-projection-and-bridges.md`](../structure/server-projection-and-bridges.md)
-  and [`../structure/data-and-events.md`](../structure/data-and-events.md) -
+- [`../../structure/server-projection-and-bridges.md`](../../structure/server-projection-and-bridges.md)
+  and [`../../structure/data-and-events.md`](../../structure/data-and-events.md) -
   projection, hydration, revision, event, and active-writer references.
-- [`../../STRUCTURE.md`](../../STRUCTURE.md) - present-tense code navigation.
+- [`../../../STRUCTURE.md`](../../../STRUCTURE.md) - present-tense code navigation.
 
 ## Reference Fix
 
