@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // layer plus the prefetch buffer.
 
 const commandSpies = vi.hoisted(() => ({
-  currentChatStateSnapshot: vi.fn(() => ({ snapshot: true })),
-  dispatchReplaceMessages: vi.fn(),
-  dispatchUpdateMessage: vi.fn(),
+  currentChatScopedSnapshot: vi.fn(() => ({ snapshot: true })),
+  dispatchReplaceMessagesScoped: vi.fn(),
+  dispatchUpdateMessageScoped: vi.fn(),
   ensureMessageId: vi.fn((message: { chatId?: string }) => {
     if (!message.chatId) message.chatId = 'minted'
     return message.chatId
@@ -152,8 +152,8 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
     await unReroll()
     expect(getRerollId()).toBe(1)
     expect(tailUids()).toEqual(['u1', 'g2'])
-    expect(commandSpies.dispatchReplaceMessages).toHaveBeenCalledTimes(1)
-    expect(commandSpies.dispatchReplaceMessages.mock.calls[0][0]).toBe('chat-1')
+    expect(commandSpies.dispatchReplaceMessagesScoped).toHaveBeenCalledTimes(1)
+    expect(commandSpies.dispatchReplaceMessagesScoped.mock.calls[0][0]).toBe('chat-1')
   })
 
   it('reroll navigates forward to the next candidate without generating', async () => {

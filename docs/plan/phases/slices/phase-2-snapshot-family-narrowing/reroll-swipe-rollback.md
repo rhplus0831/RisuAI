@@ -1,7 +1,18 @@
 # Reroll / Swipe Rollback
 
-Status: planned. Phase 2. Depends on the Phase 0 `currentChatScopedSnapshot`.
+Status: implemented. Phase 2. Depends on the Phase 0 `currentChatScopedSnapshot`.
 Phase 3 handles redundant clone removal.
+
+Landed: `applyTailDataSwap`, `applyTailSlice`, and `applyTranscript` in
+`rerollNavigation.svelte.ts` capture `currentChatScopedSnapshot()` instead of
+`currentChatStateSnapshot()`, and persist through `dispatchUpdateMessageScoped` /
+`dispatchReplaceMessagesScoped` (the Phase 0 chat-scoped dispatch variants), so a
+failed swipe restores only the active chat row, never the whole characters array.
+The redundant `safeStructuredClone(record.message)` / full-transcript clones are
+left to Phase 3. Proof: `rerollNavigation.rollback.test.ts` (clone-cost: a swipe
+never serializes the large sibling transcript; rollback: a failed
+`dispatchReplaceMessagesScoped` restores only the active chat). The unit and guard
+suites now assert the scoped dispatch variants.
 
 ## Scope
 

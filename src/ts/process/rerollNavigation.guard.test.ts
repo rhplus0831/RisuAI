@@ -11,9 +11,9 @@ vi.mock('../platform', async (importActual) => ({
 }))
 
 const commandSpies = vi.hoisted(() => ({
-  currentChatStateSnapshot: vi.fn(() => ({ snapshot: true })),
-  dispatchReplaceMessages: vi.fn(),
-  dispatchUpdateMessage: vi.fn(),
+  currentChatScopedSnapshot: vi.fn(() => ({ snapshot: true })),
+  dispatchReplaceMessagesScoped: vi.fn(),
+  dispatchUpdateMessageScoped: vi.fn(),
   ensureMessageId: vi.fn((message: { chatId?: string }) => {
     if (!message.chatId) message.chatId = 'minted'
     return message.chatId
@@ -84,7 +84,7 @@ describe('reroll swipe under the read-only projection guard', () => {
     await expect(unReroll()).resolves.toBeUndefined()
     expect(tailUid()).toBe('g2')
     expect(getRerollId()).toBe(1)
-    expect(commandSpies.dispatchReplaceMessages).toHaveBeenCalledTimes(1)
+    expect(commandSpies.dispatchReplaceMessagesScoped).toHaveBeenCalledTimes(1)
   })
 
   it('reroll navigates forward on the frozen projection', async () => {

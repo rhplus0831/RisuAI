@@ -1,9 +1,9 @@
 import { get } from 'svelte/store'
 import { DBState, selectedCharID } from '../stores.svelte'
 import {
-  currentChatStateSnapshot,
-  dispatchReplaceMessages,
-  dispatchUpdateMessage,
+  currentChatScopedSnapshot,
+  dispatchReplaceMessagesScoped,
+  dispatchUpdateMessageScoped,
   ensureMessageId,
 } from '../chatCommands'
 import { safeStructuredClone } from '../polyfill'
@@ -80,7 +80,7 @@ export function markRerollChar(): void {
 
 /** Swap just the active tail message's `data` (prefetch reroll), then persist. */
 function applyTailDataSwap(data: string): void {
-  const previous = currentChatStateSnapshot()
+  const previous = currentChatScopedSnapshot()
   const messageId = withTrustedServerProjectionWrite(() => {
     const record = activeChatRecord()
     const message = record.message[record.message.length - 1]
@@ -88,12 +88,12 @@ function applyTailDataSwap(data: string): void {
     message.data = data
     return id
   })
-  dispatchUpdateMessage(messageId, { data }, previous)
+  dispatchUpdateMessageScoped(messageId, { data }, previous)
 }
 
 /** Overwrite the last `slice.length` messages with a saved candidate, then persist. */
 function applyTailSlice(slice: Message[]): void {
-  const previous = currentChatStateSnapshot()
+  const previous = currentChatScopedSnapshot()
   withTrustedServerProjectionWrite(() => {
     const msgs = activeChatRecord().message
     for (let i = 0; i < slice.length; i++) {
@@ -102,19 +102,19 @@ function applyTailSlice(slice: Message[]): void {
   })
   const record = activeChatRecord()
   if (record.id) {
-    dispatchReplaceMessages(record.id, safeStructuredClone(record.message), previous)
+    dispatchReplaceMessagesScoped(record.id, safeStructuredClone(record.message), previous)
   }
 }
 
 /** Replace the whole active transcript (regenerate prep: the popped tail), then persist. */
 function applyTranscript(messages: Message[]): void {
-  const previous = currentChatStateSnapshot()
+  const previous = currentChatScopedSnapshot()
   withTrustedServerProjectionWrite(() => {
     activeChatRecord().message = messages
   })
   const record = activeChatRecord()
   if (record.id) {
-    dispatchReplaceMessages(record.id, messages, previous)
+    dispatchReplaceMessagesScoped(record.id, messages, previous)
   }
 }
 
