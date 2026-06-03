@@ -5,18 +5,23 @@ Date: 2026-06-04
 This is the router for the frontend deep-clone / hot-path narrowing workstream.
 Use it first, then open only the phase or slice needed for the next task.
 
-Current status reflects the code and commit history through `804ecad1`
-(`perf: copy-on-write projection write guard (Phase 1)`). Phase 0 foundations
-and the Phase 1 primary guard fix have landed; Phase 2 is the next hot-path
-snapshot-narrowing work.
+Current status reflects the code and commit history through `727a28c0`
+(`perf: narrow scriptstate var writes to per-chat rollback (Phase 2)`). Phase 0
+foundations, the Phase 1 primary guard fix, and the first three Phase 2 slices
+have landed; the remaining three Phase 2 slices are the next work.
 
 ## Current Snapshot
 
-Analysis is complete. Phase 0 foundations are implemented, and Phase 1 removed
-the guard clone amplifier. No Phase 2 production hot-path snapshot call site has
-been rewired yet. The reference fix `c9e728b1` already narrowed character
-select; Phase 2 applies that pattern to message, send, trigger, reroll, watcher,
-and editor paths.
+Analysis is complete. Phase 0 foundations are implemented, Phase 1 removed the
+guard clone amplifier, and Phase 2 is in progress (3 of 6 slices landed). The
+reference fix `c9e728b1` already narrowed character select; Phase 2 applies that
+pattern to the remaining message, send, trigger, reroll, watcher, and editor
+paths.
+
+Phase 2 slices landed: chat-metadata watcher (`e5e183da`), chat-scoped message
+paths (`2070df02`), scriptstate-scoped var writes (`727a28c0`). Remaining Phase 2
+slices (planned): reroll/swipe rollback, character-row snapshot paths,
+global-lorebook snapshot paths.
 
 - Phase 0, implemented: narrow snapshot kit + clone-cost harness. No
   snapshot-family production call sites were rewired (that starts in Phase 2).
@@ -24,8 +29,10 @@ and editor paths.
   the two whole-`Database` clones from every guarded write (~100 sites). The
   optional secondary streaming/completion batching slice is deferred — now that
   each guard transition is O(1), batching per-chunk transitions has little value.
-- Phase 2, planned: route Critical/High `current*StateSnapshot` call sites
-  through the narrow kit.
+- Phase 2, in progress (3 of 6 slices): route Critical/High
+  `current*StateSnapshot` call sites through the narrow kit. Landed: chat-metadata
+  watcher, chat-scoped message paths, scriptstate-scoped var writes. Remaining:
+  reroll/swipe rollback, character-row paths, global-lorebook paths.
 - Phase 3, planned: reroll clone reorder/removal and `runTrigger` early return.
 - Phase 4, planned: script-definition watcher rollback scoped at dispatch.
 - Phase 5, planned: prompt-template debounce, single-item mutation, and cheaper
@@ -43,7 +50,9 @@ and editor paths.
   copy-on-write / proxy unwrap-rewrap (primary slice implemented; batching
   slice deferred).
 - [Phase 2](phases/phase-2-snapshot-family-narrowing.md): chat, message, send,
-  trigger, reroll, character, and lorebook snapshot call sites.
+  trigger, reroll, character, and lorebook snapshot call sites (3 of 6 slices
+  landed: chat-metadata watcher, chat-scoped message paths, scriptstate var
+  writes; reroll/character-row/global-lorebook remain).
 - [Phase 3](phases/phase-3-cheap-wins.md): reroll clone reorder/removal and
   `runTrigger` clone-before-early-return.
 - [Phase 4](phases/phase-4-script-definition-watcher.md): script-definition
