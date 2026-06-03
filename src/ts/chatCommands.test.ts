@@ -30,10 +30,12 @@ import {
   dispatchCreateChat,
   dispatchCreateChatFolder,
   dispatchPatchChatScriptstate,
+  dispatchPatchChatScriptstateScoped,
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
   dispatchReplaceMessagesScoped,
   dispatchUpdateChat,
+  dispatchUpdateChatNoteScoped,
   restoreChatFolderRowMetadata,
   restoreChatRowMetadata,
   restoreChatScopedState,
@@ -705,5 +707,73 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     // sibling character/chat untouched; the active character's other chat too
     expect(DBState.db.characters[0].chats[1].id).toBe('chat-b')
     expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent')
+  })
+})
+
+describe('Phase 2 scriptstate-scoped var dispatch', () => {
+  it('dispatchPatchChatScriptstateScoped restores only the chat scriptstate on failure', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a/scriptstate') {
+          return jsonResponse({ error: 'nope' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    const previous = currentChatScriptstateSnapshot(true)
+    // optimistic scriptstate edit plus an unrelated concurrent message edit on
+    // the same chat (a whole-chat restore would have wiped it)
+    DBState.db.characters[0].chats[0].scriptstate!.$score = 'optimistic'
+    DBState.db.characters[0].chats[0].message.push({ role: 'user', data: 'keep', chatId: 'm-keep' })
+
+    dispatchPatchChatScriptstateScoped('chat-a', { $score: 'optimistic' }, [], previous)
+    await waitForCallCount(calls, 2)
+
+    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
+    expect(DBState.db.characters[0].chats[0].message).toHaveLength(1)
+  })
+
+  it('dispatchUpdateChatNoteScoped restores only the chat note on failure', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a') return jsonResponse({ error: 'nope' }, 500)
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    DBState.db.characters[0].chats[0].note = 'original note'
+
+    const previous = currentChatScriptstateSnapshot(true)
+    expect(previous.note).toBe('original note')
+
+    DBState.db.characters[0].chats[0].note = 'optimistic note'
+    DBState.db.characters[0].chats[0].scriptstate!.$score = 'keep'
+
+    dispatchUpdateChatNoteScoped('chat-a', 'optimistic note', previous)
+    await waitForCallCount(calls, 2)
+
+    expect(DBState.db.characters[0].chats[0].note).toBe('original note')
+    // the snapshot also restored scriptstate to its captured value
+    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
   })
 })

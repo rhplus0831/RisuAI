@@ -831,11 +831,11 @@ export function dispatchReplaceMessagesScoped(
   dispatchReplaceMessagesWith(chatId, messages, () => restoreChatScopedState(previous))
 }
 
-export function dispatchPatchChatScriptstate(
+function dispatchPatchChatScriptstateWith(
   chatId: string,
   patch: ChatScriptstatePatch,
   deleteKeys: string[],
-  previous: ChatStateSnapshot,
+  rollback: () => void,
 ): void {
   const commandPatch = sanitizeScriptstatePatch(patch)
   const commandDeleteKeys = deleteKeys.filter((key) => key.length > 0)
@@ -848,18 +848,61 @@ export function dispatchPatchChatScriptstate(
         patch: commandPatch,
         deleteKeys: commandDeleteKeys,
       }),
-    () => restoreChatState(previous),
+    rollback,
+  )
+}
+
+export function dispatchPatchChatScriptstate(
+  chatId: string,
+  patch: ChatScriptstatePatch,
+  deleteKeys: string[],
+  previous: ChatStateSnapshot,
+): void {
+  dispatchPatchChatScriptstateWith(chatId, patch, deleteKeys, () => restoreChatState(previous))
+}
+
+// Scriptstate-scoped rollback variant for single-key var writes (`setVar`,
+// `setChatVar`, `/setvar`, `/addvar`): a failed patch restores only the active
+// chat's `scriptstate` map (and optional `note`), never the whole array.
+export function dispatchPatchChatScriptstateScoped(
+  chatId: string,
+  patch: ChatScriptstatePatch,
+  deleteKeys: string[],
+  previous: ChatScriptstateSnapshot,
+): void {
+  dispatchPatchChatScriptstateWith(chatId, patch, deleteKeys, () =>
+    restoreChatScriptstate(previous),
   )
 }
 
 export function dispatchCurrentChatScriptstatePatch(
   patch: ChatScriptstatePatch,
   deleteKeys: string[] = [],
-  previous: ChatStateSnapshot = currentChatStateSnapshot(),
+  previous: ChatScriptstateSnapshot = currentChatScriptstateSnapshot(),
 ): void {
   const chatId = currentSelectedChatId()
   if (!chatId) return
-  dispatchPatchChatScriptstate(chatId, patch, deleteKeys, previous)
+  dispatchPatchChatScriptstateScoped(chatId, patch, deleteKeys, previous)
+}
+
+// Author-note write (`v2SetAuthorNote`) with a scriptstate-scoped rollback. The
+// note is a chat-row scalar, so the command is a chat update, but the rollback
+// reuses the pass's `ChatScriptstateSnapshot` (which also restores `note`).
+export function dispatchUpdateChatNoteScoped(
+  chatId: string,
+  note: string,
+  previous: ChatScriptstateSnapshot,
+): void {
+  runChatCommand(
+    (baseRevision) =>
+      updateChatCommand({
+        baseRevision,
+        chatId,
+        patch: sanitizeChatPatch({ note }),
+        select: false,
+      }),
+    () => restoreChatScriptstate(previous),
+  )
 }
 
 export function currentSelectedChatId(): string | undefined {

@@ -1,6 +1,19 @@
 # Scriptstate-Scoped Var Writes
 
-Status: planned. Phase 2. Depends on the Phase 0 `ChatScriptstateSnapshot`.
+Status: implemented. Phase 2. Depends on the Phase 0 `ChatScriptstateSnapshot`.
+
+Landed: single-key scriptstate and author-note writes capture
+`currentChatScriptstateSnapshot()` instead of `currentChatStateSnapshot()`. New
+scoped dispatchers (sharing the broad cores): `dispatchPatchChatScriptstateScoped`
+and `dispatchUpdateChatNoteScoped`, both rolling back via `restoreChatScriptstate`
+(scriptstate map + optional note, never the characters array);
+`dispatchCurrentChatScriptstatePatch` now takes a `ChatScriptstateSnapshot`. In
+`runTrigger`, a lazy-memoized `captureScriptstateRollback()` mints one snapshot
+per pass (captured on the first `setVar`/`v2SetAuthorNote`, reused after, free on
+display passes) — `setVar` → `dispatchPatchChatScriptstateScoped`,
+`v2SetAuthorNote` → `dispatchUpdateChatNoteScoped`. `chatVar.svelte.ts::setChatVar`
+and `command.ts` `/setvar`/`/addvar` also narrowed. Proof: scoped scriptstate +
+note failure-rollback tests in `chatCommands.test.ts`.
 
 ## Scope
 

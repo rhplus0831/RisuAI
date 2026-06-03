@@ -3,7 +3,7 @@ import { DBState, selectedCharID } from '../stores.svelte'
 import { parseKeyValue } from '../util'
 import { setChatVarBackend } from './chatVarBackend'
 import { setParserStateBackend } from './parserStateBackend'
-import { currentChatStateSnapshot, dispatchCurrentChatScriptstatePatch } from '../chatCommands'
+import { currentChatScriptstateSnapshot, dispatchCurrentChatScriptstatePatch } from '../chatCommands'
 
 export function getChatVar(key: string): string {
   const selectedChar = get(selectedCharID)
@@ -33,7 +33,7 @@ export function setChatVar(key: string, value: string): void {
   const chat =
     DBState.db.characters[selectedChar]?.chats?.[DBState.db.characters[selectedChar].chatPage]
   if (!chat) return
-  const previous = currentChatStateSnapshot()
+  const previous = currentChatScriptstateSnapshot()
   chat.scriptstate ??= {}
   chat.scriptstate['$' + key] = value
   dispatchCurrentChatScriptstatePatch({ ['$' + key]: value }, [], previous)

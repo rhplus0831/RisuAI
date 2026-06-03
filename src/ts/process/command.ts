@@ -14,9 +14,9 @@ import { sendChat } from './index.svelte'
 import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { runTrigger } from './triggers'
 import {
-  currentChatStateSnapshot,
+  currentChatScriptstateSnapshot,
   dispatchCompatibleChatUpdateScoped,
-  dispatchPatchChatScriptstate,
+  dispatchPatchChatScriptstateScoped,
   type ChatScopedSnapshot,
 } from '../chatCommands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
@@ -198,7 +198,7 @@ async function processCommand(command: string, pipe: string): Promise<false | st
     }
     case 'setvar': {
       const selectedChar = get(selectedCharID)
-      const previous = currentChatStateSnapshot()
+      const previous = currentChatScriptstateSnapshot()
       const stateKey = '$' + namedArg['key']
       let chatId: string | undefined
       withTrustedServerProjectionWrite(() => {
@@ -211,13 +211,13 @@ async function processCommand(command: string, pipe: string): Promise<false | st
         setDatabase(db)
       })
       if (chatId) {
-        dispatchPatchChatScriptstate(chatId, { [stateKey]: arg }, [], previous)
+        dispatchPatchChatScriptstateScoped(chatId, { [stateKey]: arg }, [], previous)
       }
       return ''
     }
     case 'addvar': {
       const selectedChar = get(selectedCharID)
-      const previous = currentChatStateSnapshot()
+      const previous = currentChatScriptstateSnapshot()
       const stateKey = '$' + namedArg['key']
       let chatId: string | undefined
       let newValue = ''
@@ -232,7 +232,7 @@ async function processCommand(command: string, pipe: string): Promise<false | st
         setDatabase(db)
       })
       if (chatId) {
-        dispatchPatchChatScriptstate(chatId, { [stateKey]: newValue }, [], previous)
+        dispatchPatchChatScriptstateScoped(chatId, { [stateKey]: newValue }, [], previous)
       }
       return ''
     }

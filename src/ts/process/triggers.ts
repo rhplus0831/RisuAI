@@ -32,9 +32,10 @@ import { writeInlayImage } from './files/inlays'
 import { runScripted } from './scriptings'
 import { calcString } from './infunctions'
 import {
-  currentChatStateSnapshot,
-  dispatchPatchChatScriptstate,
-  dispatchUpdateChat,
+  currentChatScriptstateSnapshot,
+  dispatchPatchChatScriptstateScoped,
+  dispatchUpdateChatNoteScoped,
+  type ChatScriptstateSnapshot,
 } from '../chatCommands'
 import {
   currentLorebookStateSnapshot,
@@ -1233,6 +1234,16 @@ export async function runTrigger(
 
   let tempVars: Record<string, string> = arg.tempVars ?? {}
 
+  // One scriptstate-scoped rollback for the whole pass, captured lazily on the
+  // first var/author-note write and reused across every `setVar`/`v2SetAuthorNote`
+  // in this pass. Captures only the active chat's scriptstate map + note, never
+  // the whole characters array, and stays free on display passes that write none.
+  let scriptstateRollbackSnapshot: ChatScriptstateSnapshot | null = null
+  const captureScriptstateRollback = (): ChatScriptstateSnapshot => {
+    scriptstateRollbackSnapshot ??= currentChatScriptstateSnapshot(true)
+    return scriptstateRollbackSnapshot
+  }
+
   let localVarScopes: Record<number, Record<string, string>>[] = [{}]
   let currentIndent = 0
 
@@ -1341,7 +1352,7 @@ export async function runTrigger(
     const selectedCharId = get(selectedCharID)
     const currentCharacter = getCurrentCharacter()
     const db = getDatabase()
-    const previous = currentChatStateSnapshot()
+    const previous = captureScriptstateRollback()
     varChanged = true
     chat.scriptstate ??= {}
     const stateKey = '$' + key
@@ -1350,7 +1361,7 @@ export async function runTrigger(
     currentCharacter.chats[currentCharacter.chatPage].scriptstate = chat.scriptstate
     db.characters[selectedCharId].chats[currentCharacter.chatPage].scriptstate = chat.scriptstate
     if (chat.id) {
-      dispatchPatchChatScriptstate(chat.id, { [stateKey]: value }, [], previous)
+      dispatchPatchChatScriptstateScoped(chat.id, { [stateKey]: value }, [], previous)
     }
   }
 
@@ -3078,7 +3089,10 @@ export async function runTrigger(
           chat.note = value
 
           if (!arg.displayMode) {
-            const chatStateSnapshot = currentChatStateSnapshot()
+            // Capture before the projection write mutates the note, so the
+            // scoped rollback restores the prior note (shared with the pass's
+            // setVar snapshot).
+            const noteRollback = captureScriptstateRollback()
             let chatId: string | undefined
             withTrustedServerProjectionWrite(() => {
               const currentCharacter = getCurrentCharacter()
@@ -3089,7 +3103,7 @@ export async function runTrigger(
               }
             })
             if (chatId) {
-              dispatchUpdateChat(chatId, { note: value }, chatStateSnapshot)
+              dispatchUpdateChatNoteScoped(chatId, value, noteRollback)
             }
           }
           break
