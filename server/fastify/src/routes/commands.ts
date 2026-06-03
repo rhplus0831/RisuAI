@@ -3860,7 +3860,14 @@ export function registerCommandRoutes(
           character.globalLore = entries
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
-            event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: characterId },
+            // `globalLore` lives in one character row; a foreign refresh ships
+            // only that character via the per-character `characterLorebook`
+            // resource (not the broad global `lorebook` re-ship).
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: characterId,
+              resource: 'characterLorebook',
+            },
             extra: { characterId },
           }
         },
@@ -3898,10 +3905,14 @@ export function registerCommandRoutes(
           chat.localLore = entries
           writeSingleChatRow(innerDb, chatId, chat)
           return {
+            // `localLore` lives in the chat row, so a foreign refresh uses the
+            // `chat` resource (chat metadata) instead of the broad global
+            // `lorebook` re-ship of characters + modules + loreBook.
             event: {
               ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
               id: chatId,
               parentId,
+              resource: 'chat',
             },
             extra: { chatId },
           }
@@ -4506,7 +4517,14 @@ export function registerCommandRoutes(
           // lorebook repairs across characters/chats are dropped to validate-only.
           writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
-            event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: moduleId },
+            // Only the `modules` table is written, so a foreign refresh ships
+            // just `modules` via the module-scoped resource (not the broad
+            // global `lorebook` re-ship).
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: moduleId,
+              resource: 'moduleUpdated',
+            },
             extra: { moduleId },
           }
         },

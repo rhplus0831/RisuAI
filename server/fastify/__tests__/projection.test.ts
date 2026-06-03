@@ -579,6 +579,110 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields.characters[0]).not.toHaveProperty('globalLore')
     expect(body.fields.characters[0].chats[0].message).toEqual([])
   })
+
+  it('narrows a global-lorebook refresh to loreBook fields (globalLorebook split)', async () => {
+    // Phase 5 lorebook-resource-split slice: a global-lorebook edit no longer
+    // re-ships every character + module via the broad `lorebook` resource.
+    const revision = await importDatabase({
+      loreBook: [{ id: 'book-a', name: 'A', data: [] }],
+      loreBookPage: 0,
+      modules: [{ id: 'mod-a', name: 'Module A', description: '' }],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          globalLore: [{ key: 'k', content: 'lore' }],
+          chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hi' }] }],
+        },
+      ],
+    })
+
+    const entries = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/lorebooks/book-a/entries',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        entries: [
+          {
+            id: 'e1',
+            key: 'k',
+            secondkey: '',
+            insertorder: 100,
+            comment: 'c',
+            content: 'x',
+            mode: 'normal',
+            alwaysActive: false,
+            selective: false,
+          },
+        ],
+      },
+    })
+    expect(entries.statusCode).toBe(200)
+    expect(entries.json().event.resource).toBe('globalLorebook')
+
+    const body = (await getProjection('globalLorebook')).json()
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields).sort()).toEqual(['loreBook', 'loreBookPage'])
+    expect(body.fields.loreBook[0].data[0].id).toBe('e1')
+    // The global-lorebook refresh must never re-ship characters or modules.
+    expect(body.fields).not.toHaveProperty('characters')
+    expect(body.fields).not.toHaveProperty('modules')
+  })
+
+  it('narrows a character-lorebook refresh to the changed character (lorebook split)', async () => {
+    // Phase 5 lorebook-resource-split slice: a character globalLore edit ships
+    // only that character's globalLore, not the whole characters array.
+    const revision = await importDatabase({
+      loreBook: [{ id: 'book-a', name: 'A', data: [] }],
+      loreBookPage: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          globalLore: [],
+          chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hi' }], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+        { chaId: 'char-b', name: 'Babbage', globalLore: [], chats: [{ id: 'chat-b', message: [] }] },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const replaced = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/lorebooks',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        entries: [
+          {
+            id: 'gl1',
+            key: 'k',
+            secondkey: '',
+            insertorder: 100,
+            comment: 'c',
+            content: 'x',
+            mode: 'normal',
+            alwaysActive: false,
+            selective: false,
+          },
+        ],
+      },
+    })
+    expect(replaced.statusCode).toBe(200)
+    expect(replaced.json().event.resource).toBe('characterLorebook')
+
+    const body = (await getProjection('characterLorebook', '?id=char-a')).json()
+    expect(body.mode).toBe('character-lorebook')
+    expect(body.characterId).toBe('char-a')
+    expect(body.globalLore).toHaveLength(1)
+    expect(body.globalLore[0].id).toBe('gl1')
+    // Only the changed character — no second-character data, no full fields blob.
+    expect(body).not.toHaveProperty('fields')
+    expect(JSON.stringify(body)).not.toContain('Babbage')
+  })
 })
 
 describe('bulk chat message hydration route', () => {

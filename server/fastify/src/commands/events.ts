@@ -380,29 +380,34 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'generation.persisted',
     resource: 'generation',
   },
+  // The global-lorebook commands change only `loreBook`/`loreBookPage`, so they
+  // carry the narrow `globalLorebook` resource (split out of the broad
+  // `lorebook` resource that also re-shipped every character + module). The
+  // character/chat/module lorebook-entry routes override `lorebookEntriesReplaced`
+  // with their own per-row resource (characterLorebook / chat / moduleUpdated).
   lorebookCreated: {
     type: 'lorebook.created',
-    resource: 'lorebook',
+    resource: 'globalLorebook',
   },
   lorebookUpdated: {
     type: 'lorebook.updated',
-    resource: 'lorebook',
+    resource: 'globalLorebook',
   },
   lorebookDeleted: {
     type: 'lorebook.deleted',
-    resource: 'lorebook',
+    resource: 'globalLorebook',
   },
   lorebookReordered: {
     type: 'lorebook.reordered',
-    resource: 'lorebook',
+    resource: 'globalLorebook',
   },
   lorebookSelected: {
     type: 'lorebook.selected',
-    resource: 'lorebook',
+    resource: 'globalLorebook',
   },
   lorebookEntriesReplaced: {
     type: 'lorebook.entries.replaced',
-    resource: 'lorebook',
+    resource: 'globalLorebook',
   },
   scriptDefinitionsReplaced: {
     type: 'scriptDefinitions.replaced',

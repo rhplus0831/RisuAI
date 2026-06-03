@@ -5740,7 +5740,7 @@ describe('Phase 9-4a lorebook commands', () => {
       event: {
         type: 'lorebook.created',
         revision: 2,
-        resource: 'lorebook',
+        resource: 'globalLorebook',
         id: 'book-b',
       },
       lorebookId: 'book-b',
@@ -5776,7 +5776,7 @@ describe('Phase 9-4a lorebook commands', () => {
       event: {
         type: 'lorebook.selected',
         revision: 5,
-        resource: 'lorebook',
+        resource: 'globalLorebook',
         id: 'book-a',
       },
       selectedLorebookId: 'book-a',
@@ -5882,7 +5882,8 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(global.statusCode).toBe(200)
     expect(global.json().event).toMatchObject({
       type: 'lorebook.entries.replaced',
-      resource: 'lorebook',
+      // The global lorebook entries edit ships only loreBook/loreBookPage.
+      resource: 'globalLorebook',
       id: 'book-a',
     })
 
@@ -5894,6 +5895,11 @@ describe('Phase 9-4a lorebook commands', () => {
     })
     expect(character.statusCode).toBe(200)
     expect(character.json()).toMatchObject({ revision: 3, characterId: 'char-a' })
+    // The character globalLore edit ships only the changed character row.
+    expect(character.json().event).toMatchObject({
+      resource: 'characterLorebook',
+      id: 'char-a',
+    })
 
     const chat = await harness.app.inject({
       method: 'PUT',
@@ -5902,7 +5908,8 @@ describe('Phase 9-4a lorebook commands', () => {
       payload: { baseRevision: 3, entries: [entry('entry-chat', 'Chat')] },
     })
     expect(chat.statusCode).toBe(200)
-    expect(chat.json().event).toMatchObject({ id: 'chat-a', parentId: 'char-a' })
+    // localLore lives in the chat row, so a foreign refresh uses the `chat` resource.
+    expect(chat.json().event).toMatchObject({ resource: 'chat', id: 'chat-a', parentId: 'char-a' })
 
     const module = await harness.app.inject({
       method: 'PUT',
@@ -5912,6 +5919,8 @@ describe('Phase 9-4a lorebook commands', () => {
     })
     expect(module.statusCode).toBe(200)
     expect(module.json()).toMatchObject({ revision: 5, moduleId: 'mod-a' })
+    // One module's lorebook is a single `modules`-row edit.
+    expect(module.json().event).toMatchObject({ resource: 'moduleUpdated', id: 'mod-a' })
 
     const bootstrap = await harness.app.inject({
       method: 'GET',

@@ -13,6 +13,13 @@ export type ServerProjectionResourceResult =
       currentChar: number
       lastInteraction?: number
     }
+  | {
+      status: 'ok'
+      revision: number
+      mode: 'character-lorebook'
+      characterId: string
+      globalLore: unknown[]
+    }
   | { status: 'ok'; revision: number; mode: 'full' }
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
@@ -112,6 +119,22 @@ export async function fetchServerProjectionResource(
       ...(typeof record.lastInteraction === 'number'
         ? { lastInteraction: record.lastInteraction }
         : {}),
+    }
+  }
+
+  if (record.mode === 'character-lorebook') {
+    if (typeof record.characterId !== 'string' || record.characterId.trim() === '') {
+      return { status: 'error', error: 'Invalid character-lorebook response' }
+    }
+    if (!Array.isArray(record.globalLore)) {
+      return { status: 'error', error: 'Invalid character-lorebook response' }
+    }
+    return {
+      status: 'ok',
+      revision: revision as number,
+      mode: 'character-lorebook',
+      characterId: record.characterId,
+      globalLore: record.globalLore as unknown[],
     }
   }
 

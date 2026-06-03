@@ -48,6 +48,13 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // validate-only), so a foreign refresh ships just `modules`.
   moduleScriptDefinition: ['modules'],
   moduleTriggerDefinition: ['modules'],
+  // Global-lorebook commands (create/patch/delete/reorder/select/entries) change
+  // only the global lorebook collection + page pointer.
+  globalLorebook: ['loreBook', 'loreBookPage'],
+  // Legacy/recovery only: no live command still emits `lorebook` (the global
+  // commands moved to `globalLorebook`; the character/chat/module lorebook-entry
+  // commands moved to characterLorebook/chat/moduleUpdated). Kept broad so a
+  // replayed historical `lorebook` event from an older event log still applies.
   lorebook: ['characters', 'modules', 'loreBook', 'loreBookPage'],
   preset: ['botPresets', 'botPresetsId'],
   // `prompt` (prompt-settings) writes ~21 scattered settings scalars, not a
@@ -112,6 +119,7 @@ const NARROW_STUBBED_PROJECTION_RESOURCES = new Set([
   'triggerDefinition',
   'moduleScriptDefinition',
   'moduleTriggerDefinition',
+  'globalLorebook',
   'lorebook',
   'module',
   'moduleUpdated',

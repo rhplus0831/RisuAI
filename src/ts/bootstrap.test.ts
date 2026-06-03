@@ -430,6 +430,64 @@ describe('web bootstrap startup source', () => {
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
   })
 
+  it('applies a character-lorebook projection to one character without rehydrating chats', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            { chaId: 'char-a', name: 'Ada', globalLore: [], chats: [{ id: 'chat-a' }] },
+            {
+              chaId: 'char-b',
+              name: 'Babbage',
+              globalLore: [{ key: 'old', content: 'old' }],
+              chats: [{ id: 'chat-b' }],
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'character-lorebook' as const,
+      characterId: 'char-a',
+      globalLore: [{ key: 'new', content: 'new lore' }],
+    }))
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({
+      type: 'lorebook.entries.replaced',
+      revision: 6,
+      resource: 'characterLorebook',
+      id: 'char-a',
+    })
+
+    await vi.waitFor(() => {
+      expect(peekCachedServerCommandRevision()).toBe(6)
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('characterLorebook', {
+      id: 'char-a',
+      parentId: undefined,
+    })
+    // Only char-a's globalLore changed; char-b is untouched.
+    expect(DBState.db.characters?.[0].globalLore).toEqual([{ key: 'new', content: 'new lore' }])
+    expect(DBState.db.characters?.[1].globalLore).toEqual([{ key: 'old', content: 'old' }])
+    // No broad characters merge, so no chat re-stub / re-hydration.
+    expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
+    expect(hydrationSpies.hydrateActiveChat).not.toHaveBeenCalled()
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
   it('applies character selection projections without replacing characters or rehydrating chats', async () => {
     serverBootstrapState.response = {
       status: 'ok',
