@@ -32,8 +32,8 @@ import {
   type ServerCommandResult,
 } from '../server/commands'
 import {
-  currentCharacterStateSnapshot,
-  dispatchCompatibleCharacterUpdate,
+  currentCharacterRowSnapshot,
+  dispatchCompatibleCharacterUpdateScoped,
 } from '../characterCommands'
 import { currentChatStateSnapshot, dispatchCompatibleChatUpdate } from '../chatCommands'
 import {
@@ -965,7 +965,7 @@ export function setCurrentCharacter(
     const shouldDispatch = options.dispatchServerCommand ?? true
     const index = get(selectedCharID)
     const previousState =
-      shouldDispatch && canUseServerCommands() ? currentCharacterStateSnapshot() : null
+      shouldDispatch && canUseServerCommands() ? currentCharacterRowSnapshot(index) : null
     const previousCharacter =
       previousState && DBState.db.characters
         ? $state.snapshot(DBState.db.characters[index])
@@ -976,7 +976,7 @@ export function setCurrentCharacter(
     }
     DBState.db.characters[index] = char
     if (previousState) {
-      dispatchCompatibleCharacterUpdate(previousCharacter, char, previousState)
+      dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
     }
   })
 }
@@ -992,7 +992,7 @@ export function getCharacterByIndex(index: number, options: getDatabaseOptions =
 
 export function setCharacterByIndex(index: number, char: character) {
   withTrustedServerProjectionWrite(() => {
-    const previousState = canUseServerCommands() ? currentCharacterStateSnapshot() : null
+    const previousState = canUseServerCommands() ? currentCharacterRowSnapshot(index) : null
     const previousCharacter =
       previousState && DBState.db.characters
         ? $state.snapshot(DBState.db.characters[index])
@@ -1003,7 +1003,7 @@ export function setCharacterByIndex(index: number, char: character) {
     }
     DBState.db.characters[index] = char
     if (previousState) {
-      dispatchCompatibleCharacterUpdate(previousCharacter, char, previousState)
+      dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
     }
   })
 }

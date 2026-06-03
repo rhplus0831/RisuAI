@@ -185,11 +185,14 @@ export function dispatchCreateAndSelectCharacter(
   )
 }
 
-export function dispatchUpdateCharacter(
+// `*With(rollback)` core plus a broad (`CharacterStateSnapshot`) and a single-row
+// (`CharacterRowSnapshot`) export. The scoped variants restore only the target
+// character row on failure; the broad ones remain for create/delete/reorder and
+// any caller that still holds a whole-collection snapshot.
+function dispatchUpdateCharacterWith(
   characterId: string,
   patch: CharacterSnapshot,
-  previous: CharacterStateSnapshot,
-  rollback: (snapshot: CharacterStateSnapshot) => void = restoreCharacterState,
+  rollback: () => void,
 ): void {
   const commandPatch = sanitizeCharacterPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
@@ -200,8 +203,41 @@ export function dispatchUpdateCharacter(
         characterId,
         patch: commandPatch,
       }),
-    () => rollback(previous),
+    rollback,
   )
+}
+
+export function dispatchUpdateCharacter(
+  characterId: string,
+  patch: CharacterSnapshot,
+  previous: CharacterStateSnapshot,
+  rollback: (snapshot: CharacterStateSnapshot) => void = restoreCharacterState,
+): void {
+  dispatchUpdateCharacterWith(characterId, patch, () => rollback(previous))
+}
+
+// Single-row rollback variant of `dispatchUpdateCharacter` for character-FIELD
+// edits: a failed update restores only the target character row (and the
+// selection scalars), never the whole characters array.
+export function dispatchUpdateCharacterScoped(
+  characterId: string,
+  patch: CharacterSnapshot,
+  previous: CharacterRowSnapshot,
+): void {
+  dispatchUpdateCharacterWith(characterId, patch, () => restoreCharacterRow(previous))
+}
+
+function dispatchCompatibleCharacterUpdateWith(
+  previousCharacter: character | undefined,
+  nextCharacter: character | undefined,
+  rollback: () => void,
+): void {
+  const characterId = nextCharacter?.chaId ?? previousCharacter?.chaId
+  if (!characterId || !previousCharacter || !nextCharacter) return
+
+  const patch = changedCharacterFields(previousCharacter, nextCharacter)
+  if (Object.keys(patch).length === 0) return
+  dispatchUpdateCharacterWith(characterId, patch, rollback)
 }
 
 export function dispatchCompatibleCharacterUpdate(
@@ -209,12 +245,22 @@ export function dispatchCompatibleCharacterUpdate(
   nextCharacter: character | undefined,
   previous: CharacterStateSnapshot,
 ): void {
-  const characterId = nextCharacter?.chaId ?? previousCharacter?.chaId
-  if (!characterId || !previousCharacter || !nextCharacter) return
+  dispatchCompatibleCharacterUpdateWith(previousCharacter, nextCharacter, () =>
+    restoreCharacterState(previous),
+  )
+}
 
-  const patch = changedCharacterFields(previousCharacter, nextCharacter)
-  if (Object.keys(patch).length === 0) return
-  dispatchUpdateCharacter(characterId, patch, previous)
+// Single-row rollback variant of `dispatchCompatibleCharacterUpdate` for the
+// character-field update paths (`setCurrentCharacter` / `setCharacterByIndex` and
+// their trigger callers): a failed update restores only that one character row.
+export function dispatchCompatibleCharacterUpdateScoped(
+  previousCharacter: character | undefined,
+  nextCharacter: character | undefined,
+  previous: CharacterRowSnapshot,
+): void {
+  dispatchCompatibleCharacterUpdateWith(previousCharacter, nextCharacter, () =>
+    restoreCharacterRow(previous),
+  )
 }
 
 // Factory-list form of dispatchCompatibleCharacterUpdate so the V3 plugin API

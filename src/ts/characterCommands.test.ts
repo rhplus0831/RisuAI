@@ -16,9 +16,11 @@ import {
   currentCharacterRowSnapshot,
   currentCharacterSelectionSnapshot,
   currentCharacterStateSnapshot,
+  dispatchCompatibleCharacterUpdateScoped,
   restoreCharacterRow,
   setCharacterSupaMemory,
 } from './characterCommands'
+import { setCharacterByIndex } from './storage/database.svelte'
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
@@ -205,5 +207,74 @@ describe('Phase 0 character-row snapshot kit', () => {
 
     const legacy = withCloneInstrumentation(() => currentCharacterStateSnapshot())
     expect(legacy.maxClonedSize).toBeGreaterThanOrEqual(charactersSize)
+  })
+})
+
+describe('Phase 2 character-row scoped dispatch', () => {
+  it('dispatchCompatibleCharacterUpdateScoped rolls back only the target row on failure', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/characters/char-a') return jsonResponse({ error: 'nope' }, 500)
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'Character', chats: [] },
+        { chaId: 'char-b', name: 'Sibling', chats: [] },
+      ],
+      characterOrder: [],
+    } as any
+    selectedCharID.set(0)
+
+    const previous = currentCharacterRowSnapshot(0)
+    const previousCharacter = JSON.parse(JSON.stringify(DBState.db.characters[0]))
+
+    // optimistic edit to the target row plus an unrelated concurrent sibling edit
+    const nextCharacter = { ...previousCharacter, name: 'Optimistic' }
+    DBState.db.characters[0] = nextCharacter as any
+    DBState.db.characters[1].name = 'Concurrent sibling edit'
+
+    dispatchCompatibleCharacterUpdateScoped(previousCharacter as any, nextCharacter as any, previous)
+    await waitForCallCount(calls, 2)
+
+    // the failed update restores only the target row; the sibling edit survives a
+    // whole-array restore would have wiped.
+    expect(DBState.db.characters[0].name).toBe('Character')
+    expect(DBState.db.characters[1].name).toBe('Concurrent sibling edit')
+  })
+
+  it('setCharacterByIndex captures a single-row rollback baseline, never the whole array', async () => {
+    DBState.db = seedCloneCostDb() as any // char-0 large (40 messages), siblings small
+    selectedCharID.set(1)
+    const charactersSize = JSON.stringify(DBState.db.characters).length
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch,
+    )
+
+    const target = JSON.parse(JSON.stringify(DBState.db.characters[1]))
+    target.name = 'Renamed'
+
+    // The selection capture + the compatible-update diff stay bounded to the one
+    // edited row; the large sibling (char-0) transcript is never serialized.
+    const instrumented = withCloneInstrumentation(() => {
+      setCharacterByIndex(1, target as any)
+    })
+    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+
+    // drain the async dispatch so it does not leak into the next test
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 })

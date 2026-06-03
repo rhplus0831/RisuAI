@@ -1,6 +1,27 @@
 # Character-Row Snapshot Paths
 
-Status: planned. Phase 2. Depends on the Phase 0 `CharacterRowSnapshot`.
+Status: implemented. Phase 2. Depends on the Phase 0 `CharacterRowSnapshot`.
+
+Landed: `setCurrentCharacter` / `setCharacterByIndex` (`database.svelte.ts`) capture
+`currentCharacterRowSnapshot(index)` instead of `currentCharacterStateSnapshot()`
+and persist through the new `dispatchCompatibleCharacterUpdateScoped`, so a failed
+character-field update restores only the target character row (plus the selection
+scalars), never the whole characters array. Because the `v2Set*` lorebook/desc/note
+trigger effects all route through `setCurrentCharacter(char)`, they inherit the
+narrow rollback automatically (the global-lorebook slice additionally drops the
+redundant re-clone). `characterCommands.ts` adds `*With(rollback)` cores plus the
+scoped exports `dispatchUpdateCharacterScoped` / `dispatchCompatibleCharacterUpdateScoped`
+(rolling back via `restoreCharacterRow`); the broad
+`dispatchUpdateCharacter` / `dispatchCompatibleCharacterUpdate` stay for the
+create/delete/reorder and image/emotion (Phase 7) call sites. Proof:
+`characterCommands.test.ts` "Phase 2 character-row scoped dispatch" — a failed
+`dispatchCompatibleCharacterUpdateScoped` restores only the target row (sibling
+concurrent edit survives), and `setCharacterByIndex` under clone instrumentation
+never serializes the large sibling transcript.
+
+Deferred (mechanical reuse, out of this slice): the image/emotion handlers in
+`characters.ts` (Phase 7) and the low-frequency `trashTime` / `realmId` field-edit
+callers still hold the broad snapshot.
 
 ## Scope
 
