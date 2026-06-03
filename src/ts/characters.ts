@@ -56,6 +56,7 @@ import {
 } from './chatCommands'
 import { getColdStorageItem } from './process/coldstorage.svelte'
 import {
+  currentCharacterSelectionSnapshot,
   currentCharacterStateSnapshot,
   dispatchCreateAndSelectCharacter,
   dispatchCompatibleCharacterUpdate,
@@ -977,9 +978,9 @@ export async function changeChar(
     alertError('Cold-storage character hydration is not supported in server-backed web mode yet')
     return
   }
-  const previous = currentCharacterStateSnapshot()
   const characterId = DBState.db.characters?.[index]?.chaId
   if (!characterId) return
+  const previous = currentCharacterSelectionSnapshot(characterId)
   const lastInteraction = Date.now()
   withTrustedServerProjectionWrite(() => {
     const character = DBState.db.characters?.[index]

@@ -23,6 +23,19 @@ export interface CharacterStateSnapshot {
   selectedCharID: number
 }
 
+// Selecting a character only flips `selectedCharID`/`currentChar` and bumps the
+// target character's `lastInteraction`, so its rollback never needs the full
+// deep-cloned state snapshot. Capturing just these scalars avoids a synchronous
+// JSON clone of the entire characters array (with all chat histories) on every
+// sidebar click, which otherwise blocks the UI for seconds before the select +
+// hydration requests can fire.
+export interface CharacterSelectionSnapshot {
+  characterId: string
+  lastInteraction: number | undefined
+  currentChar?: number
+  selectedCharID: number
+}
+
 export const CHARACTER_PATCH_EXCLUDED_KEYS = new Set([
   'chaId',
   'chats',
@@ -54,6 +67,29 @@ export function restoreCharacterState(snapshot: CharacterStateSnapshot): void {
   withTrustedServerProjectionWrite(() => {
     DBState.db.characters = cloneJsonValue(snapshot.characters)
     DBState.db.characterOrder = cloneJsonValue(snapshot.characterOrder)
+    ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
+    selectedCharID.set(snapshot.selectedCharID)
+  })
+}
+
+export function currentCharacterSelectionSnapshot(characterId: string): CharacterSelectionSnapshot {
+  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  return {
+    characterId,
+    lastInteraction: character?.lastInteraction,
+    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    selectedCharID: get(selectedCharID),
+  }
+}
+
+export function restoreCharacterSelection(snapshot: CharacterSelectionSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const character = DBState.db.characters?.find(
+      (candidate) => candidate.chaId === snapshot.characterId,
+    )
+    if (character) {
+      character.lastInteraction = snapshot.lastInteraction
+    }
     ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
     selectedCharID.set(snapshot.selectedCharID)
   })
@@ -174,7 +210,7 @@ export function dispatchDeleteCharacter(
 
 export function dispatchSelectCharacter(
   characterId: string,
-  previous: CharacterStateSnapshot,
+  previous: CharacterSelectionSnapshot,
   lastInteraction?: number,
 ): void {
   runCharacterCommand(
@@ -184,7 +220,7 @@ export function dispatchSelectCharacter(
         characterId,
         lastInteraction,
       }),
-    () => restoreCharacterState(previous),
+    () => restoreCharacterSelection(previous),
   )
 }
 

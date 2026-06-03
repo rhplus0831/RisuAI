@@ -25,6 +25,7 @@ vi.mock('./process/coldstorage.svelte', () => ({
 import { clearCachedServerCommandRevision, type CommandEvent } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
 import {
+  currentCharacterSelectionSnapshot,
   currentCharacterStateSnapshot,
   dispatchCompatibleCharacterUpdate,
   prepareCompatibleCharacterUpdate,
@@ -491,6 +492,64 @@ describe('Phase 9-3f compatibility adapters', () => {
         lastInteraction: DBState.db.characters[0].lastInteraction,
       },
     })
+  })
+
+  it('captures only scalar selection state, never a deep clone of every character', () => {
+    // A sidebar click must not pay for JSON-cloning every character's (possibly
+    // hydrated) chat history just to hold a selection-rollback snapshot.
+    const snapshotResult = currentCharacterSelectionSnapshot('char-a')
+
+    expect(snapshotResult.characterId).toBe('char-a')
+    expect(snapshotResult.currentChar).toBe(0)
+    expect(snapshotResult.selectedCharID).toBe(0)
+    expect(snapshotResult).not.toHaveProperty('characters')
+    expect(snapshotResult).not.toHaveProperty('characterOrder')
+  })
+
+  it('rolls a failed character selection back to the previous selection only', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: 10 })
+        }
+        if (url === '/api/v1/commands/characters/select') {
+          return jsonResponse({ error: 'boom' }, 500)
+        }
+        return jsonResponse({ revision: 11 })
+      }) as unknown as typeof fetch,
+    )
+    const otherChar = {
+      ...seedCharacter(),
+      chaId: 'char-b',
+      name: 'Char B',
+      lastInteraction: 1234,
+    } as character
+    DBState.db = {
+      currentChar: 0,
+      characters: [seedCharacter(), otherChar],
+      characterOrder: ['char-a', 'char-b'],
+    } as any
+    selectedCharID.set(0)
+    setServerProjectionWriteGuardEnabled(true)
+
+    await changeChar(1)
+
+    // Optimistic selection lands immediately, before the command resolves.
+    expect(get(selectedCharID)).toBe(1)
+
+    // The failed select command rolls the selection back to char-a, restoring
+    // the unrelated character's lastInteraction without clobbering its state.
+    await vi.waitFor(() => {
+      expect(get(selectedCharID)).toBe(0)
+    })
+    expect((DBState.db as any).currentChar).toBe(0)
+    expect(DBState.db.characters[1].lastInteraction).toBe(1234)
+    expect(DBState.db.characters[1].name).toBe('Char B')
   })
 
   it('rejects cold-storage character hydration in server-backed web mode', async () => {
