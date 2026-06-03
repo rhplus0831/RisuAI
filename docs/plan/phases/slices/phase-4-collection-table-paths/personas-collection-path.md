@@ -7,23 +7,24 @@ projection-field co-fix.
 
 - [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 personas row and the `persona` projection-field bug.
-- `server/fastify/src/routes/commands.ts` - create (1637), patch (1682), delete
-  (1732), select (1804), reorder (1850).
+- `server/fastify/src/routes/commands.ts` - create, patch, delete, select,
+  reorder.
 - `server/fastify/src/routes/projection.ts` - `persona` →
   `['personas','selectedPersona']` (omits the legacy mirror scalars).
 
 ## Scope
 
-Edits to the `personas` collection that currently rewrite all nine collection
-tables + all characters. Narrow to the `personas` table (+ settings).
+Before implementation, edits to the `personas` collection rewrote all nine
+collection tables + all characters. The implemented path writes the `personas`
+table (+ settings).
 
-| Route (line) | Desired write |
+| Route | Desired write |
 | --- | --- |
-| `POST personas` (1637) | `personas` table. (Appendix lever for 1637 is `message-free-downgrade`; confirm whether create can reach a single-table write or stays at the floor.) |
-| `PATCH personas/:id` (1682) | single-row `personas`. |
-| `DELETE personas/:id` (1732) | `personas` table + settings (`selectedPersona` + the 4 legacy mirror scalars when `mirrorLegacyProfile`). |
-| `POST personas/select` (1804) | `personas` table + settings (`selectedPersona` + the 4 legacy mirror scalars `username`/`userIcon`/`personaPrompt`/`userNote` when `mirrorLegacyProfile`). |
-| `POST personas/reorder` (1850) | `personas` table. |
+| `POST personas` | `personas` table. |
+| `PATCH personas/:id` | single-row `personas`. |
+| `DELETE personas/:id` | `personas` table + settings (`selectedPersona` + the 4 legacy mirror scalars when `mirrorLegacyProfile`). |
+| `POST personas/select` | `personas` table + settings (`selectedPersona` + the 4 legacy mirror scalars `username`/`userIcon`/`personaPrompt`/`userNote` when `mirrorLegacyProfile`). |
+| `POST personas/reorder` | `personas` table. |
 
 select/delete also write the legacy mirror scalars (`username`, `userIcon`,
 `personaPrompt`, `userNote`) via `mirrorLegacyProfile` — these are not in the

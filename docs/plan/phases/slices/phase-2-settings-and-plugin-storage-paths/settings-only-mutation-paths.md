@@ -13,27 +13,26 @@ recorded as validate-only below.
   Tier 1.
 - `server/fastify/src/routes/commands.ts` - the routes below.
 - `server/fastify/src/repository.ts` - `writeSettingsOnly`.
-- `server/fastify/src/routes/projection.ts` - `module` and `lorebook` resources
-  (Phase 5 co-fixes).
+- `server/fastify/src/routes/projection.ts` - Phase 5 `moduleEnabled`,
+  `globalLorebook`, and prompt fallback resources.
 
 ## Scope
 
-Each route changes one (or a few) settings-row scalar but currently rewrites
-every character row + every chat row + all nine collection tables (most also load
-every message). Narrow the write to a single `UPDATE settings` via a bespoke
-settings-only mutation modeled on `applyCharacterSelectionCommandMutation`
-(`mutationPath: targeted-settings`).
+Before implementation, each route changed one (or a few) settings-row scalar but
+rewrote every character row + every chat row + all nine collection tables (most
+also loaded every message). The implemented path writes a single `UPDATE
+settings` via `mutationPath: targeted-settings`.
 
-| Route (line) | Desired write | Notes |
+| Route | Desired write | Notes |
 | --- | --- | --- |
-| `PATCH characters/reorder` (2457) | `UPDATE settings` only | sole write is `characterOrder` (a settings scalar); reorder edits presentation order, not `characters` table positions. |
-| `PATCH prompt-settings` (1424) | `UPDATE settings` only | all 21 `PROMPT_SETTINGS_KEYS` are settings scalars. `prompt` projection ships the wrong field — Phase 5 co-fix. |
-| `POST plugins/provider` (3966) | `UPDATE settings` only | `currentPluginProvider` scalar. |
-| `POST modules/enable` (3708) | `UPDATE settings` only | `enabledModules` scalar. Needs the narrow `moduleEnabled` projection (Phase 5); the shared `module` resource stays broad otherwise. |
-| `PATCH settings/:group` (1074) | `UPDATE settings` (8 of 9 groups) | the `memory` group additionally rewrites `hypa_v3_presets` only when the patch carries `hypaV3Presets`. Already `message-free`; this is the high-severity core (it rewrites every character row for a settings patch). |
-| `POST lorebooks/:lorebookId/select` (3459) | `UPDATE settings` only (`loreBookPage`) | must explicitly accept dropping the `ensureAllChildLorebooks` repairs it currently persists across characters/chats/modules (Prerequisite 2). |
+| `PATCH characters/reorder` | `UPDATE settings` only | sole write is `characterOrder` (a settings scalar); reorder edits presentation order, not `characters` table positions. |
+| `PATCH prompt-settings` | `UPDATE settings` only | all 21 `PROMPT_SETTINGS_KEYS` are settings scalars. Phase 5 routes `prompt` to full/sprawling fallback. |
+| `POST plugins/provider` | `UPDATE settings` only | `currentPluginProvider` scalar. |
+| `POST modules/enable` | `UPDATE settings` only | `enabledModules` scalar. Phase 5 emits the narrow `moduleEnabled` projection. |
+| `PATCH settings/:group` | `UPDATE settings` (8 of 9 groups) | the `memory` group additionally rewrites `hypa_v3_presets` only when the patch carries `hypaV3Presets`. It came into this slice from the Phase 1 floor; the high-severity core was rewriting every character row for a settings patch. |
+| `POST lorebooks/:lorebookId/select` | `UPDATE settings` only (`loreBookPage`) | accepted dropping the `ensureAllChildLorebooks` repairs to validate-only (Prerequisite 2). |
 
-translator-presets/select (2050) is listed in the audit's Tier 1 but is not
+translator-presets/select is listed in the audit's Tier 1 but is not
 settings-only — it also rewrites the `translator_presets` table — so it is
 handled with the translator family in
 [`../phase-4-collection-table-paths/translator-presets-collection-path.md`](../phase-4-collection-table-paths/translator-presets-collection-path.md).

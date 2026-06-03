@@ -16,8 +16,9 @@ classifier assertion).
 
 ## Scope
 
-These resources ship the wrong field, so a foreign refresh never reflects the
-changed state — independent of the write range, but fixed alongside it.
+Before the fixes, these resources shipped the wrong field, so a foreign refresh
+never reflected the changed state. They were independent of the write range, but
+were fixed alongside it.
 
 | Resource | Today | Fix |
 | --- | --- | --- |

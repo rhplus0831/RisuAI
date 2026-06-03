@@ -1,6 +1,7 @@
 # Latest Verification Log
 
-Status: planned. Maintenance rule for the workstream's verification record.
+Status: ongoing. Maintenance rule for the workstream's verification record; the
+current latest run is recorded in `latest-verification.md`.
 
 ## Source Anchors
 
@@ -37,8 +38,7 @@ any recorded normalization-drop decisions).
 
 ## Done When
 
-- The first implementation slice replaces the pre-implementation baseline in
-  `latest-verification.md` with a real run.
+- `latest-verification.md` records the latest real run.
 - Each later tier replaces (not appends to) the "Latest Run" section.
 
 ## Validation

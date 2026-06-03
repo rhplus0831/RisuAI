@@ -6,22 +6,22 @@ script-definition normalization is scoped to validate-only.
 ## Source Anchors
 
 - [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
-  Tier 5 entries for 4171, 4205.
-- `server/fastify/src/routes/commands.ts` - PUT characters/:id/scripts (4171), PUT
-  characters/:id/triggers (4205).
+  Tier 5 character script/trigger entries.
+- `server/fastify/src/routes/commands.ts` - PUT characters/:id/scripts, PUT
+  characters/:id/triggers.
 
 ## Scope
 
-| Route (line) | Blocker | Floor / unblock |
+| Route | Blocker | Floor / unblock |
 | --- | --- | --- |
-| `PUT characters/:id/scripts` (4171) | `normalizeScriptDefinitionDatabase` + `ensureCharacterCollection` rewrite all characters + all modules + settings (`characterOrder`/`currentChar`) on every call. A single-character-row write would silently drop those repairs, and there is no helper for it. | `message-free-downgrade` only now. Verifier downgraded from the optimistic single-character-row claim: medium. |
-| `PUT characters/:id/triggers` (4205) | Same normalization span as 4171. | `message-free-downgrade` only now. Verifier: low. |
+| `PUT characters/:id/scripts` | `normalizeScriptDefinitionDatabase` + `ensureCharacterCollection` rewrite all characters + all modules + settings (`characterOrder`/`currentChar`) on every call. A single-character-row write would silently drop those repairs, and there is no helper for it. | `message-free-downgrade` only now. Verifier downgraded from the optimistic single-character-row claim: medium. |
+| `PUT characters/:id/triggers` | Same normalization span as scripts. | `message-free-downgrade` only now. Verifier: low. |
 
 The single-character-row fix (the audit's optimistic lever) requires
 `normalizeScriptDefinitionDatabase` / `ensureCharacterCollection` to be scoped to
-operate validate-only on siblings and write-through only the target character —
-the same refactor that unblocks the modules :id/scripts and :id/triggers routes
-in Phase 4. Until that lands, these two stay at the floor.
+operate validate-only on siblings and write-through only the target character.
+Module script/trigger routes already took the validate-only decision in Phase 4;
+these character routes still need their own scoped write.
 
 ## Implementation Scope
 
@@ -33,7 +33,7 @@ in Phase 4. Until that lands, these two stay at the floor.
 
 ## Done When
 
-- 4171 and 4205 are at the `message-free` floor.
+- The character script and trigger routes are at the `message-free` floor.
 - Each records the blocking normalization (`normalizeScriptDefinitionDatabase` +
   `ensureCharacterCollection`) and the unblock step (scope those passes to
   validate-only on siblings, write-through only the target character row).

@@ -13,7 +13,7 @@ while forbidding the nine other-collection tables; `writeCharacterChatRows` and
 Goal: narrow Tier-3 character/chat metadata edits to
 `UPDATE ... WHERE id=?`. Most are `hydrated` despite touching no messages, so
 they also drop the all-message load. Projection stays correct because refresh
-reads SQLite fresh; Phase 5 adds the narrower refresh shapes.
+reads SQLite fresh; Phase 5 has added the narrower refresh shapes.
 
 ## Source Anchors
 
@@ -29,22 +29,22 @@ reads SQLite fresh; Phase 5 adds the narrower refresh shapes.
 ## Slices
 
 - [`single-character-row-paths.md`](slices/phase-3-single-row-paths/single-character-row-paths.md) -
-  characters/:id PATCH (2350, +settings on trash), characters/:id/lorebooks
-  (3528), chat-folders create (2811) / PATCH (2853) / reorder (2939) / DELETE
-  (2896, +that character's chat rows), chats/reorder (2758, that character's chat
-  rows + its character row), per-character modules/reorder (3782, +modules table
-  + enabledModules), chats/:id/fork (2655, source character row + its chat rows +
+  characters/:id PATCH (+settings on trash), characters/:id/lorebooks,
+  chat-folders create/PATCH/reorder/DELETE (+that character's chat rows),
+  chats/reorder (that character's chat rows + its character row),
+  per-character modules/reorder (character row only; module repairs
+  validate-only), and chats/:id/fork (source character row + its chat rows +
   surgical forked messages).
 - [`single-chat-row-paths.md`](slices/phase-3-single-row-paths/single-chat-row-paths.md) -
-  chats/:id/scriptstate (2983, hot path), chats/:id PATCH (2560, +parent
-  character row when `select:true`), chats/:id/lorebooks (3564, `localLore`).
+  chats/:id/scriptstate (hot path), chats/:id PATCH (+parent character row when
+  `select:true`), and chats/:id/lorebooks (`localLore`).
 
 ## Exit Criteria
 
 - Each route writes only its target character or chat row, with the documented
   conditional co-writes (settings on trash; the character's chat rows on
-  folder-delete/reorder; the `modules` table + `enabledModules` on per-character
-  modules/reorder; the parent character row on chat select).
+  folder-delete/reorder; the parent character row on chat select). Per-character
+  modules/reorder writes only the character row.
 - chats/:id/fork keeps surgical forked-message persistence and treats
   cross-character validation/normalization as validate-only.
 - The scriptstate write no longer hydrates every message or rewrites every

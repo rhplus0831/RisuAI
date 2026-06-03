@@ -10,9 +10,9 @@ batch. Avoid broad cleanup passes.
 - Start with the per-tier findings in
   [`active-risk-analysis.md`](active-risk-analysis.md) and the route table in
   [`mutation-range-mismatch.md`](mutation-range-mismatch.md).
-- Before editing runtime code, add a compact scope to the active slice: routes
-  and line numbers, target SQLite tables, settings co-write condition,
-  revision/event behavior, normalization-drop decision, and proof command.
+- Before editing runtime code, add a compact scope to the active slice: route
+  names, target SQLite tables, settings co-write condition, revision/event
+  behavior, normalization-drop decision, and proof command.
 - The Phase 0 writer kit, the `TARGETED_MUTATION_PATHS` vehicles, and the
   review-gate template (`__tests__/helpers/commandMetricGates.ts` /
   `rowStability.ts`) all exist now; a Tier write slice imports them rather than
@@ -22,16 +22,18 @@ batch. Avoid broad cleanup passes.
 ## Current Best Targets
 
 Phases 0-4 (the write-side tiers) are implemented, and Phase 5
-(projection-range narrowing, all four slices) is implemented — the read/refresh
-side now narrows each event's projection resource to its write range: the
-`prompt` field-bug fallback (`314af90f`), the module + script/trigger resources
-(`f94e51ab`), the `globalLorebook`/`characterLorebook` lorebook split
-(`c3fff925`), and the `generation-chat` + `characterRow` per-row branches
-(`608de26c`). Recommended order from here:
+(projection-range narrowing, all four slices) is implemented: the `prompt`
+field-bug fallback (`314af90f`), the module + script/trigger resources
+(`f94e51ab`, with character script/trigger writes still a Phase 6 floor-route
+exception), the `globalLorebook`/`characterLorebook` lorebook split (`c3fff925`),
+and the `generation-chat` + `characterRow` per-row branches (`608de26c`).
+Recommended order from here:
 
-1. Phase 6 Tier-5 floor routes (2273, 2310, 2390, 2495, 2617, 3673, 4171, 4205)
-   and their unblock conditions — the deepest narrowing, blocked by cross-table
-   spans or load-bearing message/normalization dependencies.
+1. Phase 6 Tier-5 floor routes (character create/create-and-select/delete,
+   character chat create, chat delete, module create/delete, character
+   scripts/triggers) and their unblock conditions — the deepest narrowing,
+   blocked by cross-table spans or load-bearing message/normalization
+   dependencies.
 2. Phase 7 verification budgets — the written-table-set, rowid-stability, and
    `dbJsonWriteMs: 0` gates plus the verification log.
 
@@ -40,9 +42,9 @@ side now narrows each event's projection resource to its write range: the
 - Do not narrow any Tier write before the Phase 0 writer kit and review gates
   exist; a narrow path without a rowid-stability test cannot prove it stopped
   rewriting unrelated rows.
-- Do not narrow a Tier-5 route (2273, 2310, 2390, 2495, 2617, 3673, 4171, 4205)
-  below the `message-free` floor before its normalization pass or message
-  dependency is scoped; that is Phase 6's explicit blocker.
+- Do not narrow a Tier-5 route below the `message-free` floor before its
+  normalization pass or message dependency is scoped; that is Phase 6's explicit
+  blocker.
 - Do not drop a global normalization repair without recording it as an accepted
   validate-only decision (Prerequisite 2) in the slice.
 - Do not narrow a projection resource without first narrowing the write it

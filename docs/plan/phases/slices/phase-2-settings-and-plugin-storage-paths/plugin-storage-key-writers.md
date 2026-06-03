@@ -11,28 +11,27 @@ reinsert). Put/delete/bulk-clear semantics are covered in
 
 - [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 2.
-- `server/fastify/src/routes/commands.ts` - put (4032), delete (4066), bulk
-  (4099).
+- `server/fastify/src/routes/commands.ts` - put, delete, bulk.
 - `server/fastify/src/repository.ts` - `plugin_custom_storage` (its own
   standalone table, written only at the tail of `replaceAllCollectionsInTable`,
   ~167-176).
 
 ## Scope
 
-`pluginCustomStorage` is key-addressable but the three routes currently rewrite
-all characters + all chats + all nine collection tables + settings +
-`plugin_custom_storage` (`message-free`). Narrow each to touch only
-`plugin_custom_storage`:
+Before implementation, `pluginCustomStorage` was key-addressable but the three
+routes rewrote all characters + all chats + all nine collection tables +
+settings + `plugin_custom_storage` (`message-free`). The implemented routes touch
+only `plugin_custom_storage`:
 
-| Route (line) | Desired write |
+| Route | Desired write |
 | --- | --- |
-| `PUT plugin-storage/:key` (4032) | single-key `UPSERT` |
-| `DELETE plugin-storage/:key` (4066) | single-key `DELETE` |
-| `POST plugin-storage/bulk` (4099) | `DELETE`-all + reinsert (clear semantics) |
+| `PUT plugin-storage/:key` | single-key `UPSERT` |
+| `DELETE plugin-storage/:key` | single-key `DELETE` |
+| `POST plugin-storage/bulk` | `DELETE`-all + reinsert (clear semantics) |
 
 `pluginCustomStorage` is neither a settings key nor one of the nine collection
-tables, so it needs its own writer. These are written by plugins at runtime, so
-the all-character rewrite is real recurring waste.
+tables, so the implemented path uses its own writer. These are written by plugins
+at runtime, so the removed all-character rewrite was real recurring waste.
 
 ## Implementation Scope
 

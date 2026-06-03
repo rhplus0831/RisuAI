@@ -1,6 +1,8 @@
 # Phase 7: Verification Budgets
 
-Status: planned. Maintained throughout as each tier lands.
+Status: partially implemented / ongoing. The shared metric gates exist for the
+targeted paths introduced through Phase 4; the open work is per-route budget
+completeness and keeping the verification log current.
 
 Goal: keep narrow writes narrow. Generalize the reference fix's
 `dbJsonWriteMs: 0` metric gate and `tableRowidsById` rowid-stability assertion
@@ -8,10 +10,11 @@ into maintained per-route budgets. Keep the verification log current.
 
 ## Source Anchors
 
-- `server/fastify/__tests__/commandMetrics.test.ts` - the `mutationPath` review
-  gate map and `dbJsonWriteMs` checks.
-- `server/fastify/__tests__/commands.test.ts` - `tableRowidsById` (lines ~161,
-  ~3269-3284).
+- `server/fastify/__tests__/helpers/commandMetricGates.ts` - the
+  `mutationPath` review gate map and `dbJsonWriteMs` checks.
+- `server/fastify/__tests__/command*Range.test.ts` and
+  `server/fastify/__tests__/commands.test.ts` - route/family rowid-stability and
+  written-table assertions.
 - [`../latest-verification.md`](../latest-verification.md) - the maintained
   verification record.
 
@@ -26,10 +29,10 @@ into maintained per-route budgets. Keep the verification log current.
 
 ## Exit Criteria
 
-- Every narrow `mutationPath` introduced in Phases 2-4 has a `commandMetrics.test.ts`
-  review gate with `dbJsonWriteMs: 0` and a written-table-set assertion.
-- Every narrowed route has a rowid-stability regression test against the
-  message-heavy harness.
+- Every narrow `mutationPath` introduced in Phases 2-4 has a review gate with
+  `dbJsonWriteMs: 0` and a written-table-set assertion.
+- Every narrowed route/family has an explicit range or rowid-stability budget;
+  remaining gaps are recorded before Phase 7 is marked complete.
 - [`../latest-verification.md`](../latest-verification.md) records the latest full
   or focused run; the gate set is the same across phases.
 

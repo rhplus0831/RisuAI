@@ -3,11 +3,13 @@
 Status: implemented (`f94e51ab`). `modules/enable` emits `moduleEnabled`
 (`['enabledModules']`); module update/reorder emit `moduleUpdated`/
 `moduleReordered` (`['modules']`); `module` create/delete keep the broad
-resource. Character scripts/triggers ship `['characters']` (the module repair is
-validate-only); module scripts/triggers emit `moduleScriptDefinition`/
-`moduleTriggerDefinition` (`['modules']`). All `mode: 'fields'`, so the generic
-client merge handles them with no client change. Proven by `projection.test.ts`
-("narrows module enable/update/reorder…", "narrows script/trigger refreshes…").
+resource. Module scripts/triggers emit `moduleScriptDefinition`/
+`moduleTriggerDefinition` (`['modules']`). Character scripts/triggers still use a
+Phase 6 `message-free` floor write, but their logical refresh resource ships
+`['characters']`; do not treat that as proof the write has narrowed below the
+floor. All are `mode: 'fields'`, so the generic client merge handles them with no
+client change. Proven by `projection.test.ts` ("narrows module enable/update/
+reorder…", "narrows script/trigger refreshes…").
 
 ## Source Anchors
 
@@ -27,12 +29,11 @@ narrowed write changed.
   Add narrower resources: `moduleEnabled` (for the Phase 2 modules/enable write —
   `enabledModules` only), and `moduleReordered`/`moduleUpdated` shipping just the
   `modules` array.
-- `scriptDefinition` / `triggerDefinition → ['characters','modules']` re-ship
-  whole characters + modules for a one-row script/trigger edit. Narrow to the
-  affected character or module row where the Phase 3/Phase 4 write is per-row;
-  where the script-definition normalization keeps the write at the whole-`modules`
-  table, the resource stays at `['modules']` (or `['characters','modules']` only
-  if the write actually touches characters).
+- `scriptDefinition` / `triggerDefinition → ['characters','modules']` originally
+  re-shipped whole characters + modules. Module script/trigger writes now rewrite
+  only `modules`, so they use module-scoped resources. Character script/trigger
+  writes remain Phase 6 floor routes; their resource ships `['characters']` for
+  the logical target while the blocker remains documented in Phase 6.
 
 ## Implementation Scope
 
@@ -45,8 +46,11 @@ narrowed write changed.
 
 ## Protocol Behavior
 
-- A resource must ship every field its write changed; `module` `delete` keeps the
-  broad resource because `removeModuleReferences` spans characters/chats.
+- A resource must ship every field the supported narrow write changed; `module`
+  `delete` keeps the broad resource because `removeModuleReferences` spans
+  characters/chats. Character script/trigger writes are the exception tracked in
+  Phase 6: their logical resource is narrowed, but their physical write remains
+  at the floor.
 - Narrowing a resource without narrowing its write leaves the refresh shipping
   fields the write no longer changes — do not land a resource ahead of its write.
 

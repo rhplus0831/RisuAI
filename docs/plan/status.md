@@ -15,8 +15,9 @@ the reference fix `b57df5cd` (`characters/select`), the six targeted message
 commands, the six `targeted-settings` routes, the three `targeted-plugin-storage`
 routes, the twelve Tier-3 `targeted-character-row` / `targeted-chat-row` routes,
 and all the Tier-4 `targeted-collection` family routes; the read side now narrows
-the projection resources to match. The remaining floor routes (Tier-5 blocked)
-still rewrite the broad table set.
+the implemented projection-resource splits, with the character script/trigger
+floor-route exception still tracked in Phase 6. The remaining floor routes
+(Tier-5 blocked) still rewrite the broad table set.
 
 ## Current Snapshot
 
@@ -24,10 +25,11 @@ Analysis is complete. Phases 0-5 have landed; Phase 6 (the Tier-5
 `message-free` ceiling) is the next tier.
 
 - Phase 5 implemented (projection-range narrowing, four slices): the read/refresh
-  side now narrows each event's projection resource to its write range. The
-  `prompt` field-bug now falls back to full (`314af90f`); the shared `module`
+  side now narrows the implemented projection resources to their scoped refresh
+  range. The `prompt` field-bug now falls back to full (`314af90f`); the shared `module`
   resource split into `moduleEnabled`/`moduleUpdated`/`moduleReordered` and the
-  script/trigger resources into character (`['characters']`) vs module
+  script/trigger resources into character (`['characters']`, while the character
+  routes remain Phase 6 floor writes) vs module
   (`moduleScriptDefinition`/`moduleTriggerDefinition`, `['modules']`) (`f94e51ab`);
   the broad `lorebook` resource split into `globalLorebook` (global commands) +
   per-row `characterLorebook`/`chat`/`moduleUpdated` (`c3fff925`); and the
@@ -49,7 +51,7 @@ Analysis is complete. Phases 0-5 have landed; Phase 6 (the Tier-5
   `writePromptTemplatesTable` wrapper. Three projection-field bugs fixed inline:
   `promptItem`→`['promptTemplate']`, `persona` reships the four legacy mirror
   scalars, and `loadout` reships `lastLoadedLoadoutName`; the broad `lorebook` /
-  `module` projection resources are deferred to Phase 5. Proven by
+  `module` projection resources were split in Phase 5. Proven by
   `commandCollectionRange.test.ts` (45 tests) plus the `projection.test.ts`
   field-bug assertions.
 
@@ -73,9 +75,8 @@ Analysis is complete. Phases 0-5 have landed; Phase 6 (the Tier-5
 - Phase 1 landed (`208e538a`): the 62 safe `hydrated` non-message routes now run
   on `applyMessageFreeJsonCommandMutation`, dropping the all-message load and the
   no-op `syncChatMessages` chat-row rewrite. The four message-dependent routes
-  (2390, 2495, 2617, 2655) are unchanged and handed to Phase 3/Phase 6. This is a
-  stopgap: a `message-free` route still rewrites all characters, the nine
-  collection tables, and settings.
+  were handed to Phase 3/Phase 6. This is a stopgap: a `message-free` route still
+  rewrites all characters, the nine collection tables, and settings.
 
 - Phase 0 landed: the targeted writer kit (`repository.ts`), the
   `TARGETED_MUTATION_PATHS` vehicles (`mutations.ts`), the `writtenTables`
@@ -92,14 +93,11 @@ Analysis is complete. Phases 0-5 have landed; Phase 6 (the Tier-5
 - Four prerequisites are recorded: build the writer kit, treat global
   normalization as validate-only, co-write settings when a pointer moves, and use
   `message-free` as the safe floor.
-- The projection-range mismatches are catalogued: broad resources that re-ship
-  whole arrays (`character`, `chat`/`message`/`generation`, `lorebook`, `module`,
-  `scriptDefinition`/`triggerDefinition`) and three pre-existing field bugs
-  (`prompt`/`promptItem` ship `botPresets`, `persona` omits legacy mirror
-  scalars, `loadout` omits `lastLoadedLoadoutName`).
+- The seed audit catalogued the projection-range mismatches; Phase 5 closed the
+  field bugs and broad-resource splits now described above.
 
-Phases 0-5 are implemented; the later tier phases below (Phase 6 onward) are
-still planned.
+Phases 0-5 are implemented. Phase 6 is planned; Phase 7 is partially implemented
+and ongoing as verification maintenance.
 
 ## Phase Router
 
@@ -112,7 +110,7 @@ still planned.
 | [Phase 4](phases/phase-4-collection-table-paths.md) | Implemented | Tier-4 single collection-table edits across all eight collection families. |
 | [Phase 5](phases/phase-5-projection-range-narrowing.md) | Implemented | Narrow projection resources, the `lorebook` resource split, and the projection-field bug fixes. |
 | [Phase 6](phases/phase-6-message-free-ceiling.md) | Planned | Tier-5 routes blocked at the `message-free` floor and their unblock conditions. |
-| [Phase 7](phases/phase-7-verification-budgets.md) | Planned | Written-table-set, rowid-stability, and `dbJsonWriteMs: 0` gates and the verification log. |
+| [Phase 7](phases/phase-7-verification-budgets.md) | Partial / ongoing | Written-table-set, rowid-stability, and `dbJsonWriteMs: 0` gates and the verification log. |
 
 ## Active Risk Summary
 
@@ -126,7 +124,7 @@ Headlines, in priority order:
   `plugin_custom_storage` (upsert/delete/clear) instead of all characters + nine
   collection tables.
 - Tier 3: DONE (Phase 3). All 12 single character/chat-row routes write only
-  their target row(s); the hot scriptstate write (`2983`) no longer hydrates
+  their target row(s); the hot scriptstate write no longer hydrates
   messages or rewrites every character.
 - Tier 4: DONE (Phase 4). One element of one of nine collection tables used to
   rewrite all nine plus all characters. All eight families now write only their

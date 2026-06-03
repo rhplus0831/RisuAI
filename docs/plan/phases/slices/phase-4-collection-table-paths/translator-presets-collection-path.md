@@ -7,28 +7,27 @@ Phase 0 writer kit.
 
 - [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 translator row and the Tier-1 note on `translator-presets/select`.
-- `server/fastify/src/routes/commands.ts` - create (1895), patch (1936), delete
-  (1984), select (2050).
+- `server/fastify/src/routes/commands.ts` - create, patch, delete, select.
 - `server/fastify/src/repository.ts` - `translator_presets` table.
 
 ## Scope
 
-Edits to the `translatorPresets` collection that currently rewrite all nine
-collection tables + all characters. Narrow to the `translator_presets` table +
-settings.
+Before implementation, edits to the `translatorPresets` collection rewrote all
+nine collection tables + all characters. The implemented path writes the
+`translator_presets` table + settings.
 
-| Route (line) | Desired write |
+| Route | Desired write |
 | --- | --- |
-| `POST translator-presets` (1895) | `translator_presets` table + settings. |
-| `PATCH translator-presets/:id` (1936) | `translator_presets` table + settings. |
-| `DELETE translator-presets/:id` (1984) | `translator_presets` table + settings. |
-| `POST translator-presets/select` (2050) | `translator_presets` table + settings (`translatorPresetId`/`translatorPrompt`/`translatorMaxResponse`). Reclassified here from Tier 1 — it is not settings-only. |
+| `POST translator-presets` | `translator_presets` table + settings. |
+| `PATCH translator-presets/:id` | `translator_presets` table + settings. |
+| `DELETE translator-presets/:id` | `translator_presets` table + settings. |
+| `POST translator-presets/select` | `translator_presets` table + settings (`translatorPresetId`/`translatorPrompt`/`translatorMaxResponse`). Reclassified here from Tier 1 — it is not settings-only. |
 
 `ensureTranslatorPresetCollection` reassigns the whole array and syncs legacy
 fields on every call, so even pure field edits become a full one-table
 rewrite + an unconditional settings write (not a single-row `UPDATE`). select
-(2050) is included here rather than in the Phase 2 settings-only slice for exactly
-this reason.
+translator-presets/select is included here rather than in the Phase 2
+settings-only slice for exactly this reason.
 
 Implemented: all four routes moved to `applyTargetedCommandMutation` with
 `mutationPath: targeted-collection`, each ending in the shared

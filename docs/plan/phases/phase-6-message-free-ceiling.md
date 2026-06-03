@@ -17,17 +17,17 @@ blocker and unblock condition; do not narrow deeper in this phase.
 ## Slices
 
 - [`message-dependent-delete-paths.md`](slices/phase-6-message-free-ceiling/message-dependent-delete-paths.md) -
-  characters/:id DELETE (2390, orphan message rows leak without a targeted
-  delete), chats/:id DELETE (2617, scoped to the owning character's row + its
-  chat rows + a targeted message delete), modules/:id DELETE (3673,
-  `removeModuleReferences` spans characters + chats + two collection tables +
-  settings).
+  characters/:id DELETE (orphan message rows leak without scoped targeted
+  deletes), chats/:id DELETE (owning character row + chat rows + targeted message
+  deletes), and modules/:id DELETE (`removeModuleReferences` spans characters +
+  chats + two collection tables + settings).
 - [`message-validation-create-paths.md`](slices/phase-6-message-free-ceiling/message-validation-create-paths.md) -
-  characters/:id/chats create (2495, corpus-wide `messageIdExists` validation
-  scan), characters create (2273) and create-and-select (2310, append one row +
-  settings, but existing-row id-repair side effects drop).
+  characters/:id/chats create (corpus-wide `messageIdExists` validation scan),
+  characters create and create-and-select (append one row + settings, but
+  existing-row id-repair side effects drop), and modules create (append one module
+  row but global module/settings/character repairs must be scoped first).
 - [`normalization-blocked-script-paths.md`](slices/phase-6-message-free-ceiling/normalization-blocked-script-paths.md) -
-  characters/:id/scripts (4171) and characters/:id/triggers (4205):
+  characters/:id/scripts and characters/:id/triggers:
   `normalizeScriptDefinitionDatabase` + `ensureCharacterCollection` rewrite all
   characters + all modules + settings on every call; the single-row fix needs the
   normalization scoped first.

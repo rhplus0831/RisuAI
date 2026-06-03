@@ -67,33 +67,26 @@ The four mutation helpers in `server/fastify/src/commands/mutations.ts`:
 | `applyTargetedCommandMutation` | custom | loads message-free `db.json` for validation only; callback does its own targeted SQLite writes; runs the broad `replaceAll*` only if `writeDatabase: true` (default off) |
 | `applyCharacterSelectionCommandMutation` | `targeted-character-selection` | bespoke: writes exactly one character row plus the settings row — the reference fix |
 
-Of 79 routes, 8 are already minimal (the six targeted message commands,
-`characters/select`, and the first-run `state/initialize` seed). The other 71
-share the exact shape `b57df5cd` fixed — 66 on `hydrated`, 5 on `message-free`,
-each rewriting characters plus nine collection tables plus settings for a sub-row
-change. Post-verification severity is 51 high, 18 medium, 3 low.
+At the seed audit, 8 of 79 routes were already minimal and 71 were over-broad
+(51 high, 18 medium, 3 low). That before-state is preserved in
+[`mutation-range-mismatch.md`](mutation-range-mismatch.md). Current runtime
+status lives in [`status.md`](status.md): Phases 0-5 have landed, the narrowed
+write paths use the Phase 0 targeted vehicles and gates, and the remaining broad
+floor is Tier 5 / Phase 6.
 
 ## Prerequisites
 
-Phase 0 handles these prerequisites before any tier write is narrowed.
+Phase 0 landed the shared prerequisites before tier writes were narrowed:
 
-1. Build the writer kit. `repository.ts` has only `writeCharacterSelectionRows`,
-   broad `replaceAll*`, and surgical message-store writers. Add
-   `writeSettingsOnly`, `writeSingleCharacterRow`, `writeSingleChatRow`,
-   `writeSingleCollectionTable` / `writeSingleCollectionRow`,
-   `writePluginStorageKey`, and `deletePluginStorageKey`.
-2. Treat global normalization as validate-only. Broad paths persist sibling-row
-   repairs; targeted paths compute those repairs for validation, then write only
-   the target row. This matches `b57df5cd` and is acceptable here because there
-   are no users, no migrations, and backup data may be lost.
-3. Co-write settings when a pointer moved. Many row edits also touch settings
-   (`characterOrder`, `currentChar`, `lastLoadedLoadoutName`, preset/persona/
-   translator pointers). Targeted writers update settings only when the scalar
+1. Writer kit: settings, single character row, single chat row, collection table
+   / row, plugin-storage key, and related targeted writers.
+2. Normalization policy: targeted paths may compute sibling repairs for
+   validation, then persist only the scoped target unless a slice records a
+   required co-write.
+3. Settings co-write rule: pointer/mirror scalars are updated only when they
    actually changed.
-4. Use `message-free` as the cheap floor. Most `hydrated` routes never touch
-   `chat.message[]`, so the message load and `syncChatMessages` no-op can go.
-   This is mechanical and safe, but it is only a stopgap because it still rewrites
-   characters, collections, and settings.
+4. `message-free` floor: safe non-message routes can avoid all-message hydration,
+   but this remains a stopgap for routes that can narrow further.
 
 ## Invariants
 
@@ -129,23 +122,14 @@ Phase 0 handles these prerequisites before any tier write is narrowed.
 | [6. Message-Free Ceiling](phases/phase-6-message-free-ceiling.md) | Record routes that stop at the `message-free` floor. |
 | [7. Verification Budgets](phases/phase-7-verification-budgets.md) | Maintain written-table, rowid, and `dbJsonWriteMs: 0` gates. |
 
-## Suggested Execution Order
+## Execution Cursor
 
-1. Capture the Phase 0 metric baseline and land the reusable
-   rowid-stability / `dbJsonWriteMs: 0` gate.
-2. Land the Phase 1 floor. Skip the message-dependent routes: 2390, 2495, 2617,
-   2655, and the message commands.
-3. Finish Phase 0: writer kit, targeted mutation paths, normalization policy.
-4. Do Phase 2 first among write tiers: highest amplification, cleanest fix.
-5. Do Phase 3 with its matching Phase 5 character/chat projections.
-6. Do Phase 4, plugins first, then the other families with pointer co-writes and
-   projection-field fixes.
-7. Split the Phase 5 `lorebook` resource after a global-lorebook command is
-   narrowed.
-8. Leave Phase 6 routes at the floor until their normalization/message blockers
-   are scoped.
-9. Keep Phase 7 gates and [`latest-verification.md`](latest-verification.md)
-   current as tiers land.
+Phases 0-5 are implemented. Phase 6 is the next runtime tier: keep the nine
+Tier-5 routes at the `message-free` floor until their message-delete,
+message-validation, cross-table reference, or normalization blocker is scoped.
+Phase 7 remains ongoing verification maintenance; keep
+[`latest-verification.md`](latest-verification.md) current after each focused or
+full run.
 
 For every targeted path: re-normalize the target row, treat global de-dup as
 validate-only (Prerequisite 2), conditionally co-write settings (Prerequisite 3),

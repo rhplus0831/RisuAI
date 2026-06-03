@@ -1,14 +1,16 @@
 # Hydrated To Message-Free Sweep
 
-Status: implemented (`208e538a` on `fastify`). The safe, helper-free first
-commit (Prerequisite 4): 62 routes swapped, the four message-dependent routes
-(2390, 2495, 2617, 2655) left on `applyJsonCommandMutation`.
+Status: implemented (`208e538a` on `fastify`). Completion snapshot for the safe,
+helper-free first commit (Prerequisite 4): 62 routes swapped, the four
+message-dependent routes left on `applyJsonCommandMutation`. Later phases
+supersede this helper snapshot for routes narrowed onto targeted helpers; fork is
+now targeted/surgical.
 
 ## Source Anchors
 
 - [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Prerequisite 4 and "Suggested implementation order" step 1; the appendix route
-  table lists every route's current helper.
+  table lists every route's audit-time helper.
 - `server/fastify/src/routes/commands.ts` - the route registrations.
 - `server/fastify/src/commands/mutations.ts` - `applyJsonCommandMutation` →
   `applyMessageFreeJsonCommandMutation`.
@@ -25,20 +27,20 @@ This is a stopgap, not the fix: a `message-free` route still rewrites all
 characters, all nine collection tables, and settings. It is the safe first commit
 for every `hydrated` non-message route the later tiers will narrow further.
 
-Skip (keep their current helper):
+Skipped at the Phase 1 commit:
 
-- 2390 `DELETE characters/:id` — orphan message rows are cleaned only because the
+- `DELETE characters/:id` — orphan message rows are cleaned only because the
   hydrate lets `syncChatMessages` see them vanish (Phase 6).
-- 2495 `POST characters/:id/chats` — duplicate message-id validation scans every
+- `POST characters/:id/chats` — duplicate message-id validation scans every
   chat's `message[]` corpus-wide (Phase 6).
-- 2617 `DELETE chats/:id` — needs a targeted message delete (Phase 6).
-- 2655 `POST chats/:id/fork` — writes the forked chat's new messages (Phase 3
+- `DELETE chats/:id` — needs a targeted message delete (Phase 6).
+- `POST chats/:id/fork` — writes the forked chat's new messages (Phase 3
   treats it as single-character-row + surgical messages).
-- The six already-targeted message commands (3030, 3072, 3118, 3163, 3207, 3248),
-  `characters/select` (2431), and `state/initialize` (1047).
+- The six already-targeted message commands, `characters/select`, and
+  `state/initialize`.
 
-The five routes already on `message-free` (settings/:group 1074, chats/:id 2560,
-plugin-storage 4032/4066/4099) need no change here.
+The five routes already on `message-free` (settings/:group, chats/:id, and the
+three plugin-storage routes) needed no change here.
 
 ## Implementation Scope
 
@@ -58,9 +60,10 @@ plugin-storage 4032/4066/4099) need no change here.
 
 ## Done When
 
-- The ~62 swept routes report `mutationPath: "message-free"`.
-- The four message-dependent routes (2390, 2495, 2617, 2655) are unchanged and
-  handed to Phase 3/Phase 6.
+- At the Phase 1 commit, the ~62 swept routes reported `mutationPath:
+  "message-free"`.
+- The four message-dependent routes were handed to Phase 3/Phase 6; later phases
+  changed fork.
 - The metric shows the swept routes dropped the message-store read from their
   written-table set (load time falls; the broad table set otherwise stands).
 

@@ -1,37 +1,36 @@
 # Lorebooks Collection Path
 
 Status: implemented (write-narrowing + normalization-drop). Tier 4. Uses the
-Phase 0 writer kit. The projection resource split stays a Phase 5 dependency.
+Phase 0 writer kit. The projection resource split landed in Phase 5.
 
 ## Source Anchors
 
 - [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 lorebooks row.
-- `server/fastify/src/routes/commands.ts` - create (3306), patch (3343), delete
-  (3378), reorder (3416), entries (3493).
+- `server/fastify/src/routes/commands.ts` - create, patch, delete, reorder,
+  entries.
 - `server/fastify/src/routes/projection.ts` - `lorebook` →
   `['characters','modules','loreBook','loreBookPage']` (the broadest; split in
   Phase 5).
 
 ## Scope
 
-Edits to the global `loreBook` collection (`lore_books` table) that currently
-rewrite all nine collection tables + all characters. Narrow to the `lore_books`
-table + settings.
+Before implementation, edits to the global `loreBook` collection (`lore_books`
+table) rewrote all nine collection tables + all characters. The implemented path
+writes the `lore_books` table + settings.
 
-| Route (line) | Desired write |
+| Route | Desired write |
 | --- | --- |
-| `POST lorebooks` (3306) | `lore_books` table + settings (`loreBookPage`). |
-| `PATCH lorebooks/:id` (3343) | single-row `lore_books` UPDATE, no settings. The clean one. |
-| `DELETE lorebooks/:id` (3378) | `lore_books` table + settings. |
-| `POST lorebooks/reorder` (3416) | `lore_books` table + settings. |
-| `PUT lorebooks/:id/entries` (3493) | `lore_books` table + settings. |
+| `POST lorebooks` | `lore_books` table + settings (`loreBookPage`). |
+| `PATCH lorebooks/:id` | single-row `lore_books` UPDATE, no settings. The clean one. |
+| `DELETE lorebooks/:id` | `lore_books` table + settings. |
+| `POST lorebooks/reorder` | `lore_books` table + settings. |
+| `PUT lorebooks/:id/entries` | `lore_books` table + settings. |
 
 `ensureAllChildLorebooks` also repairs `character.globalLore` / `chat.localLore` /
-`module.lorebook` in memory; create/reorder/entries currently persist those, so
-they are effectively `message-free-downgrade`-only unless the slice accepts
-dropping child-lorebook normalization (Prerequisite 2 — recorded here). `patch`
-(name edit) is the clean single-row case with no settings and no child repair.
+`module.lorebook` in memory; the implemented slice accepted dropping those
+repairs to validate-only (Prerequisite 2 — recorded here). `patch` (name edit)
+is the clean single-row case with no settings and no child repair.
 
 Implemented: all five routes (`select` was already Phase 2 `targeted-settings`)
 moved to `applyTargetedCommandMutation` with `mutationPath: targeted-collection`.
@@ -46,8 +45,8 @@ write only when `loreBookPage` moved); `patch` (name) and `entries` are single-r
 create reports `['lore_books']`, delete/reorder report `['lore_books','settings']`
 when the page pointer shifts, and patch/entries report `['lore_books']`. Proven by
 `commandCollectionRange.test.ts` (5 lorebooks tests, incl. lore_books rowid
-stability for the single-row edits). The broad `lorebook` projection resource is
-left for the Phase 5 resource split.
+stability for the single-row edits). The broad `lorebook` projection resource was
+split in Phase 5.
 
 ## Implementation Scope
 
@@ -63,7 +62,7 @@ left for the Phase 5 resource split.
   are dropped to validate-only for create/reorder/entries — recorded here; if a
   reader is found to depend on them, keep those three at the `message-free`
   floor.
-- Projection: depends on the Phase 5
+- Projection: implemented by the Phase 5
   [`lorebook-resource-split.md`](../phase-5-projection-range-narrowing/lorebook-resource-split.md)
   to give global-lorebook events a `['loreBook','loreBookPage']` resource.
 

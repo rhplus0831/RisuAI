@@ -7,23 +7,24 @@ projection-field co-fix.
 
 - [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 loadouts row and the `loadout` projection-field bug.
-- `server/fastify/src/routes/commands.ts` - create (2085), patch (2121), delete
-  (2163), favorite (2197), touch (2232).
+- `server/fastify/src/routes/commands.ts` - create, patch, delete, favorite,
+  touch.
 - `server/fastify/src/routes/projection.ts` - `loadout` → `['loadouts']` (omits
   `lastLoadedLoadoutName`).
 
 ## Scope
 
-Edits to the `loadouts` collection that currently rewrite all nine collection
-tables + all characters. Narrow to the `loadouts` table + settings.
+Before implementation, edits to the `loadouts` collection rewrote all nine
+collection tables + all characters. The implemented path writes the `loadouts`
+table + settings.
 
-| Route (line) | Desired write |
+| Route | Desired write |
 | --- | --- |
-| `POST loadouts` (2085) | `loadouts` table + settings (`lastLoadedLoadoutName` defaulted by `ensureLoadoutCollection`). |
-| `PATCH loadouts/:id` (2121) | `loadouts` table + settings. |
-| `DELETE loadouts/:id` (2163) | `loadouts` table + settings. |
-| `POST loadouts/:id/favorite` (2197) | `loadouts` table (pure field edit, but the repair pass rewrites the whole array → full one-table rewrite). |
-| `POST loadouts/:id/touch` (2232) | `loadouts` table + settings (`lastLoadedLoadoutName` written explicitly). |
+| `POST loadouts` | `loadouts` table + settings (`lastLoadedLoadoutName` defaulted by `ensureLoadoutCollection`). |
+| `PATCH loadouts/:id` | `loadouts` table + settings. |
+| `DELETE loadouts/:id` | `loadouts` table + settings. |
+| `POST loadouts/:id/favorite` | `loadouts` table (pure field edit, but the repair pass rewrites the whole array → full one-table rewrite). |
+| `POST loadouts/:id/touch` | `loadouts` table + settings (`lastLoadedLoadoutName` written explicitly). |
 
 `favorite`/`touch` are pure field edits but `ensureLoadoutCollection` rewrites the
 whole array on every call, so they are full one-table rewrites, not single-row.

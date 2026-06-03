@@ -27,13 +27,12 @@ projections are already safe or intentionally sprawling.
 ## Slices
 
 - [`settings-only-mutation-paths.md`](slices/phase-2-settings-and-plugin-storage-paths/settings-only-mutation-paths.md) -
-  Tier 1: characters/reorder (2457), prompt-settings (1424), plugins/provider
-  (3966), modules/enable (3708), settings/:group (1074), lorebooks/:id/select
-  (3459). translator-presets/select (2050) is reclassified to the Phase 4
-  translator family because it also writes the `translator_presets` table.
+  Tier 1: characters/reorder, prompt-settings, plugins/provider, modules/enable,
+  settings/:group, lorebooks/:id/select. translator-presets/select is
+  reclassified to the Phase 4 translator family because it also writes the
+  `translator_presets` table.
 - [`plugin-storage-key-writers.md`](slices/phase-2-settings-and-plugin-storage-paths/plugin-storage-key-writers.md) -
-  Tier 2: plugin-storage put (4032), delete (4066), bulk (4099) → only
-  `plugin_custom_storage`.
+  Tier 2: plugin-storage put/delete/bulk → only `plugin_custom_storage`.
 
 ## Exit Criteria
 
@@ -45,8 +44,7 @@ projections are already safe or intentionally sprawling.
   upsert/delete; bulk = clear + reinsert) with `dbJsonWriteMs: 0`.
 - lorebooks/:id/select explicitly accepts dropping the global
   `ensureAllChildLorebooks` normalization (Prerequisite 2), recorded in the slice.
-- modules/enable's broad `module` projection is noted for the Phase 5 narrow
-  `moduleEnabled` resource co-fix.
+- modules/enable now emits the Phase 5 `moduleEnabled` projection resource.
 
 ## Validation
 

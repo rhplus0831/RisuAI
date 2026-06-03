@@ -10,8 +10,8 @@ character), chats/:id (+ the parent character row only when `select:true` moves
 
 - [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 3 "Single chat row".
-- `server/fastify/src/routes/commands.ts` - scriptstate (2983), chats/:id PATCH
-  (2560), chats/:id/lorebooks (3564).
+- `server/fastify/src/routes/commands.ts` - scriptstate, chats/:id PATCH, and
+  chats/:id/lorebooks.
 - `server/fastify/src/repository.ts` - `writeSingleChatRow`.
 
 ## Scope
@@ -19,11 +19,11 @@ character), chats/:id (+ the parent character row only when `select:true` moves
 The change is one chat row (`scriptstate` and `localLore` live in
 `chats.data_json`). Narrow each to `UPDATE chats WHERE id=?`.
 
-| Route (line) | Desired write | Notes |
+| Route | Desired write | Notes |
 | --- | --- | --- |
-| `PATCH chats/:id/scriptstate` (2983) | the patched chat row (`scriptstate`); + its parent character row only if keeping the `normalizeAllCharacterChats` repairs. | Hot path (script/generation runtime), currently `hydrated`. Dominant win is dropping the all-message hydrate + the all-character/nine-collection rewrite on every scriptstate write. |
-| `PATCH chats/:id` (2560) | one chat row; + the parent character row only when `select:true` (`chatPage` moves). | Already `message-free`. |
-| `PUT chats/:id/lorebooks` (3564) | one chat row (`localLore`). | Needs `writeSingleChatRow` and a policy on cross-character normalization (validate-only). |
+| `PATCH chats/:id/scriptstate` | one chat row (`scriptstate`). | Hot path; now avoids all-message hydrate and all-character/nine-collection rewrites. |
+| `PATCH chats/:id` | one chat row; + the parent character row only when `select:true` (`chatPage` moves). | Now `targeted-chat-row`. |
+| `PUT chats/:id/lorebooks` | one chat row (`localLore`). | Cross-character normalization is validate-only. |
 
 ## Implementation Scope
 
@@ -36,16 +36,13 @@ The change is one chat row (`scriptstate` and `localLore` live in
 - Revision/event behavior: one `baseRevision` check, one revision bump, one
   event; unchanged from the generic path.
 - Normalization decision: `normalizeAllCharacterChats` and cross-character repairs
-  are validate-only; the scriptstate path either keeps the parent-character-row
-  write (if it relies on those repairs) or records dropping them — recorded here.
-- Projection: stays broad until the Phase 5 per-chat / `generation.persisted`
-  branch lands.
+  are validate-only; scriptstate writes only the chat row.
+- Projection: Phase 5 added the per-chat / `generation.persisted` branch.
 
 ## Done When
 
-- scriptstate and chats/:id/lorebooks report `mutationPath: "targeted-chat-row"`
-  (chats/:id stays `message-free` or moves to `targeted-chat-row`) with
-  `dbJsonWriteMs: 0`.
+- scriptstate, chats/:id, and chats/:id/lorebooks report
+  `mutationPath: "targeted-chat-row"` with `dbJsonWriteMs: 0`.
 - The scriptstate hot path no longer hydrates messages or rewrites every
   character; rowid-stability tests prove unrelated chat and character rows are
   untouched.

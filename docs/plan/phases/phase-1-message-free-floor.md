@@ -1,9 +1,10 @@
 # Phase 1: Message-Free Floor
 
-Status: implemented (`208e538a` on `fastify`). The 62 safe `hydrated`
-non-message routes now run on `applyMessageFreeJsonCommandMutation`; the four
-message-dependent routes (2390, 2495, 2617, 2655) are unchanged and handed to
-Phase 3/Phase 6.
+Status: implemented (`208e538a` on `fastify`). Completion snapshot: 62 safe
+`hydrated` non-message routes were moved to `applyMessageFreeJsonCommandMutation`;
+later phases narrowed many of them onto targeted helpers. The original skipped
+message-dependent routes were handed to Phase 3/Phase 6; fork is now
+targeted/surgical from Phase 3.
 
 Goal: apply the cheap floor. Swap safe `hydrated` non-message routes to
 `applyMessageFreeJsonCommandMutation`. This removes the all-message load and the
@@ -22,16 +23,16 @@ still rewrites characters, nine collection tables, and settings.
 
 - [`hydrated-to-message-free-sweep.md`](slices/phase-1-message-free-floor/hydrated-to-message-free-sweep.md) -
   the single mechanical commit across ~62 routes, skipping the message-dependent
-  ones (2390, 2495, 2617, 2655) and the already-targeted message commands and
-  seed route.
+  ones (character delete, character chat create, chat delete, and fork) and the
+  already-targeted message commands and seed route. Later phases supersede this
+  helper snapshot for narrowed routes.
 
 ## Exit Criteria
 
-- Every `hydrated` route that never reads or writes `chat.message[]` reports
-  `mutationPath: "message-free"`.
-- The four message-dependent routes (2390, 2495, 2617, 2655) remain on their
-  current helper and are handed to Phase 3 (fork) or Phase 6 (the deletes and the
-  chats-create validation).
+- At the Phase 1 commit, every `hydrated` route that never read or wrote
+  `chat.message[]` reported `mutationPath: "message-free"`.
+- The four skipped routes were handed to Phase 3 (fork) or Phase 6 (the deletes
+  and the chats-create validation).
 - Revision conflict, event, and response shapes are byte-for-byte unchanged from
   the `hydrated` path (the swap removes only the message load and chat-row
   rewrite).

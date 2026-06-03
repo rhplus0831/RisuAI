@@ -2,10 +2,10 @@
 
 Status: implemented (all 8 collection families). Every Tier-4 collection route now
 runs on `applyTargetedCommandMutation` with `mutationPath: targeted-collection`.
-Two projection-field bugs were co-fixed inline (`promptItem`→`promptTemplate`,
+Three projection-field bugs were co-fixed inline (`promptItem`→`promptTemplate`,
 `persona` mirror scalars, `loadout`→`lastLoadedLoadoutName`); the broad
-`lorebook` / `module` projection resources are deferred to the Phase 5
-resource-split / collection-projection slices. Uses the Phase 0 writer kit
+`lorebook` / `module` projection resources were split in Phase 5. Uses the
+Phase 0 writer kit
 (`writeSingleCollectionTable` / `writeSingleCollectionRow`, `writeSettingsOnly`)
 and review gates.
 
@@ -54,11 +54,11 @@ Ordered easiest/lowest-risk first.
 - [`lorebooks-collection-path.md`](slices/phase-4-collection-table-paths/lorebooks-collection-path.md) -
   IMPLEMENTED. `lore_books` create/patch/delete/reorder/entries + `loreBookPage`
   + the child-lorebook normalization-drop decision (taken). Projection split
-  deferred to Phase 5.
+  landed in Phase 5.
 - [`modules-collection-path.md`](slices/phase-4-collection-table-paths/modules-collection-path.md) -
   IMPLEMENTED. `modules` patch/reorder/:id/lorebooks/:id/scripts/:id/triggers;
   the scripts/triggers cross-character repairs are dropped to validate-only.
-  Shared `module` projection deferred to Phase 5.
+  Shared `module` projection narrowing landed in Phase 5.
 
 ## Exit Criteria
 
@@ -66,8 +66,8 @@ Ordered easiest/lowest-risk first.
   field edits; one-table rewrite for create/delete/reorder) plus its pointer
   scalar in settings only when it changed.
 - The two-table cases are explicit: presets select/delete with `apply=true`
-  (+`prompt_templates` + settings), modules :id/scripts and :id/triggers (whole
-  `modules` table, may touch `characters`).
+  (+`prompt_templates` + settings). Module :id/scripts and :id/triggers rewrite
+  only the `modules` table; character repairs are validate-only.
 - Rowid-stability tests prove the other eight collection tables and all
   characters are untouched.
 - The `promptItem` (→`promptTemplate`), `persona` (+mirror scalars), and

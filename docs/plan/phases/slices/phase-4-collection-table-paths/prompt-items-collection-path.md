@@ -7,24 +7,25 @@ projection-field co-fix.
 
 - [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 prompt-items row and the `promptItem` projection-field bug.
-- `server/fastify/src/routes/commands.ts` - create (1453), patch (1489), delete
-  (1528), enable (1562), reorder (1601).
-- `server/fastify/src/routes/projection.ts` - `promptItem` → `['botPresets']`
-  (wrong; should be `['promptTemplate']`).
+- `server/fastify/src/routes/commands.ts` - create, patch, delete, enable,
+  reorder.
+- `server/fastify/src/routes/projection.ts` - `promptItem` now ships
+  `['promptTemplate']`; before this slice it incorrectly shipped
+  `['botPresets']`.
 
 ## Scope
 
-Edits to the `promptTemplate` collection (`prompt_templates` table) that currently
-rewrite all nine collection tables + all characters. Narrow to the
-`prompt_templates` table only.
+Before implementation, edits to the `promptTemplate` collection
+(`prompt_templates` table) rewrote all nine collection tables + all characters.
+The implemented path writes the `prompt_templates` table only.
 
-| Route (line) | Desired write |
+| Route | Desired write |
 | --- | --- |
-| `POST prompt-items` (1453) | `prompt_templates` table. |
-| `PATCH prompt-items/:id` (1489) | single-row `prompt_templates`. |
-| `DELETE prompt-items/:id` (1528) | `prompt_templates` table. |
-| `POST prompt-items/enable` (1562) | single-row `prompt_templates`. |
-| `POST prompt-items/reorder` (1601) | `prompt_templates` table. |
+| `POST prompt-items` | `prompt_templates` table. |
+| `PATCH prompt-items/:id` | single-row `prompt_templates`. |
+| `DELETE prompt-items/:id` | `prompt_templates` table. |
+| `POST prompt-items/enable` | full `prompt_templates` table toggle. |
+| `POST prompt-items/reorder` | `prompt_templates` table. |
 
 No pointer scalar rides along. Projection-field bug: `promptItem` mapped to
 `['botPresets']`, so a foreign refresh never reflected the changed `promptTemplate`
@@ -51,7 +52,7 @@ tests) plus two `projection.test.ts` assertions (a `promptItem` refresh reships
   `server/fastify/src/repository.ts`,
   `server/fastify/src/routes/projection.ts`.
 - Durable path: validate message-free `db.json`, write `prompt_templates`
-  (single-row for patch/enable; full table for create/delete/reorder) inside the
+  (single-row for patch; full table for create/delete/enable/reorder) inside the
   revision/event transaction.
 - Revision/event behavior: one `baseRevision` check, one revision bump, one
   event.

@@ -6,26 +6,26 @@ Status: implemented. Tier 4. Uses the Phase 0 writer kit.
 
 - [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 presets row.
-- `server/fastify/src/routes/commands.ts` - create (1105), patch (1143), delete
-  (1185), copy (1251), select (1299), import (1341), reorder (1379).
+- `server/fastify/src/routes/commands.ts` - create, patch, delete, copy, select,
+  import, reorder.
 - `server/fastify/src/repository.ts` - `bot_presets` and `prompt_templates`
   tables.
 
 ## Scope
 
-Edits to the `bot_presets` collection that currently rewrite all nine collection
-tables + all characters. Narrow to the `bot_presets` table (+ settings
-`botPresetsId`).
+Before implementation, edits to the `bot_presets` collection rewrote all nine
+collection tables + all characters. The implemented path writes the `bot_presets`
+table (+ settings `botPresetsId`).
 
-| Route (line) | Desired write |
+| Route | Desired write |
 | --- | --- |
-| `POST presets` (1105) | `bot_presets` table (+ settings `botPresetsId`). |
-| `PATCH presets/:id` (1143) | single-row `bot_presets`. |
-| `DELETE presets/:id` (1185) | `bot_presets` table (+ settings `botPresetsId`). With `apply=true`: also the `prompt_templates` table + ~73 settings scalars (via `applyPreset` writing `promptTemplate`). |
-| `POST presets/:id/copy` (1251) | `bot_presets` table. |
-| `POST presets/select` (1299) | `bot_presets` table (+ settings `botPresetsId`). With `apply=true`: also `prompt_templates` + ~73 settings scalars. |
-| `POST presets/import` (1341) | `bot_presets` table. |
-| `POST presets/reorder` (1379) | `bot_presets` table. |
+| `POST presets` | `bot_presets` table (+ settings `botPresetsId`). |
+| `PATCH presets/:id` | single-row `bot_presets`. |
+| `DELETE presets/:id` | `bot_presets` table (+ settings `botPresetsId`). With `apply=true`: also the `prompt_templates` table + ~73 settings scalars (via `applyPreset` writing `promptTemplate`). |
+| `POST presets/:id/copy` | `bot_presets` table. |
+| `POST presets/select` | `bot_presets` table (+ settings `botPresetsId`). With `apply=true`: also `prompt_templates` + ~73 settings scalars. |
+| `POST presets/import` | `bot_presets` table. |
+| `POST presets/reorder` | `bot_presets` table. |
 
 The verifier flagged select/delete with `apply=true` as wider than the
 classifier's single-table claim: `applyPreset` writes `promptTemplate` (a

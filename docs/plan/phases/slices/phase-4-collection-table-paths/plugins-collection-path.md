@@ -8,8 +8,8 @@ risk). Uses the Phase 0 writer kit (`writeSingleCollectionTable` /
 
 - [`../../../mutation-range-mismatch.md`](../../../mutation-range-mismatch.md) -
   Tier 4 plugins row.
-- `server/fastify/src/routes/commands.ts` - create (3823), patch (3859), delete
-  (3894), enable (3931), reorder (3998).
+- `server/fastify/src/routes/commands.ts` - create, patch, delete, enable,
+  reorder.
 - `server/fastify/src/routes/projection.ts` - `plugins` →
   `['plugins','currentPluginProvider']` (already narrow).
 
@@ -18,17 +18,17 @@ risk). Uses the Phase 0 writer kit (`writeSingleCollectionTable` /
 Each route edits one element/ordering of the `plugins` collection but rewrites
 all nine collection tables + all characters. Narrow to the `plugins` table only.
 
-| Route (line) | Desired write |
+| Route | Desired write |
 | --- | --- |
-| `POST plugins` (3823) | `plugins` table rewrite (create shifts positions). |
-| `PATCH plugins/:id` (3859) | single-row `UPDATE ... WHERE position=?`. |
-| `DELETE plugins/:id` (3894) | `plugins` table rewrite + settings `currentPluginProvider`. |
-| `POST plugins/:id/enable` (3931) | single-row `UPDATE ... WHERE position=?`. |
-| `POST plugins/reorder` (3998) | `plugins` table rewrite. |
+| `POST plugins` | `plugins` table rewrite (create shifts positions). |
+| `PATCH plugins/:id` | single-row `UPDATE ... WHERE position=?`. |
+| `DELETE plugins/:id` | `plugins` table rewrite + settings `currentPluginProvider`. |
+| `POST plugins/:id/enable` | single-row `UPDATE ... WHERE position=?`. |
+| `POST plugins/reorder` | `plugins` table rewrite. |
 
 `patch`/`enable` are clean single-row writes; create/delete/reorder are one-table
-rewrites. The projection is already narrow, so no Phase 5 co-fix is needed — this
-is the lowest-risk Tier-4 family and the audit confirms all routes.
+rewrites. The projection was already narrow, so this was the lowest-risk Tier-4
+family and the audit confirms all routes.
 
 Implemented: all five routes moved from `applyMessageFreeJsonCommandMutation` to
 `applyTargetedCommandMutation` with `mutationPath: targeted-collection`. `patch`

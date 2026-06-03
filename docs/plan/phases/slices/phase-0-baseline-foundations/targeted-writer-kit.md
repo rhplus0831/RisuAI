@@ -13,21 +13,25 @@ Status: implemented (2026-06-03). Realizes Prerequisite 1.
 
 ## Scope
 
-Add the small writer kit `repository.ts` is missing. Today it has only the broad
+Implemented writer inventory. Phase 0 added the targeted kit beside the broad
 `replaceAll*` writers, the surgical message-store writers, and the bespoke
-`writeCharacterSelectionRows`. Each new writer touches exactly its rows and
-leaves every other rowid stable.
+`writeCharacterSelectionRows`; later phases added the chat-cascade/fork and
+bulk-plugin-storage helpers they needed. Each targeted writer touches exactly its
+rows and leaves unrelated rowids stable.
 
 - `writeSettingsOnly(db, settings)` — one `UPDATE settings` (id=1).
 - `writeSingleCharacterRow(db, id, character)` — `UPDATE characters WHERE id=?`.
-- `writeSingleChatRow(db, id, chat)` — `UPDATE chats WHERE id=?` (no `chats`
-  single-row writer exists anywhere today).
+- `writeSingleChatRow(db, id, chat)` — `UPDATE chats WHERE id=?`.
+- `writeCharacterChatRows(db, characterId, chats)` /
+  `insertCharacterChatRow(db, characterId, chat)` — scoped chat-row cascade and
+  fork helpers added by Phase 3.
 - `writeSingleCollectionTable(db, field, array)` — DELETE+reinsert one of the
   nine collection tables (for create/delete/reorder).
 - `writeSingleCollectionRow(db, field, position, value)` — single-row
   `UPDATE ... WHERE position=?` (for pure field edits).
-- `writePluginStorageKey(db, key, value)` / `deletePluginStorageKey(db, key)` —
-  single-key upsert/delete on `plugin_custom_storage`.
+- `writePluginStorageKey(db, key, value)` / `deletePluginStorageKey(db, key)` /
+  `replacePluginStorage(db, entries)` — key and bulk writes on
+  `plugin_custom_storage`.
 
 ## Implementation Scope
 
@@ -50,11 +54,12 @@ leaves every other rowid stable.
 
 ## Done When
 
-- [x] All seven writers exist in `repository.ts` (`writeSettingsOnly`,
+- [x] The Phase 0 writers exist in `repository.ts` (`writeSettingsOnly`,
   `writeSingleCharacterRow`, `writeSingleChatRow`, `writeSingleCollectionTable`,
   `writeSingleCollectionRow`, `writePluginStorageKey`, `deletePluginStorageKey`)
   with unit tests (`__tests__/repositoryWriterKit.test.ts`) proving each touches
-  exactly its rows.
+  exactly its rows; later phases added scoped helpers such as
+  `writeCharacterChatRows`, `insertCharacterChatRow`, and `replacePluginStorage`.
 - [x] A rowid-stability unit test (the `position→rowid` / `id→rowid` snapshot
   template) shows unrelated character/chat/collection rowids are unchanged after
   each writer.

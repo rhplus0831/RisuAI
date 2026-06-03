@@ -78,7 +78,7 @@ record it here, and generalize the reference fix's rowid-stability +
   (`__tests__/helpers/commandMetricGates.ts`) and the existing
   `targeted-character-selection` gate runs through it without behavior change.
 
-## Measurement
+## Before-State Measurement
 
 Captured before-state (2026-06-03), expressed in physical SQLite table names so
 the metric is a literal write proof. The broad write set is the 13 tables every

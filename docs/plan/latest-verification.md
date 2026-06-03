@@ -7,30 +7,25 @@ latest-run section on each full or focused run; do not append history.
 
 ## Latest Run
 
-- Runtime/code commit under test: Phase 3 single character/chat-row paths
-  (`07971179`→`65e57c0a` on `fastify`, four stages). All 12 Tier-3 routes write
-  only their target character/chat row(s) + documented co-writes:
-  `targeted-character-row` for the pure character-row edits + the
-  chat-folder/reorder cascades + fork; `targeted-chat-row` for scriptstate,
-  chats/:id, and chats/:id/lorebooks.
-- Scope: server (`routes/commands.ts` 12 routes; `repository.ts` adds
-  `writeCharacterChatRows` + `insertCharacterChatRow`), the `targeted-character-row`
-  gate widened to {characters, chats, settings, + message-store tables for fork}
-  while forbidding the nine other-collection tables, the `commandMetrics.test.ts`
-  update (chat.updated → `targeted-chat-row`/`['chats']`), and the new
-  `commandSingleRowPaths.test.ts` (15 tests).
-- Result: green. The hot scriptstate path no longer hydrates messages or rewrites
-  every character; fork persists the forked chat + its messages surgically while
-  preserving the source chat's messages; rowid-stability proves unrelated
-  character/chat rows keep their rowids.
+- Runtime/code commit under test: Phase 5 projection-range narrowing through
+  `608de26c` on `fastify`, with the docs closure commit `2a1acbea`.
+- Scope: read/refresh narrowing only. `prompt` falls back to full/sprawling
+  (`314af90f`); module and script/trigger resources narrow to
+  `moduleEnabled`/`moduleUpdated`/`moduleReordered` and
+  `moduleScriptDefinition`/`moduleTriggerDefinition` (`f94e51ab`); the broad
+  `lorebook` resource splits into `globalLorebook` plus per-row lorebook resources
+  (`c3fff925`); `generation.persisted` uses `generation-chat` and
+  character/chat metadata events use `characterRow` (`608de26c`).
+- Result: green. No write range changed in Phase 5; the foreign/recovery
+  projection side now matches the narrowed write ranges from Phases 2-4.
 
 | Command | Result |
 | --- | --- |
-| `pnpm api:test` | 1556 passed, 1 skipped (89 files); +15 vs the Phase 2 baseline (the new Phase 3 regression). |
-| `pnpm test` | 948 passed, 4 skipped (100 files); unchanged — server-only diff. |
+| `pnpm api:test` | 1611 passed, 1 skipped. |
+| `pnpm test` | 951 passed, 4 skipped. |
 | `pnpm client-thinning:audit` | Passed. |
-| `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test commandMetrics` | Passed; chat.updated now `targeted-chat-row`/`['chats']`. |
-| `pnpm api:test commandSingleRowPaths` | 15 passed (targeted path + exact `writtenTables` + rowid stability across the character-row, chat-row, cascade, and fork families). |
+| `pnpm api:test -- server/fastify/__tests__/projection.test.ts` | Passed; covers prompt fallback, module/script/trigger resources, lorebook split, `characterRow`, and `generation-chat`. |
+| `pnpm test -- src/ts/bootstrap.test.ts` | Passed; covers client application of `characterRow`, `character-lorebook`, and `generation-chat`. |
 | Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | Passed (zero errors). |
 
 ## Notes
@@ -43,10 +38,5 @@ latest-run section on each full or focused run; do not append history.
 - The mutation-range metric baseline (Phase 0) is now live: `command_mutation`
   records `writtenTables`, so the before/after table set is the proof a write
   narrowed, not just timing.
-- Next slice (Phase 4 collection-table paths): narrow the Tier-4 collection
-  families (plugins first — its projection is already narrow) onto
-  `targeted-collection` via `writeSingleCollectionRow` / `writeSingleCollectionTable`
-  + the family's pointer-settings co-write, pairing each with its Phase 5
-  projection-field co-fix; each lands with its rowid-stability test + metric gate,
-  then re-run `pnpm api:test`, the `commandMetrics` summary,
-  `pnpm client-thinning:audit`, and the type check, and refresh this file.
+- Next runtime slice: Phase 6 Tier-5 floor routes and unblock conditions.
+  Refresh this file after any new focused or full verification run.

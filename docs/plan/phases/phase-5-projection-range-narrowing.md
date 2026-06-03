@@ -4,13 +4,16 @@ Status: implemented (`314af90f` field-bug, `f94e51ab` collection resources,
 `c3fff925` lorebook split, `608de26c` character/chat branches). All four slices
 landed: the `prompt` field-bug fallback, the narrow module + script/trigger
 resources, the `globalLorebook`/`characterLorebook` lorebook split, and the
-`generation-chat` + `characterRow` per-row branches. api:test 1611/1, test
-951/4, both typechecks + the client-thinning audit green.
+`generation-chat` + `characterRow` per-row branches. Character script/trigger
+routes still remain Phase 6 floor writes even though their logical refresh
+resource ships `['characters']`. api:test 1611/1, test 951/4, both typechecks +
+the client-thinning audit green.
 
 Goal: narrow the read/refresh side. `RESOURCE_PROJECTION_FIELDS` maps each event
 resource to the fields a foreign or recovery refresh ships. These refreshes are
 rare, but a narrowed write with a broad projection still refreshes too much. The
-three field bugs ship the wrong fields today and should be fixed regardless.
+three field bugs shipped the wrong fields before Phase 5 and were fixed
+regardless.
 
 ## Source Anchors
 
@@ -31,9 +34,9 @@ three field bugs ship the wrong fields today and should be fixed regardless.
   per-chat branch. Co-scheduled with Phase 3.
 - [`collection-projection-resources.md`](slices/phase-5-projection-range-narrowing/collection-projection-resources.md) -
   narrower `module` resources (`moduleEnabled` / `reordered` / `updated` instead
-  of the shared `['modules','enabledModules','loadouts','characters']`) and the
-  `scriptDefinition` / `triggerDefinition` whole-characters+modules re-ship.
-  Co-scheduled with Phases 2 and 4.
+  of the shared `['modules','enabledModules','loadouts','characters']`) plus
+  module-scoped script/trigger resources. Character script/trigger writes remain
+  a Phase 6 floor-route exception.
 - [`lorebook-resource-split.md`](slices/phase-5-projection-range-narrowing/lorebook-resource-split.md) -
   split the broad `lorebook` resource
   (`['characters','modules','loreBook','loreBookPage']`) into a `globalLorebook`

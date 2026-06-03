@@ -5,6 +5,11 @@ _Audited 2026-06-03. Scope: all 79 command routes in
 `b57df5cd` ("fix: speed up character selection command"). A fan-out classifier
 produced the findings; an adversarial verifier re-checked each narrowing claim._
 
+Current note: this file is the frozen seed/before-state audit. Route line numbers
+and helper classifications below are audit-time anchors and have drifted as
+Phases 0-5 landed. Use [`status.md`](status.md), [`active-risk-analysis.md`](active-risk-analysis.md),
+and the phase/slice docs for present-tense runtime status.
+
 ## What "mutation-range mismatch" means
 
 A mismatch means a command changes a small state slice but uses a helper that
@@ -222,7 +227,7 @@ Pointer scalars ride along in settings when they change.
 | Translator presets → `translator_presets` | create 1895, patch 1936, delete 1984 | `translator_presets` table + settings (`translatorPresetId`/`translatorPrompt`/`translatorMaxResponse`). `ensureTranslatorPresetCollection` rewrites the whole array + syncs legacy fields on every call, so a full one-table rewrite + unconditional settings write (not a single-row UPDATE). |
 | Loadouts → `loadouts` | create 2085, patch 2121, delete 2163, favorite 2197, touch 2232 | `loadouts` table + settings (`lastLoadedLoadoutName`, defaulted by `ensureLoadoutCollection`; `touch` writes it explicitly). `favorite`/`touch` are pure field edits but the repair pass rewrites the whole array → full one-table rewrite. |
 | Lorebooks → `lore_books` | create 3306, patch 3343, delete 3378, reorder 3416, entries 3493 | `lore_books` table + settings (`loreBookPage`). `ensureAllChildLorebooks` also repairs `character.globalLore` / `chat.localLore` / `module.lorebook` in memory; create/reorder/entries currently persist those, so they are effectively `message-free-downgrade`-only unless you accept dropping child-lorebook normalization. `patch` (name edit) is the clean one: single-row `lore_books` UPDATE, no settings. |
-| Modules → `modules` | patch 3638, reorder 3748, `:id/lorebooks` 4137, `:id/scripts` 4239, `:id/triggers` 4273 | `modules` table only (patch/lorebooks = single-row by position; reorder = full one-table rewrite). `:id/scripts`/`:id/triggers` additionally trigger `ensureAllScriptDefinitionCollections` repairs across all characters+modules, so a faithful narrow write must rewrite the whole `modules` table (and may touch `characters`) — verifier downgraded these from the optimistic single-row claim. |
+| Modules → `modules` | patch 3638, reorder 3748, `:id/lorebooks` 4137, `:id/scripts` 4239, `:id/triggers` 4273 | `modules` table only (patch/lorebooks = single-row by position; reorder = full one-table rewrite). Audit-time note: `:id/scripts`/`:id/triggers` triggered `ensureAllScriptDefinitionCollections` repairs across all characters+modules. Phase 4 later implemented the accepted decision: rewrite only `modules` and drop character repairs to validate-only. |
 | Plugins → `plugins` | create 3823, patch 3859, delete 3894, enable 3931, reorder 3998 | `plugins` table (+ settings `currentPluginProvider` for `delete`). `patch`/`enable` are clean single-row `UPDATE … WHERE position=?`; create/delete/reorder = full one-table rewrite. Projection already narrow (`['plugins','currentPluginProvider']`), so these are the lowest-risk Tier-4 fixes. Verifier: all confirmed. |
 
 ### Tier 5 — `message-free-downgrade` is the ceiling (deeper narrowing blocked)
@@ -252,6 +257,11 @@ Use `message-free` where safe, or keep `hydrated` where noted.
   character row, + settings (`characterOrder` always appended, `currentChar` clamped). Feasible
   as a single `INSERT` + settings, but with the caveat that existing-row id-repair side effects are
   dropped. Start with `message-free-downgrade`.
+- `POST /api/v1/commands/modules` (3602). Appends one module row, but
+  `ensureModuleCommandDatabase` can also repair existing module ids,
+  `enabledModules`, and character collection shape. Start with
+  `message-free-downgrade` until those repairs are scoped to validate-only or
+  explicitly co-written.
 - `PUT /api/v1/commands/characters/:characterId/scripts` (4171) and `/triggers` (4205).
   `normalizeScriptDefinitionDatabase` + `ensureCharacterCollection` rewrite all characters +
   all modules + settings (`characterOrder`/`currentChar`) on every call. A single-character-row
