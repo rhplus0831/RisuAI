@@ -12,6 +12,10 @@ import {
   type GenerationChatRouteOptions,
 } from '../src/routes/generationChat.js'
 import { LLMFormat } from '../../../src/ts/model/types'
+import {
+  assertCommandMetricGate,
+  type CommandMutationMetric,
+} from './helpers/commandMetricGates.js'
 
 const subtle = webcrypto.subtle
 
@@ -744,6 +748,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         type: 'chat.scriptstate.updated',
         mutationPath: 'targeted-assembly',
       })
+      assertCommandMetricGate(
+        chatVar.find((entry) => entry.metric === 'command_mutation') as CommandMutationMetric,
+      )
 
       await seedDatabase(
         harness.app,
@@ -776,6 +783,11 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         type: 'messages.replaced',
         mutationPath: 'targeted-assembly',
       })
+      assertCommandMetricGate(
+        transcriptRewrite.find(
+          (entry) => entry.metric === 'command_mutation',
+        ) as CommandMutationMetric,
+      )
 
       await seedDatabase(
         harness.app,
@@ -808,6 +820,11 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         type: 'messages.replaced',
         mutationPath: 'targeted-assembly',
       })
+      assertCommandMetricGate(
+        combinedSideEffects.find(
+          (entry) => entry.metric === 'command_mutation',
+        ) as CommandMutationMetric,
+      )
 
       await seedDatabase(harness.app, auth.assertion, fixtureDatabase)
       before = metrics.length
