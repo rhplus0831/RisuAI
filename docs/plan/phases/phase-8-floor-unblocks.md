@@ -25,9 +25,11 @@ where frequency and per-call cost both justify it:
 - `DELETE chats/:id` — **frequent** (chat housekeeping), currently `hydrated`
   (`loadPersistedWithMessages` + `cloneJsonValue` over every message of every chat)
   to delete one chat.
+- `DELETE characters/:id` — occasional, but per-call as expensive as the chat
+  delete (same corpus-wide message hydration) and it reuses 8b's mechanism, so it
+  landed as a follow-up (slice 8c).
 
-Left at the floor (Non-Scope): `DELETE characters/:id` (occasional; reuses the
-8b cleanup, deferred), `POST characters`, `POST characters/create-and-select`,
+Left at the floor (Non-Scope): `POST characters`, `POST characters/create-and-select`,
 `POST modules` (rare/occasional one-shot button clicks), and `DELETE modules/:id`
 (rare + a separate cross-table `removeModuleReferences` blocker).
 
@@ -44,25 +46,32 @@ Left at the floor (Non-Scope): `DELETE characters/:id` (occasional; reuses the
    sibling mutations are discarded — the same "validate-only via discard" the
    `characterUpdated` reference fix (`commands.ts:2563`) already relies on. No
    change to the normalizer itself.
-2. **Targeted orphan-message cleanup (8b).** `deleteChatMessages` /
+2. **Targeted orphan-message cleanup (8b + 8c).** `deleteChatMessages` /
    `deleteChatHypaV3` already exist (`messageStore.ts`) and are already paired in
-   `repository.ts`. Calling them directly removes the deleted chat's message and
+   `repository.ts`. Calling them directly removes a deleted chat's message and
    hypa rows, which is the only reason `DELETE chats/:id` stayed `hydrated` (the
    `syncChatMessages` diff did the orphan cleanup as a side effect of loading every
    message). With the targeted deletes wired in, the route drops the message load
-   entirely.
+   entirely. `DELETE characters/:id` (8c) reuses the same deletes — looped over the
+   removed character's chat ids — plus `deleteCharacterRow` (delete + position
+   compaction) and `deleteCharacterChats`, and persists the re-normalized
+   `characterOrder`/`currentChar` settings scalars.
 
 ## Source Anchors
 
 - `server/fastify/src/routes/commands.ts` — `PUT characters/:id/scripts`
-  (`:4543`), `PUT characters/:id/triggers` (`:4577`), `DELETE chats/:id` (`:2854`);
-  reference `targeted-character-row` route `PATCH characters/:id` (`:2563`).
+  (`:4543`), `PUT characters/:id/triggers` (`:4577`), `DELETE chats/:id` (`:2854`),
+  `DELETE characters/:id` (`:2620`); reference `targeted-character-row` route
+  `PATCH characters/:id` (`:2563`).
 - `server/fastify/src/commands/scriptDefinitions.ts` — `normalizeScriptDefinitionDatabase`,
   `readCharacterScriptParent`, the strict `readScriptDefinitions`/`readTriggerDefinitions`.
 - `server/fastify/src/commands/chats.ts` — `normalizeAllCharacterChats`,
   `requireChatLocation`, `ensureCharacterChats`, `selectedChatId`.
+- `server/fastify/src/commands/characters.ts` — `ensureCharacterCollection`
+  (re-normalizes `characterOrder`/`currentChar`), `selectedCharacterId`.
 - `server/fastify/src/repository.ts` — `writeSingleCharacterRow`,
-  `writeCharacterChatRows`, and the new `deleteCharacterChatRow`.
+  `writeCharacterChatRows`, `deleteCharacterChatRow`, and the new
+  `deleteCharacterRow` (delete + position compaction) / `deleteCharacterChats`.
 - `server/fastify/src/messageStore.ts` — `deleteChatMessages`, `deleteChatHypaV3`.
 - `server/fastify/src/commands/mutations.ts` — `applyTargetedCommandMutation`,
   `TARGETED_MUTATION_PATHS.characterRow`.
@@ -74,13 +83,18 @@ Left at the floor (Non-Scope): `DELETE characters/:id` (occasional; reuses the
 - [`chat-delete-character-row.md`](slices/phase-8-floor-unblocks/chat-delete-character-row.md)
   (8b) — route `DELETE chats/:id` onto `targeted-character-row` + targeted
   message/hypa delete.
+- [`character-delete-character-row.md`](slices/phase-8-floor-unblocks/character-delete-character-row.md)
+  (8c) — route `DELETE characters/:id` onto `targeted-character-row`: delete the
+  character row + all its chat rows + each chat's message/hypa rows + the settings
+  pointers (reuses 8b's deletes).
 
 ## Projection / Event Behavior
 
 No projection change. The emitted events and their resources are unchanged
 (`scriptDefinitions.replaced` → `scriptDefinition`, `triggerDefinitions.replaced`
-→ `triggerDefinition`, `chat.deleted` → `chat`), so the client refreshes exactly
-as before; the narrowed writes update the same SQLite rows the projection reads.
+→ `triggerDefinition`, `chat.deleted` → `chat`, `character.deleted` →
+`character`), so the client refreshes exactly as before; the narrowed writes update
+the same SQLite rows the projection reads.
 
 ## Exit Criteria
 
@@ -92,10 +106,15 @@ as before; the narrowed writes update the same SQLite rows the projection reads.
   the deleted chat's message/hypa rows (`writtenTables: ['characters',
   'chat_hypa_v3', 'chats', 'messages']`), and leaves no orphan message/hypa rows;
   unrelated rows stay stable. (Met.)
+- `DELETE characters/:id` reports `mutationPath: targeted-character-row`, loads no
+  messages, removes the character row (compacting positions) + all its chat rows +
+  each chat's message/hypa rows + the settings pointers (`writtenTables:
+  ['characters', 'chat_hypa_v3', 'chats', 'messages', 'settings']`); the sibling
+  character and its rows stay stable. (Met.)
 - The normalization-drop decision (validate-only via discard) is recorded; no
-  global repair is silently dropped without it. (Met — recorded in both slices.)
+  global repair is silently dropped without it. (Met — recorded in all slices.)
 - Each slice lands with a rowid-stability regression test and the metric gate.
-  (Met — `commandFloorUnblock.test.ts`, 5 tests.)
+  (Met — `commandFloorUnblock.test.ts`, 6 tests.)
 
 ## Validation
 

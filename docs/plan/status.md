@@ -30,19 +30,21 @@ high-value Tier-5 routes below the floor. The only remaining work is the
 deferred-by-choice low-value Tier-5 routes and the standing verification-log
 upkeep.
 
-- Phase 8 implemented (scoped Tier-5 floor unblocks): the two highest-cost Tier-5
-  routes graduated below their floor onto `targeted-character-row`. 8a (`ad5f3cde`)
-  — `PUT characters/:id/scripts` + `/triggers` (a 250 ms debounced client watcher
+- Phase 8 implemented (scoped Tier-5 floor unblocks): the high-cost Tier-5 routes
+  graduated below their floor onto `targeted-character-row`. 8a (`ad5f3cde`) —
+  `PUT characters/:id/scripts` + `/triggers` (a 250 ms debounced client watcher
   fires them per edit) now write only the target character row; the normalization
   still runs but its sibling repairs mutate the clone only and are discarded
   (validate-only via discard). 8b (`a83c474a`) — `DELETE chats/:id` drops the
   corpus-wide message hydration and cleans the deleted chat's orphans with the
   targeted `deleteChatMessages`/`deleteChatHypaV3` (+ new `deleteCharacterChatRow`
-  writer). No projection change. Deferred by choice (rare actions): `DELETE
-  characters/:id` (a trivial follow-up reusing `deleteCharacterChatRow`), the
-  `message-free` creates, and `DELETE modules/:id`. Proven by
-  `commandFloorUnblock.test.ts` (5); the Phase 6 ceiling proof was updated for the
-  graduations.
+  writer). 8c (`4009b65d`) — `DELETE characters/:id` reuses the same deletes looped
+  over the removed character's chats (+ new `deleteCharacterRow` with position
+  compaction, `deleteCharacterChats`) and persists the re-normalized
+  `characterOrder`/`currentChar`. No projection change. Left at the floor by choice
+  (rare one-shot actions): the `message-free` creates and `DELETE modules/:id`
+  (separate cross-table blocker). Proven by `commandFloorUnblock.test.ts` (6); the
+  Phase 6 ceiling proof was updated for the graduations.
 
 - Phase 7 implemented (verification budgets, gate-completeness pass): the gate map
   (`__tests__/helpers/commandMetricGates.ts`) now carries one review gate per
@@ -183,21 +185,21 @@ Headlines, in priority order:
   own table (+ pointer/mirror settings, and for preset apply the prompt_templates
   co-write); lore_books child-lorebook and modules scripts/triggers
   cross-character repairs are dropped to validate-only.
-- Tier 5: floors verified (Phase 6); high-value subset narrowed below the floor
-  (Phase 8). The script/trigger PUTs and `DELETE chats/:id` now run on
-  `targeted-character-row` (8a/8b). The remaining routes stay at their floor by
-  choice — `DELETE characters/:id` (a trivial follow-up reusing
-  `deleteCharacterChatRow`), the `message-free` creates, and `DELETE modules/:id`
+- Tier 5: floors verified (Phase 6); the character-scoped routes narrowed below
+  the floor (Phase 8). The script/trigger PUTs (8a), `DELETE chats/:id` (8b), and
+  `DELETE characters/:id` (8c) now run on `targeted-character-row`. The remaining
+  routes stay at their floor by choice — the `message-free` creates (`POST
+  characters`, `create-and-select`, `POST modules`) and `DELETE modules/:id`
   (separate cross-table blocker) — all rare actions where the broad write is
   acceptable.
 
 ## Latest Verification
 
 See [`latest-verification.md`](latest-verification.md). Phase 8 (scoped Tier-5
-floor unblocks) is the latest change; the script/trigger PUTs and `DELETE
-chats/:id` narrowed onto `targeted-character-row`, proven by
-`commandFloorUnblock.test.ts` (5 tests) with the Phase 6 ceiling proof updated.
-api:test 1631/1, test 951/4, both typechecks + the client-thinning audit green.
+floor unblocks) is the latest change; the script/trigger PUTs, `DELETE chats/:id`,
+and `DELETE characters/:id` narrowed onto `targeted-character-row`, proven by
+`commandFloorUnblock.test.ts` (6 tests) with the Phase 6 ceiling proof updated.
+api:test 1632/1, test 951/4, both typechecks + the client-thinning audit green.
 
 ## Start Here
 

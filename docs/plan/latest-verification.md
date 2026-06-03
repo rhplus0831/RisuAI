@@ -9,7 +9,7 @@ latest-run section on each full or focused run; do not append history.
 
 - Runtime/code change under test: Phase 8 (scoped Tier-5 floor unblocks) on
   `fastify`, on top of Phase 7 (`e3887777`).
-- Scope: runtime write-range narrowing for the high-value Tier-5 subset; no
+- Scope: runtime write-range narrowing for the character-scoped Tier-5 routes; no
   projection change (emitted events/resources unchanged). 8a — `PUT
   characters/:id/scripts` + `/triggers` moved off the `message-free` 13-table floor
   onto `targeted-character-row`, writing only the target character row
@@ -18,25 +18,33 @@ latest-run section on each full or focused run; do not append history.
   8b — `DELETE chats/:id` moved off the `hydrated` corpus-wide message load onto
   `targeted-character-row` + the targeted `deleteChatMessages`/`deleteChatHypaV3`
   orphan cleanup; new `deleteCharacterChatRow` writer removes the one chat row.
+  8c — `DELETE characters/:id` moved off `hydrated` onto `targeted-character-row`:
+  delete the character row (new `deleteCharacterRow`, with position compaction) +
+  all its chat rows (new `deleteCharacterChats`) + each chat's message/hypa rows
+  (looped) + the re-normalized `characterOrder`/`currentChar` settings.
 - Before/after written-table set: scripts/triggers `message-free` (all 13 broad
-  tables) → `['characters']`; `DELETE chats/:id` `hydrated` (whole-corpus message
-  load + 13-table rewrite) → `['characters', 'chat_hypa_v3', 'chats', 'messages']`
-  with no message hydration. `DELETE characters/:id` (reuses 8b's helper), the
-  `message-free` creates, and `DELETE modules/:id` stay at the floor by choice.
+  tables) → `['characters']`; `DELETE chats/:id` `hydrated` → `['characters',
+  'chat_hypa_v3', 'chats', 'messages']`; `DELETE characters/:id` `hydrated` →
+  `['characters', 'chat_hypa_v3', 'chats', 'messages', 'settings']` — all with no
+  message hydration. The `message-free` creates and `DELETE modules/:id` stay at
+  the floor by choice (rare actions; module delete has a cross-table blocker).
 - Result: green. New `server/fastify/__tests__/commandFloorUnblock.test.ts`
-  (5 tests) proves the targeted paths + `writtenTables` + rowid stability + the
-  deleted chat's orphan message/hypa cleanup + preserved selection semantics. The
-  Phase 6 ceiling proof (`commandMessageFreeCeiling.test.ts`) was updated to track
-  the three graduated routes. The gate-completeness invariant
-  (`commandMutationBudget.test.ts`) still passes (these routes reuse the existing
-  `targeted-character-row` gate, so the emittable-label set is unchanged).
+  (6 tests) proves the targeted paths + `writtenTables` + rowid stability + the
+  deleted chat(s)' orphan message/hypa cleanup + position compaction + preserved
+  selection/pointer semantics. The Phase 6 ceiling proof
+  (`commandMessageFreeCeiling.test.ts`) was updated to track the four graduated
+  routes. The gate-completeness invariant (`commandMutationBudget.test.ts`) still
+  passes (these routes reuse the existing `targeted-character-row` gate, so the
+  emittable-label set is unchanged). The client-thinning audit's A4R3 (transitive
+  command-path id minting) required binding `characters[index]` to a `character`
+  local before `ensureCharacterChats`.
 
 | Command | Result |
 | --- | --- |
-| `pnpm api:test` | 1631 passed, 1 skipped. |
+| `pnpm api:test` | 1632 passed, 1 skipped. |
 | `pnpm test` | 951 passed, 4 skipped. |
 | `pnpm client-thinning:audit` | Passed. |
-| `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandFloorUnblock.test.ts` | 5 passed; the Phase 8 narrowing proof. |
+| `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandFloorUnblock.test.ts` | 6 passed; the Phase 8 narrowing proof. |
 | `commandMessageFreeCeiling.test.ts` (Phase 6 ceiling, updated) | 9 passed. |
 | Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | Passed (zero errors). |
 
@@ -58,7 +66,7 @@ latest-run section on each full or focused run; do not append history.
   `dbJsonWriteMs: 0` (for `targeted-*`) review gate with a written-table budget,
   and `commandMutationBudget.test.ts` fails on any gate-map drift.
 - Phase 8 landed the scoped Tier-5 floor unblocks (8a scripts/triggers, 8b chat
-  delete). Remaining deferred-by-choice: `DELETE characters/:id` (a trivial
-  follow-up reusing `deleteCharacterChatRow`), the `message-free` creates, and
-  `DELETE modules/:id` (separate cross-table blocker) — all rare actions left at
-  the floor. Refresh this file after any new focused or full verification run.
+  delete, 8c character delete). Remaining deferred-by-choice: the `message-free`
+  creates and `DELETE modules/:id` (separate cross-table blocker) — all rare
+  actions left at the floor. Refresh this file after any new focused or full
+  verification run.

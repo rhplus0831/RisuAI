@@ -26,16 +26,12 @@ slices), Phase 6 (the Tier-5 message-free ceiling, floors verified), and Phase 7
 (verification budgets, gate-completeness pass) are implemented. All Tier-5 routes
 now sit at their proven safe floor; the deepest narrowing per route is deferred
 behind a recorded unblock prerequisite. Phases 0-8 have landed;
-[`Phase 8`](phases/phase-8-floor-unblocks.md) narrowed the high-value Tier-5
-subset (8a scripts/triggers, 8b `DELETE chats/:id`) onto `targeted-character-row`.
-The plan is effectively complete. Remaining work is optional, low-value, and
-deferred by choice:
+[`Phase 8`](phases/phase-8-floor-unblocks.md) narrowed the character-scoped Tier-5
+routes (8a scripts/triggers, 8b `DELETE chats/:id`, 8c `DELETE characters/:id`)
+onto `targeted-character-row`. The plan is effectively complete. Remaining work is
+optional, low-value, and left at the floor by choice:
 
-1. (Optional) `DELETE characters/:id` — a trivial follow-up: loop the character's
-   chat ids over the `deleteCharacterChatRow` + `deleteChatMessages`/
-   `deleteChatHypaV3` primitives 8b already built, then remove the character row.
-   Occasional action, so low priority.
-2. (Optional, left at floor) the `message-free` creates (`POST characters`,
+1. (Optional, left at floor) the `message-free` creates (`POST characters`,
    `create-and-select`, `POST modules`) and `DELETE modules/:id` — rare one-shot
    actions; the module delete also has a separate cross-table
    `removeModuleReferences` blocker. The broad write is acceptable here.
@@ -75,10 +71,12 @@ deferred by choice:
    every `targeted-*` gate holds `dbJsonWriteMs: 0` + a table budget), with the
    `targeted-assembly` gate added. The verification-log maintenance rule stays
    standing.
-9. Phase 8 scoped Tier-5 floor unblocks — done (`ad5f3cde`, `a83c474a`): the
-   script/trigger PUTs (8a) and `DELETE chats/:id` (8b) narrowed onto
-   `targeted-character-row`, proven by `commandFloorUnblock.test.ts`; the Phase 6
-   ceiling proof updated for the graduations. Low-value routes left at the floor.
+9. Phase 8 scoped Tier-5 floor unblocks — done (`ad5f3cde`, `a83c474a`,
+   `4009b65d`): the script/trigger PUTs (8a), `DELETE chats/:id` (8b), and
+   `DELETE characters/:id` (8c) narrowed onto `targeted-character-row`, proven by
+   `commandFloorUnblock.test.ts`; the Phase 6 ceiling proof updated for the
+   graduations. Only the rare `message-free` creates + `DELETE modules/:id` left
+   at the floor.
 10. Refresh [`latest-verification.md`](latest-verification.md) after each tier's
    focused and full run.
 
