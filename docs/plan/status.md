@@ -10,8 +10,9 @@ Current status reflects the seed audit
 Phase 0 (baseline foundations), Phase 1 (the message-free floor), Phase 2
 (settings + plugin-storage paths), Phase 3 (single character/chat-row paths),
 Phase 4 (collection-table paths, all eight families), Phase 5
-(projection-range narrowing), and Phase 6 (the Tier-5 message-free ceiling, floors
-verified) have landed. The narrow runtime paths now include
+(projection-range narrowing), Phase 6 (the Tier-5 message-free ceiling, floors
+verified), and Phase 7 (verification budgets, gate-completeness pass) have landed.
+The narrow runtime paths now include
 the reference fix `b57df5cd` (`characters/select`), the six targeted message
 commands, the six `targeted-settings` routes, the three `targeted-plugin-storage`
 routes, the twelve Tier-3 `targeted-character-row` / `targeted-chat-row` routes,
@@ -23,9 +24,23 @@ the broad table set by design until their prerequisites land.
 
 ## Current Snapshot
 
-Analysis is complete. Phases 0-6 have landed. The write-side tiers are at their
-floor; remaining work is the deferred Tier-5 unblock prerequisites and Phase 7
-verification maintenance.
+Analysis is complete. Phases 0-7 have landed. The write-side tiers are at their
+floor and the verification budgets are gate-complete; the only remaining work is
+the deferred (optional, gated) Tier-5 unblock prerequisites and the standing
+verification-log upkeep.
+
+- Phase 7 implemented (verification budgets, gate-completeness pass): the gate map
+  (`__tests__/helpers/commandMetricGates.ts`) now carries one review gate per
+  emittable `mutationPath` — the missing `targeted-assembly` gate (the
+  `/generate/chat` scriptstate + transcript persistence path) was added. New
+  `commandMutationBudget.test.ts` (6 tests) makes the gate map self-checking: it
+  scans the server source for every emittable label and requires the gate set and
+  the emitted set to be exactly equal (11 labels), every `targeted-*` gate to fix
+  `dbJsonWriteMs: 0` and declare a written-table budget, the broad baselines to
+  keep theirs, and no budget to name an out-of-universe table. The new gate is also
+  exercised against its real runtime metric in `generation.chat.test.ts`. Per-family
+  written-table + rowid-stability budgets from Phases 2-4 remain in the
+  `command*Range` tests. No runtime write/projection range changed.
 
 - Phase 6 implemented (Tier-5 message-free ceiling, floors verified): all nine
   Tier-5 routes are held at their correct safe floor with their blocker + unblock
@@ -115,8 +130,9 @@ verification maintenance.
 - The seed audit catalogued the projection-range mismatches; Phase 5 closed the
   field bugs and broad-resource splits now described above.
 
-Phases 0-6 are implemented. Phase 7 is partially implemented and ongoing as
-verification maintenance.
+Phases 0-7 are implemented. Phase 7's only ongoing piece is the
+verification-log maintenance rule (replace the `latest-verification.md` "Latest
+Run" section on each subsequent run).
 
 ## Phase Router
 
@@ -129,7 +145,7 @@ verification maintenance.
 | [Phase 4](phases/phase-4-collection-table-paths.md) | Implemented | Tier-4 single collection-table edits across all eight collection families. |
 | [Phase 5](phases/phase-5-projection-range-narrowing.md) | Implemented | Narrow projection resources, the `lorebook` resource split, and the projection-field bug fixes. |
 | [Phase 6](phases/phase-6-message-free-ceiling.md) | Implemented | Tier-5 routes held at their safe floor (`hydrated`/`message-free`) with blockers + unblock conditions recorded. |
-| [Phase 7](phases/phase-7-verification-budgets.md) | Partial / ongoing | Written-table-set, rowid-stability, and `dbJsonWriteMs: 0` gates and the verification log. |
+| [Phase 7](phases/phase-7-verification-budgets.md) | Implemented (log upkeep ongoing) | Written-table-set, rowid-stability, and `dbJsonWriteMs: 0` gates, the gate-completeness invariants, and the verification log. |
 
 ## Active Risk Summary
 
@@ -159,10 +175,10 @@ Headlines, in priority order:
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). Phase 6 (the Tier-5
-message-free ceiling) is the latest change; it adds the floor-proving test
-`commandMessageFreeCeiling.test.ts` (9 tests) and records/corrects the per-route
-blockers — no runtime write range changed. api:test 1620/1, test 951/4, both
+See [`latest-verification.md`](latest-verification.md). Phase 7 (verification
+budgets, gate-completeness pass) is the latest change; it adds the missing
+`targeted-assembly` gate and the self-checking `commandMutationBudget.test.ts`
+(6 tests) — no runtime write range changed. api:test 1626/1, test 951/4, both
 typechecks + the client-thinning audit green.
 
 ## Start Here

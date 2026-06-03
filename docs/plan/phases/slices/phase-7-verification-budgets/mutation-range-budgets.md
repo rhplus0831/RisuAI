@@ -1,12 +1,19 @@
 # Mutation-Range Budgets
 
-Status: partially implemented / ongoing. Shared gates exist; per-route/family
-budget coverage is maintained and still needs a final completeness pass.
+Status: implemented. The final completeness pass landed: every emittable
+`mutationPath` has a gate, every `targeted-*` gate holds the `dbJsonWriteMs: 0`
+floor + a written-table budget, and `commandMutationBudget.test.ts` fails on any
+gate-map drift (a new route, renamed label, or loosened narrow gate). Per-route /
+family written-table + rowid-stability coverage is maintained in the
+`command*Range` tests.
 
 ## Source Anchors
 
 - `server/fastify/__tests__/helpers/commandMetricGates.ts` - the `mutationPath`
   review gate map and `dbJsonWriteMs` checks.
+- `server/fastify/__tests__/commandMutationBudget.test.ts` - the gate-completeness
+  invariants (gate set == emitted set; every `targeted-*` gate holds
+  `dbJsonWriteMs: 0` + a table budget; no out-of-universe tables).
 - `server/fastify/__tests__/command*Range.test.ts` and
   `server/fastify/__tests__/commands.test.ts` - per-route/family written-table
   and rowid-stability assertions.
@@ -47,10 +54,14 @@ Phases 2-4, keep a shared review gate and per-route/family assertions for:
 
 ## Done When
 
-- Every narrow `mutationPath` from Phases 2-4 has a `dbJsonWriteMs: 0` gate.
+- Every narrow `mutationPath` from Phases 2-4 has a `dbJsonWriteMs: 0` gate. Done.
 - Every route/family has a written-table and row-scope budget, with exceptions
-  encoded explicitly.
-- Tests fail if any gated route writes a table outside its budget.
+  encoded explicitly. Done — the preset `apply` `prompt_templates` co-write and
+  the `targeted-assembly` chat-var broad fallback are named in their gates.
+- Tests fail if any gated route writes a table outside its budget. Done — the
+  `assertCommandMetricGate` written-table checks plus the per-family
+  `writtenTables` equality assertions, and `commandMutationBudget.test.ts` fails
+  on any gate-map drift before a widened write can reach a gate.
 
 ## Validation
 

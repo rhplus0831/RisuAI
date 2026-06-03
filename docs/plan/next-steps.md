@@ -22,14 +22,13 @@ batch. Avoid broad cleanup passes.
 ## Current Best Targets
 
 Phases 0-4 (the write-side tiers), Phase 5 (projection-range narrowing, all four
-slices), and Phase 6 (the Tier-5 message-free ceiling, floors verified) are
-implemented. All Tier-5 routes now sit at their proven safe floor; the deepest
-narrowing per route is deferred behind a recorded unblock prerequisite.
-Recommended order from here:
+slices), Phase 6 (the Tier-5 message-free ceiling, floors verified), and Phase 7
+(verification budgets, gate-completeness pass) are implemented. All Tier-5 routes
+now sit at their proven safe floor; the deepest narrowing per route is deferred
+behind a recorded unblock prerequisite. The core plan is complete — the only
+remaining work is optional and gated:
 
-1. Phase 7 verification budgets — the written-table-set, rowid-stability, and
-   `dbJsonWriteMs: 0` gates plus the verification log.
-2. (Optional, gated) the deferred Tier-5 unblock prerequisites, each of which
+1. (Optional, gated) the deferred Tier-5 unblock prerequisites, each of which
    must land before the route it gates can narrow below the floor:
    - wire `deleteChatMessages`/`deleteChatHypaV3` into `DELETE chats/:id` (then
      `DELETE characters/:id` over its chat ids) so the deletes can drop to a
@@ -69,7 +68,11 @@ Recommended order from here:
    held at their safe floor with blockers + unblock conditions recorded, proven by
    `commandMessageFreeCeiling.test.ts`; the `DELETE chats/:id` floor was corrected
    to `hydrated`.
-8. Phase 7 verification budgets — next.
+8. Phase 7 verification budgets — done (gate-completeness pass): the gate map is
+   self-checking via `commandMutationBudget.test.ts` (gate set == emitted set;
+   every `targeted-*` gate holds `dbJsonWriteMs: 0` + a table budget), with the
+   `targeted-assembly` gate added. The verification-log maintenance rule stays
+   standing.
 9. Refresh [`latest-verification.md`](latest-verification.md) after each tier's
    focused and full run.
 
@@ -82,6 +85,7 @@ touches shared protocol behavior.
 - `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test __tests__/commandMetrics.test.ts --reporter verbose`
 - `pnpm api:test -- server/fastify/__tests__/commandMetrics.test.ts`
 - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandMessageFreeCeiling.test.ts`
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandMutationBudget.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/projection.test.ts`
 - `pnpm api:test -- server/fastify/__tests__/db.test.ts`
 - `pnpm test -- src/lib/Others/projectionGuard.test.ts`
