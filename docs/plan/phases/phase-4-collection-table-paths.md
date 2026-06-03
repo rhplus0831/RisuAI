@@ -1,7 +1,11 @@
 # Phase 4: Collection-Table Paths
 
-Status: in progress (4 of 8 slices landed: plugins, presets, prompt-items,
-personas). Depends on the Phase 0 writer kit
+Status: implemented (all 8 collection families). Every Tier-4 collection route now
+runs on `applyTargetedCommandMutation` with `mutationPath: targeted-collection`.
+Two projection-field bugs were co-fixed inline (`promptItem`→`promptTemplate`,
+`persona` mirror scalars, `loadout`→`lastLoadedLoadoutName`); the broad
+`lorebook` / `module` projection resources are deferred to the Phase 5
+resource-split / collection-projection slices. Uses the Phase 0 writer kit
 (`writeSingleCollectionTable` / `writeSingleCollectionRow`, `writeSettingsOnly`)
 and review gates.
 
@@ -42,17 +46,19 @@ Ordered easiest/lowest-risk first.
   `selectedPersona` + the legacy mirror scalars (added to the `persona`
   projection).
 - [`translator-presets-collection-path.md`](slices/phase-4-collection-table-paths/translator-presets-collection-path.md) -
-  `translator_presets` (create 1895, patch 1936, delete 1984) and select (2050,
-  reclassified here from Tier 1) + unconditional settings write.
+  IMPLEMENTED. `translator_presets` create/patch/delete + select (reclassified
+  here from Tier 1) + the unconditional settings re-sync.
 - [`loadouts-collection-path.md`](slices/phase-4-collection-table-paths/loadouts-collection-path.md) -
-  `loadouts` (create 2085, patch 2121, delete 2163, favorite 2197, touch 2232) +
-  `lastLoadedLoadoutName`.
+  IMPLEMENTED. `loadouts` create/patch/delete/favorite/touch +
+  `lastLoadedLoadoutName` (added to the `loadout` projection).
 - [`lorebooks-collection-path.md`](slices/phase-4-collection-table-paths/lorebooks-collection-path.md) -
-  `lore_books` (create 3306, patch 3343, delete 3378, reorder 3416, entries 3493)
-  + `loreBookPage` + the child-lorebook normalization-drop decision.
+  IMPLEMENTED. `lore_books` create/patch/delete/reorder/entries + `loreBookPage`
+  + the child-lorebook normalization-drop decision (taken). Projection split
+  deferred to Phase 5.
 - [`modules-collection-path.md`](slices/phase-4-collection-table-paths/modules-collection-path.md) -
-  `modules` (patch 3638, reorder 3748, :id/lorebooks 4137, :id/scripts 4239,
-  :id/triggers 4273) + the scripts/triggers normalization caveat.
+  IMPLEMENTED. `modules` patch/reorder/:id/lorebooks/:id/scripts/:id/triggers;
+  the scripts/triggers cross-character repairs are dropped to validate-only.
+  Shared `module` projection deferred to Phase 5.
 
 ## Exit Criteria
 

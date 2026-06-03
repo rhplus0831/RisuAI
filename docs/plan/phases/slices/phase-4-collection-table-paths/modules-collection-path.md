@@ -1,7 +1,7 @@
 # Modules Collection Path
 
-Status: planned. Tier 4. Depends on the Phase 0 writer kit. Carries a Phase 5
-projection co-fix and a normalization caveat.
+Status: implemented (write-narrowing). Tier 4. Uses the Phase 0 writer kit. The
+shared `module` projection narrowing stays a Phase 5 co-fix.
 
 ## Source Anchors
 
@@ -30,6 +30,22 @@ repairs across all characters + modules, so a faithful narrow write must rewrite
 the whole `modules` table (and may touch `characters`) — the verifier downgraded
 these from the optimistic single-row claim. `patch`/`:id/lorebooks` are clean
 single-row writes; `reorder` is a one-table rewrite.
+
+Implemented: all five in-scope routes moved to `applyTargetedCommandMutation`
+with `mutationPath: targeted-collection`. `patch` and `:id/lorebooks` are
+single-row `writeSingleCollectionRow(db, 'modules', index, …)` writes (the latter
+also drops the in-memory child-lorebook repairs across characters/chats to
+validate-only); `reorder`, `:id/scripts`, and `:id/triggers` are full
+`writeSingleCollectionTable(db, 'modules', …)` rewrites. Normalization decision
+recorded: for `:id/scripts` / `:id/triggers` the parallel character
+`customscript`/`triggerscript` repairs are **dropped to validate-only**
+(Prerequisite 2) — the narrow write touches only `modules`, never `characters`,
+which both keeps the writes within the `targeted-collection` gate (it forbids
+characters/chats) and is what `writtenTables: ['modules']` proves. Every route
+reports `['modules']`. Proven by `commandCollectionRange.test.ts` (5 modules
+tests, incl. modules rowid stability for the single-row edits and the
+characters-untouched assertion for scripts/triggers). The shared broad `module`
+projection resource is left for the Phase 5 collection-projection narrowing.
 
 `DELETE modules/:id` (3673) and `POST modules` (3602) are not here: the delete is
 Tier 5 (`removeModuleReferences` spans characters/chats/two collection tables +

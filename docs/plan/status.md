@@ -8,32 +8,36 @@ Use it first, then open only the phase or slice needed for the next task.
 Current status reflects the seed audit
 [`mutation-range-mismatch.md`](mutation-range-mismatch.md), audited 2026-06-03.
 Phase 0 (baseline foundations), Phase 1 (the message-free floor), Phase 2
-(settings + plugin-storage paths), and Phase 3 (single character/chat-row paths)
-have landed, and Phase 4 (collection-table paths) is in progress with the
-plugins, bot_presets, prompt_templates, and personas families landed. The narrow
+(settings + plugin-storage paths), Phase 3 (single character/chat-row paths), and
+Phase 4 (collection-table paths, all eight families) have landed. The narrow
 runtime paths now include the reference fix `b57df5cd` (`characters/select`), the
 six targeted message commands, the six `targeted-settings` routes, the three
 `targeted-plugin-storage` routes, the twelve Tier-3
-`targeted-character-row` / `targeted-chat-row` routes, and the four landed Tier-4
-`targeted-collection` families; the remaining floor routes (the four remaining
-Tier-4 collections, Tier-5 blocked) still rewrite the broad table set.
+`targeted-character-row` / `targeted-chat-row` routes, and all the Tier-4
+`targeted-collection` family routes; the remaining floor routes (Tier-5 blocked)
+still rewrite the broad table set.
 
 ## Current Snapshot
 
-Analysis is complete. Phases 0-3 have landed; Phase 4 (Tier-4 collection-table
-tier) is in progress with 4 of 8 family slices landed.
+Analysis is complete. Phases 0-4 have landed; Phase 5 (projection-range
+narrowing) is the next tier.
 
-- Phase 4 in progress (4/8 slices): the plugins, bot_presets, prompt_templates,
-  and personas families now run on `applyTargetedCommandMutation` with
-  `mutationPath: targeted-collection`, writing only their own collection table
+- Phase 4 implemented (all 8 collection families): every Tier-4 collection route
+  now runs on `applyTargetedCommandMutation` with
+  `mutationPath: targeted-collection`, writing only its own collection table
   (single-row `UPDATE` for pure field edits; one-table rewrite for
   create/delete/reorder) plus the pointer/mirror settings scalars only when they
-  moved. Preset `apply=true` co-writes `prompt_templates` through the named
-  `writePromptTemplatesTable` wrapper. Two projection-field bugs fixed:
-  `promptItem` now maps to `['promptTemplate']` and `persona` reships the four
-  legacy mirror scalars. Proven by `commandCollectionRange.test.ts` (26 tests)
-  plus four `projection.test.ts` assertions. translator-presets, loadouts,
-  lorebooks, and modules remain.
+  moved. The families: plugins, bot_presets, prompt_templates, personas,
+  translator_presets (unconditional settings re-sync), loadouts, lore_books
+  (child-lorebook repairs dropped to validate-only), and modules
+  (scripts/triggers cross-character repairs dropped to validate-only). Preset
+  `apply=true` co-writes `prompt_templates` through the named
+  `writePromptTemplatesTable` wrapper. Three projection-field bugs fixed inline:
+  `promptItem`→`['promptTemplate']`, `persona` reships the four legacy mirror
+  scalars, and `loadout` reships `lastLoadedLoadoutName`; the broad `lorebook` /
+  `module` projection resources are deferred to Phase 5. Proven by
+  `commandCollectionRange.test.ts` (45 tests) plus the `projection.test.ts`
+  field-bug assertions.
 
 - Phase 3 landed (`07971179`→`65e57c0a`, four stages): all 12 Tier-3 routes write
   only their target character/chat row(s) + documented co-writes. Pure
@@ -80,9 +84,8 @@ tier) is in progress with 4 of 8 family slices landed.
   (`prompt`/`promptItem` ship `botPresets`, `persona` omits legacy mirror
   scalars, `loadout` omits `lastLoadedLoadoutName`).
 
-Phases 0, 1, 2, and 3 are implemented and Phase 4 is in progress (4 of 8
-collection families landed); the remaining Phase 4 families and later tier
-phases below are still planned.
+Phases 0, 1, 2, 3, and 4 are implemented; the later tier phases below (Phase 5
+onward) are still planned.
 
 ## Phase Router
 
@@ -92,7 +95,7 @@ phases below are still planned.
 | [Phase 1](phases/phase-1-message-free-floor.md) | Implemented | The mechanical `hydrated` to `message-free` sweep across the 62 non-message routes. |
 | [Phase 2](phases/phase-2-settings-and-plugin-storage-paths.md) | Implemented | Tier-1 settings/pointer-only writes and Tier-2 plugin custom storage writes. |
 | [Phase 3](phases/phase-3-single-row-paths.md) | Implemented | Tier-3 single character-row and single chat-row metadata edits. |
-| [Phase 4](phases/phase-4-collection-table-paths.md) | In progress (4/8) | Tier-4 single collection-table edits across the eight collection families. Plugins, presets, prompt-items, personas landed; translator-presets, loadouts, lorebooks, modules remain. |
+| [Phase 4](phases/phase-4-collection-table-paths.md) | Implemented | Tier-4 single collection-table edits across all eight collection families. |
 | [Phase 5](phases/phase-5-projection-range-narrowing.md) | Planned | Narrow projection resources, the `lorebook` resource split, and the projection-field bug fixes. |
 | [Phase 6](phases/phase-6-message-free-ceiling.md) | Planned | Tier-5 routes blocked at the `message-free` floor and their unblock conditions. |
 | [Phase 7](phases/phase-7-verification-budgets.md) | Planned | Written-table-set, rowid-stability, and `dbJsonWriteMs: 0` gates and the verification log. |
@@ -111,11 +114,11 @@ Headlines, in priority order:
 - Tier 3: DONE (Phase 3). All 12 single character/chat-row routes write only
   their target row(s); the hot scriptstate write (`2983`) no longer hydrates
   messages or rewrites every character.
-- Tier 4 (in progress, 4/8): one element of one of nine collection tables used to
-  rewrite all nine plus all characters. The plugins, bot_presets, prompt_templates,
-  and personas families now write only their own table (+ pointer/mirror settings
-  and, for preset apply, the prompt_templates co-write); translator_presets,
-  loadouts, lore_books, and modules remain on the message-free floor.
+- Tier 4: DONE (Phase 4). One element of one of nine collection tables used to
+  rewrite all nine plus all characters. All eight families now write only their
+  own table (+ pointer/mirror settings, and for preset apply the prompt_templates
+  co-write); lore_books child-lorebook and modules scripts/triggers
+  cross-character repairs are dropped to validate-only.
 - Tier 5: deeper narrowing blocked by cross-table spans or load-bearing
   message/normalization dependencies; the `message-free` floor is the ceiling.
 

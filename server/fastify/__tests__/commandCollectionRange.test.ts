@@ -81,7 +81,10 @@ function seedDatabase(): Record<string, unknown> {
       { id: 'preset-0', name: 'P0', temperature: 0.1, promptTemplate: [{ type: 'plain', text: 'pt-0' }] },
       { id: 'preset-1', name: 'P1', temperature: 0.9, promptTemplate: [{ type: 'plain', text: 'pt-1' }] },
     ],
-    modules: [{ id: 'mod-a', name: 'Module A' }],
+    modules: [
+      { id: 'mod-a', name: 'Module A', regex: [], trigger: [], lorebook: [] },
+      { id: 'mod-b', name: 'Module B', regex: [], trigger: [], lorebook: [] },
+    ],
     plugins: [
       pluginRecord('plugin-a'),
       pluginRecord('plugin-b'),
@@ -1154,5 +1157,118 @@ describe('Phase 4 lorebooks collection range', () => {
     expect(books[0].data.map((e) => e.id)).toEqual(['entry-1'])
     // Sibling lorebook untouched.
     expect(books[1].id).toBe('lore-1')
+  })
+})
+
+describe('Phase 4 modules collection range', () => {
+  const SCRIPT = {
+    id: 'script-a',
+    comment: 'Regex',
+    in: 'a',
+    out: 'b',
+    type: 'editinput',
+    flag: 'g',
+    ableFlag: true,
+  }
+  const TRIGGER = { id: 'trigger-a', comment: 'Start', type: 'start', conditions: [], effect: [] }
+
+  it('PATCH modules/:id updates one row in place', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+    const beforeRowids = collectionRowidsByPosition('modules')
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-b',
+      payload: { baseRevision: revision, patch: { name: 'Renamed B' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['modules'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(collectionRowidsByPosition('modules')).toEqual(beforeRowids)
+    const modules = readCollection('modules') as Array<{ id: string; name: string }>
+    expect(modules[1]).toMatchObject({ id: 'mod-b', name: 'Renamed B' })
+    expect(modules[0].name).toBe('Module A')
+  })
+
+  it('POST modules/reorder rewrites only the modules table', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/modules/reorder',
+      payload: { baseRevision: revision, moduleIds: ['mod-b', 'mod-a'] },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['modules'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('modules') as Array<{ id: string }>).map((m) => m.id)).toEqual([
+      'mod-b',
+      'mod-a',
+    ])
+  })
+
+  it('PUT modules/:id/lorebooks updates one row in place', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+    const beforeRowids = collectionRowidsByPosition('modules')
+
+    const { metric } = await runCommand({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-b/lorebooks',
+      payload: { baseRevision: revision, entries: [{ id: 'e-1', key: 'k', content: 'c' }] },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['modules'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(collectionRowidsByPosition('modules')).toEqual(beforeRowids)
+    const modules = readCollection('modules') as Array<{ id: string; lorebook: Array<{ id: string }> }>
+    expect(modules[1].id).toBe('mod-b')
+    expect(modules[1].lorebook.map((e) => e.id)).toEqual(['e-1'])
+  })
+
+  it('PUT modules/:id/scripts rewrites modules; character repairs stay validate-only', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/scripts',
+      payload: { baseRevision: revision, scripts: [SCRIPT] },
+    })
+
+    // writtenTables proves characters were NOT written — the cross-character
+    // script-definition repair was dropped to validate-only.
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['modules'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    const modules = readCollection('modules') as Array<{ id: string; regex: Array<{ id: string }> }>
+    expect(modules[0].regex.map((s) => s.id)).toEqual(['script-a'])
+  })
+
+  it('PUT modules/:id/triggers rewrites modules; character repairs stay validate-only', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/triggers',
+      payload: { baseRevision: revision, triggers: [TRIGGER] },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['modules'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    const modules = readCollection('modules') as Array<{ id: string; trigger: Array<{ id: string }> }>
+    expect(modules[0].trigger.map((t) => t.id)).toEqual(['trigger-a'])
   })
 })

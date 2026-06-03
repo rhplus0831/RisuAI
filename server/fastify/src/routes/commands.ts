@@ -3962,16 +3962,18 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readModulePatch(body.patch, { assetDb: db })
-      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
+      const result = applyTargetedCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
           const index = requireModuleIndex(modules, moduleId)
           Object.assign(modules[index], patch)
+          writeSingleCollectionRow(innerDb, 'modules', index, modules[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.moduleUpdated, id: moduleId },
             extra: { moduleId },
@@ -4075,17 +4077,20 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
       const moduleIds = readModuleIdList(body.moduleIds)
-      const result = applyMessageFreeJsonCommandMutation({
+      const result = applyTargetedCommandMutation({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
           validateFullModuleOrder(modules, moduleIds)
           const byId = new Map(modules.map((module) => [module.id, module]))
-          target.modules = moduleIds.map((id) => byId.get(id))
+          const reordered = moduleIds.map((id) => byId.get(id))
+          target.modules = reordered
+          writeSingleCollectionTable(innerDb, 'modules', reordered)
           return {
             event: { ...COMMAND_EVENT_CATALOG.moduleReordered },
           }
@@ -4486,15 +4491,20 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
       const entries = validateLorebookEntries(body.entries)
-      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
+      const result = applyTargetedCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
-          const module = requireModule(ensureModuleCollection(target), moduleId)
+          const modules = ensureModuleCollection(target)
+          const module = requireModule(modules, moduleId)
           module.lorebook = entries
+          // One module's lorebook is a single-row edit; the in-memory child
+          // lorebook repairs across characters/chats are dropped to validate-only.
+          writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: moduleId },
             extra: { moduleId },
@@ -4588,15 +4598,20 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ScriptDefinitionCommandBody
       const baseRevision = readBaseRevision(body)
       const scripts = readScriptDefinitions(body.scripts)
-      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
+      const result = applyTargetedCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = normalizeScriptDefinitionDatabase(database)
           const module = readModuleScriptParent(target, moduleId)
           module.regex = scripts
+          // The script-definition repair spans every module, so rewrite the whole
+          // modules table; the parallel character customscript/triggerscript
+          // repairs are dropped to validate-only (Prerequisite 2) — not persisted.
+          writeSingleCollectionTable(innerDb, 'modules', asArray(target.modules))
           return {
             event: { ...COMMAND_EVENT_CATALOG.scriptDefinitionsReplaced, id: moduleId },
             extra: { moduleId },
@@ -4622,15 +4637,20 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ScriptDefinitionCommandBody
       const baseRevision = readBaseRevision(body)
       const triggers = readTriggerDefinitions(body.triggers)
-      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
+      const result = applyTargetedCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = normalizeScriptDefinitionDatabase(database)
           const module = readModuleScriptParent(target, moduleId)
           module.trigger = triggers
+          // The trigger-definition repair spans every module, so rewrite the whole
+          // modules table; the parallel character customscript/triggerscript
+          // repairs are dropped to validate-only (Prerequisite 2) — not persisted.
+          writeSingleCollectionTable(innerDb, 'modules', asArray(target.modules))
           return {
             event: { ...COMMAND_EVENT_CATALOG.triggerDefinitionsReplaced, id: moduleId },
             extra: { moduleId },
