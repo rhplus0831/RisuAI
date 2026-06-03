@@ -265,6 +265,22 @@ function writeTranslatorPresetMutation(
   writeSettingsOnly(db, extractSettings(target))
 }
 
+/** The shared narrow write for every loadouts route: a full `loadouts` rewrite
+ *  (`ensureLoadoutCollection` reassigns the whole array by design, so even a
+ *  field edit is a faithful one-table rewrite) plus a `settings` write only when
+ *  `lastLoadedLoadoutName` actually moved (touch sets it; the rest leave it). */
+function writeLoadoutMutation(
+  db: DatabaseSync,
+  target: Record<string, unknown>,
+  loadouts: readonly unknown[],
+  beforeLastLoaded: unknown,
+): void {
+  writeSingleCollectionTable(db, 'loadouts', loadouts)
+  if (target.lastLoadedLoadoutName !== beforeLastLoaded) {
+    writeSettingsOnly(db, extractSettings(target))
+  }
+}
+
 interface RuntimeSettingsCommandBody {
   baseRevision?: unknown
   patch?: unknown
@@ -2255,18 +2271,21 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as LoadoutCommandBody
       const baseRevision = readBaseRevision(body)
       const loadout = createLoadoutRecord(body.loadout)
-      const result = applyMessageFreeJsonCommandMutation<{ loadoutId: string }>({
+      const result = applyTargetedCommandMutation<{ loadoutId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
+          const beforeLastLoaded = target.lastLoadedLoadoutName
           if (findLoadoutIndex(loadouts, loadout.id) !== -1) {
             throw new ValidationError(`Duplicate loadout id: ${loadout.id}`)
           }
           loadouts.push(loadout)
+          writeLoadoutMutation(innerDb, target, loadouts, beforeLastLoaded)
           return {
             event: { ...COMMAND_EVENT_CATALOG.loadoutCreated, id: loadout.id },
             extra: { loadoutId: loadout.id },
@@ -2295,20 +2314,23 @@ export function registerCommandRoutes(
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== loadoutId) {
         throw new ValidationError('patch.id must match loadoutId')
       }
-      const result = applyMessageFreeJsonCommandMutation<{ loadoutId: string }>({
+      const result = applyTargetedCommandMutation<{ loadoutId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
+          const beforeLastLoaded = target.lastLoadedLoadoutName
           const index = requireLoadoutIndex(loadouts, loadoutId)
           loadouts[index] = {
             ...loadouts[index],
             ...patch,
             id: loadoutId,
           }
+          writeLoadoutMutation(innerDb, target, loadouts, beforeLastLoaded)
           return {
             event: { ...COMMAND_EVENT_CATALOG.loadoutUpdated, id: loadoutId },
             extra: { loadoutId },
@@ -2333,16 +2355,19 @@ export function registerCommandRoutes(
       const loadoutId = readLoadoutId((req.params as { loadoutId?: unknown }).loadoutId)
       const body = (req.body ?? {}) as LoadoutCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyMessageFreeJsonCommandMutation<{ loadoutId: string }>({
+      const result = applyTargetedCommandMutation<{ loadoutId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
+          const beforeLastLoaded = target.lastLoadedLoadoutName
           const index = requireLoadoutIndex(loadouts, loadoutId)
           loadouts.splice(index, 1)
+          writeLoadoutMutation(innerDb, target, loadouts, beforeLastLoaded)
           return {
             event: { ...COMMAND_EVENT_CATALOG.loadoutDeleted, id: loadoutId },
             extra: { loadoutId },
@@ -2368,16 +2393,19 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as LoadoutCommandBody
       const baseRevision = readBaseRevision(body)
       const favorite = readLoadoutOptionalBoolean(body.favorite, 'favorite', true)
-      const result = applyMessageFreeJsonCommandMutation<{ loadoutId: string }>({
+      const result = applyTargetedCommandMutation<{ loadoutId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
+          const beforeLastLoaded = target.lastLoadedLoadoutName
           const index = requireLoadoutIndex(loadouts, loadoutId)
           loadouts[index].favorite = favorite
+          writeLoadoutMutation(innerDb, target, loadouts, beforeLastLoaded)
           return {
             event: { ...COMMAND_EVENT_CATALOG.loadoutFavorited, id: loadoutId },
             extra: { loadoutId },
@@ -2404,14 +2432,16 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const lastUsed = readOptionalTimestamp(body.lastUsed, 'lastUsed')
       const characterId = readOptionalCharacterId(body.characterId)
-      const result = applyMessageFreeJsonCommandMutation<{ loadoutId: string }>({
+      const result = applyTargetedCommandMutation<{ loadoutId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
+          const beforeLastLoaded = target.lastLoadedLoadoutName
           const index = requireLoadoutIndex(loadouts, loadoutId)
           const loadout = loadouts[index]
           loadout.lastUsed = lastUsed
@@ -2419,6 +2449,7 @@ export function registerCommandRoutes(
             loadout.characterIds.push(characterId)
           }
           target.lastLoadedLoadoutName = loadout.name
+          writeLoadoutMutation(innerDb, target, loadouts, beforeLastLoaded)
           return {
             event: { ...COMMAND_EVENT_CATALOG.loadoutTouched, id: loadoutId },
             extra: { loadoutId },

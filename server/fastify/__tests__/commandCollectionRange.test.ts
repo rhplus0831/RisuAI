@@ -74,6 +74,8 @@ function seedDatabase(): Record<string, unknown> {
     translatorPresetId: 0,
     translatorPrompt: 'pa-prompt',
     translatorMaxResponse: 500,
+    // Loadout legacy pointer scalar (settings); touch/delete rewrite it.
+    lastLoadedLoadoutName: 'Loadout A',
     hypaV3Presets: [{ name: 'hypa-0' }],
     botPresets: [
       { id: 'preset-0', name: 'P0', temperature: 0.1, promptTemplate: [{ type: 'plain', text: 'pt-0' }] },
@@ -89,7 +91,10 @@ function seedDatabase(): Record<string, unknown> {
       { id: 'persona-a', name: 'Persona A', personaPrompt: 'pa-prompt', note: 'pa-note' },
       { id: 'persona-b', name: 'Persona B', personaPrompt: 'pb-prompt', note: 'pb-note' },
     ],
-    loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
+    loadouts: [
+      { id: 'loadout-a', name: 'Loadout A', lastUsed: 1 },
+      { id: 'loadout-b', name: 'Loadout B', lastUsed: 2 },
+    ],
     loreBook: [
       { id: 'lore-0', name: 'lore-0', data: [] },
       { id: 'lore-1', name: 'lore-1', data: [] },
@@ -932,5 +937,105 @@ describe('Phase 4 translator-presets collection range', () => {
     expect(settings.translatorPresetId).toBe(1)
     expect(settings.translatorPrompt).toBe('pb-prompt')
     expect(settings.translatorMaxResponse).toBe(800)
+  })
+})
+
+describe('Phase 4 loadouts collection range', () => {
+  it('POST loadouts rewrites only the loadouts table', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts',
+      payload: { baseRevision: revision, loadout: { id: 'loadout-c', name: 'Loadout C' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['loadouts'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('loadouts') as Array<{ id: string }>).map((l) => l.id)).toEqual([
+      'loadout-a',
+      'loadout-b',
+      'loadout-c',
+    ])
+    // Pointer scalar unchanged → settings stayed out of writtenTables.
+    expect(readSettings().lastLoadedLoadoutName).toBe('Loadout A')
+  })
+
+  it('PATCH loadouts/:id rewrites only the loadouts table', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/loadouts/loadout-b',
+      payload: { baseRevision: revision, patch: { name: 'Renamed B' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['loadouts'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    const loadouts = readCollection('loadouts') as Array<{ id: string; name: string }>
+    expect(loadouts[1]).toMatchObject({ id: 'loadout-b', name: 'Renamed B' })
+  })
+
+  it('DELETE loadouts/:id rewrites only the loadouts table', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/loadouts/loadout-a',
+      payload: { baseRevision: revision },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['loadouts'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('loadouts') as Array<{ id: string }>).map((l) => l.id)).toEqual([
+      'loadout-b',
+    ])
+  })
+
+  it('POST loadouts/:id/favorite rewrites only the loadouts table', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts/loadout-b/favorite',
+      payload: { baseRevision: revision, favorite: true },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['loadouts'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    const loadouts = readCollection('loadouts') as Array<{ id: string; favorite: boolean }>
+    expect(loadouts[1]).toMatchObject({ id: 'loadout-b', favorite: true })
+  })
+
+  it('POST loadouts/:id/touch co-writes settings (lastLoadedLoadoutName)', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts/loadout-b/touch',
+      payload: { baseRevision: revision, lastUsed: 999 },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['loadouts', 'settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    // touch sets lastLoadedLoadoutName to the touched loadout's name.
+    expect(readSettings().lastLoadedLoadoutName).toBe('Loadout B')
+    const loadouts = readCollection('loadouts') as Array<{ id: string; lastUsed: number }>
+    expect(loadouts[1]).toMatchObject({ id: 'loadout-b', lastUsed: 999 })
   })
 })

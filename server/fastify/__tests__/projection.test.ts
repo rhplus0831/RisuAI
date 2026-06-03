@@ -251,6 +251,24 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields).not.toHaveProperty('language')
   })
 
+  it('includes lastLoadedLoadoutName for a loadout refresh', async () => {
+    // Phase 4 loadouts slice co-fix: touch/delete write the lastLoadedLoadoutName
+    // settings scalar, so a foreign refresh must reship it with the loadouts.
+    await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      loadouts: [{ id: 'loadout-a', name: 'Loadout A', lastUsed: 1 }],
+      lastLoadedLoadoutName: 'Loadout A',
+      language: 'en',
+    })
+
+    const res = await getProjection('loadout')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields).sort()).toEqual(['lastLoadedLoadoutName', 'loadouts'])
+    expect(body.fields.lastLoadedLoadoutName).toBe('Loadout A')
+    expect(body.fields).not.toHaveProperty('language')
+  })
+
   it('returns mode "full" for a sprawling resource (settings)', async () => {
     const revision = await importDatabase({ characters: [], language: 'en' })
     const res = await getProjection('settings')
@@ -315,6 +333,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       'personaPrompt',
       'userNote',
     ])
+    expect(resourceProjectionFields('loadout')).toEqual(['loadouts', 'lastLoadedLoadoutName'])
     expect(resourceProjectionFields('settings')).toBeNull()
     expect(resourceProjectionFields('state')).toBeNull()
   })

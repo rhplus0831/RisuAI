@@ -59,7 +59,9 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   ],
   module: ['modules', 'enabledModules', 'loadouts', 'characters'],
   plugin: ['plugins', 'currentPluginProvider'],
-  loadout: ['loadouts'],
+  // loadout touch/delete also write the `lastLoadedLoadoutName` settings scalar,
+  // so a foreign refresh must reship it alongside the loadouts collection.
+  loadout: ['loadouts', 'lastLoadedLoadoutName'],
   translatorPreset: [
     'translatorPresets',
     'translatorPresetId',

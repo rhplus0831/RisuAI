@@ -1,6 +1,6 @@
 # Loadouts Collection Path
 
-Status: planned. Tier 4. Depends on the Phase 0 writer kit. Carries a Phase 5
+Status: implemented. Tier 4. Uses the Phase 0 writer kit. Carried the Phase 5
 projection-field co-fix.
 
 ## Source Anchors
@@ -30,6 +30,19 @@ whole array on every call, so they are full one-table rewrites, not single-row.
 Projection-field fix: `loadout` omits `lastLoadedLoadoutName`, which
 `touch`/`delete` write — add it (see
 [`../phase-5-projection-range-narrowing/projection-field-bug-fixes.md`](../phase-5-projection-range-narrowing/projection-field-bug-fixes.md)).
+
+Implemented: all five routes moved to `applyTargetedCommandMutation` with
+`mutationPath: targeted-collection`, each ending in the shared
+`writeLoadoutMutation` helper — a full `writeSingleCollectionTable(db,
+'loadouts', …)` rewrite (faithful, since `ensureLoadoutCollection` reassigns the
+whole array by design) plus a `writeSettingsOnly` only when
+`lastLoadedLoadoutName` actually moved (captured after the ensure-normalize). In
+practice only `touch` moves it, so create/patch/delete/favorite report
+`writtenTables: ['loadouts']` and touch reports `['loadouts','settings']` — the
+slice's "+settings" upper bound narrowed to the precise pointer-changed case. The
+`loadout` projection now reships `['loadouts','lastLoadedLoadoutName']`. Proven by
+`commandCollectionRange.test.ts` (5 loadouts tests) plus two `projection.test.ts`
+assertions.
 
 ## Implementation Scope
 
