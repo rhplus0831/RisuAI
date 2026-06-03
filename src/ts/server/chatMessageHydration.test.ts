@@ -25,6 +25,7 @@ import {
   hydrateActiveCharacterLorebook,
   hydrateActiveChat,
   hydrateChatMessages,
+  isChatMessageHydrationPending,
   resetChatHydration,
 } from './chatMessageHydration.svelte'
 import { isCharacterLorebookHydrated, resetLorebookHydration } from './lorebookBridge.svelte'
@@ -322,6 +323,97 @@ describe('chat message hydration bridge', () => {
     await ensureAllChatsHydrated()
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
     expect(projectionState.fetchBulkChat).not.toHaveBeenCalled()
+  })
+
+  it('still applies a response when an unrelated command bumps the revision mid-flight', async () => {
+    // Real char-open (changeChar) sets selectedCharID (starting this slow chat
+    // hydration) AND dispatches a `character.selected` command. That tiny command
+    // commits first and advances the cached revision, while the big hydration
+    // response carries the older revision it was built at. The messages are NOT
+    // stale (select never touched them) and must still render.
+    setCachedServerCommandRevision(1)
+    projectionState.fetchChat.mockImplementation(async () => {
+      // The concurrent select command lands while this fetch is in flight.
+      setCachedServerCommandRevision(2)
+      return { ...okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]), revision: 1 }
+    })
+
+    await hydrateActiveChat()
+
+    expect(db().characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'hi', chatId: 'm1' },
+    ])
+  })
+
+  it('still drops a response older than the revision already applied at request start', async () => {
+    // The genuine stale case the revision guard exists for: we had already applied
+    // revision 5 BEFORE issuing this fetch, and the response reflects an older
+    // revision 3 -> drop it rather than regress.
+    setCachedServerCommandRevision(5)
+    projectionState.fetchChat.mockResolvedValue({
+      ...okResult('chat-1', [{ role: 'user', data: 'stale', chatId: 'm-old' }]),
+      revision: 3,
+    })
+
+    await hydrateActiveChat()
+
+    expect(db().characters[0].chats[0].message).toEqual([])
+  })
+})
+
+describe('isChatMessageHydrationPending', () => {
+  it('is pending for an un-hydrated empty stub, and clears once messages arrive', async () => {
+    // A fresh open chat: empty stub, never fetched -> loading.
+    expect(isChatMessageHydrationPending('chat-1', 0)).toBe(true)
+
+    projectionState.fetchChat.mockResolvedValue(
+      okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]),
+    )
+    await hydrateActiveChat()
+
+    // Messages present -> not loading.
+    expect(isChatMessageHydrationPending('chat-1', 1)).toBe(false)
+    // ...and still not loading even if asked with a stale zero count, because the
+    // chat is now marked hydrated.
+    expect(isChatMessageHydrationPending('chat-1', 0)).toBe(false)
+  })
+
+  it('clears for a legitimately empty chat once hydration settles', async () => {
+    projectionState.fetchChat.mockResolvedValue(okResult('chat-1', []))
+    await hydrateActiveChat()
+    // Empty result, but the attempt is done -> show the greeting, not a spinner.
+    expect(isChatMessageHydrationPending('chat-1', 0)).toBe(false)
+  })
+
+  it('clears after a failed fetch so it never spins forever', async () => {
+    projectionState.fetchChat.mockResolvedValue({ status: 'error' })
+    await hydrateActiveChat()
+    expect(isChatMessageHydrationPending('chat-1', 0)).toBe(false)
+  })
+
+  it('is never pending when messages are already present', () => {
+    expect(isChatMessageHydrationPending('chat-1', 3)).toBe(false)
+  })
+
+  it('is never pending when server projection is off', () => {
+    projectionState.canUse.mockReturnValue(false)
+    expect(isChatMessageHydrationPending('chat-1', 0)).toBe(false)
+  })
+
+  it('is never pending without a chat id', () => {
+    expect(isChatMessageHydrationPending(undefined, 0)).toBe(false)
+  })
+
+  it('becomes pending again after a resync re-stubs the chat', async () => {
+    projectionState.fetchChat.mockResolvedValue(
+      okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]),
+    )
+    await hydrateActiveChat()
+    expect(isChatMessageHydrationPending('chat-1', 1)).toBe(false)
+
+    // A foreign re-stub wipes messages and clears the hydration cache.
+    resetChatHydration()
+    expect(isChatMessageHydrationPending('chat-1', 0)).toBe(true)
   })
 })
 

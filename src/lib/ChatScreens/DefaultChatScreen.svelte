@@ -88,6 +88,7 @@
   } from 'src/ts/chatCommands'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { isChatMessageHydrationPending } from 'src/ts/server/chatMessageHydration.svelte'
 
   const loadPlaygroundMenu = () =>
     import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
@@ -115,6 +116,15 @@
   }: Props = $props()
   let currentCharacter = $derived(DBState.db.characters[$selectedCharID])
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
+  // The open chat ships as a message-less stub until `/projection/chatMessages`
+  // resolves; show a loading state over the message area until then so the
+  // history does not flash in over the greeting-only stub.
+  let activeChatMessagesLoading = $derived(
+    isChatMessageHydrationPending(
+      currentCharacter?.chats[currentCharacter.chatPage]?.id,
+      currentChat.length,
+    ),
+  )
 
   function scrollToBottom() {
     chatsInstance?.scrollToLatestMessage()
@@ -590,6 +600,33 @@
       class="absolute inset-0 z-50 flex items-center justify-center bg-black/50 text-white text-xl font-bold backdrop-blur-sm"
     >
       Loading...
+    </div>
+  {/if}
+  {#if $selectedCharID >= 0 && activeChatMessagesLoading}
+    <div class="absolute inset-0 z-40 flex items-center justify-center bg-bgcolor">
+      <div class="flex flex-col items-center text-textcolor2">
+        <svg
+          class="animate-spin h-6 w-6 mb-3"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            class="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            stroke-width="4"
+          ></circle>
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+          ></path>
+        </svg>
+        <span class="text-sm">{language.loadingChatData}</span>
+      </div>
     </div>
   {/if}
   {#if $selectedCharID < 0}

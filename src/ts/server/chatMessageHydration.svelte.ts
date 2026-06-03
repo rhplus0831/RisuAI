@@ -1,4 +1,5 @@
 import { get } from 'svelte/store'
+import { SvelteSet } from 'svelte/reactivity'
 import { DBState, selectedCharID } from '../stores.svelte'
 import {
   hydrateServerCharacterLorebook,
@@ -29,7 +30,14 @@ export const BULK_HYDRATION_CONCURRENCY = 4
 
 // Chat ids whose messages this client has already hydrated this session, so
 // re-opening a chat does not refetch. Cleared on a full re-stub (resync).
-const hydratedChatIds = new Set<string>()
+// Reactive so the chat UI can render a loading state until the open chat's
+// messages arrive instead of flashing the greeting-only stub.
+const hydratedChatIds = new SvelteSet<string>()
+// Chat ids whose hydration attempt has *finished* this session (success OR
+// failure). Lets the loading state clear after a failed/empty fetch so a chat
+// that will never gain messages does not spin forever. Reactive; cleared on
+// resync alongside `hydratedChatIds`.
+const attemptedChatIds = new SvelteSet<string>()
 const inFlight = new Map<string, Promise<void>>()
 let chatHydrationGeneration = 0
 
@@ -55,6 +63,7 @@ async function hydrateChat(chatId: string, force: boolean): Promise<void> {
   if (currentRequest) return currentRequest
 
   const generation = chatHydrationGeneration
+  const baselineRevision = peekCachedServerCommandRevision()
   let request: Promise<void>
   request = (async () => {
     try {
@@ -67,7 +76,7 @@ async function hydrateChat(chatId: string, force: boolean): Promise<void> {
         recordHydrationStaleDrop('chat', 'generation-reset')
         return
       }
-      if (isOlderThanAppliedRevision(result.revision)) {
+      if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
         recordHydrationStaleDrop('chat', 'older-than-applied-revision')
         return
       }
@@ -81,6 +90,9 @@ async function hydrateChat(chatId: string, force: boolean): Promise<void> {
         seedRerollBufferFromAlternates(result.message, result.alternates)
       }
     } finally {
+      // Mark the attempt as settled (even on failure / stale-drop) so the
+      // loading state can clear and fall back to the greeting render.
+      attemptedChatIds.add(chatId)
       if (inFlight.get(chatId) === request) {
         inFlight.delete(chatId)
       }
@@ -94,6 +106,7 @@ async function hydrateChatsBulk(chatIds: readonly string[]): Promise<void> {
   if (!canUseServerProjection() || chatIds.length === 0) return
 
   const generation = chatHydrationGeneration
+  const baselineRevision = peekCachedServerCommandRevision()
   const endRequest = beginHydrationRequest('chat')
   const result = await fetchServerBulkChatMessages(chatIds).finally(endRequest)
   if (result.status !== 'ok') return
@@ -101,7 +114,7 @@ async function hydrateChatsBulk(chatIds: readonly string[]): Promise<void> {
     recordHydrationStaleDrop('chat', 'generation-reset')
     return
   }
-  if (isOlderThanAppliedRevision(result.revision)) {
+  if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
     recordHydrationStaleDrop('chat', 'older-than-applied-revision')
     return
   }
@@ -147,9 +160,34 @@ export function applyServerChatMessagesProjection(
   const applied = hydrateServerChatMessages(chatId, message, hypaV3Data)
   if (!applied) return false
   hydratedChatIds.add(chatId)
+  attemptedChatIds.add(chatId)
   if (activeChatId() === chatId) {
     seedRerollBufferFromAlternates(message, alternates)
   }
+  return true
+}
+
+/**
+ * Reactive: is the given chat's message history still being hydrated from the
+ * server (so the UI should show a loading state instead of the greeting-only
+ * stub)? True only while the open chat is an un-hydrated, empty stub whose first
+ * hydration attempt has not yet finished. Reads reactive `SvelteSet`s, so a
+ * `$derived`/`$effect` reading it re-runs when hydration settles.
+ *
+ * Returns false once messages arrive (so it never lingers over real content),
+ * once the chat is hydrated (including a legitimately empty chat), and once the
+ * fetch settles even on failure (so a chat the server can't supply does not spin
+ * forever). Also false when server projection is off — nothing hydrates then.
+ */
+export function isChatMessageHydrationPending(
+  chatId: string | undefined,
+  messageCount: number,
+): boolean {
+  if (!canUseServerProjection()) return false
+  if (!chatId) return false
+  if (messageCount > 0) return false
+  if (hydratedChatIds.has(chatId)) return false
+  if (attemptedChatIds.has(chatId)) return false
   return true
 }
 
@@ -171,6 +209,7 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
   if (currentRequest) return currentRequest
 
   const generation = charLorebookHydrationGeneration
+  const baselineRevision = peekCachedServerCommandRevision()
   let request: Promise<void>
   request = (async () => {
     try {
@@ -183,7 +222,7 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
         recordHydrationStaleDrop('characterLorebook', 'generation-reset')
         return
       }
-      if (isOlderThanAppliedRevision(result.revision)) {
+      if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
         recordHydrationStaleDrop('characterLorebook', 'older-than-applied-revision')
         return
       }
@@ -209,6 +248,7 @@ async function hydrateCharacterLorebooksBulk(characterIds: readonly string[]): P
   }
 
   const generation = charLorebookHydrationGeneration
+  const baselineRevision = peekCachedServerCommandRevision()
   const endRequest = beginHydrationRequest('characterLorebook')
   const result = await fetchServerBulkCharacterLorebooks(characterIds).finally(endRequest)
   if (result.status !== 'ok') return
@@ -216,7 +256,7 @@ async function hydrateCharacterLorebooksBulk(characterIds: readonly string[]): P
     recordHydrationStaleDrop('characterLorebook', 'generation-reset')
     return
   }
-  if (isOlderThanAppliedRevision(result.revision)) {
+  if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
     recordHydrationStaleDrop('characterLorebook', 'older-than-applied-revision')
     return
   }
@@ -274,6 +314,7 @@ export async function ensureAllCharacterLorebooksHydrated(): Promise<void> {
  */
 export function resetChatHydration(): void {
   hydratedChatIds.clear()
+  attemptedChatIds.clear()
   chatHydrationGeneration += 1
   inFlight.clear()
   // A re-stub also re-stubs character globalLore; forget these marks so the open
@@ -283,9 +324,16 @@ export function resetChatHydration(): void {
   charLorebookInFlight.clear()
 }
 
-function isOlderThanAppliedRevision(revision: number): boolean {
-  const appliedRevision = peekCachedServerCommandRevision()
-  return appliedRevision !== null && revision < appliedRevision
+// A hydration response is stale only when it is older than the revision this
+// client had ALREADY applied at the moment the request was issued. Comparing
+// against the *current* cached revision is wrong: an unrelated command — most
+// commonly the `character.selected` command that `changeChar` fires alongside
+// chat-open — can advance the cached revision while the (large, slow) hydration
+// fetch is still in flight. That would falsely drop a perfectly current message
+// payload (the select command never touched the messages), leaving the chat
+// stuck on stubs. Capture the baseline at request start and compare against it.
+function isOlderThanBaselineRevision(revision: number, baselineRevision: number | null): boolean {
+  return baselineRevision !== null && revision < baselineRevision
 }
 
 /**
