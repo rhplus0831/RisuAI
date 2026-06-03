@@ -1,7 +1,7 @@
 # Phase 2: Snapshot-Family Hot-Path Narrowing
 
-Status: planned. Six slices, one per call-site family. Depends on the Phase 0
-snapshot kit.
+Status: implemented. All six slices landed, one per call-site family. Depends on
+the Phase 0 snapshot kit.
 
 Goal: route Critical/High `current*StateSnapshot` call sites through the Phase 0
 kit. Each hot path should capture a scalar, single-row, or single-chat rollback
@@ -33,27 +33,29 @@ Each slice keeps the full-collection snapshot for genuine restructures
 ## Slices
 
 - [`chat-metadata-watcher.md`](slices/phase-2-snapshot-family-narrowing/chat-metadata-watcher.md) -
-  drop full-array snapshots from the watcher, capture rollback lazily per row,
-  and make `scalarChatMetadata` skip `message`.
+  (implemented) drop full-array snapshots from the watcher, capture rollback lazily
+  per row, and make `scalarChatMetadata` skip `message`.
 - [`chat-scoped-message-paths.md`](slices/phase-2-snapshot-family-narrowing/chat-scoped-message-paths.md) -
-  `chatCommands.ts` message-replace rollback, `Chat.svelte` per-message
+  (implemented) `chatCommands.ts` message-replace rollback, `Chat.svelte` per-message
   edit/delete/bookmark/partial-edit, `DefaultChatScreen.svelte` send/continue and
   the empty-slot button, and the `command.ts` slash-command message mutation ->
   `currentChatScopedSnapshot`.
 - [`scriptstate-scoped-var-writes.md`](slices/phase-2-snapshot-family-narrowing/scriptstate-scoped-var-writes.md) -
-  `triggers.ts` `setVar` / `v2SetAuthorNote`, `chatVar.svelte.ts` `setChatVar`,
+  (implemented) `triggers.ts` `setVar` / `v2SetAuthorNote`, `chatVar.svelte.ts` `setChatVar`,
   and `command.ts` `/setvar` `/addvar` -> `ChatScriptstateSnapshot`; hoist one
   snapshot per `runTrigger` pass.
 - [`reroll-swipe-rollback.md`](slices/phase-2-snapshot-family-narrowing/reroll-swipe-rollback.md) -
-  replace the `apply*` helpers' full snapshot with chat-scoped rollback. Phase 3
-  handles redundant transcript clones.
+  (implemented) the `apply*` helpers capture `currentChatScopedSnapshot()` and
+  persist via the chat-scoped dispatch variants. Phase 3 handles the redundant
+  transcript clones.
 - [`character-row-snapshot-paths.md`](slices/phase-2-snapshot-family-narrowing/character-row-snapshot-paths.md) -
-  `currentCharacterStateSnapshot()` at `setCurrentCharacter`/`setCharacterByIndex`
-  and the trigger `v2Set*` callers -> `CharacterRowSnapshot`/`restoreCharacterRow`.
+  (implemented) `setCurrentCharacter`/`setCharacterByIndex` (and their `v2Set*`
+  trigger callers) capture `currentCharacterRowSnapshot()` and dispatch via
+  `dispatchCompatibleCharacterUpdateScoped` -> `restoreCharacterRow`.
 - [`global-lorebook-snapshot-paths.md`](slices/phase-2-snapshot-family-narrowing/global-lorebook-snapshot-paths.md) -
-  `lorepreset.svelte` select/create/delete -> `currentGlobalLorebookStateSnapshot`;
-  the 6 lorebook trigger sites -> `scopedLorebookStateSnapshot`; drop the redundant
-  `setCurrentCharacter` re-clone.
+  (implemented) `lorepreset.svelte` select/create/delete -> `currentGlobalLorebookStateSnapshot`;
+  the 6 lorebook trigger sites -> `scopedLorebookStateSnapshot` via
+  `persistCharacterLorebookEdit`; the redundant `setCurrentCharacter` re-clone is dropped.
 
 ## Implementation Notes
 
@@ -67,14 +69,21 @@ Each slice keeps the full-collection snapshot for genuine restructures
 
 ## Exit Criteria
 
-- [ ] Each listed call site captures a narrow snapshot; none materializes the
+- [x] Each listed call site captures a narrow snapshot; none materializes the
       whole characters array on the hot path.
-- [ ] Each narrowed rollback restores exactly the mutated slice and a failed
+- [x] Each narrowed rollback restores exactly the mutated slice and a failed
       command does not clobber unrelated concurrent edits (rollback-correctness test).
-- [ ] `scalarChatMetadata` never serializes `chat.message` / `chat.localLore`.
-- [ ] The full-collection snapshots remain in use for create/delete/reorder/fork.
-- [ ] Clone-cost regression tests prove the hot paths stay O(slice); `pnpm test`,
+- [x] `scalarChatMetadata` never serializes `chat.message` / `chat.localLore`.
+- [x] The full-collection snapshots remain in use for create/delete/reorder/fork.
+- [x] Clone-cost regression tests prove the hot paths stay O(slice); `pnpm test`,
       `pnpm api:test`, and `pnpm client-thinning:audit` are green.
+
+All six slices landed: chat-metadata watcher (`e5e183da`), chat-scoped message
+paths (`2070df02`), scriptstate var writes (`727a28c0`), reroll/swipe rollback
+(`f1558e39`), character-row snapshot paths (`458458a7`), and global-lorebook
+snapshot paths (`9547ba3e`). The image/emotion handlers (Phase 7) and the
+lower-frequency character/lorebook field-edit callers still hold the broad
+snapshot; they reuse the same kit when narrowed.
 
 ## Validation
 

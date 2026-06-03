@@ -9,9 +9,9 @@ not a verification log. Keep proof runs in
 
 ## Summary
 
-All findings are analyzed. Phase 0 and the primary Phase 1 guard fix are
-implemented; Phase 2-8 remain planned. Severity comes from the seed audit:
-4 critical, 13 high, 6 medium, 6 low, plus the clone-site inventory.
+All findings are analyzed. Phase 0, the primary Phase 1 guard fix, and all six
+Phase 2 slices are implemented; Phases 3-8 remain planned. Severity comes from the
+seed audit: 4 critical, 13 high, 6 medium, 6 low, plus the clone-site inventory.
 
 Principle: do not clone the whole characters array, whole `Database`, or full
 message history for scalar-only hot paths. Keep full clones for real
@@ -27,34 +27,36 @@ restructures.
   cost is closed by the Phase 1 guard fix. The optional batching slice is
   deferred; reopen only if proxy wrap transitions show up in profiling.
 - `currentChatStateSnapshot` message paths: send, message edit, swipe/reroll,
-  slash var, and chat-metadata watcher clone all characters. Target:
+  slash var, and chat-metadata watcher cloned all characters. DONE (Phase 2):
   `currentChatScopedSnapshot`, with full clone kept for create/delete/reorder/fork.
-  Phase: [Phase 0](phases/phase-0-baseline-foundations.md) kit, then
+  Phase: [Phase 0](phases/phase-0-baseline-foundations.md) kit +
   [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
-- Chat-metadata watcher (`chatBridge.svelte.ts:68/190`): the effect snapshots all
-  chats before its early return, and `scalarChatMetadata` clones each full chat.
-  Target: capture rollback lazily per changed row; copy only allowed scalar keys.
-  Phase: [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
-- Character paths: `currentCharacterStateSnapshot` clones all characters for
-  field edits and `v2Set*` triggers. Target: `CharacterRowSnapshot` /
-  `restoreCharacterRow`. Phase:
-  [Phase 0](phases/phase-0-baseline-foundations.md) kit, then
+- Chat-metadata watcher (`chatBridge.svelte.ts:68/190`): the effect snapshotted all
+  chats before its early return, and `scalarChatMetadata` cloned each full chat.
+  DONE (Phase 2): rollback captured lazily per changed row, only allowed scalar
+  keys copied. Phase: [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
+- Character paths: `currentCharacterStateSnapshot` cloned all characters for
+  field edits and `v2Set*` triggers. DONE (Phase 2) for
+  `setCurrentCharacter`/`setCharacterByIndex` + the `v2Set*` trigger callers via
+  `CharacterRowSnapshot` / `restoreCharacterRow`; image/emotion handlers remain
+  (Phase 7). Phase: [Phase 0](phases/phase-0-baseline-foundations.md) kit +
   [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
-- Global-lorebook and trigger paths: `currentLorebookStateSnapshot` clones
-  characters and modules for global-lorebook edits and lorebook triggers. Target:
-  global-lorebook snapshot for `loreBook`/`loreBookPage`, scoped character
-  lorebook rollback for trigger sites. Phase:
-  [Phase 0](phases/phase-0-baseline-foundations.md) kit, then
+- Global-lorebook and trigger paths: `currentLorebookStateSnapshot` cloned
+  characters and modules for global-lorebook edits and lorebook triggers. DONE
+  (Phase 2) for select/create/delete (`loreBook`/`loreBookPage` snapshot) and the
+  6 trigger sites (scoped single-character `globalLore` rollback); the LoreBook
+  sidebar/MCP callers remain. Phase:
+  [Phase 0](phases/phase-0-baseline-foundations.md) kit +
   [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
 - Scriptstate var writes: `setVar`, `setChatVar`, `/setvar`, `/addvar`, and
-  `v2SetAuthorNote` clone all characters to roll back one chat field. Target:
-  `ChatScriptstateSnapshot`, plus one snapshot per `runTrigger` pass. Phase:
-  [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
+  `v2SetAuthorNote` cloned all characters to roll back one chat field. DONE
+  (Phase 2): `ChatScriptstateSnapshot`, plus one snapshot per `runTrigger` pass.
+  Phase: [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
 - Reroll and swipe: reroll clones the full transcript before slicing, and the
-  `apply*` helpers clone all characters for rollback. Target: clone only the
-  tail, pass `record.message` by reference, and use chat-scoped rollback. Phase:
-  [Phase 3](phases/phase-3-cheap-wins.md) for clone reorder, plus
-  [Phase 2](phases/phase-2-snapshot-family-narrowing.md) for rollback.
+  `apply*` helpers cloned all characters for rollback. The rollback baseline is
+  DONE (Phase 2): chat-scoped rollback. The full-transcript clone-before-slice and
+  the redundant `safeStructuredClone(record.message)` remain for
+  [Phase 3](phases/phase-3-cheap-wins.md).
 - `runTrigger`: clones the full character and chat before the no-trigger early
   return. Target: return before cloning; clone only the active chat and a shallow
   trigger script copy. Phase: [Phase 3](phases/phase-3-cheap-wins.md).
@@ -94,12 +96,13 @@ restructures.
 
 ## Decision
 
-Phase 0 (kit + harness) and the Phase 1 primary guard fix are done. Next narrow
-the Critical/High snapshot call sites in Phase 2. Phases 3-7 are independent
+Phase 0 (kit + harness), the Phase 1 primary guard fix, and Phase 2 (all six
+Critical/High snapshot call-site slices) are done. Phases 3-7 are independent
 cleanups. Phase 8 is the standing gate.
 
-- The highest-leverage guard fix has landed; the Phase 0 snapshot kit is the
-  shared dependency for the remaining narrowing work.
+- The highest-leverage guard fix and the Critical/High snapshot narrowing have
+  landed; the Phase 0 snapshot kit was the shared dependency for that work and is
+  reused by the remaining Phase 7 image/emotion narrowing.
 - Every narrowing keeps the full-collection snapshot for genuine restructures and
   proves the hot path no longer reaches it (clone-cost regression test).
 - A narrowed rollback restores exactly what the command mutates; correctness is

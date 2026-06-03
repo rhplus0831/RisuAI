@@ -21,9 +21,8 @@ guard follow-up, or one proof batch. Avoid broad cleanup passes.
 
 ## Current Best Targets
 
-Phases 0 and 1 have landed, and Phase 2 is in progress (3 of 6 slices). Continue
-the snapshot-family narrowing (Phase 2) in the remaining slices, then Phases 3-7
-(independent, any order).
+Phases 0, 1, and 2 have landed. Phase 2 (snapshot-family narrowing) is complete;
+the next work is Phases 3-7 (independent, any order).
 
 1. Phase 0 (DONE): snapshot kit + clone-cost harness.
 2. Phase 1 (DONE, primary slice): copy-on-write projection guard — a guarded
@@ -31,14 +30,16 @@ the snapshot-family narrowing (Phase 2) in the remaining slices, then Phases 3-7
    writable pass-through working copy; refreeze re-wraps the same mutated source
    in a fresh read-only proxy tree). The optional streaming/completion batching
    slice is deferred (low value now that each transition is O(1)).
-3. Phase 2 (IN PROGRESS, 3 of 6 slices done):
-   - DONE: chat-metadata watcher (`e5e183da`), chat-scoped message paths
-     (`2070df02`), scriptstate-scoped var writes (`727a28c0`).
-   - NEXT: reroll/swipe rollback (`reroll-swipe-rollback.md`) -> character-row
-     snapshot paths (`character-row-snapshot-paths.md`) -> global-lorebook
-     snapshot paths (`global-lorebook-snapshot-paths.md`). The broad
-     `dispatchReplaceMessages`/`dispatchUpdateMessage` and
-     `currentLorebookStateSnapshot` paths are still in use for these slices.
+3. Phase 2 (DONE, 6 of 6 slices): chat-metadata watcher (`e5e183da`), chat-scoped
+   message paths (`2070df02`), scriptstate-scoped var writes (`727a28c0`),
+   reroll/swipe rollback (`f1558e39`), character-row snapshot paths (`458458a7`),
+   global-lorebook snapshot paths (`9547ba3e`). The broad
+   `dispatchReplaceMessages`/`dispatchUpdateMessage`/`currentLorebookStateSnapshot`
+   and `currentCharacterStateSnapshot` paths remain only for the restructure
+   call sites (create/delete/reorder/fork) and the deferred image/emotion (Phase 7)
+   and sidebar/MCP lorebook callers.
+4. NEXT: Phase 3 (reroll clone reorder/removal + `runTrigger` early return) and
+   Phases 4-7 — independent cleanups, any order.
 
 ## Not First
 
@@ -64,10 +65,9 @@ the snapshot-family narrowing (Phase 2) in the remaining slices, then Phases 3-7
    writable pass-through working copy on entry and a fresh per-wrap read-only
    proxy tree on refreeze; proof in `src/ts/server/projectionWriteGuard.test.ts`.
    Secondary streaming/completion batching slice deferred (optional).
-3. Phase 2 snapshot-family narrowing - not started. Suggested slice order:
-   chat-metadata watcher (always-on, per-render Critical) -> chat-scoped message/
-   send paths -> scriptstate-scoped var writes -> reroll/swipe -> character-row ->
-   global-lorebook.
+3. Phase 2 snapshot-family narrowing - DONE (all 6 slices). Order landed:
+   chat-metadata watcher -> chat-scoped message/send paths -> scriptstate-scoped
+   var writes -> reroll/swipe -> character-row -> global-lorebook.
 4. Phase 3 cheap wins - not started. Independent; can land alongside Phase 1.
 5. Phase 4 script-definition watcher - not started.
 6. Phase 5 prompt-template keystroke - not started (the guard half closed in

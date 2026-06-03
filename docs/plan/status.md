@@ -5,23 +5,23 @@ Date: 2026-06-04
 This is the router for the frontend deep-clone / hot-path narrowing workstream.
 Use it first, then open only the phase or slice needed for the next task.
 
-Current status reflects the code and commit history through `727a28c0`
-(`perf: narrow scriptstate var writes to per-chat rollback (Phase 2)`). Phase 0
-foundations, the Phase 1 primary guard fix, and the first three Phase 2 slices
-have landed; the remaining three Phase 2 slices are the next work.
+Current status reflects the code and commit history through `9547ba3e`
+(`perf: narrow global-lorebook + lorebook-trigger rollback (Phase 2)`). Phase 0
+foundations, the Phase 1 primary guard fix, and all six Phase 2 slices have
+landed; Phase 2 is complete and the next work is Phases 3-7 (independent).
 
 ## Current Snapshot
 
 Analysis is complete. Phase 0 foundations are implemented, Phase 1 removed the
-guard clone amplifier, and Phase 2 is in progress (3 of 6 slices landed). The
-reference fix `c9e728b1` already narrowed character select; Phase 2 applies that
+guard clone amplifier, and Phase 2 is complete (all 6 slices landed). The
+reference fix `c9e728b1` already narrowed character select; Phase 2 applied that
 pattern to the remaining message, send, trigger, reroll, watcher, and editor
 paths.
 
 Phase 2 slices landed: chat-metadata watcher (`e5e183da`), chat-scoped message
-paths (`2070df02`), scriptstate-scoped var writes (`727a28c0`). Remaining Phase 2
-slices (planned): reroll/swipe rollback, character-row snapshot paths,
-global-lorebook snapshot paths.
+paths (`2070df02`), scriptstate-scoped var writes (`727a28c0`), reroll/swipe
+rollback (`f1558e39`), character-row snapshot paths (`458458a7`), global-lorebook
+snapshot paths (`9547ba3e`).
 
 - Phase 0, implemented: narrow snapshot kit + clone-cost harness. No
   snapshot-family production call sites were rewired (that starts in Phase 2).
@@ -29,10 +29,10 @@ global-lorebook snapshot paths.
   the two whole-`Database` clones from every guarded write (~100 sites). The
   optional secondary streaming/completion batching slice is deferred — now that
   each guard transition is O(1), batching per-chunk transitions has little value.
-- Phase 2, in progress (3 of 6 slices): route Critical/High
+- Phase 2, implemented (6 of 6 slices): routed Critical/High
   `current*StateSnapshot` call sites through the narrow kit. Landed: chat-metadata
-  watcher, chat-scoped message paths, scriptstate-scoped var writes. Remaining:
-  reroll/swipe rollback, character-row paths, global-lorebook paths.
+  watcher, chat-scoped message paths, scriptstate-scoped var writes, reroll/swipe
+  rollback, character-row paths, global-lorebook paths.
 - Phase 3, planned: reroll clone reorder/removal and `runTrigger` early return.
 - Phase 4, planned: script-definition watcher rollback scoped at dispatch.
 - Phase 5, planned: prompt-template debounce, single-item mutation, and cheaper
@@ -50,9 +50,8 @@ global-lorebook snapshot paths.
   copy-on-write / proxy unwrap-rewrap (primary slice implemented; batching
   slice deferred).
 - [Phase 2](phases/phase-2-snapshot-family-narrowing.md): chat, message, send,
-  trigger, reroll, character, and lorebook snapshot call sites (3 of 6 slices
-  landed: chat-metadata watcher, chat-scoped message paths, scriptstate var
-  writes; reroll/character-row/global-lorebook remain).
+  trigger, reroll, character, and lorebook snapshot call sites (implemented, 6 of
+  6 slices landed).
 - [Phase 3](phases/phase-3-cheap-wins.md): reroll clone reorder/removal and
   `runTrigger` clone-before-early-return.
 - [Phase 4](phases/phase-4-script-definition-watcher.md): script-definition
@@ -76,11 +75,14 @@ Headlines, in priority order (audit severity in parentheses):
 - `currentChatStateSnapshot()` family (Critical/High): the whole-characters clone
   on every send, per-message edit/delete/bookmark, swipe/reroll, scriptstate
   write, and a per-render chat-metadata watcher. -> Phase 0 (kit) + Phase 2
-  (apply).
+  (apply) — DONE.
 - `currentCharacterStateSnapshot()` (High): whole-characters clone on character
-  field edits and lorebook-mutating triggers. -> Phase 0 (kit) + Phase 2.
+  field edits and lorebook-mutating triggers. -> Phase 0 (kit) + Phase 2 — DONE
+  for `setCurrentCharacter`/`setCharacterByIndex` + the `v2Set*` trigger callers;
+  image/emotion handlers remain (Phase 7).
 - `currentLorebookStateSnapshot()` (High): whole characters+modules clone on
-  global-lorebook select and lorebook triggers. -> Phase 2.
+  global-lorebook select and lorebook triggers. -> Phase 2 — DONE for select/
+  create/delete + the 6 trigger sites; the LoreBook sidebar/MCP callers remain.
 - Script-definition watcher (High): full characters+modules clone per fire while
   a config/module panel is open. -> Phase 4.
 - Reroll/transcript clones (High): full-transcript clone to keep 1-2 tail
@@ -93,11 +95,13 @@ Headlines, in priority order (audit severity in parentheses):
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). Phases 0 and 1 have
+See [`latest-verification.md`](latest-verification.md). Phases 0, 1, and 2 have
 landed. The guard amplifier is gone: a guarded write is now O(1) (zero
-whole-`Database` clones) instead of ~255 ms on a 61 MB DB. Whole-characters
-snapshots on the hot paths still scale with total history until Phase 2 narrows
-them.
+whole-`Database` clones) instead of ~255 ms on a 61 MB DB. Phase 2 narrowed the
+Critical/High hot-path rollback snapshots (send, message edit, swipe/reroll,
+scriptstate, chat-metadata watcher, character-field edits, global-lorebook
+select, and the 6 lorebook triggers) to scalar/single-row/single-chat clones; the
+deferred image/emotion and sidebar/MCP lorebook callers still scale with history.
 
 ## Start Here
 

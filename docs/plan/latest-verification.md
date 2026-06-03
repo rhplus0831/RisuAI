@@ -1,33 +1,36 @@
 # Latest Verification
 
-Date: 2026-06-03
+Date: 2026-06-04
 
 This file holds the latest verification result for this workstream. Replace the
 latest-run section on each full or focused run; do not append history.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 1 copy-on-write projection write guard
-  (`src/ts/server/projectionWriteGuard.svelte.ts`), on top of the Phase 0 kit +
-  harness. This is the first runtime clone-range change.
-- Before/after clone range for a guarded write: BEFORE = two whole-`Database`
-  deep clones per top-level guarded write (entry `structuredClone(source)` +
-  refreeze `$state.snapshot`), ~255 ms on a 61 MB DB. AFTER = zero clones; entry
-  hands the callback a writable pass-through working copy and refreeze re-wraps
-  the same mutated source in a fresh read-only proxy tree (per-wrap memo keeps
-  reactivity). O(1) regardless of DB size. The rare full-projection-replacement
-  apply path still does one `$state.snapshot` unwrap (unchanged).
-- Snapshot-family hot paths (Phase 2) still clone whole collections; unchanged
-  this run.
-- Result: green. `projectionWriteGuard.test.ts` proves a guarded one-field write
-  performs `structuredCloneCount === 0` and `maxClonedSize` below the characters
-  size, stays read-only after the write, mints a fresh identity per write, nests
-  correctly, and supports the apply path. `chatMessageHydration.reactivity.svelte.test.ts`
-  guards that nested `$derived` chains still re-run (the per-wrap-memo fix).
+- Runtime/code change under test: Phase 2 snapshot-family hot-path narrowing
+  COMPLETE (final three slices: reroll/swipe rollback `f1558e39`, character-row
+  snapshot paths `458458a7`, global-lorebook + lorebook-trigger rollback
+  `9547ba3e`), on top of the Phase 0 kit, the Phase 1 guard, and the first three
+  Phase 2 slices.
+- Before/after rollback-clone range for the narrowed hot paths: BEFORE = a
+  whole-`characters` (and, for lorebook, `characters` + `modules`) JSON deep clone
+  per swipe / character-field edit / global-lorebook select / lorebook-trigger
+  fire — scales with total hydrated history. AFTER = a single active-chat clone
+  (reroll/swipe), a single character-row clone (`setCurrentCharacter` /
+  `setCharacterByIndex`), `loreBook`/`loreBookPage` only (global-lorebook
+  select/create/delete), and a single character's `globalLore` (the 6 v2 lorebook
+  triggers, which also drop the redundant `setCurrentCharacter` re-clone + the
+  per-trigger `ensureAllClientLorebookIds` full-tree walk).
+- Result: green. New rollback-correctness + clone-cost proofs:
+  `rerollNavigation.rollback.test.ts` (a swipe never serializes the large sibling
+  transcript; a failed `dispatchReplaceMessagesScoped` restores only the active
+  chat), `characterCommands.test.ts` "Phase 2 character-row scoped dispatch",
+  `lorebookBridge.test.ts` "Phase 2 global-lorebook scoped dispatch", and
+  `triggers.projectionGuard.test.ts` "Phase 2 trigger lorebook scoped rollback".
 
 | Command                                                                                     | Result                                                                                                      |
 | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `pnpm test`                                                                                 | green - 982 passed / 4 skipped (103 files).                                                                 |
+| `pnpm test`                                                                                 | green - 997 passed / 4 skipped (104 files).                                                                 |
 | `pnpm api:test`                                                                             | green - 1632 passed / 1 skipped (93 files).                                                                 |
 | `pnpm client-thinning:audit`                                                                | green - audit passed.                                                                                       |
 | Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | green - both zero errors (clean client-lib rebuild required: remove `dist/client-types` if TS6305 appears). |
