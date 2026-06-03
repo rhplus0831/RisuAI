@@ -1,6 +1,17 @@
 # Clone-Cost Regression Harness
 
-Status: planned. Phase 0. Adds reusable proof helpers. No runtime code changes.
+Status: implemented. Phase 0. Adds reusable proof helpers. No runtime code
+changes.
+
+Landed at `src/ts/__tests__/cloneCostHarness.ts` (test-only, excluded from the
+client-lib build). Surface: `assertSnapshotIsScalar` and
+`assertSnapshotOmitsCollections` (structural), `assertRollbackRestoresOnly`
+(rollback-correctness driver), `withCloneInstrumentation` (spies
+`JSON.stringify` for `cloneJsonValue` and `structuredClone` for
+`safeStructuredClone`, returns clone counts + max cloned payload size), and
+`seedCloneCostDb` (multi-character, one multi-message hydrated chat). Imported by
+the Phase 0 kit tests; the sanity baseline shows the selection snapshot performs
+zero whole-characters clones while the legacy snapshot performs one.
 
 ## Scope
 

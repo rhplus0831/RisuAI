@@ -117,6 +117,33 @@ export function restoreLorebookState(snapshot: LorebookStateSnapshot): void {
   })
 }
 
+// Narrow global-lorebook rollback. Global-lorebook select/create/delete only
+// touch `loreBook` and `loreBookPage`, so the snapshot omits the whole
+// `characters` and `modules` collections that the heavy `LorebookStateSnapshot`
+// clones. The full snapshot stays for paths that can mutate character/module
+// lore alongside the global list.
+export interface GlobalLorebookStateSnapshot {
+  loreBook: GlobalLorebook[]
+  loreBookPage: number
+  selectedCharID: number
+}
+
+export function currentGlobalLorebookStateSnapshot(): GlobalLorebookStateSnapshot {
+  ensureAllClientLorebookIds()
+  return {
+    loreBook: cloneJsonValue((DBState.db.loreBook ?? []) as GlobalLorebook[]),
+    loreBookPage: DBState.db.loreBookPage ?? 0,
+    selectedCharID: get(selectedCharID),
+  }
+}
+
+export function restoreGlobalLorebookState(snapshot: GlobalLorebookStateSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.loreBook = cloneJsonValue(snapshot.loreBook) as typeof DBState.db.loreBook
+    DBState.db.loreBookPage = snapshot.loreBookPage
+  })
+}
+
 export function ensureClientLorebookEntryIds(entries: loreBook[]): loreBook[] {
   for (const entry of entries ?? []) {
     // Only write when an id is actually missing. An unconditional assignment
@@ -497,7 +524,10 @@ function snapshotJson(value: unknown): string {
   return snapshot === undefined ? '__undefined__' : snapshot
 }
 
-function scopedLorebookStateSnapshot(key: string, previousSnapshot: string): LorebookStateSnapshot {
+export function scopedLorebookStateSnapshot(
+  key: string,
+  previousSnapshot: string,
+): LorebookStateSnapshot {
   return {
     scopeKey: key,
     scopedValue: parseSnapshotJson(previousSnapshot),
@@ -509,7 +539,7 @@ function scopedLorebookStateSnapshot(key: string, previousSnapshot: string): Lor
   }
 }
 
-function restoreScopedLorebookState(snapshot: LorebookStateSnapshot): void {
+export function restoreScopedLorebookState(snapshot: LorebookStateSnapshot): void {
   const key = snapshot.scopeKey
   if (!key) return
 

@@ -95,6 +95,58 @@ export function restoreCharacterSelection(snapshot: CharacterSelectionSnapshot):
   })
 }
 
+// Narrow single-row rollback. Character field edits, image/emotion writes, and
+// `setCurrentCharacter`/`setCharacterByIndex` only mutate one character row (and
+// the selection scalars), so the snapshot clones just that row instead of the
+// whole `characters` array with every hydrated chat history. The full-array
+// `CharacterStateSnapshot` stays for create/delete/reorder.
+export interface CharacterRowSnapshot {
+  characterId: string | undefined
+  index: number
+  character: character | undefined
+  currentChar?: number
+  selectedCharID: number
+}
+
+export function currentCharacterRowSnapshot(index: number = get(selectedCharID)): CharacterRowSnapshot {
+  const character = DBState.db.characters?.[index]
+  return {
+    characterId: character?.chaId,
+    index,
+    character: character ? cloneJsonValue(character) : undefined,
+    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    selectedCharID: get(selectedCharID),
+  }
+}
+
+export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const characters = DBState.db.characters
+    if (snapshot.character && characters) {
+      const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
+      if (index >= 0) {
+        characters[index] = cloneJsonValue(snapshot.character) as character
+      }
+    }
+    ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
+    selectedCharID.set(snapshot.selectedCharID)
+  })
+}
+
+function locateCharacterIndex(
+  characters: character[],
+  characterId: string | undefined,
+  fallbackIndex: number,
+): number {
+  // Prefer the stable id so a stale index can never overwrite the wrong row;
+  // fall back to the captured index only when the row carried no id.
+  if (characterId) {
+    const byId = characters.findIndex((candidate) => candidate.chaId === characterId)
+    if (byId >= 0) return byId
+  }
+  return fallbackIndex >= 0 && fallbackIndex < characters.length ? fallbackIndex : -1
+}
+
 export function runCharacterCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,

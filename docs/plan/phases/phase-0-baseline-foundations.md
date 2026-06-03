@@ -1,9 +1,35 @@
 # Phase 0: Baseline Foundations
 
-Status: planned. Two slices, no call site narrowed (that starts in Phase 2).
+Status: implemented. Two slices landed, no call site narrowed (that starts in
+Phase 2).
 
 Goal: add the shared snapshot kit and clone-cost harness. This phase makes later
 narrowing reusable and provable; it does not change hot-path behavior.
+
+## Implementation
+
+- Snapshot kit added (no call site rewired):
+  `currentChatScopedSnapshot`/`restoreChatScopedState` and
+  `ChatScriptstateSnapshot`/`currentChatScriptstateSnapshot`/
+  `restoreChatScriptstate` in `src/ts/chatCommands.ts`;
+  `CharacterRowSnapshot`/`currentCharacterRowSnapshot`/`restoreCharacterRow` in
+  `src/ts/characterCommands.ts`;
+  `currentGlobalLorebookStateSnapshot`/`restoreGlobalLorebookState` in
+  `src/ts/server/lorebookBridge.svelte.ts`, which also exports the existing
+  `scopedLorebookStateSnapshot`/`restoreScopedLorebookState` pair. Each
+  `restore*` locates its target by stable id (index only as a fallback) inside
+  `withTrustedServerProjectionWrite`.
+- Clone-cost harness added at `src/ts/__tests__/cloneCostHarness.ts` (test-only,
+  excluded from the client-lib build): `assertSnapshotIsScalar`,
+  `assertSnapshotOmitsCollections`, `assertRollbackRestoresOnly`,
+  `withCloneInstrumentation` (spies `JSON.stringify`/`structuredClone`), and a
+  `seedCloneCostDb` multi-character/multi-message seed builder.
+- Proofs: `Phase 0` describe blocks in `src/ts/characterCommands.test.ts`,
+  `src/ts/chatCommands.test.ts`, and a new `src/ts/server/lorebookBridge.test.ts`
+  prove each snapshot captures only its slice, each restore writes back only that
+  slice (and never clobbers concurrent sibling edits), and the sanity baseline
+  (`currentCharacterSelectionSnapshot` performs zero whole-characters clones vs
+  one for the legacy `currentCharacterStateSnapshot`).
 
 ## Source Anchors
 
@@ -36,14 +62,16 @@ narrowing reusable and provable; it does not change hot-path behavior.
 
 ## Exit Criteria
 
-- [ ] Unit tests prove each `current*Snapshot` captures only its narrow slice and
+- [x] Unit tests prove each `current*Snapshot` captures only its narrow slice and
   each `restore*` writes back only that slice.
-- [ ] The clone-cost regression harness exists and is importable from a single
-  place (`__tests__` helper), exposing both the structural snapshot assertion and
-  the clone-primitive instrumentation.
-- [ ] The reference fix's existing tests still pass and are re-expressed through
-  the harness where practical (no behavior change).
-- [ ] No hot-path call site is changed; `pnpm test` and `pnpm api:test` are green.
+- [x] The clone-cost regression harness exists and is importable from a single
+  place (`src/ts/__tests__/cloneCostHarness.ts`), exposing both the structural
+  snapshot assertions and the clone-primitive instrumentation.
+- [x] The reference fix's existing tests still pass; the new kit tests reuse the
+  harness's structural and rollback-correctness assertions (no behavior change).
+- [x] No hot-path call site is changed; `pnpm test` (975 passed / 4 skipped) and
+  `pnpm api:test` (1632 passed / 1 skipped) are green, plus the audit and both
+  type checks.
 
 ## Validation
 

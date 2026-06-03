@@ -5,16 +5,18 @@ Date: 2026-06-03
 This is the router for the frontend deep-clone / hot-path narrowing workstream.
 Use it first, then open only the phase or slice needed for the next task.
 
-Current status reflects the seed audit from 2026-06-03. No remediation has
-landed yet.
+Current status reflects the seed audit from 2026-06-03. Phase 0 (foundations)
+has landed; no hot-path call site is narrowed yet.
 
 ## Current Snapshot
 
-Analysis is complete. Nothing is implemented. The reference fix `c9e728b1`
-already narrowed character select; this plan applies that pattern to message,
-send, streaming, trigger, reroll, watcher, and editor paths.
+Analysis is complete. Phase 0 foundations are implemented; no hot path is
+narrowed. The reference fix `c9e728b1` already narrowed character select; this
+plan applies that pattern to message, send, streaming, trigger, reroll, watcher,
+and editor paths.
 
-- Phase 0, planned: snapshot kit and clone-cost harness. No call sites narrowed.
+- Phase 0, implemented: narrow snapshot kit + clone-cost harness. No call sites
+  narrowed (that starts in Phase 2).
 - Phase 1, planned: copy-on-write projection guard. This removes the full-DB
   clone amplifier from about 100 guarded writes.
 - Phase 2, planned: route Critical/High `current*StateSnapshot` call sites
@@ -30,7 +32,8 @@ send, streaming, trigger, reroll, watcher, and editor paths.
 
 ## Phase Router
 
-- [Phase 0](phases/phase-0-baseline-foundations.md): snapshot kit and harness.
+- [Phase 0](phases/phase-0-baseline-foundations.md): snapshot kit and harness
+  (implemented).
 - [Phase 1](phases/phase-1-projection-write-guard.md): projection guard
   copy-on-write / proxy unwrap-rewrap.
 - [Phase 2](phases/phase-2-snapshot-family-narrowing.md): chat, message, send,
@@ -75,10 +78,11 @@ Headlines, in priority order (audit severity in parentheses):
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). No code change has landed;
-the recorded baseline is the audit's empirical measurement (61 MB DB: one guarded
-write takes about 255 ms; whole-characters snapshots scale with total history).
-Replace the latest-run section once Phase 0/1 lands.
+See [`latest-verification.md`](latest-verification.md). Phase 0 has landed
+(snapshot kit + clone-cost harness, no hot path narrowed); the recorded runtime
+baseline is still the audit's empirical measurement (61 MB DB: one guarded write
+takes about 255 ms; whole-characters snapshots scale with total history).
+Replace the latest-run section once Phase 1 narrows the guard.
 
 ## Start Here
 

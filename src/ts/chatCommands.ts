@@ -85,6 +85,107 @@ export function restoreChatState(snapshot: ChatStateSnapshot): void {
   })
 }
 
+// Narrow single-chat rollback. Message edit/delete/bookmark/replace/send and
+// slash-command message mutation only touch the active chat row, so a rollback
+// only needs that one chat — not a JSON clone of every character's whole chat
+// history (the heavy `ChatStateSnapshot`). The full-collection snapshot stays
+// for genuine restructures (create/delete/reorder/fork chats); this scoped pair
+// is reserved for paths that mutate one chat in place.
+export interface ChatScopedSnapshot {
+  selectedCharID: number
+  characterId: string | undefined
+  chatId: string | undefined
+  chat: Chat | undefined
+}
+
+export function currentChatScopedSnapshot(): ChatScopedSnapshot {
+  const selectedChar = get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  const chat = character?.chats?.[character.chatPage]
+  return {
+    selectedCharID: selectedChar,
+    characterId: character?.chaId,
+    chatId: chat?.id,
+    chat: chat ? cloneJsonValue(chat) : undefined,
+  }
+}
+
+export function restoreChatScopedState(snapshot: ChatScopedSnapshot): void {
+  if (!snapshot.chat) return
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
+    if (!character?.chats) return
+    const index = locateChatIndex(character, snapshot.chatId)
+    if (index < 0) return
+    character.chats[index] = cloneJsonValue(snapshot.chat) as Chat
+  })
+}
+
+// Narrow scriptstate rollback. `setVar`/`setChatVar`/`/setvar`/`/addvar` only
+// mutate the active chat's `scriptstate` map (and `v2SetAuthorNote` its `note`
+// scalar), so the snapshot shallow-clones just that small key/value map plus an
+// optional note — never the chat or the characters array.
+export interface ChatScriptstateSnapshot {
+  chatId: string | undefined
+  selectedCharID: number
+  scriptstate: { [key: string]: string | number | boolean } | undefined
+  note?: string
+}
+
+export function currentChatScriptstateSnapshot(includeNote = false): ChatScriptstateSnapshot {
+  const selectedChar = get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  const chat = character?.chats?.[character.chatPage]
+  const snapshot: ChatScriptstateSnapshot = {
+    chatId: chat?.id,
+    selectedCharID: selectedChar,
+    scriptstate: chat?.scriptstate ? { ...chat.scriptstate } : undefined,
+  }
+  if (includeNote) snapshot.note = chat?.note
+  return snapshot
+}
+
+export function restoreChatScriptstate(snapshot: ChatScriptstateSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const chat = locateScriptstateChat(snapshot)
+    if (!chat) return
+    chat.scriptstate = snapshot.scriptstate ? { ...snapshot.scriptstate } : undefined
+    if (snapshot.note !== undefined) chat.note = snapshot.note
+  })
+}
+
+function locateSnapshotCharacter(
+  characterId: string | undefined,
+  fallbackIndex: number,
+): character | undefined {
+  if (characterId) {
+    const byId = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    if (byId) return byId
+  }
+  return DBState.db.characters?.[fallbackIndex]
+}
+
+function locateChatIndex(character: character, chatId: string | undefined): number {
+  // Prefer a stable id so a stale index can never clobber the wrong chat. Only
+  // fall back to the active `chatPage` when the chat carried no id at all.
+  if (chatId) {
+    return character.chats?.findIndex((candidate) => candidate.id === chatId) ?? -1
+  }
+  const page = character.chatPage ?? 0
+  return page >= 0 && page < (character.chats?.length ?? 0) ? page : -1
+}
+
+function locateScriptstateChat(snapshot: ChatScriptstateSnapshot): Chat | undefined {
+  if (snapshot.chatId) {
+    for (const character of DBState.db.characters ?? []) {
+      const chat = character.chats?.find((candidate) => candidate.id === snapshot.chatId)
+      if (chat) return chat
+    }
+  }
+  const character = DBState.db.characters?.[snapshot.selectedCharID]
+  return character?.chats?.[character.chatPage]
+}
+
 export function runChatCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,

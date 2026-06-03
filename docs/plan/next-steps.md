@@ -21,17 +21,19 @@ fix, or one proof batch. Avoid broad cleanup passes.
 
 ## Current Best Targets
 
-Nothing is implemented. Start with the foundation phases, then follow the audit
-order.
+Phase 0 has landed. Next is the guard (Phase 1), then the snapshot-family
+narrowing (Phase 2), following the audit order.
 
-1. Phase 0: snapshot kit + clone-cost harness. Add
+1. Phase 0 (DONE): snapshot kit + clone-cost harness. Added
    `currentChatScopedSnapshot`/`restoreChatScopedState`,
-   `ChatScriptstateSnapshot`/`restoreChatScriptstate`,
-   `CharacterRowSnapshot`/`restoreCharacterRow`,
-   `currentGlobalLorebookStateSnapshot`/`restoreGlobalLorebookState`, and the
-   reusable snapshot/rollback test helper. No call site narrowed yet.
-2. Phase 1: projection write guard. Use copy-on-write / proxy unwrap-rewrap so a
-   guarded write stops cloning the whole `Database` twice.
+   `ChatScriptstateSnapshot`/`currentChatScriptstateSnapshot`/
+   `restoreChatScriptstate`,
+   `CharacterRowSnapshot`/`currentCharacterRowSnapshot`/`restoreCharacterRow`,
+   `currentGlobalLorebookStateSnapshot`/`restoreGlobalLorebookState`, exported the
+   scoped lorebook pair, and added `src/ts/__tests__/cloneCostHarness.ts`. No call
+   site narrowed.
+2. Phase 1 (NEXT): projection write guard. Use copy-on-write / proxy
+   unwrap-rewrap so a guarded write stops cloning the whole `Database` twice.
 3. Phase 2: apply narrow snapshots one slice at a time. Start with the
    chat-metadata watcher and message-edit/send paths, then trigger, reroll,
    character, and lorebook paths.
@@ -52,10 +54,12 @@ order.
 
 ## Selection Order
 
-1. Phase 0 snapshot kit + clone-cost harness - not started.
-2. Phase 1 projection write guard (copy-on-write / proxy unwrap-rewrap) - not
-   started. Interim mitigation if the proxy swap is risky: drop the refreeze-time
-   `$state.snapshot` (halves the cost).
+1. Phase 0 snapshot kit + clone-cost harness - DONE (kit in
+   `chatCommands.ts`/`characterCommands.ts`/`lorebookBridge.svelte.ts`, harness in
+   `src/ts/__tests__/cloneCostHarness.ts`; proofs in the three command suites).
+2. Phase 1 projection write guard (copy-on-write / proxy unwrap-rewrap) - NEXT,
+   not started. Interim mitigation if the proxy swap is risky: drop the
+   refreeze-time `$state.snapshot` (halves the cost).
 3. Phase 2 snapshot-family narrowing - not started. Suggested slice order:
    chat-metadata watcher (always-on, per-render Critical) -> chat-scoped message/
    send paths -> scriptstate-scoped var writes -> reroll/swipe -> character-row ->

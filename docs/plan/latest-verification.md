@@ -7,24 +7,31 @@ latest-run section on each full or focused run; do not append history.
 
 ## Latest Run
 
-- Runtime/code change under test: none. This plan was split from the seed audit;
-  no remediation has landed.
+- Runtime/code change under test: Phase 0 foundations only — the narrow snapshot
+  kit (`chatCommands.ts`/`characterCommands.ts`/`lorebookBridge.svelte.ts`) and
+  the clone-cost harness (`src/ts/__tests__/cloneCostHarness.ts`). No hot-path
+  call site is rewired, so no runtime clone range changed yet.
+- Before/after clone range: unchanged for every live path. The kit and harness
+  exist but are not wired in; Phase 1 (guard) is the first range change. The
+  baseline below still holds.
 - Baseline (from the audit, not a fresh run): on a 61 MB hydrated DB, one
   `withTrustedServerProjectionWrite` guarded write takes about 255 ms (entry
   `structuredClone` ~125 ms + refreeze `$state.snapshot` ~130 ms); a few-MB DB is
   tens of ms per call. `currentChatStateSnapshot()` and
   `currentCharacterStateSnapshot()` scale with total hydrated history, not the
   row being mutated. `c9e728b1` already removed the character-select instance.
-- Result: not applicable (no change). The pre-existing client/server suites and
-  the client-thinning audit are green at the plan's start commit; the reference
-  fix's regression tests in `src/ts/compatibilityAdapters.test.ts` pass.
+- Result: green. The new Phase 0 kit tests prove (via `withCloneInstrumentation`)
+  that `currentCharacterSelectionSnapshot` performs zero whole-characters clones
+  while the legacy `currentCharacterStateSnapshot` performs one, and that each new
+  snapshot omits the whole collection while each restore rolls back only its slice
+  without clobbering concurrent sibling edits.
 
 | Command | Result |
 | --- | --- |
-| `pnpm test` | (baseline, pre-change) - green at plan start. |
-| `pnpm api:test` | (baseline, pre-change) - green at plan start. |
-| `pnpm client-thinning:audit` | (baseline, pre-change) - green at plan start. |
-| Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | (baseline, pre-change) - green at plan start. |
+| `pnpm test` | green - 975 passed / 4 skipped (102 files). |
+| `pnpm api:test` | green - 1632 passed / 1 skipped (93 files). |
+| `pnpm client-thinning:audit` | green - audit passed. |
+| Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | green - both zero errors (clean client-lib rebuild required: remove `dist/client-types` if TS6305 appears). |
 
 ## Notes
 

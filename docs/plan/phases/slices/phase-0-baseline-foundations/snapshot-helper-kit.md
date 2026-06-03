@@ -1,7 +1,13 @@
 # Snapshot Helper Kit
 
-Status: planned. Phase 0. Adds narrow snapshot+restore pairs for later phases.
-No call site is rewired here.
+Status: implemented. Phase 0. Adds narrow snapshot+restore pairs for later
+phases. No call site is rewired here.
+
+Landed: the five helper pairs below exist and are exported
+(`chatCommands.ts`/`characterCommands.ts`/`lorebookBridge.svelte.ts`), the scoped
+lorebook pair is now exported, and `Phase 0` describe blocks in the three command
+suites prove each snapshot/restore touches only its slice. The heavy
+`current*StateSnapshot`/`restore*State` helpers are untouched.
 
 ## Scope
 

@@ -5,7 +5,7 @@ Date: 2026-06-03
 Use these files for phase status, scope, exit criteria, and slice routing.
 Concrete slices live under `slices/[phase]/[slice-name].md`.
 
-- Phase 0, planned:
+- Phase 0, implemented:
   [`phase-0-baseline-foundations.md`](phase-0-baseline-foundations.md),
   [`slices/phase-0-baseline-foundations/`](slices/phase-0-baseline-foundations/).
 - Phase 1, planned:

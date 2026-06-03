@@ -24,6 +24,8 @@ import {
 import { DBState, selectedCharID } from './stores.svelte'
 import {
   appendCurrentChatUserMessageForSend,
+  currentChatScopedSnapshot,
+  currentChatScriptstateSnapshot,
   currentChatStateSnapshot,
   dispatchCreateChat,
   dispatchCreateChatFolder,
@@ -31,7 +33,16 @@ import {
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
   dispatchUpdateChat,
+  restoreChatScopedState,
+  restoreChatScriptstate,
 } from './chatCommands'
+import {
+  assertRollbackRestoresOnly,
+  assertSnapshotIsScalar,
+  assertSnapshotOmitsCollections,
+  seedCloneCostDb,
+  withCloneInstrumentation,
+} from './__tests__/cloneCostHarness'
 
 interface CapturedFetch {
   url: string
@@ -412,5 +423,127 @@ describe('chat command projection helpers', () => {
     expect(result).toEqual({ status: 'error', error: 'nope' })
     await waitForCallCount(calls, 2)
     expect(DBState.db.characters[0].chats[0].message).toEqual([])
+  })
+})
+
+describe('Phase 0 chat-scoped snapshot kit', () => {
+  it('captures only the active chat, never the whole characters array', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+
+    const snapshot = currentChatScopedSnapshot()
+
+    expect(snapshot.characterId).toBe('char-0')
+    expect(snapshot.chatId).toBe('chat-0')
+    expect(snapshot.selectedCharID).toBe(0)
+    expect(snapshot.chat?.message).toHaveLength(40)
+    expect(snapshot).not.toHaveProperty('characters')
+    assertSnapshotOmitsCollections(snapshot)
+
+    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const instrumented = withCloneInstrumentation(() => currentChatScopedSnapshot())
+    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+  })
+
+  it('restores only the active chat, preserving concurrent edits to other chats', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+
+    assertRollbackRestoresOnly({
+      capture: () => currentChatScopedSnapshot(),
+      mutate: () => {
+        DBState.db.characters[0].chats[0].message.push({
+          role: 'char',
+          data: 'optimistic',
+          chatId: 'msg-extra',
+        })
+        // an unrelated, concurrent edit to a different character's chat
+        DBState.db.characters[1].chats[0].note = 'sibling concurrent note'
+      },
+      expectMutated: () => {
+        expect(DBState.db.characters[0].chats[0].message).toHaveLength(41)
+      },
+      restore: (snapshot) => restoreChatScopedState(snapshot),
+      expectRestored: () => {
+        expect(DBState.db.characters[0].chats[0].message).toHaveLength(40)
+      },
+      expectUntouched: () => {
+        expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent note')
+      },
+    })
+  })
+
+  it('restores the chat by stable id even when its character index has shifted', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+    const snapshot = currentChatScopedSnapshot()
+
+    DBState.db.characters[0].chats[0].message.push({
+      role: 'char',
+      data: 'optimistic',
+      chatId: 'msg-extra',
+    })
+    DBState.db.characters.unshift({ chaId: 'char-new', name: 'Inserted', chats: [] } as any)
+
+    restoreChatScopedState(snapshot)
+
+    const restored = DBState.db.characters.find((c: any) => c.chaId === 'char-0')
+    expect(restored.chats[0].message).toHaveLength(40)
+  })
+})
+
+describe('Phase 0 chat-scriptstate snapshot kit', () => {
+  it('captures only the scriptstate map and an optional note, never a chat or the collection', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+
+    const snapshot = currentChatScriptstateSnapshot()
+    expect(snapshot.chatId).toBe('chat-0')
+    expect(snapshot.scriptstate).toEqual({ $score: '0', $old: 'gone' })
+    expect(snapshot.note).toBeUndefined()
+    assertSnapshotIsScalar(snapshot)
+
+    const withNote = currentChatScriptstateSnapshot(true)
+    expect(withNote.note).toBe('note-0')
+    assertSnapshotIsScalar(withNote)
+
+    // The scriptstate map is shallow-cloned: mutating the live map after the
+    // snapshot must not bleed into the captured copy.
+    DBState.db.characters[0].chats[0].scriptstate.$score = '99'
+    expect(snapshot.scriptstate?.$score).toBe('0')
+  })
+
+  it('restores scriptstate and note only, preserving concurrent message edits on the same chat', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+
+    assertRollbackRestoresOnly({
+      capture: () => currentChatScriptstateSnapshot(true),
+      mutate: () => {
+        DBState.db.characters[0].chats[0].scriptstate = { $score: 'optimistic' }
+        DBState.db.characters[0].chats[0].note = 'optimistic note'
+        // a concurrent, unrelated edit to the same chat's message history
+        DBState.db.characters[0].chats[0].message.push({
+          role: 'char',
+          data: 'concurrent',
+          chatId: 'msg-concurrent',
+        })
+      },
+      expectMutated: () => {
+        expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: 'optimistic' })
+      },
+      restore: (snapshot) => restoreChatScriptstate(snapshot),
+      expectRestored: () => {
+        expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({
+          $score: '0',
+          $old: 'gone',
+        })
+        expect(DBState.db.characters[0].chats[0].note).toBe('note-0')
+      },
+      expectUntouched: () => {
+        // a whole-chat restore would have wiped this concurrent message
+        expect(DBState.db.characters[0].chats[0].message).toHaveLength(41)
+      },
+    })
   })
 })
