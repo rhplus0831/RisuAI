@@ -1,6 +1,17 @@
 # Copy-On-Write Projection Guard
 
-Status: planned. Phase 1. The single highest-leverage fix.
+Status: implemented. Phase 1. The single highest-leverage fix.
+
+Landed in `src/ts/server/projectionWriteGuard.svelte.ts`: entry hands the
+callback a writable pass-through working copy (`new Proxy(source, {
+getPrototypeOf })` — the custom prototype stops Svelte's `$state` from
+deep-proxying it, so mutations write through to the plain source with no clone);
+refreeze re-wraps the same source via `createReadOnlyServerProjection`, which now
+uses a per-wrap memo so the whole proxy tree gets fresh identities (reactivity
+preserved). Achieved zero clones, beyond the interim half-cost mitigation. The
+hydration reactivity test (`chatMessageHydration.reactivity.svelte.test.ts`)
+caught that a global nested-proxy memo would freeze `$derived` chains; the
+per-wrap memo fixes it. Proof: `src/ts/server/projectionWriteGuard.test.ts`.
 
 ## Scope
 

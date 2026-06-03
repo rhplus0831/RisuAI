@@ -2,8 +2,10 @@ import { DBState } from '../stores.svelte'
 import type { Database } from '../storage/database.svelte'
 
 let serverProjectionWriteGuardEnabled = false
-const readOnlyServerProjectionTargets = new WeakMap<object, object>()
+// Maps a top-level read-only projection proxy back to its plain source.
 const readOnlyServerProjectionSources = new WeakMap<object, object>()
+// Maps a writable copy-on-write working proxy back to its plain mutable source.
+const trustedServerProjectionWorkingCopies = new WeakMap<object, object>()
 let trustedServerProjectionWriteDepth = 0
 let serverProjectionApplyEpoch = $state(0)
 let readOnlyServerProjection = $state.raw<Database>({} as Database)
@@ -12,7 +14,9 @@ const readOnlyServerProjectionPrototype = {}
 export function setServerProjectionWriteGuardEnabled(enabled: boolean) {
   serverProjectionWriteGuardEnabled = enabled
   if (enabled && DBState.db && typeof DBState.db === 'object') {
-    DBState.db = createReadOnlyServerProjection(snapshotServerProjectionValue(DBState.db))
+    // One-time on enable: DBState.db is still a raw reactive object, so resolve a
+    // plain source for it and wrap that in the read-only projection.
+    DBState.db = createReadOnlyServerProjection(resolveServerProjectionSource(DBState.db))
   }
 }
 
@@ -32,7 +36,11 @@ export function withTrustedServerProjectionWrite<T>(callback: () => T): T {
     if (!shouldRefreeze) return
     trustedServerProjectionWriteDepth -= 1
     if (trustedServerProjectionWriteDepth === 0) {
-      DBState.db = createReadOnlyServerProjection(snapshotServerProjectionValue(DBState.db))
+      // Copy-on-write refreeze: re-wrap the same mutated source in a FRESH
+      // read-only proxy. createReadOnlyServerProjection always mints a new proxy
+      // tree (per-wrap memo), so DBState.db and every nested proxy get a new
+      // identity and dependent $derived chains re-run — with no data clone.
+      DBState.db = createReadOnlyServerProjection(resolveServerProjectionSource(DBState.db))
     }
     shouldRefreeze = false
   }
@@ -40,7 +48,11 @@ export function withTrustedServerProjectionWrite<T>(callback: () => T): T {
   trustedServerProjectionWriteDepth += 1
   shouldRefreeze = true
   if (trustedServerProjectionWriteDepth === 1) {
-    DBState.db = snapshotServerProjectionValue(DBState.db)
+    // Copy-on-write entry: hand the callback a writable pass-through working copy
+    // of the projection source — no clone.
+    DBState.db = createTrustedServerProjectionWorkingCopy(
+      resolveServerProjectionSource(DBState.db),
+    )
   }
 
   try {
@@ -72,12 +84,23 @@ export function getServerProjectionApplyEpoch(): number {
 }
 
 export function createReadOnlyServerProjection<T extends object>(target: T): T {
-  readOnlyServerProjection = createReadOnlyServerProjectionProxy(target) as Database
-  return readOnlyServerProjection as T
+  // A fresh nested-proxy memo per top-level wrap. Each guarded write thus mints a
+  // brand-new proxy tree (new identities top-to-bottom) so dependent $derived
+  // chains re-run exactly as they did when the old guard deep-cloned the tree —
+  // but the underlying data is never cloned. The memo still dedupes shared refs
+  // and breaks cycles within a single wrap.
+  const memo = new WeakMap<object, object>()
+  const proxy = createReadOnlyServerProjectionProxy(target, memo)
+  readOnlyServerProjectionSources.set(proxy, target)
+  readOnlyServerProjection = proxy as Database
+  return proxy as T
 }
 
-function createReadOnlyServerProjectionProxy(target: object): object {
-  const existing = readOnlyServerProjectionTargets.get(target)
+function createReadOnlyServerProjectionProxy(
+  target: object,
+  memo: WeakMap<object, object>,
+): object {
+  const existing = memo.get(target)
   if (existing) return existing
 
   const proxy = new Proxy(target, {
@@ -90,7 +113,7 @@ function createReadOnlyServerProjectionProxy(target: object): object {
     get(currentTarget, key, receiver) {
       const value = Reflect.get(currentTarget, key, receiver)
       if (value && typeof value === 'object') {
-        return createReadOnlyServerProjectionProxy(value)
+        return createReadOnlyServerProjectionProxy(value, memo)
       }
       return value
     },
@@ -107,17 +130,38 @@ function createReadOnlyServerProjectionProxy(target: object): object {
       throw new TypeError('Cannot mutate read-only server projection')
     },
   })
-  readOnlyServerProjectionTargets.set(target, proxy)
-  readOnlyServerProjectionSources.set(proxy, target)
+  memo.set(target, proxy)
   return proxy
 }
 
-function snapshotServerProjectionValue(value: Database): Database {
+// A guarded write hands the callback this writable working copy: a pass-through
+// proxy over the plain projection source. Its only non-default trap is
+// getPrototypeOf, which reports a non-Object/Array prototype so Svelte's `$state`
+// does NOT deep-proxy it on assignment. That preserves the source's plain
+// identity (so refreeze can re-wrap it with no clone) and lets the callback's
+// mutations write straight through to the source.
+function createTrustedServerProjectionWorkingCopy(source: Database): Database {
+  const working = new Proxy(source as object, {
+    getPrototypeOf() {
+      return readOnlyServerProjectionPrototype
+    },
+  })
+  trustedServerProjectionWorkingCopies.set(working, source as object)
+  return working as Database
+}
+
+// Resolve the plain mutable source behind whatever DBState.db currently holds:
+// a copy-on-write working proxy (entry/refreeze), a read-only proxy (between
+// writes, or after a callback re-applied a full projection), or a foreign/raw
+// object a callback assigned directly. Only the last case clones — `$state.snapshot`
+// unwraps Svelte's reactive proxy back to a plain object, matching the old
+// refreeze behavior on that rare full-replacement path.
+function resolveServerProjectionSource(value: Database): Database {
   if (value && typeof value === 'object') {
-    const source = readOnlyServerProjectionSources.get(value)
-    if (source) {
-      return structuredClone(source) as Database
-    }
+    const working = trustedServerProjectionWorkingCopies.get(value)
+    if (working) return working as Database
+    const readOnlySource = readOnlyServerProjectionSources.get(value)
+    if (readOnlySource) return readOnlySource as Database
   }
   return $state.snapshot(value) as Database
 }

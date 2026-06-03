@@ -17,8 +17,10 @@ and editor paths.
 
 - Phase 0, implemented: narrow snapshot kit + clone-cost harness. No call sites
   narrowed (that starts in Phase 2).
-- Phase 1, planned: copy-on-write projection guard. This removes the full-DB
-  clone amplifier from about 100 guarded writes.
+- Phase 1, implemented (primary slice): copy-on-write projection guard. Removes
+  the two whole-`Database` clones from every guarded write (~100 sites). The
+  optional secondary streaming/completion batching slice is deferred — now that
+  each guard transition is O(1), batching per-chunk transitions has little value.
 - Phase 2, planned: route Critical/High `current*StateSnapshot` call sites
   through the narrow kit.
 - Phase 3, planned: reroll clone reorder/removal and `runTrigger` early return.
@@ -35,7 +37,8 @@ and editor paths.
 - [Phase 0](phases/phase-0-baseline-foundations.md): snapshot kit and harness
   (implemented).
 - [Phase 1](phases/phase-1-projection-write-guard.md): projection guard
-  copy-on-write / proxy unwrap-rewrap.
+  copy-on-write / proxy unwrap-rewrap (primary slice implemented; batching
+  slice deferred).
 - [Phase 2](phases/phase-2-snapshot-family-narrowing.md): chat, message, send,
   trigger, reroll, character, and lorebook snapshot call sites.
 - [Phase 3](phases/phase-3-cheap-wins.md): reroll clone reorder/removal and
@@ -78,11 +81,11 @@ Headlines, in priority order (audit severity in parentheses):
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). Phase 0 has landed
-(snapshot kit + clone-cost harness, no hot path narrowed); the recorded runtime
-baseline is still the audit's empirical measurement (61 MB DB: one guarded write
-takes about 255 ms; whole-characters snapshots scale with total history).
-Replace the latest-run section once Phase 1 narrows the guard.
+See [`latest-verification.md`](latest-verification.md). Phases 0 and 1 have
+landed. The guard amplifier is gone: a guarded write is now O(1) (zero
+whole-`Database` clones) instead of ~255 ms on a 61 MB DB. Whole-characters
+snapshots on the hot paths still scale with total history until Phase 2 narrows
+them.
 
 ## Start Here
 

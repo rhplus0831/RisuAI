@@ -1,16 +1,39 @@
 # Phase 1: Projection Write Guard
 
-Status: planned. The single highest-leverage fix; one primary slice plus an
-optional secondary batching slice.
+Status: implemented (primary copy-on-write slice). The single highest-leverage
+fix. The optional secondary batching slice is deferred.
 
 Goal: stop `withTrustedServerProjectionWrite` cloning the whole `Database` twice
 per guarded write. This removes the amplifier behind streaming, completion, SSE
 apply, chat-open hydration, and prompt-template editing.
 
-Current behavior: depth-1 entry unwraps the read-only proxy by returning
-`structuredClone(source)`. Refreeze misses the WeakMap and falls back to
-`$state.snapshot(value)`. Together they clone every character, hydrated chat, and
+Old behavior: depth-1 entry unwrapped the read-only proxy by returning
+`structuredClone(source)`. Refreeze missed the WeakMap and fell back to
+`$state.snapshot(value)`. Together they cloned every character, hydrated chat, and
 `message[]`.
+
+## Implementation
+
+`src/ts/server/projectionWriteGuard.svelte.ts`:
+
+- Depth-1 entry hands the callback a writable **pass-through working copy** of the
+  projection source: `new Proxy(source, { getPrototypeOf })`. The custom
+  prototype makes Svelte's `$state` skip deep-proxying it (verified empirically),
+  so the source keeps its plain identity and the callback's mutations write
+  straight through to it — no clone.
+- Refreeze re-wraps the same mutated source in a fresh read-only proxy.
+  `createReadOnlyServerProjection` now uses a **per-wrap memo**, so every guarded
+  write mints a brand-new proxy tree (new identity top-to-bottom). That preserves
+  the exact reactivity the old deep-clone produced (dependent `$derived` chains
+  re-run, e.g. `DefaultChatScreen`'s loading overlay) without cloning data.
+- `resolveServerProjectionSource` unwraps whatever `DBState.db` holds — the
+  working copy, a read-only proxy (the apply path re-applies a full projection),
+  or a foreign/raw object (the only path that still clones, via `$state.snapshot`,
+  matching the old refreeze on that rare full-replacement case).
+
+The depth counter, command/event/revision contract, and read-only immutability
+are unchanged; only the snapshot strategy changed. Proof:
+`src/ts/server/projectionWriteGuard.test.ts`.
 
 ## Source Anchors
 
@@ -29,26 +52,32 @@ Current behavior: depth-1 entry unwraps the read-only proxy by returning
 ## Slices
 
 - [`copy-on-write-guard.md`](slices/phase-1-projection-write-guard/copy-on-write-guard.md) -
-  keep one mutable working copy. On entry, assign the proxy source with no clone.
-  On refreeze, wrap the same source in a fresh read-only proxy so Svelte sees a
-  new identity. Fallback: skip only the refreeze-time `$state.snapshot`, which
-  halves the cost.
+  IMPLEMENTED. Keep one mutable working source. On entry, hand the callback a
+  writable pass-through proxy over it with no clone. On refreeze, wrap the same
+  source in a fresh read-only proxy tree so Svelte sees a new identity. Went
+  beyond the interim mitigation: zero clones, not half.
 - [`streaming-and-completion-batching.md`](slices/phase-1-projection-write-guard/streaming-and-completion-batching.md) -
-  secondary: hold one trusted-write scope across streaming tails and batch the
-  non-stream guarded calls per message append.
+  DEFERRED (optional). It batched guard transitions to amortize the per-write
+  clone. With the clone gone, each transition is O(1), so the batching value is
+  small and the per-chunk `DBState.db` identity flip is the desired incremental
+  streaming render. Revisit only if profiling shows per-chunk transitions matter.
 
 ## Exit Criteria
 
-- [ ] A guarded write of a single field on a multi-chat hydrated DB performs no
-  full-`Database` `structuredClone` and no full `$state.snapshot` (verified by
-  instrumentation / timing staying O(1), not O(DB)).
-- [ ] After a guarded write, `DBState.db` is still a read-only projection (writes
+- [x] A guarded write of a single field on a multi-chat hydrated DB performs no
+  full-`Database` `structuredClone` and no full `$state.snapshot` (proven by the
+  clone-cost harness: `structuredCloneCount === 0`, `maxClonedSize` below the
+  characters-array size).
+- [x] After a guarded write, `DBState.db` is still a read-only projection (writes
   outside the guard throw), and Svelte reactivity fires (a new identity is
-  observed by dependent effects).
-- [ ] Nothing that reads `DBState.db` reactively mid-write breaks (no consumer
-  depends on receiving a fresh `$state` proxy per write).
-- [ ] `pnpm test`, `pnpm api:test`, and `pnpm client-thinning:audit` are green;
-  the optimistic-write guard invariants still hold.
+  observed; the `DefaultChatScreen` loading-overlay derived chain flips).
+- [x] Nothing that reads `DBState.db` reactively mid-write breaks — the
+  per-wrap-memo fix restores fresh nested proxy identities so no consumer that
+  depended on a fresh proxy per write regresses (the hydration reactivity test
+  caught and now guards this).
+- [x] `pnpm test` (982 passed / 4 skipped), `pnpm api:test` (1632 passed /
+  1 skipped), and `pnpm client-thinning:audit` are green; the optimistic-write
+  guard invariants still hold.
 
 ## Validation
 

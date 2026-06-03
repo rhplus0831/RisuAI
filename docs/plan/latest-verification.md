@@ -7,28 +7,27 @@ latest-run section on each full or focused run; do not append history.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 0 foundations only — the narrow snapshot
-  kit (`chatCommands.ts`/`characterCommands.ts`/`lorebookBridge.svelte.ts`) and
-  the clone-cost harness (`src/ts/__tests__/cloneCostHarness.ts`). No hot-path
-  call site is rewired, so no runtime clone range changed yet.
-- Before/after clone range: unchanged for every live path. The kit and harness
-  exist but are not wired in; Phase 1 (guard) is the first range change. The
-  baseline below still holds.
-- Baseline (from the audit, not a fresh run): on a 61 MB hydrated DB, one
-  `withTrustedServerProjectionWrite` guarded write takes about 255 ms (entry
-  `structuredClone` ~125 ms + refreeze `$state.snapshot` ~130 ms); a few-MB DB is
-  tens of ms per call. `currentChatStateSnapshot()` and
-  `currentCharacterStateSnapshot()` scale with total hydrated history, not the
-  row being mutated. `c9e728b1` already removed the character-select instance.
-- Result: green. The new Phase 0 kit tests prove (via `withCloneInstrumentation`)
-  that `currentCharacterSelectionSnapshot` performs zero whole-characters clones
-  while the legacy `currentCharacterStateSnapshot` performs one, and that each new
-  snapshot omits the whole collection while each restore rolls back only its slice
-  without clobbering concurrent sibling edits.
+- Runtime/code change under test: Phase 1 copy-on-write projection write guard
+  (`src/ts/server/projectionWriteGuard.svelte.ts`), on top of the Phase 0 kit +
+  harness. This is the first runtime clone-range change.
+- Before/after clone range for a guarded write: BEFORE = two whole-`Database`
+  deep clones per top-level guarded write (entry `structuredClone(source)` +
+  refreeze `$state.snapshot`), ~255 ms on a 61 MB DB. AFTER = zero clones; entry
+  hands the callback a writable pass-through working copy and refreeze re-wraps
+  the same mutated source in a fresh read-only proxy tree (per-wrap memo keeps
+  reactivity). O(1) regardless of DB size. The rare full-projection-replacement
+  apply path still does one `$state.snapshot` unwrap (unchanged).
+- Snapshot-family hot paths (Phase 2) still clone whole collections; unchanged
+  this run.
+- Result: green. `projectionWriteGuard.test.ts` proves a guarded one-field write
+  performs `structuredCloneCount === 0` and `maxClonedSize` below the characters
+  size, stays read-only after the write, mints a fresh identity per write, nests
+  correctly, and supports the apply path. `chatMessageHydration.reactivity.svelte.test.ts`
+  guards that nested `$derived` chains still re-run (the per-wrap-memo fix).
 
 | Command | Result |
 | --- | --- |
-| `pnpm test` | green - 975 passed / 4 skipped (102 files). |
+| `pnpm test` | green - 982 passed / 4 skipped (103 files). |
 | `pnpm api:test` | green - 1632 passed / 1 skipped (93 files). |
 | `pnpm client-thinning:audit` | green - audit passed. |
 | Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | green - both zero errors (clean client-lib rebuild required: remove `dist/client-types` if TS6305 appears). |

@@ -8,7 +8,7 @@ Concrete slices live under `slices/[phase]/[slice-name].md`.
 - Phase 0, implemented:
   [`phase-0-baseline-foundations.md`](phase-0-baseline-foundations.md),
   [`slices/phase-0-baseline-foundations/`](slices/phase-0-baseline-foundations/).
-- Phase 1, planned:
+- Phase 1, implemented (primary slice; batching slice deferred):
   [`phase-1-projection-write-guard.md`](phase-1-projection-write-guard.md),
   [`slices/phase-1-projection-write-guard/`](slices/phase-1-projection-write-guard/).
 - Phase 2, planned:

@@ -1,6 +1,13 @@
 # Streaming & Completion Write Batching
 
-Status: planned. Phase 1. Secondary and independent.
+Status: deferred (optional). Phase 1. Secondary and independent.
+
+Rationale for deferral: this slice batched guard enter/refreeze transitions to
+amortize the per-write whole-`Database` clone. The copy-on-write slice removed
+that clone, so each transition is now O(1). The remaining per-chunk transition is
+the `DBState.db` identity flip that drives incremental streaming render, which we
+want to keep. Reopen only if profiling shows per-chunk guard transitions (proxy
+tree minting, not cloning) are a measurable cost on a hydrated DB.
 
 ## Scope
 
