@@ -683,6 +683,105 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body).not.toHaveProperty('fields')
     expect(JSON.stringify(body)).not.toContain('Babbage')
   })
+
+  it('narrows a character field edit to a single character row (characterRow)', async () => {
+    // Phase 5 character-chat-projection slice: a one-character edit ships just
+    // that character (message-free) instead of re-shipping every character.
+    const revision = await importDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hi' }] }],
+        },
+        {
+          chaId: 'char-b',
+          name: 'Babbage',
+          chats: [{ id: 'chat-b', message: [{ role: 'user', data: 'yo' }] }],
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'Ada Lovelace' } },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().event.resource).toBe('characterRow')
+
+    const body = (await getProjection('characterRow', '?id=char-a')).json()
+    expect(body.mode).toBe('character-row')
+    expect(body.characterId).toBe('char-a')
+    expect(body.character.name).toBe('Ada Lovelace')
+    // Messages are stubbed; only the changed character is shipped.
+    expect(body.character.chats[0].message).toEqual([])
+    expect(body).not.toHaveProperty('fields')
+    expect(JSON.stringify(body)).not.toContain('Babbage')
+
+    // Chat/folder events key the character row by parentId (the character id).
+    const viaParent = (await getProjection('characterRow', '?parentId=char-a')).json()
+    expect(viaParent.mode).toBe('character-row')
+    expect(viaParent.characterId).toBe('char-a')
+  })
+
+  it('narrows a generation.persisted refresh to the changed chat messages', async () => {
+    // Phase 5 character-chat-projection slice: generation.persisted (the one
+    // foreign-firing command) ships just the changed chat's messages, keyed by
+    // the event parentId (chatId), instead of re-stubbing every character.
+    const revision = await importDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          chats: [
+            {
+              id: 'chat-a',
+              message: [{ role: 'user', data: 'hi', chatId: 'msg-a' }],
+              chatFolders: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const appended = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationResult: {
+          message: {
+            role: 'char',
+            data: 'fresh answer',
+            chatId: 'gen-1',
+            generationInfo: { generationId: 'gen-1', model: 'echo_model' },
+          },
+        },
+      },
+    })
+    expect(appended.statusCode).toBe(200)
+    expect(appended.json().event).toMatchObject({ resource: 'generation', parentId: 'chat-a' })
+
+    // The narrow per-chat branch fires when the event parentId (chatId) is sent.
+    const body = (await getProjection('generation', '?parentId=chat-a')).json()
+    expect(body.mode).toBe('generation-chat')
+    expect(body.chatId).toBe('chat-a')
+    expect(body.message.map((m: { chatId: string }) => m.chatId)).toEqual(['msg-a', 'gen-1'])
+    expect(body).not.toHaveProperty('fields')
+    expect(body).not.toHaveProperty('characters')
+
+    // Without a chat id (recovery fetch) it falls back to the broad fields path.
+    const fallback = (await getProjection('generation')).json()
+    expect(fallback.mode).toBe('fields')
+    expect(Object.keys(fallback.fields)).toEqual(['characters'])
+  })
 })
 
 describe('bulk chat message hydration route', () => {

@@ -302,7 +302,9 @@ export const COMMAND_EVENT_CATALOG = {
   },
   characterUpdated: {
     type: 'character.updated',
-    resource: 'character',
+    // A field edit writes one character row, so a foreign refresh ships just
+    // that character (per-character `characterRow` branch), not every character.
+    resource: 'characterRow',
   },
   characterDeleted: {
     type: 'character.deleted',
@@ -322,7 +324,9 @@ export const COMMAND_EVENT_CATALOG = {
   },
   chatUpdated: {
     type: 'chat.updated',
-    resource: 'chat',
+    // Chat metadata lives in one character row; a foreign refresh ships just
+    // the containing character (per-character `characterRow` branch).
+    resource: 'characterRow',
   },
   chatDeleted: {
     type: 'chat.deleted',
@@ -342,7 +346,9 @@ export const COMMAND_EVENT_CATALOG = {
   },
   chatFolderUpdated: {
     type: 'chatFolder.updated',
-    resource: 'chatFolder',
+    // Chat folders live in one character row; a foreign refresh ships just the
+    // containing character (per-character `characterRow` branch).
+    resource: 'characterRow',
   },
   chatFolderDeleted: {
     type: 'chatFolder.deleted',
@@ -445,7 +451,9 @@ export const COMMAND_EVENT_CATALOG = {
   },
   characterModulesReordered: {
     type: 'character.modules.reordered',
-    resource: 'character',
+    // Reordering a character's module links writes one character row, so a
+    // foreign refresh ships just that character (per-character `characterRow`).
+    resource: 'characterRow',
   },
   pluginCreated: {
     type: 'plugin.created',

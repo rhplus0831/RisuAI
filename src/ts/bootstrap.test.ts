@@ -139,6 +139,7 @@ const hydrationSpies = vi.hoisted(() => ({
   ensureAllChatsHydrated: vi.fn(async () => undefined),
   ensureAllCharacterLorebooksHydrated: vi.fn(async () => undefined),
   hydrateChatMessages: vi.fn(async () => undefined),
+  applyServerChatMessagesProjection: vi.fn(() => true),
 }))
 vi.mock('./server/chatMessageHydration.svelte', () => hydrationSpies)
 
@@ -485,6 +486,135 @@ describe('web bootstrap startup source', () => {
     // No broad characters merge, so no chat re-stub / re-hydration.
     expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
     expect(hydrationSpies.hydrateActiveChat).not.toHaveBeenCalled()
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('applies a character-row projection to one character, preserving hydrated chats', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            {
+              chaId: 'char-a',
+              name: 'Ada',
+              chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hi' }] }],
+            },
+            { chaId: 'char-b', name: 'Babbage', chats: [{ id: 'chat-b', message: [] }] },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'character-row' as const,
+      characterId: 'char-a',
+      // Shipped row is message-free (stubbed chats).
+      character: { chaId: 'char-a', name: 'Ada Lovelace', chats: [{ id: 'chat-a', message: [] }] },
+    }))
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({
+      type: 'character.updated',
+      revision: 6,
+      resource: 'characterRow',
+      id: 'char-a',
+    })
+
+    await vi.waitFor(() => {
+      expect(peekCachedServerCommandRevision()).toBe(6)
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('characterRow', {
+      id: 'char-a',
+      parentId: undefined,
+    })
+    // char-a's metadata updated; its already-hydrated chat messages are kept.
+    expect(DBState.db.characters?.[0].name).toBe('Ada Lovelace')
+    expect(DBState.db.characters?.[0].chats?.[0].message).toEqual([{ role: 'user', data: 'hi' }])
+    // char-b is untouched.
+    expect(DBState.db.characters?.[1].name).toBe('Babbage')
+    // No broad characters merge → no chat re-stub / re-hydration / full bootstrap.
+    expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
+    expect(hydrationSpies.hydrateActiveChat).not.toHaveBeenCalled()
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('applies a generation-chat projection to the changed chat and re-arms reattach', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            {
+              chaId: 'char-a',
+              name: 'Ada',
+              chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hi', chatId: 'm1' }] }],
+              chatPage: 0,
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+    hydrationSpies.applyServerChatMessagesProjection.mockClear()
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
+
+    const generatedTail = [
+      { role: 'user', data: 'hi', chatId: 'm1' },
+      { role: 'char', data: 'fresh answer', chatId: 'gen-1' },
+    ]
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'generation-chat' as const,
+      chatId: 'chat-a',
+      message: generatedTail,
+      alternates: [],
+    }))
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({
+      type: 'generation.persisted',
+      revision: 6,
+      resource: 'generation',
+      id: 'gen-1',
+      parentId: 'chat-a',
+    })
+
+    await vi.waitFor(() => {
+      expect(peekCachedServerCommandRevision()).toBe(6)
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('generation', {
+      id: 'gen-1',
+      parentId: 'chat-a',
+    })
+    // The changed chat's message tail is applied surgically (no broad re-stub).
+    expect(hydrationSpies.applyServerChatMessagesProjection).toHaveBeenCalledWith(
+      'chat-a',
+      generatedTail,
+      undefined,
+      [],
+    )
+    // The open-chat generation reattach is re-armed.
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
+    expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 

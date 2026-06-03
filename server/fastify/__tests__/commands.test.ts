@@ -3381,7 +3381,8 @@ describe('Phase 9-3a character commands', () => {
     expect(updated.statusCode).toBe(200)
     expect(updated.json().event).toMatchObject({
       type: 'character.updated',
-      resource: 'character',
+      // A single-character edit ships only that character (per-character branch).
+      resource: 'characterRow',
       id: 'char-b',
     })
     expect(
@@ -3730,7 +3731,9 @@ describe('Phase 9-3b chat record and folder commands', () => {
       revision: 3,
       event: {
         type: 'chat.updated',
-        resource: 'chat',
+        // Chat metadata lives in one character row, so a foreign refresh ships
+        // just the containing character (per-character `characterRow` branch).
+        resource: 'characterRow',
         id: 'chat-c',
         parentId: 'char-a',
       },
@@ -3936,7 +3939,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       revision: 2,
       event: {
         type: 'chat.updated',
-        resource: 'chat',
+        resource: 'characterRow',
         id: 'chat-a',
         parentId: 'char-a',
       },
@@ -7185,7 +7188,7 @@ describe('Phase 9-4d asset reference commands', () => {
     expect(character.statusCode).toBe(200)
     expect(character.json().event).toMatchObject({
       type: 'character.updated',
-      resource: 'character',
+      resource: 'characterRow',
       id: 'char-a',
     })
 

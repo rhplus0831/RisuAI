@@ -5,6 +5,7 @@ import {
   applyServerCharacterSelectionProjection,
   applyServerProjectionDatabase,
   mergeServerProjectionFields,
+  mergeServerProjectionCharacterRow,
   hydrateServerCharacterLorebook,
   setDatabase,
   defaultSdDataFunc,
@@ -55,6 +56,7 @@ import { peekActiveWriterSessionId } from './server/activeWriterSession'
 import { fetchServerProjectionResource } from './server/projection'
 import { forceServerProjectionResync } from './server/projectionResync'
 import {
+  applyServerChatMessagesProjection,
   hydrateActiveCharacterLorebook,
   hydrateActiveChat,
   resetChatHydration,
@@ -339,6 +341,33 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       // character's globalLore instead of re-shipping every character. Works
       // whether or not lorebook stubs are on (the field is set resident).
       hydrateServerCharacterLorebook(result.characterId, result.globalLore)
+      setCachedServerCommandRevision(event.revision)
+      return
+    }
+    if (result.status === 'ok' && result.mode === 'character-row') {
+      // A foreign per-character edit (character field / module-link / chat or
+      // folder metadata): surgically replace just that character row, preserving
+      // already-hydrated chat messages, instead of re-stubbing every character.
+      const applied = mergeServerProjectionCharacterRow(result.character)
+      if (applied) {
+        setCachedServerCommandRevision(event.revision)
+        return
+      }
+      // Unknown character locally → reconcile from scratch.
+      await forceServerProjectionResync('projection-error', { resource: event.resource })
+      return
+    }
+    if (result.status === 'ok' && result.mode === 'generation-chat') {
+      // Foreign server-owned generation: apply just the changed chat's message
+      // tail and re-arm the open-chat reattach, instead of re-stubbing every
+      // character and re-hydrating the open chat.
+      applyServerChatMessagesProjection(
+        result.chatId,
+        result.message,
+        result.hypaV3Data,
+        result.alternates,
+      )
+      triggerOpenChatGenerationReattach()
       setCachedServerCommandRevision(event.revision)
       return
     }

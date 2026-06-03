@@ -20,6 +20,22 @@ export type ServerProjectionResourceResult =
       characterId: string
       globalLore: unknown[]
     }
+  | {
+      status: 'ok'
+      revision: number
+      mode: 'character-row'
+      characterId: string
+      character: Record<string, unknown>
+    }
+  | {
+      status: 'ok'
+      revision: number
+      mode: 'generation-chat'
+      chatId: string
+      message: unknown[]
+      hypaV3Data?: unknown
+      alternates: unknown[]
+    }
   | { status: 'ok'; revision: number; mode: 'full' }
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
@@ -135,6 +151,40 @@ export async function fetchServerProjectionResource(
       mode: 'character-lorebook',
       characterId: record.characterId,
       globalLore: record.globalLore as unknown[],
+    }
+  }
+
+  if (record.mode === 'character-row') {
+    if (typeof record.characterId !== 'string' || record.characterId.trim() === '') {
+      return { status: 'error', error: 'Invalid character-row response' }
+    }
+    if (!record.character || typeof record.character !== 'object' || Array.isArray(record.character)) {
+      return { status: 'error', error: 'Invalid character-row response' }
+    }
+    return {
+      status: 'ok',
+      revision: revision as number,
+      mode: 'character-row',
+      characterId: record.characterId,
+      character: record.character as Record<string, unknown>,
+    }
+  }
+
+  if (record.mode === 'generation-chat') {
+    if (typeof record.chatId !== 'string' || record.chatId.trim() === '') {
+      return { status: 'error', error: 'Invalid generation-chat response' }
+    }
+    if (!Array.isArray(record.message)) {
+      return { status: 'error', error: 'Invalid generation-chat response' }
+    }
+    return {
+      status: 'ok',
+      revision: revision as number,
+      mode: 'generation-chat',
+      chatId: record.chatId,
+      message: record.message as unknown[],
+      hypaV3Data: record.hypaV3Data,
+      alternates: Array.isArray(record.alternates) ? (record.alternates as unknown[]) : [],
     }
   }
 

@@ -131,6 +131,28 @@ export async function hydrateChatMessages(chatId: string): Promise<void> {
   if (chatId) await hydrateChat(chatId, false)
 }
 
+/**
+ * Apply an already-fetched chat message payload to a chat directly (no refetch).
+ * Used by the foreign `generation.persisted` per-chat projection branch, which
+ * ships the changed chat's messages inline. Marks the chat hydrated and seeds
+ * the swipe buffer when it is the open chat, mirroring `hydrateChat`'s apply.
+ */
+export function applyServerChatMessagesProjection(
+  chatId: string,
+  message: unknown[],
+  hypaV3Data: unknown,
+  alternates: unknown[],
+): boolean {
+  if (!chatId) return false
+  const applied = hydrateServerChatMessages(chatId, message, hypaV3Data)
+  if (!applied) return false
+  hydratedChatIds.add(chatId)
+  if (activeChatId() === chatId) {
+    seedRerollBufferFromAlternates(message, alternates)
+  }
+  return true
+}
+
 // Character globalLore hydration (only when stubs are on).
 
 function activeCharacterId(): string | undefined {

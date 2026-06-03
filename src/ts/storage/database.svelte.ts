@@ -809,6 +809,58 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
   })
 }
 
+/**
+ * Surgically replace a single character row by `chaId` without touching the rest
+ * of the `characters` array. Used for foreign per-character refreshes
+ * (`characterRow` events: character field edits, module-link reorders, chat /
+ * chat-folder metadata edits). The shipped row is message-free (stubbed chats),
+ * so already-hydrated chat messages / globalLore are carried over to avoid
+ * dropping loaded history. Returns false if the character is unknown so the
+ * caller can fall back to a full bootstrap.
+ */
+export function mergeServerProjectionCharacterRow(
+  character: { chaId?: string } & Record<string, unknown>,
+): boolean {
+  return withServerProjectionApply(() => {
+    const characters = DBState.db.characters
+    if (!Array.isArray(characters) || typeof character?.chaId !== 'string') return false
+    const index = characters.findIndex((candidate) => candidate?.chaId === character.chaId)
+    if (index < 0) return false
+    const existing = characters[index] as unknown as Record<string, unknown> | undefined
+
+    // The shipped chats are stubs (empty message[]); carry over any messages
+    // this client already hydrated so a metadata refresh keeps loaded history.
+    const incomingChats = (character as { chats?: Array<Record<string, unknown>> }).chats
+    const existingChats = (existing as { chats?: Array<Record<string, unknown>> } | undefined)?.chats
+    if (Array.isArray(incomingChats) && Array.isArray(existingChats)) {
+      const existingById = new Map(existingChats.map((chat) => [chat?.id, chat]))
+      for (const chat of incomingChats) {
+        const prior = existingById.get((chat as { id?: unknown }).id)
+        if (!prior) continue
+        const priorMessage = (prior as { message?: unknown }).message
+        if (Array.isArray(priorMessage) && priorMessage.length > 0) {
+          ;(chat as { message?: unknown }).message = priorMessage
+          const priorHypa = (prior as { hypaV3Data?: unknown }).hypaV3Data
+          if (priorHypa !== undefined) (chat as { hypaV3Data?: unknown }).hypaV3Data = priorHypa
+        }
+      }
+    }
+    // Preserve resident globalLore if the shipped row stubbed it (stubs on).
+    if (
+      (character as { globalLore?: unknown }).globalLore === undefined &&
+      existing &&
+      (existing as { globalLore?: unknown }).globalLore !== undefined
+    ) {
+      ;(character as { globalLore?: unknown }).globalLore = (
+        existing as { globalLore?: unknown }
+      ).globalLore
+    }
+
+    characters[index] = character as unknown as (typeof characters)[number]
+    return true
+  })
+}
+
 export function applyServerCharacterSelectionProjection(input: {
   characterId: string
   currentChar: number
