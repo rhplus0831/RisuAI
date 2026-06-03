@@ -7,25 +7,25 @@ latest-run section on each full or focused run; do not append history.
 
 ## Latest Run
 
-- Runtime/code commit under test: Phase 5 projection-range narrowing through
-  `608de26c` on `fastify`, with the docs closure commit `2a1acbea`.
-- Scope: read/refresh narrowing only. `prompt` falls back to full/sprawling
-  (`314af90f`); module and script/trigger resources narrow to
-  `moduleEnabled`/`moduleUpdated`/`moduleReordered` and
-  `moduleScriptDefinition`/`moduleTriggerDefinition` (`f94e51ab`); the broad
-  `lorebook` resource splits into `globalLorebook` plus per-row lorebook resources
-  (`c3fff925`); `generation.persisted` uses `generation-chat` and
-  character/chat metadata events use `characterRow` (`608de26c`).
-- Result: green. No write range changed in Phase 5; the foreign/recovery
-  projection side now matches the narrowed write ranges from Phases 2-4.
+- Runtime/code change under test: Phase 6 (the Tier-5 message-free ceiling) on
+  `fastify`, on top of Phase 5 (`608de26c`).
+- Scope: verification + documentation only. No runtime write/projection range
+  changed. Added `server/fastify/__tests__/commandMessageFreeCeiling.test.ts`
+  (9 tests) proving each Tier-5 route sits at its safe floor (`hydrated` where the
+  message load is a real dependency, else `message-free`) and that the documented
+  blocker is load-bearing; corrected the seed audit's `DELETE chats/:id` floor
+  claim (it stays `hydrated` for orphan-message cleanup, not `message-free`).
+- Result: green. The deletes prove `syncChatMessages` cleans the deleted
+  chat/character's message rows (no FK cascade, no message GC); the chats-create
+  proves corpus-wide `messageIdExists` validation; the module delete + creates +
+  script/trigger PUTs report `message-free` writing exactly the broad set.
 
 | Command | Result |
 | --- | --- |
-| `pnpm api:test` | 1611 passed, 1 skipped. |
+| `pnpm api:test` | 1620 passed, 1 skipped. |
 | `pnpm test` | 951 passed, 4 skipped. |
 | `pnpm client-thinning:audit` | Passed. |
-| `pnpm api:test -- server/fastify/__tests__/projection.test.ts` | Passed; covers prompt fallback, module/script/trigger resources, lorebook split, `characterRow`, and `generation-chat`. |
-| `pnpm test -- src/ts/bootstrap.test.ts` | Passed; covers client application of `characterRow`, `character-lorebook`, and `generation-chat`. |
+| `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandMessageFreeCeiling.test.ts` | 9 passed; the Phase 6 floor + blocker proof. |
 | Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | Passed (zero errors). |
 
 ## Notes
@@ -38,5 +38,9 @@ latest-run section on each full or focused run; do not append history.
 - The mutation-range metric baseline (Phase 0) is now live: `command_mutation`
   records `writtenTables`, so the before/after table set is the proof a write
   narrowed, not just timing.
-- Next runtime slice: Phase 6 Tier-5 floor routes and unblock conditions.
-  Refresh this file after any new focused or full verification run.
+- Phase 6 holds the Tier-5 routes at their floor with blockers recorded; the
+  deeper per-route narrowing is gated on the deferred unblock prerequisites
+  (wiring `deleteChatMessages`/`deleteChatHypaV3` into the deletes, scoping
+  `normalizeScriptDefinitionDatabase`/`ensureCharacterCollection` to validate-only).
+- Next: Phase 7 verification budgets. Refresh this file after any new focused or
+  full verification run.

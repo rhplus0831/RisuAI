@@ -9,20 +9,39 @@ Current status reflects the seed audit
 [`mutation-range-mismatch.md`](mutation-range-mismatch.md), audited 2026-06-03.
 Phase 0 (baseline foundations), Phase 1 (the message-free floor), Phase 2
 (settings + plugin-storage paths), Phase 3 (single character/chat-row paths),
-Phase 4 (collection-table paths, all eight families), and Phase 5
-(projection-range narrowing) have landed. The narrow runtime paths now include
+Phase 4 (collection-table paths, all eight families), Phase 5
+(projection-range narrowing), and Phase 6 (the Tier-5 message-free ceiling, floors
+verified) have landed. The narrow runtime paths now include
 the reference fix `b57df5cd` (`characters/select`), the six targeted message
 commands, the six `targeted-settings` routes, the three `targeted-plugin-storage`
 routes, the twelve Tier-3 `targeted-character-row` / `targeted-chat-row` routes,
 and all the Tier-4 `targeted-collection` family routes; the read side now narrows
-the implemented projection-resource splits, with the character script/trigger
-floor-route exception still tracked in Phase 6. The remaining floor routes
-(Tier-5 blocked) still rewrite the broad table set.
+the implemented projection-resource splits. The Tier-5 floor routes are verified
+at their safe floor (`hydrated` where the message load is a real dependency, else
+`message-free`) with blockers and unblock conditions recorded; they still rewrite
+the broad table set by design until their prerequisites land.
 
 ## Current Snapshot
 
-Analysis is complete. Phases 0-5 have landed; Phase 6 (the Tier-5
-`message-free` ceiling) is the next tier.
+Analysis is complete. Phases 0-6 have landed. The write-side tiers are at their
+floor; remaining work is the deferred Tier-5 unblock prerequisites and Phase 7
+verification maintenance.
+
+- Phase 6 implemented (Tier-5 message-free ceiling, floors verified): all nine
+  Tier-5 routes are held at their correct safe floor with their blocker + unblock
+  recorded, and no route is narrowed below the floor. `DELETE characters/:id`,
+  `DELETE chats/:id`, and `POST characters/:id/chats` stay `hydrated` (the message
+  load is a real dependency: orphan message/`hypa_v3` cleanup via
+  `syncChatMessages` — no FK cascade, no message GC — and corpus-wide
+  `messageIdExists` validation); the seed audit's "message-free floor" for
+  `DELETE chats/:id` was corrected to `hydrated`. `DELETE modules/:id`
+  (cross-table `removeModuleReferences`), `POST characters`,
+  `POST characters/create-and-select`, `POST modules`, and the two character
+  script/trigger PUTs (`normalizeScriptDefinitionDatabase` +
+  `ensureCharacterCollection`) stay at the `message-free` broad-set floor. Proven
+  by `commandMessageFreeCeiling.test.ts` (9 tests): each route asserts its
+  `mutationPath` floor + gate, the deletes prove the orphan cleanup is
+  load-bearing, and the chats-create proves the corpus-wide validation.
 
 - Phase 5 implemented (projection-range narrowing, four slices): the read/refresh
   side now narrows the implemented projection resources to their scoped refresh
@@ -96,8 +115,8 @@ Analysis is complete. Phases 0-5 have landed; Phase 6 (the Tier-5
 - The seed audit catalogued the projection-range mismatches; Phase 5 closed the
   field bugs and broad-resource splits now described above.
 
-Phases 0-5 are implemented. Phase 6 is planned; Phase 7 is partially implemented
-and ongoing as verification maintenance.
+Phases 0-6 are implemented. Phase 7 is partially implemented and ongoing as
+verification maintenance.
 
 ## Phase Router
 
@@ -109,7 +128,7 @@ and ongoing as verification maintenance.
 | [Phase 3](phases/phase-3-single-row-paths.md) | Implemented | Tier-3 single character-row and single chat-row metadata edits. |
 | [Phase 4](phases/phase-4-collection-table-paths.md) | Implemented | Tier-4 single collection-table edits across all eight collection families. |
 | [Phase 5](phases/phase-5-projection-range-narrowing.md) | Implemented | Narrow projection resources, the `lorebook` resource split, and the projection-field bug fixes. |
-| [Phase 6](phases/phase-6-message-free-ceiling.md) | Planned | Tier-5 routes blocked at the `message-free` floor and their unblock conditions. |
+| [Phase 6](phases/phase-6-message-free-ceiling.md) | Implemented | Tier-5 routes held at their safe floor (`hydrated`/`message-free`) with blockers + unblock conditions recorded. |
 | [Phase 7](phases/phase-7-verification-budgets.md) | Partial / ongoing | Written-table-set, rowid-stability, and `dbJsonWriteMs: 0` gates and the verification log. |
 
 ## Active Risk Summary
@@ -131,15 +150,20 @@ Headlines, in priority order:
   own table (+ pointer/mirror settings, and for preset apply the prompt_templates
   co-write); lore_books child-lorebook and modules scripts/triggers
   cross-character repairs are dropped to validate-only.
-- Tier 5: deeper narrowing blocked by cross-table spans or load-bearing
-  message/normalization dependencies; the `message-free` floor is the ceiling.
+- Tier 5: DONE at floor (Phase 6). All nine routes are verified at their safe
+  floor — `hydrated` where the message load is a real dependency (the two deletes'
+  orphan cleanup, chats-create's corpus-wide validation), else the `message-free`
+  broad-set floor. Deeper narrowing stays blocked by cross-table spans or
+  load-bearing message/normalization dependencies; the unblock prerequisites are
+  recorded per route but deferred.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). Phase 5 (the
-projection-range narrowing, `608de26c`) is the latest runtime change; it narrows
-the read/refresh side only (no write range changed). api:test 1611/1, test
-951/4, both typechecks + the client-thinning audit green.
+See [`latest-verification.md`](latest-verification.md). Phase 6 (the Tier-5
+message-free ceiling) is the latest change; it adds the floor-proving test
+`commandMessageFreeCeiling.test.ts` (9 tests) and records/corrects the per-route
+blockers — no runtime write range changed. api:test 1620/1, test 951/4, both
+typechecks + the client-thinning audit green.
 
 ## Start Here
 

@@ -14,7 +14,7 @@ routing. Concrete slice definitions live under
 | 3 | Implemented | [`phase-3-single-row-paths.md`](phase-3-single-row-paths.md) | [`slices/phase-3-single-row-paths/`](slices/phase-3-single-row-paths/) |
 | 4 | Implemented | [`phase-4-collection-table-paths.md`](phase-4-collection-table-paths.md) | [`slices/phase-4-collection-table-paths/`](slices/phase-4-collection-table-paths/) |
 | 5 | Implemented | [`phase-5-projection-range-narrowing.md`](phase-5-projection-range-narrowing.md) | [`slices/phase-5-projection-range-narrowing/`](slices/phase-5-projection-range-narrowing/) |
-| 6 | Planned | [`phase-6-message-free-ceiling.md`](phase-6-message-free-ceiling.md) | [`slices/phase-6-message-free-ceiling/`](slices/phase-6-message-free-ceiling/) |
+| 6 | Implemented | [`phase-6-message-free-ceiling.md`](phase-6-message-free-ceiling.md) | [`slices/phase-6-message-free-ceiling/`](slices/phase-6-message-free-ceiling/) |
 | 7 | Partial / ongoing | [`phase-7-verification-budgets.md`](phase-7-verification-budgets.md) | [`slices/phase-7-verification-budgets/`](slices/phase-7-verification-budgets/) |
 
 ## Slice Rules

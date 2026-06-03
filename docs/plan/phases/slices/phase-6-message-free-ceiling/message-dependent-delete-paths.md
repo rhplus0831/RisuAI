@@ -1,8 +1,9 @@
 # Message-Dependent Delete Paths
 
-Status: planned. Blocked below the `message-free` floor until the existing
-targeted message-delete helpers are wired into these command scopes, or a
-reference-strip scope exists.
+Status: implemented (verified at floor). Each route is held at its safe floor and
+its blocker is proven by `commandMessageFreeCeiling.test.ts`. The deletes stay
+below the deeper narrowing until the existing targeted message-delete helpers are
+wired into these command scopes, or a reference-strip scope exists.
 
 ## Source Anchors
 
@@ -17,9 +18,9 @@ reference-strip scope exists.
 
 | Route | Blocker | Floor / unblock |
 | --- | --- | --- |
-| `DELETE characters/:id` | `characters`/`chats` have no FK cascade to the message store; orphaned message/`hypa_v3` rows are cleaned today only because `syncChatMessages` sees them vanish from the hydrated baseline. A naive narrowing leaks message rows permanently. | Keep message handling (stays `hydrated`, or `message-free` only after `deleteChatMessages`/`deleteChatHypaV3` are wired over the deleted character's chat ids). Verifier: medium. |
-| `DELETE chats/:id` | Reduces to the owning character's row (`chatPage`) + that character's chat rows + targeted message deletes — a scoped narrowing, not a single row. | `message-free` floor now; full scoped narrowing once the delete helpers are wired into this route. Verifier: high. |
-| `DELETE modules/:id` | `removeModuleReferences` strips the id from `enabledModules` (settings) + every `character.modules` + every `chat.modules` + every `loadout.modules` — spans characters, chats, two collection tables, and settings. No single-table lever applies. | `message-free` floor only. Verifier: medium. |
+| `DELETE characters/:id` | `characters`/`chats` have no FK cascade to the message store, and there is no message GC (only `assetGc`). Orphaned message/`hypa_v3` rows are cleaned today only because the hydrated `syncChatMessages` diff sees them vanish from the baseline. A naive narrowing leaks message rows permanently. | Stays `hydrated` (the message load is a real dependency). Unblock to `message-free` only after `deleteChatMessages`/`deleteChatHypaV3` are wired over the deleted character's chat ids. Verifier: medium. |
+| `DELETE chats/:id` | Same orphan-leak as the character delete: deleting a chat orphans that chat's message/`hypa_v3` rows, and only the hydrated `syncChatMessages` diff deletes them. The seed audit's optimistic "message-free floor now" was wrong — `message-free` here leaks the deleted chat's messages. The eventual scoped narrowing is the owning character's row (`chatPage`) + that character's chat rows + targeted message deletes. | Stays `hydrated` (orphan-cleanup message dependency). Unblock: wire `deleteChatMessages`/`deleteChatHypaV3` for the deleted chat id, then drop to a scoped per-character narrowing. Verifier: high. |
+| `DELETE modules/:id` | `removeModuleReferences` strips the id from `enabledModules` (settings) + every `character.modules` + every `chat.modules` + every `loadout.modules` — spans characters, chats, the loadouts collection, and settings. No single-table lever applies. | `message-free` floor only (writes the full broad set). Verifier: medium. |
 
 ## Implementation Scope
 
@@ -28,17 +29,23 @@ reference-strip scope exists.
 - This phase only records the blocker and keeps each route at its floor; it does
   not wire the targeted message deletes or scope `removeModuleReferences`.
 - Revision/event behavior: unchanged from the current helper.
+- Verified by `commandMessageFreeCeiling.test.ts`: the character/chat deletes
+  report `mutationPath: 'hydrated'`, write the message store (`writtenTables`
+  contains `messages`), and leave zero rows for the deleted chat id (orphan
+  cleanup proven load-bearing); the module delete reports `message-free`, writes
+  exactly the broad set, and strips the id from settings/characters/chats/loadouts.
 
 ## Done When
 
-- characters/:id DELETE keeps faithful orphan-row cleanup at its current floor;
+- characters/:id DELETE keeps faithful orphan-row cleanup at the `hydrated` floor;
   the unblock step (wire `deleteChatMessages`/`deleteChatHypaV3` for the route's
-  chat ids) is recorded.
-- chats/:id DELETE is at the `message-free` floor with the scoped-narrowing target
-  recorded.
+  chat ids) is recorded. (Done.)
+- chats/:id DELETE is held at the `hydrated` floor (orphan-cleanup message
+  dependency) with the scoped-narrowing target recorded; the seed audit's
+  "message-free floor" was corrected. (Done.)
 - modules/:id DELETE is at the `message-free` floor with the cross-table
-  reference-strip blocker recorded.
-- No route here is narrowed below the floor.
+  reference-strip blocker recorded. (Done.)
+- No route here is narrowed below the floor. (Done.)
 
 ## Validation
 

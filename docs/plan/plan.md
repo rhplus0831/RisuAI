@@ -70,9 +70,10 @@ The four mutation helpers in `server/fastify/src/commands/mutations.ts`:
 At the seed audit, 8 of 79 routes were already minimal and 71 were over-broad
 (51 high, 18 medium, 3 low). That before-state is preserved in
 [`mutation-range-mismatch.md`](mutation-range-mismatch.md). Current runtime
-status lives in [`status.md`](status.md): Phases 0-5 have landed, the narrowed
+status lives in [`status.md`](status.md): Phases 0-6 have landed, the narrowed
 write paths use the Phase 0 targeted vehicles and gates, and the remaining broad
-floor is Tier 5 / Phase 6.
+floor is Tier 5 — held at its verified safe floor (Phase 6), with deeper
+narrowing deferred behind recorded unblock prerequisites.
 
 ## Prerequisites
 
@@ -124,10 +125,14 @@ Phase 0 landed the shared prerequisites before tier writes were narrowed:
 
 ## Execution Cursor
 
-Phases 0-5 are implemented. Phase 6 is the next runtime tier: keep the nine
-Tier-5 routes at the `message-free` floor until their message-delete,
-message-validation, cross-table reference, or normalization blocker is scoped.
-Phase 7 remains ongoing verification maintenance; keep
+Phases 0-6 are implemented. Phase 6 verified the nine Tier-5 routes at their safe
+floor (`hydrated` where the message load is load-bearing — the two deletes' orphan
+cleanup and chats-create's corpus-wide validation — else the `message-free`
+broad-set floor) with each blocker + unblock condition recorded and proven by
+`commandMessageFreeCeiling.test.ts`; the seed audit's `DELETE chats/:id` floor was
+corrected to `hydrated`. The message-delete, message-validation, cross-table
+reference, and normalization blockers stay deferred as gated unblock
+prerequisites. Phase 7 is the next focus as ongoing verification maintenance; keep
 [`latest-verification.md`](latest-verification.md) current after each focused or
 full run.
 

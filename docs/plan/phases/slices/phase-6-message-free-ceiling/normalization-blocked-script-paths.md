@@ -1,7 +1,10 @@
 # Normalization-Blocked Script Paths
 
-Status: planned. Blocked below the `message-free` floor until the
-script-definition normalization is scoped to validate-only.
+Status: implemented (verified at floor). Both routes are held at the
+`message-free` floor and the blocking normalization is recorded; deeper
+single-character-row narrowing stays blocked until
+`normalizeScriptDefinitionDatabase` / `ensureCharacterCollection` are scoped to
+validate-only. Proven by `commandMessageFreeCeiling.test.ts`.
 
 ## Source Anchors
 
@@ -30,14 +33,17 @@ these character routes still need their own scoped write.
   normalization that blocks a per-row write; it does not perform the
   normalization refactor.
 - Revision/event behavior: unchanged from the current helper.
+- Verified by `commandMessageFreeCeiling.test.ts`: both routes report
+  `mutationPath: 'message-free'`, write exactly the broad set, and persist the
+  replaced `customscript` / `triggerscript`.
 
 ## Done When
 
-- The character script and trigger routes are at the `message-free` floor.
+- The character script and trigger routes are at the `message-free` floor. (Done.)
 - Each records the blocking normalization (`normalizeScriptDefinitionDatabase` +
   `ensureCharacterCollection`) and the unblock step (scope those passes to
-  validate-only on siblings, write-through only the target character row).
-- No route here is narrowed to single-character-row in this plan.
+  validate-only on siblings, write-through only the target character row). (Done.)
+- No route here is narrowed to single-character-row in this plan. (Done.)
 
 ## Validation
 

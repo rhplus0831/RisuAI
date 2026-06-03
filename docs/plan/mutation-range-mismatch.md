@@ -7,8 +7,11 @@ produced the findings; an adversarial verifier re-checked each narrowing claim._
 
 Current note: this file is the frozen seed/before-state audit. Route line numbers
 and helper classifications below are audit-time anchors and have drifted as
-Phases 0-5 landed. Use [`status.md`](status.md), [`active-risk-analysis.md`](active-risk-analysis.md),
-and the phase/slice docs for present-tense runtime status.
+Phases 0-6 landed. In particular, the Tier-5 `DELETE chats/:id` floor here was
+later corrected from `message-free` to `hydrated` (Phase 6) because the message
+load is load-bearing for orphan cleanup. Use [`status.md`](status.md),
+[`active-risk-analysis.md`](active-risk-analysis.md), and the phase/slice docs for
+present-tense runtime status.
 
 ## What "mutation-range mismatch" means
 
