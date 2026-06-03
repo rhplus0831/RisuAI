@@ -14,16 +14,14 @@ import {
 
 // Phase 6 (the message-free ceiling) regression. Each test PROVES a Tier-5
 // route's floor was correct and the documented blocker is load-bearing. Phase 8
-// has since landed the two unblock prerequisites for the high-value subset, so
-// three of these routes have graduated below the floor (asserted here at their
-// new range; the detailed proof is in commandFloorUnblock.test.ts):
+// has since landed the unblock prerequisites for the high-value subset, so the
+// two deletes and the two script/trigger PUTs have graduated below the floor
+// (asserted here at their new range; detailed proof in commandFloorUnblock.test.ts):
 //
-//   * DELETE characters/:id stays `hydrated` (Phase 8 deferred it): the message
-//     store has no FK cascade and no GC, so only the hydrated `syncChatMessages`
-//     diff deletes a vanished character's chats' message rows.
-//   * DELETE chats/:id GRADUATED to `targeted-character-row` (Phase 8b): the
-//     orphan cleanup now uses the targeted deleteChatMessages/deleteChatHypaV3
-//     instead of a corpus-wide message load.
+//   * DELETE characters/:id and DELETE chats/:id GRADUATED to
+//     `targeted-character-row` (Phase 8b + follow-up): the orphan cleanup now
+//     loops the targeted deleteChatMessages/deleteChatHypaV3 over the removed
+//     chat(s) instead of hydrating every message of every chat.
 //   * DELETE modules/:id stays `message-free`: `removeModuleReferences` strips
 //     the id across characters, chats, the loadouts collection, and settings, so
 //     no single-table lever applies and it writes the full broad set.
@@ -269,7 +267,7 @@ afterEach(async () => {
 })
 
 describe('Phase 6 message-dependent delete floors', () => {
-  it('DELETE characters/:id stays hydrated and cleans up its chats\' message rows', async () => {
+  it('DELETE characters/:id narrows to targeted-character-row (Phase 8 follow-up) and cleans up its chats\' message rows', async () => {
     const revision = await importDatabase(seedDatabase())
     // The deleted character owns a chat with a persisted message row.
     expect(messageRowCount('chat-a-1')).toBe(1)
@@ -280,10 +278,10 @@ describe('Phase 6 message-dependent delete floors', () => {
       payload: { baseRevision: revision },
     })
 
-    // The floor is `hydrated`: the message load is a real dependency. The metric
-    // proves `syncChatMessages` ran (it wrote the message store) and the orphan
-    // rows were deleted — exactly the cleanup a `message-free` downgrade loses.
-    expect(metric.mutationPath).toBe('hydrated')
+    // Graduated off the hydrated floor: the orphan cleanup loops the targeted
+    // deleteChatMessages/deleteChatHypaV3 over the removed character's chats
+    // instead of hydrating the corpus. Detailed proof in commandFloorUnblock.test.ts.
+    expect(metric.mutationPath).toBe('targeted-character-row')
     expect(metric.writtenTables).toContain('messages')
     assertCommandMetricGate(metric)
     expect(readCharacterIds()).toEqual(['char-b'])

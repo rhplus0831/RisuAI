@@ -188,6 +188,30 @@ function readChatOrder(characterId: string): string[] {
   }
 }
 
+/** Character id→position pairs in stored `position` order (contiguity check). */
+function readCharacterRows(): Array<{ id: string; position: number }> {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    return db
+      .prepare('SELECT id, position FROM characters ORDER BY position')
+      .all() as Array<{ id: string; position: number }>
+  } finally {
+    db.close()
+  }
+}
+
+function readSettings(): Record<string, unknown> {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+      data_json: string
+    }
+    return JSON.parse(row.data_json) as Record<string, unknown>
+  } finally {
+    db.close()
+  }
+}
+
 /** Total message rows for a chat (active + every alternate). */
 function countChatMessages(chatId: string): number {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
@@ -380,5 +404,62 @@ describe('Phase 8b DELETE chats/:id → targeted-character-row', () => {
     // Nothing removed.
     expect(readChatOrder('char-b')).toEqual(['chat-b-1'])
     expect(countChatMessages('chat-b-1')).toBe(1)
+  })
+})
+
+describe('Phase 8 follow-up: DELETE characters/:id → targeted-character-row', () => {
+  it('removes the character + all its chats/messages/hypa and compacts positions', async () => {
+    const revision = await importDatabase(seedDatabase())
+
+    // char-a owns three chats (one with hypa); char-b is the sibling.
+    expect(readCharacterRows()).toEqual([
+      { id: 'char-a', position: 0 },
+      { id: 'char-b', position: 1 },
+    ])
+    expect(countChatMessages('chat-a-1')).toBe(2)
+    expect(countChatHypa('chat-a-2')).toBe(1)
+
+    const before = rowidSnapshot()
+    const { metric, body } = await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/characters/char-a',
+      payload: { baseRevision: revision },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.dbJsonWriteMs).toBe(0)
+    // The character row, its chat rows, those chats' message/hypa rows, and the
+    // settings pointers — but no collection table.
+    expect(metric.writtenTables).toEqual([
+      'characters',
+      'chat_hypa_v3',
+      'chats',
+      'messages',
+      'settings',
+    ])
+    assertCommandMetricGate(metric)
+
+    // char-a (and its chats) are removed; char-b's rows keep their rowids.
+    expectNoChurn(before, {
+      characters: ['char-a'],
+      chats: ['chat-a-1', 'chat-a-2', 'chat-a-3'],
+    })
+
+    // The characters table is compacted: char-b is the lone row at position 0.
+    expect(readCharacterRows()).toEqual([{ id: 'char-b', position: 0 }])
+    // Every one of char-a's chats and their message/hypa rows are gone.
+    expect(readChatOrder('char-a')).toEqual([])
+    expect(countChatMessages('chat-a-1')).toBe(0)
+    expect(countChatMessages('chat-a-2')).toBe(0)
+    expect(countChatMessages('chat-a-3')).toBe(0)
+    expect(countChatHypa('chat-a-2')).toBe(0)
+    // char-b is untouched.
+    expect(readChatOrder('char-b')).toEqual(['chat-b-1'])
+    expect(countChatMessages('chat-b-1')).toBe(1)
+
+    // The re-normalized settings pointers are persisted: char-a is dropped from
+    // characterOrder and currentChar resolves to the surviving character.
+    expect(readSettings().characterOrder).toEqual(['char-b'])
+    expect(body.selectedCharacterId).toBe('char-b')
   })
 })

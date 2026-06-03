@@ -464,6 +464,28 @@ export function deleteCharacterChatRow(
   db.prepare('DELETE FROM chats WHERE id = ? AND character_id = ?').run(chatId, characterId)
 }
 
+/** Delete one character's row and compact the positions of the rows after it so
+ *  the `characters` table stays contiguous (matching the broad rewrite). Pairs
+ *  with `deleteCharacterChats` + the message-store deletes for a character
+ *  removal. Remaining rows keep their rowids (UPDATE/DELETE, no reINSERT). */
+export function deleteCharacterRow(db: DatabaseSync, characterId: string): void {
+  recordTableWrite('characters')
+  const row = db.prepare('SELECT position FROM characters WHERE id = ?').get(characterId) as
+    | { position: number }
+    | undefined
+  db.prepare('DELETE FROM characters WHERE id = ?').run(characterId)
+  if (row) {
+    db.prepare('UPDATE characters SET position = position - 1 WHERE position > ?').run(row.position)
+  }
+}
+
+/** Delete every chat row belonging to a character in one statement. The chats'
+ *  message / hypa rows are cleaned separately via the message-store deletes. */
+export function deleteCharacterChats(db: DatabaseSync, characterId: string): void {
+  recordTableWrite('chats')
+  db.prepare('DELETE FROM chats WHERE character_id = ?').run(characterId)
+}
+
 /** Re-stamp one character's chat rows in place: `position` = array index and the
  *  updated `data_json`, keyed by id, for reorder / folder-cascade edits where the
  *  chat set is unchanged. Each row keeps its rowid (UPDATE, not DELETE+reINSERT);

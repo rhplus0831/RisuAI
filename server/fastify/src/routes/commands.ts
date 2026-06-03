@@ -209,6 +209,8 @@ import {
 } from '../messageStore.js'
 import {
   deleteCharacterChatRow,
+  deleteCharacterChats,
+  deleteCharacterRow,
   deletePluginStorageKey,
   EntityNotFoundError,
   extractSettings,
@@ -2624,7 +2626,7 @@ export function registerCommandRoutes(
       const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyJsonCommandMutation<{
+      const result = applyTargetedCommandMutation<{
         characterId: string
         selectedCharacterId: string | null
       }>({
@@ -2632,12 +2634,27 @@ export function registerCommandRoutes(
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        // Phase 8 follow-up: no message hydration. Character deletion is
+        // self-contained (no cross-table reference cleanup), so we remove the
+        // character's row + its chat rows + each of those chats' message/hypa
+        // rows directly, and persist the settings pointers (`characterOrder` /
+        // `currentChar`) that `ensureCharacterCollection` re-normalizes. Sibling
+        // character-row repairs mutate the clone only and are discarded.
+        mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
           const index = requireCharacterIndex(characters, characterId)
+          const removedChatIds = ensureCharacterChats(characters[index]).map((chat) => chat.id)
           characters.splice(index, 1)
           ensureCharacterCollection(target)
+          deleteCharacterRow(innerDb, characterId)
+          deleteCharacterChats(innerDb, characterId)
+          for (const chatId of removedChatIds) {
+            deleteChatMessages(innerDb, chatId)
+            deleteChatHypaV3(innerDb, chatId)
+          }
+          writeSettingsOnly(innerDb, extractSettings(target))
           return {
             event: { ...COMMAND_EVENT_CATALOG.characterDeleted, id: characterId },
             extra: {
