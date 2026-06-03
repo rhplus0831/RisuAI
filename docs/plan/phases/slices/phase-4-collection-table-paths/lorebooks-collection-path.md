@@ -1,7 +1,7 @@
 # Lorebooks Collection Path
 
-Status: planned. Tier 4. Depends on the Phase 0 writer kit. Carries a
-normalization-drop decision and a Phase 5 resource-split dependency.
+Status: implemented (write-narrowing + normalization-drop). Tier 4. Uses the
+Phase 0 writer kit. The projection resource split stays a Phase 5 dependency.
 
 ## Source Anchors
 
@@ -32,6 +32,22 @@ table + settings.
 they are effectively `message-free-downgrade`-only unless the slice accepts
 dropping child-lorebook normalization (Prerequisite 2 — recorded here). `patch`
 (name edit) is the clean single-row case with no settings and no child repair.
+
+Implemented: all five routes (`select` was already Phase 2 `targeted-settings`)
+moved to `applyTargetedCommandMutation` with `mutationPath: targeted-collection`.
+The recorded decision is taken: `ensureLorebookDatabase` still runs
+`ensureAllChildLorebooks` in memory, but the narrow writes touch only `lore_books`
+(+ `loreBookPage`), so the character/chat/module child-lorebook repairs are
+**dropped to validate-only** (never persisted — `writtenTables` excludes
+characters/chats). create/delete/reorder rewrite the table via the shared
+`writeLorebookTableMutation` helper (full `lore_books` rewrite + a `settings`
+write only when `loreBookPage` moved); `patch` (name) and `entries` are single-row
+`writeSingleCollectionRow` writes with no settings — the clean cases. In practice
+create reports `['lore_books']`, delete/reorder report `['lore_books','settings']`
+when the page pointer shifts, and patch/entries report `['lore_books']`. Proven by
+`commandCollectionRange.test.ts` (5 lorebooks tests, incl. lore_books rowid
+stability for the single-row edits). The broad `lorebook` projection resource is
+left for the Phase 5 resource split.
 
 ## Implementation Scope
 

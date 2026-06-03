@@ -1039,3 +1039,120 @@ describe('Phase 4 loadouts collection range', () => {
     expect(loadouts[1]).toMatchObject({ id: 'loadout-b', lastUsed: 999 })
   })
 })
+
+describe('Phase 4 lorebooks collection range', () => {
+  it('POST lorebooks rewrites only the lore_books table', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/lorebooks',
+      payload: { baseRevision: revision, lorebook: { id: 'lore-2', name: 'lore-2', data: [] } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['lore_books'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('lore_books') as Array<{ id: string }>).map((l) => l.id)).toEqual([
+      'lore-0',
+      'lore-1',
+      'lore-2',
+    ])
+    // Pointer unchanged → settings stayed out; child lorebooks untouched.
+    expect(readSettings().loreBookPage).toBe(0)
+  })
+
+  it('PATCH lorebooks/:id updates one row in place (no settings)', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+    const beforeRowids = collectionRowidsByPosition('lore_books')
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/lorebooks/lore-1',
+      payload: { baseRevision: revision, patch: { name: 'Renamed Lore 1' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['lore_books'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(collectionRowidsByPosition('lore_books')).toEqual(beforeRowids)
+    const books = readCollection('lore_books') as Array<{ id: string; name: string }>
+    expect(books[1]).toMatchObject({ id: 'lore-1', name: 'Renamed Lore 1' })
+    expect(books[0].name).toBe('lore-0')
+  })
+
+  it('DELETE lorebooks/:id co-writes settings when the page pointer shifts', async () => {
+    const seed = seedDatabase()
+    seed.loreBookPage = 1
+    const revision = await importDatabase(seed)
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/lorebooks/lore-0',
+      payload: { baseRevision: revision },
+    })
+
+    // delete resets loreBookPage to 0; the seed had 1, so settings rides along.
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['lore_books', 'settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('lore_books') as Array<{ id: string }>).map((l) => l.id)).toEqual([
+      'lore-1',
+    ])
+    expect(readSettings().loreBookPage).toBe(0)
+  })
+
+  it('POST lorebooks/reorder co-writes settings when the page pointer moves', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    // Selected lore-0 (page 0) moves to index 1.
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/lorebooks/reorder',
+      payload: { baseRevision: revision, lorebookIds: ['lore-1', 'lore-0'] },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['lore_books', 'settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('lore_books') as Array<{ id: string }>).map((l) => l.id)).toEqual([
+      'lore-1',
+      'lore-0',
+    ])
+    expect(readSettings().loreBookPage).toBe(1)
+  })
+
+  it('PUT lorebooks/:id/entries updates one row in place (no settings)', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+    const beforeRowids = collectionRowidsByPosition('lore_books')
+
+    const { metric } = await runCommand({
+      method: 'PUT',
+      url: '/api/v1/commands/lorebooks/lore-0/entries',
+      payload: {
+        baseRevision: revision,
+        entries: [{ id: 'entry-1', key: 'k', content: 'c' }],
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['lore_books'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(collectionRowidsByPosition('lore_books')).toEqual(beforeRowids)
+    const books = readCollection('lore_books') as Array<{ id: string; data: Array<{ id: string }> }>
+    expect(books[0].id).toBe('lore-0')
+    expect(books[0].data.map((e) => e.id)).toEqual(['entry-1'])
+    // Sibling lorebook untouched.
+    expect(books[1].id).toBe('lore-1')
+  })
+})

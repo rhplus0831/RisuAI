@@ -281,6 +281,22 @@ function writeLoadoutMutation(
   }
 }
 
+/** Full `lore_books` rewrite (create/delete/reorder change the array) plus a
+ *  `settings` write only when the `loreBookPage` pointer moved. The child
+ *  lorebook repairs `ensureAllChildLorebooks` makes across characters/chats/
+ *  modules are intentionally NOT persisted (validate-only, Prerequisite 2). */
+function writeLorebookTableMutation(
+  db: DatabaseSync,
+  target: Record<string, unknown>,
+  lorebooks: readonly unknown[],
+  beforeLoreBookPage: unknown,
+): void {
+  writeSingleCollectionTable(db, 'loreBook', lorebooks)
+  if (target.loreBookPage !== beforeLoreBookPage) {
+    writeSettingsOnly(db, extractSettings(target))
+  }
+}
+
 interface RuntimeSettingsCommandBody {
   baseRevision?: unknown
   patch?: unknown
@@ -3580,18 +3596,24 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       // Validate-only constructor rejects missing entry ids rather than minting them.
       const lorebook = validateGlobalLorebookCreate(body.lorebook)
-      const result = applyMessageFreeJsonCommandMutation<{ lorebookId: string }>({
+      const result = applyTargetedCommandMutation<{ lorebookId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
+          const beforeLoreBookPage = target.loreBookPage
           if (lorebooks.some((candidate) => candidate.id === lorebook.id)) {
             throw new ValidationError(`Duplicate lorebook id: ${lorebook.id}`)
           }
           lorebooks.push(lorebook)
+          // The global lorebook collection rewrite is faithful; the in-memory
+          // `ensureAllChildLorebooks` repairs across characters/chats/modules are
+          // dropped to validate-only (Prerequisite 2) — they are not persisted.
+          writeLorebookTableMutation(innerDb, target, lorebooks, beforeLoreBookPage)
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookCreated, id: lorebook.id },
             extra: { lorebookId: lorebook.id },
@@ -3617,16 +3639,20 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; patch?: unknown }
       const baseRevision = readBaseRevision(body)
       const patch = readGlobalLorebookPatch(body.patch)
-      const result = applyMessageFreeJsonCommandMutation<{ lorebookId: string }>({
+      const result = applyTargetedCommandMutation<{ lorebookId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
           Object.assign(lorebooks[index], patch)
+          // The clean case: one lorebook's metadata, no pointer move, no child
+          // repair persisted — a single-row UPDATE.
+          writeSingleCollectionRow(innerDb, 'loreBook', index, lorebooks[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookUpdated, id: lorebookId },
             extra: { lorebookId },
@@ -3651,20 +3677,23 @@ export function registerCommandRoutes(
       const lorebookId = readLorebookId((req.params as { lorebookId?: unknown }).lorebookId)
       const body = (req.body ?? {}) as { baseRevision?: unknown }
       const baseRevision = readBaseRevision(body)
-      const result = applyMessageFreeJsonCommandMutation<{ lorebookId: string }>({
+      const result = applyTargetedCommandMutation<{ lorebookId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
+          const beforeLoreBookPage = target.loreBookPage
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
           if (lorebooks.length === 1) {
             throw new ValidationError('Cannot delete the last lorebook')
           }
           lorebooks.splice(index, 1)
           target.loreBookPage = 0
+          writeLorebookTableMutation(innerDb, target, lorebooks, beforeLoreBookPage)
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookDeleted, id: lorebookId },
             extra: { lorebookId },
@@ -3689,17 +3718,20 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; lorebookIds?: unknown }
       const baseRevision = readBaseRevision(body)
       const lorebookIds = readLorebookIdList(body.lorebookIds)
-      const result = applyMessageFreeJsonCommandMutation<{ selectedLorebookId: string | null }>({
+      const result = applyTargetedCommandMutation<{ selectedLorebookId: string | null }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
+          const beforeLoreBookPage = target.loreBookPage
           validateFullLorebookOrder(lorebooks, lorebookIds)
           const byId = new Map(lorebooks.map((lorebook) => [lorebook.id, lorebook]))
-          target.loreBook = lorebookIds.map((id) => byId.get(id))
+          const reordered = lorebookIds.map((id) => byId.get(id))
+          target.loreBook = reordered
           const currentPage = Number.isInteger(target.loreBookPage as number)
             ? (target.loreBookPage as number)
             : 0
@@ -3708,6 +3740,7 @@ export function registerCommandRoutes(
             0,
             lorebookIds.findIndex((id) => id === selectedLorebookId),
           )
+          writeLorebookTableMutation(innerDb, target, reordered, beforeLoreBookPage)
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookReordered },
             extra: { selectedLorebookId },
@@ -3772,16 +3805,20 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
       const entries = validateLorebookEntries(body.entries)
-      const result = applyMessageFreeJsonCommandMutation<{ lorebookId: string }>({
+      const result = applyTargetedCommandMutation<{ lorebookId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
           lorebooks[index].data = entries
+          // Replacing one lorebook's entries: no pointer move, no child repair
+          // persisted — a single-row UPDATE.
+          writeSingleCollectionRow(innerDb, 'loreBook', index, lorebooks[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
             extra: { lorebookId },
