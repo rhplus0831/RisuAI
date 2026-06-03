@@ -25,18 +25,21 @@ Phases 0-4 (the write-side tiers), Phase 5 (projection-range narrowing, all four
 slices), Phase 6 (the Tier-5 message-free ceiling, floors verified), and Phase 7
 (verification budgets, gate-completeness pass) are implemented. All Tier-5 routes
 now sit at their proven safe floor; the deepest narrowing per route is deferred
-behind a recorded unblock prerequisite. The core plan is complete — the only
-remaining work is optional and gated:
+behind a recorded unblock prerequisite. Phases 0-7 (the core plan) are complete;
+[`Phase 8`](phases/phase-8-floor-unblocks.md) is the active work — the **scoped**
+floor unblocks for the high-value subset:
 
-1. (Optional, gated) the deferred Tier-5 unblock prerequisites, each of which
-   must land before the route it gates can narrow below the floor:
-   - wire `deleteChatMessages`/`deleteChatHypaV3` into `DELETE chats/:id` (then
-     `DELETE characters/:id` over its chat ids) so the deletes can drop to a
-     scoped `message-free` write without leaking orphan message rows;
-   - scope `normalizeScriptDefinitionDatabase` + `ensureCharacterCollection`
-     (and the `modules` create's `ensure*` repairs) to validate-only on siblings
-     so the character script/trigger PUTs and the creates can become single-row
-     / append-only writes.
+1. (Phase 8, in progress) narrow the Tier-5 routes whose write range actually
+   hurts onto `targeted-character-row`:
+   - 8a: the script/trigger PUTs (`PUT characters/:id/scripts` + `/triggers`) —
+     a 250 ms debounced watcher fires them per edit; keep the normalization pass
+     but persist only the target row (validate-only via discard).
+   - 8b: `DELETE chats/:id` — wire `deleteChatMessages`/`deleteChatHypaV3` so it
+     drops the corpus-wide message hydration; write only the parent character's
+     rows + the deleted chat's message/hypa rows.
+   - Deferred (Non-Scope): `DELETE characters/:id` (reuses 8b's helper), the
+     `message-free` creates, and `DELETE modules/:id` stay at the floor by choice
+     (rare actions; module delete has a separate cross-table blocker).
 
 ## Not First
 

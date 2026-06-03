@@ -16,6 +16,7 @@ routing. Concrete slice definitions live under
 | 5 | Implemented | [`phase-5-projection-range-narrowing.md`](phase-5-projection-range-narrowing.md) | [`slices/phase-5-projection-range-narrowing/`](slices/phase-5-projection-range-narrowing/) |
 | 6 | Implemented | [`phase-6-message-free-ceiling.md`](phase-6-message-free-ceiling.md) | [`slices/phase-6-message-free-ceiling/`](slices/phase-6-message-free-ceiling/) |
 | 7 | Implemented (log upkeep ongoing) | [`phase-7-verification-budgets.md`](phase-7-verification-budgets.md) | [`slices/phase-7-verification-budgets/`](slices/phase-7-verification-budgets/) |
+| 8 | In progress | [`phase-8-floor-unblocks.md`](phase-8-floor-unblocks.md) | [`slices/phase-8-floor-unblocks/`](slices/phase-8-floor-unblocks/) |
 
 ## Slice Rules
 

@@ -146,6 +146,7 @@ Run" section on each subsequent run).
 | [Phase 5](phases/phase-5-projection-range-narrowing.md) | Implemented | Narrow projection resources, the `lorebook` resource split, and the projection-field bug fixes. |
 | [Phase 6](phases/phase-6-message-free-ceiling.md) | Implemented | Tier-5 routes held at their safe floor (`hydrated`/`message-free`) with blockers + unblock conditions recorded. |
 | [Phase 7](phases/phase-7-verification-budgets.md) | Implemented (log upkeep ongoing) | Written-table-set, rowid-stability, and `dbJsonWriteMs: 0` gates, the gate-completeness invariants, and the verification log. |
+| [Phase 8](phases/phase-8-floor-unblocks.md) | In progress | The scoped Tier-5 floor unblocks: the script/trigger PUTs and `DELETE chats/:id` narrowed onto `targeted-character-row` (normalization validate-only + targeted message delete). |
 
 ## Active Risk Summary
 
