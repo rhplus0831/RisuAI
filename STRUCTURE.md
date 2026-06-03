@@ -23,10 +23,6 @@ explain decisions but are not the source of present-tense behavior.
 10. `docs/structure/testing-and-operations.md` - scripts, checks, env, Docker.
 11. `docs/structure/generated-and-legacy.md` - generated/local/legacy caveats.
 
-For still-open follow-ups, check `docs/leftover.md`. For closed design history,
-start at `docs/archive/README.md`, including the db-json-to-SQLite migration
-record in `docs/archive/db-json-to-sqlite.md`.
-
 ## Top-Level Map
 
 | Path                                                                                              | Purpose                                                                                                                                      |
