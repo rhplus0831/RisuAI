@@ -199,6 +199,8 @@ import {
   appendChatMessage,
   clearAlternateMessages,
   deleteActiveMessageById,
+  deleteChatHypaV3,
+  deleteChatMessages,
   getActiveMessageLocationById,
   replaceActiveChatMessages,
   truncateActiveChatMessages,
@@ -206,6 +208,7 @@ import {
   writeGenerationChatMessage,
 } from '../messageStore.js'
 import {
+  deleteCharacterChatRow,
   deletePluginStorageKey,
   EntityNotFoundError,
   extractSettings,
@@ -2858,12 +2861,22 @@ export function registerCommandRoutes(
       const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
       const body = (req.body ?? {}) as ChatCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyJsonCommandMutation<{ chatId: string; selectedChatId: string | null }>({
+      const result = applyTargetedCommandMutation<{
+        chatId: string
+        selectedChatId: string | null
+      }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        // Phase 8b: no message hydration. The mutate works on chat metadata only;
+        // the deleted chat's orphan message/hypa rows are cleaned with the
+        // targeted message-store deletes (the sole reason this used to hydrate
+        // every message). `normalizeAllCharacterChats` still runs but its global
+        // sibling id de-dup mutates the clone only and is discarded — we persist
+        // just the parent character's rows.
+        mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
           const { character, chatIndex } = requireChatLocation(characters, chatId)
           const chats = ensureCharacterChats(character)
@@ -2872,6 +2885,12 @@ export function registerCommandRoutes(
           }
           chats.splice(chatIndex, 1)
           ensureCharacterChats(character)
+          const characterId = character.chaId as string
+          deleteCharacterChatRow(innerDb, chatId, characterId)
+          writeCharacterChatRows(innerDb, characterId, chats as Record<string, unknown>[])
+          writeSingleCharacterRow(innerDb, characterId, character)
+          deleteChatMessages(innerDb, chatId)
+          deleteChatHypaV3(innerDb, chatId)
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatDeleted, id: chatId, parentId: character.chaId },
             extra: { chatId, selectedChatId: selectedChatId(character) },

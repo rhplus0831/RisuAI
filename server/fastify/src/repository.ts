@@ -451,6 +451,19 @@ export function writeSingleChatRow(db: DatabaseSync, chatId: string, chat: JsonR
   db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chatClean), chatId)
 }
 
+/** Delete one chat row from the `chats` table (scoped by its parent character).
+ *  Pairs with the message-store deletes for a chat removal; the caller re-stamps
+ *  the remaining rows' positions. Keyed by character so a character-wide delete
+ *  can iterate it. */
+export function deleteCharacterChatRow(
+  db: DatabaseSync,
+  chatId: string,
+  characterId: string,
+): void {
+  recordTableWrite('chats')
+  db.prepare('DELETE FROM chats WHERE id = ? AND character_id = ?').run(chatId, characterId)
+}
+
 /** Re-stamp one character's chat rows in place: `position` = array index and the
  *  updated `data_json`, keyed by id, for reorder / folder-cascade edits where the
  *  chat set is unchanged. Each row keeps its rowid (UPDATE, not DELETE+reINSERT);

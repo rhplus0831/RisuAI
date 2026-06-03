@@ -87,6 +87,7 @@ function seedDatabase(): Record<string, unknown> {
             name: 'A2',
             scriptstate: {},
             localLore: [],
+            hypaV3Data: { summaries: [{ text: 'a2 summary' }] },
             message: [{ role: 'user', data: 'a2-m0', chatId: 'msg-a2-0' }],
           },
           {
@@ -321,5 +322,63 @@ describe('Phase 8a script/trigger PUTs → targeted-character-row', () => {
     expect(res.statusCode).toBe(400)
     // Unchanged target row.
     expect((readCharacter('char-a').customscript as Array<{ id: string }>)[0].id).toBe('rx-old')
+  })
+})
+
+describe('Phase 8b DELETE chats/:id → targeted-character-row', () => {
+  it('writes only the parent character rows + the deleted chat message/hypa rows', async () => {
+    const revision = await importDatabase(seedDatabase())
+
+    // Preconditions: the target chat has message + hypa rows; siblings too.
+    expect(countChatMessages('chat-a-2')).toBe(1)
+    expect(countChatHypa('chat-a-2')).toBe(1)
+    expect(readChatOrder('char-a')).toEqual(['chat-a-1', 'chat-a-2', 'chat-a-3'])
+
+    const before = rowidSnapshot()
+    const { metric, body } = await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/chats/chat-a-2',
+      payload: { baseRevision: revision },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.dbJsonWriteMs).toBe(0)
+    // The targeted write touches the parent character row, the chats table, and
+    // the deleted chat's message/hypa rows — nothing else (no collections).
+    expect(metric.writtenTables).toEqual(['characters', 'chat_hypa_v3', 'chats', 'messages'])
+    assertCommandMetricGate(metric)
+
+    // Only the deleted chat row changed identity; remaining chats were UPDATEd in
+    // place (rowid stable) and char-b's chat is untouched.
+    expectNoChurn(before, { chats: ['chat-a-2'] })
+
+    // The deleted chat is gone from the chats table and order is preserved.
+    expect(readChatOrder('char-a')).toEqual(['chat-a-1', 'chat-a-3'])
+    // Its orphan message + hypa rows are cleaned (the unblock).
+    expect(countChatMessages('chat-a-2')).toBe(0)
+    expect(countChatHypa('chat-a-2')).toBe(0)
+    // Sibling chats' messages are intact.
+    expect(countChatMessages('chat-a-1')).toBe(2)
+    expect(countChatMessages('chat-a-3')).toBe(1)
+    expect(countChatMessages('chat-b-1')).toBe(1)
+
+    // Same selection semantics as the broad path: chatPage (1) is unchanged, so
+    // the selected chat is whatever now sits at index 1.
+    expect(readCharacter('char-a').chatPage).toBe(1)
+    expect(body.selectedChatId).toBe('chat-a-3')
+  })
+
+  it('refuses to delete the only chat of a character', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const res = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/chats/chat-b-1',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+    expect(res.statusCode).toBe(400)
+    // Nothing removed.
+    expect(readChatOrder('char-b')).toEqual(['chat-b-1'])
+    expect(countChatMessages('chat-b-1')).toBe(1)
   })
 })
