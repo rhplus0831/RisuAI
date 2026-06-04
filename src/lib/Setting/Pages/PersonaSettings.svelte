@@ -187,12 +187,15 @@
     })
   }
 
-  function queueSelectedPersonaUpdate(previous: PersonaStateSnapshot): void {
+  function queueSelectedPersonaUpdate(
+    previous: PersonaStateSnapshot,
+    attempted: PersonaStateSnapshot,
+  ): void {
     if (!canUseServerCommands() || suppressPersonaRollback) return
     const personaId = selectedPersonaId()
     if (!personaId) return
     pendingPersonaUpdate.previous ??= previous
-    pendingPersonaUpdate.attempted = currentPersonaStateSnapshot()
+    pendingPersonaUpdate.attempted = attempted
     if (pendingPersonaUpdate.timer) clearTimeout(pendingPersonaUpdate.timer)
     pendingPersonaUpdate.timer = setTimeout(() => {
       pendingPersonaUpdate.timer = null
@@ -244,8 +247,13 @@
     if (current === previousPersonaSnapshot) return
     const previous = previousPersonaState ?? currentPersonaStateSnapshot()
     previousPersonaSnapshot = current
-    previousPersonaState = currentPersonaStateSnapshot()
-    untrack(() => queueSelectedPersonaUpdate(previous))
+    // One snapshot of the (still-unmutated) current state, reused as both the
+    // next keystroke's rollback baseline and this command's attempted-state
+    // guard, instead of cloning the personas array twice per keystroke. Both
+    // consumers only read the snapshot, so sharing the reference is safe.
+    const attempted = currentPersonaStateSnapshot()
+    previousPersonaState = attempted
+    untrack(() => queueSelectedPersonaUpdate(previous, attempted))
   })
 
   const createStb = () => {
