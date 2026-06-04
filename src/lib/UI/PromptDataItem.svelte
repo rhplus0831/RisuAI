@@ -57,8 +57,11 @@
     if (snapshot === previousPromptSnapshot) return
     const before = previousPromptItem
     previousPromptSnapshot = snapshot
-    previousPromptItem = clonePromptItem(promptItem)
-    onUpdate(clonePromptItem(promptItem), before)
+    // One clone serves both the next-change baseline and the dispatched value
+    // (neither side mutates it); the former code cloned twice per keystroke.
+    const currentClone = clonePromptItem(promptItem)
+    previousPromptItem = currentClone
+    onUpdate(currentClone, before)
   })
 
   const chatPromptChange = () => {
