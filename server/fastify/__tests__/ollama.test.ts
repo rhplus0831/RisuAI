@@ -5,6 +5,10 @@ import {
   runOllama,
   runOllamaStream,
 } from '../src/generation/ollama.js'
+import {
+  MAX_STREAM_BUFFER_CHARS,
+  STREAM_BUFFER_OVERFLOW_ERROR,
+} from '../src/generation/sse.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -507,5 +511,23 @@ describe('runOllamaStream', () => {
       { kind: 'token', content: 'one' },
       { kind: 'done', finishReason: 'stop' },
     ])
+  })
+
+  it('L22: bounds the line buffer when upstream never sends a newline', async () => {
+    const chunk = 'x'.repeat(1024 * 1024)
+    vi.stubGlobal('fetch', async () =>
+      ndjsonResponse(
+        Array.from({ length: MAX_STREAM_BUFFER_CHARS / chunk.length + 2 }, () => chunk),
+      ),
+    )
+    const resolved = resolveOllamaRequest({
+      model: 'llama3',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runOllamaStream(resolved)) frames.push(f)
+    expect(frames).toEqual([{ kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }])
   })
 })

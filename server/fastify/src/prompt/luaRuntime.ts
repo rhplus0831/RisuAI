@@ -178,7 +178,71 @@ function isBlockedV6(ip: string): boolean {
   if (/^fe[89ab]/.test(ip)) return true
   // fc00::/7 unique-local (includes fd00::/8).
   if (/^f[cd]/.test(ip)) return true
+  // Transition addresses embed an IPv4 target the connection ultimately
+  // reaches; classify that embedded address too (audit L23). Covers
+  // IPv4-mapped in hex form (`::ffff:7f00:1`), IPv4-compatible (`::7f00:1`),
+  // 6to4 (`2002:7f00:1::`), and NAT64 (`64:ff9b::7f00:1`).
+  const embedded = embeddedV4InV6(ip)
+  if (embedded !== null) return isBlockedV4(embedded)
   return false
+}
+
+/** Expand a valid IPv6 literal (lowercase, no zone) into its 8 16-bit groups.
+ *  Returns null on anything that does not parse (callers treat that as "no
+ *  embedded address"; `isBlockedAddress` already denies unparseable input). */
+function parseV6Groups(ip: string): number[] | null {
+  const halves = ip.split('::')
+  if (halves.length > 2) return null
+  const parseSide = (side: string): number[] | null => {
+    if (side.length === 0) return []
+    const groups: number[] = []
+    const parts = side.split(':')
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]
+      if (part.includes('.')) {
+        // Dotted-quad tail (`::ffff:127.0.0.1`) occupies the last two groups.
+        if (i !== parts.length - 1) return null
+        const octets = part.split('.').map((n) => Number(n))
+        if (octets.length !== 4 || octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+          return null
+        }
+        groups.push((octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3])
+        continue
+      }
+      if (!/^[0-9a-f]{1,4}$/.test(part)) return null
+      groups.push(Number.parseInt(part, 16))
+    }
+    return groups
+  }
+  const head = parseSide(halves[0])
+  const tail = halves.length === 2 ? parseSide(halves[1]) : []
+  if (!head || !tail) return null
+  if (halves.length === 1) return head.length === 8 ? head : null
+  const fill = 8 - head.length - tail.length
+  if (fill < 0) return null
+  return [...head, ...(Array(fill).fill(0) as number[]), ...tail]
+}
+
+/** The IPv4 address embedded in an IPv6 transition form, or null. */
+function embeddedV4InV6(ip: string): string | null {
+  const groups = parseV6Groups(ip)
+  if (!groups) return null
+  const v4 = (hi: number, lo: number): string =>
+    `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`
+  const allZero = (from: number, to: number): boolean =>
+    groups.slice(from, to).every((group) => group === 0)
+  // IPv4-mapped ::ffff:0:0/96 (hex form; the dotted form is unwrapped by
+  // `isBlockedAddress`) and IPv4-compatible ::/96.
+  if (allZero(0, 5) && (groups[5] === 0xffff || groups[5] === 0)) {
+    return v4(groups[6], groups[7])
+  }
+  // 6to4 2002::/16 carries the IPv4 address in bits 16-48.
+  if (groups[0] === 0x2002) return v4(groups[1], groups[2])
+  // NAT64 well-known prefix 64:ff9b::/96.
+  if (groups[0] === 0x64 && groups[1] === 0xff9b && allZero(2, 6)) {
+    return v4(groups[6], groups[7])
+  }
+  return null
 }
 
 /**
@@ -308,7 +372,6 @@ export async function serverLuaRequest(
       data: 'Too many requests. you can request 30 times per minute',
     })
   }
-  rateState.count++
 
   const verdict = await validateEgressUrl(url, deps)
   if (!verdict.ok) {
@@ -319,6 +382,9 @@ export async function serverLuaRequest(
     const failure = verdict as Extract<EgressVerdict, { ok: false }>
     return JSON.stringify({ status: failure.status, data: failure.data })
   }
+  // Count only validated requests (audit L25): a blocked URL must not consume
+  // the egress budget, or a single misbehaving script could starve legit calls.
+  rateState.count++
   try {
     const fetchImpl = deps.fetchImpl ?? pinnedHttpsFetch
     const result = await fetchImpl(url, verdict.addresses)
@@ -519,6 +585,14 @@ export interface ServerLuaRuntimeContext {
   egress?: EgressDeps
   /** Shared `request()` rate-limit state; defaults to the module singleton. */
   rateState?: RequestRateState
+  /**
+   * Originating-request abort signal (audit L20). When it fires, in-flight
+   * hook work is cancelled: the load thread's deadline is pulled to "now"
+   * (cooperating with the exec-limit hook), every host-fn call throws, and
+   * `sleep` wakes early. Pure-compute stretches between host calls remain
+   * bounded by the exec limit.
+   */
+  signal?: AbortSignal
 }
 
 interface RuntimeState {
@@ -554,6 +628,8 @@ export interface ServerLuaResult {
   timedOut: boolean
   /** An interactive host fn was invoked (no server equivalent → `unsupported`). */
   interactiveInvoked: boolean
+  /** The originating request's abort signal fired during the run (L20). */
+  aborted?: boolean
   /** Captured load/dispatch error message, if any (the browser swallows these). */
   error?: string
 }
@@ -565,8 +641,29 @@ function asCharacter(ctx: ServerLuaRuntimeContext): character | undefined {
     : undefined
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+/** Sleep that wakes early when `signal` fires, so an aborted request never
+ *  waits out the remaining `sleep()` budget (the very next host-fn call then
+ *  throws {@link LuaAbortError}). */
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (!signal) {
+      setTimeout(resolve, ms)
+      return
+    }
+    if (signal.aborted) {
+      resolve()
+      return
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 function isTimeoutError(error: unknown): boolean {
@@ -576,6 +673,9 @@ function isTimeoutError(error: unknown): boolean {
 
 /** Error thrown by interactive host fns so the dispatch can tag the result. */
 class InteractiveApiError extends Error {}
+
+/** Error thrown by every host fn once the request signal has fired (L20). */
+class LuaAbortError extends Error {}
 
 // ── Host functions (the disposition table, README §Host-function disposition) ─
 
@@ -593,7 +693,14 @@ class InteractiveApiError extends Error {}
  */
 function declareHostFunctions(engine: LuaEngine, state: RuntimeState): void {
   const declare = (name: string, fn: (...args: any[]) => unknown) => {
-    engine.global.set(name, fn)
+    // Every host fn is the abort checkpoint (L20): once the request signal
+    // fires, the next host call throws, terminating the surrounding pcall.
+    engine.global.set(name, (...args: any[]) => {
+      if (state.ctx.signal?.aborted) {
+        throw new LuaAbortError('request aborted')
+      }
+      return fn(...args)
+    })
   }
   const canWrite = (id: string) => state.safeIds.has(id)
   const canWriteVar = (id: string) =>
@@ -835,7 +942,7 @@ function declareHostFunctions(engine: LuaEngine, state: RuntimeState): void {
     if (state.sleptMs >= MAX_TOTAL_SLEEP_MS) return false
     const ms = Math.min(requested, MAX_SLEEP_MS, MAX_TOTAL_SLEEP_MS - state.sleptMs)
     state.sleptMs += ms
-    await delay(ms)
+    await delay(ms, state.ctx.signal)
     return true
   })
 
@@ -882,14 +989,22 @@ async function runStringWithTimeout(
   engine: LuaEngine,
   code: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<void> {
   const global = engine.global
   const thread = global.newThread()
   const threadIndex = global.getTop()
+  // Abort propagation (L20): pulling the thread deadline to the epoch makes the
+  // run loop's next yield-boundary check throw. A pure-compute chunk that never
+  // yields stays bounded by `timeoutMs` itself (the count hook's own deadline).
+  const onAbort = (): void => thread.setTimeout(1)
+  signal?.addEventListener('abort', onAbort, { once: true })
   try {
+    if (signal?.aborted) throw new LuaAbortError('request aborted')
     thread.loadString(code)
     await thread.run(0, { timeout: timeoutMs })
   } finally {
+    signal?.removeEventListener('abort', onAbort)
     global.remove(threadIndex)
   }
 }
@@ -912,6 +1027,19 @@ export async function runServerLua(
   const data = opts.data ?? ''
   const meta = opts.meta ?? {}
   const lowLevelAccess = opts.lowLevelAccess ?? false
+  const signal = ctx.signal
+
+  // An already-cancelled request never boots an engine (L20).
+  if (signal?.aborted) {
+    return {
+      stopSending: false,
+      res: undefined,
+      timedOut: false,
+      interactiveInvoked: false,
+      aborted: true,
+      error: 'request aborted',
+    }
+  }
 
   const state: RuntimeState = {
     ctx,
@@ -940,15 +1068,19 @@ export async function runServerLua(
     declareHostFunctions(engine, state)
 
     try {
-      await runStringWithTimeout(engine, luaCodeWrapper(opts.code), execTimeoutMs)
+      await runStringWithTimeout(engine, luaCodeWrapper(opts.code), execTimeoutMs, signal)
     } catch (error) {
       // A load failure (syntax error or a top-level runaway loop) leaves nothing to
       // dispatch. Record it and return identity, mirroring the browser's
       // error-swallowing `runLuaEditTrigger`.
       result.error = error instanceof Error ? error.message : String(error)
-      result.timedOut = isTimeoutError(error)
+      // An abort surfaces through the same deadline machinery; report it as a
+      // cancellation, not an exec-limit timeout.
+      result.timedOut = isTimeoutError(error) && !signal?.aborted
       return result
     }
+
+    if (signal?.aborted) return result
 
     const accessKey = randomUUID()
     if (opts.mode === 'editDisplay') {
@@ -1005,13 +1137,14 @@ export async function runServerLua(
       // Browser parity: the dispatch switch swallows errors (`scriptings.ts:1139`).
       // We additionally record the cause so a timeout / interactive abort is visible.
       result.error = error instanceof Error ? error.message : String(error)
-      result.timedOut = isTimeoutError(error)
+      result.timedOut = isTimeoutError(error) && !signal?.aborted
     }
 
     return result
   } finally {
     result.stopSending = state.stopSending
     result.interactiveInvoked = state.interactiveInvoked
+    if (signal?.aborted) result.aborted = true
     engine.global.close()
   }
 }

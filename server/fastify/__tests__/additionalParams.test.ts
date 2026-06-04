@@ -164,6 +164,26 @@ describe('applyAdditionalParameters DSL', () => {
     ])
     expect(body.x).toBeUndefined()
   })
+
+  it('L24: setObjectValue cannot pollute Object.prototype via dotted prototype keys', () => {
+    const { body, headers } = setup()
+    applyAdditionalParameters(body, headers, [
+      // Walks to Object.prototype then writes onto it without the guard.
+      ['__proto__.polluted', '"yes"'],
+      ['a.__proto__.polluted', '"yes"'],
+      ['constructor.prototype.polluted', '"yes"'],
+      ['a.constructor.prototype.polluted', 'json::{"deep": true}'],
+      // Single-segment prototype keys are dropped too (they would flip the
+      // body's prototype rather than set a data field).
+      ['__proto__', 'json::{"polluted": "yes"}'],
+    ])
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined()
+    expect(Object.prototype).not.toHaveProperty('polluted')
+    expect(Object.getPrototypeOf(body)).toBe(Object.prototype)
+    // The guard drops the entry whole — no partial intermediate objects.
+    expect(body.a).toBeUndefined()
+    expect(Object.keys(body).sort()).toEqual(['messages', 'model', 'temperature'])
+  })
 })
 
 describe('coerceAdditionalParams', () => {

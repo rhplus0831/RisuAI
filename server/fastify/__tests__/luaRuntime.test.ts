@@ -191,6 +191,32 @@ describe('server Lua runtime — request() egress guard (SSRF)', () => {
     }
   })
 
+  it('L23: blocks embedded-private IPv6 transition forms (mapped-hex / compatible / 6to4 / NAT64)', () => {
+    for (const blocked of [
+      '::ffff:7f00:1', // IPv4-mapped loopback, hex form (dotted form was already unwrapped)
+      '::ffff:a9fe:a9fe', // IPv4-mapped metadata IP, hex form
+      '::7f00:1', // IPv4-compatible loopback
+      '::127.0.0.1', // IPv4-compatible loopback, dotted form
+      '::a00:1', // IPv4-compatible 10.0.0.1
+      '2002:7f00:1::', // 6to4 embedding 127.0.0.1
+      '2002:a9fe:a9fe::', // 6to4 embedding 169.254.169.254 (metadata)
+      '2002:c0a8:101::', // 6to4 embedding 192.168.1.1
+      '64:ff9b::7f00:1', // NAT64 embedding 127.0.0.1
+      '64:ff9b::127.0.0.1', // NAT64, dotted form
+      '64:ff9b::a9fe:a9fe', // NAT64 embedding the metadata IP
+    ]) {
+      expect(isBlockedAddress(blocked), `${blocked} should be blocked`).toBe(true)
+    }
+    // Transition forms of PUBLIC addresses stay reachable.
+    for (const allowed of [
+      '::ffff:808:808', // IPv4-mapped 8.8.8.8, hex form
+      '2002:808:808::', // 6to4 of 8.8.8.8
+      '64:ff9b::808:808', // NAT64 of 8.8.8.8
+    ]) {
+      expect(isBlockedAddress(allowed), `${allowed} should be allowed`).toBe(false)
+    }
+  })
+
   it('rejects non-https URLs', async () => {
     const verdict = await validateEgressUrl('http://example.com/')
     expect(verdict.ok).toBe(false)
@@ -249,6 +275,26 @@ describe('server Lua runtime — request() egress guard (SSRF)', () => {
     }
     expect(statuses.slice(0, 30)).toEqual(Array(30).fill(200))
     expect(statuses[30]).toBe(429)
+  })
+
+  it('L25: a blocked URL does not consume the egress budget', async () => {
+    const rate: RequestRateState = { count: 0, resetAt: 0 }
+    const deps: EgressDeps = {
+      lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+      fetchImpl: async () => ({ status: 200, data: 'ok' }),
+      now: () => 1_000_000,
+    }
+    // 40 rejected requests (non-https) would previously exhaust the 30/window
+    // budget without a single socket opening.
+    for (let i = 0; i < 40; i++) {
+      const raw = await serverLuaRequest('http://blocked.test/x', deps, rate)
+      expect((JSON.parse(raw) as { status: number }).status).toBe(400)
+    }
+    expect(rate.count).toBe(0)
+    // A valid request afterwards still goes through.
+    const ok = await serverLuaRequest('https://example.test/x', deps, rate)
+    expect((JSON.parse(ok) as { status: number }).status).toBe(200)
+    expect(rate.count).toBe(1)
   })
 })
 
@@ -317,6 +363,56 @@ describe('server Lua runtime — execution limit', () => {
     const elapsed = Date.now() - started
     expect(result.timedOut).toBe(true)
     expect(elapsed).toBeLessThan(5000)
+  })
+})
+
+describe('server Lua runtime — request-signal abort (L20)', () => {
+  it('L20: an already-aborted request signal returns immediately without dispatching', async () => {
+    const { ctx, engine } = makeRuntime()
+    const controller = new AbortController()
+    controller.abort()
+    ctx.signal = controller.signal
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        setChatVar(id, 'mood', 'ran-anyway')
+        return data
+      end)
+    `
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('x') }, ctx)
+
+    expect(result.aborted).toBe(true)
+    expect(result.timedOut).toBe(false)
+    expect(result.res).toBeUndefined()
+    expect(engine.getVar('mood')).toBe('null')
+  })
+
+  it('L20: aborting mid-dispatch cancels in-flight hook work well before the exec limit', async () => {
+    const { ctx, engine } = makeRuntime()
+    const controller = new AbortController()
+    ctx.signal = controller.signal
+    // The handler would loop sleep() for far longer than our abort point; every
+    // host-fn call is the abort checkpoint, so the loop dies on the next call.
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        while true do
+          sleep(id, 200):await()
+        end
+        return data
+      end)
+    `
+    setTimeout(() => controller.abort(), 100)
+    const started = Date.now()
+    const result = await runServerLua(
+      { code, mode: 'editRequest', data: rows('x'), execTimeoutMs: 60_000 },
+      ctx,
+    )
+    const elapsed = Date.now() - started
+
+    expect(result.aborted).toBe(true)
+    expect(result.timedOut).toBe(false)
+    expect(result.res).toBeUndefined()
+    expect(elapsed).toBeLessThan(5_000)
+    expect(engine.varChanged).toBe(false)
   })
 })
 

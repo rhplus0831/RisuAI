@@ -1,4 +1,5 @@
 import { createSign } from 'node:crypto'
+import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 
 /**
  * Vertex AI service-account auth helper. The SPA's local path
@@ -141,7 +142,7 @@ export async function resolveVertexBearer(
   if (!response.ok) {
     let body = ''
     try {
-      body = await response.text()
+      body = await readBoundedBodyText(response)
     } catch {
       // ignore
     }
@@ -153,7 +154,7 @@ export async function resolveVertexBearer(
 
   let data: TokenResponse
   try {
-    data = (await response.json()) as TokenResponse
+    data = (await readBoundedBodyJson(response)) as TokenResponse
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { ok: false, error: `Vertex token response was not valid JSON: ${msg}` }

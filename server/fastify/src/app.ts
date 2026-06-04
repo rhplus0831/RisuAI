@@ -57,6 +57,13 @@ import {
   createSummarizeMemoryJobHandler,
 } from './memorySummarizeJobHandler.js'
 
+/**
+ * Node `server.requestTimeout` backstop (audit M6): the wall-clock bound for
+ * receiving one request. Mirrors the durable generation path's 600s
+ * `deadlineAt` reference instead of Node's implicit 300s default.
+ */
+export const REQUEST_RECEIVE_TIMEOUT_MS = 600_000
+
 export interface BuildAppOptions {
   config?: AppConfig
   generationChat?: GenerationChatRouteOptions
@@ -81,6 +88,12 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     logger: process.env.LOG_LEVEL === 'silent' ? false : { level: process.env.LOG_LEVEL ?? 'info' },
     bodyLimit: config.bodyLimit,
     trustProxy: config.trustProxy,
+    // Generous explicit backstop for receiving a request (audit M6), aligned
+    // with the durable path's 600s deadline. Bounds only the request-receive
+    // phase (Node clears it once the body has arrived), so long SSE responses
+    // and slow generations are unaffected; multi-GB backup uploads on a LAN
+    // still fit comfortably.
+    requestTimeout: REQUEST_RECEIVE_TIMEOUT_MS,
   })
 
   await app.register(rateLimit, {

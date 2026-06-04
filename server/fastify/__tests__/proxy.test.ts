@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { buildApp } from '../src/app.js'
+import { REQUEST_RECEIVE_TIMEOUT_MS, buildApp } from '../src/app.js'
 
 const subtle = webcrypto.subtle
 
@@ -332,5 +332,55 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(res.statusCode).toBe(200)
     expect(res.headers['content-type']).toBe('text/event-stream')
     expect(res.body).toBe('data: one\n\ndata: two\n\n')
+  })
+
+  it('M6: configures the generous request-receive timeout backstop (600s reference)', () => {
+    expect(REQUEST_RECEIVE_TIMEOUT_MS).toBe(600_000)
+    expect(harness.app.server.requestTimeout).toBe(REQUEST_RECEIVE_TIMEOUT_MS)
+  })
+
+  it('M6: a client disconnect mid-fetch aborts the upstream request', async () => {
+    let resolveUpstreamStarted!: () => void
+    const upstreamStarted = new Promise<void>((r) => {
+      resolveUpstreamStarted = r
+    })
+    let resolveUpstreamClosed!: () => void
+    const upstreamClosed = new Promise<void>((r) => {
+      resolveUpstreamClosed = r
+    })
+    echo.setResponder((_req, res) => {
+      // Hold the upstream open without responding; `close` then only fires
+      // when the proxy aborts the upstream connection.
+      res.on('close', () => resolveUpstreamClosed())
+      resolveUpstreamStarted()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    await harness.app.listen({ port: 0, host: '127.0.0.1' })
+    const addr = harness.app.server.address() as AddressInfo
+
+    const creq = http.request({
+      host: '127.0.0.1',
+      port: addr.port,
+      method: 'POST',
+      path: '/api/v1/proxy/fetch',
+      headers: {
+        'risu-auth': assertion,
+        'risu-url': encodeURIComponent(echo.url),
+      },
+    })
+    creq.on('error', () => {
+      // The local destroy below surfaces as ECONNRESET; irrelevant here.
+    })
+    creq.end()
+
+    await upstreamStarted
+    creq.destroy()
+
+    const outcome = await Promise.race([
+      upstreamClosed.then(() => 'upstream-aborted' as const),
+      new Promise<'still-open'>((r) => setTimeout(() => r('still-open'), 2_000)),
+    ])
+    expect(outcome).toBe('upstream-aborted')
   })
 })

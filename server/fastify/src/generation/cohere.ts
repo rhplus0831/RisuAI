@@ -1,5 +1,6 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
+import { readBoundedBodyText } from './body.js'
 
 export interface CohereRequest {
   model: string
@@ -269,7 +270,7 @@ export async function runCohere(req: CohereRequest): Promise<CompletionResult> {
 
   let raw: string
   try {
-    raw = await response.text()
+    raw = await readBoundedBodyText(response)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { type: 'fail', result: `invalid upstream body: ${msg}` }

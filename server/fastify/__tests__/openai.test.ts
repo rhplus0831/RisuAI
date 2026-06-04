@@ -5,6 +5,10 @@ import {
   runOpenAI,
   runOpenAIStream,
 } from '../src/generation/openai.js'
+import {
+  MAX_STREAM_BUFFER_CHARS,
+  STREAM_BUFFER_OVERFLOW_ERROR,
+} from '../src/generation/sse.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -540,5 +544,25 @@ describe('runOpenAIStream', () => {
       frames.push(f)
     }
     expect(frames).toEqual([{ kind: 'error', error: 'truncated upstream stream event' }])
+  })
+
+  it('L22: bounds the accumulation buffer when upstream never sends an event delimiter', async () => {
+    // > MAX_STREAM_BUFFER_CHARS of delimiter-less bytes, streamed in 1 MB
+    // chunks. Without the cap the adapter would buffer the whole stream.
+    const chunk = 'x'.repeat(1024 * 1024)
+    vi.stubGlobal('fetch', async () =>
+      sseUpstream(Array.from({ length: MAX_STREAM_BUFFER_CHARS / chunk.length + 2 }, () => chunk)),
+    )
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([{ kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }])
   })
 })

@@ -1,4 +1,6 @@
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
+import { STREAM_BUFFER_OVERFLOW_ERROR, streamBufferExceedsCap } from './sse.js'
+import { readBoundedBodyText } from './body.js'
 
 export interface OllamaRequest {
   model: string
@@ -130,7 +132,7 @@ interface OllamaChunk {
 async function readOllamaStreamError(response: Response): Promise<CompletionStreamFrame> {
   let error = `HTTP ${response.status}`
   try {
-    const text = await response.text()
+    const text = await readBoundedBodyText(response)
     if (text.length > 0) {
       try {
         const parsed = JSON.parse(text) as OllamaChunk
@@ -179,7 +181,7 @@ export async function runOllama(req: OllamaRequest): Promise<CompletionResult> {
 
   let raw: string
   try {
-    raw = await response.text()
+    raw = await readBoundedBodyText(response)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { type: 'fail', result: `invalid upstream body: ${msg}` }
@@ -293,6 +295,12 @@ export async function* runOllamaStream(
           sawDone = true
           finishReason = mapDoneReason(chunk.done_reason)
         }
+      }
+      // Post-drain the buffer holds at most one partial line; a newline-less
+      // upstream must not grow it unbounded (L22).
+      if (streamBufferExceedsCap(buf)) {
+        yield { kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }
+        return
       }
     }
     // The body may end without a trailing newline; try to parse the tail.

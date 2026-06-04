@@ -1,6 +1,12 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
-import { hasNonIgnorableSseTail, popSseEventBlock } from './sse.js'
+import {
+  STREAM_BUFFER_OVERFLOW_ERROR,
+  hasNonIgnorableSseTail,
+  popSseEventBlock,
+  streamBufferExceedsCap,
+} from './sse.js'
+import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 
 export interface AnthropicRequest {
   model: string
@@ -145,7 +151,7 @@ export async function runAnthropic(req: AnthropicRequest): Promise<CompletionRes
 
   let body: AnthropicResponse
   try {
-    body = (await response.json()) as AnthropicResponse
+    body = (await readBoundedBodyJson(response)) as AnthropicResponse
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
@@ -217,7 +223,7 @@ async function readAnthropicStreamError(response: Response): Promise<CompletionS
   let error = `HTTP ${response.status}`
   let code: string | undefined
   try {
-    const text = await response.text()
+    const text = await readBoundedBodyText(response)
     if (text.length > 0) {
       try {
         const parsed = JSON.parse(text) as AnthropicErrorResponse
@@ -327,6 +333,12 @@ export async function* runAnthropicStream(
           return
         }
         // message_start / content_block_start / content_block_stop / ping: ignore
+      }
+      // Post-drain the buffer holds at most one partial event; a
+      // delimiter-less upstream must not grow it unbounded (L22).
+      if (streamBufferExceedsCap(buf)) {
+        yield { kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }
+        return
       }
     }
   } finally {

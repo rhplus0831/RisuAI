@@ -1,5 +1,6 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
+import { readBoundedBodyJson } from './body.js'
 
 export interface OpenAILegacyInstructRequest {
   model: string
@@ -188,7 +189,7 @@ export async function runOpenAILegacyInstruct(
 
   let body: LegacyInstructResponse
   try {
-    body = (await response.json()) as LegacyInstructResponse
+    body = (await readBoundedBodyJson(response)) as LegacyInstructResponse
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }

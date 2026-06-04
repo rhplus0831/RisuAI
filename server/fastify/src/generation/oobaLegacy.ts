@@ -1,5 +1,6 @@
 import type { CompletionResult } from './frames.js'
 import { flattenForLegacyInstruct } from './openaiLegacyInstruct.js'
+import { readBoundedBodyText } from './body.js'
 
 export interface OobaLegacyRequest {
   prompt: string
@@ -147,7 +148,7 @@ export async function runOobaLegacy(req: OobaLegacyRequest): Promise<CompletionR
 
   let raw: string
   try {
-    raw = await response.text()
+    raw = await readBoundedBodyText(response)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { type: 'fail', result: `invalid upstream body: ${msg}` }

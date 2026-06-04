@@ -104,6 +104,11 @@ export interface AssembleDeps {
    * absent, asset and inlay prompts drop their bytes.
    */
   resolveStoredAsset?: ResolveStoredAsset
+  /**
+   * Originating-request (or durable-job) abort signal, threaded into the Lua
+   * runtime so a disconnect/cancel stops in-flight hook work (audit L20).
+   */
+  signal?: AbortSignal
 }
 
 export type PromptAssemblyStage =
@@ -277,6 +282,8 @@ export interface AssemblyState {
   formatOrder: FormatOrderKey[]
   /** `input.mode === 'continue'`; drives the `[Continue the last response]` marker. */
   isContinue: boolean
+  /** Abort signal from `AssembleDeps.signal`, handed to every Lua run (L20). */
+  signal?: AbortSignal
   /** Recorded identity only; applying a non-active preset/loadout happens elsewhere. */
   presetId?: string
   loadoutId?: string
@@ -441,6 +448,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     promptTemplate,
     usingPromptTemplate,
     formatOrder,
+    signal: deps.signal,
     isContinue: input.mode === 'continue',
     presetId: input.presetId,
     loadoutId: input.loadoutId,
@@ -607,6 +615,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
           varEngine,
           char: currentChar,
           model: db.aiModel,
+          signal: state.signal,
         },
       )
       // The host fns mutate `chat` in place (its `.message` array is reassigned by
@@ -1273,6 +1282,7 @@ function buildLuaEditTriggerContext(state: AssemblyState): {
     chatPage: state.chatPage,
     varEngine,
     model: db.aiModel,
+    signal: state.signal,
     moduleTriggers: getModuleTriggers(getActiveModules(db, state.currentChar, state.currentChat)),
   }
   return { editCtx, varEngine }
@@ -1625,6 +1635,7 @@ async function runOutputTrigger(state: AssemblyState): Promise<boolean> {
           varEngine,
           char: currentChar,
           model: db.aiModel,
+          signal: state.signal,
         },
       )
       return { chat, stopSending: result.stopSending }

@@ -1,7 +1,13 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 import { parseOpenAIStyleSseData } from './openai.js'
-import { hasNonIgnorableSseTail, popSseEventBlock } from './sse.js'
+import {
+  STREAM_BUFFER_OVERFLOW_ERROR,
+  hasNonIgnorableSseTail,
+  popSseEventBlock,
+  streamBufferExceedsCap,
+} from './sse.js'
+import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 
 export interface MistralRequest {
   model: string
@@ -233,7 +239,7 @@ export async function runMistral(req: MistralRequest): Promise<CompletionResult>
 
   let body: MistralNonStreamResponse
   try {
-    body = (await response.json()) as MistralNonStreamResponse
+    body = (await readBoundedBodyJson(response)) as MistralNonStreamResponse
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
@@ -282,7 +288,7 @@ async function readMistralStreamError(response: Response): Promise<CompletionStr
   let error = `HTTP ${response.status}`
   let code: string | undefined
   try {
-    const text = await response.text()
+    const text = await readBoundedBodyText(response)
     if (text.length > 0) {
       try {
         const parsed = JSON.parse(text) as MistralErrorResponse
@@ -381,6 +387,12 @@ export async function* runMistralStream(
         if (choice?.finish_reason) {
           finishReason = mapFinishReason(choice.finish_reason)
         }
+      }
+      // Post-drain the buffer holds at most one partial event; a
+      // delimiter-less upstream must not grow it unbounded (L22).
+      if (streamBufferExceedsCap(buf)) {
+        yield { kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }
+        return
       }
     }
   } finally {

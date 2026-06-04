@@ -1,5 +1,6 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
+import { readBoundedBodyText } from './body.js'
 
 export interface OpenAIResponsesRequest {
   model: string
@@ -210,7 +211,7 @@ export async function runOpenAIResponses(req: OpenAIResponsesRequest): Promise<C
 
   let raw: string
   try {
-    raw = await response.text()
+    raw = await readBoundedBodyText(response)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { type: 'fail', result: `invalid upstream body: ${msg}` }

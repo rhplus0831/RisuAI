@@ -41,6 +41,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { loadPersisted } from '../repository.js'
 import { dispatchChatProvider } from '../prompt/chatDispatch.js'
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
+import { attachAbort } from '../requestAbort.js'
 
 const SUPPORTED_PROVIDERS = new Set([
   'echo',
@@ -368,18 +369,8 @@ function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void 
   reply.raw.write(`event: ${event}\ndata: ${data}\n\n`)
 }
 
-function attachAbort(req: FastifyRequest): {
-  signal: AbortSignal
-  cleanup: () => void
-} {
-  const controller = new AbortController()
-  const onClose = (): void => controller.abort()
-  req.raw.on('close', onClose)
-  return {
-    signal: controller.signal,
-    cleanup: () => req.raw.off('close', onClose),
-  }
-}
+// Disconnect + generous-deadline abort plumbing (audit M8) shared with the
+// chat route; see `requestAbort.ts`.
 
 async function pipeStream(
   reply: FastifyReply,

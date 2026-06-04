@@ -48,6 +48,15 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
 
         const timeoutMs = getRequestTimeoutMs(req.headers['risu-timeout-ms'])
         const timeout = createTimeoutController(timeoutMs)
+        // Abort the upstream when the browser disconnects (audit M6). Without
+        // this, a cancelled/navigated-away client leaves the server reading the
+        // provider until undici's own timeout.
+        const closeController = new AbortController()
+        const onClose = (): void => closeController.abort()
+        req.raw.once('close', onClose)
+        const signal = timeout.signal
+          ? AbortSignal.any([timeout.signal, closeController.signal])
+          : closeController.signal
 
         const method = req.method
         const body =
@@ -60,7 +69,7 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
             method,
             headers,
             body: body ? bufferToBodyInit(body) : undefined,
-            signal: timeout.signal,
+            signal,
           })
 
           const filtered = filterResponseHeaders(upstream.headers)
@@ -81,9 +90,10 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
             if (!reply.raw.headersSent) {
               reply.code(504)
               return {
-                error: timeoutMs
-                  ? `Proxy request timed out after ${timeoutMs}ms`
-                  : 'Proxy request aborted',
+                error:
+                  timeoutMs && !closeController.signal.aborted
+                    ? `Proxy request timed out after ${timeoutMs}ms`
+                    : 'Proxy request aborted',
               }
             }
             reply.raw.end()
@@ -92,6 +102,7 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
           throw err
         } finally {
           timeout.cleanup()
+          req.raw.off('close', onClose)
         }
       },
     )

@@ -1,4 +1,5 @@
 import type { CompletionResult } from './frames.js'
+import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 
 /**
  * Stable Horde text dispatcher. Mirrors the local SPA path at
@@ -208,7 +209,7 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
   if (asyncResp.status !== 202) {
     let raw = ''
     try {
-      raw = await asyncResp.text()
+      raw = await readBoundedBodyText(asyncResp)
     } catch {
       // ignore
     }
@@ -217,7 +218,7 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
 
   let asyncBody: AsyncResponse
   try {
-    asyncBody = (await asyncResp.json()) as AsyncResponse
+    asyncBody = (await readBoundedBodyJson(asyncResp)) as AsyncResponse
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { type: 'fail', result: `invalid async response JSON: ${msg}` }
@@ -271,7 +272,7 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
 
       let body: StatusResponse
       try {
-        body = (await statusResp.json()) as StatusResponse
+        body = (await readBoundedBodyJson(statusResp)) as StatusResponse
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         return { type: 'fail', result: `invalid horde status JSON: ${msg}` }

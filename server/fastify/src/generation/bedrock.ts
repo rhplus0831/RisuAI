@@ -1,6 +1,7 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
 import { encodePathSegment, signSigV4 } from './sigv4.js'
+import { readBoundedBodyText } from './body.js'
 
 /**
  * AWS Bedrock Claude (Anthropic Messages) dispatcher. Mirrors the local
@@ -226,7 +227,7 @@ export async function runBedrock(req: BedrockRequest): Promise<CompletionResult>
 
   let raw: string
   try {
-    raw = await response.text()
+    raw = await readBoundedBodyText(response)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { type: 'fail', result: `invalid upstream body: ${msg}` }

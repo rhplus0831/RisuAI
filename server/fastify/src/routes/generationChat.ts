@@ -47,6 +47,7 @@ import {
   type PromptEvent,
 } from '../prompt/sseEvents.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../activeWriter.js'
+import { attachAbort } from '../requestAbort.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import type { JobClient, StreamJob } from '../streamJobs.js'
 import { getWritableBufferedBytes, writeBoundedRaw } from '../streamBackpressure.js'
@@ -198,20 +199,8 @@ function validatePreview(body: ChatRequestBody): { ok: true } | { ok: false; err
   return { ok: true }
 }
 
-function attachAbort(req: FastifyRequest): {
-  signal: AbortSignal
-  abort: () => void
-  cleanup: () => void
-} {
-  const controller = new AbortController()
-  const onClose = (): void => controller.abort()
-  req.raw.on('close', onClose)
-  return {
-    signal: controller.signal,
-    abort: () => controller.abort(),
-    cleanup: () => req.raw.off('close', onClose),
-  }
-}
+// Disconnect + generous-deadline abort plumbing (audit M8) shared with the
+// standalone generation routes; see `requestAbort.ts`.
 
 /** Map a validated request body to the assembler input contract. */
 function toAssembleInput(body: ChatRequestBody): AssembleInput {
@@ -344,10 +333,12 @@ function loadDatabaseDeps(
   db: DatabaseSync,
   chatId: string,
   measurement?: PromptAssemblyMeasurement,
+  signal?: AbortSignal,
 ): RouteAssembleDeps {
   let database: Database | null = null
   const resolveStoredAsset = createRequestScopedStoredAssetResolver(db, dataDir)
   return {
+    signal,
     loadDatabase: () => {
       const startedAt = measurement ? protocolNowMs() : 0
       // Assembly reads only the target chat's transcript (audit M1): hydrate
@@ -373,13 +364,14 @@ async function assemblePromptWithMetrics(
   input: AssembleInput,
   dataDir: string,
   db: DatabaseSync,
+  signal?: AbortSignal,
 ): Promise<{ result: AssembleResult; deps: RouteAssembleDeps; promptMs: number }> {
   const measurement: PromptAssemblyMeasurement | undefined = protocolMetricsEnabled()
     ? { databaseLoadCount: 0, databaseLoadMs: 0, stageTimingsMs: {} }
     : undefined
   const metricStartedAt = measurement ? protocolNowMs() : 0
   const startedAt = Date.now()
-  const deps = loadDatabaseDeps(dataDir, db, input.chatId, measurement)
+  const deps = loadDatabaseDeps(dataDir, db, input.chatId, measurement, signal)
   try {
     const result = await assemblePrompt(input, deps)
     const promptMs = Date.now() - startedAt
@@ -868,7 +860,7 @@ async function streamAssembly(
     emit({ type: 'stage', stage: 'prompt', status: 'start' })
 
     try {
-      const { result, deps, promptMs } = await assemblePromptWithMetrics(input, dataDir, db)
+      const { result, deps, promptMs } = await assemblePromptWithMetrics(input, dataDir, db, signal)
       const database = deps.getDatabase()
       // The route owns assembly-time chat-var writes and post-`editinput`
       // submit-transcript writes for persisting modes. This runs for both success
@@ -1527,7 +1519,7 @@ async function runGenerationJob(args: {
     emit({ type: 'stage', stage: 'prompt', status: 'start' })
 
     try {
-      const { result, deps, promptMs } = await assemblePromptWithMetrics(input, dataDir, db)
+      const { result, deps, promptMs } = await assemblePromptWithMetrics(input, dataDir, db, signal)
       const database = deps.getDatabase()
       const persistedRevision =
         isPersistingMode(input.mode) && result.mutations
@@ -1847,8 +1839,9 @@ export function registerGenerationChatRoutes(
       }
 
       const input = toAssembleInput({ ...body, mode: 'preview_prompt' })
+      const { signal, cleanup } = attachAbort(req)
       try {
-        const { result } = await assemblePromptWithMetrics(input, dataDir, db)
+        const { result } = await assemblePromptWithMetrics(input, dataDir, db, signal)
         if (result.stopSending) {
           return { stopSending: true, abortReason: result.abortReason }
         }
@@ -1859,6 +1852,8 @@ export function registerGenerationChatRoutes(
           return { error: err.message }
         }
         throw err
+      } finally {
+        cleanup()
       }
     },
   )
