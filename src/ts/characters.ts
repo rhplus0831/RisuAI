@@ -56,10 +56,11 @@ import {
 } from './chatCommands'
 import { getColdStorageItem } from './process/coldstorage.svelte'
 import {
+  currentCharacterRowSnapshot,
   currentCharacterSelectionSnapshot,
   currentCharacterStateSnapshot,
   dispatchCreateAndSelectCharacter,
-  dispatchCompatibleCharacterUpdate,
+  dispatchCompatibleCharacterUpdateScoped,
   dispatchCreateCharacter,
   dispatchDeleteCharacter,
   dispatchSelectCharacter,
@@ -96,11 +97,6 @@ export function createNewCharacter(
   return index
 }
 
-function cloneCharacterSnapshot(char: character | undefined): character | undefined {
-  if (!char) return undefined
-  return JSON.parse(JSON.stringify(char)) as character
-}
-
 export async function getCharImage(loc: string, type: 'plain' | 'css' | 'contain' | 'lgcss') {
   const db = DBState.db
 
@@ -135,8 +131,8 @@ export async function selectCharImg(charIndex: number) {
   if (!selected) {
     return
   }
-  const previous = currentCharacterStateSnapshot()
-  const previousCharacter = cloneCharacterSnapshot(DBState.db.characters[charIndex])
+  const previous = currentCharacterRowSnapshot(charIndex)
+  const previousCharacter = previous.character
   const img = selected.data
   let db = DBState.db
 
@@ -187,15 +183,17 @@ export async function selectCharImg(charIndex: number) {
     dumpCharImage(charIndex, { dispatch: false })
     DBState.db.characters[charIndex].image = imgp
   })
-  dispatchCompatibleCharacterUpdate(previousCharacter, DBState.db.characters[charIndex], previous)
+  dispatchCompatibleCharacterUpdateScoped(
+    previousCharacter,
+    DBState.db.characters[charIndex],
+    previous,
+  )
 }
 
 export function dumpCharImage(charIndex: number, options: { dispatch?: boolean } = {}) {
   const dispatch = options.dispatch ?? true
-  const previous = dispatch ? currentCharacterStateSnapshot() : null
-  const previousCharacter = dispatch
-    ? cloneCharacterSnapshot(DBState.db.characters[charIndex])
-    : null
+  const previous = dispatch ? currentCharacterRowSnapshot(charIndex) : null
+  const previousCharacter = previous?.character ?? null
   withTrustedServerProjectionWrite(() => {
     const char = DBState.db.characters[charIndex] as character
     if (!char.image || char.image === '') {
@@ -212,13 +210,17 @@ export function dumpCharImage(charIndex: number, options: { dispatch?: boolean }
     DBState.db.characters[charIndex] = char
   })
   if (previous && previousCharacter) {
-    dispatchCompatibleCharacterUpdate(previousCharacter, DBState.db.characters[charIndex], previous)
+    dispatchCompatibleCharacterUpdateScoped(
+      previousCharacter,
+      DBState.db.characters[charIndex],
+      previous,
+    )
   }
 }
 
 export function changeCharImage(charIndex: number, changeIndex: number) {
-  const previous = currentCharacterStateSnapshot()
-  const previousCharacter = cloneCharacterSnapshot(DBState.db.characters[charIndex])
+  const previous = currentCharacterRowSnapshot(charIndex)
+  const previousCharacter = previous.character
   withTrustedServerProjectionWrite(() => {
     const char = DBState.db.characters[charIndex] as character
     const image = char.ccAssets[changeIndex].uri
@@ -227,7 +229,11 @@ export function changeCharImage(charIndex: number, changeIndex: number) {
     char.image = image
     DBState.db.characters[charIndex] = char
   })
-  dispatchCompatibleCharacterUpdate(previousCharacter, DBState.db.characters[charIndex], previous)
+  dispatchCompatibleCharacterUpdateScoped(
+    previousCharacter,
+    DBState.db.characters[charIndex],
+    previous,
+  )
 }
 
 export const addingEmotion = writable(false)
@@ -239,8 +245,8 @@ export async function addCharEmotion(charId: number) {
     addingEmotion.set(false)
     return
   }
-  const previous = currentCharacterStateSnapshot()
-  const previousCharacter = cloneCharacterSnapshot(DBState.db.characters[charId])
+  const previous = currentCharacterRowSnapshot(charId)
+  const previousCharacter = previous.character
   for (const f of selected) {
     const img = f.data
     const imgp = await saveImage(img)
@@ -252,18 +258,26 @@ export async function addCharEmotion(charId: number) {
     })
   }
   addingEmotion.set(false)
-  dispatchCompatibleCharacterUpdate(previousCharacter, DBState.db.characters[charId], previous)
+  dispatchCompatibleCharacterUpdateScoped(
+    previousCharacter,
+    DBState.db.characters[charId],
+    previous,
+  )
 }
 
 export function rmCharEmotion(charId: number, emotionId: number) {
-  const previous = currentCharacterStateSnapshot()
-  const previousCharacter = cloneCharacterSnapshot(DBState.db.characters[charId])
+  const previous = currentCharacterRowSnapshot(charId)
+  const previousCharacter = previous.character
   withTrustedServerProjectionWrite(() => {
     let dbChar = DBState.db.characters[charId]
     dbChar.emotionImages.splice(emotionId, 1)
     DBState.db.characters[charId] = dbChar
   })
-  dispatchCompatibleCharacterUpdate(previousCharacter, DBState.db.characters[charId], previous)
+  dispatchCompatibleCharacterUpdateScoped(
+    previousCharacter,
+    DBState.db.characters[charId],
+    previous,
+  )
 }
 
 export async function exportChat(page: number) {
