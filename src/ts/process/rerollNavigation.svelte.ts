@@ -60,7 +60,11 @@ export function clearRerollBuffer(): void {
 export function recordGeneratedReroll(previousLength: number): void {
   const message = activeChatRecord().message
   if (previousLength < message.length) {
-    rerolls.push(safeStructuredClone(message).slice(previousLength))
+    // Clone only the freshly generated tail. `message.slice(previousLength)` is a
+    // cheap shallow array of the 1-2 new rows; deep-cloning that is O(tail) and
+    // byte-identical to the former `safeStructuredClone(message).slice(...)`, which
+    // deep-cloned the entire transcript just to keep its last rows.
+    rerolls.push(safeStructuredClone(message.slice(previousLength)))
     rerollid = rerolls.length - 1
   }
 }
@@ -99,22 +103,41 @@ function applyTailSlice(slice: Message[]): void {
     for (let i = 0; i < slice.length; i++) {
       msgs[msgs.length - slice.length + i] = slice[i]
     }
+    // Mint ids while the projection is writable so the by-reference dispatch
+    // below never has to mutate a refrozen read-only message row.
+    for (const message of msgs) {
+      ensureMessageId(message)
+    }
   })
   const record = activeChatRecord()
   if (record.id) {
-    dispatchReplaceMessagesScoped(record.id, safeStructuredClone(record.message), previous)
+    // `dispatchReplaceMessagesScoped` deep-clones each row via `toMessageSnapshot`,
+    // so the former `safeStructuredClone(record.message)` was a redundant second
+    // full-transcript clone. Pass the rows by reference (ids already minted above).
+    dispatchReplaceMessagesScoped(record.id, record.message, previous)
   }
 }
 
-/** Replace the whole active transcript (regenerate prep: the popped tail), then persist. */
-function applyTranscript(messages: Message[]): void {
+/**
+ * Reshape the trailing assistant group (regenerate prep) by truncating the live
+ * transcript in place to `keepLength`, then persist the surviving rows. Truncating
+ * keeps the existing rows by reference (no whole-transcript clone) and is
+ * guard-safe: the surviving rows are the projection's own rows, never re-installed
+ * proxies. The dispatch is still a message replace with the surviving rows, so the
+ * persisted payload is unchanged.
+ */
+function applyRerollTruncate(keepLength: number): void {
   const previous = currentChatScopedSnapshot()
   withTrustedServerProjectionWrite(() => {
-    activeChatRecord().message = messages
+    const msgs = activeChatRecord().message
+    msgs.length = keepLength
+    for (const message of msgs) {
+      ensureMessageId(message)
+    }
   })
   const record = activeChatRecord()
   if (record.id) {
-    dispatchReplaceMessagesScoped(record.id, messages, previous)
+    dispatchReplaceMessagesScoped(record.id, record.message, previous)
   }
 }
 
@@ -144,12 +167,17 @@ export async function reroll(deps: RerollDeps): Promise<void> {
     rerolls.push(safeStructuredClone([activeChatRecord().message.at(-1)]) as Message[])
     rerollid = rerolls.length - 1
   }
-  const cha = safeStructuredClone(activeChatRecord().message)
+  // `cha` is a shallow copy (shared row refs) used only to locate the truncation
+  // point and the regenerate target — never installed — so the whole transcript is
+  // no longer deep-cloned here. The regenerate id is minted on a throwaway copy of
+  // the tail (so it never mutates the read-only projection row), and the live
+  // transcript is truncated in place by `applyRerollTruncate`.
+  const cha = activeChatRecord().message.slice()
   if (cha.length === 0) {
     return
   }
   const regenerateMessageId =
-    cha[cha.length - 1].role === 'user' ? undefined : ensureMessageId(cha[cha.length - 1])
+    cha[cha.length - 1].role === 'user' ? undefined : ensureMessageId({ ...cha[cha.length - 1] })
   deps.closeMenu()
   const saying = cha[cha.length - 1].saying
   let sayingQu = 2
@@ -165,7 +193,7 @@ export async function reroll(deps: RerollDeps): Promise<void> {
       return
     }
   }
-  applyTranscript(cha)
+  applyRerollTruncate(cha.length)
   await deps.sendChatMain(false, regenerateMessageId)
 }
 

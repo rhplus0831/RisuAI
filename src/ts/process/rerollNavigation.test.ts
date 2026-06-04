@@ -23,6 +23,7 @@ const prerollSpies = vi.hoisted(() => ({
 vi.mock('./prereroll', () => prerollSpies)
 
 import { DBState, selectedCharID } from '../stores.svelte'
+import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
   clearRerollBuffer,
   getRerollBuffer,
@@ -230,5 +231,68 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
     resetRerollOnCharChange()
     expect(getRerollBuffer()).toEqual([])
     expect(getRerollId()).toBe(-1)
+  })
+})
+
+describe('reroll clone cost (Phase 3 cheap wins)', () => {
+  // A long transcript whose tail is a single freshly generated row. The clone-cost
+  // harness proves the post-send / regenerate paths never deep-clone the whole
+  // transcript just to keep its trailing rows.
+  function bigTranscript(prefixCount: number): Msg[] {
+    const body = 'y'.repeat(2000)
+    const prefix: Msg[] = Array.from({ length: prefixCount }, (_unused, index) => ({
+      role: index % 2 === 0 ? 'user' : 'char',
+      data: `${body}-${index}`,
+      chatId: `p-${index}`,
+    }))
+    return [...prefix, { role: 'user', data: 'last user', chatId: 'lu' }]
+  }
+
+  it('recordGeneratedReroll clones only the generated tail, not the whole transcript', () => {
+    const transcript = bigTranscript(40)
+    setupChat(transcript)
+    const fullSize = JSON.stringify(transcript).length
+    expect(fullSize).toBeGreaterThan(50_000)
+    // Simulate a generation appending one assistant row to the existing tail.
+    DBState.db.characters[0].chats[0].message.push({
+      role: 'char',
+      data: 'fresh reply',
+      chatId: 'g-fresh',
+    } as never)
+    const previousLength = transcript.length
+
+    const instrumented = withCloneInstrumentation(() => recordGeneratedReroll(previousLength))
+
+    expect(getRerollBuffer().at(-1)?.map((m) => (m as unknown as Msg).chatId)).toEqual(['g-fresh'])
+    // The only deep clone is of the single appended row, far below the transcript.
+    expect(instrumented.maxClonedSize).toBeLessThan(fullSize)
+    expect(instrumented.maxClonedSize).toBeLessThan(5_000)
+  })
+
+  it('reroll regenerate truncates in place without deep-cloning the whole transcript', async () => {
+    const transcript = [
+      ...bigTranscript(40),
+      { role: 'char', data: 'assistant tail', chatId: 'g-tail' } as Msg,
+    ]
+    setupChat(transcript)
+    const fullSize = JSON.stringify(transcript).length
+    expect(fullSize).toBeGreaterThan(50_000)
+    // One buffered candidate positioned at the end → reroll() takes the regenerate
+    // (truncate + send) branch.
+    seedRerollBufferFromAlternates(transcript, [
+      { role: 'char', data: 'assistant tail', chatId: 'g-tail' },
+    ])
+    expect(getRerollId()).toBe(0)
+    const sendChatMain = vi.fn(async () => {})
+
+    const instrumented = withCloneInstrumentation(() => reroll({ sendChatMain, closeMenu: vi.fn() }))
+    await instrumented.result
+
+    // The assistant tail is dropped (regenerate keyed by its id) and only the
+    // surviving rows remain — without serializing the whole transcript.
+    expect(sendChatMain).toHaveBeenCalledWith(false, 'g-tail')
+    expect(tailUids().at(-1)).toBe('lu')
+    expect(instrumented.maxClonedSize).toBeLessThan(fullSize)
+    expect(instrumented.maxClonedSize).toBeLessThan(5_000)
   })
 })

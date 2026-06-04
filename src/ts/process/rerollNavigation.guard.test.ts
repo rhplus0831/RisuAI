@@ -95,6 +95,18 @@ describe('reroll swipe under the read-only projection guard', () => {
     expect(getRerollId()).toBe(2)
   })
 
+  it('reroll regenerate truncates the frozen transcript in place without throwing', async () => {
+    seedAndFreeze() // active = [u1, g3], positioned at the end of the buffer
+    const sendChatMain = vi.fn(async () => {})
+    // At the end of the buffer → drop the assistant tail (truncate in place) and
+    // ask for a regenerate keyed by the dropped row's id. The in-place truncation
+    // reuses the surviving rows, so it must not throw on the read-only projection.
+    await expect(reroll({ sendChatMain, closeMenu: vi.fn() })).resolves.toBeUndefined()
+    expect(tailUid()).toBe('u1')
+    expect(sendChatMain).toHaveBeenCalledWith(false, 'g3')
+    expect(commandSpies.dispatchReplaceMessagesScoped).toHaveBeenCalledTimes(1)
+  })
+
   it('a direct projection write still throws (the guard is genuinely active)', () => {
     seedAndFreeze()
     expect(() => {
