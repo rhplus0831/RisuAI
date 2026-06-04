@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 
 // No-data-loss invariant for `watchServerBackedLorebooks`.
 // The watcher auto-persists any lorebook change it diffs; stubbing character
@@ -122,9 +124,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
 
     recorded.commands.length = 0
     // Even a spurious change to a stub must not be persisted.
-    ;(DBState.db.characters[0] as { globalLore: unknown }).globalLore = [
-      { key: 'x', content: 'X' },
-    ]
+    ;(DBState.db.characters[0] as { globalLore: unknown }).globalLore = [{ key: 'x', content: 'X' }]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -178,6 +178,19 @@ function setupMultiCollectionDb(): void {
     ],
   }
   selectedCharID.set(0)
+}
+
+function stripIdsForScopedEnsureRegression(): void {
+  const db = DBState.db as any
+  delete db.loreBook[0].id
+  delete db.loreBook[0].data[0].id
+  for (const character of db.characters) {
+    delete character.globalLore[0].id
+    delete character.chats[0].localLore[0].id
+  }
+  for (const module of db.modules) {
+    delete module.lorebook[0].id
+  }
 }
 
 function chatReplaceChatIds(): string[] {
@@ -257,7 +270,9 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     const scoped = withCloneInstrumentation(() =>
       collectLorebookCollectionSnapshots({ kind: 'character' }),
     )
-    const whole = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'all' }))
+    const whole = withCloneInstrumentation(() =>
+      collectLorebookCollectionSnapshots({ kind: 'all' }),
+    )
 
     // The whole-DB scan stringifies every character + chat + module + global; the
     // character scope stringifies only the selected character's two entries.
@@ -265,6 +280,70 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     expect(scoped.jsonCloneCount).toBeLessThan(whole.jsonCloneCount)
     expect(scoped.jsonCloneCount).toBe(2)
     stop()
+  })
+
+  it('L32: a character-scoped watcher first-run id ensure touches only the selected character collections', () => {
+    setupMultiCollectionDb()
+    stripIdsForScopedEnsureRegression()
+    markCharacterLorebookHydrated('c0')
+    markCharacterLorebookHydrated('c1')
+    selectedCharID.set(0)
+
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    expect((DBState.db.characters[0].globalLore as Entry[])[0].id).toEqual(expect.any(String))
+    expect((DBState.db.characters[0].chats[0].localLore as Entry[])[0].id).toEqual(
+      expect.any(String),
+    )
+    expect((DBState.db.characters[1].globalLore as Entry[])[0].id).toBeUndefined()
+    expect((DBState.db.characters[1].chats[0].localLore as Entry[])[0].id).toBeUndefined()
+    expect(((DBState.db.modules as any[])[0].lorebook as Entry[])[0].id).toBeUndefined()
+    expect(((DBState.db.modules as any[])[1].lorebook as Entry[])[0].id).toBeUndefined()
+    expect(((DBState.db.loreBook as any[])[0] as { id?: string }).id).toBeUndefined()
+    expect(((DBState.db.loreBook as any[])[0].data as Entry[])[0].id).toBeUndefined()
+
+    selectedCharID.set(1)
+    flushSync()
+
+    expect((DBState.db.characters[1].globalLore as Entry[])[0].id).toEqual(expect.any(String))
+    expect((DBState.db.characters[1].chats[0].localLore as Entry[])[0].id).toEqual(
+      expect.any(String),
+    )
+    expect(((DBState.db.modules as any[])[0].lorebook as Entry[])[0].id).toBeUndefined()
+    expect(((DBState.db.loreBook as any[])[0] as { id?: string }).id).toBeUndefined()
+    stop()
+  })
+
+  it('L32: a global-scoped watcher first-run id ensure touches only the global lorebook list', () => {
+    setupMultiCollectionDb()
+    stripIdsForScopedEnsureRegression()
+    markCharacterLorebookHydrated('c0')
+    markCharacterLorebookHydrated('c1')
+
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
+    flushSync()
+
+    expect(((DBState.db.loreBook as any[])[0] as { id?: string }).id).toEqual(expect.any(String))
+    expect(((DBState.db.loreBook as any[])[0].data as Entry[])[0].id).toEqual(expect.any(String))
+    expect((DBState.db.characters[0].globalLore as Entry[])[0].id).toBeUndefined()
+    expect((DBState.db.characters[0].chats[0].localLore as Entry[])[0].id).toBeUndefined()
+    expect(((DBState.db.modules as any[])[0].lorebook as Entry[])[0].id).toBeUndefined()
+    stop()
+  })
+
+  it('L32: the global lorebook modal mount does not call the broad id ensure', () => {
+    const source = readFileSync(
+      path.join(process.cwd(), 'src/lib/Setting/lorepreset.svelte'),
+      'utf8',
+    )
+    const mountEffect = source.slice(
+      source.indexOf('$effect'),
+      source.indexOf('function selectLorebook'),
+    )
+
+    expect(mountEffect).toContain('ensureGlobalLorebookListIds()')
+    expect(mountEffect).not.toContain('ensureAllClientLorebookIds')
   })
 
   it('character-scoped watcher dispatches a selected-character edit but ignores a sibling chat edit', async () => {

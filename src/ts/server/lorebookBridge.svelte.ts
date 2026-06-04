@@ -210,6 +210,62 @@ export function ensureAllClientLorebookIds(): void {
   })
 }
 
+function ensureWatchScopeClientLorebookIds(scope: LorebookWatchScope): void {
+  switch (scope.kind) {
+    case 'all':
+      ensureAllClientLorebookIds()
+      return
+    case 'global':
+      ensureGlobalLorebookListIds()
+      return
+    case 'character':
+      ensureSelectedCharacterLorebookIds()
+      return
+    case 'module':
+      ensureModuleLorebookIds(scope.moduleId)
+      return
+  }
+}
+
+function lorebookWatchScopeIdKey(scope: LorebookWatchScope): string {
+  switch (scope.kind) {
+    case 'all':
+      return 'all'
+    case 'global':
+      return 'global'
+    case 'character': {
+      const character = DBState.db.characters?.[selectedCharMirror]
+      return `character:${selectedCharMirror}:${character?.chaId ?? ''}`
+    }
+    case 'module':
+      return `module:${scope.moduleId}`
+  }
+}
+
+function ensureSelectedCharacterLorebookIds(): void {
+  withTrustedServerProjectionWrite(() => {
+    const character = DBState.db.characters?.[selectedCharMirror]
+    if (!character) return
+    if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
+      character.globalLore = ensureClientLorebookEntryIds(character.globalLore ?? [])
+    }
+    for (const chat of character.chats ?? []) {
+      chat.localLore = ensureClientLorebookEntryIds(chat.localLore ?? [])
+    }
+  })
+}
+
+function ensureModuleLorebookIds(moduleId: string): void {
+  withTrustedServerProjectionWrite(() => {
+    const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
+      (candidate) => candidate.id === moduleId,
+    )
+    if (module && Array.isArray(module.lorebook)) {
+      module.lorebook = ensureClientLorebookEntryIds(module.lorebook)
+    }
+  })
+}
+
 // Shared by the whole-DB ensure above and the global-list-only ensure below.
 // Must run inside a trusted write scope (it re-reads `DBState.db` itself).
 function assignGlobalLorebookListIds(): void {
@@ -502,7 +558,7 @@ export function watchServerBackedLorebooks(
   const delayMs = options.delayMs ?? 300
   const scope: LorebookWatchScope = options.scope ?? { kind: 'all' }
   let initialized = false
-  let clientIdsInitialized = false
+  let clientIdsInitializedFor: string | null = null
   let previousSnapshots = new Map<string, string>()
 
   // A character-scoped watcher must re-run when the selected character changes,
@@ -517,9 +573,10 @@ export function watchServerBackedLorebooks(
 
   const stop = $effect.root(() => {
     $effect(() => {
-      if (!clientIdsInitialized) {
-        ensureAllClientLorebookIds()
-        clientIdsInitialized = true
+      const clientIdsScopeKey = lorebookWatchScopeIdKey(scope)
+      if (clientIdsInitializedFor !== clientIdsScopeKey) {
+        ensureWatchScopeClientLorebookIds(scope)
+        clientIdsInitializedFor = clientIdsScopeKey
       }
       const currentSnapshots = collectLorebookCollectionSnapshots(scope)
 
@@ -603,9 +660,7 @@ function dispatchWatchedReplacement(
  * character and every module (O(all lore in the DB)). The `all` branch is the
  * original whole-DB scan and is byte-for-byte identical to the previous code.
  */
-export function collectLorebookCollectionSnapshots(
-  scope: LorebookWatchScope,
-): Map<string, string> {
+export function collectLorebookCollectionSnapshots(scope: LorebookWatchScope): Map<string, string> {
   const snapshots = new Map<string, string>()
 
   if (scope.kind === 'all' || scope.kind === 'global') {

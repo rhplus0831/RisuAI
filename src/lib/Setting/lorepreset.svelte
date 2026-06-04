@@ -11,7 +11,7 @@
     dispatchCreateGlobalLorebook,
     dispatchDeleteGlobalLorebook,
     dispatchSelectGlobalLorebook,
-    ensureAllClientLorebookIds,
+    ensureGlobalLorebookListIds,
     watchServerBackedLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
@@ -20,7 +20,7 @@
   let { close = () => {} } = $props()
 
   $effect(() => {
-    ensureAllClientLorebookIds()
+    ensureGlobalLorebookListIds()
     // This modal only edits the global lorebook list, so scope change detection
     // to it instead of scanning every character/chat/module per keystroke.
     const stopLorebooks = watchServerBackedLorebooks({ scope: { kind: 'global' } })

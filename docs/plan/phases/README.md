@@ -19,8 +19,7 @@ the finding -> phase map is in
   landed: M1/L1/L2, M3/L5/L6, M4, M5/L10/U1):
   [`phase-2-server-load-narrowing.md`](phase-2-server-load-narrowing.md),
   [`slices/phase-2-server-load-narrowing/`](slices/phase-2-server-load-narrowing/).
-- Phase 3, complete (Root 2 — client clone narrowing; one batch landed:
-  M12-M14, L31-L36, U4):
+- Phase 3, complete (Root 2 — client clone narrowing; M12-M14, L31-L36, U4):
   [`phase-3-client-clone-narrowing.md`](phase-3-client-clone-narrowing.md),
   [`slices/phase-3-client-clone-narrowing/`](slices/phase-3-client-clone-narrowing/).
 - Phase 4, not started (Root 4 — outbound request lifecycle):

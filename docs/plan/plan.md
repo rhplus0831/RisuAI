@@ -64,7 +64,9 @@ hot paths, but left adjacent paths broad:
 
 This plan started from the green baseline in
 [`latest-verification.md`](latest-verification.md). Phases 0, 1, and 2 have
-landed; Phase 3 client clone narrowing is the next root in audit order.
+landed, and Phase 3 is complete after the L32 watcher/global-modal
+ID-assignment follow-up. Phase 4 outbound request lifecycle is the next root in
+audit order.
 
 ## Prerequisites
 
@@ -130,9 +132,8 @@ Every slice must preserve these; a slice that cannot is out of scope:
 
 ## Execution Cursor
 
-Phases 0, 1, and 2 are complete. Continue with Phase 3, then prefer Phases 4-7
-in the order above unless current evidence points elsewhere. Phase 8 is the
-standing gate.
+Phases 0, 1, 2, and 3 are complete. Prefer Phases 4-7 in the order above unless
+current evidence points elsewhere. Phase 8 is the standing gate.
 
 For each fix: re-check the cited symbol, add the focused regression test, narrow
 or bound the path, keep true full-corpus consumers broad, and register the gate.

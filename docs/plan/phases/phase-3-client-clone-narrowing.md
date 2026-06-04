@@ -1,8 +1,8 @@
 # Phase 3: Client Clone Narrowing (Root 2)
 
-Status: COMPLETE (`0efa7ba6`, one batch: M12-M14, L31-L36, U4). Addressed the
-client whole-corpus clones left after the snapshot-family narrowing. Uses
-`src/ts/__tests__/cloneCostHarness.ts`.
+Status: COMPLETE (`0efa7ba6` landed M12-M14, L31, L33-L36, U4, plus the L32
+helper/action scope; the L32 watcher/global-modal follow-up closes the
+remaining first-run ID-assignment gap). Uses `src/ts/__tests__/cloneCostHarness.ts`.
 
 Goal: hot client paths use scalar/single-row rollbacks instead of
 `cloneJsonValue(DBState.db.characters)`. Drop redundant full `setDatabase` on var
@@ -37,7 +37,7 @@ Findings: M12, M13, M14, L31, L32, L33, L34, L35, L36, U4.
     `CHARACTER_PATCH_EXCLUDED_KEYS` before any clone (also
     `prepareCompatibleCharacterUpdate`).
   - M14: `setupSendChatContext` uses `currentCharacterRowSnapshot(selectedChar)`
-    + `restoreCharacterRow`.
+    - `restoreCharacterRow`.
   - L34/L35/U4: `toggleSelectedChatModule`, MCP `setCharacterInfo`, and
     `setCurrentChat` use the existing scoped chat/character snapshots.
   - L33: avoid deep-cloning the modules array as a dependency read in the
@@ -45,7 +45,8 @@ Findings: M12, M13, M14, L31, L32, L33, L34, L35, L36, U4.
   - L31: scope/throttle the script-definition watcher's per-keystroke
     scan-and-stringify.
   - L32: scope the discrete lorebook-editor clone + whole-DB id-assign to the
-    edited collection [known-leftover].
+    edited collection, including watcher/global-modal first-run ID assignment
+    [known-leftover broader MCP/module-apply callers stay broad].
   - L36: fire-and-forget command runners surface/await factory rejections and
     roll back (a stability fix, not a clone).
 
@@ -70,10 +71,14 @@ Findings: M12, M13, M14, L31, L32, L33, L34, L35, L36, U4.
 - [x] L36: a failing optimistic command rolls back and surfaces; no swallowed
       rejection on the runner paths.
 - [x] `currentChatStateSnapshot` remains in use for create/delete/reorder/fork.
+- [x] L32: scoped lorebook watcher/global-modal mounts avoid
+      `ensureAllClientLorebookIds()` and prove they do not assign IDs on sibling
+      character/chat/module lorebook collections.
 - [x] Gates registered in Phase 8; client suite + audit + TypeScript checks green.
 
 ## Validation
 
 - `pnpm test -- src/ts/chatCommands.test.ts src/ts/characterCommands.test.ts src/ts/compatibilityAdapters.test.ts`
 - `pnpm test -- src/ts/server/scriptDefinitionBridge.svelte.test.ts src/ts/server/lorebookBridge.svelte.test.ts`
+- `pnpm test -- src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/lorebookBridge.test.ts`
 - `pnpm test`, `pnpm client-thinning:audit`, both TypeScript checks.

@@ -82,7 +82,12 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
     testName: 'M1: prompt assembly performs zero whole-corpus message/hypa payload reads',
   },
-  { id: 'M2', phase: 7, fix: 'Hoist module/script/RegExp work once per assembly', status: 'PLANNED' },
+  {
+    id: 'M2',
+    phase: 7,
+    fix: 'Hoist module/script/RegExp work once per assembly',
+    status: 'PLANNED',
+  },
   {
     id: 'M3',
     phase: 2,
@@ -107,11 +112,26 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
     testName: 'M5: projection and bootstrap responses are serialized once when metrics are off',
   },
-  { id: 'M6', phase: 4, fix: 'Abort proxy /fetch upstream on close; timeout backstop', status: 'PLANNED' },
-  { id: 'M7', phase: 6, fix: 'Cap embed batches; split contextual requests by token size', status: 'PLANNED' },
+  {
+    id: 'M6',
+    phase: 4,
+    fix: 'Abort proxy /fetch upstream on close; timeout backstop',
+    status: 'PLANNED',
+  },
+  {
+    id: 'M7',
+    phase: 6,
+    fix: 'Cap embed batches; split contextual requests by token size',
+    status: 'PLANNED',
+  },
   { id: 'M8', phase: 4, fix: 'Non-durable provider deadline and body cap', status: 'PLANNED' },
   { id: 'M9', phase: 5, fix: 'Streaming bounded inflate per envelope/block', status: 'PLANNED' },
-  { id: 'M10', phase: 5, fix: 'Token-only asset scan; defer import asset report', status: 'PLANNED' },
+  {
+    id: 'M10',
+    phase: 5,
+    fix: 'Token-only asset scan; defer import asset report',
+    status: 'PLANNED',
+  },
   { id: 'M11', phase: 5, fix: 'Settle bundle-export drain wait on close/error', status: 'PLANNED' },
   {
     id: 'M12',
@@ -171,7 +191,12 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     testPath: 'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
     testName: 'returns identical rows to the broad loader for both chat-id and message-id targets',
   },
-  { id: 'L8', phase: 7, fix: 'Replace OFFSET 999 prune walk with bounded delete', status: 'PLANNED' },
+  {
+    id: 'L8',
+    phase: 7,
+    fix: 'Replace OFFSET 999 prune walk with bounded delete',
+    status: 'PLANNED',
+  },
   { id: 'L9', phase: 7, fix: 'Drop redundant chats DELETE', status: 'PLANNED' },
   {
     id: 'L10',
@@ -183,14 +208,34 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   },
   { id: 'L11', phase: 5, fix: 'cleanedUp guard before memoryEvents.subscribe', status: 'PLANNED' },
   { id: 'L12', phase: 5, fix: 'Close proxy WS viewer on already-done jobs', status: 'PLANNED' },
-  { id: 'L13', phase: 5, fix: 'Guard detached runners and cancel-persist on close', status: 'PLANNED' },
-  { id: 'L14', phase: 5, fix: 'Heartbeat durable SSE viewer during long assembly', status: 'PLANNED' },
+  {
+    id: 'L13',
+    phase: 5,
+    fix: 'Guard detached runners and cancel-persist on close',
+    status: 'PLANNED',
+  },
+  {
+    id: 'L14',
+    phase: 5,
+    fix: 'Heartbeat durable SSE viewer during long assembly',
+    status: 'PLANNED',
+  },
   { id: 'L15', phase: 5, fix: 'Bound no-viewer proxy-job replay/buffer', status: 'PLANNED' },
   { id: 'L16', phase: 6, fix: 'Skip empty orphan-cleanup write txn', status: 'PLANNED' },
   { id: 'L17', phase: 6, fix: 'Bound per-chat memory batches for fairness', status: 'PLANNED' },
-  { id: 'L18', phase: 6, fix: 'Reuse the Phase 2 scoped/memoized loader in memory batches', status: 'PLANNED' },
+  {
+    id: 'L18',
+    phase: 6,
+    fix: 'Reuse the Phase 2 scoped/memoized loader in memory batches',
+    status: 'PLANNED',
+  },
   { id: 'L19', phase: 6, fix: 'Aggregate Lua exec budget across hook phases', status: 'PLANNED' },
-  { id: 'L20', phase: 4, fix: 'Thread request AbortSignal into the Lua runtime', status: 'PLANNED' },
+  {
+    id: 'L20',
+    phase: 4,
+    fix: 'Thread request AbortSignal into the Lua runtime',
+    status: 'PLANNED',
+  },
   { id: 'L21', phase: 6, fix: 'Reuse engine safely or cache compiled prelude', status: 'PLANNED' },
   { id: 'L22', phase: 4, fix: 'Cap streaming-provider SSE accumulation buffer', status: 'PLANNED' },
   { id: 'L23', phase: 4, fix: 'Block embedded-private IPv6 forms', status: 'PLANNED' },
@@ -198,7 +243,12 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   { id: 'L25', phase: 4, fix: 'Count Lua egress only after URL validation', status: 'PLANNED' },
   { id: 'L27', phase: 5, fix: 'Guard backup manifest JSON.parse', status: 'PLANNED' },
   { id: 'L28', phase: 5, fix: 'Make legacy restore re-import transactional', status: 'PLANNED' },
-  { id: 'L29', phase: 5, fix: 'Persist writer-session origin on command events', status: 'PLANNED' },
+  {
+    id: 'L29',
+    phase: 5,
+    fix: 'Persist writer-session origin on command events',
+    status: 'PLANNED',
+  },
   { id: 'L30', phase: 5, fix: 'Re-arm reattach after completion', status: 'PLANNED' },
   {
     id: 'L31',
@@ -214,8 +264,9 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     phase: 3,
     fix: 'Scope lorebook-editor clone/id-assign',
     status: 'DONE',
-    testPath: 'src/ts/server/lorebookBridge.test.ts',
-    testName: 'L32: a character-scoped editor snapshot never clones the characters or modules graph',
+    testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+    testName:
+      'L32: a character-scoped watcher first-run id ensure touches only the selected character collections',
   },
   {
     id: 'L33',
@@ -260,7 +311,8 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Bulk hydration known-id check (fold into Phase 2 if cheap)',
     status: 'DONE',
     testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-    testName: 'U1: bulk chat hydration performs zero whole-corpus payload reads, missing ids included',
+    testName:
+      'U1: bulk chat hydration performs zero whole-corpus payload reads, missing ids included',
   },
   {
     id: 'U4',
@@ -401,7 +453,7 @@ interface RiskRow {
 function riskMapRows(): RiskRow[] {
   const rows: RiskRow[] = []
   for (const line of readDoc(RISK_DOC).split('\n')) {
-    const match = /^\| ([HMLU]\d+) \|(.+)\|\s*$/.exec(line)
+    const match = /^\|\s*([HMLU]\d+)\s*\|(.+)\|\s*$/.exec(line)
     if (!match) continue
     const id = match[1]
     const cells = match[2].split('|').map((cell) => cell.trim())
@@ -558,10 +610,9 @@ describe('fix-completeness gate (stability/performance plan)', () => {
 
   it('records a reason for every gated and no-action id', () => {
     for (const entry of [...INTENTIONALLY_GATED, ...NO_ACTION]) {
-      expect(
-        entry.reason.trim().length,
-        `${entry.id} needs a substantive reason`,
-      ).toBeGreaterThan(20)
+      expect(entry.reason.trim().length, `${entry.id} needs a substantive reason`).toBeGreaterThan(
+        20,
+      )
     }
   })
 })

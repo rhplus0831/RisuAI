@@ -2,13 +2,14 @@
 
 Date: 2026-06-04
 
-Phases 1, 2 AND 3 are COMPLETE. Phase 1: H1 `0dc7452e`, H3 `e41dc6c6`, H2
+Phases 1, 2, and 3 are COMPLETE. Phase 1: H1 `0dc7452e`, H3 `e41dc6c6`, H2
 `067ab82a`. Phase 2: scoped assembly load (M1, L1, L2, `c193c008`),
 command-mutation read narrowing (M3, L5, L6, `e0e86ab1`), single-character
 projection (M4, `254b3112`), and the metric/bulk-read slice (M5, L10, U1,
-`b2765994`). Phase 3: client clone narrowing in one batch (M12-M14,
-L31-L36, U4, `0efa7ba6`). Next: pick Phase 4-7 by current pain — Phase 4
-(outbound request lifecycle) is the next root in audit order.
+`b2765994`). Phase 3: client clone narrowing (M12-M14, L31-L36, U4) plus the
+L32 watcher/global-modal ID-assignment follow-up. Next: pick Phase 4-7 by
+current pain — Phase 4 outbound request lifecycle is the next root in audit
+order.
 Every fix needs a regression test, a Phase 8 gate flip
 (`fixCompletenessGate.test.ts` registry `PLANNED` -> `DONE` with the test
 path), and the matching status flip in
@@ -43,14 +44,15 @@ In leverage order. Each is independent unless noted.
 
 Done so far (Phases 0-3 complete):
 
-- M12-M14, L31-L36, U4 — client clone narrowing, DONE (`0efa7ba6`, one
-  batch): `/setvar`/`/addvar` drop the redundant `setDatabase` normalizer
+- M12-M14, L31-L36, U4 — client clone narrowing, DONE (`0efa7ba6` plus L32
+  follow-up): `/setvar`/`/addvar` drop the redundant `setDatabase` normalizer
   (M12); `changedCharacterFields` diffs per kept key, excluded keys skipped
   before any clone (M13); `setupSendChatContext` rolls back via one
   `currentCharacterRowSnapshot` (M14); the script-definition watcher gains
-  character/module scopes wired from CharConfig/ModuleMenu (L31); the
-  LoreBook editors capture `currentLorebookCollectionScopedSnapshot` and the
-  global narrow snapshot id-assigns only the global list (L32); the
+  character/module scopes wired from CharConfig/ModuleMenu (L31); lorebook
+  editor actions use scoped snapshots and scoped ID assignment, scoped
+  `watchServerBackedLorebooks()` mounts initialize IDs only for their watched
+  scope, and `lorepreset.svelte` uses the global-list-only ensure (L32); the
   `stores.svelte` modules `$effect` reads `readModuleUpdateSignals` instead
   of `$state.snapshot` (L33); `toggleSelectedChatModule` and MCP
   `setCharacterInfo` use scoped snapshots (L34, L35); `runServerCommand` and
@@ -58,9 +60,9 @@ Done so far (Phases 0-3 complete):
   (L36); `setCurrentChat` uses the chat-scoped snapshot (U4). Regressions:
   `command.projectionGuard.test.ts`, `characterCommands.test.ts`,
   `sendChatContext.test.ts`, `scriptDefinitionBridge.svelte.test.ts`,
-  `lorebookBridge.test.ts`, `stores.modulesEffect.svelte.test.ts`,
-  `moduleCommands.test.ts`, `characters.setCharacterInfo.test.ts`,
-  `commands.test.ts`, `chatCommands.test.ts`.
+  `lorebookBridge.test.ts`, `lorebookBridge.svelte.test.ts`,
+  `stores.modulesEffect.svelte.test.ts`, `moduleCommands.test.ts`,
+  `characters.setCharacterInfo.test.ts`, `commands.test.ts`, `chatCommands.test.ts`.
 
 - M5/L10/U1 — projection metric & bulk read, DONE (`b2765994`):
   `emitProtocolMetric` takes a fields thunk evaluated after the enabled
