@@ -1,6 +1,7 @@
 # Phase 8: Verification Budgets
 
-Status: planned. Standing verification-gate layer.
+Status: implemented. Standing verification-gate layer
+(`src/ts/__tests__/cloneCostGateCompleteness.test.ts`, `deb4196c`).
 
 Goal: ensure every narrowed hot path keeps a clone-cost gate. This phase does not
 narrow new paths; it makes the gate map self-checking.
@@ -28,13 +29,15 @@ narrow new paths; it makes the gate map self-checking.
 
 ## Exit Criteria
 
-- [ ] Every Critical/High narrowed path has a clone-cost regression test and a
-      rollback-correctness test.
-- [ ] A self-checking test asserts the gate set covers the inventory's
-      hot-path entries (no narrowed path is left ungated), and fails on drift.
-- [ ] `latest-verification.md` records the latest before/after clone range; the
+- [x] Every Critical/High narrowed path has a clone-cost regression test and a
+      rollback-correctness test (registered in `NARROWED_HOT_PATHS`; the
+      Critical/High dual-gate rule is asserted).
+- [x] A self-checking test asserts the gate set covers the inventory's
+      hot-path entries (no narrowed path is left ungated), and fails on drift
+      (proven: an unregistered harness-importing test fails the self-check).
+- [x] `latest-verification.md` records the latest before/after clone range; the
       maintenance rule (replace, do not append) is followed.
-- [ ] `pnpm test`, `pnpm api:test`, and `pnpm client-thinning:audit` are green.
+- [x] `pnpm test`, `pnpm api:test`, and `pnpm client-thinning:audit` are green.
 
 ## Validation
 

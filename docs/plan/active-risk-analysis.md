@@ -9,15 +9,16 @@ not a verification log. Keep proof runs in
 
 ## Summary
 
-All findings are analyzed. Phase 0, the primary Phase 1 guard fix, all six
-Phase 2 slices, Phase 3 (cheap wins), Phase 4 (script-definition watcher,
-including the debounced rollback baseline fix), Phase 5 (prompt-template
-keystroke), and Phase 6 (lorebook watcher scope) are implemented. The debounced
-rollback baseline gap the read-only completion audit found is closed
-(`c1349966`); see
-[`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md). Phase 7 remains
-planned and Phase 8 is the standing gate. Severity comes from the seed audit: 4
-critical, 13 high, 6 medium, 6 low, plus the clone-site inventory.
+All findings are analyzed and **Phases 0-8 are implemented.** Phase 0, the
+primary Phase 1 guard fix, all six Phase 2 slices, Phase 3 (cheap wins), Phase 4
+(script-definition watcher, including the debounced rollback baseline fix), Phase
+5 (prompt-template keystroke), Phase 6 (lorebook watcher scope), Phase 7 (all
+eight opportunistic cleanups), and Phase 8 (the self-checking clone-cost gate
+map) are done. The debounced rollback baseline gap the read-only completion audit
+found is closed (`c1349966`); see
+[`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md). Severity comes
+from the seed audit: 4 critical, 13 high, 6 medium, 6 low, plus the clone-site
+inventory.
 
 Principle: do not clone the whole characters array, whole `Database`, or full
 message history for scalar-only hot paths. Keep full clones for real
@@ -25,9 +26,7 @@ restructures.
 
 Remaining runtime work:
 
-- Phase 7: low-priority CBS, observer, image/emotion, regex, parser, render-log,
-  persona, and `SideChatList` cleanups.
-- Deferred: Phase 5 debounce coalescing.
+- None open. Optional only: the deferred Phase 5 debounce coalescing.
 
 ## Risk Map
 
@@ -51,9 +50,11 @@ Remaining runtime work:
 - Character paths: `currentCharacterStateSnapshot` cloned all characters for
   field edits and `v2Set*` triggers. DONE (Phase 2) for
   `setCurrentCharacter`/`setCharacterByIndex` + the `v2Set*` trigger callers via
-  `CharacterRowSnapshot` / `restoreCharacterRow`; image/emotion handlers remain
-  (Phase 7). Phase: [Phase 0](phases/phase-0-baseline-foundations.md) kit +
-  [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
+  `CharacterRowSnapshot` / `restoreCharacterRow`; the image/emotion handlers are
+  now on the same single-row pattern (Phase 7, `2c1456ef`). Phase:
+  [Phase 0](phases/phase-0-baseline-foundations.md) kit +
+  [Phase 2](phases/phase-2-snapshot-family-narrowing.md) +
+  [Phase 7](phases/phase-7-opportunistic-cleanups.md).
 - Global-lorebook and trigger paths: `currentLorebookStateSnapshot` cloned
   characters and modules for global-lorebook edits and lorebook triggers. DONE
   (Phase 2) for select/create/delete (`loreBook`/`loreBookPage` snapshot) and the
@@ -109,10 +110,19 @@ Remaining runtime work:
   whole-DB scan; the `character` scope re-subscribes on a character switch via
   `selectedCharMirror`, and the hydrated-character no-data-loss invariant is
   preserved. Phase: [Phase 6](phases/phase-6-lorebook-watcher-scope.md).
-- Opportunistic low items: CBS history, Claude observer, image/emotion, regex,
-  `{{#each}}`, `console.log`, and `SideChatList` scan. Target: shallow-spread,
-  scope, memoize, or remove as listed in the slice. Phase:
-  [Phase 7](phases/phase-7-opportunistic-cleanups.md).
+- Opportunistic low items: implemented in Phase 7. CBS history and Claude
+  observer are shallow-spread; image/emotion edits roll back via a single
+  `currentCharacterRowSnapshot` row (no whole-array clone); regex-script
+  `RegExp`s are memoized per source+flags (`lastIndex` reset on retrieval);
+  `{{#each}}` re-injection drops the consumed source prefix and resets the
+  pointer (O(remaining), not O(da.length)); the per-`<img>` render logs are gone;
+  `SideChatList` groups chats in one `groupChatsByFolderId` pass; and
+  PersonaSettings reuses one snapshot per keystroke. Each output/behavior
+  preserving. Phase: [Phase 7](phases/phase-7-opportunistic-cleanups.md).
+- Clone-cost gate completeness: implemented in Phase 8.
+  `cloneCostGateCompleteness.test.ts` registers every Critical/High narrowed path
+  with its clone-cost + rollback gates and fails on drift. Phase:
+  [Phase 8](phases/phase-8-verification-budgets.md).
 
 ## Source Anchors
 
@@ -134,16 +144,15 @@ Remaining runtime work:
 
 ## Decision
 
-Phase 0 (kit + harness), the Phase 1 primary guard fix, Phase 2 (all six
-Critical/High snapshot call-site slices), Phase 3 (cheap wins), Phase 5
-(prompt-template keystroke), and Phase 6 (lorebook watcher scope) are done.
-Phase 4's clone-cost work is done, but rollback-correctness completion is
-blocked by the debounce baseline audit gap. Phase 7 is an independent cleanup
-batch. Phase 8 is the standing gate.
+All phases are done. Phase 0 (kit + harness), the Phase 1 primary guard fix,
+Phase 2 (all six Critical/High snapshot call-site slices), Phase 3 (cheap wins),
+Phase 4 (script-definition watcher + debounce baseline fix), Phase 5
+(prompt-template keystroke), Phase 6 (lorebook watcher scope), Phase 7 (the eight
+opportunistic cleanups), and Phase 8 (the self-checking gate map) have landed.
 
 - The highest-leverage guard fix and the Critical/High snapshot narrowing have
-  landed; the Phase 0 snapshot kit was the shared dependency for that work and is
-  reused by the remaining Phase 7 image/emotion narrowing.
+  landed; the Phase 0 snapshot kit was the shared dependency for that work and was
+  reused by the Phase 7 image/emotion narrowing.
 - Every completed narrowing keeps the full-collection snapshot for genuine
   restructures and proves the hot path no longer reaches it (clone-cost
   regression test).

@@ -27,10 +27,10 @@ Concrete slices live under `slices/[phase]/[slice-name].md`.
 - Phase 6, implemented:
   [`phase-6-lorebook-watcher-scope.md`](phase-6-lorebook-watcher-scope.md),
   [`slices/phase-6-lorebook-watcher-scope/`](slices/phase-6-lorebook-watcher-scope/).
-- Phase 7, planned:
+- Phase 7, implemented (all eight opportunistic cleanups):
   [`phase-7-opportunistic-cleanups.md`](phase-7-opportunistic-cleanups.md),
   [`slices/phase-7-opportunistic-cleanups/`](slices/phase-7-opportunistic-cleanups/).
-- Phase 8, planned:
+- Phase 8, implemented (self-checking clone-cost gate map):
   [`phase-8-verification-budgets.md`](phase-8-verification-budgets.md),
   [`slices/phase-8-verification-budgets/`](slices/phase-8-verification-budgets/).
 

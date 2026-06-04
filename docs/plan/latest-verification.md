@@ -7,30 +7,42 @@ latest-run section on each full or focused run; do not append history.
 
 ## Latest Run
 
-- Runtime under test: Phase 4 debounced rollback baseline fix (`c1349966`) on top
-  of Phases 0-6.
-- Before: the script-definition watcher debounced rapid same-key edits and
-  preserved the first dispatch's rollback baseline in `queueReplacement`, but the
-  queued command's rollback closed over the latest dispatch's `previous`, so a
-  failed coalesced command restored the intermediate edit (A) instead of the
-  pre-first-edit baseline.
-- After: `PendingCollectionReplacement.command` is a factory that receives the
-  rollback baseline at fire time, and the debounce timer calls
-  `pending.command(pending.previous)`, so the coalesced final command sends the
-  latest content (B) and rolls back to the preserved first baseline. No clone
-  range change — this is a rollback-correctness fix, not a clone narrowing.
-- Result: green. `scriptDefinitionBridge.svelte.test.ts` adds two failed-command
-  regressions (character scripts + module triggers) that edit the same key twice
-  inside the debounce window and assert rollback restores the pre-first-edit
-  baseline; the existing clone-cost and scoped-rollback proofs are unchanged.
+- Runtime under test: Phase 7 (opportunistic cleanups, all eight items) and Phase
+  8 (clone-cost gate completeness self-check), on top of Phases 0-6.
+- Phase 7 clone-range changes (all output/behavior preserving):
+  - CBS history (`cbs.ts`): per-message deep clone → shallow spread; before = one
+    `safeStructuredClone` per rendered history message, after = one `{ ...v }`.
+  - Claude observer (`observer.svelte.ts`): full request-body deep clone → shallow
+    spread.
+  - Image/emotion (`characters.ts`): before = whole `characters` array clone +
+    full target-character clone per action; after = a single
+    `currentCharacterRowSnapshot` row clone, rolled back via
+    `dispatchCompatibleCharacterUpdateScoped`.
+  - Regex scripts (`scripts.ts`): per-token `new RegExp` recompile → memoized
+    (capped 1000, `lastIndex` reset on retrieval).
+  - `{{#each}}` (`risuChatParser.ts`): whole-source re-splice (O(da.length),
+    compounding for nested each) → drop the consumed prefix and reset the pointer
+    (O(remaining)).
+  - Render logs (`ChatBody.svelte`): removed two per-`<img>` `console.log`s,
+    including the full-assets serialization.
+  - `SideChatList`: before = `chats.filter(...)` twice per folder + `indexOf` per
+    chat (O(folders*chats)+O(chats^2)); after = one `groupChatsByFolderId` pass.
+  - `PersonaSettings`: two whole-personas clones per keystroke → one reused
+    snapshot.
+- Phase 8: `cloneCostGateCompleteness.test.ts` registers every Critical/High
+  narrowed path with its clone-cost + rollback gates and fails on drift
+  (verified: an unregistered harness-importing test breaks the self-check).
+- Result: green. The new gates are CBS history, image/emotion clone-cost +
+  rollback, regex-cache, `{{#each}}` re-injection, `chatFolderGrouping`, and the
+  Phase 8 self-check; the Phase 0-6 proofs are unchanged.
 
 | Command                                                                                     | Result                                                                                                      |
 | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `pnpm test`                                                                                 | green - 1024 passed / 4 skipped (106 files).                                                                |
+| `pnpm test`                                                                                 | green - 1054 passed / 4 skipped (112 files).                                                                |
 | `pnpm api:test`                                                                             | green - 1632 passed / 1 skipped (93 files).                                                                 |
 | `pnpm client-thinning:audit`                                                                | green - audit passed.                                                                                       |
 | Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | green - both zero errors (clean client-lib rebuild required: remove `dist/client-types` AND `tsconfig.client-lib.tsbuildinfo` if TS6305 appears). |
-| `pnpm check` (svelte-check)                                                                  | 10 pre-existing errors in 5 files outside this workstream (unchanged baseline); the Phase 6 files add none. |
+| `pnpm check` (svelte-check)                                                                  | 10 pre-existing errors in 5 files outside this workstream (unchanged baseline); the Phase 7 files add none. |
 
 ## Notes
 

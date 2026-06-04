@@ -5,29 +5,30 @@ Date: 2026-06-04
 This is the router for the frontend deep-clone / hot-path narrowing workstream.
 Use it first, then open only the phase or slice needed for the next task.
 
-Current status reflects runtime code through `c1349966` (`fix: roll coalesced
-script-definition edits back to the first baseline`). Phase 0 foundations, the
-Phase 1 primary guard fix, all six Phase 2 slices, Phase 3 (cheap wins), the
-`runTrigger` scriptstate guard follow-up, Phase 4 (script-definition watcher,
-including the debounced rollback baseline fix), Phase 5 (prompt-template
-keystroke), and Phase 6 (lorebook watcher scope) have landed; the next work is
-Phase 7 (independent). The Phase 4 debounce rollback correctness gap the
-read-only completion audit found is now closed; see
-[`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md).
+Current status reflects runtime code through `deb4196c` (Phase 8 clone-cost gate
+completeness). Phase 0 foundations, the Phase 1 primary guard fix, all six Phase 2
+slices, Phase 3 (cheap wins), the `runTrigger` scriptstate guard follow-up, Phase
+4 (script-definition watcher, including the debounced rollback baseline fix),
+Phase 5 (prompt-template keystroke), Phase 6 (lorebook watcher scope), Phase 7
+(all eight opportunistic cleanups), and Phase 8 (the self-checking clone-cost
+gate map) have landed. **All phases (0-8) are now implemented.** The Phase 4
+debounce rollback correctness gap the read-only completion audit found is closed;
+see [`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md).
 
 ## Current Snapshot
 
-Analysis is complete. Phase 0-6 are implemented. Phase 4's clone-cost watcher
-slice landed, and the debounced rollback baseline gap the Phase 1-5 completion
-audit found is now closed (`c1349966`): the coalesced final command rolls the
-changed row back to the pre-first-edit baseline. Phase 6 scoped the lorebook
-change-detection watcher to the mounting panel:
-`watchServerBackedLorebooks` takes a `LorebookWatchScope` (`all | global |
-character | module`) and each panel passes its own, so a lorebook keystroke no
-longer rebuilds a DB-wide lore stringify map (every global lorebook + every
-character's globalLore + every chat of every character + every module). The
-`all` default is the unchanged whole-DB scan. Start new runtime work with Phase 7;
-keep Phase 8 as the standing verification layer.
+Analysis is complete and **Phases 0-8 are all implemented**. Phase 7 landed the
+eight opportunistic low-severity cleanups (CBS history and Claude observer
+shallow-spreads, the image/emotion scoped row rollback, per-token regex
+memoization, the `{{#each}}` prefix-drop re-injection, ChatBody render-log
+removal, the SideChatList single-pass `groupChatsByFolderId`, and the optional
+PersonaSettings snapshot dedup); each is output/behavior preserving. Phase 8
+landed `cloneCostGateCompleteness.test.ts`, the standing self-checking gate map:
+it scans `src` for every clone-cost gate test and fails on drift (an unregistered
+gate, a renamed/deleted gate, or a Critical/High path missing its rollback gate).
+No open runtime narrowing remains; the deferred Phase 5 debounce-coalescing is the
+only optional follow-up, and broad snapshots stay intentional for restructures and
+the recorded lower-frequency callers.
 
 | Phase | State | Use For |
 | --- | --- | --- |
@@ -38,23 +39,26 @@ keep Phase 8 as the standing verification layer.
 | [4](phases/phase-4-script-definition-watcher.md) | Implemented | Clone-cost watcher slice (`2ec1ea40`) plus the debounced rollback baseline fix (`c1349966`): coalesced same-key edits roll back to the pre-first-edit baseline. |
 | [5](phases/phase-5-prompt-template-keystroke.md) | Implemented | Prompt-template in-place item write + revision-gated reconcile (`c5fc5967`) and `PromptDataItem` single-clone update (`64804305`); debounce coalescing deferred. |
 | [6](phases/phase-6-lorebook-watcher-scope.md) | Implemented | Lorebook watcher scoped to the mounted panel via `LorebookWatchScope` (`c6dd103c`). |
-| [7](phases/phase-7-opportunistic-cleanups.md) | Planned | CBS, observer, image/emotion, regex, parser, log, and scan cleanups. |
-| [8](phases/phase-8-verification-budgets.md) | Planned | Clone-cost gate completeness. |
+| [7](phases/phase-7-opportunistic-cleanups.md) | Implemented | CBS/observer shallow-spread, image/emotion scoped rollback, regex memo, `{{#each}}` prefix-drop, render-log removal, SideChatList single-pass, PersonaSettings dedup. |
+| [8](phases/phase-8-verification-budgets.md) | Implemented | Self-checking clone-cost gate map (`cloneCostGateCompleteness.test.ts`); fails on drift. |
 
 ## Open Risk Router
 
 [`active-risk-analysis.md`](active-risk-analysis.md) has the full per-area
-detail. The remaining planned runtime work is Phase 7 low-priority cleanups
-(plus the deferred Phase 5 debounce coalescing). Broad snapshots still
-intentionally exist for real restructures plus deferred lower-frequency callers
-such as image/emotion edits and LoreBook sidebar/MCP paths.
+detail. No open runtime narrowing remains; the only optional follow-up is the
+deferred Phase 5 debounce coalescing. Broad snapshots still intentionally exist
+for real restructures plus the recorded lower-frequency callers (LoreBook
+sidebar/MCP paths, the bounded PersonaSettings config snapshot, and the
+local-assembler clones dead on the default server route) — all enumerated in
+`cloneCostGateCompleteness.test.ts`'s `INTENTIONALLY_BROAD` list.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). Latest maintained run:
-`pnpm test`, `pnpm api:test`, `pnpm client-thinning:audit`, and both
-project-reference TypeScript checks passed. `pnpm check` remains at the
-unchanged 10-error svelte-check baseline outside this workstream.
+See [`latest-verification.md`](latest-verification.md). Latest maintained run
+(Phases 7-8): `pnpm test` (1054 passed / 4 skipped), `pnpm api:test` (1632 passed
+/ 1 skipped), `pnpm client-thinning:audit`, and both project-reference TypeScript
+checks passed. `pnpm check` remains at the unchanged 10-error svelte-check
+baseline outside this workstream.
 
 ## Start Here
 

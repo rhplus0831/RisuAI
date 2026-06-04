@@ -2,8 +2,12 @@
 
 Date: 2026-06-04
 
-Read this when choosing the next batch. Pick one focused Phase 7 cleanup / Phase
-8 proof batch. Avoid broad cleanup passes.
+**Phases 0-8 are all implemented.** No open runtime narrowing remains. The only
+optional follow-up is the deferred Phase 5 debounce coalescing (folding the
+prompt-template optimistic write into the 250 ms window). Any new hot-path
+narrowing must register a clone-cost gate in
+`src/ts/__tests__/cloneCostGateCompleteness.test.ts` or the Phase 8 self-check
+fails on drift.
 
 ## Start Point
 
@@ -14,24 +18,22 @@ Read this when choosing the next batch. Pick one focused Phase 7 cleanup / Phase
 - Before editing runtime code, add a compact scope to the active slice: location,
   cloned data, hot-path trigger, target snapshot, rollback property, and proof
   command.
-- Phase 7 is an independent cleanup batch. The remaining snapshot-dependent item
-  is the Phase 7 image/emotion narrowing, which should reuse the Phase 0
-  character row kit; cheap wins and watcher/editor changes should still use the
-  clone-cost harness when proving a win.
+- Any future narrowing should reuse the Phase 0 snapshot kit and the clone-cost
+  harness, and must register its gate in `cloneCostGateCompleteness.test.ts`.
 
 ## Current Best Targets
 
-Phases 0-6 have landed and the Phase 4 rollback-correctness gap
+Phases 0-8 have all landed. The Phase 4 rollback-correctness gap
 [`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md) found is closed
-(`c1349966`). The next work is Phase 7 (independent).
+(`c1349966`). No open runtime narrowing remains.
 
-- DONE: Phases 0-6, including the `48d473dc` `runTrigger` guard fix, the Phase 5
+- DONE: Phases 0-8, including the `48d473dc` `runTrigger` guard fix, the Phase 5
   `PromptDataItem` single-clone update (`64804305`), the Phase 6 lorebook
-  watcher scope (`c6dd103c`), and the Phase 4 debounced rollback baseline fix
-  (`c1349966`). Broad snapshots still exist for restructures plus lower-frequency
-  or deferred callers.
-- NEXT: pick one focused Phase 7 item. Optionally revisit the deferred Phase 5
-  debounce coalescing.
+  watcher scope (`c6dd103c`), the Phase 4 debounced rollback baseline fix
+  (`c1349966`), all eight Phase 7 cleanups (`d96d04c7`→`6861494d`), and the Phase
+  8 self-checking gate map (`deb4196c`). Broad snapshots still exist for
+  restructures plus the recorded lower-frequency or deferred callers.
+- NEXT: optional only — revisit the deferred Phase 5 debounce coalescing.
 - FIXED (`48d473dc`): `setVar`/`v2SetVar` previously wrote scriptstate directly to
   the read-only projection, so a client `manual`/slash `setVar` trigger threw under
   the Fastify guard. Now routed through `syncActiveChatScriptstate`

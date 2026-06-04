@@ -1,6 +1,7 @@
 # Opportunistic Clone Cleanups
 
-Status: planned. Phase 7. Small independent cleanups.
+Status: implemented. Phase 7. All eight items landed (`d96d04c7`→`6861494d`); see
+the phase doc's Landed table for per-item commits and gate tests.
 
 ## Scope
 

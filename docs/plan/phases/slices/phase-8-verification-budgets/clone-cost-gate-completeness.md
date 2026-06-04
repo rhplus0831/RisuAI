@@ -1,6 +1,7 @@
 # Clone-Cost Gate Completeness
 
-Status: planned. Phase 8. Standing verification-gate layer.
+Status: implemented. Phase 8. Standing verification-gate layer
+(`src/ts/__tests__/cloneCostGateCompleteness.test.ts`, `deb4196c`).
 
 ## Scope
 

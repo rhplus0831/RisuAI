@@ -1,7 +1,9 @@
 # Phase 7: Opportunistic Cleanups
 
-Status: planned. One slice grouping the low-priority items. Each item is small and
-independent; land them opportunistically.
+Status: implemented. All eight items landed (CBS history shallow-spread, Claude
+observer shallow-spread, image/emotion scoped rollback, per-token regex memo,
+`{{#each}}` prefix-drop re-injection, ChatBody render-log removal, SideChatList
+single-pass grouping, and the optional PersonaSettings snapshot dedup).
 
 Goal: land Low-severity cleanups: shallow-spread clones, scoped row baselines,
 regex memoization, parser string-work reduction, and a stray render-path log.
@@ -33,12 +35,25 @@ regex memoization, parser string-work reduction, and a stray render-path log.
 
 ## Exit Criteria
 
-- [ ] Each item is shallow-spread / scoped / memoized per the audit's per-finding
+- [x] Each item is shallow-spread / scoped / memoized per the audit's per-finding
       fix; output (CBS render text, prompt assembly, persisted state) is
       byte-identical.
-- [ ] The per-render `console.log` is removed; the `SideChatList` scan is single
+- [x] The per-render `console.log` is removed; the `SideChatList` scan is single
       pass with identical ordering.
-- [ ] `pnpm test` is green; no behavioral change is observable.
+- [x] `pnpm test` is green; no behavioral change is observable.
+
+## Landed
+
+| Item | Commit | Gate test |
+| --- | --- | --- |
+| CBS history shallow-spread | `d96d04c7` | `parser/tests/cbs/history.test.ts` |
+| Claude observer shallow-spread | `e5c98d19` | (trivial, experimental path) |
+| Image/emotion scoped rollback | `2c1456ef` | `characters.imageEmotion.test.ts` |
+| Per-token regex memo | `62acd3e3` | `process/scripts.regexCache.test.ts` |
+| `{{#each}}` prefix-drop re-injection | `daa15c59` | `parser/tests/cbs/eachReinjection.test.ts` |
+| ChatBody render-log removal | `6bf59815` | (debug-log deletion) |
+| SideChatList single-pass grouping | `ba3d53d1` | `SideBars/chatFolderGrouping.test.ts` |
+| PersonaSettings snapshot dedup (optional) | `6861494d` | (clone dedup; svelte-check) |
 
 ## Validation
 
