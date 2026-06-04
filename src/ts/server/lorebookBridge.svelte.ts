@@ -44,6 +44,13 @@ interface PendingCollectionReplacement {
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
 let suppressRollbackDispatch = false
 
+// Mirror of the selected character id as $state so a `character`-scoped watcher
+// re-runs (and re-subscribes to the newly selected character's lore) when the
+// user switches characters while the panel stays mounted. A bare
+// `get(selectedCharID)` read would not re-run the effect on a switch, which could
+// drop the first edit made to the newly selected character.
+let selectedCharMirror = $state(-1)
+
 // No-data-loss guard for character `globalLore` stubs. `checkNewFormat` defaults
 // absent character lore to `[]`, so field presence cannot distinguish a stub from
 // an empty hydrated lorebook. The watcher only snapshots/persists ids in this
@@ -87,8 +94,29 @@ export function recordHydratedCharacterLorebooks(
   }
 }
 
+/**
+ * Restrict the watcher's change-detection snapshot to the mounting panel's
+ * collection so a single lorebook keystroke does not rebuild a DB-wide lore map
+ * on every reactive fire.
+ *
+ * - `all` (default): the original whole-DB scan (global + every character's
+ *   globalLore/chats + every module). Used by callers with no narrower scope and
+ *   by the no-data-loss tests.
+ * - `global`: only the global `loreBook` list (the `lorepreset` modal and the
+ *   global-mode `LoreBookSetting`).
+ * - `character`: only the selected character's globalLore and its chats'
+ *   localLore (the character `LoreBookSetting` sidebar).
+ * - `module`: only the open module's lorebook (the module `ModuleMenu`).
+ */
+export type LorebookWatchScope =
+  | { kind: 'all' }
+  | { kind: 'global' }
+  | { kind: 'character' }
+  | { kind: 'module'; moduleId: string }
+
 export interface WatchServerBackedLorebooksOptions {
   delayMs?: number
+  scope?: LorebookWatchScope
 }
 
 export function currentLorebookStateSnapshot(): LorebookStateSnapshot {
@@ -374,9 +402,20 @@ export function watchServerBackedLorebooks(
 ): () => void {
   if (!canUseServerCommands()) return () => {}
   const delayMs = options.delayMs ?? 300
+  const scope: LorebookWatchScope = options.scope ?? { kind: 'all' }
   let initialized = false
   let clientIdsInitialized = false
   let previousSnapshots = new Map<string, string>()
+
+  // A character-scoped watcher must re-run when the selected character changes,
+  // so mirror the store into the $state the collector reads. Other scopes do not
+  // read the mirror, so they never re-fire on a selection change.
+  const unsubscribeSelected =
+    scope.kind === 'character'
+      ? selectedCharID.subscribe((value) => {
+          selectedCharMirror = value
+        })
+      : null
 
   const stop = $effect.root(() => {
     $effect(() => {
@@ -384,7 +423,7 @@ export function watchServerBackedLorebooks(
         ensureAllClientLorebookIds()
         clientIdsInitialized = true
       }
-      const currentSnapshots = collectLorebookCollectionSnapshots()
+      const currentSnapshots = collectLorebookCollectionSnapshots(scope)
 
       if (suppressRollbackDispatch || !initialized) {
         initialized = true
@@ -404,7 +443,10 @@ export function watchServerBackedLorebooks(
     })
   })
 
-  return stop
+  return () => {
+    unsubscribeSelected?.()
+    stop()
+  }
 }
 
 function dispatchWatchedReplacement(
@@ -456,31 +498,72 @@ function dispatchWatchedReplacement(
   }
 }
 
-function collectLorebookCollectionSnapshots(): Map<string, string> {
+/**
+ * Build the change-detection snapshot map for the watcher's scope. Exported for
+ * the clone-cost regression test, which asserts a scoped fire covers only the
+ * mounting panel's collection (O(panel scope)) instead of every chat of every
+ * character and every module (O(all lore in the DB)). The `all` branch is the
+ * original whole-DB scan and is byte-for-byte identical to the previous code.
+ */
+export function collectLorebookCollectionSnapshots(
+  scope: LorebookWatchScope,
+): Map<string, string> {
   const snapshots = new Map<string, string>()
-  for (const lorebook of (DBState.db.loreBook ?? []) as GlobalLorebook[]) {
-    if (lorebook.id) {
-      snapshots.set(`global:${lorebook.id}`, snapshotJson(lorebook.data ?? []))
-      snapshots.set(`globalMeta:${lorebook.id}`, snapshotJson({ name: lorebook.name }))
+
+  if (scope.kind === 'all' || scope.kind === 'global') {
+    for (const lorebook of (DBState.db.loreBook ?? []) as GlobalLorebook[]) {
+      if (lorebook.id) {
+        snapshots.set(`global:${lorebook.id}`, snapshotJson(lorebook.data ?? []))
+        snapshots.set(`globalMeta:${lorebook.id}`, snapshotJson({ name: lorebook.name }))
+      }
     }
   }
-  for (const character of DBState.db.characters ?? []) {
-    // Snapshot a character's globalLore ONLY when it is hydrated; a stubbed /
-    // not-yet-hydrated character is never tracked, so a re-stub can't be diffed into
-    // a deletion (the no-data-loss invariant).
-    if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
-      snapshots.set(`character:${character.chaId}`, snapshotJson(character.globalLore ?? []))
+
+  if (scope.kind === 'all') {
+    for (const character of DBState.db.characters ?? []) {
+      collectCharacterLorebookSnapshots(snapshots, character)
     }
-    for (const chat of character.chats ?? []) {
-      if (chat.id) snapshots.set(`chat:${chat.id}`, snapshotJson(chat.localLore ?? []))
-    }
+  } else if (scope.kind === 'character') {
+    // Track only the selected character's lore. Reading the $state mirror (not a
+    // bare get()) re-runs the effect on a character switch, so the first edit to
+    // the newly selected character is never dropped.
+    const character = DBState.db.characters?.[selectedCharMirror]
+    if (character) collectCharacterLorebookSnapshots(snapshots, character)
   }
-  for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
-    if (module.id && Array.isArray(module.lorebook)) {
-      snapshots.set(`module:${module.id}`, snapshotJson(module.lorebook))
+
+  if (scope.kind === 'all') {
+    for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
+      collectModuleLorebookSnapshot(snapshots, module)
     }
+  } else if (scope.kind === 'module') {
+    const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
+      (candidate) => candidate.id === scope.moduleId,
+    )
+    if (module) collectModuleLorebookSnapshot(snapshots, module)
   }
+
   return snapshots
+}
+
+function collectCharacterLorebookSnapshots(
+  snapshots: Map<string, string>,
+  character: character,
+): void {
+  // Snapshot a character's globalLore ONLY when it is hydrated; a stubbed /
+  // not-yet-hydrated character is never tracked, so a re-stub can't be diffed into
+  // a deletion (the no-data-loss invariant).
+  if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
+    snapshots.set(`character:${character.chaId}`, snapshotJson(character.globalLore ?? []))
+  }
+  for (const chat of character.chats ?? []) {
+    if (chat.id) snapshots.set(`chat:${chat.id}`, snapshotJson(chat.localLore ?? []))
+  }
+}
+
+function collectModuleLorebookSnapshot(snapshots: Map<string, string>, module: RisuModule): void {
+  if (module.id && Array.isArray(module.lorebook)) {
+    snapshots.set(`module:${module.id}`, snapshotJson(module.lorebook))
+  }
 }
 
 function queueReplacement(

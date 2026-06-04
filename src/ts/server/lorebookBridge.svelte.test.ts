@@ -41,11 +41,13 @@ vi.mock('./projectionWriteGuard.svelte', () => ({
 
 import { DBState, selectedCharID } from '../stores.svelte'
 import {
+  collectLorebookCollectionSnapshots,
   markCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
   watchServerBackedLorebooks,
 } from './lorebookBridge.svelte'
+import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
 type Entry = { key?: string; content?: string; id?: string }
 
@@ -147,6 +149,176 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     await vi.advanceTimersByTimeAsync(DELAY)
     // 'resident' is tracked → its edit persists.
     expect(characterReplaceCommands().map((c) => c.characterId)).toEqual(['resident'])
+    stop()
+  })
+})
+
+// Phase 6: scope the watcher's change-detection snapshot to the mounting panel's
+// collection. A keystroke must no longer rebuild a DB-wide lore stringify map.
+
+function setupMultiCollectionDb(): void {
+  ;(DBState as { db: unknown }).db = {
+    loreBook: [{ id: 'g1', name: 'Global One', data: [{ key: 'gk', content: 'GC', id: 'ge1' }] }],
+    loreBookPage: 0,
+    characters: [
+      {
+        chaId: 'c0',
+        globalLore: [{ key: 'c0g', content: 'C0G', id: 'c0g1' }],
+        chats: [{ id: 'c0chat', localLore: [{ key: 'c0l', content: 'C0L', id: 'c0l1' }] }],
+      },
+      {
+        chaId: 'c1',
+        globalLore: [{ key: 'c1g', content: 'C1G', id: 'c1g1' }],
+        chats: [{ id: 'c1chat', localLore: [{ key: 'c1l', content: 'C1L', id: 'c1l1' }] }],
+      },
+    ],
+    modules: [
+      { id: 'm0', lorebook: [{ key: 'm0', content: 'M0', id: 'm0e1' }] },
+      { id: 'm1', lorebook: [{ key: 'm1', content: 'M1', id: 'm1e1' }] },
+    ],
+  }
+  selectedCharID.set(0)
+}
+
+function chatReplaceChatIds(): string[] {
+  return recorded.commands
+    .filter((c) => c.kind === 'replaceChat')
+    .map((c) => (c.a as { chatId?: string }).chatId ?? '')
+}
+
+describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () => {
+  it('global scope collects only the global lorebook list', () => {
+    setupMultiCollectionDb()
+    markCharacterLorebookHydrated('c0')
+    markCharacterLorebookHydrated('c1')
+
+    const keys = [...collectLorebookCollectionSnapshots({ kind: 'global' }).keys()].sort()
+    expect(keys).toEqual(['global:g1', 'globalMeta:g1'])
+    // No character/chat/module entries leak into a global-scoped fire.
+    expect(keys.some((k) => k.startsWith('character:'))).toBe(false)
+    expect(keys.some((k) => k.startsWith('chat:'))).toBe(false)
+    expect(keys.some((k) => k.startsWith('module:'))).toBe(false)
+  })
+
+  it('module scope collects only the open module, not all modules', () => {
+    setupMultiCollectionDb()
+
+    const keys = [...collectLorebookCollectionSnapshots({ kind: 'module', moduleId: 'm0' }).keys()]
+    expect(keys).toEqual(['module:m0'])
+    // 'm1' and every global/character/chat entry are out of scope.
+    expect(keys).not.toContain('module:m1')
+  })
+
+  it('character scope collects only the selected character, not siblings/modules/global', () => {
+    setupMultiCollectionDb()
+    markCharacterLorebookHydrated('c0')
+    markCharacterLorebookHydrated('c1')
+    selectedCharID.set(0)
+
+    // Start a character-scoped watcher so the selected-char mirror tracks c0.
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    const keys = [...collectLorebookCollectionSnapshots({ kind: 'character' }).keys()].sort()
+    expect(keys).toEqual(['character:c0', 'chat:c0chat'])
+    // c1 (sibling), modules, and the global list are never scanned.
+    expect(keys).not.toContain('character:c1')
+    expect(keys).not.toContain('chat:c1chat')
+    expect(keys.some((k) => k.startsWith('module:') || k.startsWith('global'))).toBe(false)
+    stop()
+  })
+
+  it('all scope (default) still scans the whole DB — regression', () => {
+    setupMultiCollectionDb()
+    markCharacterLorebookHydrated('c0')
+    markCharacterLorebookHydrated('c1')
+
+    const keys = [...collectLorebookCollectionSnapshots({ kind: 'all' }).keys()].sort()
+    expect(keys).toEqual([
+      'character:c0',
+      'character:c1',
+      'chat:c0chat',
+      'chat:c1chat',
+      'global:g1',
+      'globalMeta:g1',
+      'module:m0',
+      'module:m1',
+    ])
+  })
+
+  it('a scoped fire performs far fewer snapshot clones than the whole-DB scan', () => {
+    setupMultiCollectionDb()
+    markCharacterLorebookHydrated('c0')
+    markCharacterLorebookHydrated('c1')
+    selectedCharID.set(0)
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    const scoped = withCloneInstrumentation(() =>
+      collectLorebookCollectionSnapshots({ kind: 'character' }),
+    )
+    const whole = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'all' }))
+
+    // The whole-DB scan stringifies every character + chat + module + global; the
+    // character scope stringifies only the selected character's two entries.
+    expect(scoped.result.size).toBe(2)
+    expect(scoped.jsonCloneCount).toBeLessThan(whole.jsonCloneCount)
+    expect(scoped.jsonCloneCount).toBe(2)
+    stop()
+  })
+
+  it('character-scoped watcher dispatches a selected-character edit but ignores a sibling chat edit', async () => {
+    setupMultiCollectionDb()
+    markCharacterLorebookHydrated('c0')
+    markCharacterLorebookHydrated('c1')
+    selectedCharID.set(0)
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync() // baseline = c0 only
+
+    // A sibling character's chat edit is out of scope → never dispatched.
+    recorded.commands.length = 0
+    ;(DBState.db.characters[1].chats[0].localLore as Entry[]).push({ key: 'x', content: 'X' })
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(chatReplaceChatIds()).not.toContain('c1chat')
+
+    // The selected character's own chat edit IS dispatched.
+    recorded.commands.length = 0
+    ;(DBState.db.characters[0].chats[0].localLore as Entry[]).push({ key: 'y', content: 'Y' })
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(chatReplaceChatIds()).toContain('c0chat')
+    stop()
+  })
+
+  it('character scope re-subscribes to the newly selected character after a switch', async () => {
+    setupMultiCollectionDb()
+    markCharacterLorebookHydrated('c0')
+    markCharacterLorebookHydrated('c1')
+    selectedCharID.set(0)
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    // Switch to c1: the effect re-runs and re-baselines to c1 (no spurious dispatch).
+    recorded.commands.length = 0
+    selectedCharID.set(1)
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(characterReplaceCommands()).toHaveLength(0)
+
+    // An edit to the now-selected c1 is dispatched...
+    recorded.commands.length = 0
+    ;(DBState.db.characters[1].globalLore as Entry[]).push({ key: 'b', content: 'B' })
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(characterReplaceCommands().map((c) => c.characterId)).toEqual(['c1'])
+
+    // ...while an edit to the no-longer-selected c0 is ignored.
+    recorded.commands.length = 0
+    ;(DBState.db.characters[0].globalLore as Entry[]).push({ key: 'z', content: 'Z' })
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(characterReplaceCommands()).toHaveLength(0)
     stop()
   })
 })

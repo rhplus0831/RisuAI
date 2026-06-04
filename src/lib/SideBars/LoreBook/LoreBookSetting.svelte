@@ -25,6 +25,7 @@
     dispatchReplaceCharacterLorebooks,
     dispatchReplaceChatLorebooks,
     watchServerBackedLorebooks,
+    type LorebookWatchScope,
   } from 'src/ts/server/lorebookBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { createServerBackedCharacterDraft } from 'src/ts/server/characterBridge.svelte'
@@ -38,7 +39,11 @@
   let { globalMode = $bindable(false) }: Props = $props()
 
   $effect(() => {
-    const stopLorebooks = watchServerBackedLorebooks()
+    // Global mode edits the global lorebook list; character mode edits the
+    // selected character's globalLore and its chats' localLore. Scope change
+    // detection to whichever this panel actually edits.
+    const scope: LorebookWatchScope = globalMode ? { kind: 'global' } : { kind: 'character' }
+    const stopLorebooks = watchServerBackedLorebooks({ scope })
     return () => stopLorebooks()
   })
 

@@ -21,7 +21,9 @@
 
   $effect(() => {
     ensureAllClientLorebookIds()
-    const stopLorebooks = watchServerBackedLorebooks()
+    // This modal only edits the global lorebook list, so scope change detection
+    // to it instead of scanning every character/chat/module per keystroke.
+    const stopLorebooks = watchServerBackedLorebooks({ scope: { kind: 'global' } })
     return () => stopLorebooks()
   })
 
