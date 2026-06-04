@@ -17,7 +17,6 @@ import { get } from 'svelte/store'
 import {
   ReloadChatPointer,
   ReloadGUIPointer,
-  selectedCharID,
   CurrentTriggerIdStore,
   DBState,
 } from '../stores.svelte'
@@ -1217,7 +1216,6 @@ export async function runTrigger(
   let stopSending = arg.stopSending ?? false
   const CharacterlowLevelAccess = char.lowLevelAccess ?? false
   let sendAIprompt = false
-  const currentChat = getCurrentChat()
   let additonalSysPrompt: additonalSysPrompt = arg.additonalSysPrompt ?? {
     start: '',
     historyend: '',
@@ -1379,6 +1377,23 @@ export async function runTrigger(
     return state.toString()
   }
 
+  // Optimistically reflect the pass's accumulated scriptstate on the live active
+  // chat. The write MUST run inside the projection guard and re-read the chat
+  // there: in Fastify web mode the live projection rows are read-only, so a direct
+  // `currentChat.scriptstate = …` throws. Off-Fastify the guard is a pass-through,
+  // so this is the same single live write the former three (identical, same-object)
+  // assignments produced. `getCurrentChat()` is the canonical active chat, so this
+  // also stays correct after a data effect (e.g. v2 lorebook/desc) re-installs the
+  // character mid-pass.
+  function syncActiveChatScriptstate(): void {
+    withTrustedServerProjectionWrite(() => {
+      const liveChat = getCurrentChat()
+      if (liveChat) {
+        liveChat.scriptstate = chat.scriptstate
+      }
+    })
+  }
+
   function setVar(key: string, value: string) {
     if (arg.displayMode) {
       tempVars[key] = value
@@ -1391,17 +1406,12 @@ export async function runTrigger(
       return
     }
 
-    const selectedCharId = get(selectedCharID)
-    const currentCharacter = getCurrentCharacter()
-    const db = getDatabase()
     const previous = captureScriptstateRollback()
     varChanged = true
     chat.scriptstate ??= {}
     const stateKey = '$' + key
     chat.scriptstate[stateKey] = value
-    currentChat.scriptstate = chat.scriptstate
-    currentCharacter.chats[currentCharacter.chatPage].scriptstate = chat.scriptstate
-    db.characters[selectedCharId].chats[currentCharacter.chatPage].scriptstate = chat.scriptstate
+    syncActiveChatScriptstate()
     if (chat.id) {
       dispatchPatchChatScriptstateScoped(chat.id, { [stateKey]: value }, [], previous)
     }
@@ -3401,8 +3411,7 @@ export async function runTrigger(
     caculatedTokens += await tokenize(additonalSysPrompt.promptend)
   }
   if (varChanged) {
-    const currentChat = getCurrentChat()
-    currentChat.scriptstate = chat.scriptstate
+    syncActiveChatScriptstate()
     ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
   }
 

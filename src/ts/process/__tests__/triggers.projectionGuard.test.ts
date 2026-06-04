@@ -376,6 +376,44 @@ describe('trigger durable writes under the projection guard', () => {
     )
     expect(cmd.body.patch.note).toBe('author note text')
   })
+
+  it('routes v2SetVar scriptstate through a chat command instead of a guarded direct write', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    // Baseline: the guard is active, so a raw scriptstate projection write throws.
+    expect(() => {
+      DBState.db.characters[0].chats[0].scriptstate = { $raw: '1' } as never
+    }).toThrow()
+
+    const char = characterWithTriggers([
+      {
+        comment: 'set',
+        type: 'manual',
+        conditions: [],
+        effect: [
+          { type: 'v2SetVar', var: 'score', operator: '=', valueType: 'value', value: '7' },
+        ],
+      },
+    ])
+
+    // The fix: setVar's optimistic live write goes through the projection guard, so
+    // the pass resolves instead of throwing on the read-only projection.
+    await expect(
+      runTrigger(char, 'manual', { chat: char.chats[char.chatPage], manualName: 'set' }),
+    ).resolves.not.toThrow()
+
+    // The optimistic write landed on the live active chat's scriptstate.
+    expect((DBState.db.characters[0].chats[0].scriptstate as any).$score).toBe('7')
+
+    // ...and the scriptstate patch was dispatched to the chat scriptstate command.
+    const cmd = await waitForCommand(
+      calls,
+      (call) =>
+        call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
+    )
+    expect(cmd.body.patch.$score).toBe('7')
+  })
 })
 
 describe('Phase 2 trigger lorebook scoped rollback', () => {

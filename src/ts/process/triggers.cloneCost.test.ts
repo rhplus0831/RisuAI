@@ -131,16 +131,20 @@ describe('runTrigger clone cost (Phase 3)', () => {
     const { siblingSize } = seedDb()
     expect(siblingSize).toBeGreaterThan(50_000)
     stubCommandFetch()
-    // The char/active-chat clone decision is guard-independent (the former
-    // whole-character clone ran on every non-display pass). Measure with the guard
-    // off so the assertion isolates the clone narrowing; the guard-safe install
-    // paths (desc/note/lorebook) are proven in triggers.projectionGuard.test.ts.
+    // Runs under the projection guard: `setVar` now writes the optimistic
+    // scriptstate through `withTrustedServerProjectionWrite`, so a trigger-bearing
+    // pass clones only the active chat (the large sibling transcript a whole-char
+    // clone would serialize is never cloned) and does not throw on the read-only
+    // projection.
+    setServerProjectionWriteGuardEnabled(true)
     const char = characterWithTriggers([
       {
         comment: 'set',
         type: 'manual',
         conditions: [],
-        effect: [{ type: 'v2SetVar', var: 'score', valueType: 'value', value: '1' }],
+        effect: [
+          { type: 'v2SetVar', var: 'score', operator: '=', valueType: 'value', value: '1' },
+        ],
       },
     ])
 
