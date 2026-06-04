@@ -5,18 +5,21 @@ Date: 2026-06-04
 This is the entry router for the remediation workstream. Use it first, then open
 only the phase or slice needed for the task.
 
-Nothing is implemented yet. The plan schedules 57 confirmed findings (3 high,
-14 medium, 40 low) from
+The plan schedules 57 confirmed findings (3 high, 14 medium, 40 low) from
 [`audit-stability-and-performance.md`](audit-stability-and-performance.md) across
-Phases 0-8.
+Phases 0-8. Phase 0's measurement slice is implemented; no runtime fix has
+landed yet.
 
 ## Current Snapshot
 
-All findings are routed. Start with Phase 0, then Phase 1. Phases 2-7 group the
+All findings are routed. Finish Phase 0, then Phase 1. Phases 2-7 group the
 mediums/lows by root cause. Phase 8 is the standing gate.
 
-- [Phase 0](phases/phase-0-baseline-foundations.md) — not started. Fixture,
-  server load-count assertion, and gate scaffold. No runtime change.
+- [Phase 0](phases/phase-0-baseline-foundations.md) — in progress. The
+  measurement slice landed (shared large-corpus fixture +
+  `assertScopedLoadOnHotPath` server load-count harness, with the H1/U1
+  breadth detections as self-proof). The fix-completeness gate scaffold is the
+  remaining slice. No runtime change.
 - [Phase 1](phases/phase-1-high-severity-hot-paths.md) — not started. H1, H2,
   H3: hydration guard, chat-selection snapshot, streaming coalescing.
 - [Phase 2](phases/phase-2-server-load-narrowing.md) — not started. M1, M3, M4,

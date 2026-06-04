@@ -1,6 +1,7 @@
 # Phase 0: Baseline & Harness Foundations
 
-Status: not started. No runtime change.
+Status: in progress — the measurement/harness slice is implemented; the
+fix-completeness gate scaffold remains. No runtime change.
 
 Goal: add the shared proof tools: a seeded large-corpus fixture, a server
 load-count assertion, and a fix-completeness gate scaffold.
@@ -27,12 +28,15 @@ load-count assertion, and a fix-completeness gate scaffold.
 ## Slices
 
 - [`measurement-baseline-harness.md`](slices/phase-0-baseline-foundations/measurement-baseline-harness.md) -
-  seeded large-corpus fixture plus a server load-count assertion that fails when
-  a scoped hot path calls a whole-corpus loader. Re-run and record the baseline
-  in [`../latest-verification.md`](../latest-verification.md).
+  IMPLEMENTED. Seeded large-corpus fixture
+  (`src/ts/__tests__/largeCorpusFixture.ts`) plus the server load-count
+  assertion (`server/fastify/__tests__/helpers/loadCostHarness.ts`,
+  `assertScopedLoadOnHotPath`) that fails when a scoped hot path calls a
+  whole-corpus loader. Baseline re-run and recorded in
+  [`../latest-verification.md`](../latest-verification.md).
 - [`fix-completeness-gate-scaffold.md`](slices/phase-0-baseline-foundations/fix-completeness-gate-scaffold.md) -
-  standing test that registers each scheduled fix by id and fails when a
-  registered gate is missing or renamed. Seed planned ids as `PLANNED`.
+  not started. Standing test that registers each scheduled fix by id and fails
+  when a registered gate is missing or renamed. Seed planned ids as `PLANNED`.
 
 ## Planned Shape
 
@@ -47,13 +51,13 @@ load-count assertion, and a fix-completeness gate scaffold.
 
 ## Exit Criteria
 
-- [ ] A seeded large-corpus fixture exists and is importable from one place for
+- [x] A seeded large-corpus fixture exists and is importable from one place for
       both suites.
-- [ ] A server-side load-count assertion exists and can fail a test
+- [x] A server-side load-count assertion exists and can fail a test
       when a hot path performs a whole-corpus load.
 - [ ] The fix-completeness gate scaffold exists, lists all scheduled finding ids,
       and fails if a registered (non-`PLANNED`) gate goes missing.
-- [ ] No runtime behavior changed; the baseline in
+- [x] No runtime behavior changed; the baseline in
       [`../latest-verification.md`](../latest-verification.md) is re-run and
       recorded green.
 

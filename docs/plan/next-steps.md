@@ -2,7 +2,8 @@
 
 Date: 2026-06-04
 
-Nothing is implemented yet. Start with Phase 0, then Phase 1. Every fix needs a
+Phase 0's measurement slice is implemented (fixture + server load-count
+harness). Finish Phase 0 (gate scaffold), then Phase 1. Every fix needs a
 regression test and a Phase 8 gate entry.
 
 ## Start Point
@@ -14,19 +15,24 @@ regression test and a Phase 8 gate entry.
 - Before editing runtime code, open the active slice and re-check the cited
   symbol. Line numbers drift.
 - Reuse the existing client clone-cost harness
-  (`src/ts/__tests__/cloneCostHarness.ts`) for Root-2 clones; add the Phase 0
-  server load-count assertion for Root-1 loads.
+  (`src/ts/__tests__/cloneCostHarness.ts`) for Root-2 clones; use the Phase 0
+  server load-count harness
+  (`server/fastify/__tests__/helpers/loadCostHarness.ts`,
+  `assertScopedLoadOnHotPath`) for Root-1 loads, and seed cost tests from the
+  shared fixture (`src/ts/__tests__/largeCorpusFixture.ts`).
 
 ## Current Best Targets
 
 In leverage order. Each is independent unless noted.
 
-1. Phase 0 — foundations. Seed the large-corpus fixture, add the server
-   load-count assertion, and scaffold the fix-completeness gate.
+1. Phase 0 — remaining slice: scaffold the fix-completeness gate
+   ([`phases/slices/phase-0-baseline-foundations/fix-completeness-gate-scaffold.md`](phases/slices/phase-0-baseline-foundations/fix-completeness-gate-scaffold.md)).
 2. H1 — `loadChatHydration` guard (`server/fastify/src/repository.ts:1061`).
    One-line change: early-return whenever `message.length > 0` so a non-HypaV3
-   chat-open / generation completion stops falling into `loadPersisted`. Add a
-   load-count test for a chat with message rows and no `chat_hypa_v3` row.
+   chat-open / generation completion stops falling into `loadPersisted`. The
+   load-count test exists: flip the "CURRENT breadth (audit H1)" block in
+   `server/fastify/__tests__/serverLoadCostHarness.test.ts` to
+   `assertScopedLoadOnHotPath`.
 3. H3 — streaming render coalescing. Buffer token frames, flush at most once per
    animation frame, and keep a full-fidelity flush on `done`.
 4. H2 — `ChatSelectionSnapshot`. Add a scalar chat-selection snapshot/restore
