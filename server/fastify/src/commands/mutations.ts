@@ -5,6 +5,7 @@ import {
   ValidationError,
   loadCharacterSelectionRows,
   loadPersisted,
+  loadPersistedForChatMutation,
   loadPersistedWithMessages,
   replaceAllCharactersInTable,
   replaceAllCollectionsInTable,
@@ -12,6 +13,7 @@ import {
   stripChatMessages,
   syncChatMessages,
   writeCharacterSelectionRows,
+  type ChatMutationTarget,
 } from '../repository.js'
 import {
   COMMAND_EVENT_CATALOG,
@@ -74,6 +76,17 @@ export interface TargetedCommandMutationArgs<TExtra extends Record<string, unkno
   eventOrigin?: CommandEventOrigin
   mutationPath: string
   writeDatabase?: boolean
+  /**
+   * Opt-in narrowed read for callbacks that only locate one chat row and
+   * mutate it / do kit-writer message writes (audit M3/L5/L6): load the target
+   * chat row + its parent character via {@link loadPersistedForChatMutation},
+   * skipping the collection tables, plugin storage, the assets scan, and the
+   * sibling character/chat payload parse. Unknown ids and pre-extraction
+   * states fall back to the broad `loadPersisted`, so error behavior and the
+   * global dedup edge are unchanged. Incompatible with `writeDatabase` — a
+   * scoped read must never be written back whole.
+   */
+  chatScopedRead?: ChatMutationTarget
   mutate: (
     database: unknown,
     db: DatabaseSync,
@@ -126,6 +139,12 @@ export type TargetedMutationPath =
 export function applyTargetedCommandMutation<TExtra extends Record<string, unknown> = {}>(
   args: TargetedCommandMutationArgs<TExtra>,
 ): JsonCommandMutationResult<TExtra> {
+  if (args.chatScopedRead && args.writeDatabase) {
+    // A chat-scoped read holds ONE character; writing it back through the
+    // replaceAll* writers would delete every other character. Hard error so
+    // the combination can never ship.
+    throw new Error('chatScopedRead cannot be combined with writeDatabase')
+  }
   let transactionOpen = false
   const totalStartedAt = protocolNowMs()
   let loadMs = 0
@@ -144,7 +163,9 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     }
 
     const loadStartedAt = protocolNowMs()
-    const persisted = loadPersisted(args.db, args.dataDir)
+    const persisted = args.chatScopedRead
+      ? loadPersistedForChatMutation(args.db, args.dataDir, args.chatScopedRead)
+      : loadPersisted(args.db, args.dataDir)
     loadMs = protocolDurationMs(loadStartedAt)
 
     // The callback owns its targeted SQLite writes (kit writers); capture which

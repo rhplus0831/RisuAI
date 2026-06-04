@@ -49,7 +49,9 @@ const COLLECTION_TABLES = [
 ] as const
 
 export const CORPUS_TABLES: Readonly<Record<string, CorpusTableSpec>> = {
-  messages: { payloadColumns: ['json'], scopeColumns: ['chat_id'] },
+  // `uid` is the per-message id (indexed); a `WHERE uid = ?` lookup is a
+  // single-row read, not a corpus scan.
+  messages: { payloadColumns: ['json'], scopeColumns: ['chat_id', 'uid'] },
   chat_hypa_v3: { payloadColumns: ['json'], scopeColumns: ['chat_id'] },
   characters: { payloadColumns: ['data_json'], scopeColumns: ['id'] },
   chats: { payloadColumns: ['data_json'], scopeColumns: ['id', 'character_id'] },

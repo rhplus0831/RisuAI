@@ -3313,6 +3313,8 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        // M3/L5/L6: this callback only locates + rewrites the one chat row.
+        chatScopedRead: { chatId },
         mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
           const { character, chat } = requireChatLocation(characters, chatId)
@@ -3363,6 +3365,8 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
+        // M3/L5/L6: chat located for validation only; writes go to the message store.
+        chatScopedRead: { chatId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
           requireChatLocation(characters, chatId)
@@ -3405,6 +3409,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
+        // M3/L5/L6: the loader resolves the parent chat from the message id;
+        // a missing message falls back broad and the callback throws as before.
+        chatScopedRead: { messageId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
           const location = getActiveMessageLocationById(targetDb, messageId)
@@ -3450,6 +3457,8 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
+        // M3/L5/L6: same message-id-resolved scoped read as the PATCH route.
+        chatScopedRead: { messageId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
           const location = getActiveMessageLocationById(targetDb, messageId)
@@ -3500,6 +3509,8 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
+        // M3/L5/L6: chat located for validation only; truncate hits the message store.
+        chatScopedRead: { chatId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
           requireChatLocation(characters, chatId)
@@ -3540,6 +3551,8 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
+        // M3/L5/L6: chat located for validation only; replacement hits the message store.
+        chatScopedRead: { chatId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
           requireChatLocation(characters, chatId)
@@ -3581,6 +3594,8 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-generation',
+        // M3/L5/L6: chat located for validation only; persistence hits the message store.
+        chatScopedRead: { chatId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
           requireChatLocation(characters, chatId)

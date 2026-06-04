@@ -880,6 +880,71 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
   return persisted
 }
 
+/** Target selector for {@link loadPersistedForChatMutation}: the chat row
+ *  itself, or (for the message PATCH/DELETE routes) the active message whose
+ *  parent chat owns the mutation. */
+export interface ChatMutationTarget {
+  chatId?: string
+  messageId?: string
+}
+
+/**
+ * Chat-scoped read for the targeted command-mutation hot paths (audit M3, L5,
+ * L6). A message/scriptstate/generation mutation only locates one chat row and
+ * mutates it (or does message-table writes through the kit writers), so it
+ * must not pay `loadPersisted`'s 9-collection-table parse (M3), the assets
+ * metadata scan (L5), or the whole characters+chats payload parse (L6). Load
+ * exactly the target chat row plus its parent character row.
+ *
+ * Behavior is preserved by construction:
+ * - The chats table's PRIMARY KEY makes cross-character chat-id duplicates
+ *   impossible in the table, so `normalizeAllCharacterChats`'s global dedup is
+ *   a no-op on every state this loader serves; any state it cannot serve
+ *   (unknown id, pre-extraction embedded characters) falls back to the broad
+ *   `loadPersisted`, where the full normalize still runs.
+ * - The single-row reads parse the identical `data_json` payloads the broad
+ *   loader would have parsed for the same records.
+ *
+ * Never combine with a whole-database write-back (`writeDatabase`); the
+ * mutation helper guards this.
+ */
+export function loadPersistedForChatMutation(
+  db: DatabaseSync,
+  dataDir: string,
+  target: ChatMutationTarget,
+): Persisted {
+  let chatId = target.chatId
+  if (chatId === undefined && target.messageId !== undefined) {
+    // Id-only resolution (no payload column) of the message's parent chat.
+    const row = db
+      .prepare('SELECT chat_id FROM messages WHERE uid = ? AND alternate = 0 LIMIT 1')
+      .get(target.messageId) as { chat_id: string } | undefined
+    chatId = row?.chat_id
+  }
+  if (chatId === undefined) return loadPersisted(db, dataDir)
+
+  const chatRow = db
+    .prepare('SELECT id, character_id, position, data_json FROM chats WHERE id = ?')
+    .get(chatId) as ChatRow | undefined
+  if (!chatRow) return loadPersisted(db, dataDir)
+
+  const charRow = db
+    .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
+    .get(chatRow.character_id) as CharacterRow | undefined
+  if (!charRow) return loadPersisted(db, dataDir)
+
+  const character = JSON.parse(charRow.data_json) as Record<string, unknown>
+  if (!isRecord(character)) return loadPersisted(db, dataDir)
+  const chat = JSON.parse(chatRow.data_json) as unknown
+  character.chats = [chat]
+
+  return {
+    _version: PERSISTED_VERSION,
+    database: { characters: [character] },
+    assets: [],
+  }
+}
+
 /**
  * `loadPersisted` + join ONLY the target chat's messages/hypaV3 (audit M1).
  * Prompt assembly reads exactly one chat's transcript, so it must not pay the
