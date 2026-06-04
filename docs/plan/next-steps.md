@@ -1,14 +1,15 @@
 # Next Steps
 
-Date: 2026-06-04
+Date: 2026-06-05
 
-Phases 1, 2, and 3 are COMPLETE. Phase 1: H1 `0dc7452e`, H3 `e41dc6c6`, H2
+Phases 1-4 are COMPLETE. Phase 1: H1 `0dc7452e`, H3 `e41dc6c6`, H2
 `067ab82a`. Phase 2: scoped assembly load (M1, L1, L2, `c193c008`),
 command-mutation read narrowing (M3, L5, L6, `e0e86ab1`), single-character
 projection (M4, `254b3112`), and the metric/bulk-read slice (M5, L10, U1,
 `b2765994`). Phase 3: client clone narrowing (M12-M14, L31-L36, U4) plus the
-L32 watcher/global-modal ID-assignment follow-up. Next: pick Phase 4-7 by
-current pain — Phase 4 outbound request lifecycle is the next root in audit
+L32 watcher/global-modal ID-assignment follow-up. Phase 4: outbound request
+lifecycle (M6, M8, L20, L22-L25, `bf1a6cb2`). Next: pick Phase 5-7 by
+current pain — Phase 5 materialization/lifecycle is the next root in audit
 order.
 Every fix needs a regression test, a Phase 8 gate flip
 (`fixCompletenessGate.test.ts` registry `PLANNED` -> `DONE` with the test
@@ -35,14 +36,33 @@ both move together.
 
 In leverage order. Each is independent unless noted.
 
-1. Phase 4 — outbound request lifecycle (M6, M8, L20, L22-L25): the next root
-   in audit order. Generous preventive timeouts + abort propagation; the
-   durable path's 600s deadline is the reference. Do not set aggressive
-   provider/proxy timeouts.
-2. Phases 5-7 by current pain. Refresh
+1. Phase 5 — bounded materialization and lifecycle cleanup (M9-M11, L11-L15,
+   L27-L30): the next root in audit order. Streaming bounded inflate for
+   `.risu` import, token-only asset GC scan, bundle-export drain settle, and
+   the stream-job lifecycle lows. Round-trip identity gates any codec change.
+2. Phases 6-7 by current pain. Refresh
    [`latest-verification.md`](latest-verification.md) after each phase.
 
-Done so far (Phases 0-3 complete):
+Done so far (Phases 0-4 complete):
+
+- M6, M8, L20, L22-L25 — outbound request lifecycle, DONE (`bf1a6cb2`, one
+  batch): `/proxy/fetch` aborts upstream on `req.raw` close
+  (`AbortSignal.any` with the optional `risu-timeout-ms` signal, listener
+  removed in `finally`) and `buildApp` sets the 600s
+  `REQUEST_RECEIVE_TIMEOUT_MS` backstop (M6); the shared `attachAbort`
+  (`requestAbort.ts`) gives every non-durable buffered/streaming provider
+  signal the durable-reference 600s deadline and all buffered provider
+  bodies read through `readBoundedBodyText/Json` (32 MB cap) (M8); the
+  request/job signal threads through `AssembleDeps` into `runServerLua` —
+  no engine boot once aborted, host-fn abort checkpoints, early-wake
+  `sleep` (L20); streaming adapters cap their accumulation buffer at 8 MB
+  (L22); `isBlockedV6` unwraps mapped-hex/compatible/6to4/NAT64 embedded
+  IPv4 (L23); `setObjectValue` rejects prototype key segments (L24); the
+  Lua egress rate counter increments only after `validateEgressUrl` (L25).
+  Regressions: `proxy.test.ts` M6 block, `requestAbort.test.ts`,
+  `generationBodyCap.test.ts`, `luaRuntime.test.ts` L20/L23/L25 blocks,
+  `openai.test.ts` + `ollama.test.ts` L22 tests, `additionalParams.test.ts`
+  L24 test.
 
 - M12-M14, L31-L36, U4 — client clone narrowing, DONE (`0efa7ba6` plus L32
   follow-up): `/setvar`/`/addvar` drop the redundant `setDatabase` normalizer

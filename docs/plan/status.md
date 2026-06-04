@@ -1,28 +1,30 @@
 # Stability And Performance Remediation Status
 
-Date: 2026-06-04
+Date: 2026-06-05
 
 This is the entry router for the remediation workstream. Use it first, then open
 only the phase or slice needed for the task.
 
 The plan schedules 57 confirmed findings (3 high, 14 medium, 40 low) from
 [`audit-stability-and-performance.md`](audit-stability-and-performance.md) across
-Phases 0-8. Phases 0-3 are complete: all three highs are fixed — H1
-(`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`) — and all of Phase 2's server
+Phases 0-8. Phases 0-4 are complete: all three highs are fixed — H1
+(`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`) — all of Phase 2's server
 load narrowing landed — scoped assembly load (M1, L1, L2, `c193c008`),
 command-mutation read narrowing (M3, L5, L6, `e0e86ab1`), single-character
 projection (M4, `254b3112`), metric/bulk-read slice (M5, L10, U1,
-`b2765994`) — and Phase 3's client clone narrowing is complete after the L32
-watcher/global-modal follow-up. Next: pick Phase 4-7 by current pain (Phase 4
-outbound request lifecycle is the next root in audit order).
+`b2765994`) — Phase 3's client clone narrowing is complete after the L32
+watcher/global-modal follow-up, and Phase 4's outbound request lifecycle
+landed in one batch (M6, M8, L20, L22-L25, `bf1a6cb2`). Next: pick Phase 5-7
+by current pain (Phase 5 materialization/lifecycle is the next root in audit
+order).
 
 ## Current Snapshot
 
-All findings are routed. Phases 0-3 are complete. Phases 4-7 group the
+All findings are routed. Phases 0-4 are complete. Phases 5-7 group the
 remaining mediums/lows by root cause. Phase 8 is the standing gate (its
-scaffold is live and H1-H3, M1, M3-M5, M12-M14, L1/L2, L5/L6, L10, L31-L36,
-U1, and U4 are registered as `DONE`, including the L32 mount-time
-watcher/global-modal regression).
+scaffold is live and H1-H3, M1, M3-M6, M8, M12-M14, L1/L2, L5/L6, L10, L20,
+L22-L25, L31-L36, U1, and U4 are registered as `DONE`, including the L32
+mount-time watcher/global-modal regression).
 
 - [Phase 0](phases/phase-0-baseline-foundations.md) — COMPLETE. Shared
   large-corpus fixture + `assertScopedLoadOnHotPath` server load-count harness
@@ -46,8 +48,12 @@ watcher/global-modal regression).
   module toggle, single-row MCP patch, runner rejection rollback, scoped
   `setCurrentChat`, and scoped lorebook watcher/global-modal first-run
   ID assignment.
-- [Phase 4](phases/phase-4-outbound-request-lifecycle.md) — not started. M6,
-  M8, L20, L22-L25: outbound timeouts, abort, egress hardening.
+- [Phase 4](phases/phase-4-outbound-request-lifecycle.md) — COMPLETE. M6, M8,
+  L20, L22-L25 DONE (`bf1a6cb2`, one batch): proxy abort-on-close +
+  `requestTimeout` backstop, shared 600s non-durable `attachAbort` deadline +
+  32 MB buffered-body cap, request signal threaded into the Lua runtime,
+  8 MB streaming-buffer cap, embedded-IPv4 SSRF unwrapping, `setObjectValue`
+  prototype-key guard, post-validation egress rate counting.
 - [Phase 5](phases/phase-5-materialization-and-lifecycle.md) — not started.
   M9-M11, L11-L15, L27-L30: bounded materialization and lifecycle cleanup.
 - [Phase 6](phases/phase-6-memory-and-lua.md) — not started. M7, L16-L19, L21:
@@ -86,9 +92,15 @@ dismissed list. Highlights:
   whole-corpus deep clones; script-definition and lorebook watcher/editor
   surfaces scan/id-assign only their panel scope; fire-and-forget runners roll
   back surfaced factory rejections. Phase 3 is COMPLETE.
-- Remaining roots: Phase 4 outbound timeouts/abort (M6, M8, L20, L22-L25),
-  Phase 5 bounded materialization/lifecycle, Phase 6 memory/Lua, Phase 7
-  memoization/hygiene.
+- Phase 4 outbound request lifecycle is DONE (M6, M8, L20, L22-L25,
+  `bf1a6cb2`): the proxy and non-durable provider paths abort on disconnect
+  and at a generous 600s deadline, buffered provider bodies and streaming
+  buffers are capped, the Lua runtime cancels on the request signal, and the
+  IPv6-embedded-IPv4 / prototype-pollution / rate-counter egress gaps are
+  closed. Phase 4 is COMPLETE.
+- Remaining roots: Phase 5 bounded materialization/lifecycle (M9-M11,
+  L11-L15, L27-L30), Phase 6 memory/Lua (M7, L16-L19, L21), Phase 7
+  memoization/hygiene (M2, L3, L8, L9, L37-L40).
 - Gated (not scheduled): L4, L7, L26, U2 stay on the
   `RISU_PROTOCOL_METRICS` evidence path or an owner decision; U3 needs no
   action; the five dismissed candidates (R1-R5 in the audit) are non-issues.

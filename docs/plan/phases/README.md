@@ -22,8 +22,8 @@ the finding -> phase map is in
 - Phase 3, complete (Root 2 — client clone narrowing; M12-M14, L31-L36, U4):
   [`phase-3-client-clone-narrowing.md`](phase-3-client-clone-narrowing.md),
   [`slices/phase-3-client-clone-narrowing/`](slices/phase-3-client-clone-narrowing/).
-- Phase 4, not started (Root 4 — outbound request lifecycle):
-  [`phase-4-outbound-request-lifecycle.md`](phase-4-outbound-request-lifecycle.md),
+- Phase 4, complete (Root 4 — outbound request lifecycle; M6, M8, L20,
+  L22-L25): [`phase-4-outbound-request-lifecycle.md`](phase-4-outbound-request-lifecycle.md),
   [`slices/phase-4-outbound-request-lifecycle/`](slices/phase-4-outbound-request-lifecycle/).
 - Phase 5, not started (Root 5 — materialization & lifecycle):
   [`phase-5-materialization-and-lifecycle.md`](phase-5-materialization-and-lifecycle.md),

@@ -1,7 +1,7 @@
 # Phase 4: Outbound Request Lifecycle (Root 4)
 
-Status: not started. Adds timeouts, abort propagation, and egress hardening for
-proxy, non-durable provider, and Lua fetch paths.
+Status: COMPLETE (`bf1a6cb2`). Timeouts, abort propagation, and egress
+hardening landed for proxy, non-durable provider, and Lua fetch paths.
 
 Goal: every outbound request has a generous wall-clock bound and cancels when its
 originating request ends. SSRF/egress/injection guards cover the known bypasses.
@@ -54,19 +54,26 @@ Findings: M6, M8, L20, L22, L23, L24, L25.
 
 ## Exit Criteria
 
-- [ ] M6: a client disconnect during a `/proxy/fetch` aborts the upstream; a
+- [x] M6: a client disconnect during a `/proxy/fetch` aborts the upstream; a
       `requestTimeout` backstop exists; the close listener is removed in `finally`.
-- [ ] M8: non-durable buffered/streaming provider requests are bounded by a
+      (`proxy.test.ts` M6 block — the disconnect test was proven failing
+      without the fix; `REQUEST_RECEIVE_TIMEOUT_MS` = 600s in `app.ts`.)
+- [x] M8: non-durable buffered/streaming provider requests are bounded by a
       generous deadline and a body-size cap; a slow-but-valid local model is not
-      aborted prematurely (test the bound is generous).
-- [ ] L20: aborting the request cancels in-flight Lua hook work.
-- [ ] L22: a streaming response with no delimiter is bounded, not unbounded.
-- [ ] L23: embedded-private IPv6 forms are blocked (test the previously-bypassing
-      addresses).
-- [ ] L24: `setObjectValue` cannot pollute `Object.prototype` (test the dotted
-      key payloads).
-- [ ] L25: a blocked URL does not consume the egress budget.
-- [ ] Gates registered in Phase 8; server suite + audit + TypeScript checks green.
+      aborted prematurely (the 600s default mirrors the durable reference;
+      `requestAbort.test.ts` + `generationBodyCap.test.ts`).
+- [x] L20: aborting the request cancels in-flight Lua hook work
+      (`luaRuntime.test.ts` L20 block — entry, load, and host-fn checkpoints).
+- [x] L22: a streaming response with no delimiter is bounded, not unbounded
+      (8 MB cap in `generation/sse.ts`; `openai.test.ts` + `ollama.test.ts`).
+- [x] L23: embedded-private IPv6 forms are blocked (mapped-hex / compatible /
+      6to4 / NAT64 payloads in `luaRuntime.test.ts`; public transition forms
+      stay reachable).
+- [x] L24: `setObjectValue` cannot pollute `Object.prototype`
+      (`additionalParams.test.ts` dotted-key payloads).
+- [x] L25: a blocked URL does not consume the egress budget
+      (`luaRuntime.test.ts` L25 test).
+- [x] Gates registered in Phase 8; server suite + audit + TypeScript checks green.
 
 ## Validation
 

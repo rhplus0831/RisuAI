@@ -47,9 +47,9 @@ consumers.
 | M3  | [2](phases/phase-2-server-load-narrowing.md)         | Field-scoped command reads or per-request load memo.            | DONE (`e0e86ab1`) |
 | M4  | [2](phases/phase-2-server-load-narrowing.md)         | Single-row `loadSingleCharacterRow`; in-place mask where owned. | DONE (`254b3112`) |
 | M5  | [2](phases/phase-2-server-load-narrowing.md)         | Defer `jsonPayloadBytes` until metrics are enabled.             | DONE (`b2765994`) |
-| M6  | [4](phases/phase-4-outbound-request-lifecycle.md)    | Abort proxy `/fetch` upstream on close; add timeout backstop.   | scheduled         |
+| M6  | [4](phases/phase-4-outbound-request-lifecycle.md)    | Abort proxy `/fetch` upstream on close; add timeout backstop.   | DONE (`bf1a6cb2`) |
 | M7  | [6](phases/phase-6-memory-and-lua.md)                | Cap embed batches; split contextual requests by token size.     | scheduled         |
-| M8  | [4](phases/phase-4-outbound-request-lifecycle.md)    | Add non-durable provider deadline and body cap.                 | scheduled         |
+| M8  | [4](phases/phase-4-outbound-request-lifecycle.md)    | Add non-durable provider deadline and body cap.                 | DONE (`bf1a6cb2`) |
 | M9  | [5](phases/phase-5-materialization-and-lifecycle.md) | Streaming bounded inflate per envelope/block.                   | scheduled         |
 | M10 | [5](phases/phase-5-materialization-and-lifecycle.md) | Token-only asset scan; defer import asset report.               | scheduled         |
 | M11 | [5](phases/phase-5-materialization-and-lifecycle.md) | Settle bundle-export drain wait on `close`/`error`.             | scheduled         |
@@ -78,12 +78,12 @@ consumers.
 | L17 | [6](phases/phase-6-memory-and-lua.md)                | Bound per-chat memory batches for fairness.                    | scheduled                         |
 | L18 | [6](phases/phase-6-memory-and-lua.md)                | Reuse the Phase 2 scoped/memoized loader in memory batches.    | scheduled (after Phase 2)         |
 | L19 | [6](phases/phase-6-memory-and-lua.md)                | Aggregate Lua exec budget across hook phases. [known-leftover] | scheduled                         |
-| L20 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Thread request `AbortSignal` into the Lua runtime.             | scheduled                         |
+| L20 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Thread request `AbortSignal` into the Lua runtime.             | DONE (`bf1a6cb2`)                 |
 | L21 | [6](phases/phase-6-memory-and-lua.md)                | Reuse engine safely or cache compiled prelude.                 | scheduled                         |
-| L22 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Cap the streaming-provider SSE accumulation buffer.            | scheduled                         |
-| L23 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Block embedded-private IPv6 forms. [known-leftover]            | scheduled                         |
-| L24 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Reject prototype keys in `setObjectValue`.                     | scheduled                         |
-| L25 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Count Lua egress only after URL validation.                    | scheduled                         |
+| L22 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Cap the streaming-provider SSE accumulation buffer.            | DONE (`bf1a6cb2`)                 |
+| L23 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Block embedded-private IPv6 forms. [known-leftover]            | DONE (`bf1a6cb2`)                 |
+| L24 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Reject prototype keys in `setObjectValue`.                     | DONE (`bf1a6cb2`)                 |
+| L25 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Count Lua egress only after URL validation.                    | DONE (`bf1a6cb2`)                 |
 | L27 | [5](phases/phase-5-materialization-and-lifecycle.md) | Guard backup manifest `JSON.parse`.                            | scheduled                         |
 | L28 | [5](phases/phase-5-materialization-and-lifecycle.md) | Make legacy restore re-import transactional.                   | scheduled                         |
 | L29 | [5](phases/phase-5-materialization-and-lifecycle.md) | Persist writer-session origin on command events.               | scheduled                         |

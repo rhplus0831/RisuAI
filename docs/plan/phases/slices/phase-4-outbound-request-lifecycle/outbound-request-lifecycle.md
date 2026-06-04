@@ -1,7 +1,7 @@
 # Outbound Request Lifecycle
 
-Status: not started. Phase 4. Bundles outbound timeout/abort fixes and egress
-hardening.
+Status: COMPLETE (`bf1a6cb2`). Phase 4. Bundles outbound timeout/abort fixes
+and egress hardening.
 
 ## Scope
 
@@ -26,21 +26,31 @@ gaps.
 
 ## Item Checklist
 
-- [ ] M6 — proxy `/fetch` aborts upstream on `req.raw` close via
-      `AbortSignal.any([timeout.signal, closeSignal])`; remove the close listener
-      in `finally`; add a generous Fastify `requestTimeout` backstop.
-- [ ] M8 — install a bounded deadline in `attachAbort` (mirror the durable
-      600s `deadlineAt`) covering buffered + streaming non-durable paths and the
-      standalone `routes/generation.ts` endpoints; add a body-size cap on buffered
-      provider bodies.
-- [ ] L20 — thread the request `AbortSignal` into `runServerLua` (cooperate
-      with the existing exec-limit hook) so disconnect cancels in-flight hook work.
-- [ ] L22 — cap the streaming-provider SSE accumulation buffer.
-- [ ] L23 — unwrap 6to4 / NAT64 / IPv4-compatible embedded addresses in
-      `isBlockedV6` [known-leftover: hosted-Lua].
-- [ ] L24 — reject dotted `__proto__`/`constructor`/`prototype` keys in
-      `setObjectValue`.
-- [ ] L25 — increment the Lua egress rate counter only after
+- [x] M6 — proxy `/fetch` aborts upstream on `req.raw` close via
+      `AbortSignal.any([timeout.signal, closeSignal])` (close-only signal when no
+      `risu-timeout-ms` is present); the close listener is removed in `finally`;
+      `buildApp` sets the `REQUEST_RECEIVE_TIMEOUT_MS` (600s) `requestTimeout`
+      backstop.
+- [x] M8 — the shared `attachAbort` (`src/requestAbort.ts`, used by
+      `routes/generation.ts` + `routes/generationChat.ts`) installs the
+      `NON_DURABLE_REQUEST_DEADLINE_MS` (= durable 600s `deadlineAt`) timer;
+      every buffered provider body read goes through `readBoundedBodyText/Json`
+      (`generation/body.ts`, 32 MB cap; all 12 adapters + `vertexAuth`).
+- [x] L20 — `AssembleDeps.signal` → `AssemblyState.signal` →
+      `ServerLuaRuntimeContext.signal`: `runServerLua` never boots on an aborted
+      signal, every host fn is an abort checkpoint, `sleep` wakes early, and the
+      load thread's deadline is pulled to "now" on abort (cooperating with the
+      exec-limit hook). `streamAssembly`, the durable runner, and
+      `preview-prompt` pass their signals.
+- [x] L22 — the five streaming adapters cap the accumulation buffer
+      (`MAX_STREAM_BUFFER_CHARS` = 8 MB in `generation/sse.ts`); a
+      delimiter-less upstream yields one bounded error frame.
+- [x] L23 — `isBlockedV6` unwraps IPv4-mapped-hex / IPv4-compatible / 6to4 /
+      NAT64 embedded addresses and classifies the embedded IPv4
+      [known-leftover: hosted-Lua].
+- [x] L24 — `setObjectValue` drops entries whose dotted key contains
+      `__proto__`/`constructor`/`prototype`.
+- [x] L25 — the Lua egress rate counter increments only after
       `validateEgressUrl` passes.
 
 ## Behavior / Invariants
@@ -52,20 +62,29 @@ gaps.
 
 ## Done Criteria
 
-- M6: a disconnect mid-`/proxy/fetch` aborts the upstream; backstop timeout
+All met by `bf1a6cb2`:
+
+- M6: a disconnect mid-`/proxy/fetch` aborts the upstream (`proxy.test.ts` M6
+  disconnect test, proven failing without the fix); backstop timeout
   configured; no listener leak.
-- M8: non-durable provider requests have a generous deadline and body cap; tests
-  confirm slow valid models are not aborted.
-- L20: aborting the request cancels in-flight Lua work.
-- L22: a delimiter-less stream is bounded.
-- L23: the previously-bypassing embedded-private IPv6 forms are blocked (test).
-- L24: `setObjectValue` cannot pollute `Object.prototype` (test the payloads).
-- L25: a blocked URL does not consume the egress budget.
-- Gates `M6, M8, L20, L22, L23, L24, L25` registered in Phase 8.
+- M8: non-durable provider requests have a generous deadline and body cap;
+  `requestAbort.test.ts` proves the bound is the durable 600s reference and a
+  slow-but-valid request inside the bound is not aborted;
+  `generationBodyCap.test.ts` proves an over-cap body fails closed.
+- L20: aborting the request cancels in-flight Lua work (`luaRuntime.test.ts`
+  L20 block).
+- L22: a delimiter-less stream is bounded (`openai.test.ts` SSE +
+  `ollama.test.ts` NDJSON).
+- L23: the previously-bypassing embedded-private IPv6 forms are blocked
+  (`luaRuntime.test.ts` L23 block).
+- L24: `setObjectValue` cannot pollute `Object.prototype`
+  (`additionalParams.test.ts` payloads).
+- L25: a blocked URL does not consume the egress budget (`luaRuntime.test.ts`
+  L25 test).
+- Gates `M6, M8, L20, L22, L23, L24, L25` registered as `DONE` in Phase 8.
 
 ## Validation
 
-- `pnpm api:test -- server/fastify/__tests__/proxy.test.ts server/fastify/__tests__/generation.test.ts`
-- `pnpm api:test -- server/fastify/__tests__/luaRuntime*.test.ts` + a
-  `setObjectValue` prototype-pollution unit test.
-- `pnpm api:test`, both TypeScript checks.
+Recorded in [`../../../latest-verification.md`](../../../latest-verification.md):
+server suite 1692/1 (+21), client suite 1121/4 (carried), audit green, both
+TypeScript checks zero errors.
