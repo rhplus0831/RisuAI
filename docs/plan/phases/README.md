@@ -9,10 +9,10 @@ in
 the finding -> phase map is in
 [`../active-risk-analysis.md`](../active-risk-analysis.md).
 
-- Phase 0, not started (foundations; no runtime change):
+- Phase 0, complete (foundations; no runtime change):
   [`phase-0-baseline-foundations.md`](phase-0-baseline-foundations.md),
   [`slices/phase-0-baseline-foundations/`](slices/phase-0-baseline-foundations/).
-- Phase 1, not started (the three high-severity fixes):
+- Phase 1, complete (the three high-severity fixes):
   [`phase-1-high-severity-hot-paths.md`](phase-1-high-severity-hot-paths.md),
   [`slices/phase-1-high-severity-hot-paths/`](slices/phase-1-high-severity-hot-paths/).
 - Phase 2, not started (Root 1 — server broad-load narrowing):
@@ -33,7 +33,7 @@ the finding -> phase map is in
 - Phase 7, not started (memoization & hygiene):
   [`phase-7-memoization-and-hygiene.md`](phase-7-memoization-and-hygiene.md),
   [`slices/phase-7-memoization-and-hygiene/`](slices/phase-7-memoization-and-hygiene/).
-- Phase 8, not started (verification budgets):
+- Phase 8, standing (verification budgets; scaffold live):
   [`phase-8-verification-budgets.md`](phase-8-verification-budgets.md),
   [`slices/phase-8-verification-budgets/`](slices/phase-8-verification-budgets/).
 

@@ -58,9 +58,10 @@ work.
       `server/fastify/__tests__/serverLoadCostHarness.test.ts`.
 - [x] H2: `changeChatTo` captures a scalar chat-selection snapshot; a clone-cost
       test proves it does not clone the `characters` array; a rollback-correctness
-      test proves a failed select restores only `chatPage`/`selectedChar` and does
-      not clobber unrelated edits. `currentChatStateSnapshot` remains for
-      restructures. DONE (`067ab82a`): proofs in
+      test proves a failed select restores only the owning character's `chatPage`
+      and does not clobber unrelated edits or character selection.
+      `currentChatStateSnapshot` remains for restructures. DONE (`067ab82a`):
+      proofs in
       `src/ts/globalApi.changeChatTo.test.ts` and `src/ts/chatCommands.test.ts`
       (the restore writes only `chatPage`; `selectedCharID` is captured for row
       location, never re-written).

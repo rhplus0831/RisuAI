@@ -62,9 +62,9 @@ hot paths, but left adjacent paths broad:
   bounded only by Node/undici defaults.
 - Several decompress/buffer paths check size only after full materialization.
 
-This plan starts from the green baseline in
-[`latest-verification.md`](latest-verification.md). No fix in this plan has
-landed yet.
+This plan started from the green baseline in
+[`latest-verification.md`](latest-verification.md). Phases 0 and 1 have landed;
+Phase 2 is next.
 
 ## Prerequisites
 
@@ -130,8 +130,9 @@ Every slice must preserve these; a slice that cannot is out of scope:
 
 ## Execution Cursor
 
-Nothing is implemented yet. Start with Phase 0, then Phase 1. After that,
-prefer Phases 2-7 in the order above. Phase 8 is the standing gate.
+Phases 0 and 1 are complete. Continue with Phase 2, then prefer Phases 3-7 in
+the order above unless current evidence points elsewhere. Phase 8 is the
+standing gate.
 
 For each fix: re-check the cited symbol, add the focused regression test, narrow
 or bound the path, keep true full-corpus consumers broad, and register the gate.

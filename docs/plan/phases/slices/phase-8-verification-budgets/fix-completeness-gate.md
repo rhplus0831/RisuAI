@@ -1,8 +1,9 @@
 # Fix-Completeness Gate
 
 Status: standing — the Phase 0 scaffold is live at
-`src/ts/__tests__/fixCompletenessGate.test.ts` with every id `PLANNED`. This
-slice is the maintenance contract for it: flip ids to `DONE` as fixes land.
+`src/ts/__tests__/fixCompletenessGate.test.ts`. Phase 0 seeded scheduled ids as
+`PLANNED`; H1/H2/H3 are now `DONE` with test paths. This slice is the
+maintenance contract for it: flip remaining ids to `DONE` as fixes land.
 Flipping requires updating the registry AND
 [`../../../active-risk-analysis.md`](../../../active-risk-analysis.md)
 together — the lockstep self-check fails if only one moves.

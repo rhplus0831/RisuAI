@@ -39,10 +39,11 @@ fresh green baseline. This is the server analog of `cloneCostHarness.ts`.
 
 ## Flip Notes For Later Phases
 
-- The two "CURRENT breadth" assertions in `serverLoadCostHarness.test.ts`
-  (H1 fallback, U1 bulk known-id check) assert `corpusLoadCount > 0` today.
-  The phase that narrows each path must flip its block to
-  `assertScopedLoadOnHotPath` — the comments mark the exact spots.
+- Phase 1 flipped the H1 no-hypa fallback from a "CURRENT breadth" assertion to
+  `assertScopedLoadOnHotPath`. The remaining broad positive controls are the
+  legitimate zero-row embedded fallback and the U1 bulk known-id check. The phase
+  that narrows U1 must flip its block to `assertScopedLoadOnHotPath` — the
+  comments mark the exact spot.
 
 ## Source Anchors
 

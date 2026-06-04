@@ -42,7 +42,8 @@ it here.
 
 - Add `ChatSelectionSnapshot`, `currentChatSelectionSnapshot()`, and
   `restoreChatSelection()` in `chatCommands.ts`. Capture `selectedCharID`,
-  target `chatPage`, and `chaId`; restore only `chatPage`/`selectedChar`.
+  target `chatPage`, and `chaId`; restore only the owning character's
+  `chatPage`. `selectedCharID` is only an index fallback for locating that row.
 - `changeChatTo` dispatches its empty-patch select with the scalar rollback
   instead of `currentChatStateSnapshot()`.
 - Keep `currentChatStateSnapshot` for genuine restructures.
@@ -51,16 +52,16 @@ it here.
 
 - The optimistic write (set `chatPage`, dispatch select) and the command/
   revision/event behavior are unchanged.
-- A failed select restores only `chatPage`/`selectedChar`; it must not clobber
-  unrelated edits.
+- A failed select restores only the owning character's `chatPage`; it must not
+  clobber unrelated edits or rewrite character selection.
 - Rendered chat after select is identical.
 
 ## Done Criteria
 
 - A clone-cost test (reuse `cloneCostHarness.ts`) proves `changeChatTo` does not
   invoke a whole-`characters` clone primitive.
-- A rollback-correctness test proves a failed select restores only the selection
-  scalars and leaves a concurrent sibling edit intact.
+- A rollback-correctness test proves a failed select restores only the owning
+  `chatPage` and leaves a concurrent sibling edit and character selection intact.
 - `currentChatStateSnapshot` remains in use for create/delete/reorder/fork.
 - Gate `H2` registered in the Phase 8 completeness map.
 

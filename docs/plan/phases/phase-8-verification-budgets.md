@@ -1,9 +1,10 @@
 # Phase 8: Verification Budgets
 
 Status: standing — the Phase 0 scaffold is live at
-`src/ts/__tests__/fixCompletenessGate.test.ts` (all ids `PLANNED`). Keeps every
-scheduled fix's regression proof registered and keeps the verification record
-current.
+`src/ts/__tests__/fixCompletenessGate.test.ts`. It seeded scheduled ids as
+`PLANNED`; landed fixes flip to `DONE` with a test path, and H1/H2/H3 are
+currently `DONE`. Keeps every scheduled fix's regression proof registered and
+keeps the verification record current.
 
 Goal: prevent silent regression. Every fix in Phases 1-7 registers its test by
 finding id. The gate fails if a registered proof is missing or if runtime code
@@ -25,7 +26,7 @@ lands without a proof. Refresh
 - [`fix-completeness-gate.md`](slices/phase-8-verification-budgets/fix-completeness-gate.md) -
   map each scheduled id to its regression test; keep explicit
   `INTENTIONALLY_GATED` and `NO_ACTION` lists; fail on drift. Phase 0 seeds
-  `PLANNED` entries, and later phases replace them with test paths.
+  `PLANNED` entries, and landed phases replace them with test paths.
 
 ## Planned Shape
 
@@ -38,11 +39,11 @@ lands without a proof. Refresh
 
 ## Exit Criteria
 
-- [ ] A single completeness gate enumerates every audit finding id and classifies
+- [x] A single completeness gate enumerates every audit finding id and classifies
       it (scheduled-with-test / planned / gated / no-action / dismissed).
-- [ ] The gate fails when a `DONE` finding's registered test is missing or
+- [x] The gate fails when a `DONE` finding's registered test is missing or
       renamed.
-- [ ] The gate fails if a new finding id appears in the audit without a registry
+- [x] The gate fails if a new finding id appears in the audit without a registry
       entry (universe completeness).
 - [ ] [`../latest-verification.md`](../latest-verification.md) is refreshed after
       each phase with the maintained full/focused run.

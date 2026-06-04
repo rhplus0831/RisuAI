@@ -12,15 +12,16 @@ Phases 0-8. Phases 0 and 1 are complete: all three highs are fixed — H1
 
 ## Current Snapshot
 
-All findings are routed. Phase 1 is in progress (H1 done). Phases 2-7 group the
-mediums/lows by root cause. Phase 8 is the standing gate (its scaffold is
-live).
+All findings are routed. Phase 1 is complete. Phases 2-7 group the mediums/lows
+by root cause. Phase 8 is the standing gate (its scaffold is live and H1/H2/H3
+are registered as `DONE`).
 
 - [Phase 0](phases/phase-0-baseline-foundations.md) — COMPLETE. Shared
   large-corpus fixture + `assertScopedLoadOnHotPath` server load-count harness
-  (with the H1/U1 breadth detections as self-proof), and the fix-completeness
-  gate scaffold (`src/ts/__tests__/fixCompletenessGate.test.ts`, all ids
-  `PLANNED`, doc-mirrored, fails on drift). No runtime change.
+  (with breadth detections as self-proof), and the fix-completeness gate
+  scaffold (`src/ts/__tests__/fixCompletenessGate.test.ts`, seeded in Phase 0
+  with planned ids, now carrying H1/H2/H3 as `DONE`, doc-mirrored, fails on
+  drift). No runtime change.
 - [Phase 1](phases/phase-1-high-severity-hot-paths.md) — COMPLETE. H1 DONE
   (`0dc7452e`, hydration guard); H3 DONE (`e41dc6c6`, streaming render
   coalescing); H2 DONE (`067ab82a`, chat-selection scalar snapshot).
@@ -58,7 +59,7 @@ dismissed list. Highlights:
 ## Latest Verification
 
 See [`latest-verification.md`](latest-verification.md). Re-run and record the
-baseline before starting Phase 1.
+focused/full proof set before starting Phase 2 or after any later phase lands.
 
 ## Start Here
 

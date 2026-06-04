@@ -13,10 +13,11 @@ and eventual regression test. Seed scheduled ids as `PLANNED` and fail on drift.
 harness), the path Phase 8 expects:
 
 - `SCHEDULED_FIXES` — all 56 scheduled ids (`H1`-`H3`, the 14 mediums, the 37
-  scheduled lows, `U1`, `U4`) as `{ id, phase, fix, status: 'PLANNED' }`.
-  A landing fix flips its entry to `DONE` with a repo-root-relative
-  `testPath` (+ optional `testName` containment check); server-side gates are
-  referenced by path so this one client-suite test asserts their existence.
+  scheduled lows, `U1`, `U4`). Phase 0 seeded them as
+  `{ id, phase, fix, status: 'PLANNED' }`; landed fixes flip their entries to
+  `DONE` with repo-root-relative `testPath` values (+ optional `testName`
+  containment checks). Server-side gates are referenced by path so this one
+  client-suite test asserts their existence.
 - `INTENTIONALLY_GATED` (L4, L7, L26, U2) and `NO_ACTION` (U3 + the dismissed
   R1-R5, in the audit's bullet order), each with a reason.
 - Self-checks parse the docs rather than trusting the registry:
@@ -48,14 +49,14 @@ harness), the path Phase 8 expects:
 
 ## Behavior / Invariants
 
-- Test-only. In Phase 0 every scheduled id is `PLANNED`; later phases flip ids
-  to `DONE`. Flipping requires updating BOTH the registry and
+- Test-only. At Phase 0 landing every scheduled id was `PLANNED`; later phases
+  flip ids to `DONE`. Flipping requires updating BOTH the registry and
   `active-risk-analysis.md` — the lockstep check enforces the pairing.
 
 ## Done Criteria
 
-- [x] The gate scaffold exists, enumerates all audit finding ids, and passes
-      with everything `PLANNED`.
+- [x] The gate scaffold exists, enumerates all audit finding ids, and passed at
+      Phase 0 landing with everything `PLANNED`.
 - [x] The gate fails in a unit test when a `DONE` entry points at a missing
       test (the negative self-proof case).
 
