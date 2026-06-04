@@ -114,8 +114,32 @@ function getScriptCache(hash: string) {
   return processScriptCache.get(hash)
 }
 
+// Regex-script sources are constant across the per-token streaming re-runs that
+// miss the script cache, so compiling `new RegExp(source, flag)` on every
+// `executeScript` is pure waste. Memoize the compiled regex keyed by its source
+// and flags. The cached instance's only mutable state is `lastIndex`, which we
+// reset on every retrieval so a reused (possibly global/sticky) regex behaves
+// exactly like a freshly compiled one.
+let compiledRegexCache = new Map<string, RegExp>()
+
+// Exported for the regex-cache regression test; not part of the public API.
+export function getCompiledRegex(source: string, flag: string): RegExp {
+  const key = `${flag}|||${source}`
+  let reg = compiledRegexCache.get(key)
+  if (!reg) {
+    reg = new RegExp(source, flag)
+    compiledRegexCache.set(key, reg)
+    if (compiledRegexCache.size > 1000) {
+      compiledRegexCache.delete(compiledRegexCache.keys().next().value)
+    }
+  }
+  reg.lastIndex = 0
+  return reg
+}
+
 export function resetScriptCache() {
   processScriptCache = new Map()
+  compiledRegexCache = new Map()
 }
 
 export async function processScriptFull(
@@ -212,7 +236,7 @@ export async function processScriptFull(
         input = risuChatParser(input, { chatID: chatID, cbsConditions })
       }
 
-      const reg = new RegExp(input, flag)
+      const reg = getCompiledRegex(input, flag)
       if (outScript.startsWith('@@') || pscript.actions.length > 0) {
         if (reg.test(data)) {
           if (outScript.startsWith('@@emo ')) {
