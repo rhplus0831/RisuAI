@@ -44,7 +44,7 @@ consumers.
 | -- | ----- | ---------- | ------ |
 | M1 | [2](phases/phase-2-server-load-narrowing.md) | Scoped target-chat message/hypa load. [known-leftover] | DONE (`c193c008`) |
 | M2 | [7](phases/phase-7-memoization-and-hygiene.md) | Hoist module/script/RegExp work once per assembly. | scheduled |
-| M3 | [2](phases/phase-2-server-load-narrowing.md) | Field-scoped command reads or per-request load memo. | scheduled |
+| M3 | [2](phases/phase-2-server-load-narrowing.md) | Field-scoped command reads or per-request load memo. | DONE (`e0e86ab1`) |
 | M4 | [2](phases/phase-2-server-load-narrowing.md) | Single-row `loadSingleCharacterRow`; in-place mask where owned. | scheduled |
 | M5 | [2](phases/phase-2-server-load-narrowing.md) | Defer `jsonPayloadBytes` until metrics are enabled. | scheduled |
 | M6 | [4](phases/phase-4-outbound-request-lifecycle.md) | Abort proxy `/fetch` upstream on close; add timeout backstop. | scheduled |
@@ -64,8 +64,8 @@ consumers.
 | L1 | [2](phases/phase-2-server-load-narrowing.md) | Memoize `getActiveModules` per assembly. | DONE (`c193c008`) |
 | L2 | [2](phases/phase-2-server-load-narrowing.md) | Hoist invariant run-var expansion. | DONE (`c193c008`) |
 | L3 | [7](phases/phase-7-memoization-and-hygiene.md) | Hoist/compile lorebook keyword regexes. [known-leftover] | scheduled |
-| L5 | [2](phases/phase-2-server-load-narrowing.md) | Skip asset scan when mutation does not read assets. | scheduled |
-| L6 | [2](phases/phase-2-server-load-narrowing.md) | Narrow message-only character/chat lookup. | scheduled |
+| L5 | [2](phases/phase-2-server-load-narrowing.md) | Skip asset scan when mutation does not read assets. | DONE (`e0e86ab1`) |
+| L6 | [2](phases/phase-2-server-load-narrowing.md) | Narrow message-only character/chat lookup. | DONE (`e0e86ab1`) |
 | L8 | [7](phases/phase-7-memoization-and-hygiene.md) | Replace `OFFSET 999` prune walk with bounded delete. | scheduled |
 | L9 | [7](phases/phase-7-memoization-and-hygiene.md) | Drop redundant `chats` DELETE. | scheduled |
 | L10 | [2](phases/phase-2-server-load-narrowing.md) | Load command-event history only when replay is requested. | scheduled |

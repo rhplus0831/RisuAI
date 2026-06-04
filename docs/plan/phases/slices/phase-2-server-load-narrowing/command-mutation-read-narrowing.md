@@ -1,6 +1,30 @@
 # Command-Mutation Read Narrowing
 
-Status: not started. Phase 2. Covers M3, L5, L6: command-mutation read cost.
+Status: DONE (`e0e86ab1`). Phase 2. Covers M3, L5, L6: command-mutation read cost.
+
+Landed shape:
+
+- `loadPersistedForChatMutation(db, dataDir, { chatId | messageId })`
+  (`server/fastify/src/repository.ts`): loads exactly the target chat row +
+  its parent character row — no collection tables, no plugin storage, no
+  assets scan, no sibling character/chat payload parse. `messageId` targets
+  resolve their chat through the indexed `uid` column (id-only read). Unknown
+  ids and the pre-extraction embedded state fall back to the broad
+  `loadPersisted`, so 404 contracts and the global dedup edge are unchanged.
+- `applyTargetedCommandMutation` gains opt-in `chatScopedRead`, hard-guarded
+  against `writeDatabase` (a one-character read written back whole would
+  delete every other character).
+- Wired routes (all writes already targeted, reads now too): scriptstate
+  PATCH, message append / PATCH / DELETE / truncate / PUT, generation-result.
+- Dedup invariant: the chats table PRIMARY KEY makes cross-character chat-id
+  duplicates impossible in every state the scoped read serves; the embedded
+  state (the one place duplicates can exist) falls back broad where
+  `normalizeAllCharacterChats` still repairs them — regression-tested.
+- Harness: `messages.uid` registered as a row-scoping predicate
+  (`loadCostHarness.ts`).
+- Regression tests: `commandMutationReadNarrowing.test.ts` (scoped scriptstate
+  PATCH, scoped full message lifecycle, loader equivalence, broad-fallback
+  404s, embedded-state dedup, writeDatabase guard).
 
 ## Scope
 
@@ -45,10 +69,13 @@ only touch `characters`. Narrow the read.
 
 ## Done Criteria
 
-- A load-count test shows a message/scriptstate/generation mutation parses only
-  the tables it reads (no collection / asset / message-body parse).
-- The cross-character chat/folder-id dedup invariant is covered by a test.
-- Gates `M3`, `L5`, `L6` registered in Phase 8.
+- [x] A load-count test shows a message/scriptstate/generation mutation parses only
+  the tables it reads (no collection / asset / message-body parse) —
+  `commandMutationReadNarrowing.test.ts` wraps the seven routes in
+  `assertScopedLoadOnHotPath`.
+- [x] The cross-character chat/folder-id dedup invariant is covered by a test
+  (embedded-state fallback + `normalizeAllCharacterChats` repair).
+- [x] Gates `M3`, `L5`, `L6` registered in Phase 8 (`fixCompletenessGate.test.ts`).
 
 ## Validation
 

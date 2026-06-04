@@ -3,10 +3,12 @@
 Date: 2026-06-04
 
 Phase 1 is COMPLETE (H1 `0dc7452e`, H3 `e41dc6c6`, H2 `067ab82a`). Phase 2 is
-in progress: the scoped-assembly-load slice (M1, L1, L2) is DONE (`c193c008`).
-Next is command-mutation read narrowing (M3, L5, L6). Every fix needs a
-regression test, a Phase 8 gate flip (`fixCompletenessGate.test.ts` registry
-`PLANNED` -> `DONE` with the test path), and the matching status flip in
+in progress: scoped assembly load (M1, L1, L2, `c193c008`) and
+command-mutation read narrowing (M3, L5, L6, `e0e86ab1`) are DONE. Next is
+the single-character projection (M4), then the metric/bulk-read slice (M5,
+L10, U1). Every fix needs a regression test, a Phase 8 gate flip
+(`fixCompletenessGate.test.ts` registry `PLANNED` -> `DONE` with the test
+path), and the matching status flip in
 [`active-risk-analysis.md`](active-risk-analysis.md) — the gate fails unless
 both move together.
 
@@ -29,13 +31,20 @@ both move together.
 
 In leverage order. Each is independent unless noted.
 
-1. Phase 2 — server load narrowing, remaining slices: command-mutation read
-   narrowing (M3, L5, L6), the single-character projection (M4), and the
-   metric/bulk-read slice (M5, L10, U1).
+1. Phase 2 — server load narrowing, remaining slices: the single-character
+   projection (M4), and the metric/bulk-read slice (M5, L10, U1).
 2. After Phase 2, pick Phase 3-7 by current pain. Refresh
    [`latest-verification.md`](latest-verification.md) after each phase.
 
 Done so far (Phase 1 complete; Phase 2 in progress):
+
+- M3/L5/L6 — command-mutation read narrowing, DONE (`e0e86ab1`):
+  `loadPersistedForChatMutation` + opt-in `chatScopedRead` on
+  `applyTargetedCommandMutation` (hard-guarded against `writeDatabase`);
+  the 7 hot routes (scriptstate, message append/PATCH/DELETE/truncate/PUT,
+  generation-result) read one chat row + parent character; broad fallback
+  for unknown ids / embedded state keeps 404s and dedup identical.
+  Regressions: `commandMutationReadNarrowing.test.ts`.
 
 - M1/L1/L2 — scoped assembly load, DONE (`c193c008`):
   `loadPersistedForAssembly` hydrates only the target chat's messages/hypaV3
