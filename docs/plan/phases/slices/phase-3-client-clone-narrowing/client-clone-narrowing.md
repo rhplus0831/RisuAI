@@ -1,7 +1,8 @@
 # Client Clone Narrowing
 
-Status: not started. Phase 3. Bundles remaining client whole-corpus clones plus
-one runner-rollback fix. Reuses `src/ts/__tests__/cloneCostHarness.ts`.
+Status: IMPLEMENTED (`0efa7ba6`). Phase 3. Bundles remaining client
+whole-corpus clones plus one runner-rollback fix. Reuses
+`src/ts/__tests__/cloneCostHarness.ts`.
 
 ## Scope
 
@@ -26,24 +27,30 @@ writes. Make optimistic runners roll back on failure.
 
 ## Item Checklist
 
-- [ ] M12 — drop `setDatabase(db)` in `/setvar`/`/addvar` (mirror
+- [x] M12 — drop `setDatabase(db)` in `/setvar`/`/addvar` (mirror
       `setChatVar`); do not include `/send`/`mutateCurrentChatMessages`.
-- [ ] M13 — `changedCharacterFields` (and `prepareCompatibleCharacterUpdate`)
+- [x] M13 — `changedCharacterFields` (and `prepareCompatibleCharacterUpdate`)
       clone per kept key, skipping `CHARACTER_PATCH_EXCLUDED_KEYS` before any clone.
-- [ ] M14 — `setupSendChatContext` uses `currentCharacterRowSnapshot(selectedChar)`
+- [x] M14 — `setupSendChatContext` uses `currentCharacterRowSnapshot(selectedChar)`
       + `restoreCharacterRow`.
-- [ ] L34 — `toggleSelectedChatModule` uses a chat-scoped snapshot.
-- [ ] L35 — MCP `setCharacterInfo` uses a single-row snapshot.
-- [ ] U4 — `setCurrentChat` uses `currentChatScopedSnapshot` +
+- [x] L34 — `toggleSelectedChatModule` uses a chat-scoped snapshot.
+- [x] L35 — MCP `setCharacterInfo` uses a single-row snapshot
+      (`dispatchUpdateCharacterScoped`).
+- [x] U4 — `setCurrentChat` uses `currentChatScopedSnapshot` +
       `dispatchCompatibleChatUpdateScoped`.
-- [ ] L33 — avoid deep-cloning the modules array as a dependency read in the
-      `stores.svelte` `$effect` (read a stable id/length signal instead).
-- [ ] L31 — scope/throttle the script-definition watcher's per-keystroke
-      scan-and-stringify.
-- [ ] L32 — scope the discrete lorebook-editor clone + whole-DB id-assign to
-      the edited collection [known-leftover].
-- [ ] L36 — fire-and-forget command runners surface/await factory rejections
-      and roll back (stability, not clone).
+- [x] L33 — avoid deep-cloning the modules array as a dependency read in the
+      `stores.svelte` `$effect` (`readModuleUpdateSignals` reads exactly the
+      id/hideIcon/backgroundEmbedding/length signals `moduleUpdate` consumes).
+- [x] L31 — scope the script-definition watcher's per-keystroke
+      scan-and-stringify (`ScriptDefinitionWatchScope`; CharConfig mounts
+      `character`, ModuleMenu mounts `module`; id-ensure scoped too).
+- [x] L32 — scope the discrete lorebook-editor clone + whole-DB id-assign to
+      the edited collection (`currentLorebookCollectionScopedSnapshot` +
+      `ensureGlobalLorebookListIds`; MCP/module-apply callers stay broad)
+      [known-leftover].
+- [x] L36 — fire-and-forget command runners surface/await factory rejections
+      and roll back (`runServerCommand` catch + sequence failure path;
+      stability, not clone).
 
 ## Behavior / Invariants
 

@@ -7,20 +7,21 @@ only the phase or slice needed for the task.
 
 The plan schedules 57 confirmed findings (3 high, 14 medium, 40 low) from
 [`audit-stability-and-performance.md`](audit-stability-and-performance.md) across
-Phases 0-8. Phases 0, 1, and 2 are complete: all three highs are fixed — H1
-(`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`) — and all of Phase 2's server
-load narrowing landed: scoped assembly load (M1, L1, L2, `c193c008`),
+Phases 0-8. Phases 0-3 are complete: all three highs are fixed — H1
+(`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`) — all of Phase 2's server
+load narrowing landed — scoped assembly load (M1, L1, L2, `c193c008`),
 command-mutation read narrowing (M3, L5, L6, `e0e86ab1`), single-character
-projection (M4, `254b3112`), and the metric/bulk-read slice (M5, L10, U1,
-`b2765994`). Next: pick Phase 3-7 by current pain (Phase 3 client clone
-narrowing is the next root in audit order).
+projection (M4, `254b3112`), metric/bulk-read slice (M5, L10, U1,
+`b2765994`) — and Phase 3's client clone narrowing landed in one batch
+(M12-M14, L31-L36, U4, `0efa7ba6`). Next: pick Phase 4-7 by current pain
+(Phase 4 outbound request lifecycle is the next root in audit order).
 
 ## Current Snapshot
 
-All findings are routed. Phases 0-2 are complete. Phases 3-7 group the
+All findings are routed. Phases 0-3 are complete. Phases 4-7 group the
 remaining mediums/lows by root cause. Phase 8 is the standing gate (its
-scaffold is live and H1/H2/H3/M1/L1/L2/M3/L5/L6/M4/M5/L10/U1 are registered as
-`DONE`).
+scaffold is live and H1-H3, M1, M3-M5, M12-M14, L1/L2, L5/L6, L10,
+L31-L36, U1, and U4 are registered as `DONE`).
 
 - [Phase 0](phases/phase-0-baseline-foundations.md) — COMPLETE. Shared
   large-corpus fixture + `assertScopedLoadOnHotPath` server load-count harness
@@ -37,8 +38,12 @@ scaffold is live and H1/H2/H3/M1/L1/L2/M3/L5/L6/M4/M5/L10/U1 are registered as
   (`254b3112`, single-row `characterRow` read + in-place secret mask); M5,
   L10, U1 DONE (`b2765994`, deferred metric serialization + replay-only
   history + scoped bulk hydration).
-- [Phase 3](phases/phase-3-client-clone-narrowing.md) — not started. M12-M14,
-  L31-L36, U4: client clone narrowing.
+- [Phase 3](phases/phase-3-client-clone-narrowing.md) — COMPLETE. M12-M14,
+  L31-L36, U4 DONE (`0efa7ba6`, one batch): var writes drop the redundant
+  `setDatabase`, kept-key character diff, single-row send-context rollback,
+  scoped script-definition watcher, scoped lorebook-editor snapshots,
+  signal-read modules `$effect`, chat-scoped module toggle, single-row MCP
+  patch, runner rejection rollback, scoped `setCurrentChat`.
 - [Phase 4](phases/phase-4-outbound-request-lifecycle.md) — not started. M6,
   M8, L20, L22-L25: outbound timeouts, abort, egress hardening.
 - [Phase 5](phases/phase-5-materialization-and-lifecycle.md) — not started.
@@ -74,8 +79,15 @@ dismissed list. Highlights:
   behind the `RISU_PROTOCOL_METRICS` guard (M5), the SSE route loads
   command-event history only for replay (L10), and bulk hydration resolves
   known ids from the requested rows only (U1). Phase 2 is COMPLETE.
-- Biggest remaining root: Phase 3 client clone narrowing (M12-M14, L31-L36,
-  U4) — whole-corpus deep clones on client hot/warm paths.
+- Phase 3 client clone narrowing is DONE (`0efa7ba6`, M12-M14, L31-L36, U4):
+  client hot/warm paths use the scalar/single-row/chat-scoped snapshot kit
+  instead of whole-corpus deep clones, the script-definition and
+  lorebook-editor surfaces scan/id-assign only their panel scope, and the
+  fire-and-forget runners roll back surfaced factory rejections. Phase 3 is
+  COMPLETE.
+- Remaining roots: Phase 4 outbound timeouts/abort (M6, M8, L20, L22-L25),
+  Phase 5 bounded materialization/lifecycle, Phase 6 memory/Lua, Phase 7
+  memoization/hygiene.
 - Gated (not scheduled): L4, L7, L26, U2 stay on the
   `RISU_PROTOCOL_METRICS` evidence path or an owner decision; U3 needs no
   action; the five dismissed candidates (R1-R5 in the audit) are non-issues.

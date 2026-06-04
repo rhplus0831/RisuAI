@@ -1,7 +1,8 @@
 # Phase 3: Client Clone Narrowing (Root 2)
 
-Status: not started. Addresses the client whole-corpus clones left after the
-snapshot-family narrowing. Uses `src/ts/__tests__/cloneCostHarness.ts`.
+Status: COMPLETE (`0efa7ba6`, one batch: M12-M14, L31-L36, U4). Addressed the
+client whole-corpus clones left after the snapshot-family narrowing. Uses
+`src/ts/__tests__/cloneCostHarness.ts`.
 
 Goal: hot client paths use scalar/single-row rollbacks instead of
 `cloneJsonValue(DBState.db.characters)`. Drop redundant full `setDatabase` on var
@@ -58,18 +59,18 @@ Findings: M12, M13, M14, L31, L32, L33, L34, L35, L36, U4.
 
 ## Exit Criteria
 
-- [ ] Each listed call site captures a scalar/single-row rollback; a clone-cost
+- [x] Each listed call site captures a scalar/single-row rollback; a clone-cost
       test proves it does not clone the `characters` array on the hot path.
-- [ ] Each narrowed rollback restores exactly the mutated slice; a
+- [x] Each narrowed rollback restores exactly the mutated slice; a
       rollback-correctness test proves a failed command does not clobber unrelated
       edits.
-- [ ] M12: `/setvar`/`/addvar` no longer call `setDatabase`; scriptstate write +
+- [x] M12: `/setvar`/`/addvar` no longer call `setDatabase`; scriptstate write +
       persistence still occur; non-English UI no longer deep-clones the language
       pack per var write.
-- [ ] L36: a failing optimistic command rolls back and surfaces; no swallowed
+- [x] L36: a failing optimistic command rolls back and surfaces; no swallowed
       rejection on the runner paths.
-- [ ] `currentChatStateSnapshot` remains in use for create/delete/reorder/fork.
-- [ ] Gates registered in Phase 8; client suite + audit + TypeScript checks green.
+- [x] `currentChatStateSnapshot` remains in use for create/delete/reorder/fork.
+- [x] Gates registered in Phase 8; client suite + audit + TypeScript checks green.
 
 ## Validation
 

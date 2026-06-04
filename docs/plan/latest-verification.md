@@ -95,6 +95,24 @@ Recorded from the shared large-corpus fixture before any fix lands.
   (was: a full `loadPersisted` per bulk call); per-row payloads proven
   equivalent to the single hydration routes, pre-extraction databases keep
   the broad fallback.
+- Phase 3 M12-M14/L31-L36/U4 (`0efa7ba6`) — PHASE 3 COMPLETE: `/setvar` and
+  `/addvar` run **zero** `setDatabase` normalizer passes per var write (was 1
+  each — an O(characters) re-filter plus, on non-English UIs, a ~99 KB
+  language-pack deep clone+merge); `/send` keeps its normalizer (boundary
+  test). `changedCharacterFields` / `prepareCompatibleCharacterUpdate` diff
+  without serializing the `chats` payload (was 2 whole-character clones per
+  field diff). The send-context, chat-module-toggle, MCP-character-patch, and
+  `setCurrentChat` rollbacks each capture **one row/chat** instead of the
+  whole characters array, and the rollback tests prove sibling concurrent
+  edits survive a failed command. A character-scoped script-definition
+  watcher fire stringifies **only the selected character's rows** (sibling
+  scripts never serialized; module scope likewise); the discrete LoreBook
+  editor actions capture a **single-collection** scoped snapshot and id-assign
+  only the edited collection (sibling id-less entries proven untouched). The
+  modules `$effect` performs **zero clone-primitive calls** for its
+  dependency read and no longer re-runs on unrelated deep module edits. A
+  rejected command factory now **rolls back once and resolves to an error
+  result** (was: unhandled rejection, optimistic write silently diverged).
 
 ## How To Reproduce The Costs Being Fixed
 
@@ -122,3 +140,4 @@ Recorded from the shared large-corpus fixture before any fix lands.
 | 2026-06-04 | Phase 2 command-mutation-read-narrowing slice (`e0e86ab1` fix + gate/doc flip) | `pnpm api:test` 1657/1 (+6 `commandMutationReadNarrowing.test.ts`), `pnpm test` 1084/4 (gate flip, no count change), audit green, both tsc checks zero errors. Message/scriptstate/generation mutation: 0 whole-corpus payload reads (was 13 per mutation). |
 | 2026-06-04 | Phase 2 single-character-projection slice (`254b3112` fix + gate/doc flip) | `pnpm api:test` 1664/1 (+5 M4 `serverLoadCostHarness.test.ts`, +2 `providerSecrets.test.ts`), `pnpm test` 1084/4 (gate flip, no count change), audit green, both tsc checks zero errors. `characterRow` projection: 0 whole-corpus payload reads + no whole-array mask clone (was a full characters+chats parse + whole-array deep clone per request); bootstrap drops its whole-stubbed-DB mask clone. |
 | 2026-06-04 | Phase 2 projection-metric-and-bulk-read slice (`b2765994` fix + gate/doc flip) — PHASE 2 COMPLETE | `pnpm api:test` 1671/1 (+8 M5/L10/U1 `serverLoadCostHarness.test.ts` tests, −1 replaced U1 breadth control), `pnpm test` 1084/4 (gate flip, no count change), audit green, both tsc checks zero errors. Metrics-off responses serialized once (was twice); fresh SSE connect 0 corpus reads (was full event-history read+map); bulk hydration 0 whole-corpus reads for extracted corpora (was full `loadPersisted` per call). |
+| 2026-06-04 | Phase 3 client-clone-narrowing batch (`0efa7ba6` fix + gate/doc flip) — PHASE 3 COMPLETE | `pnpm test` 1117/4 (+33: M12 `command.projectionGuard.test.ts`, M13 `characterCommands.test.ts`, M14 `sendChatContext.test.ts`, L31 `scriptDefinitionBridge.svelte.test.ts`, L32 `lorebookBridge.test.ts`, L33 `stores.modulesEffect.svelte.test.ts`, L34 `moduleCommands.test.ts`, L35 `characters.setCharacterInfo.test.ts`, L36 `commands.test.ts`+`chatCommands.test.ts`, U4 `chatCommands.test.ts`), `pnpm api:test` 1671/1 (carried, client-only change), audit green, both tsc checks zero errors, `pnpm check` at the carried 13-error baseline (outside this workstream). Var writes: 0 normalizer passes (was 1 + language-pack clone); character field diff: no chats serialization (was 2 whole-char clones); send/toggle/MCP/setCurrentChat rollbacks: one row (was whole corpus); scoped watcher/editor scans; modules `$effect`: 0 clones; rejected factories roll back. |

@@ -53,9 +53,9 @@ consumers.
 | M9 | [5](phases/phase-5-materialization-and-lifecycle.md) | Streaming bounded inflate per envelope/block. | scheduled |
 | M10 | [5](phases/phase-5-materialization-and-lifecycle.md) | Token-only asset scan; defer import asset report. | scheduled |
 | M11 | [5](phases/phase-5-materialization-and-lifecycle.md) | Settle bundle-export drain wait on `close`/`error`. | scheduled |
-| M12 | [3](phases/phase-3-client-clone-narrowing.md) | Drop redundant `setDatabase(db)` in `/setvar`/`/addvar`. | scheduled |
-| M13 | [3](phases/phase-3-client-clone-narrowing.md) | Clone only kept character fields. | scheduled |
-| M14 | [3](phases/phase-3-client-clone-narrowing.md) | Use `currentCharacterRowSnapshot` in send context. | scheduled |
+| M12 | [3](phases/phase-3-client-clone-narrowing.md) | Drop redundant `setDatabase(db)` in `/setvar`/`/addvar`. | DONE (`0efa7ba6`) |
+| M13 | [3](phases/phase-3-client-clone-narrowing.md) | Clone only kept character fields. | DONE (`0efa7ba6`) |
+| M14 | [3](phases/phase-3-client-clone-narrowing.md) | Use `currentCharacterRowSnapshot` in send context. | DONE (`0efa7ba6`) |
 
 ### Low (scheduled)
 
@@ -88,12 +88,12 @@ consumers.
 | L28 | [5](phases/phase-5-materialization-and-lifecycle.md) | Make legacy restore re-import transactional. | scheduled |
 | L29 | [5](phases/phase-5-materialization-and-lifecycle.md) | Persist writer-session origin on command events. | scheduled |
 | L30 | [5](phases/phase-5-materialization-and-lifecycle.md) | Re-arm reattach after completion. | scheduled |
-| L31 | [3](phases/phase-3-client-clone-narrowing.md) | Scope/throttle script-definition watcher scans. | scheduled |
-| L32 | [3](phases/phase-3-client-clone-narrowing.md) | Scope lorebook-editor clone/id-assign. [known-leftover] | scheduled |
-| L33 | [3](phases/phase-3-client-clone-narrowing.md) | Avoid modules-array deep clone in `$effect`. | scheduled |
-| L34 | [3](phases/phase-3-client-clone-narrowing.md) | Use a chat-scoped snapshot in `toggleSelectedChatModule`. | scheduled |
-| L35 | [3](phases/phase-3-client-clone-narrowing.md) | Use a single-row snapshot in MCP `setCharacterInfo`. | scheduled |
-| L36 | [3](phases/phase-3-client-clone-narrowing.md) | Surface runner rejections and roll back. | scheduled |
+| L31 | [3](phases/phase-3-client-clone-narrowing.md) | Scope/throttle script-definition watcher scans. | DONE (`0efa7ba6`) |
+| L32 | [3](phases/phase-3-client-clone-narrowing.md) | Scope lorebook-editor clone/id-assign. [known-leftover] | DONE (`0efa7ba6`) |
+| L33 | [3](phases/phase-3-client-clone-narrowing.md) | Avoid modules-array deep clone in `$effect`. | DONE (`0efa7ba6`) |
+| L34 | [3](phases/phase-3-client-clone-narrowing.md) | Use a chat-scoped snapshot in `toggleSelectedChatModule`. | DONE (`0efa7ba6`) |
+| L35 | [3](phases/phase-3-client-clone-narrowing.md) | Use a single-row snapshot in MCP `setCharacterInfo`. | DONE (`0efa7ba6`) |
+| L36 | [3](phases/phase-3-client-clone-narrowing.md) | Surface runner rejections and roll back. | DONE (`0efa7ba6`) |
 | L37 | [7](phases/phase-7-memoization-and-hygiene.md) | Remove logs of full command/preset objects. | scheduled |
 | L38 | [7](phases/phase-7-memoization-and-hygiene.md) | Remove per-render `Trigger time` log. | scheduled |
 | L39 | [7](phases/phase-7-memoization-and-hygiene.md) | Scan transcript in place. | scheduled |
@@ -104,7 +104,7 @@ consumers.
 | ID | Routing | Note |
 | -- | ------- | ---- |
 | U1 | [2](phases/phase-2-server-load-narrowing.md) | Bulk hydration known-id check. Folded into Phase 2: DONE (`b2765994`). |
-| U4 | [3](phases/phase-3-client-clone-narrowing.md) | `setCurrentChat` scoped snapshot cleanup. |
+| U4 | [3](phases/phase-3-client-clone-narrowing.md) | `setCurrentChat` scoped snapshot cleanup. DONE (`0efa7ba6`). |
 | U2 | gated | Foreign `fields` re-stub; keep on `leftover.md` evidence gate. |
 | U3 | no action | Session-bounded hydration id `Set`s; bounded and cleared on resync. |
 
