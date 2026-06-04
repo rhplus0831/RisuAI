@@ -1,6 +1,6 @@
 # Phase 6: Lorebook Watcher Scope
 
-Status: planned. One slice. Independent.
+Status: implemented (`c6dd103c`). One slice. Independent.
 
 Goal: scope the lorebook watcher's snapshot to the mounted panel instead of
 rebuilding a DB-wide lore stringify map on each reactive fire. The watcher does
@@ -28,12 +28,14 @@ not read `chat.message`, but it still re-fires per lorebook keystroke.
 
 ## Exit Criteria
 
-- [ ] The collector no longer iterates every chat of every character / every
-      module per fire; it covers only the mounting panel's collection.
-- [ ] Change detection still fires the same dispatches for edits within the
-      panel's scope (no missed lorebook change for the open collection).
-- [ ] A clone-cost regression test proves the collector is O(panel scope) not
-      O(all lore in the DB); `pnpm test` is green.
+- [x] The collector no longer iterates every chat of every character / every
+      module per fire; it covers only the mounting panel's collection
+      (`LorebookWatchScope` + scoped `collectLorebookCollectionSnapshots`).
+- [x] Change detection still fires the same dispatches for edits within the
+      panel's scope (no missed lorebook change for the open collection); the
+      `character` scope re-subscribes on a switch via `selectedCharMirror`.
+- [x] A clone-cost regression test proves the collector is O(panel scope) not
+      O(all lore in the DB); `pnpm test` is green (1022/4).
 
 ## Validation
 

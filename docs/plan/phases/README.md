@@ -23,7 +23,7 @@ Concrete slices live under `slices/[phase]/[slice-name].md`.
   coalescing deferred):
   [`phase-5-prompt-template-keystroke.md`](phase-5-prompt-template-keystroke.md),
   [`slices/phase-5-prompt-template-keystroke/`](slices/phase-5-prompt-template-keystroke/).
-- Phase 6, planned:
+- Phase 6, implemented:
   [`phase-6-lorebook-watcher-scope.md`](phase-6-lorebook-watcher-scope.md),
   [`slices/phase-6-lorebook-watcher-scope/`](slices/phase-6-lorebook-watcher-scope/).
 - Phase 7, planned:

@@ -1,6 +1,6 @@
 # Scope Lorebook Collector
 
-Status: planned. Phase 6. Independent.
+Status: implemented (`c6dd103c`). Phase 6. Independent.
 
 ## Scope
 
@@ -60,8 +60,34 @@ instead of rebuilding a DB-wide lore stringify map on each fire.
 - Existing character-lorebook hydration / no-data-loss tests stay green.
 - `pnpm test` and `pnpm client-thinning:audit` are green.
 
+## Implementation (`c6dd103c`)
+
+- Added `LorebookWatchScope` (`all | global | character | module`) to
+  `watchServerBackedLorebooks`; `collectLorebookCollectionSnapshots(scope)`
+  branches on it. The `all` branch is byte-for-byte the original whole-DB scan
+  and remains the default, so callers without a narrower scope (and the
+  no-data-loss tests) are unchanged.
+- Panels pass their scope: `lorepreset` and global-mode `LoreBookSetting` →
+  `global`; character-mode `LoreBookSetting` → `character`; `ModuleMenu` →
+  `module` (its effect reads `currentModule.id`, restarting the watcher with a
+  fresh baseline when a different module opens).
+- The `character` scope reads a `selectedCharMirror` `$state` (fed by a
+  `selectedCharID.subscribe`) rather than a bare `get()`, so the effect re-runs
+  and re-subscribes to the newly selected character on a switch — the first edit
+  to the new character is never dropped. `LoreBook` is mounted unkeyed in
+  `CharConfig`, so the watcher does not remount on a switch; the mirror is what
+  keeps it correct.
+- The hydrated-character no-data-loss invariant is preserved (the per-character
+  helper still snapshots `globalLore` only when hydrated).
+
+Regression coverage in `lorebookBridge.svelte.test.ts`: each scope collects only
+its panel's keys, `all` still scans the whole DB, a scoped fire performs far
+fewer snapshot clones (`withCloneInstrumentation`), and a character-scoped
+watcher ignores sibling/cross-scope edits while re-subscribing after a switch.
+
 ## Validation
 
 - `pnpm test -- src/ts/server/lorebookBridge.test.ts src/ts/server/lorebookBridge.svelte.test.ts`
-- `pnpm test`
-- `pnpm client-thinning:audit`
+  (15 tests: 4 no-data-loss + 4 Phase 0 + 7 Phase 6).
+- `pnpm test` (1022 passed / 4 skipped).
+- `pnpm client-thinning:audit` (green).

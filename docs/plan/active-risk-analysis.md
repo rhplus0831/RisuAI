@@ -10,10 +10,11 @@ not a verification log. Keep proof runs in
 ## Summary
 
 All findings are analyzed. Phase 0, the primary Phase 1 guard fix, all six
-Phase 2 slices, Phase 3 (cheap wins), Phase 4 (script-definition watcher), and
-Phase 5 (prompt-template keystroke) are implemented; Phases 6-7 remain planned
-and Phase 8 is the standing gate. Severity comes from the seed audit: 4 critical,
-13 high, 6 medium, 6 low, plus the clone-site inventory.
+Phase 2 slices, Phase 3 (cheap wins), Phase 4 (script-definition watcher),
+Phase 5 (prompt-template keystroke), and Phase 6 (lorebook watcher scope) are
+implemented; Phase 7 remains planned and Phase 8 is the standing gate. Severity
+comes from the seed audit: 4 critical, 13 high, 6 medium, 6 low, plus the
+clone-site inventory.
 
 Principle: do not clone the whole characters array, whole `Database`, or full
 message history for scalar-only hot paths. Keep full clones for real
@@ -21,7 +22,6 @@ restructures.
 
 Remaining runtime work:
 
-- Phase 6: scope the lorebook watcher collector to the mounted panel.
 - Phase 7: low-priority CBS, observer, image/emotion, regex, parser, render-log,
   persona, and `SideChatList` cleanups.
 - Deferred: Phase 5 debounce coalescing.
@@ -95,9 +95,13 @@ Remaining runtime work:
   whole-template stringify passes; `PromptDataItem` clones the edited item once.
   Deferred: coalescing the optimistic write into the 250 ms debounce window. Phase:
   [Phase 5](phases/phase-5-prompt-template-keystroke.md).
-- Lorebook watcher: rebuilds a DB-wide lore stringify map per fire. Target:
-  scope the collector to the mounted panel's collection. Phase:
-  [Phase 6](phases/phase-6-lorebook-watcher-scope.md).
+- Lorebook watcher: implemented in Phase 6. `watchServerBackedLorebooks` takes a
+  `LorebookWatchScope` (`all | global | character | module`) and each panel
+  passes its own, so a fire scans only the mounted panel's collection instead of
+  rebuilding a DB-wide lore stringify map. The `all` default is the unchanged
+  whole-DB scan; the `character` scope re-subscribes on a character switch via
+  `selectedCharMirror`, and the hydrated-character no-data-loss invariant is
+  preserved. Phase: [Phase 6](phases/phase-6-lorebook-watcher-scope.md).
 - Opportunistic low items: CBS history, Claude observer, image/emotion, regex,
   `{{#each}}`, `console.log`, and `SideChatList` scan. Target: shallow-spread,
   scope, memoize, or remove as listed in the slice. Phase:
@@ -125,8 +129,9 @@ Remaining runtime work:
 
 Phase 0 (kit + harness), the Phase 1 primary guard fix, Phase 2 (all six
 Critical/High snapshot call-site slices), Phase 3 (cheap wins), Phase 4
-(script-definition watcher), and Phase 5 (prompt-template keystroke) are done.
-Phases 6-7 are independent cleanups. Phase 8 is the standing gate.
+(script-definition watcher), Phase 5 (prompt-template keystroke), and Phase 6
+(lorebook watcher scope) are done. Phase 7 is an independent cleanup batch.
+Phase 8 is the standing gate.
 
 - The highest-leverage guard fix and the Critical/High snapshot narrowing have
   landed; the Phase 0 snapshot kit was the shared dependency for that work and is

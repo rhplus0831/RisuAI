@@ -7,25 +7,27 @@ latest-run section on each full or focused run; do not append history.
 
 ## Latest Run
 
-- Runtime under test: Phase 5 (`c5fc5967` + `64804305`) on top of Phases 0-4.
-- Before: prompt-item keystrokes cloned the whole template, rollback cloned it
-  again, reconcile double-stringified each fire, and `PromptDataItem` cloned the
-  edited item twice.
-- After: one edited item is mirrored/restored; reconcile only stringifies on a
-  command-revision advance; `PromptDataItem` clones once. Debounce coalescing
-  remains deferred.
-- Result: green. `promptTemplateBridge.svelte.test.ts` proves the bridge helper
-  costs: single-item projection write, scoped rollback, and revision-gated
-  reconcile. The `PromptDataItem` single-clone change is source-inspected here and
-  has no dedicated component test.
+- Runtime under test: Phase 6 (`c6dd103c`) on top of Phases 0-5.
+- Before: every lorebook reactive fire rebuilt a DB-wide stringify map — every
+  global lorebook, every character's globalLore, every chat of every character,
+  and every module — regardless of which panel was mounted.
+- After: `watchServerBackedLorebooks` takes a `LorebookWatchScope`
+  (`all | global | character | module`); each panel passes its own, so a fire
+  scans only that collection. The `all` default is the unchanged whole-DB scan.
+  The `character` scope re-subscribes on a character switch via
+  `selectedCharMirror`; the hydrated-character no-data-loss invariant is intact.
+- Result: green. `lorebookBridge.svelte.test.ts` proves each scope collects only
+  its panel's keys, `all` still scans the whole DB, a scoped fire performs far
+  fewer snapshot clones (`withCloneInstrumentation`), and a character-scoped
+  watcher ignores cross-scope edits while re-subscribing after a switch.
 
 | Command                                                                                     | Result                                                                                                      |
 | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `pnpm test`                                                                                 | green - 1015 passed / 4 skipped (106 files).                                                                |
+| `pnpm test`                                                                                 | green - 1022 passed / 4 skipped (106 files).                                                                |
 | `pnpm api:test`                                                                             | green - 1632 passed / 1 skipped (93 files).                                                                 |
 | `pnpm client-thinning:audit`                                                                | green - audit passed.                                                                                       |
 | Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | green - both zero errors (clean client-lib rebuild required: remove `dist/client-types` AND `tsconfig.client-lib.tsbuildinfo` if TS6305 appears). |
-| `pnpm check` (svelte-check)                                                                  | 10 pre-existing errors in 5 files outside this workstream (unchanged baseline); the Phase 5 files add none. |
+| `pnpm check` (svelte-check)                                                                  | 10 pre-existing errors in 5 files outside this workstream (unchanged baseline); the Phase 6 files add none. |
 
 ## Notes
 
