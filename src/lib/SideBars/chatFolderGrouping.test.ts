@@ -1,0 +1,60 @@
+import { describe, expect, it } from 'vitest'
+import { groupChatsByFolderId } from './chatFolderGrouping'
+
+interface TestChat {
+  id: string
+  folderId?: string | null
+}
+
+describe('groupChatsByFolderId', () => {
+  it('groups chats by folder id in a single pass, preserving order and indices', () => {
+    const chats: TestChat[] = [
+      { id: 'a', folderId: 'f1' },
+      { id: 'b', folderId: null },
+      { id: 'c', folderId: 'f1' },
+      { id: 'd', folderId: 'f2' },
+      { id: 'e' }, // folderId undefined
+    ]
+
+    const groups = groupChatsByFolderId(chats)
+
+    // f1 keeps source order with the real chara.chats indices
+    expect(groups.get('f1')).toEqual([
+      { chat: chats[0], index: 0 },
+      { chat: chats[2], index: 2 },
+    ])
+    expect(groups.get('f2')).toEqual([{ chat: chats[3], index: 3 }])
+    // null and undefined folderId both collapse to the empty-string key
+    expect(groups.get('')).toEqual([
+      { chat: chats[1], index: 1 },
+      { chat: chats[4], index: 4 },
+    ])
+  })
+
+  it('records indices that match chats.indexOf for every grouped chat', () => {
+    const chats: TestChat[] = [
+      { id: 'a', folderId: 'f1' },
+      { id: 'b', folderId: 'f2' },
+      { id: 'c', folderId: 'f1' },
+    ]
+    for (const entries of groupChatsByFolderId(chats).values()) {
+      for (const { chat, index } of entries) {
+        expect(index).toBe(chats.indexOf(chat))
+      }
+    }
+  })
+
+  it('never returns chats with a nullish folderId under a real folder id', () => {
+    const chats: TestChat[] = [
+      { id: 'a', folderId: null },
+      { id: 'b', folderId: undefined },
+    ]
+    const groups = groupChatsByFolderId(chats)
+    expect(groups.get('f1')).toBeUndefined()
+    expect(groups.get('')).toHaveLength(2)
+  })
+
+  it('returns an empty map for no chats', () => {
+    expect(groupChatsByFolderId([]).size).toBe(0)
+  })
+})
