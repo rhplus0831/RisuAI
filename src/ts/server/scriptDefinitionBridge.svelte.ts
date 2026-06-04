@@ -24,9 +24,31 @@ export interface ScriptDefinitionStateSnapshot {
   modules: RisuModule[]
 }
 
+/**
+ * A scoped rollback that restores only the changed row's scripts/triggers, used
+ * by the watcher hot path so a failed replacement does not need the whole
+ * characters+modules snapshot. The `scripts`/`triggers` value is the pre-edit
+ * array (the collected per-key snapshots are always arrays, so an empty/missing
+ * field restores to `[]`).
+ */
+export type ScopedScriptDefinitionRollback =
+  | { kind: 'characterScripts'; characterId: string; scripts: customscript[] }
+  | { kind: 'characterTriggers'; characterId: string; triggers: triggerscript[] }
+  | { kind: 'moduleScripts'; moduleId: string; scripts: customscript[] }
+  | { kind: 'moduleTriggers'; moduleId: string; triggers: triggerscript[] }
+
+/**
+ * Rollback accepted by the dispatch functions. The watcher passes a scoped
+ * single-row rollback; the rarer discrete callers (module apply, MCP edits) keep
+ * passing the full `ScriptDefinitionStateSnapshot`.
+ */
+export type ScriptDefinitionRollback =
+  | ScriptDefinitionStateSnapshot
+  | ScopedScriptDefinitionRollback
+
 interface PendingCollectionReplacement {
   key: string
-  previous: ScriptDefinitionStateSnapshot
+  previous: ScriptDefinitionRollback
   timer: ReturnType<typeof setTimeout> | null
   command: () => Promise<ServerCommandResult<Record<string, unknown>>>
 }
@@ -114,7 +136,7 @@ function needsTriggerDefinitionIds(triggers: triggerscript[]): boolean {
 export function dispatchReplaceCharacterScripts(
   characterId: string,
   scripts: customscript[],
-  previous: ScriptDefinitionStateSnapshot,
+  previous: ScriptDefinitionRollback,
   delayMs = 250,
 ): void {
   if (!canUseServerCommands()) return
@@ -139,7 +161,7 @@ export function dispatchReplaceCharacterScripts(
 export function dispatchReplaceCharacterTriggers(
   characterId: string,
   triggers: triggerscript[],
-  previous: ScriptDefinitionStateSnapshot,
+  previous: ScriptDefinitionRollback,
   delayMs = 250,
 ): void {
   if (!canUseServerCommands()) return
@@ -164,7 +186,7 @@ export function dispatchReplaceCharacterTriggers(
 export function dispatchReplaceModuleScripts(
   moduleId: string,
   scripts: customscript[],
-  previous: ScriptDefinitionStateSnapshot,
+  previous: ScriptDefinitionRollback,
   delayMs = 250,
 ): void {
   if (!canUseServerCommands()) return
@@ -189,7 +211,7 @@ export function dispatchReplaceModuleScripts(
 export function dispatchReplaceModuleTriggers(
   moduleId: string,
   triggers: triggerscript[],
-  previous: ScriptDefinitionStateSnapshot,
+  previous: ScriptDefinitionRollback,
   delayMs = 250,
 ): void {
   if (!canUseServerCommands()) return
@@ -218,14 +240,15 @@ export function watchServerBackedScriptDefinitions(
   const delayMs = options.delayMs ?? 300
   let initialized = false
   let previousSnapshots = new Map<string, string>()
-  let previousState = currentScriptDefinitionStateSnapshot()
   let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
   const stop = $effect.root(() => {
     $effect(() => {
       const projectionApplyEpoch = getServerProjectionApplyEpoch()
       ensureAllClientScriptDefinitionIds()
-      const currentState = currentScriptDefinitionStateSnapshot()
+      // The per-key stringify map is the only change-detection input and the only
+      // per-fire clone: each value is one row's small scripts/triggers array, not
+      // the whole characters+modules graph (which carries hydrated histories).
       const currentSnapshots = collectScriptDefinitionCollectionSnapshots()
 
       if (
@@ -236,18 +259,19 @@ export function watchServerBackedScriptDefinitions(
         initialized = true
         previousProjectionApplyEpoch = projectionApplyEpoch
         previousSnapshots = currentSnapshots
-        previousState = currentState
         return
       }
 
       for (const [key, snapshot] of currentSnapshots) {
-        if (!previousSnapshots.has(key)) continue
-        if (snapshot === previousSnapshots.get(key)) continue
-        untrack(() => dispatchWatchedReplacement(key, previousState, delayMs))
+        const previousSnapshot = previousSnapshots.get(key)
+        if (previousSnapshot === undefined) continue
+        if (snapshot === previousSnapshot) continue
+        // Build the rollback lazily from the prior per-key snapshot string, so a
+        // failed replacement restores only this row — no whole-collection clone.
+        untrack(() => dispatchWatchedReplacement(key, previousSnapshot, delayMs))
       }
 
       previousSnapshots = currentSnapshots
-      previousState = currentState
     })
   })
 
@@ -256,14 +280,18 @@ export function watchServerBackedScriptDefinitions(
 
 function dispatchWatchedReplacement(
   key: string,
-  previous: ScriptDefinitionStateSnapshot,
+  previousSnapshot: string,
   delayMs: number,
 ): void {
   if (key.startsWith('characterScripts:')) {
     const characterId = key.slice('characterScripts:'.length)
     const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
     if (character) {
-      dispatchReplaceCharacterScripts(characterId, character.customscript ?? [], previous, delayMs)
+      dispatchReplaceCharacterScripts(characterId, character.customscript ?? [], {
+        kind: 'characterScripts',
+        characterId,
+        scripts: parseSnapshotArray<customscript>(previousSnapshot),
+      }, delayMs)
     }
     return
   }
@@ -271,12 +299,11 @@ function dispatchWatchedReplacement(
     const characterId = key.slice('characterTriggers:'.length)
     const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
     if (character) {
-      dispatchReplaceCharacterTriggers(
+      dispatchReplaceCharacterTriggers(characterId, character.triggerscript ?? [], {
+        kind: 'characterTriggers',
         characterId,
-        character.triggerscript ?? [],
-        previous,
-        delayMs,
-      )
+        triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
+      }, delayMs)
     }
     return
   }
@@ -285,7 +312,13 @@ function dispatchWatchedReplacement(
     const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
       (candidate) => candidate.id === moduleId,
     )
-    if (module?.regex) dispatchReplaceModuleScripts(moduleId, module.regex, previous, delayMs)
+    if (module?.regex) {
+      dispatchReplaceModuleScripts(moduleId, module.regex, {
+        kind: 'moduleScripts',
+        moduleId,
+        scripts: parseSnapshotArray<customscript>(previousSnapshot),
+      }, delayMs)
+    }
     return
   }
   if (key.startsWith('moduleTriggers:')) {
@@ -293,7 +326,13 @@ function dispatchWatchedReplacement(
     const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
       (candidate) => candidate.id === moduleId,
     )
-    if (module?.trigger) dispatchReplaceModuleTriggers(moduleId, module.trigger, previous, delayMs)
+    if (module?.trigger) {
+      dispatchReplaceModuleTriggers(moduleId, module.trigger, {
+        kind: 'moduleTriggers',
+        moduleId,
+        triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
+      }, delayMs)
+    }
   }
 }
 
@@ -324,7 +363,7 @@ function collectScriptDefinitionCollectionSnapshots(): Map<string, string> {
 
 function queueReplacement(
   key: string,
-  previous: ScriptDefinitionStateSnapshot,
+  previous: ScriptDefinitionRollback,
   command: () => Promise<ServerCommandResult<Record<string, unknown>>>,
   delay: number,
 ): void {
@@ -344,10 +383,14 @@ function queueReplacement(
   pendingReplacements.set(key, pending)
 }
 
-function rollbackServerBackedScriptDefinitions(snapshot: ScriptDefinitionStateSnapshot): void {
+function rollbackServerBackedScriptDefinitions(rollback: ScriptDefinitionRollback): void {
   suppressRollbackDispatch = true
   try {
-    restoreScriptDefinitionState(snapshot)
+    if ('kind' in rollback) {
+      restoreScopedScriptDefinition(rollback)
+    } else {
+      restoreScriptDefinitionState(rollback)
+    }
   } finally {
     queueMicrotask(() => {
       suppressRollbackDispatch = false
@@ -355,9 +398,56 @@ function rollbackServerBackedScriptDefinitions(snapshot: ScriptDefinitionStateSn
   }
 }
 
+// Restore only the changed row's scripts/triggers from a scoped rollback, leaving
+// every other character/module untouched. The full-collection
+// `restoreScriptDefinitionState` is reserved for the rarer discrete callers.
+function restoreScopedScriptDefinition(rollback: ScopedScriptDefinitionRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    switch (rollback.kind) {
+      case 'characterScripts': {
+        const character = DBState.db.characters?.find(
+          (candidate) => candidate.chaId === rollback.characterId,
+        )
+        if (character) character.customscript = cloneJsonValue(rollback.scripts)
+        return
+      }
+      case 'characterTriggers': {
+        const character = DBState.db.characters?.find(
+          (candidate) => candidate.chaId === rollback.characterId,
+        )
+        if (character) character.triggerscript = cloneJsonValue(rollback.triggers)
+        return
+      }
+      case 'moduleScripts': {
+        const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
+          (candidate) => candidate.id === rollback.moduleId,
+        )
+        if (module) module.regex = cloneJsonValue(rollback.scripts)
+        return
+      }
+      case 'moduleTriggers': {
+        const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
+          (candidate) => candidate.id === rollback.moduleId,
+        )
+        if (module) module.trigger = cloneJsonValue(rollback.triggers)
+        return
+      }
+    }
+  })
+}
+
 function snapshotJson(value: unknown): string {
   const snapshot = JSON.stringify(value)
   return snapshot === undefined ? '__undefined__' : snapshot
+}
+
+// Parse a per-key snapshot string back into the pre-edit scripts/triggers array.
+// `collectScriptDefinitionCollectionSnapshots` always stringifies an array
+// (`?? []`), so a non-array or `'__undefined__'` marker restores to `[]`.
+function parseSnapshotArray<T>(snapshot: string): T[] {
+  if (snapshot === '__undefined__') return []
+  const parsed = JSON.parse(snapshot) as unknown
+  return Array.isArray(parsed) ? (parsed as T[]) : []
 }
 
 function cloneJsonValue<T>(value: T): T {
