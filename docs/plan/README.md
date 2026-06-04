@@ -17,16 +17,20 @@ seed inventory. The code remains the source of truth.
 2. [`next-steps.md`](next-steps.md) - next task batch and proof commands.
 3. [`active-risk-analysis.md`](active-risk-analysis.md) - per-area current vs
    target clone range.
-4. [`plan.md`](plan.md) - goal, sources, invariants, prerequisites, and phase
+4. [`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md) - read-only
+   audit of whether Phases 1-5 actually met implementation and proof criteria.
+5. [`plan.md`](plan.md) - goal, sources, invariants, prerequisites, and phase
    order.
-5. [`phases/README.md`](phases/README.md) - phase index.
-6. [`phases/slices/`](phases/slices/) - concrete task slices under each phase.
+6. [`phases/README.md`](phases/README.md) - phase index.
+7. [`phases/slices/`](phases/slices/) - concrete task slices under each phase.
 
 ## Canonical Detail
 
 - Current status and phase routing live in [`status.md`](status.md).
 - The per-area risk analysis (actual vs desired clone range) lives in
   [`active-risk-analysis.md`](active-risk-analysis.md).
+- The read-only Phase 1-5 completion audit lives in
+  [`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md).
 - The latest maintained verification result lives in
   [`latest-verification.md`](latest-verification.md).
 - Next task selection, non-goals, and proof commands live in

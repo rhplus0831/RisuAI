@@ -10,11 +10,13 @@ not a verification log. Keep proof runs in
 ## Summary
 
 All findings are analyzed. Phase 0, the primary Phase 1 guard fix, all six
-Phase 2 slices, Phase 3 (cheap wins), Phase 4 (script-definition watcher),
-Phase 5 (prompt-template keystroke), and Phase 6 (lorebook watcher scope) are
-implemented; Phase 7 remains planned and Phase 8 is the standing gate. Severity
-comes from the seed audit: 4 critical, 13 high, 6 medium, 6 low, plus the
-clone-site inventory.
+Phase 2 slices, Phase 3 (cheap wins), Phase 5 (prompt-template keystroke), and
+Phase 6 (lorebook watcher scope) are implemented. Phase 4's clone-cost slice
+landed, but the read-only completion audit found a debounced rollback baseline
+gap; see [`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md).
+Phase 7 remains planned and Phase 8 is the standing gate. Severity comes from
+the seed audit: 4 critical, 13 high, 6 medium, 6 low, plus the clone-site
+inventory.
 
 Principle: do not clone the whole characters array, whole `Database`, or full
 message history for scalar-only hot paths. Keep full clones for real
@@ -22,6 +24,8 @@ restructures.
 
 Remaining runtime work:
 
+- Phase 4 audit fix: preserve the first debounce rollback baseline for rapid
+  same-key script-definition edits and add the failed-command regression.
 - Phase 7: low-priority CBS, observer, image/emotion, regex, parser, render-log,
   persona, and `SideChatList` cleanups.
 - Deferred: Phase 5 debounce coalescing.
@@ -80,12 +84,15 @@ Remaining runtime work:
   character (a pure shallow character would have poisoned the read-only projection
   on install). Phase: [Phase 3](phases/phase-3-cheap-wins.md).
 - Script-definition watcher: cloned full characters and modules per effect fire
-  while the config/module panel was open. DONE (Phase 4, `2ec1ea40`): the per-key
-  string snapshot map is the only change-detection input, and the rollback is
-  built lazily in `dispatchWatchedReplacement` as a single-row
+  while the config/module panel was open. PARTIAL (Phase 4, `2ec1ea40`): the
+  per-key string snapshot map is the only change-detection input, and the
+  rollback is built lazily in `dispatchWatchedReplacement` as a single-row
   `ScopedScriptDefinitionRollback`. The discrete full-snapshot callers
   (`modules.ts`, MCP) keep the broad snapshot via the `ScriptDefinitionRollback`
-  union. Phase: [Phase 4](phases/phase-4-script-definition-watcher.md).
+  union. Audit gap: rapid same-key edits inside the debounce window can roll back
+  to the intermediate baseline because `queueReplacement()` preserves
+  `existing?.previous` but the queued command rollback closes over the latest
+  dispatch's `previous`. Phase: [Phase 4](phases/phase-4-script-definition-watcher.md).
 - Prompt-template editor: Phase 1 removed the guard clone; each keystroke still
   cloned the whole prompt template and double-stringified for change detection.
   DONE (Phase 5, `c5fc5967` + `64804305`): the keystroke writes only the edited
@@ -128,18 +135,21 @@ Remaining runtime work:
 ## Decision
 
 Phase 0 (kit + harness), the Phase 1 primary guard fix, Phase 2 (all six
-Critical/High snapshot call-site slices), Phase 3 (cheap wins), Phase 4
-(script-definition watcher), Phase 5 (prompt-template keystroke), and Phase 6
-(lorebook watcher scope) are done. Phase 7 is an independent cleanup batch.
-Phase 8 is the standing gate.
+Critical/High snapshot call-site slices), Phase 3 (cheap wins), Phase 5
+(prompt-template keystroke), and Phase 6 (lorebook watcher scope) are done.
+Phase 4's clone-cost work is done, but rollback-correctness completion is
+blocked by the debounce baseline audit gap. Phase 7 is an independent cleanup
+batch. Phase 8 is the standing gate.
 
 - The highest-leverage guard fix and the Critical/High snapshot narrowing have
   landed; the Phase 0 snapshot kit was the shared dependency for that work and is
   reused by the remaining Phase 7 image/emotion narrowing.
-- Every narrowing keeps the full-collection snapshot for genuine restructures and
-  proves the hot path no longer reaches it (clone-cost regression test).
-- A narrowed rollback restores exactly what the command mutates; correctness is
-  proven by a failed-command rollback test (the reference fix's second test).
+- Every completed narrowing keeps the full-collection snapshot for genuine
+  restructures and proves the hot path no longer reaches it (clone-cost
+  regression test).
+- A narrowed rollback must restore exactly what the command mutates. The Phase 4
+  debounce rollback path still needs the rapid-edit failed-command proof called
+  out in [`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md).
 
 ## Investigated But Not Flagged
 

@@ -10,18 +10,22 @@ lorebook watcher to the mounted panel (Phase 6)`). Phase 0 foundations, the
 Phase 1 primary guard fix, all six Phase 2 slices, Phase 3 (cheap wins), the
 `runTrigger` scriptstate guard follow-up, Phase 4 (script-definition watcher),
 Phase 5 (prompt-template keystroke), and Phase 6 (lorebook watcher scope) have
-landed; the next work is Phase 7 (independent).
+landed; the next work is Phase 7 (independent). A read-only completion audit
+found a Phase 4 debounce rollback correctness gap; see
+[`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md).
 
 ## Current Snapshot
 
-Analysis is complete. Phase 0-6 are implemented. Phase 6 scoped the lorebook
-change-detection watcher to the mounting panel: `watchServerBackedLorebooks`
-takes a `LorebookWatchScope` (`all | global | character | module`) and each
-panel passes its own, so a lorebook keystroke no longer rebuilds a DB-wide lore
-stringify map (every global lorebook + every character's globalLore + every chat
-of every character + every module). The `all` default is the unchanged whole-DB
-scan. Start new runtime work in Phase 7; keep Phase 8 as the standing
-verification layer.
+Analysis is complete. Phase 0-3, 5, and 6 are implemented. Phase 4's clone-cost
+watcher slice landed, but the Phase 1-5 completion audit found a debounced
+rollback baseline gap that must be fixed before treating Phase 4 as complete.
+Phase 6 scoped the lorebook change-detection watcher to the mounting panel:
+`watchServerBackedLorebooks` takes a `LorebookWatchScope` (`all | global |
+character | module`) and each panel passes its own, so a lorebook keystroke no
+longer rebuilds a DB-wide lore stringify map (every global lorebook + every
+character's globalLore + every chat of every character + every module). The
+`all` default is the unchanged whole-DB scan. Start new runtime work with the
+Phase 4 audit fix or Phase 7; keep Phase 8 as the standing verification layer.
 
 | Phase | State | Use For |
 | --- | --- | --- |
@@ -29,7 +33,7 @@ verification layer.
 | [1](phases/phase-1-projection-write-guard.md) | Implemented | Copy-on-write projection guard; batching slice deferred. |
 | [2](phases/phase-2-snapshot-family-narrowing.md) | Implemented | Six snapshot-family hot-path slices. |
 | [3](phases/phase-3-cheap-wins.md) | Implemented | Reroll transcript wins, `runTrigger` lazy clone, `48d473dc` guard follow-up. |
-| [4](phases/phase-4-script-definition-watcher.md) | Implemented | Script-definition watcher scoped per-row rollback (`2ec1ea40`). |
+| [4](phases/phase-4-script-definition-watcher.md) | Partial audit gap | Clone-cost watcher slice landed (`2ec1ea40`), but rapid same-key debounced edits can roll back to the intermediate baseline; see [`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md). |
 | [5](phases/phase-5-prompt-template-keystroke.md) | Implemented | Prompt-template in-place item write + revision-gated reconcile (`c5fc5967`) and `PromptDataItem` single-clone update (`64804305`); debounce coalescing deferred. |
 | [6](phases/phase-6-lorebook-watcher-scope.md) | Implemented | Lorebook watcher scoped to the mounted panel via `LorebookWatchScope` (`c6dd103c`). |
 | [7](phases/phase-7-opportunistic-cleanups.md) | Planned | CBS, observer, image/emotion, regex, parser, log, and scan cleanups. |
@@ -39,9 +43,10 @@ verification layer.
 
 [`active-risk-analysis.md`](active-risk-analysis.md) has the full per-area
 detail. The remaining planned runtime work is Phase 7 low-priority cleanups
-(plus the deferred Phase 5 debounce coalescing). Broad snapshots still
-intentionally exist for real restructures plus deferred lower-frequency callers
-such as image/emotion edits and LoreBook sidebar/MCP paths.
+(plus the Phase 4 debounce rollback fix and deferred Phase 5 debounce
+coalescing). Broad snapshots still intentionally exist for real restructures
+plus deferred lower-frequency callers such as image/emotion edits and LoreBook
+sidebar/MCP paths.
 
 ## Latest Verification
 

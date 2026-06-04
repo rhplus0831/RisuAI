@@ -1,7 +1,16 @@
 # Phase 4: Script-Definition Watcher
 
-Status: implemented (`2ec1ea40`). One slice. Independent; reuses the Phase 2
-chat-metadata watcher's lazy per-row rollback pattern.
+Status: partial audit gap. The clone-cost slice landed (`2ec1ea40`), but the
+Phase 1-5 completion audit found a debounced rollback baseline correctness gap.
+One slice. Independent; reuses the Phase 2 chat-metadata watcher's lazy per-row
+rollback pattern.
+
+Audit note: [`../phase-1-5-completion-audit.md`](../phase-1-5-completion-audit.md)
+found that rapid same-key edits inside the debounce window can roll back to the
+intermediate baseline, because `queueReplacement()` preserves
+`existing?.previous` but the queued command rollback closes over the latest
+dispatch's `previous`. Close that gap and add a failed-command regression before
+marking Phase 4 complete again.
 
 Goal: stop the script-definition watcher from taking a full characters+modules
 rollback snapshot on every reactive fire. While the panel is open, script/trigger
