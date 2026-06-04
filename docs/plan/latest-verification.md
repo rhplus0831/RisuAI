@@ -83,6 +83,18 @@ Recorded from the shared large-corpus fixture before any fix lands.
   and TTS-secret masking), the embedded-characters fallback is kept, and
   bootstrap's in-place mask ships the same bytes while on-disk secrets stay
   unmasked.
+- Phase 2 M5/L10/U1 (`b2765994`) — PHASE 2 COMPLETE: with metrics off, a
+  projection/bootstrap response is serialized **once** instead of twice
+  (exact +1 accounting proves the deferred `jsonPayloadBytes` runs only when
+  `RISU_PROTOCOL_METRICS` is on, with identical metric output). A fresh
+  no-replay SSE connect performs **zero corpus reads of any table** (was: the
+  full command-event history read+mapped per connect); replay and metrics-on
+  connects keep the load. Bulk chat/lorebook hydration performs **zero
+  whole-corpus payload reads** for any extracted corpus — known ids, missing
+  ids, and legacy embedded-message rows all resolve from the requested rows
+  (was: a full `loadPersisted` per bulk call); per-row payloads proven
+  equivalent to the single hydration routes, pre-extraction databases keep
+  the broad fallback.
 
 ## How To Reproduce The Costs Being Fixed
 
@@ -109,3 +121,4 @@ Recorded from the shared large-corpus fixture before any fix lands.
 | 2026-06-04 | Phase 2 scoped-assembly-load slice (`c193c008` fix + gate/doc flip) | `pnpm api:test` 1651/1 (+3 M1 `serverLoadCostHarness.test.ts`, +6 L1 `modulesMemo.test.ts`, +2 L2 `assemble.test.ts`), `pnpm test` 1084/4 (gate flip, no count change), audit green, both tsc checks zero errors. Assembly: 0 whole-corpus message/hypa reads (was 2 whole-table parses per send/preview). |
 | 2026-06-04 | Phase 2 command-mutation-read-narrowing slice (`e0e86ab1` fix + gate/doc flip) | `pnpm api:test` 1657/1 (+6 `commandMutationReadNarrowing.test.ts`), `pnpm test` 1084/4 (gate flip, no count change), audit green, both tsc checks zero errors. Message/scriptstate/generation mutation: 0 whole-corpus payload reads (was 13 per mutation). |
 | 2026-06-04 | Phase 2 single-character-projection slice (`254b3112` fix + gate/doc flip) | `pnpm api:test` 1664/1 (+5 M4 `serverLoadCostHarness.test.ts`, +2 `providerSecrets.test.ts`), `pnpm test` 1084/4 (gate flip, no count change), audit green, both tsc checks zero errors. `characterRow` projection: 0 whole-corpus payload reads + no whole-array mask clone (was a full characters+chats parse + whole-array deep clone per request); bootstrap drops its whole-stubbed-DB mask clone. |
+| 2026-06-04 | Phase 2 projection-metric-and-bulk-read slice (`b2765994` fix + gate/doc flip) — PHASE 2 COMPLETE | `pnpm api:test` 1671/1 (+8 M5/L10/U1 `serverLoadCostHarness.test.ts` tests, −1 replaced U1 breadth control), `pnpm test` 1084/4 (gate flip, no count change), audit green, both tsc checks zero errors. Metrics-off responses serialized once (was twice); fresh SSE connect 0 corpus reads (was full event-history read+map); bulk hydration 0 whole-corpus reads for extracted corpora (was full `loadPersisted` per call). |

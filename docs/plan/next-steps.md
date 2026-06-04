@@ -2,10 +2,12 @@
 
 Date: 2026-06-04
 
-Phase 1 is COMPLETE (H1 `0dc7452e`, H3 `e41dc6c6`, H2 `067ab82a`). Phase 2 is
-in progress: scoped assembly load (M1, L1, L2, `c193c008`), command-mutation
-read narrowing (M3, L5, L6, `e0e86ab1`), and the single-character projection
-(M4, `254b3112`) are DONE. Next is the metric/bulk-read slice (M5, L10, U1).
+Phases 1 AND 2 are COMPLETE. Phase 1: H1 `0dc7452e`, H3 `e41dc6c6`, H2
+`067ab82a`. Phase 2: scoped assembly load (M1, L1, L2, `c193c008`),
+command-mutation read narrowing (M3, L5, L6, `e0e86ab1`), single-character
+projection (M4, `254b3112`), and the metric/bulk-read slice (M5, L10, U1,
+`b2765994`). Next: pick Phase 3-7 by current pain — Phase 3 (client clone
+narrowing) is the next root in audit order.
 Every fix needs a regression test, a Phase 8 gate flip
 (`fixCompletenessGate.test.ts` registry `PLANNED` -> `DONE` with the test
 path), and the matching status flip in
@@ -31,12 +33,23 @@ both move together.
 
 In leverage order. Each is independent unless noted.
 
-1. Phase 2 — server load narrowing, remaining slice: the metric/bulk-read
-   slice (M5, L10, U1).
-2. After Phase 2, pick Phase 3-7 by current pain. Refresh
+1. Phase 3 — client clone narrowing (M12-M14, L31-L36, U4): the next root in
+   audit order, and the largest remaining one. Reuse the clone-cost harness
+   (`src/ts/__tests__/cloneCostHarness.ts`) and the H2 scalar-snapshot
+   template.
+2. Phases 4-7 by current pain. Refresh
    [`latest-verification.md`](latest-verification.md) after each phase.
 
-Done so far (Phase 1 complete; Phase 2 in progress):
+Done so far (Phases 0-2 complete):
+
+- M5/L10/U1 — projection metric & bulk read, DONE (`b2765994`):
+  `emitProtocolMetric` takes a fields thunk evaluated after the enabled
+  guard (no `jsonPayloadBytes` double-serialization when metrics are off);
+  the SSE route loads command-event history only for replay or with
+  metrics on; bulk chat/lorebook hydration resolves known ids + the
+  embedded fallback from requested rows (`WHERE id IN`), broad fallback
+  kept for pre-extraction databases. Regressions:
+  `serverLoadCostHarness.test.ts` M5/L10/U1 tests.
 
 - M4 — single-character projection, DONE (`254b3112`):
   `loadSingleCharacterStubRow` reads one character row + its chat rows

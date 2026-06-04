@@ -1,6 +1,34 @@
 # Projection Metric & Bulk Read
 
-Status: not started. Phase 2. Covers M5, L10, U1.
+Status: DONE (`b2765994`). Phase 2. Covers M5, L10, U1.
+
+## Landed Shape
+
+- M5: `emitProtocolMetric` accepts `fields` as a thunk evaluated only after
+  the `protocolMetricsEnabled()` guard; the projection (`emitProjectionMetric`)
+  and bootstrap call sites pass thunks, so `jsonPayloadBytes` no longer
+  re-serializes every response in the default metrics-off config. The five
+  test mocks of `emitProtocolMetric` evaluate function fields the same way.
+- L10: the SSE route calls `listPersistedCommandEventHistory` only when a
+  replay cursor was sent — or when metrics are on, keeping the replay metric's
+  `oldestRevision`/`latestRevision` fidelity. A fresh default-config connect
+  performs zero corpus reads.
+- U1: `loadChatHydrations` / `loadCharacterLorebookHydrations` resolve known
+  ids and the legacy embedded-message fallback from the REQUESTED rows
+  (`WHERE id IN`, chunked, via `getChatRowsByIds` / `getCharacterRowsByIds`).
+  `sqliteIsCharacterAuthority` gates the scoped path to exactly the states the
+  broad walk would have served from the tables (settings present, characters
+  extracted; chats are FK-tied to characters) — a pre-extraction
+  embedded-characters database keeps the broad `loadPersisted` fallback, so
+  `missing`/payload semantics are identical. A genuinely unknown id resolves
+  to `missing` without the broad walk. `command_events` joined the load-count
+  harness corpus tables (prune's revision-only walk stays unflagged).
+- Regressions: `server/fastify/__tests__/serverLoadCostHarness.test.ts` M5
+  (thunk laziness unit + exact +1-serialization on/off accounting for
+  projection and bootstrap), L10 (scoped fresh connect; replay and metrics-on
+  controls still read history), U1 (scoped bulk routes incl. missing ids,
+  per-row payload equivalence vs the single hydration routes, legacy
+  embedded-row fallback now scoped, pre-extraction broad fallback kept).
 
 ## Scope
 
@@ -43,11 +71,17 @@ Three independent read-side narrowings:
 
 ## Done Criteria
 
-- M5: `jsonPayloadBytes` does not run when `RISU_PROTOCOL_METRICS` is off (spy/
-  count test).
-- L10: no command-event history load on a fresh (no-replay) SSE connect.
-- U1 (if taken): bulk hydration resolves known ids without a full `loadPersisted`.
-- Gates `M5`, `L10` (and `U1` if implemented) registered in Phase 8.
+- [x] M5: `jsonPayloadBytes` does not run when `RISU_PROTOCOL_METRICS` is off
+      (`M5: projection and bootstrap responses are serialized once when
+      metrics are off` — exact on/off accounting).
+- [x] L10: no command-event history load on a fresh (no-replay) SSE connect
+      (`L10: a fresh (no-replay) SSE connect performs zero command-event
+      history reads`).
+- [x] U1 (taken): bulk hydration resolves known ids without a full
+      `loadPersisted` (`U1: bulk chat hydration performs zero whole-corpus
+      payload reads, missing ids included`).
+- [x] Gates `M5`, `L10`, `U1` registered in Phase 8
+      (`fixCompletenessGate.test.ts`).
 
 ## Validation
 

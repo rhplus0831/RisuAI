@@ -99,7 +99,14 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
     testName: 'M4: the characterRow projection performs zero whole-corpus payload reads',
   },
-  { id: 'M5', phase: 2, fix: 'Defer jsonPayloadBytes until metrics are enabled', status: 'PLANNED' },
+  {
+    id: 'M5',
+    phase: 2,
+    fix: 'Defer jsonPayloadBytes until metrics are enabled',
+    status: 'DONE',
+    testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+    testName: 'M5: projection and bootstrap responses are serialized once when metrics are off',
+  },
   { id: 'M6', phase: 4, fix: 'Abort proxy /fetch upstream on close; timeout backstop', status: 'PLANNED' },
   { id: 'M7', phase: 6, fix: 'Cap embed batches; split contextual requests by token size', status: 'PLANNED' },
   { id: 'M8', phase: 4, fix: 'Non-durable provider deadline and body cap', status: 'PLANNED' },
@@ -145,7 +152,14 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   },
   { id: 'L8', phase: 7, fix: 'Replace OFFSET 999 prune walk with bounded delete', status: 'PLANNED' },
   { id: 'L9', phase: 7, fix: 'Drop redundant chats DELETE', status: 'PLANNED' },
-  { id: 'L10', phase: 2, fix: 'Load command-event history only when replay is requested', status: 'PLANNED' },
+  {
+    id: 'L10',
+    phase: 2,
+    fix: 'Load command-event history only when replay is requested',
+    status: 'DONE',
+    testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+    testName: 'L10: a fresh (no-replay) SSE connect performs zero command-event history reads',
+  },
   { id: 'L11', phase: 5, fix: 'cleanedUp guard before memoryEvents.subscribe', status: 'PLANNED' },
   { id: 'L12', phase: 5, fix: 'Close proxy WS viewer on already-done jobs', status: 'PLANNED' },
   { id: 'L13', phase: 5, fix: 'Guard detached runners and cancel-persist on close', status: 'PLANNED' },
@@ -176,7 +190,14 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   { id: 'L39', phase: 7, fix: 'Scan transcript in place', status: 'PLANNED' },
   { id: 'L40', phase: 7, fix: 'Memoize trigger-effect regex sites', status: 'PLANNED' },
   // Context-dependent but scheduled
-  { id: 'U1', phase: 2, fix: 'Bulk hydration known-id check (fold into Phase 2 if cheap)', status: 'PLANNED' },
+  {
+    id: 'U1',
+    phase: 2,
+    fix: 'Bulk hydration known-id check (fold into Phase 2 if cheap)',
+    status: 'DONE',
+    testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+    testName: 'U1: bulk chat hydration performs zero whole-corpus payload reads, missing ids included',
+  },
   { id: 'U4', phase: 3, fix: 'setCurrentChat scoped snapshot cleanup', status: 'PLANNED' },
 ]
 

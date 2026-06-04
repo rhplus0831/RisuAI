@@ -46,7 +46,7 @@ consumers.
 | M2 | [7](phases/phase-7-memoization-and-hygiene.md) | Hoist module/script/RegExp work once per assembly. | scheduled |
 | M3 | [2](phases/phase-2-server-load-narrowing.md) | Field-scoped command reads or per-request load memo. | DONE (`e0e86ab1`) |
 | M4 | [2](phases/phase-2-server-load-narrowing.md) | Single-row `loadSingleCharacterRow`; in-place mask where owned. | DONE (`254b3112`) |
-| M5 | [2](phases/phase-2-server-load-narrowing.md) | Defer `jsonPayloadBytes` until metrics are enabled. | scheduled |
+| M5 | [2](phases/phase-2-server-load-narrowing.md) | Defer `jsonPayloadBytes` until metrics are enabled. | DONE (`b2765994`) |
 | M6 | [4](phases/phase-4-outbound-request-lifecycle.md) | Abort proxy `/fetch` upstream on close; add timeout backstop. | scheduled |
 | M7 | [6](phases/phase-6-memory-and-lua.md) | Cap embed batches; split contextual requests by token size. | scheduled |
 | M8 | [4](phases/phase-4-outbound-request-lifecycle.md) | Add non-durable provider deadline and body cap. | scheduled |
@@ -68,7 +68,7 @@ consumers.
 | L6 | [2](phases/phase-2-server-load-narrowing.md) | Narrow message-only character/chat lookup. | DONE (`e0e86ab1`) |
 | L8 | [7](phases/phase-7-memoization-and-hygiene.md) | Replace `OFFSET 999` prune walk with bounded delete. | scheduled |
 | L9 | [7](phases/phase-7-memoization-and-hygiene.md) | Drop redundant `chats` DELETE. | scheduled |
-| L10 | [2](phases/phase-2-server-load-narrowing.md) | Load command-event history only when replay is requested. | scheduled |
+| L10 | [2](phases/phase-2-server-load-narrowing.md) | Load command-event history only when replay is requested. | DONE (`b2765994`) |
 | L11 | [5](phases/phase-5-materialization-and-lifecycle.md) | Add the `cleanedUp` guard before `memoryEvents.subscribe`. | scheduled |
 | L12 | [5](phases/phase-5-materialization-and-lifecycle.md) | Close the proxy WS viewer on already-done jobs. | scheduled |
 | L13 | [5](phases/phase-5-materialization-and-lifecycle.md) | Guard detached runners and cancel-persist on close. | scheduled |
@@ -103,7 +103,7 @@ consumers.
 
 | ID | Routing | Note |
 | -- | ------- | ---- |
-| U1 | [2](phases/phase-2-server-load-narrowing.md) | Bulk hydration known-id check. Low payoff; fold into Phase 2 if cheap. |
+| U1 | [2](phases/phase-2-server-load-narrowing.md) | Bulk hydration known-id check. Folded into Phase 2: DONE (`b2765994`). |
 | U4 | [3](phases/phase-3-client-clone-narrowing.md) | `setCurrentChat` scoped snapshot cleanup. |
 | U2 | gated | Foreign `fields` re-stub; keep on `leftover.md` evidence gate. |
 | U3 | no action | Session-bounded hydration id `Set`s; bounded and cleared on resync. |

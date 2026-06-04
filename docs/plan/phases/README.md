@@ -15,8 +15,8 @@ the finding -> phase map is in
 - Phase 1, complete (the three high-severity fixes):
   [`phase-1-high-severity-hot-paths.md`](phase-1-high-severity-hot-paths.md),
   [`slices/phase-1-high-severity-hot-paths/`](slices/phase-1-high-severity-hot-paths/).
-- Phase 2, in progress (Root 1 — server broad-load narrowing; M1/L1/L2,
-  M3/L5/L6, and M4 done — the M5/L10/U1 metric/bulk-read slice remains):
+- Phase 2, complete (Root 1 — server broad-load narrowing; all four slices
+  landed: M1/L1/L2, M3/L5/L6, M4, M5/L10/U1):
   [`phase-2-server-load-narrowing.md`](phase-2-server-load-narrowing.md),
   [`slices/phase-2-server-load-narrowing/`](slices/phase-2-server-load-narrowing/).
 - Phase 3, not started (Root 2 — client clone narrowing):

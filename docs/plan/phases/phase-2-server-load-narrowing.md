@@ -1,11 +1,12 @@
 # Phase 2: Server Load Narrowing (Root 1)
 
-Status: in progress — the scoped-assembly-load slice (M1, L1, L2) is DONE
+Status: COMPLETE — the scoped-assembly-load slice (M1, L1, L2) is DONE
 (`c193c008`), the command-mutation-read-narrowing slice (M3, L5, L6) is DONE
-(`e0e86ab1`), and the single-character-projection slice (M4) is DONE
-(`254b3112`). Addresses the largest server root: hot paths still rebuild a
-broad in-memory `Database` when they need one row. Depends on Phase 0's server
-load-count assertion.
+(`e0e86ab1`), the single-character-projection slice (M4) is DONE (`254b3112`),
+and the projection-metric-and-bulk-read slice (M5, L10, U1) is DONE
+(`b2765994`). Addressed the largest server root: hot paths no longer rebuild a
+broad in-memory `Database` when they need one row. Depended on Phase 0's
+server load-count assertion.
 
 Goal: each hot path loads only the rows it reads. Add scoped assembly loading
 and a per-request memo or field-scoped loader. Keep `loadPersisted` and
@@ -51,8 +52,10 @@ Findings: M1, M3, M4, M5, L1, L2, L5, L6, L10, U1.
   only that row via the new opt-in `maskProviderSecretsInPlace` (bootstrap uses
   it too); broad fallback for embedded/uninitialized states.
 - [`projection-metric-and-bulk-read.md`](slices/phase-2-server-load-narrowing/projection-metric-and-bulk-read.md) -
-  M5, L10, U1. Defer `jsonPayloadBytes`, load command history only for replay,
-  and target bulk-hydration id checks.
+  M5, L10, U1 — DONE (`b2765994`). `emitProtocolMetric` takes a fields thunk
+  evaluated after the enabled guard; the SSE route loads command-event history
+  only for replay (or with metrics on); the bulk hydration loaders resolve
+  known ids + the embedded fallback from the requested rows only.
 
 ## Planned Shape
 
@@ -81,12 +84,16 @@ Findings: M1, M3, M4, M5, L1, L2, L5, L6, L10, U1.
       the multi-character fixture), bootstrap masks in place with identical
       bytes. (`254b3112`, `serverLoadCostHarness.test.ts` M4 block +
       `providerSecrets.test.ts`.)
-- [ ] M5: `jsonPayloadBytes` does not run when `RISU_PROTOCOL_METRICS` is off;
-      metric output identical when on.
-- [ ] L1/L2/L10/U1: each narrows its cited redundant load with no behavior change.
-      (L1 + L2 DONE in `c193c008` — `modulesMemo.test.ts`, `assemble.test.ts`
-      L2 describe; L10/U1 remain.)
-- [ ] Gates registered in Phase 8; full server suite + audit + TypeScript checks
+- [x] M5: `jsonPayloadBytes` does not run when `RISU_PROTOCOL_METRICS` is off
+      (exact +1-serialization accounting on/off); metric output identical when
+      on. (`b2765994`, `serverLoadCostHarness.test.ts` M5 tests.)
+- [x] L1/L2/L10/U1: each narrows its cited redundant load with no behavior
+      change. (L1 + L2 `c193c008` — `modulesMemo.test.ts`, `assemble.test.ts`
+      L2 describe; L10 + U1 `b2765994` — `serverLoadCostHarness.test.ts`
+      L10/U1 tests: scoped fresh SSE connect with replay/metrics-on controls,
+      scoped bulk hydration with single-route payload equivalence and the
+      pre-extraction broad fallback.)
+- [x] Gates registered in Phase 8; full server suite + audit + TypeScript checks
       green.
 
 ## Validation
