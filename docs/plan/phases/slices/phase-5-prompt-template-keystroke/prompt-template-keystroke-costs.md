@@ -1,6 +1,7 @@
 # Prompt-Template Keystroke Costs
 
-Status: planned. Phase 5. The whole-DB guard half closed in Phase 1.
+Status: implemented (`c5fc5967` + `64804305`). Phase 5. The whole-DB guard half
+closed in Phase 1.
 
 ## Scope
 
@@ -21,18 +22,24 @@ double-stringifying it on each keystroke.
 
 ## Target Implementation
 
-1. Debounce the projection write. Coalesce the optimistic write into the existing
-   250 ms server-command timer.
-2. Mutate only the edited item. Inside the guarded write, set
-   `DBState.db.promptTemplate[index] = cloneJsonValue(promptItem)` (the `index` is
-   already computed) instead of replacing the whole array.
-3. Cheap change detection. Replace the double whole-template `JSON.stringify`
-   with the exported server-revision discriminator
-   (`peekCachedServerCommandRevision()`). Only re-pull `serverValue` when that
-   revision advances. A pure reference check will not work because
-   `queuePromptItemUpdate` reassigns `DBState.db.promptTemplate`.
-4. (Optional) `PromptDataItem.svelte`: drop one of the two `clonePromptItem`
-   passes; bounded, low.
+1. (Deferred) Debounce the projection write. Coalescing the optimistic write into
+   the 250 ms server-command timer is deferred: after step 2 the dominant
+   whole-array clone is gone and the guarded write is O(1), so this only saves the
+   per-keystroke guard wrap, while keeping the write synchronous preserves the
+   projection as authoritative for `templateCheck` warns and the revision-gated
+   reconcile. See the phase doc's Deferred note.
+2. (Done) Mutate only the edited item. `applyPromptItemProjectionWrite` finds the
+   item by id in the projection and assigns one row
+   (`template[index] = cloneJsonValue(item)`) instead of replacing the whole
+   array; `restorePromptItemProjectionWrite` does the same for the rollback. Falls
+   back to a full sync only when the projection has no row with that id yet.
+3. (Done) Cheap change detection. `reconcilePromptTemplateDraft` uses
+   `peekCachedServerCommandRevision()` as the discriminator and only re-pulls
+   `serverValue` when the revision advances; it reads `DBState.db.promptTemplate`
+   first so the caller `$effect` still re-runs on a projection change. A keystroke
+   (no revision advance) runs zero whole-template stringify passes.
+4. (Done) `PromptDataItem.svelte`: clones the edited item once per change instead
+   of twice.
 
 ## Behavior / Invariants
 
@@ -42,17 +49,18 @@ double-stringifying it on each keystroke.
   advance.
 - Edited template content is byte-identical.
 
-## Done When
+## Done When (met, except the deferred debounce)
 
 - A keystroke clones only the edited item (not the whole array) and runs zero
-  whole-template `JSON.stringify` passes; the guarded write fires at most once per
-  idle window (clone-cost harness + a debounce assertion).
+  whole-template `JSON.stringify` passes (clone-cost harness in
+  `promptTemplateBridge.svelte.test.ts`). The guarded write firing "at most once
+  per idle window" is the deferred coalescing (step 1); the write is still
+  per-keystroke but now O(1) + one-item clone.
 - Draft <-> server reconciliation still works on a revision advance.
 - `pnpm test` and `pnpm client-thinning:audit` are green.
 
 ## Validation
 
-- Add focused tests for `PromptSettings.svelte` / `PromptDataItem.svelte` behavior
-  touched by the slice.
+- `pnpm test -- src/ts/server/promptTemplateBridge.svelte.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`

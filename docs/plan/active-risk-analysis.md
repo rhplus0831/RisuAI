@@ -10,10 +10,10 @@ not a verification log. Keep proof runs in
 ## Summary
 
 All findings are analyzed. Phase 0, the primary Phase 1 guard fix, all six
-Phase 2 slices, Phase 3 (cheap wins), and Phase 4 (script-definition watcher) are
-implemented; Phases 5-7 remain planned and Phase 8 is the standing gate. Severity
-comes from the seed audit: 4 critical, 13 high, 6 medium, 6 low, plus the
-clone-site inventory.
+Phase 2 slices, Phase 3 (cheap wins), Phase 4 (script-definition watcher), and
+Phase 5 (prompt-template keystroke) are implemented; Phases 6-7 remain planned
+and Phase 8 is the standing gate. Severity comes from the seed audit: 4 critical,
+13 high, 6 medium, 6 low, plus the clone-site inventory.
 
 Principle: do not clone the whole characters array, whole `Database`, or full
 message history for scalar-only hot paths. Keep full clones for real
@@ -79,10 +79,14 @@ restructures.
   `ScopedScriptDefinitionRollback`. The discrete full-snapshot callers
   (`modules.ts`, MCP) keep the broad snapshot via the `ScriptDefinitionRollback`
   union. Phase: [Phase 4](phases/phase-4-script-definition-watcher.md).
-- Prompt-template editor: Phase 1 removed the guard clone, but each keystroke
-  still clones the whole prompt template and double-stringifies for change
-  detection. Target: debounce the projection write, mutate one item, and use a
-  revision discriminator. Phase:
+- Prompt-template editor: Phase 1 removed the guard clone; each keystroke still
+  cloned the whole prompt template and double-stringified for change detection.
+  DONE (Phase 5, `c5fc5967` + `64804305`): the keystroke writes only the edited
+  item in place (`applyPromptItemProjectionWrite`), the rollback restores one item
+  (`restorePromptItemProjectionWrite`), and change detection is gated on the cached
+  command revision (`reconcilePromptTemplateDraft`) so a keystroke runs zero
+  whole-template stringify passes; `PromptDataItem` clones the edited item once.
+  Deferred: coalescing the optimistic write into the 250 ms debounce window. Phase:
   [Phase 5](phases/phase-5-prompt-template-keystroke.md).
 - Lorebook watcher: rebuilds a DB-wide lore stringify map per fire. Target:
   scope the collector to the mounted panel's collection. Phase:
@@ -112,9 +116,9 @@ restructures.
 ## Decision
 
 Phase 0 (kit + harness), the Phase 1 primary guard fix, Phase 2 (all six
-Critical/High snapshot call-site slices), Phase 3 (cheap wins), and Phase 4
-(script-definition watcher) are done. Phases 5-7 are independent cleanups. Phase
-8 is the standing gate.
+Critical/High snapshot call-site slices), Phase 3 (cheap wins), Phase 4
+(script-definition watcher), and Phase 5 (prompt-template keystroke) are done.
+Phases 6-7 are independent cleanups. Phase 8 is the standing gate.
 
 - The highest-leverage guard fix and the Critical/High snapshot narrowing have
   landed; the Phase 0 snapshot kit was the shared dependency for that work and is

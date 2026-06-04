@@ -19,7 +19,8 @@ Concrete slices live under `slices/[phase]/[slice-name].md`.
 - Phase 4, implemented:
   [`phase-4-script-definition-watcher.md`](phase-4-script-definition-watcher.md),
   [`slices/phase-4-script-definition-watcher/`](slices/phase-4-script-definition-watcher/).
-- Phase 5, planned:
+- Phase 5, implemented (in-place write + revision-gated reconcile; debounce
+  coalescing deferred):
   [`phase-5-prompt-template-keystroke.md`](phase-5-prompt-template-keystroke.md),
   [`slices/phase-5-prompt-template-keystroke/`](slices/phase-5-prompt-template-keystroke/).
 - Phase 6, planned:
