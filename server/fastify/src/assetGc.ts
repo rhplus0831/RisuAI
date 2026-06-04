@@ -7,9 +7,12 @@ import {
   deleteAssetMetadataByIds,
   getAllAssetMetadata,
   isValidAssetId,
-  loadPersistedWithMessages,
+  loadPersisted,
 } from './repository.js'
-import { buildRisuSaveAssetReport } from './risuSave/assetReferences.js'
+import {
+  buildRisuSaveAssetReport,
+  collectMessageInlayReferences,
+} from './risuSave/assetReferences.js'
 
 // How often the periodic sweep runs. Asset GC is cheap but reads + (when it
 // reclaims) rewrites db.json, so it runs well outside the request hot path.
@@ -79,9 +82,17 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
 
   if (!opts.db) return result
 
-  const persisted = loadPersistedWithMessages(opts.db, dataDir)
+  // Message inlay references come from a column-only `messages.data` token scan
+  // (audit M10) — no whole-corpus message hydrate / per-row JSON.parse on this
+  // periodic synchronous sweep. The message-free projection covers every other
+  // reference; the referenced/orphaned sets are identical to the hydrated walk.
+  const persisted = loadPersisted(opts.db, dataDir)
   const assets = getAllAssetMetadata(opts.db)
-  const report = buildRisuSaveAssetReport(persisted.database, assets)
+  const report = buildRisuSaveAssetReport(
+    persisted.database,
+    assets,
+    collectMessageInlayReferences(opts.db, persisted.database),
+  )
   result.scannedOrphans = report.orphaned.length
 
   const referencedIds = new Set(report.referenced.map((reference) => reference.id))

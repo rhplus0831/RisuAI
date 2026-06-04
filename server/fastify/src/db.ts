@@ -5,7 +5,7 @@ import { createChatBlobTable, createMessageTable } from './messageStore.js'
 import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
 import { createAssetMetadataTable, createCharacterTables, createCollectionTables, createSettingsTable } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 14
+export const CURRENT_SCHEMA_VERSION = 15
 
 export interface MigrationStep {
   version: number
@@ -122,6 +122,22 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     up: () => {
       // No table changes; the boot path (`ensureDbJsonImported`) handles file
       // removal. The version bump signals that db.json is no longer expected.
+    },
+  },
+  {
+    version: 15,
+    name: 'command-event-origin',
+    up: (db) => {
+      // Persist the writer-session origin with each replayable command event
+      // (audit L29) so an SSE reconnect replay carries the same own-echo
+      // suppression metadata as the live event. Fresh databases get the column
+      // from `createCommandEventTable`.
+      ensureColumn(
+        db,
+        'command_events',
+        'origin_writer_session_id',
+        'ALTER TABLE command_events ADD COLUMN origin_writer_session_id TEXT',
+      )
     },
   },
 ]
@@ -373,6 +389,7 @@ function createCommandEventTable(db: DatabaseSync): void {
       resource TEXT NOT NULL,
       id TEXT,
       parent_id TEXT,
+      origin_writer_session_id TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );
 

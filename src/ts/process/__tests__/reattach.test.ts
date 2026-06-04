@@ -149,6 +149,53 @@ describe('reattach open-chat generation (Phase 4)', () => {
     expect(h.sendChat).not.toHaveBeenCalled()
   })
 
+  it('re-arms and reattaches a second live-job chat after the first completes (L30)', async () => {
+    // The first chat's reattach streams (sendChat blocked on a gate) while the
+    // user switches to a second chat with its own live job. The mid-stream
+    // trigger must defer — not drop — and fire once the first settles.
+    let releaseFirst!: () => void
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    h.sendChat.mockImplementationOnce(async () => {
+      await firstGate
+      return true
+    })
+
+    h.DBState.db = {
+      characters: [
+        { chaId: 'char-a', chatPage: 0, chats: [{ id: 'chat-1', message: [] }] },
+        { chaId: 'char-b', chatPage: 0, chats: [{ id: 'chat-2', message: [] }] },
+      ],
+    }
+    h.selectedCharID.set(0)
+    setActiveGenerationJobs([
+      { chatId: 'chat-1', jobId: 'job-1' },
+      { chatId: 'chat-2', jobId: 'job-2' },
+    ])
+
+    const first = maybeReattachOpenChatGeneration()
+    await vi.waitFor(() => expect(h.sendChat).toHaveBeenCalledTimes(1))
+
+    // Switch to the second chat mid-stream and request a probe: it must not
+    // start a second reattach now (one is in flight) and must not be lost.
+    h.selectedCharID.set(1)
+    triggerOpenChatGenerationReattach()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(h.sendChat).toHaveBeenCalledTimes(1)
+
+    releaseFirst()
+    await first
+
+    await vi.waitFor(() => {
+      expect(h.sendChat).toHaveBeenCalledWith(
+        -1,
+        expect.objectContaining({ reattachJobId: 'job-2' }),
+      )
+    })
+    expect(get(activeGenerationJobs)).toEqual([])
+  })
+
   it('reattaches after a queued trigger observes a same-character chat switch', async () => {
     h.DBState.db = {
       characters: [

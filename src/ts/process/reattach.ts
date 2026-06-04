@@ -25,6 +25,10 @@ function openChatId(): string | undefined {
 
 let reattaching = false
 let reattachQueued = false
+// A trigger that arrived while a reattach was streaming (audit L30): the user
+// switched to another chat with its own live job. Re-arm one probe after the
+// in-flight reattach settles instead of dropping the request.
+let reattachDeferred = false
 
 /**
  * Request a near-future reattach probe after projection state has settled. This
@@ -46,7 +50,10 @@ export function triggerOpenChatGenerationReattach(): void {
  * generation is already in flight locally. Each job is reattached at most once.
  */
 export async function maybeReattachOpenChatGeneration(): Promise<void> {
-  if (reattaching) return
+  if (reattaching) {
+    reattachDeferred = true
+    return
+  }
   const chatId = openChatId()
   if (!chatId) return
   const job = get(activeGenerationJobs).find((entry) => entry.chatId === chatId)
@@ -83,6 +90,13 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
     // projection refresh.
   } finally {
     reattaching = false
+    // Re-arm (audit L30): a probe requested mid-stream targets whatever chat is
+    // open NOW — without this, switching between two chats with live jobs left
+    // the second un-reattached until another selection change.
+    if (reattachDeferred) {
+      reattachDeferred = false
+      triggerOpenChatGenerationReattach()
+    }
   }
 }
 

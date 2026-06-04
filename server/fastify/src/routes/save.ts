@@ -60,6 +60,11 @@ const BUNDLE_EXPORT_FILENAME = 'database.risu.zip'
 // batches, so size is constrained by disk, not memory. A finite ceiling is opt-in
 // via RISU_API_IMPORT_MAX_BYTES (see config.ts).
 const DEFAULT_IMPORT_MAX_BYTES = Number.POSITIVE_INFINITY
+// Backstop for the bundle's inner `database.risu` when neither the import
+// ceiling nor the expanded-import cap is finite (audit M9): unlike the asset
+// entries, the inner `.risu` inflates fully in memory before decoding, so it
+// always needs a finite expanded-size cap.
+const DEFAULT_BUNDLE_INNER_RISU_MAX_EXPANDED_BYTES = 1024 * 1024 * 1024
 
 export function registerSaveRoutes(
   app: FastifyInstance,
@@ -70,6 +75,13 @@ export function registerSaveRoutes(
   options: { maxExpandedImportBytes?: number; importMaxBytes?: number } = {},
 ): void {
   const importMaxBytes = options.importMaxBytes ?? DEFAULT_IMPORT_MAX_BYTES
+  // The bundle's embedded `database.risu` gets a finite expanded-size cap even
+  // when the bundle import as a whole is unlimited (audit M9): the explicit
+  // import ceiling when set, else the same expanded cap the ordinary
+  // `/import/risusave` route enforces, else a 1 GiB backstop.
+  const bundleInnerRisuMaxExpandedBytes = Number.isFinite(importMaxBytes)
+    ? importMaxBytes
+    : (options.maxExpandedImportBytes ?? DEFAULT_BUNDLE_INNER_RISU_MAX_EXPANDED_BYTES)
   app.post(
     '/api/v1/import/risusave',
     { config: { rateLimit: importRateLimit } },
@@ -148,7 +160,7 @@ export function registerSaveRoutes(
         })
 
         const snapshot = decodeRisuSaveImportSnapshot(decoded.databaseBytes, {
-          maxExpandedBytes: importMaxBytes,
+          maxExpandedBytes: bundleInnerRisuMaxExpandedBytes,
         })
         const { revision, event, assetReport } = applyImportedDatabase(
           db,

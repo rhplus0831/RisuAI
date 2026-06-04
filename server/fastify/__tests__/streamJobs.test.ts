@@ -426,6 +426,62 @@ describe('runStreamJob', () => {
     const events = client.messages.map((m) => JSON.parse(m) as StreamJobEventLike)
     expect(events.at(-1)).toMatchObject({ type: 'error', status: 504 })
   })
+
+  it('stops consuming the upstream once the no-viewer buffer overflows (L15)', async () => {
+    // Stream far more than the pending-buffer byte cap with NO viewer attached.
+    // Once the drop-oldest window overflows, no late viewer can ever see a
+    // coherent stream, so the job must abort the upstream instead of draining
+    // the whole response through the lossy window.
+    const totalBytes = 4 * PROXY_STREAM_MAX_PENDING_BYTES
+    const writeSize = 64 * 1024
+    let written = 0
+    let upstreamClosed = false
+    echo.setResponder((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/octet-stream' })
+      res.on('close', () => {
+        upstreamClosed = true
+      })
+      res.on('error', () => {
+        // The aborted connection may surface as a late write error; ignore.
+      })
+      const writeMore = (): void => {
+        while (written < totalBytes) {
+          written += writeSize
+          if (!res.write(Buffer.alloc(writeSize, 1))) {
+            res.once('drain', writeMore)
+            return
+          }
+        }
+        res.end()
+      }
+      writeMore()
+    })
+
+    const registry = new JobRegistry()
+    const job = registry.create({ timeoutMs: 30_000, heartbeatSec: 10 })
+    await runStreamJob(registry, job, {
+      targetUrl: echo.url,
+      method: 'POST',
+      headers: {},
+      clientIp: '127.0.0.1',
+    })
+
+    expect(job.done).toBe(true)
+    expect(job.abortController.signal.aborted).toBe(true)
+    expect(JSON.parse(job.pendingEvents.at(-1) ?? '{}')).toMatchObject({
+      type: 'error',
+      status: 503,
+      message: expect.stringContaining('overflowed') as unknown as string,
+    })
+    // The upstream connection tears down (abort propagation is async) well
+    // before the full response was produced.
+    const deadline = Date.now() + 2_000
+    while (!upstreamClosed && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(upstreamClosed).toBe(true)
+    expect(written).toBeLessThan(totalBytes)
+  })
 })
 
 type StreamJobEventLike =

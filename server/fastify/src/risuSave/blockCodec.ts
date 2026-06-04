@@ -4,6 +4,7 @@ import {
   classifyRisuSaveEnvelope,
   concatBytes,
 } from './legacyEnvelopeCodec.js'
+import { gunzipBounded } from './boundedInflate.js'
 import { assertExpandedSizeWithinLimit, type ExpandedSizeLimitOptions } from './importLimits.js'
 
 export enum RisuSaveBlockType {
@@ -114,7 +115,14 @@ export function decodeRisuSaveBlockEnvelope(
 
     const rawBlockData = data.subarray(offset, offset + byteLength)
     offset += byteLength
-    const contentBytes = compression ? fflate.gunzipSync(rawBlockData) : rawBlockData
+    // Streaming bounded inflate (audit M9): each compressed block expands
+    // against the budget the previous blocks left over, so the cumulative cap
+    // is enforced *while* a block inflates rather than after it materialized.
+    const remainingBudget: ExpandedSizeLimitOptions =
+      options.maxExpandedBytes !== undefined
+        ? { maxExpandedBytes: options.maxExpandedBytes - expandedBytes }
+        : {}
+    const contentBytes = compression ? gunzipBounded(rawBlockData, remainingBudget) : rawBlockData
     expandedBytes += contentBytes.byteLength
     assertExpandedSizeWithinLimit(expandedBytes, options)
 

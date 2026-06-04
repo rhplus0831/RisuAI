@@ -101,33 +101,68 @@ async function writeBundleZipStream(
   manifest: RisuSaveBundleManifest,
   assetEntries: Array<{ bundlePath: string; diskPath: string }>,
 ): Promise<void> {
+  // Audit M11: an aborted download destroys the reply stream with a clean
+  // 'close' (no 'error'), which a bare `once(stream, 'drain')` never observes —
+  // the entry loop would park forever, leaking the in-flight asset FD and the
+  // Zip state. Track terminal stream state and make every backpressure wait
+  // race against it; throwing unwinds the `for await` (destroying the read
+  // stream via its async-iterator return) into the terminate/destroy catch.
+  let terminal: Error | null = null
+  const closeOrError = new Promise<Error>((resolve) => {
+    stream.once('error', (err) => resolve(err))
+    stream.once('close', () => resolve(new Error('bundle export output closed before completion')))
+  }).then((err) => {
+    terminal = err
+    return err
+  })
+
   let outputReady: Promise<void> = Promise.resolve()
   const zip = new fflate.Zip((err, chunk, final) => {
     if (err) {
       stream.destroy(err)
       return
     }
+    // Drop output once the consumer is gone — writing to a destroyed stream
+    // would raise a second, unobserved 'error'.
+    if (terminal || stream.destroyed) return
     if (chunk.length > 0 && !stream.write(chunk)) {
-      outputReady = once(stream, 'drain').then(() => undefined)
+      // Swallow rejection: a destroyed stream signals through `closeOrError`;
+      // an unobserved replaced waiter must not become an unhandled rejection.
+      outputReady = once(stream, 'drain').then(
+        () => undefined,
+        () => undefined,
+      )
     }
     if (final) stream.end()
   })
 
+  const readOutputReady = async (): Promise<void> => {
+    if (terminal) throw terminal
+    await Promise.race([
+      outputReady,
+      closeOrError.then((err) => {
+        throw err
+      }),
+    ])
+  }
+
   try {
-    await addBufferEntry(zip, () => outputReady, RISU_PATH, risuBytes)
+    await addBufferEntry(zip, readOutputReady, RISU_PATH, risuBytes)
     for (const entry of assetEntries) {
-      await addFileEntry(zip, () => outputReady, entry.bundlePath, entry.diskPath)
+      await addFileEntry(zip, readOutputReady, entry.bundlePath, entry.diskPath)
     }
     await addBufferEntry(
       zip,
-      () => outputReady,
+      readOutputReady,
       MANIFEST_PATH,
       Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),
     )
     zip.end()
   } catch (err) {
     zip.terminate()
-    stream.destroy(err instanceof Error ? err : new Error('Failed to build .risu bundle export'))
+    if (!stream.destroyed) {
+      stream.destroy(err instanceof Error ? err : new Error('Failed to build .risu bundle export'))
+    }
   }
 }
 

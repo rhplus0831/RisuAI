@@ -1,5 +1,6 @@
 import * as fflate from 'fflate'
 import { Unpackr } from 'msgpackr/index-no-eval'
+import { decompressBounded, gunzipBounded } from './boundedInflate.js'
 import { assertExpandedSizeWithinLimit, type ExpandedSizeLimitOptions } from './importLimits.js'
 
 export type RisuSaveEnvelopeKind =
@@ -72,13 +73,14 @@ export function decodeLegacyRisuSaveEnvelope(
     return unpackr.decode(payload)
   }
   if (kind === 'legacy-compressed') {
-    const payload = fflate.decompressSync(data.subarray(LEGACY_COMPRESSED_HEADER.length))
-    assertExpandedSizeWithinLimit(payload.byteLength, options)
+    // Streaming bounded inflate (audit M9): the cap is enforced while the
+    // payload expands, so an oversized compressed envelope aborts at the limit
+    // instead of fully materializing first.
+    const payload = decompressBounded(data.subarray(LEGACY_COMPRESSED_HEADER.length), options)
     return unpackr.decode(payload)
   }
   if (kind === 'legacy-stream') {
-    const payload = fflate.gunzipSync(data.subarray(LEGACY_STREAM_HEADER.length))
-    assertExpandedSizeWithinLimit(payload.byteLength, options)
+    const payload = gunzipBounded(data.subarray(LEGACY_STREAM_HEADER.length), options)
     return unpackr.decode(payload)
   }
   throw new Error(`Unsupported legacy .risu envelope: ${kind}`)

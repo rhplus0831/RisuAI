@@ -20,6 +20,30 @@ import { JobRegistry, type StreamJob } from './streamJobs.js'
 export class GenerationJobRegistry {
   readonly registry = new JobRegistry()
   private readonly runningByChat = new Map<string, string>()
+  private readonly runners = new Set<Promise<void>>()
+
+  /**
+   * Track a detached runner promise so shutdown can wait for it (audit L13):
+   * `onClose` aborts every job and then settles the runners *before* closing
+   * the SQLite handle, so an in-flight cancel-persist still writes to an open
+   * database instead of racing `db.close()`.
+   */
+  trackRunner(runner: Promise<void>): void {
+    const tracked = runner.catch(() => {
+      // The runner has its own terminal handling; tracking must never reject.
+    })
+    this.runners.add(tracked)
+    void tracked.finally(() => {
+      this.runners.delete(tracked)
+    })
+  }
+
+  /** Wait until every tracked detached runner has settled. */
+  async settleRunners(): Promise<void> {
+    while (this.runners.size > 0) {
+      await Promise.all([...this.runners])
+    }
+  }
 
   /**
    * The currently *running* (not done) job for a chat, if any. A done-but-not-yet

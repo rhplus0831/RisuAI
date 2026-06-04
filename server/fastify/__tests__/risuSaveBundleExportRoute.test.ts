@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import fs, { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import * as fflate from 'fflate'
@@ -11,8 +11,11 @@ import { DatabaseSync } from 'node:sqlite'
 import {
   writePersistedWithMessages,
   assetsDir,
+  getAllAssetMetadata,
   insertAssetMetadataBatch,
+  loadPersistedWithMessages,
 } from '../src/repository.js'
+import { buildRepositoryRisuSaveBundleExport } from '../src/risuSave/bundleExport.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
@@ -389,5 +392,71 @@ describe('bundle export materialization measurement', () => {
     // The metric measures the embedded `.risu` bytes, not the final (compressed,
     // multi-entry) zip, so only its presence and positivity are asserted here.
     expect(metric?.outputBytes).toBeGreaterThan(0)
+  })
+})
+
+describe('bundle export abort cleanup (M11)', () => {
+  async function waitFor(predicate: () => boolean, what: string): Promise<void> {
+    const deadline = Date.now() + 2_000
+    while (Date.now() < deadline) {
+      if (predicate()) return
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    throw new Error(`timed out waiting for ${what}`)
+  }
+
+  it('terminates the entry loop and destroys the in-flight asset read stream on premature close', async () => {
+    // A multi-megabyte asset guarantees write backpressure (PassThrough
+    // high-water mark is 16 KiB) parks the entry loop mid-file with the asset
+    // read stream open — the empirically reproduced leak shape.
+    const dataDir = harness.dataDir
+    const bigAsset = Buffer.alloc(4 * 1024 * 1024, 7)
+    const db = openDatabase(dataDir)
+    try {
+      writePersistedWithMessages(db, dataDir, {
+        _version: 1,
+        database: { version: 1, userIcon: INCLUDED_ASSET, characters: [] },
+        assets: [],
+      })
+      insertAssetMetadataBatch(db, [
+        { id: INCLUDED_ASSET, ext: 'png', size: bigAsset.length, contentType: 'image/png' },
+      ])
+      mkdirSync(assetsDir(dataDir), { recursive: true })
+      writeFileSync(path.join(assetsDir(dataDir), `${INCLUDED_ASSET}.png`), bigAsset)
+
+      const openedReadStreams: Array<ReturnType<typeof fs.createReadStream>> = []
+      const realCreateReadStream = fs.createReadStream.bind(fs)
+      const spy = vi
+        .spyOn(fs, 'createReadStream')
+        .mockImplementation((...args: Parameters<typeof fs.createReadStream>) => {
+          const stream = realCreateReadStream(...args)
+          openedReadStreams.push(stream)
+          return stream
+        })
+      try {
+        const persisted = loadPersistedWithMessages(db, dataDir)
+        persisted.assets = getAllAssetMetadata(db)
+        const bundle = buildRepositoryRisuSaveBundleExport({
+          dataDir,
+          persisted,
+          risuBytes: new Uint8Array([1, 2, 3]),
+          envelope: 'risusave-blocks',
+          compression: false,
+        })
+        // No consumer reads the bundle stream, so the writer parks on
+        // backpressure while the asset file is mid-read.
+        await waitFor(() => openedReadStreams.length === 1, 'the asset read stream to open')
+        expect(openedReadStreams[0].destroyed).toBe(false)
+
+        // The client aborts: Fastify destroys the reply stream — a clean
+        // 'close', no 'error'. The parked loop must unwind and free the FD.
+        bundle.stream.destroy()
+        await waitFor(() => openedReadStreams[0].destroyed, 'the asset read stream to be destroyed')
+      } finally {
+        spy.mockRestore()
+      }
+    } finally {
+      db.close()
+    }
   })
 })

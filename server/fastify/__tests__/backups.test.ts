@@ -551,6 +551,77 @@ describe('Phase 2D backups', () => {
     }
   })
 
+  it('skips a corrupt manifest instead of failing the whole backups list (L27)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const a = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'healthy' },
+    })
+    expect(a.statusCode).toBe(201)
+
+    // One corrupt (unparsable) and one misshapen (no createdAt) manifest.
+    const corruptId = '2026-06-05-01-02-03-c0ffee'
+    mkdirSync(path.join(harness.dataDir, 'backups', corruptId), { recursive: true })
+    writeFileSync(
+      path.join(harness.dataDir, 'backups', corruptId, 'manifest.json'),
+      '{not valid json',
+    )
+    const misshapenId = '2026-06-05-01-02-04-c0ffee'
+    mkdirSync(path.join(harness.dataDir, 'backups', misshapenId), { recursive: true })
+    writeFileSync(
+      path.join(harness.dataDir, 'backups', misshapenId, 'manifest.json'),
+      JSON.stringify({ id: misshapenId }),
+    )
+
+    const list = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(list.statusCode).toBe(200)
+    expect(list.json().backups.map((m: { id: string }) => m.id)).toEqual([a.json().id])
+  })
+
+  it('rolls a failed legacy db.json re-import back atomically, with no restore event (L28)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'live-before-broken-legacy' })
+    const before = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const revisionBefore = before.json().revision as number
+    harness.commandEvents.clear()
+
+    // A legacy-only backup (db.json, no risu.db) whose snapshot is unreadable:
+    // the re-import throws inside the restore transaction.
+    const backupId = '2026-06-05-02-03-04-abcdef'
+    const backupRoot = path.join(harness.dataDir, 'backups', backupId)
+    mkdirSync(backupRoot, { recursive: true })
+    writeFileSync(path.join(backupRoot, 'db.json'), '{broken legacy snapshot')
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(500)
+
+    // Atomic: no partial table wipe survived and no restore event was emitted
+    // or persisted (pre-fix the tables were already swapped + the event row
+    // committed before the import ran).
+    expect(harness.commandEvents.list()).toEqual([])
+    const after = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(after.json().revision).toBe(revisionBefore)
+    expect(after.json().database).toMatchObject({ tag: 'live-before-broken-legacy' })
+  })
+
   it('restore of an unknown id returns 404', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({

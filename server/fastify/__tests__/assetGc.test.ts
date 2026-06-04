@@ -8,11 +8,17 @@ import {
   assetsDir,
   getAllAssetMetadata,
   insertAssetMetadataBatch,
+  loadPersistedWithMessages,
   writePersistedWithMessages,
   type PersistedAsset,
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { replaceAllChatMessages } from '../src/messageStore.js'
+import {
+  buildRepositoryRisuSaveAssetReport,
+  buildRisuSaveAssetReport,
+} from '../src/risuSave/assetReferences.js'
+import { CORPUS_TABLES, assertScopedLoadOnHotPath } from './helpers/loadCostHarness.js'
 
 const REFERENCED = 'a'.repeat(64)
 const SHARED = 'b'.repeat(64)
@@ -132,6 +138,76 @@ describe('runAssetGc', () => {
     expect(result.deletedAssetIds).toEqual([])
     expect(result.deletedStrayFiles).toEqual([])
     expect(getAllAssetMetadata(db)).toEqual([asset(REFERENCED)])
+  })
+
+  it('never hydrates the message corpus during a sweep (M10)', async () => {
+    const database = {
+      characters: [{ chaId: 'char-a', image: REFERENCED, chats: [{ id: 'chat-a' }] }],
+    }
+    seedDatabase(database, [asset(REFERENCED), asset(ORPHAN_OLD)])
+    writeAssetFile(REFERENCED, OLD_MTIME)
+    writeAssetFile(ORPHAN_OLD, OLD_MTIME)
+    replaceAllChatMessages(db, [
+      {
+        chatId: 'chat-a',
+        messages: [{ chatId: 'message-a', role: 'user', data: `{{inlay::${SHARED}}}` }],
+      },
+    ])
+
+    // The sweep may keep its message-free broad walk (that is its union source),
+    // but the message/hypa corpus must never hydrate — the inlay references come
+    // from the column-only `messages.data` scan.
+    const allowEverythingButMessages = Object.keys(CORPUS_TABLES).filter(
+      (table) => table !== 'messages' && table !== 'chat_hypa_v3',
+    )
+    const result = await assertScopedLoadOnHotPath(
+      () => runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW }),
+      { allowTables: allowEverythingButMessages },
+    )
+    expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
+  })
+
+  it('reports identical referenced/missing/orphaned sets to the hydrated walker (M10)', () => {
+    const MISSING = '9'.repeat(64)
+    const database = {
+      userIcon: REFERENCED,
+      characters: [
+        {
+          chaId: 'char-a',
+          image: SHARED,
+          chats: [
+            { id: 'chat-a' },
+            { id: 'chat-b', message: [{ chatId: 'embedded-1', role: 'user', data: 'plain' }] },
+          ],
+        },
+        { chaId: 'char-b', chats: [{ id: 'chat-c' }] },
+      ],
+    }
+    seedDatabase(database, [asset(REFERENCED), asset(SHARED), asset(ORPHAN_OLD)])
+    replaceAllChatMessages(db, [
+      {
+        chatId: 'chat-a',
+        messages: [
+          { chatId: 'message-a', role: 'user', data: `one {{inlay::${SHARED}}}` },
+          { chatId: 'message-b', role: 'char', data: `two {{inlayed::${MISSING}}}` },
+        ],
+      },
+      {
+        chatId: 'chat-c',
+        messages: [{ chatId: 'message-c', role: 'user', data: `{{inlayeddata::${REFERENCED}}}` }],
+      },
+    ])
+
+    const scoped = buildRepositoryRisuSaveAssetReport(dataDir, db)
+    const hydrated = buildRisuSaveAssetReport(
+      loadPersistedWithMessages(db, dataDir).database,
+      getAllAssetMetadata(db),
+    )
+    // Byte-identical report: same ids, same path labels, same counts.
+    expect(scoped).toEqual(hydrated)
+    expect(scoped.referenced.map((reference) => reference.id)).toContain(SHARED)
+    expect(scoped.missing.map((reference) => reference.id)).toEqual([MISSING])
+    expect(scoped.orphaned.map((entry) => entry.id)).toEqual([ORPHAN_OLD])
   })
 
   it('keeps assets referenced only by SQLite chat-message inlay tokens', () => {

@@ -3,7 +3,7 @@ import {
   type PersistedAsset,
   getAllAssetMetadata,
   isValidAssetId,
-  loadPersistedWithMessages,
+  loadPersisted,
 } from '../repository.js'
 
 type JsonRecord = Record<string, unknown>
@@ -11,6 +11,13 @@ type JsonRecord = Record<string, unknown>
 export interface RisuSaveAssetReference {
   id: string
   paths: string[]
+}
+
+/** A candidate reference value + its report path label, fed through the same
+ *  validation as the walker's own finds. */
+export interface RisuSaveAssetReferenceSource {
+  value: unknown
+  path: string
 }
 
 export interface RisuSaveAssetReport {
@@ -28,16 +35,25 @@ export function buildRepositoryRisuSaveAssetReport(
   dataDir: string,
   db: DatabaseSync,
 ): RisuSaveAssetReport {
-  const persisted = loadPersistedWithMessages(db, dataDir)
+  // Message inlay references come from a column-only `messages.data` scan
+  // (audit M10) instead of hydrating every chat's message JSON; the message-free
+  // `loadPersisted` projection covers all non-message references and supplies
+  // the chat path labels, so the report is identical to the hydrated walk.
+  const persisted = loadPersisted(db, dataDir)
   const assets = getAllAssetMetadata(db)
-  return buildRisuSaveAssetReport(persisted.database, assets)
+  return buildRisuSaveAssetReport(
+    persisted.database,
+    assets,
+    collectMessageInlayReferences(db, persisted.database),
+  )
 }
 
 export function buildRisuSaveAssetReport(
   database: unknown,
   assets: readonly PersistedAsset[],
+  extraReferences: readonly RisuSaveAssetReferenceSource[] = [],
 ): RisuSaveAssetReport {
-  const references = collectRisuSaveAssetReferences(database)
+  const references = collectRisuSaveAssetReferences(database, extraReferences)
   const referencedIds = new Set(references.map((reference) => reference.id))
   const storedIds = new Set(assets.map((asset) => asset.id))
 
@@ -61,7 +77,61 @@ export function summarizeRisuSaveAssetReport(
   }
 }
 
-function collectRisuSaveAssetReferences(database: unknown): RisuSaveAssetReference[] {
+/**
+ * Inlay-token references from the messages table, without hydrating any chat
+ * (audit M10): a column-only scan of `messages.data` in `seq` order, labeled
+ * via each chat's position in the projected database so the paths match the
+ * hydrated walker byte-for-byte. Rows whose chat is not in the projection are
+ * skipped, mirroring the hydrate-then-walk behavior.
+ */
+export function collectMessageInlayReferences(
+  db: DatabaseSync,
+  database: unknown,
+): RisuSaveAssetReferenceSource[] {
+  // chatId → every `database.characters[i].chats[j]` label that carries it
+  // (duplicate chat ids across characters hydrate the same rows into each).
+  const chatLabels = new Map<string, string[]>()
+  const root = readRecord(database)
+  readArray(root?.characters).forEach((character, characterIndex) => {
+    const record = readRecord(character)
+    if (!record) return
+    readArray(record.chats).forEach((chat, chatIndex) => {
+      const chatId = readRecord(chat)?.id
+      if (typeof chatId !== 'string') return
+      const labels = chatLabels.get(chatId) ?? []
+      labels.push(`database.characters[${characterIndex}].chats[${chatIndex}]`)
+      chatLabels.set(chatId, labels)
+    })
+  })
+  if (chatLabels.size === 0) return []
+
+  const rows = db
+    .prepare('SELECT chat_id, data FROM messages WHERE alternate = 0 ORDER BY chat_id, seq')
+    .all() as Array<{ chat_id: string; data: string }>
+
+  const references: RisuSaveAssetReferenceSource[] = []
+  const messageIndexByChat = new Map<string, number>()
+  for (const row of rows) {
+    const labels = chatLabels.get(row.chat_id)
+    const messageIndex = messageIndexByChat.get(row.chat_id) ?? 0
+    messageIndexByChat.set(row.chat_id, messageIndex + 1)
+    if (!labels || typeof row.data !== 'string') continue
+    for (const match of row.data.matchAll(INLAY_TOKEN_RE)) {
+      for (const label of labels) {
+        references.push({
+          value: match[2],
+          path: `${label}.message[${messageIndex}].data.${match[1]}`,
+        })
+      }
+    }
+  }
+  return references
+}
+
+function collectRisuSaveAssetReferences(
+  database: unknown,
+  extraReferences: readonly RisuSaveAssetReferenceSource[] = [],
+): RisuSaveAssetReference[] {
   const found = new Map<string, Set<string>>()
   const root = readRecord(database)
   if (!root) return []
@@ -108,9 +178,27 @@ function collectRisuSaveAssetReferences(database: unknown): RisuSaveAssetReferen
     addGptSoVitsReference(found, record.gptSoVitsConfig, `${prefix}.gptSoVitsConfig`)
   })
 
+  addMessageInlayReferenceSources(found, extraReferences)
+
   return [...found.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([id, paths]) => ({ id, paths: [...paths].sort() }))
+}
+
+/**
+ * Merge the table-scanned message inlay references (audit M10). Like the
+ * hydrated `addChatInlayReferences` walk these relocate, message `data` is
+ * free text scanned by regex — deliberately outside the EC6 validator-owned
+ * asset-field collectors; each candidate still passes `addReference`'s id
+ * validation.
+ */
+function addMessageInlayReferenceSources(
+  found: Map<string, Set<string>>,
+  extraReferences: readonly RisuSaveAssetReferenceSource[],
+): void {
+  for (const extra of extraReferences) {
+    addReference(found, extra.value, extra.path)
+  }
 }
 
 function addChatInlayReferences(

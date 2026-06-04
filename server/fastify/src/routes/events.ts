@@ -145,19 +145,45 @@ export function registerEventsRoutes(
     queuedCommandEvents.length = 0
     liveCommandDelivery = true
 
-    heartbeat = setInterval(() => {
-      if (!reply.raw.writableEnded) {
-        sendFrame(formatSseComment('heartbeat'))
-      }
-    }, 25_000)
-    heartbeat.unref()
-
-    unsubscribeMemory = memoryEvents.subscribe((event) => {
-      if (!reply.raw.writableEnded) {
-        sendFrame(formatMemoryEvent(event))
-      }
+    const armed = armSseLiveDelivery({
+      tornDown: () => cleanedUp,
+      startHeartbeat: () =>
+        setInterval(() => {
+          if (!reply.raw.writableEnded) {
+            sendFrame(formatSseComment('heartbeat'))
+          }
+        }, 25_000),
+      subscribeMemory: () =>
+        memoryEvents.subscribe((event) => {
+          if (!reply.raw.writableEnded) {
+            sendFrame(formatMemoryEvent(event))
+          }
+        }),
     })
+    heartbeat = armed.heartbeat
+    unsubscribeMemory = armed.unsubscribeMemory
   })
+}
+
+/**
+ * Arm the live-delivery legs (heartbeat interval + memory-event fanout) after
+ * the replay flush. When the flush itself tore the stream down — a
+ * slow-consumer overflow runs `cleanup` mid-handler via `writeBoundedRaw`'s
+ * `onOverflow` — arming anyway would leak both forever: `cleanup` already ran
+ * and its `cleanedUp` latch keeps it from ever running again (audit L11).
+ * Exported for the regression test.
+ */
+export function armSseLiveDelivery(args: {
+  tornDown: () => boolean
+  startHeartbeat: () => NodeJS.Timeout
+  subscribeMemory: () => () => void
+}): { heartbeat: NodeJS.Timeout | null; unsubscribeMemory: (() => void) | null } {
+  if (args.tornDown()) {
+    return { heartbeat: null, unsubscribeMemory: null }
+  }
+  const heartbeat = args.startHeartbeat()
+  heartbeat.unref()
+  return { heartbeat, unsubscribeMemory: args.subscribeMemory() }
 }
 
 type ReplayCursorResult =

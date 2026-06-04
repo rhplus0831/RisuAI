@@ -436,4 +436,61 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     expect(events.some((e) => e.type === 'chunk')).toBe(true)
     expect(events.at(-1)?.type).toBe('done')
   })
+
+  it('closes a viewer that attaches to an already-done job instead of pinning it (L12)', async () => {
+    echo.setResponder((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end('hello')
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const create = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/proxy/stream-jobs',
+      headers: { 'risu-auth': assertion },
+      payload: { url: echo.url },
+    })
+    const { jobId } = create.json() as { jobId: string }
+
+    // Let the upstream complete so the job is done before the viewer attaches.
+    await new Promise((r) => setTimeout(r, 80))
+
+    // A real socket (not the inject transport): the assertion is that the
+    // SERVER initiates the close handshake — the viewer never hangs up.
+    // Pre-fix this attached client pinned the job (and its ping timer)
+    // until the client disconnected.
+    await harness.app.listen({ host: '127.0.0.1', port: 0 })
+    const port = (harness.app.server.address() as AddressInfo).port
+    const { WebSocket: WsClient } = await import('ws')
+    const ws = new WsClient(
+      `ws://127.0.0.1:${port}/api/v1/proxy/stream-jobs/${jobId}/ws?risu-auth=${encodeURIComponent(assertion)}`,
+    )
+    const events: { type: string }[] = []
+    ws.on('message', (data) => {
+      events.push(JSON.parse(Buffer.from(data as Buffer).toString('utf8')) as { type: string })
+    })
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('server did not close the done-job viewer')),
+        3_000,
+      )
+      ws.once('close', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+      ws.once('error', (err) => {
+        clearTimeout(timer)
+        reject(err)
+      })
+    })
+
+    // The buffered tail was still flushed before the close...
+    expect(events.some((event) => event.type === 'done')).toBe(true)
+    // ...and the job is unpinned: detaching the last viewer of a done job
+    // cleans it up, so a fresh attach now 404s.
+    await expect(
+      harness.app.injectWS(`/api/v1/proxy/stream-jobs/${jobId}/ws`, {
+        headers: { 'risu-auth': assertion },
+      }),
+    ).rejects.toThrow(/404/)
+  })
 })

@@ -92,12 +92,23 @@ export function persistCommandEvent(
   historyLimit = COMMAND_EVENT_HISTORY_LIMIT,
 ): void {
   validateCommandEventForPersistence(event)
+  // The writer-session origin persists with the event (audit L29) so an SSE
+  // reconnect replay carries the same own-echo suppression metadata as the
+  // live emit. Metadata only — the projected event payload is unchanged for
+  // events that never had an origin.
   db.prepare(
     `
-      INSERT INTO command_events (revision, type, resource, id, parent_id)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO command_events (revision, type, resource, id, parent_id, origin_writer_session_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `,
-  ).run(event.revision, event.type, event.resource, event.id ?? null, event.parentId ?? null)
+  ).run(
+    event.revision,
+    event.type,
+    event.resource,
+    event.id ?? null,
+    event.parentId ?? null,
+    event.origin?.writerSessionId ?? null,
+  )
   pruneCommandEventHistory(db, historyLimit)
 }
 
@@ -116,7 +127,8 @@ export function listPersistedCommandEventHistory(db: DatabaseSync): readonly Com
   const rows = db
     .prepare(
       `
-        SELECT revision, type, resource, id, parent_id AS parentId
+        SELECT revision, type, resource, id, parent_id AS parentId,
+               origin_writer_session_id AS originWriterSessionId
         FROM command_events
         ORDER BY revision ASC
       `,
@@ -161,6 +173,7 @@ interface PersistedCommandEventRow {
   resource: string
   id: string | null
   parentId: string | null
+  originWriterSessionId: string | null
 }
 
 function commandEventFromRow(row: PersistedCommandEventRow): CommandEvent {
@@ -170,6 +183,9 @@ function commandEventFromRow(row: PersistedCommandEventRow): CommandEvent {
     resource: row.resource,
     ...(row.id !== null ? { id: row.id } : {}),
     ...(row.parentId !== null ? { parentId: row.parentId } : {}),
+    ...(row.originWriterSessionId !== null
+      ? { origin: { writerSessionId: row.originWriterSessionId } }
+      : {}),
   }
 }
 

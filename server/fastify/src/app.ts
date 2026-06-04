@@ -207,6 +207,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     for (const job of generationJobRegistry.registry.list()) {
       generationJobRegistry.registry.deleteJob(job.id)
     }
+    // Detached generation runners were just aborted; wait for them to settle
+    // (their cancel path persists the streamed-so-far text) BEFORE closing the
+    // SQLite handle, so no runner ever touches a closed database (audit L13).
+    await generationJobRegistry.settleRunners()
     db.close()
   })
 

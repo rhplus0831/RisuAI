@@ -111,6 +111,11 @@ export type ChatProviderDispatcher = (
 export interface GenerationChatRouteOptions {
   dispatchProvider?: ChatProviderDispatcher
   finalizationRetry?: false | { intervalMs?: number; maxPerSweep?: number }
+  /**
+   * Cadence of the durable viewer's SSE comment heartbeat (audit L14).
+   * Defaults to the job's `heartbeatSec`; injectable for tests.
+   */
+  viewerHeartbeatMs?: number
 }
 
 export interface GenerationFinalizationRetryLogger {
@@ -1057,6 +1062,7 @@ function attachGenerationViewer(
   reply: FastifyReply,
   registry: GenerationJobRegistry,
   job: StreamJob,
+  viewerHeartbeatMs?: number,
 ): void {
   reply.hijack()
   reply.raw.writeHead(200, {
@@ -1068,13 +1074,27 @@ function attachGenerationViewer(
   const client = makeSseJobClient(reply)
   client.send(formatPromptChatFrame({ type: 'job_accepted', jobId: job.id }))
   registry.registry.attach(job.id, client)
-  req.raw.once('close', () => registry.registry.detach(job.id, client))
+  // SSE comment heartbeat (audit L14): a long assembly or provider connect can
+  // leave the stream silent past idle-proxy timeouts before the first token.
+  // Comments are invisible to the SSE block parser and are written directly to
+  // this viewer's socket — they never enter the job's replay buffer.
+  const heartbeat = setInterval(() => {
+    if (!reply.raw.writableEnded) {
+      writeBoundedRaw(reply.raw, ': heartbeat\n\n')
+    }
+  }, viewerHeartbeatMs ?? job.heartbeatSec * 1000)
+  heartbeat.unref()
+  req.raw.once('close', () => {
+    clearInterval(heartbeat)
+    registry.registry.detach(job.id, client)
+  })
   // Reattach to an already-completed (in-grace) job: `attach` just flushed the
   // buffered terminal frame, and the runner's finally already ran (it cannot close
   // this late viewer), so close + detach here. Otherwise the socket and the job
   // would dangle until the client hangs up (the job is `done` with one client, which
   // neither GC branch collects).
   if (job.done) {
+    clearInterval(heartbeat)
     client.close()
     registry.registry.detach(job.id, client)
   }
@@ -1266,6 +1286,13 @@ function queueAndPersistGenerationFinalization(args: {
   eventSink: CommandEventSink
   attempt: GenerationFinalizationAttempt
 }): number {
+  // Shutdown guard (audit L13): an aborted runner's cancel-persist can land
+  // after `onClose` closed the SQLite handle (the runner-settle wait covers
+  // tracked runners; this covers any straggler). Fail with a clear error
+  // instead of touching a closed database.
+  if (!args.db.isOpen) {
+    throw new Error('database is closed; generation finalization skipped (server shutting down)')
+  }
   enqueueGenerationFinalizationRetry(args.db, args.attempt)
   try {
     const revision = persistGenerationFinalizationAttempt(args)
@@ -1284,6 +1311,11 @@ export function retryQueuedGenerationFinalizations(args: {
   logger?: GenerationFinalizationRetryLogger
   maxPerSweep?: number
 }): { attempted: number; persisted: number; terminal: number; retryable: number } {
+  // Shutdown guard (audit L13): a sweep that fires while `onClose` is tearing
+  // down must not touch the closed handle.
+  if (!args.db.isOpen) {
+    return { attempted: 0, persisted: 0, terminal: 0, retryable: 0 }
+  }
   const attempts = listPendingGenerationFinalizationRetries(args.db, args.maxPerSweep ?? 25)
   let persisted = 0
   let terminal = 0
@@ -1734,16 +1766,20 @@ function startDurableGeneration(args: {
   job.mode = input.mode === 'continue' || input.mode === 'regenerate' ? input.mode : 'send'
   if (input.mode === 'regenerate') job.regenerateMessageId = input.regenerateMessageId
   generationJobs.register(input.chatId, job.id)
-  attachGenerationViewer(req, reply, generationJobs, job)
-  void runGenerationJob({
-    registry: generationJobs,
-    job,
-    db: args.db,
-    input,
-    dataDir: args.dataDir,
-    eventSink: args.eventSink,
-    options: args.options,
-  })
+  attachGenerationViewer(req, reply, generationJobs, job, args.options.viewerHeartbeatMs)
+  // Fire-and-forget, but tracked: shutdown awaits the runner before closing
+  // the database (audit L13).
+  generationJobs.trackRunner(
+    runGenerationJob({
+      registry: generationJobs,
+      job,
+      db: args.db,
+      input,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      options: args.options,
+    }),
+  )
 }
 
 export function registerGenerationChatRoutes(
@@ -1802,7 +1838,7 @@ export function registerGenerationChatRoutes(
         reply.code(404).send({ error: 'Job not found' })
         return
       }
-      attachGenerationViewer(req, reply, generationJobs, job)
+      attachGenerationViewer(req, reply, generationJobs, job, options.viewerHeartbeatMs)
     },
   )
 

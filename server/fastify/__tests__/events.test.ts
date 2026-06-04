@@ -404,6 +404,63 @@ describe('Phase 9-5a command events stream', () => {
     }
   })
 
+  it('replays the writer-session origin so reconnect keeps own-echo suppression (L29)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      streamGeminiThoughts: false,
+    })
+    // Claim the writer session, then mutate as that writer.
+    const boot = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-l29' },
+    })
+    expect(boot.statusCode).toBe(200)
+    const command = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-l29' },
+      payload: { baseRevision: revision, patch: { streamGeminiThoughts: true } },
+    })
+    expect(command.statusCode).toBe(200)
+    const nextRevision = command.json().revision as number
+
+    // The origin persists with the event row...
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const persisted = listPersistedCommandEventHistory(db).find(
+        (event) => event.revision === nextRevision,
+      )
+      expect(persisted?.origin).toEqual({ writerSessionId: 'writer-l29' })
+    } finally {
+      db.close()
+    }
+
+    // ...and a reconnect replay carries it, identical to the live emit.
+    const baseUrl = await listen(harness.app)
+    const abort = new AbortController()
+    const res = await fetch(`${baseUrl}/api/v1/events?sinceRevision=${revision}`, {
+      headers: { 'risu-auth': assertion },
+      signal: abort.signal,
+    })
+    const reader = res.body?.getReader()
+    expect(reader).toBeDefined()
+    try {
+      const text = await readUntil(reader!, (chunk) => chunk.includes('settings.updated'))
+      const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+      expect(dataLine).toBeDefined()
+      expect(JSON.parse(dataLine!.slice('data: '.length))).toEqual({
+        type: 'settings.updated',
+        revision: nextRevision,
+        resource: 'settings',
+        origin: { writerSessionId: 'writer-l29' },
+      })
+    } finally {
+      abort.abort()
+      reader?.releaseLock()
+    }
+  })
+
   it('replays stored command events after app restart', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -716,5 +773,44 @@ describe('Phase 9-5a command events stream', () => {
     abort.abort()
     await waitFor(() => harness.commandEvents.activeListeners === 0)
     reader?.releaseLock()
+  })
+
+  it('never arms the heartbeat or memory subscription after a mid-handler teardown (L11)', async () => {
+    // A slow-consumer overflow during the replay flush runs `cleanup` before
+    // the live-delivery legs are armed; the `cleanedUp` latch then keeps
+    // cleanup from ever running again, so arming anyway would leak both
+    // forever. The guard must skip arming entirely.
+    const { armSseLiveDelivery } = await import('../src/routes/events.js')
+
+    let heartbeatStarted = 0
+    let memorySubscribed = 0
+    const tornDown = armSseLiveDelivery({
+      tornDown: () => true,
+      startHeartbeat: () => {
+        heartbeatStarted += 1
+        return setInterval(() => {}, 1_000)
+      },
+      subscribeMemory: () => {
+        memorySubscribed += 1
+        return () => {}
+      },
+    })
+    expect(tornDown).toEqual({ heartbeat: null, unsubscribeMemory: null })
+    expect(heartbeatStarted).toBe(0)
+    expect(memorySubscribed).toBe(0)
+
+    // The live path still arms both.
+    const armed = armSseLiveDelivery({
+      tornDown: () => false,
+      startHeartbeat: () => setInterval(() => {}, 1_000),
+      subscribeMemory: () => {
+        memorySubscribed += 1
+        return () => {}
+      },
+    })
+    expect(armed.heartbeat).not.toBeNull()
+    expect(memorySubscribed).toBe(1)
+    if (armed.heartbeat) clearInterval(armed.heartbeat)
+    armed.unsubscribeMemory?.()
   })
 })

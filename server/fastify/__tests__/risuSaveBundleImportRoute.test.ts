@@ -383,6 +383,33 @@ describe('repository .risu bundle import route', () => {
     expect(imported.statusCode).toBe(400)
   })
 
+  it('caps the expanded size of the embedded database.risu even when the bundle import is unlimited (M9)', async () => {
+    // importMaxBytes is Infinity in this harness, so the inner `.risu` falls
+    // back to the expanded-import cap (bodyLimit = 4 MiB). A tiny gzip that
+    // expands past that must be rejected during inflate, not materialized.
+    const { encodeLegacyRisuSaveEnvelope } = await import(
+      '../src/risuSave/legacyEnvelopeCodec.js'
+    )
+    const bomb = encodeLegacyRisuSaveEnvelope(
+      { version: 1, blob: 'x'.repeat(6 * 1024 * 1024) },
+      'legacy-stream',
+    )
+    const zip = fflate.zipSync({
+      'database.risu': bomb,
+      'manifest.json': new TextEncoder().encode(JSON.stringify({ version: 1 })),
+    })
+
+    const upload = multipartBundle(zip)
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/bundle',
+      payload: upload.payload,
+      headers: { 'content-type': upload.contentType },
+    })
+    expect(imported.statusCode).toBe(400)
+    expect((imported.json() as { error: string }).error).toContain('exceeds size limit')
+  })
+
   it('rejects a bundle whose manifest version is unsupported', async () => {
     persistDatabaseWithAsset(harness.dataDir)
     const files = fflate.unzipSync(new Uint8Array(await exportBundleZip()))

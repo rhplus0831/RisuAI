@@ -64,6 +64,14 @@ export interface StreamJob {
   writerSessionId?: string | null
   mode?: 'send' | 'continue' | 'regenerate'
   regenerateMessageId?: string
+  /**
+   * Set when no-viewer pending frames were dropped at the cap (audit L15). The
+   * buffered prefix is gone, so a late viewer could never see a coherent
+   * stream — the proxy runner aborts the upstream instead of draining the rest
+   * of the response into a lossy window. Never set for durable jobs (their
+   * replay buffer takes the no-client frames).
+   */
+  pendingOverflow?: boolean
 }
 
 const DURABLE_REPLAY_PROTECTED_EVENTS = new Set([
@@ -279,6 +287,7 @@ export class JobRegistry {
         const removed = job.pendingEvents.shift()
         if (!removed) break
         job.pendingBytes -= Buffer.byteLength(removed)
+        job.pendingOverflow = true
       }
       return
     }
@@ -433,6 +442,20 @@ export async function runStreamJob(
             type: 'chunk',
             dataBase64: chunk.toString('base64'),
           })
+        }
+        // No-viewer buffer overflow (audit L15): the pending window already
+        // dropped frames, so any future viewer would see a corrupt stream.
+        // Stop consuming the upstream instead of pulling the whole response
+        // through a lossy 2 MB window until the deadline.
+        if (job.pendingOverflow && job.clients.size === 0) {
+          job.abortController.abort()
+          registry.pushEvent(job, {
+            type: 'error',
+            status: 503,
+            message: 'Proxy stream buffer overflowed with no attached viewer',
+          })
+          registry.markDone(job)
+          return
         }
       }
     }

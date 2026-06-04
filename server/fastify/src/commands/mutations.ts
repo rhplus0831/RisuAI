@@ -184,7 +184,9 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     }
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
-    persistCommandEvent(args.db, event)
+    // Persist with the writer-session origin (audit L29) so reconnect replay
+    // keeps own-echo suppression; the returned/route event stays origin-free.
+    persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
     const writtenTables = takeTableWrites()
 
@@ -271,7 +273,9 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     replaceAllSettingsInTable(args.db, persisted.database)
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
-    persistCommandEvent(args.db, event)
+    // Persist with the writer-session origin (audit L29) so reconnect replay
+    // keeps own-echo suppression; the returned/route event stays origin-free.
+    persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
     const writtenTables = takeTableWrites()
 
@@ -358,7 +362,9 @@ export function applyCharacterSelectionCommandMutation(
       id: args.characterId,
       revision,
     }
-    persistCommandEvent(args.db, event)
+    // Persist with the writer-session origin (audit L29) so reconnect replay
+    // keeps own-echo suppression; the returned/route event stays origin-free.
+    persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
     const writtenTables = takeTableWrites()
 
@@ -452,7 +458,9 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
 
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
-    persistCommandEvent(args.db, event)
+    // Persist with the writer-session origin (audit L29) so reconnect replay
+    // keeps own-echo suppression; the returned/route event stays origin-free.
+    persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
     const writtenTables = takeTableWrites()
 

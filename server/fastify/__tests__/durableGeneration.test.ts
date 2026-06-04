@@ -39,7 +39,9 @@ function newController(): AbortController {
   return controller
 }
 
-async function startHarness(): Promise<Harness> {
+async function startHarness(
+  generationChatOverrides: Record<string, unknown> = {},
+): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-durable-'))
   const commandEvents = createRetryTestCommandSink()
@@ -56,6 +58,7 @@ async function startHarness(): Promise<Harness> {
     generationChat: {
       dispatchProvider: (ctx) => providerImpl(ctx),
       finalizationRetry: { intervalMs: 10 },
+      ...generationChatOverrides,
     },
     commandEvents,
   })
@@ -989,5 +992,122 @@ describe('Durable generation (Milestone 1)', () => {
     expect(events.at(-1)?.type).toBe('done')
     const boot = await bootstrap()
     expect(boot.activeGenerationJobs).toEqual([])
+  })
+
+  // Shutdown must settle detached runners BEFORE closing the SQLite handle, so
+  // the aborted runner's cancel-persist lands in an open database (audit L13).
+  it('settles detached runners before closing the database on shutdown (L13)', async () => {
+    const gated = makeGatedProvider({ before: 'partial shutdown text' }) // never released
+    providerImpl = gated.dispatchProvider
+    const local = await startHarness()
+    let localDataDirKept: string | null = local.dataDir
+    try {
+      const { assertion: localAssertion } = await setupAuthedClient(local.app)
+      const seeded = await fetch(`${local.baseUrl}/api/v1/import/risusave`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'risu-auth': localAssertion },
+        body: JSON.stringify({ database: fixtureDatabase }),
+      })
+      expect(seeded.status).toBe(200)
+
+      const controller = newController()
+      const res = await fetch(`${local.baseUrl}/api/v1/generate/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'risu-auth': localAssertion },
+        body: JSON.stringify({
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          mode: 'send',
+          userMessage: 'hi',
+          durable: true,
+        }),
+        signal: controller.signal,
+      })
+      await readSse(res, (ev) => ev.type === 'token')
+      controller.abort() // bare disconnect; the job keeps running
+
+      // Shutdown aborts the job; the runner's cancel path persists the
+      // streamed-so-far text — it must land before db.close(), not race it.
+      await local.app.close()
+
+      const db = new DatabaseSync(path.join(local.dataDir, 'risu.db'), { readOnly: true })
+      try {
+        const rows = db
+          .prepare(
+            "SELECT data FROM messages WHERE chat_id = 'chat-1' AND alternate = 0 ORDER BY seq",
+          )
+          .all() as Array<{ data: string }>
+        expect(rows.map((row) => row.data)).toContain('partial shutdown text')
+      } finally {
+        db.close()
+      }
+    } finally {
+      if (localDataDirKept) rmSync(localDataDirKept, { recursive: true, force: true })
+      localDataDirKept = null
+    }
+  })
+
+  // A long silent window (slow assembly / provider connect) must not look idle
+  // to intermediary proxies: the viewer gets SSE comment heartbeats, which are
+  // invisible to the frame parser and never enter the replay buffer (audit L14).
+  it('heartbeats the durable SSE viewer during silent windows (L14)', async () => {
+    const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
+    providerImpl = gated.dispatchProvider
+    const local = await startHarness({ viewerHeartbeatMs: 25 })
+    try {
+      const { assertion: localAssertion } = await setupAuthedClient(local.app)
+      const seeded = await fetch(`${local.baseUrl}/api/v1/import/risusave`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'risu-auth': localAssertion },
+        body: JSON.stringify({ database: fixtureDatabase }),
+      })
+      expect(seeded.status).toBe(200)
+
+      const controller = newController()
+      const res = await fetch(`${local.baseUrl}/api/v1/generate/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'risu-auth': localAssertion },
+        body: JSON.stringify({
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          mode: 'send',
+          userMessage: 'hi',
+          durable: true,
+        }),
+        signal: controller.signal,
+      })
+
+      // Read raw SSE text: the provider is gated after the first token, so the
+      // stream goes silent — the comment heartbeat must arrive on its own.
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let raw = ''
+      let jobId = ''
+      const deadline = Date.now() + 5_000
+      while (!raw.includes(': heartbeat\n\n')) {
+        if (Date.now() > deadline) throw new Error('no viewer heartbeat observed')
+        const { value, done } = await reader.read()
+        if (done) break
+        raw += decoder.decode(value, { stream: true })
+        const accepted = /event: job_accepted\ndata: (\{[^\n]*\})/.exec(raw)
+        if (accepted) jobId = (JSON.parse(accepted[1]) as { jobId: string }).jobId
+      }
+      expect(raw).toContain(': heartbeat\n\n')
+      expect(jobId).not.toBe('')
+      controller.abort()
+
+      // Heartbeats are per-viewer keep-alives: the reattach replay buffer must
+      // not contain them.
+      gated.release()
+      const re = await fetch(
+        `${local.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
+        { headers: { 'risu-auth': localAssertion } },
+      )
+      const replayEvents = await readSse(re, (ev) => ev.type === 'done')
+      expect(replayEvents.at(-1)?.type).toBe('done')
+    } finally {
+      await local.app.close()
+      rmSync(local.dataDir, { recursive: true, force: true })
+    }
   })
 })

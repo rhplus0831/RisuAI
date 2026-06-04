@@ -1779,8 +1779,17 @@ export function listBackups(dataDir: string): BackupManifest[] {
     if (!isValidBackupId(id)) continue
     const manifestPath = path.join(root, id, 'manifest.json')
     if (!fs.existsSync(manifestPath)) continue
-    const raw = fs.readFileSync(manifestPath, 'utf8')
-    const parsed = JSON.parse(raw) as BackupManifest
+    // One unreadable/corrupt manifest must not 500 the whole backups list
+    // (audit L27): skip the broken entry, keep listing the healthy ones. The
+    // sort below relies on `createdAt`, so a parsed-but-misshapen manifest is
+    // skipped too.
+    let parsed: BackupManifest
+    try {
+      parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as BackupManifest
+    } catch {
+      continue
+    }
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.createdAt !== 'string') continue
     manifests.push(parsed)
   }
   manifests.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -1905,6 +1914,15 @@ export function restoreBackup(
   let event: CommandEvent | undefined
   try {
     restoreSqliteFromBackup(db, backupSqlite, () => {
+      // If the backup predates Phase 5 and carries a db.json, import it into
+      // SQLite so no legacy data is lost. Runs INSIDE the restore transaction
+      // and BEFORE the restore event is persisted (audit L28): a failed
+      // re-import rolls the whole restore back instead of leaving the swapped
+      // tables half-overwritten after the event already announced success.
+      if (fs.existsSync(legacySnapshot)) {
+        fs.copyFileSync(legacySnapshot, dbJsonPath(dataDir))
+        ensureDbJsonImported(db, dataDir)
+      }
       event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
       fs.renameSync(tmpAssets, liveAssets)
       fs.renameSync(tmpSave, liveSave)
@@ -1925,14 +1943,6 @@ export function restoreBackup(
 
   rmDirectoryIfPresent(oldAssets)
   rmDirectoryIfPresent(oldSave)
-
-  // If the backup predates Phase 5 and carries a db.json, import it into
-  // SQLite so no legacy data is lost.
-  if (fs.existsSync(legacySnapshot)) {
-    const liveDbJson = dbJsonPath(dataDir)
-    fs.copyFileSync(legacySnapshot, liveDbJson)
-    ensureDbJsonImported(db, dataDir)
-  }
 
   if (!event) {
     throw new Error('restore did not produce a command event')
