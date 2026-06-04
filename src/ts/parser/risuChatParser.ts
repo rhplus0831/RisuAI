@@ -635,17 +635,25 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
                 sub = type2.substring(subind + 1)
                 array = parseArray(type2.substring(0, subind))
               }
-              let added = ''
+              const slot = `{{slot::${sub}}}`
+              const parts: string[] = []
               for (let i = 0; i < array.length; i++) {
-                added += matchResult.replaceAll(
-                  `{{slot::${sub}}}`,
-                  typeof array[i] === 'string' ? (array[i] as string) : JSON.stringify(array[i]),
+                parts.push(
+                  matchResult.replaceAll(
+                    slot,
+                    typeof array[i] === 'string' ? (array[i] as string) : JSON.stringify(array[i]),
+                  ),
                 )
               }
-              da =
-                da.substring(0, pointer + 1) +
-                (blockType.mode === 'keep' ? added : added.trim()) +
-                da.substring(pointer + 1)
+              const added = parts.join('')
+              // Re-inject the expanded body for re-scanning, but drop the already
+              // consumed prefix instead of rebuilding the whole source: nothing is
+              // ever read behind `pointer` (the loop only reads da[pointer] /
+              // da[pointer+1] going forward), so discarding it and resetting the
+              // pointer keeps the output identical while turning the O(da.length)
+              // splice — which compounds for nested {{#each}} — into O(remaining).
+              da = (blockType.mode === 'keep' ? added : added.trim()) + da.substring(pointer + 1)
+              pointer = -1
               break
             }
             if (blockType.type === 'function') {
