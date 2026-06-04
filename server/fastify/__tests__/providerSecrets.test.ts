@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   MASKED_PROVIDER_SECRET,
+  maskProviderSecrets,
+  maskProviderSecretsInPlace,
   resolveMaskedProviderSecretPlaceholders,
 } from '../src/providerSecrets.js'
 
@@ -70,5 +72,38 @@ describe('provider secret masking', () => {
       { chaId: 'char-b', name: 'B renamed', oaiTTSConfig: { apiKey: 'tts-b' } },
       { chaId: 'char-a', name: 'A renamed', oaiTTSConfig: { apiKey: 'tts-a' } },
     ])
+  })
+})
+
+describe('maskProviderSecretsInPlace (M4)', () => {
+  const sample = () => ({
+    openAIKey: 'sk-top',
+    aiModel: 'gpt4o-chatgpt',
+    OaiCompAPIKeys: { deepseek: 'ds-key' },
+    botPresets: [{ id: 'preset-a', openAIKey: 'sk-preset', proxyKey: 'proxy-key' }],
+    characters: [{ chaId: 'char-a', name: 'Ada', oaiTTSConfig: { apiKey: 'tts-key' } }],
+  })
+
+  it('produces the same masked output as the copying variant', () => {
+    const inPlace = maskProviderSecretsInPlace(sample())
+    const copying = maskProviderSecrets(sample())
+    expect(JSON.stringify(inPlace)).toBe(JSON.stringify(copying))
+    expect(inPlace.openAIKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(inPlace.OaiCompAPIKeys.deepseek).toBe(MASKED_PROVIDER_SECRET)
+    expect(inPlace.botPresets[0].openAIKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(inPlace.characters[0].oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(inPlace.aiModel).toBe('gpt4o-chatgpt')
+  })
+
+  it('mutates its owned argument, while the copying variant leaves the source intact', () => {
+    const owned = sample()
+    expect(maskProviderSecretsInPlace(owned)).toBe(owned)
+    expect(owned.openAIKey).toBe(MASKED_PROVIDER_SECRET)
+
+    const shared = sample()
+    const masked = maskProviderSecrets(shared)
+    expect(masked).not.toBe(shared)
+    expect(shared.openAIKey).toBe('sk-top')
+    expect(masked.openAIKey).toBe(MASKED_PROVIDER_SECRET)
   })
 })

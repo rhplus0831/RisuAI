@@ -58,11 +58,22 @@ const SECRET_PATHS: PathSegment[][] = [
 
 export function maskProviderSecrets<T>(database: T): T {
   if (!isRecord(database)) return database
-  const masked = cloneJsonValue(database)
+  return maskProviderSecretsInPlace(cloneJsonValue(database))
+}
+
+/**
+ * In-place variant of {@link maskProviderSecrets} for a caller that OWNS the
+ * object — a freshly parsed/built value nothing else references (the SQLite
+ * loaders' results always are). Applies the same secret paths but skips the
+ * whole-object JSON round-trip clone (audit M4). Never pass a caller-shared
+ * object: the argument is mutated.
+ */
+export function maskProviderSecretsInPlace<T>(database: T): T {
+  if (!isRecord(database)) return database
   for (const path of SECRET_PATHS) {
-    maskPath(masked, path)
+    maskPath(database, path)
   }
-  return masked
+  return database
 }
 
 export function resolveMaskedProviderSecretPlaceholders(

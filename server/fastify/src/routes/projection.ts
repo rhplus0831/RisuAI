@@ -10,10 +10,11 @@ import {
   loadChatHydration,
   loadChatHydrations,
   loadPersistedDatabaseFields,
+  loadSingleCharacterStubRow,
   loadStubProjection,
   loadStubbedProjectionFields,
 } from '../repository.js'
-import { maskProviderSecrets } from '../providerSecrets.js'
+import { maskProviderSecrets, maskProviderSecretsInPlace } from '../providerSecrets.js'
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
 
 // Targeted per-resource projection.
@@ -521,18 +522,14 @@ function loadSingleCharacterRow(
   dataDir: string,
   characterId: string,
 ): Record<string, unknown> | null {
-  // Reuse the stubbed-character loader (message-free chats, lorebook stubs) and
-  // the secret mask, then pick the single requested character row.
-  const masked = maskProviderSecrets(loadStubbedProjectionFields(db, dataDir, ['characters']))
-  const characters =
-    masked && typeof masked === 'object' && Array.isArray((masked as { characters?: unknown }).characters)
-      ? ((masked as { characters: unknown[] }).characters as Array<Record<string, unknown>>)
-      : []
-  const character = characters.find(
-    (candidate) =>
-      candidate && typeof candidate === 'object' && candidate.chaId === characterId,
-  )
-  return character ?? null
+  // Single-row read (audit M4): one character + its chat rows, stubbed exactly
+  // like the broad loader (message-free chats, lorebook stubs). The loader
+  // returns a freshly parsed object this route owns, so mask it in place;
+  // wrapping it in `{ characters: [...] }` keeps the row under the same
+  // root-relative secret paths the whole-database mask applies.
+  const character = loadSingleCharacterStubRow(db, dataDir, characterId)
+  if (!character) return null
+  return maskProviderSecretsInPlace({ characters: [character] }).characters[0]
 }
 
 function emitProjectionMetric(

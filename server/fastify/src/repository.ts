@@ -786,6 +786,68 @@ export function loadStubbedProjectionFields(
   return fields
 }
 
+/**
+ * Single-character stub row for the `characterRow` projection (audit M4). The
+ * route ships exactly one character, so it must not pay
+ * `loadCharactersFromSqlite`'s whole characters+chats payload parse. Read the
+ * one character row (`WHERE id = ?`, precedent: `loadCharacterSelectionRows`)
+ * plus its chat rows (`WHERE character_id = ?`) and apply the same stub
+ * contract as `loadStubbedProjectionFields`: message-free chats, and a
+ * stripped `globalLore` when `enableLorebookStubs` is on.
+ *
+ * Any state the single-row read cannot serve falls back to the broad stubbed
+ * loader so behavior stays identical: an uninitialized settings table, a
+ * non-object character payload, or a missing SQLite row (unknown id -> the
+ * same `null` 404; a pre-extraction database keeps its embedded-characters
+ * fallback). The returned row is freshly parsed and owned by the caller.
+ */
+export function loadSingleCharacterStubRow(
+  db: DatabaseSync,
+  dataDir: string,
+  characterId: string,
+): JsonRecord | null {
+  const settings = loadSettingsFromSqlite(db)
+  if (settings === null) return loadSingleCharacterStubRowBroad(db, dataDir, characterId)
+
+  const charRow = db
+    .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
+    .get(characterId) as CharacterRow | undefined
+  if (!charRow) return loadSingleCharacterStubRowBroad(db, dataDir, characterId)
+
+  const character = JSON.parse(charRow.data_json) as unknown
+  if (!isRecord(character)) return loadSingleCharacterStubRowBroad(db, dataDir, characterId)
+
+  const chatRows = db
+    .prepare(
+      'SELECT id, character_id, position, data_json FROM chats WHERE character_id = ? ORDER BY position',
+    )
+    .all(charRow.id) as unknown as ChatRow[]
+  character.chats = chatRows.map((row) => {
+    const chat = JSON.parse(row.data_json) as unknown
+    if (isRecord(chat)) {
+      chat.message = []
+      delete chat.hypaV3Data
+    }
+    return chat
+  })
+
+  if (settings.enableLorebookStubs === true) delete character.globalLore
+  return character
+}
+
+function loadSingleCharacterStubRowBroad(
+  db: DatabaseSync,
+  dataDir: string,
+  characterId: string,
+): JsonRecord | null {
+  const fields = loadStubbedProjectionFields(db, dataDir, ['characters'])
+  const characters = Array.isArray(fields.characters) ? fields.characters : []
+  const character = characters.find(
+    (candidate) => isRecord(candidate) && candidate.chaId === characterId,
+  )
+  return isRecord(character) ? character : null
+}
+
 function selectDatabaseFields(
   database: Record<string, unknown>,
   fieldKeys: readonly string[],

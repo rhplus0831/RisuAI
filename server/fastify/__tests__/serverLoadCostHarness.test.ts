@@ -6,7 +6,19 @@ import { performance } from 'node:perf_hooks'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
-import { loadPersistedForAssembly, loadPersistedWithMessages } from '../src/repository.js'
+import {
+  loadPersisted,
+  loadPersistedForAssembly,
+  loadPersistedWithMessages,
+  loadSingleCharacterStubRow,
+  loadStubProjection,
+  loadStubbedProjectionFields,
+} from '../src/repository.js'
+import {
+  MASKED_PROVIDER_SECRET,
+  maskProviderSecrets,
+  maskProviderSecretsInPlace,
+} from '../src/providerSecrets.js'
 import { getChatMessagesGroupedByIds } from '../src/messageStore.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import {
@@ -417,6 +429,157 @@ describe('server load-count harness on the large-corpus fixture', () => {
           allowTables: ['messages'],
         }),
       ).rejects.toThrow(/\[characters\]/)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('M4: the characterRow projection performs zero whole-corpus payload reads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    // The owned-row mask must still apply on the narrow path: give the target
+    // character the one character-scoped secret (`oaiTTSConfig.apiKey`).
+    ;(fixture.characters[0] as unknown as Record<string, unknown>).oaiTTSConfig = {
+      enabled: true,
+      apiKey: 'sk-tts-secret',
+      model: 'tts-1',
+    }
+    await importDatabase(fixture.database)
+
+    // Audit M4 regression: the route loaded ALL characters+chats and JSON-deep-
+    // cloned the whole array just to `.find()` one row. The single-row loader +
+    // in-place mask make the per-character projection a per-character read.
+    const res = await assertScopedLoadOnHotPath(() =>
+      harness.app.inject({
+        method: 'GET',
+        url: `/api/v1/projection/characterRow?id=${fixture.hot.characterId}`,
+        headers: { 'risu-auth': assertion },
+      }),
+    )
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.mode).toBe('character-row')
+    expect(body.characterId).toBe(fixture.hot.characterId)
+    expect(body.character.chaId).toBe(fixture.hot.characterId)
+    // The stub contract holds: chats present, message-free; secrets masked.
+    expect(body.character.chats).toHaveLength(3)
+    expect(body.character.chats.every((chat: { message: unknown[] }) => chat.message.length === 0)).toBe(true)
+    expect(body.character.oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
+  })
+
+  it('M4: the single-row loader is byte-identical to the broad composition for every character', async () => {
+    const fixture = buildLargeCorpusFixture()
+    ;(fixture.characters[1] as unknown as Record<string, unknown>).oaiTTSConfig = {
+      enabled: true,
+      apiKey: 'sk-tts-secret',
+      model: 'tts-1',
+    }
+    await importDatabase(fixture.database)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      // The pre-M4 route composition: broad stubbed load + whole-array mask clone.
+      const broadRows = maskProviderSecrets(
+        loadStubbedProjectionFields(db, harness.dataDir, ['characters']),
+      ).characters as Array<Record<string, unknown>>
+      expect(broadRows).toHaveLength(fixture.characters.length)
+
+      for (const broadRow of broadRows) {
+        const scoped = await assertScopedLoadOnHotPath(() =>
+          loadSingleCharacterStubRow(db, harness.dataDir, broadRow.chaId as string),
+        )
+        expect(scoped).not.toBeNull()
+        // The route's masking shape on the owned row.
+        const masked = maskProviderSecretsInPlace({ characters: [scoped!] }).characters[0]
+        expect(JSON.stringify(masked)).toBe(JSON.stringify(broadRow))
+      }
+
+      // Unknown ids still resolve to null (the route's 404 contract).
+      expect(loadSingleCharacterStubRow(db, harness.dataDir, 'no-such-character')).toBeNull()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('M4: the single-row loader respects enableLorebookStubs like the broad loader', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase({ ...fixture.database, enableLorebookStubs: true })
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const scoped = await assertScopedLoadOnHotPath(() =>
+        loadSingleCharacterStubRow(db, harness.dataDir, fixture.hot.characterId),
+      )
+      expect(scoped).not.toBeNull()
+      expect(scoped).not.toHaveProperty('globalLore')
+
+      const broadRow = (
+        maskProviderSecrets(loadStubbedProjectionFields(db, harness.dataDir, ['characters']))
+          .characters as Array<Record<string, unknown>>
+      ).find((row) => row.chaId === fixture.hot.characterId)
+      const masked = maskProviderSecretsInPlace({ characters: [scoped!] }).characters[0]
+      expect(JSON.stringify(masked)).toBe(JSON.stringify(broadRow))
+    } finally {
+      db.close()
+    }
+  })
+
+  it('M4: the single-row loader keeps the embedded-characters fallback (pre-extraction settings)', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      // Simulate the legacy pre-extraction state: characters embedded in the
+      // settings record with empty characters/chats tables. The single-row
+      // read cannot serve it, so the loader must fall back to the broad
+      // stubbed loader (which keeps the embedded array).
+      const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      settings.characters = [
+        {
+          chaId: 'embedded-char',
+          name: 'Embedded',
+          chats: [
+            { id: 'embedded-chat', name: 'E', message: [{ role: 'user', data: 'embedded hi' }] },
+          ],
+        },
+      ]
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      db.exec('DELETE FROM chats')
+      db.exec('DELETE FROM characters')
+
+      const row = loadSingleCharacterStubRow(db, harness.dataDir, 'embedded-char')
+      expect(row?.chaId).toBe('embedded-char')
+      // The fallback applies the same stub contract: message-free chats.
+      expect((row?.chats as Array<Record<string, unknown>>)[0].message).toEqual([])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('M4: bootstrap in-place masking matches the copying mask byte-for-byte', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase({ ...fixture.database, openAIKey: 'sk-bootstrap-secret' })
+
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.database.openAIKey).toBe(MASKED_PROVIDER_SECRET)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      // Same wire bytes as the pre-M4 copying mask…
+      const expected = maskProviderSecrets(loadStubProjection(db, harness.dataDir).database)
+      expect(JSON.stringify(body.database)).toBe(JSON.stringify(expected))
+      // …and the in-place mask never reaches the persisted rows.
+      const onDisk = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
+      expect(onDisk.openAIKey).toBe('sk-bootstrap-secret')
     } finally {
       db.close()
     }
