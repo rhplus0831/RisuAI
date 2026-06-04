@@ -7,8 +7,8 @@ only the phase or slice needed for the task.
 
 The plan schedules 57 confirmed findings (3 high, 14 medium, 40 low) from
 [`audit-stability-and-performance.md`](audit-stability-and-performance.md) across
-Phases 0-8. Phase 0 is complete (foundations only). Phase 1 is in progress:
-H1 (`0dc7452e`) and H3 (`e41dc6c6`) landed; H2 remains.
+Phases 0-8. Phases 0 and 1 are complete: all three highs are fixed — H1
+(`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`). Next is Phase 2 (M1 first).
 
 ## Current Snapshot
 
@@ -21,9 +21,9 @@ live).
   (with the H1/U1 breadth detections as self-proof), and the fix-completeness
   gate scaffold (`src/ts/__tests__/fixCompletenessGate.test.ts`, all ids
   `PLANNED`, doc-mirrored, fails on drift). No runtime change.
-- [Phase 1](phases/phase-1-high-severity-hot-paths.md) — in progress. H1 DONE
+- [Phase 1](phases/phase-1-high-severity-hot-paths.md) — COMPLETE. H1 DONE
   (`0dc7452e`, hydration guard); H3 DONE (`e41dc6c6`, streaming render
-  coalescing); H2 chat-selection snapshot remains.
+  coalescing); H2 DONE (`067ab82a`, chat-selection scalar snapshot).
 - [Phase 2](phases/phase-2-server-load-narrowing.md) — not started. M1, M3, M4,
   M5, L1, L2, L5, L6, L10, U1: server broad-load narrowing.
 - [Phase 3](phases/phase-3-client-clone-narrowing.md) — not started. M12-M14,
@@ -46,12 +46,10 @@ live).
 routing (finding -> phase -> target fix), the gated exclusions, and the
 dismissed list. Highlights:
 
-- Highest leverage: H1 (`loadChatHydration` guard) — DONE (`0dc7452e`). The
-  whole-corpus parse is gone from chat-open and generation completion; the
-  zero-row not-yet-extracted fallback is preserved.
-- Most user-visible: H3 streaming parse coalescing — DONE (`e41dc6c6`): token
-  renders apply at most once per animation frame with a full-fidelity settle.
-  Next: H2 chat-select snapshot.
+- All three highs are DONE: H1 (`0dc7452e`) hydration guard, H3 (`e41dc6c6`)
+  streaming render coalescing, H2 (`067ab82a`) chat-selection scalar snapshot.
+- Biggest remaining root: Phase 2 server broad-load narrowing (start with M1,
+  the scoped assembly load).
 - Biggest shared root: Phase 2 server broad-load narrowing.
 - Gated (not scheduled): L4, L7, L26, U2 stay on the
   `RISU_PROTOCOL_METRICS` evidence path or an owner decision; U3 needs no

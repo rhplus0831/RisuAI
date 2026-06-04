@@ -1,7 +1,21 @@
 # H2 — Chat-Selection Scalar Snapshot
 
-Status: not started. Phase 1. Mirrors the landed char-select fix (`c9e728b1`)
-for chat select.
+Status: IMPLEMENTED (`067ab82a`). Phase 1. Mirrors the landed char-select fix
+(`c9e728b1`) for chat select.
+
+Landed shape: `ChatSelectionSnapshot` / `currentChatSelectionSnapshot()` /
+`restoreChatSelection()` + `dispatchSelectChat()` in `chatCommands.ts`. The
+restore writes only the owning character's `chatPage` (located by `chaId`,
+`selectedCharID` kept as the index fallback only — chat select never mutates
+the character selection, so the restore must not re-write it). Wired into both
+select sites: `changeChatTo` (`globalApi.svelte.ts`) and the sidebar
+`selectChat` direct dispatch (`SideChatList.svelte`, which previously captured
+the whole-array snapshot per click even though it performs no optimistic
+write). Proofs: `src/ts/globalApi.changeChatTo.test.ts` (end-to-end clone-cost
+gate) + the `chatCommands.test.ts` H2 block (zero-clone scalar snapshot,
+rollback-restores-only, stable-chaId restore, dispatch wiring); both
+registered in `cloneCostGateCompleteness.test.ts`. Gate `H2` flipped in
+`fixCompletenessGate.test.ts` + `active-risk-analysis.md`.
 
 ## Scope
 

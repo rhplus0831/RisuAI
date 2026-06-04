@@ -55,6 +55,10 @@ Recorded from the shared large-corpus fixture before any fix lands.
   finally) instead of 200 each; final text byte-identical. Real-stream parse
   count is now bounded by frames-per-second × stream duration, not token
   count.
+- Phase 1 H2 (`067ab82a`): chat select captures **zero clone-primitive calls**
+  (`totalCloneCount` 0) instead of a whole-characters JSON clone per click;
+  the `changeChatTo` end-to-end gate proves no clone at the size of the
+  characters array on either the index or the id path.
 
 ## How To Reproduce The Costs Being Fixed
 
@@ -77,3 +81,4 @@ Recorded from the shared large-corpus fixture before any fix lands.
 | 2026-06-04 | Phase 0 fix-completeness-gate-scaffold slice (test-only) — PHASE 0 COMPLETE | `pnpm test` 1067/4 (+8 `fixCompletenessGate.test.ts`), audit green, both tsc checks zero errors. Server suite untouched (1639/1 carried). Drift behavior hand-verified: doc-DONE-only, new audit id, phase reroute each fail one self-check. |
 | 2026-06-04 | Phase 1 H1 slice (`0dc7452e` fix + gate/doc flip) | `pnpm api:test` 1640/1 (+1 zero-row fallback regression; H1 control flipped to `assertScopedLoadOnHotPath`), `pnpm test` 1067/4 (gate flip, no count change), audit green, both tsc checks zero errors. No-hypa hydration: 0 corpus loads (was 13). |
 | 2026-06-04 | Phase 1 H3 slice (`e41dc6c6` fix + gate/doc flip) | `pnpm test` 1077/4 (+7 `streamCoalescer.test.ts`, +3 `streamResponse.test.ts` H3 block), `pnpm api:test` 1640/1 (carried), audit green, both tsc checks zero errors. 200-token stream: ≤2 parses (was 200). |
+| 2026-06-04 | Phase 1 H2 slice (`067ab82a` fix + gate/doc flip) — PHASE 1 COMPLETE | `pnpm test` 1084/4 (+4 `chatCommands.test.ts` H2 block, +3 `globalApi.changeChatTo.test.ts`), `pnpm api:test` 1640/1, audit green, both tsc checks zero errors. Chat select: 0 clone calls (was a whole-characters clone per click). |

@@ -1,7 +1,7 @@
 # Phase 1: High-Severity Hot Paths
 
-Status: in progress. H1 (`0dc7452e`) and H3 (`e41dc6c6`) landed; H2 remains.
-Three independent slices. Depends on the Phase 0 harness.
+Status: COMPLETE. H1 (`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`). Three
+independent slices; depended on the Phase 0 harness.
 
 Goal: fix the three high-severity hot paths. H1 is the highest-leverage guard,
 H2 mirrors the landed char-select fix, and H3 removes quadratic streaming parse
@@ -31,9 +31,10 @@ work.
   DONE (`0dc7452e`): early-return `loadChatHydration` on `message.length > 0`;
   fallback kept for zero-row not-yet-extracted chats.
 - [`h2-chat-selection-snapshot.md`](slices/phase-1-high-severity-hot-paths/h2-chat-selection-snapshot.md) -
-  add a scalar `ChatSelectionSnapshot`/`restoreChatSelection` pair (mirroring
-  `CharacterSelectionSnapshot`) and use it in `changeChatTo` instead of the
-  whole-`characters` `currentChatStateSnapshot()`.
+  DONE (`067ab82a`): scalar `ChatSelectionSnapshot`/`restoreChatSelection` pair
+  (mirroring `CharacterSelectionSnapshot`) used by `changeChatTo` and the
+  sidebar `selectChat` instead of the whole-`characters`
+  `currentChatStateSnapshot()`.
 - [`h3-streaming-render-coalescing.md`](slices/phase-1-high-severity-hot-paths/h3-streaming-render-coalescing.md) -
   DONE (`e41dc6c6`): token-driven renders coalesced to at most one parse per
   animation frame, with a final full-fidelity flush on `done`.
@@ -55,19 +56,24 @@ work.
       (zero-rows) fallback still works. Regression test asserts the load-count.
       DONE (`0dc7452e`): both proofs live in
       `server/fastify/__tests__/serverLoadCostHarness.test.ts`.
-- [ ] H2: `changeChatTo` captures a scalar chat-selection snapshot; a clone-cost
+- [x] H2: `changeChatTo` captures a scalar chat-selection snapshot; a clone-cost
       test proves it does not clone the `characters` array; a rollback-correctness
       test proves a failed select restores only `chatPage`/`selectedChar` and does
       not clobber unrelated edits. `currentChatStateSnapshot` remains for
-      restructures.
+      restructures. DONE (`067ab82a`): proofs in
+      `src/ts/globalApi.changeChatTo.test.ts` and `src/ts/chatCommands.test.ts`
+      (the restore writes only `chatPage`; `selectedCharID` is captured for row
+      location, never re-written).
 - [x] H3: for an N-token stream the displayed message is parsed O(frames-per-sec ×
       duration) times, not O(N); rendered output and persisted text are identical
       to before; a test bounds the render/parse count for a synthetic N-token
       stream. DONE (`e41dc6c6`): proofs in
       `src/ts/process/__tests__/streamResponse.test.ts` and
       `src/ts/process/__tests__/streamCoalescer.test.ts`.
-- [ ] Each fix registers its gate in Phase 8; full suites + audit + both
-      TypeScript checks are green.
+- [x] Each fix registers its gate in Phase 8; full suites + audit + both
+      TypeScript checks are green. (H1/H2/H3 all flipped in
+      `fixCompletenessGate.test.ts` + `active-risk-analysis.md`; see
+      [`../latest-verification.md`](../latest-verification.md).)
 
 ## Validation
 

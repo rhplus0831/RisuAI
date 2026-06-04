@@ -57,7 +57,14 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
     testName: 'H1 guard: hydration of a chat WITHOUT a chat_hypa_v3 row stays scoped',
   },
-  { id: 'H2', phase: 1, fix: 'Scalar ChatSelectionSnapshot for changeChatTo', status: 'PLANNED' },
+  {
+    id: 'H2',
+    phase: 1,
+    fix: 'Scalar ChatSelectionSnapshot for changeChatTo',
+    status: 'DONE',
+    testPath: 'src/ts/globalApi.changeChatTo.test.ts',
+    testName: 'switches chatPage by index without cloning the characters array',
+  },
   {
     id: 'H3',
     phase: 1,

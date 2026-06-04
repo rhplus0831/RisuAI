@@ -2,10 +2,10 @@
 
 Date: 2026-06-04
 
-Phase 1 is in progress: H1 (`0dc7452e`) and H3 (`e41dc6c6`) landed; H2 is
-next. Every fix needs a regression test, a Phase 8 gate flip
-(`fixCompletenessGate.test.ts` registry `PLANNED` -> `DONE` with the test
-path), and the matching status flip in
+Phase 1 is COMPLETE (H1 `0dc7452e`, H3 `e41dc6c6`, H2 `067ab82a`). Next is
+Phase 2 (server load narrowing, M1 first). Every fix needs a regression test,
+a Phase 8 gate flip (`fixCompletenessGate.test.ts` registry `PLANNED` ->
+`DONE` with the test path), and the matching status flip in
 [`active-risk-analysis.md`](active-risk-analysis.md) — the gate fails unless
 both move together.
 
@@ -28,15 +28,13 @@ both move together.
 
 In leverage order. Each is independent unless noted.
 
-1. H2 — `ChatSelectionSnapshot`. Add a scalar chat-selection snapshot/restore
-   pair (mirror the landed `CharacterSelectionSnapshot`) and use it in
-   `changeChatTo`.
-2. Phase 2 — server load narrowing. Start with scoped assembly load (M1), then
-   command-mutation read narrowing (M3, L5, L6).
-3. After the highs and Phase 2, pick Phase 3-7 by current pain. Refresh
+1. Phase 2 — server load narrowing. Start with scoped assembly load (M1), then
+   command-mutation read narrowing (M3, L5, L6), the single-character
+   projection (M4), and the metric/bulk-read slice (M5, L10, U1).
+2. After Phase 2, pick Phase 3-7 by current pain. Refresh
    [`latest-verification.md`](latest-verification.md) after each phase.
 
-Done so far:
+Done so far (Phase 1 complete):
 
 - H1 — `loadChatHydration` guard, DONE (`0dc7452e`): early-return on
   `message.length > 0`; scoped + zero-row-fallback regression tests in
@@ -46,6 +44,11 @@ Done so far:
   at most once per animation frame with a final full-fidelity `settle()`;
   bounded-parse + display-progress + failure-propagation regressions in
   `src/ts/process/__tests__/streamResponse.test.ts` (+ coalescer unit suite).
+- H2 — chat-selection scalar snapshot, DONE (`067ab82a`):
+  `ChatSelectionSnapshot`/`restoreChatSelection` + `dispatchSelectChat` in
+  `chatCommands.ts`; used by `changeChatTo` and `SideChatList.selectChat`.
+  Clone-cost gate `src/ts/globalApi.changeChatTo.test.ts` + rollback proofs in
+  `src/ts/chatCommands.test.ts`, registered in the clone-cost budget map.
 
 ## Not First
 
