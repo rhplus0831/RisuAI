@@ -1,0 +1,190 @@
+# Active Risk Analysis
+
+Date: 2026-06-04
+
+This file routes each finding area to its target clone range and phase. It is
+not a verification log. Keep proof runs in
+[`latest-verification.md`](latest-verification.md). Keep per-finding detail in
+[`../../frontend-performance-audit.md`](../../frontend-performance-audit.md).
+
+## Summary
+
+All findings are analyzed and **Phases 0-8 are implemented.** Phase 0, the
+primary Phase 1 guard fix, all six Phase 2 slices, Phase 3 (cheap wins), Phase 4
+(script-definition watcher, including the debounced rollback baseline fix), Phase
+5 (prompt-template keystroke), Phase 6 (lorebook watcher scope), Phase 7 (all
+eight opportunistic cleanups), and Phase 8 (the self-checking clone-cost gate
+map) are done. The debounced rollback baseline gap the read-only completion audit
+found is closed (`c1349966`); see
+[`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md). Severity comes
+from the seed audit: 4 critical, 13 high, 6 medium, 6 low, plus the clone-site
+inventory.
+
+Principle: do not clone the whole characters array, whole `Database`, or full
+message history for scalar-only hot paths. Keep full clones for real
+restructures.
+
+Remaining runtime work:
+
+- None open. Optional only: the deferred Phase 5 debounce coalescing.
+
+## Risk Map
+
+- Projection write guard: implemented in Phase 1. Guarded writes now unwrap to a
+  writable pass-through proxy and refreeze with a fresh read-only proxy tree, so
+  the former two whole-`Database` clones per guarded write are gone. The rare
+  full-projection replacement path may still snapshot once.
+- Streaming, completion, SSE, and chat-open writes: the per-write full-DB clone
+  cost is closed by the Phase 1 guard fix. The optional batching slice is
+  deferred; reopen only if proxy wrap transitions show up in profiling.
+- `currentChatStateSnapshot` message paths: send, message edit, swipe/reroll,
+  slash var, and chat-metadata watcher cloned all characters. DONE (Phase 2):
+  `currentChatScopedSnapshot`, with full clone kept for create/delete/reorder/fork.
+  Phase: [Phase 0](phases/phase-0-baseline-foundations.md) kit +
+  [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
+- Chat-metadata watcher (`chatBridge.svelte.ts` watcher +
+  `scalarChatMetadata`): the effect snapshotted all chats before its early
+  return, and `scalarChatMetadata` cloned each full chat.
+  DONE (Phase 2): rollback captured lazily per changed row, only allowed scalar
+  keys copied. Phase: [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
+- Character paths: `currentCharacterStateSnapshot` cloned all characters for
+  field edits and `v2Set*` triggers. DONE (Phase 2) for
+  `setCurrentCharacter`/`setCharacterByIndex` + the `v2Set*` trigger callers via
+  `CharacterRowSnapshot` / `restoreCharacterRow`; the image/emotion handlers are
+  now on the same single-row pattern (Phase 7, `2c1456ef`). Phase:
+  [Phase 0](phases/phase-0-baseline-foundations.md) kit +
+  [Phase 2](phases/phase-2-snapshot-family-narrowing.md) +
+  [Phase 7](phases/phase-7-opportunistic-cleanups.md).
+- Global-lorebook and trigger paths: `currentLorebookStateSnapshot` cloned
+  characters and modules for global-lorebook edits and lorebook triggers. DONE
+  (Phase 2) for select/create/delete (`loreBook`/`loreBookPage` snapshot) and the
+  6 trigger sites (scoped single-character `globalLore` rollback); the LoreBook
+  sidebar/MCP callers remain. Phase:
+  [Phase 0](phases/phase-0-baseline-foundations.md) kit +
+  [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
+- Scriptstate var writes: `setVar`, `setChatVar`, `/setvar`, `/addvar`, and
+  `v2SetAuthorNote` cloned all characters to roll back one chat field. DONE
+  (Phase 2): `ChatScriptstateSnapshot`, plus one snapshot per `runTrigger` pass.
+  Follow-up `48d473dc` fixed the separate direct-write bug where `runTrigger`
+  `setVar`/`v2SetVar` synced scriptstate into the read-only projection without the
+  guard. Phase: [Phase 2](phases/phase-2-snapshot-family-narrowing.md) +
+  [Phase 3 follow-up](phases/phase-3-cheap-wins.md).
+- Reroll and swipe: reroll clones the full transcript before slicing, and the
+  `apply*` helpers cloned all characters for rollback. The rollback baseline is
+  DONE (Phase 2): chat-scoped rollback. The full-transcript clone-before-slice and
+  the redundant `safeStructuredClone(record.message)` are DONE (Phase 3):
+  `recordGeneratedReroll` clones the tail only, the dispatch takes rows by
+  reference (ids minted inside the write guard), and the regenerate path truncates
+  the live transcript in place instead of cloning + reinstalling it. Phase:
+  [Phase 3](phases/phase-3-cheap-wins.md).
+- `runTrigger`: cloned the full character and chat before the no-trigger early
+  return. DONE (Phase 3): the early return runs before any clone; the
+  trigger-bearing path clones only the active chat, and the whole-character clone
+  is lazy (`materializeChar`) — paid once, only when a data effect installs the
+  character (a pure shallow character would have poisoned the read-only projection
+  on install). Phase: [Phase 3](phases/phase-3-cheap-wins.md).
+- Script-definition watcher: cloned full characters and modules per effect fire
+  while the config/module panel was open. DONE (Phase 4, `2ec1ea40` +
+  `c1349966`): the per-key string snapshot map is the only change-detection
+  input, and the rollback is built lazily in `dispatchWatchedReplacement` as a
+  single-row `ScopedScriptDefinitionRollback`. The discrete full-snapshot callers
+  (`modules.ts`, MCP) keep the broad snapshot via the `ScriptDefinitionRollback`
+  union. The debounced rollback baseline gap is closed: `queueReplacement()`
+  still preserves `existing?.previous`, and the command is now a factory that the
+  debounce timer feeds `pending.previous` at fire time, so a failed coalesced
+  command rolls back to the pre-first-edit baseline, not the intermediate edit.
+  Phase: [Phase 4](phases/phase-4-script-definition-watcher.md).
+- Prompt-template editor: Phase 1 removed the guard clone; each keystroke still
+  cloned the whole prompt template and double-stringified for change detection.
+  DONE (Phase 5, `c5fc5967` + `64804305`): the keystroke writes only the edited
+  item in place (`applyPromptItemProjectionWrite`), the rollback restores one item
+  (`restorePromptItemProjectionWrite`), and change detection is gated on the cached
+  command revision (`reconcilePromptTemplateDraft`) so a keystroke runs zero
+  whole-template stringify passes; `PromptDataItem` clones the edited item once.
+  Deferred: coalescing the optimistic write into the 250 ms debounce window. Phase:
+  [Phase 5](phases/phase-5-prompt-template-keystroke.md).
+- Lorebook watcher: implemented in Phase 6. `watchServerBackedLorebooks` takes a
+  `LorebookWatchScope` (`all | global | character | module`) and each panel
+  passes its own, so a fire scans only the mounted panel's collection instead of
+  rebuilding a DB-wide lore stringify map. The `all` default is the unchanged
+  whole-DB scan; the `character` scope re-subscribes on a character switch via
+  `selectedCharMirror`, and the hydrated-character no-data-loss invariant is
+  preserved. Phase: [Phase 6](phases/phase-6-lorebook-watcher-scope.md).
+- Opportunistic low items: implemented in Phase 7. CBS history and Claude
+  observer are shallow-spread; image/emotion edits roll back via a single
+  `currentCharacterRowSnapshot` row (no whole-array clone); regex-script
+  `RegExp`s are memoized per source+flags (`lastIndex` reset on retrieval);
+  `{{#each}}` re-injection drops the consumed source prefix and resets the
+  pointer (O(remaining), not O(da.length)); the per-`<img>` render logs are gone;
+  `SideChatList` groups chats in one `groupChatsByFolderId` pass; and
+  PersonaSettings reuses one snapshot per keystroke. Each output/behavior
+  preserving. Phase: [Phase 7](phases/phase-7-opportunistic-cleanups.md).
+- Clone-cost gate completeness: implemented in Phase 8.
+  `cloneCostGateCompleteness.test.ts` registers every Critical/High narrowed path
+  with its clone-cost + rollback gates and fails on drift. Phase:
+  [Phase 8](phases/phase-8-verification-budgets.md).
+
+## Source Anchors
+
+- Guard and snapshots: `src/ts/server/projectionWriteGuard.svelte.ts`,
+  `src/ts/chatCommands.ts`, `src/ts/characterCommands.ts`,
+  `src/ts/server/lorebookBridge.svelte.ts`,
+  `src/ts/server/scriptDefinitionBridge.svelte.ts`,
+  `src/ts/server/chatBridge.svelte.ts`.
+- Write paths: `src/ts/process/postGeneration/streamResponse.ts`,
+  `nonStreamResponse.ts`, `src/ts/process/rerollNavigation.svelte.ts`,
+  `src/ts/process/triggers.ts`, `src/ts/parser/chatVar.svelte.ts`,
+  `src/ts/process/command.ts`, `src/ts/storage/database.svelte.ts`.
+- Call sites: `src/lib/ChatScreens/DefaultChatScreen.svelte`,
+  `src/lib/ChatScreens/Chat.svelte`, `src/lib/Setting/Pages/PromptSettings.svelte`,
+  `src/ts/server/promptTemplateBridge.svelte.ts`, `src/lib/UI/PromptDataItem.svelte`,
+  `src/lib/Setting/lorepreset.svelte`.
+- Reference fix and proof template: `c9e728b1`,
+  `src/ts/compatibilityAdapters.test.ts`.
+
+## Decision
+
+All phases are done. Phase 0 (kit + harness), the Phase 1 primary guard fix,
+Phase 2 (all six Critical/High snapshot call-site slices), Phase 3 (cheap wins),
+Phase 4 (script-definition watcher + debounce baseline fix), Phase 5
+(prompt-template keystroke), Phase 6 (lorebook watcher scope), Phase 7 (the eight
+opportunistic cleanups), and Phase 8 (the self-checking gate map) have landed.
+
+- The highest-leverage guard fix and the Critical/High snapshot narrowing have
+  landed; the Phase 0 snapshot kit was the shared dependency for that work and was
+  reused by the Phase 7 image/emotion narrowing.
+- Every completed narrowing keeps the full-collection snapshot for genuine
+  restructures and proves the hot path no longer reaches it (clone-cost
+  regression test).
+- A narrowed rollback must restore exactly what the command mutates. The Phase 4
+  debounce rollback path now has the rapid-edit failed-command proof called out in
+  [`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md) (`c1349966`).
+
+## Investigated But Not Flagged
+
+Carried from the audit so future readers do not re-open them:
+
+- `buildMemoryWindow.ts` - full-characters clone on the local-assembler path,
+  dead on the default `server` send route. Latent foot-gun, not a live freeze.
+  Downgraded to low (inventory only).
+- `request.ts` - full-prompt double clone, skipped on the default server
+  route; hot callers carry small bounded prompts. Downgraded to low.
+- `lorebook.svelte.ts` - combined-lorebook clone, local-assembler only; a
+  by-reference fix would be a correctness regression (child mode mutates in
+  place). Downgraded to low.
+- `chatTemplate.ts` - instruct-template prompt clone, context-bounded text,
+  single-digit ms, opt-in provider. Benign.
+- `ChatBody.svelte` - `isEqual` over the simpleCharacter arrays hits the
+  reference `===` fast path (shared references); benchmarked 0.20 ms. Benign.
+- `PersonaSettings.svelte` - personas double clone is bounded config, sub-ms;
+  a cheap cleanup carried as a Phase 7 optional, not a freeze. Downgraded to
+  low.
+- `protocolDiagnostics.ts` - small bounded counters object. Benign.
+
+## Non-Goals
+
+- Do not re-architect where hydrated `message[]` histories live; reduce what is
+  cloned, not the storage model.
+- Do not change message-store, `hypaV3Data`, or alternate semantics.
+- Do not narrow a rollback's restore set or the guard's immutability contract.
+- Do not treat a downgraded/benign candidate above as open work.
