@@ -21,15 +21,22 @@ Phase 8 proof batch. Avoid broad cleanup passes.
 
 ## Current Best Targets
 
-Phases 0, 1, and 2 have landed. Phase 2 (snapshot-family narrowing) is complete;
-the next work is Phases 3-7 (independent, any order).
+Phases 0, 1, 2, and 3 have landed. The next work is Phases 4-7 (independent, any
+order).
 
 - DONE: Phase 0 snapshot kit + clone-cost harness; Phase 1 primary guard
   copy-on-write fix; Phase 2 all six snapshot-family slices
-  (`e5e183da` -> `9547ba3e`). Broad snapshots still exist for restructures plus
-  lower-frequency or deferred callers.
-- NEXT: Phase 3 (`recordGeneratedReroll`, redundant reroll clones,
-  `runTrigger` early return) or any focused Phase 4-7 cleanup.
+  (`e5e183da` -> `9547ba3e`); Phase 3 cheap wins (reroll `ed4e0af0`, `runTrigger`
+  `f4855e24`). Broad snapshots still exist for restructures plus lower-frequency or
+  deferred callers.
+- NEXT: any focused Phase 4-7 cleanup — Phase 4 (script-definition watcher),
+  Phase 5 (prompt-template keystroke), Phase 6 (lorebook watcher scope), or a
+  Phase 7 opportunistic item.
+- KNOWN BUG (separate from this plan): `setVar`/`v2SetVar` (`triggers.ts:1402-1404`)
+  writes scriptstate directly to the read-only projection (no
+  `withTrustedServerProjectionWrite`), so a client `manual`/slash `setVar` trigger
+  throws under the Fastify guard. Surfaced by `triggers.cloneCost.test.ts`
+  (measured guard-off for that reason). Guard-safety fix, not a clone item.
 - STANDING: Phase 8 verification budgets; refresh
   [`latest-verification.md`](latest-verification.md) after focused/full runs.
 

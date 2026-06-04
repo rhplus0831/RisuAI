@@ -9,10 +9,10 @@ not a verification log. Keep proof runs in
 
 ## Summary
 
-All findings are analyzed. Phase 0, the primary Phase 1 guard fix, and all six
-Phase 2 slices are implemented; Phases 3-7 remain planned and Phase 8 is the
-standing gate. Severity comes from the seed audit: 4 critical, 13 high, 6 medium,
-6 low, plus the clone-site inventory.
+All findings are analyzed. Phase 0, the primary Phase 1 guard fix, all six
+Phase 2 slices, and Phase 3 (cheap wins) are implemented; Phases 4-7 remain
+planned and Phase 8 is the standing gate. Severity comes from the seed audit: 4
+critical, 13 high, 6 medium, 6 low, plus the clone-site inventory.
 
 Principle: do not clone the whole characters array, whole `Database`, or full
 message history for scalar-only hot paths. Keep full clones for real
@@ -57,11 +57,17 @@ restructures.
 - Reroll and swipe: reroll clones the full transcript before slicing, and the
   `apply*` helpers cloned all characters for rollback. The rollback baseline is
   DONE (Phase 2): chat-scoped rollback. The full-transcript clone-before-slice and
-  the redundant `safeStructuredClone(record.message)` remain for
+  the redundant `safeStructuredClone(record.message)` are DONE (Phase 3):
+  `recordGeneratedReroll` clones the tail only, the dispatch takes rows by
+  reference (ids minted inside the write guard), and the regenerate path truncates
+  the live transcript in place instead of cloning + reinstalling it. Phase:
   [Phase 3](phases/phase-3-cheap-wins.md).
-- `runTrigger`: clones the full character and chat before the no-trigger early
-  return. Target: return before cloning; clone only the active chat and a shallow
-  trigger script copy. Phase: [Phase 3](phases/phase-3-cheap-wins.md).
+- `runTrigger`: cloned the full character and chat before the no-trigger early
+  return. DONE (Phase 3): the early return runs before any clone; the
+  trigger-bearing path clones only the active chat, and the whole-character clone
+  is lazy (`materializeChar`) — paid once, only when a data effect installs the
+  character (a pure shallow character would have poisoned the read-only projection
+  on install). Phase: [Phase 3](phases/phase-3-cheap-wins.md).
 - Script-definition watcher: clones full characters and modules per effect fire
   while the config/module panel is open. Target: keep per-key string snapshots;
   build rollback lazily in `dispatchWatchedReplacement`. Phase:
@@ -98,9 +104,9 @@ restructures.
 
 ## Decision
 
-Phase 0 (kit + harness), the Phase 1 primary guard fix, and Phase 2 (all six
-Critical/High snapshot call-site slices) are done. Phases 3-7 are independent
-cleanups. Phase 8 is the standing gate.
+Phase 0 (kit + harness), the Phase 1 primary guard fix, Phase 2 (all six
+Critical/High snapshot call-site slices), and Phase 3 (cheap wins) are done.
+Phases 4-7 are independent cleanups. Phase 8 is the standing gate.
 
 - The highest-leverage guard fix and the Critical/High snapshot narrowing have
   landed; the Phase 0 snapshot kit was the shared dependency for that work and is

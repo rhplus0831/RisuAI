@@ -14,7 +14,7 @@ Concrete slices live under `slices/[phase]/[slice-name].md`.
 - Phase 2, implemented:
   [`phase-2-snapshot-family-narrowing.md`](phase-2-snapshot-family-narrowing.md),
   [`slices/phase-2-snapshot-family-narrowing/`](slices/phase-2-snapshot-family-narrowing/).
-- Phase 3, planned: [`phase-3-cheap-wins.md`](phase-3-cheap-wins.md),
+- Phase 3, implemented: [`phase-3-cheap-wins.md`](phase-3-cheap-wins.md),
   [`slices/phase-3-cheap-wins/`](slices/phase-3-cheap-wins/).
 - Phase 4, planned:
   [`phase-4-script-definition-watcher.md`](phase-4-script-definition-watcher.md),

@@ -5,24 +5,30 @@ Date: 2026-06-04
 This is the router for the frontend deep-clone / hot-path narrowing workstream.
 Use it first, then open only the phase or slice needed for the next task.
 
-Current status reflects HEAD `fd560a77` (`docs: mark Phase 2 complete (all 6
-slices landed)`), with runtime code through `9547ba3e` (`perf: narrow
-global-lorebook + lorebook-trigger rollback (Phase 2)`). Phase 0 foundations, the
-Phase 1 primary guard fix, and all six Phase 2 slices have landed; Phase 2 is
-complete and the next work is Phases 3-7 (independent).
+Current status reflects runtime code through `f4855e24` (`perf: hoist runTrigger
+early return + lazily clone the trigger character (Phase 3)`) and `ed4e0af0`
+(`perf: narrow reroll post-send + swipe/regenerate transcript clones (Phase 3)`).
+Phase 0 foundations, the Phase 1 primary guard fix, all six Phase 2 slices, and
+Phase 3 (cheap wins) have landed; the next work is Phases 4-7 (independent).
 
 ## Current Snapshot
 
 Analysis is complete. Phase 0 foundations are implemented, Phase 1 removed the
-guard clone amplifier, and Phase 2 is complete (all 6 slices landed). The
-reference fix `c9e728b1` already narrowed character select; Phase 2 applied that
-pattern to message-edit, send/continue, trigger, reroll/swipe, chat-metadata
-watcher, character-row, and global-lorebook paths.
+guard clone amplifier, Phase 2 is complete (all 6 slices landed), and Phase 3
+(cheap wins) is complete. The reference fix `c9e728b1` already narrowed character
+select; Phase 2 applied that pattern to message-edit, send/continue, trigger,
+reroll/swipe, chat-metadata watcher, character-row, and global-lorebook paths;
+Phase 3 narrowed the reroll post-send/regenerate transcript clones and the
+`runTrigger` whole-character clone.
 
 Phase 2 slices landed: chat-metadata watcher (`e5e183da`), chat-scoped message
 paths (`2070df02`), scriptstate-scoped var writes (`727a28c0`), reroll/swipe
 rollback (`f1558e39`), character-row snapshot paths (`458458a7`), global-lorebook
 snapshot paths (`9547ba3e`).
+
+Phase 3 landed: reroll post-send tail clone + redundant dispatch-clone removal +
+in-place regenerate truncation (`ed4e0af0`), `runTrigger` early-return hoist +
+lazy character materialization (`f4855e24`).
 
 - Phase 0, implemented: narrow snapshot kit + clone-cost harness. No
   snapshot-family production call sites were rewired (that starts in Phase 2).
@@ -34,7 +40,10 @@ snapshot paths (`9547ba3e`).
   `current*StateSnapshot` call sites through the narrow kit. Landed: chat-metadata
   watcher, chat-scoped message paths, scriptstate-scoped var writes, reroll/swipe
   rollback, character-row paths, global-lorebook paths.
-- Phase 3, planned: reroll clone reorder/removal and `runTrigger` early return.
+- Phase 3, implemented: reroll post-send tail clone + redundant dispatch-clone
+  removal + in-place regenerate truncation; `runTrigger` early-return hoist + lazy
+  whole-character clone (the install paths and the reroll regenerate use guard-safe
+  shapes rather than the naive shallow copy the audit sketched).
 - Phase 4, planned: script-definition watcher rollback scoped at dispatch.
 - Phase 5, planned: prompt-template debounce, single-item mutation, and cheaper
   change detection.
@@ -54,7 +63,7 @@ snapshot paths (`9547ba3e`).
   trigger, reroll, character, and lorebook snapshot call sites (implemented, 6 of
   6 slices landed).
 - [Phase 3](phases/phase-3-cheap-wins.md): reroll clone reorder/removal and
-  `runTrigger` clone-before-early-return.
+  `runTrigger` clone-before-early-return (implemented).
 - [Phase 4](phases/phase-4-script-definition-watcher.md): script-definition
   watcher full characters+modules clone.
 - [Phase 5](phases/phase-5-prompt-template-keystroke.md): prompt-template
@@ -87,7 +96,11 @@ Headlines, in priority order (audit severity in parentheses):
 - Script-definition watcher (High): full characters+modules clone per fire while
   a config/module panel is open. -> Phase 4.
 - Reroll/transcript clones (High): full-transcript clone to keep 1-2 tail
-  messages; redundant dispatch clones. -> Phase 3 (cheap) + Phase 2 (rollback).
+  messages; redundant dispatch clones. -> Phase 2 (rollback) + Phase 3 — DONE
+  (tail-only post-send clone, by-reference dispatch, in-place regenerate truncate).
+- `runTrigger` whole-character clone (Medium): cloned the full character + chat
+  before the no-trigger early return. -> Phase 3 — DONE (early-return hoist; lazy
+  whole-character clone paid only on the install effects).
 - Prompt-template keystroke (High): guard half closed by Phase 1; the remaining
   work is the whole-template clone + double stringify per keystroke. -> Phase 5.
 - Lorebook watcher (Medium): DB-wide lore stringify per fire. -> Phase 6.
@@ -96,13 +109,16 @@ Headlines, in priority order (audit severity in parentheses):
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). Phases 0, 1, and 2 have
+See [`latest-verification.md`](latest-verification.md). Phases 0, 1, 2, and 3 have
 landed. The guard amplifier is gone: a guarded write is now O(1) (zero
 whole-`Database` clones) instead of ~255 ms on a 61 MB DB. Phase 2 narrowed the
 Critical/High hot-path rollback snapshots (send, message edit, swipe/reroll,
 scriptstate, chat-metadata watcher, character-field edits, global-lorebook
-select, and the 6 lorebook triggers) to scalar/single-row/single-chat clones; the
-deferred image/emotion and sidebar/MCP lorebook callers still scale with history.
+select, and the 6 lorebook triggers) to scalar/single-row/single-chat clones.
+Phase 3 narrowed the reroll post-send/regenerate transcript clones (tail-only +
+in-place truncate) and the `runTrigger` whole-character clone (lazy, paid only on
+the install effects). The deferred image/emotion and sidebar/MCP lorebook callers
+still scale with history.
 
 ## Start Here
 

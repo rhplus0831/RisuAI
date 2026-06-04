@@ -1,10 +1,25 @@
 # Phase 3: Cheap High-Confidence Wins
 
-Status: planned. One slice. Independent of the Phase 0 snapshot kit; ready to
-land next.
+Status: implemented. One slice, landed in two commits (reroll
+`ed4e0af0`, `runTrigger` `f4855e24`).
 
 Goal: land small behavior-preserving clone wins: reroll clone reorder/removal and
 `runTrigger` early return before cloning. No snapshot API changes.
+
+Note: two targets needed a guard-safe adaptation beyond the naive shallow
+copy the audit sketched, because the Fastify read-only projection re-installs the
+mutated object. A shallow copy of either the reroll transcript or the trigger
+character would have stored read-only proxy rows back into the projection and
+poisoned later writes (a subsequent message append / character edit would throw).
+The landed shapes preserve the win while staying guard-safe:
+
+- reroll regenerate truncates the live transcript in place (its surviving rows
+  are the projection's own rows, never re-installed) instead of installing a
+  shallow-popped array.
+- `runTrigger` keeps the whole-character deep clone but makes it lazy
+  (`materializeChar`), paid at most once per pass and only when a data effect
+  installs the character; the common (read-only / `setVar`) trigger pays only the
+  active-chat clone.
 
 ## Source Anchors
 
@@ -25,19 +40,36 @@ Goal: land small behavior-preserving clone wins: reroll clone reorder/removal an
 
 ## Exit Criteria
 
-- [ ] `recordGeneratedReroll` clones O(tail) not O(transcript); the stored reroll
+- [x] `recordGeneratedReroll` clones O(tail) not O(transcript); the stored reroll
       is byte-identical.
-- [ ] The redundant `:105` clone is removed and `reroll()` no longer clones the
-      whole transcript when only the trailing group is reshaped; dispatch payloads are
-      unchanged.
-- [ ] A zero-trigger character pays no `char`/`chat` clone in `runTrigger`;
-      trigger-bearing paths clone only the active chat once.
-- [ ] Trigger results, reroll navigation, and persisted messages are
+- [x] The redundant `:105` clone is removed (rows passed by reference, ids minted
+      inside the write guard) and `reroll()` no longer clones the whole transcript
+      when only the trailing group is reshaped (in-place truncate); dispatch payloads
+      are unchanged.
+- [x] A zero-trigger character pays no `char`/`chat` clone in `runTrigger`;
+      trigger-bearing paths clone only the active chat (the whole-character clone is
+      lazy — paid once, only when a data effect installs the character).
+- [x] Trigger results, reroll navigation, and persisted messages are
       byte-identical; `pnpm test` is green.
+
+## Out of Scope / Found While Implementing
+
+- `setVar`/`v2SetVar` (`triggers.ts:1402-1404`) writes the new scriptstate
+  directly to `getCurrentChat()` / `getCurrentCharacter()` / `getDatabase()` (the
+  read-only projection) without a `withTrustedServerProjectionWrite`, so a
+  client-side `manual`/slash `setVar` trigger throws under the Fastify guard. This
+  is pre-existing (untouched by Phase 3; the Phase 2 scriptstate slice narrowed the
+  rollback but left these direct writes) and surfaced by the new
+  `triggers.cloneCost.test.ts`, which measures the `setVar` path guard-off for that
+  reason. Track as a separate guard-safety fix, not a Phase 3 clone item.
 
 ## Validation
 
-- `pnpm test -- src/ts/process/rerollNavigation.test.ts src/ts/process/rerollNavigation.rollback.test.ts src/ts/process/rerollNavigation.guard.test.ts`
-- `pnpm test -- src/ts/process/__tests__/triggers.projectionGuard.test.ts`
-- `pnpm test`
-- `pnpm client-thinning:audit`
+- `pnpm exec vitest run rerollNavigation` (unit + rollback + guard suites, incl.
+  the new Phase 3 clone-cost + guard-on regenerate tests)
+- `pnpm exec vitest run triggers.projectionGuard triggers.cloneCost`
+- `pnpm test` - green, 1002 passed / 4 skipped (105 files)
+- `pnpm api:test` - green, 1632 passed / 1 skipped (93 files)
+- `pnpm client-thinning:audit` - green
+- Type check: `tsconfig.client-lib.json` build then
+  `server/fastify/tsconfig.json --noEmit` - both zero errors
