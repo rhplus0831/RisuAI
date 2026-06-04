@@ -32,11 +32,11 @@ order).
 - NEXT: any focused Phase 4-7 cleanup — Phase 4 (script-definition watcher),
   Phase 5 (prompt-template keystroke), Phase 6 (lorebook watcher scope), or a
   Phase 7 opportunistic item.
-- KNOWN BUG (separate from this plan): `setVar`/`v2SetVar` (`triggers.ts:1402-1404`)
-  writes scriptstate directly to the read-only projection (no
-  `withTrustedServerProjectionWrite`), so a client `manual`/slash `setVar` trigger
-  throws under the Fastify guard. Surfaced by `triggers.cloneCost.test.ts`
-  (measured guard-off for that reason). Guard-safety fix, not a clone item.
+- FIXED (`48d473dc`): `setVar`/`v2SetVar` previously wrote scriptstate directly to
+  the read-only projection, so a client `manual`/slash `setVar` trigger threw under
+  the Fastify guard. Now routed through `syncActiveChatScriptstate`
+  (`withTrustedServerProjectionWrite` + `getCurrentChat()` re-read); proven by the
+  guard-on v2SetVar test in `triggers.projectionGuard.test.ts`.
 - STANDING: Phase 8 verification budgets; refresh
   [`latest-verification.md`](latest-verification.md) after focused/full runs.
 

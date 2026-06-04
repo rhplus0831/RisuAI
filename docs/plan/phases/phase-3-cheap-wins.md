@@ -52,16 +52,18 @@ The landed shapes preserve the win while staying guard-safe:
 - [x] Trigger results, reroll navigation, and persisted messages are
       byte-identical; `pnpm test` is green.
 
-## Out of Scope / Found While Implementing
+## Found While Implementing (now fixed)
 
-- `setVar`/`v2SetVar` (`triggers.ts:1402-1404`) writes the new scriptstate
-  directly to `getCurrentChat()` / `getCurrentCharacter()` / `getDatabase()` (the
-  read-only projection) without a `withTrustedServerProjectionWrite`, so a
-  client-side `manual`/slash `setVar` trigger throws under the Fastify guard. This
-  is pre-existing (untouched by Phase 3; the Phase 2 scriptstate slice narrowed the
-  rollback but left these direct writes) and surfaced by the new
-  `triggers.cloneCost.test.ts`, which measures the `setVar` path guard-off for that
-  reason. Track as a separate guard-safety fix, not a Phase 3 clone item.
+- `setVar`/`v2SetVar` (`triggers.ts:1402-1404`) wrote the new scriptstate directly
+  to `getCurrentChat()` / `getCurrentCharacter()` / `getDatabase()` (the read-only
+  projection) without a `withTrustedServerProjectionWrite`, so a client-side
+  `manual`/slash `setVar` trigger threw under the Fastify guard. Pre-existing
+  (untouched by Phase 3; the Phase 2 scriptstate slice narrowed the rollback but
+  left these direct writes) and surfaced by the new `triggers.cloneCost.test.ts`.
+  Fixed in `48d473dc`: the three identical writes (and the end-of-pass
+  `varChanged` sync) now route through a single `syncActiveChatScriptstate` helper
+  that runs inside the guard and re-reads `getCurrentChat()`. Proven by the
+  guard-on `v2SetVar` test in `triggers.projectionGuard.test.ts`.
 
 ## Validation
 

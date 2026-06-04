@@ -35,14 +35,17 @@ latest-run section on each full or focused run; do not append history.
   `triggers.cloneCost.test.ts` (zero-trigger pays no clone; a `setVar` trigger
   clones only the active chat). The `runTrigger` install effects stay covered by
   `triggers.projectionGuard.test.ts` (8 tests green with the lazy clone).
-- Found while implementing (out of scope, tracked in `next-steps.md`):
-  `setVar`/`v2SetVar` writes scriptstate directly to the read-only projection
-  (`triggers.ts:1402-1404`) so a client `manual`/slash `setVar` trigger throws
-  under the guard — pre-existing, untouched by Phase 3.
+- Follow-up fix (`48d473dc`): `setVar`/`v2SetVar` previously wrote scriptstate
+  directly to the read-only projection (`triggers.ts:1402-1404`), so a client
+  `manual`/slash `setVar` trigger threw under the guard (pre-existing, surfaced by
+  the Phase 3 clone-cost test). Now routed through `syncActiveChatScriptstate`
+  (`withTrustedServerProjectionWrite` + `getCurrentChat()` re-read); a guard-on
+  `v2SetVar` test in `triggers.projectionGuard.test.ts` proves no throw + the
+  dispatched `/chats/:id/scriptstate` patch. Client suite now 1003 / 4 skipped.
 
 | Command                                                                                     | Result                                                                                                      |
 | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `pnpm test`                                                                                 | green - 1002 passed / 4 skipped (105 files).                                                                |
+| `pnpm test`                                                                                 | green - 1003 passed / 4 skipped (105 files).                                                                |
 | `pnpm api:test`                                                                             | green - 1632 passed / 1 skipped (93 files).                                                                 |
 | `pnpm client-thinning:audit`                                                                | green - audit passed.                                                                                       |
 | Type check (`tsconfig.client-lib.json` build, then `server/fastify/tsconfig.json --noEmit`) | green - both zero errors (clean client-lib rebuild required: remove `dist/client-types` if TS6305 appears). |
