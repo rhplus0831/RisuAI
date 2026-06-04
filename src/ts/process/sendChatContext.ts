@@ -10,13 +10,12 @@ import { DBState } from '../stores.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { ChatTokenizer } from '../tokenizer'
 import { parseToggleSyntax } from '../util'
+import { runOptimisticCommandSequence, toMessageSnapshot } from '../chatCommands'
 import {
-  type ChatStateSnapshot,
-  currentChatStateSnapshot,
-  restoreChatState,
-  runOptimisticCommandSequence,
-  toMessageSnapshot,
-} from '../chatCommands'
+  type CharacterRowSnapshot,
+  currentCharacterRowSnapshot,
+  restoreCharacterRow,
+} from '../characterCommands'
 import {
   canUseServerCommands,
   replaceMessagesCommand,
@@ -81,7 +80,7 @@ export function setupSendChatContext(args: {
     // one optimistic snapshot. The sequencer awaits each response so the next
     // command reads the updated revision.
     const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
-    let rollbackSnapshot: ChatStateSnapshot | null = null
+    let rollbackSnapshot: CharacterRowSnapshot | null = null
 
     withTrustedServerProjectionWrite(() => {
       const nowChatroom = DBState.db.characters[selectedChar]
@@ -89,11 +88,13 @@ export function setupSendChatContext(args: {
       const selectedChatRecord = nowChatroom.chats[nowChatroom.chatPage]
       const needsMessageIdBackfill = selectedChatRecord.message.some((v) => v.chatId === undefined)
 
-      // Single snapshot covers both rollbacks: chat-state restores the
-      // characters array, which carries both lastInteraction and message
-      // chatId fields.
+      // Single single-row snapshot covers both rollbacks (M14): the
+      // lastInteraction stamp and the message-id backfill both live under
+      // `characters[selectedChar]`, so restoring that one row is exactly the
+      // mutated slice — never the whole characters array with every other
+      // hydrated history.
       if (characterId || needsMessageIdBackfill) {
-        rollbackSnapshot = currentChatStateSnapshot()
+        rollbackSnapshot = currentCharacterRowSnapshot(selectedChar)
       }
 
       nowChatroom.lastInteraction = lastInteraction
@@ -126,7 +127,7 @@ export function setupSendChatContext(args: {
 
     if (factories.length > 0 && rollbackSnapshot) {
       const snapshot = rollbackSnapshot
-      runOptimisticCommandSequence(factories, () => restoreChatState(snapshot))
+      runOptimisticCommandSequence(factories, () => restoreCharacterRow(snapshot))
     }
   } else {
     const nowChatroom = DBState.db.characters[selectedChar]

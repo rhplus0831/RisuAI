@@ -47,7 +47,12 @@
   })
 
   $effect(() => {
-    const stopScripts = watchServerBackedScriptDefinitions()
+    // This panel only edits the open module's regex/trigger definitions, so
+    // scope change detection to that one module. Reading currentModule.id here
+    // re-runs the effect (restarting the watcher with a fresh baseline) when the
+    // user opens a different module.
+    const moduleId = currentModule?.id ?? ''
+    const stopScripts = watchServerBackedScriptDefinitions({ scope: { kind: 'module', moduleId } })
     return () => stopScripts()
   })
 

@@ -13,11 +13,14 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 import {
+  changedCharacterFields,
   currentCharacterRowSnapshot,
   currentCharacterSelectionSnapshot,
   currentCharacterStateSnapshot,
   dispatchCompatibleCharacterUpdateScoped,
+  prepareCompatibleCharacterUpdate,
   restoreCharacterRow,
+  sanitizeCharacterPatch,
   setCharacterSupaMemory,
 } from './characterCommands'
 import { setCharacterByIndex } from './storage/database.svelte'
@@ -276,5 +279,78 @@ describe('Phase 2 character-row scoped dispatch', () => {
     // drain the async dispatch so it does not leak into the next test
     await new Promise((resolve) => setTimeout(resolve, 0))
     await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+})
+
+describe('Phase 3 kept-key character diff (M13)', () => {
+  it('M13: changedCharacterFields diffs without cloning the chats payload', () => {
+    DBState.db = seedCloneCostDb() as any // char-0 carries a 40-message hydrated chat
+    const previous = DBState.db.characters[0]
+    const next = { ...previous, name: 'Renamed' }
+    const chatsSize = JSON.stringify(previous.chats).length
+
+    const instrumented = withCloneInstrumentation(() => changedCharacterFields(previous, next as any))
+
+    // Pre-fix the diff cloned BOTH characters in full (chats with every hydrated
+    // history included) before stripping exactly those keys.
+    expect(instrumented.maxClonedSize).toBeLessThan(chatsSize)
+    expect(instrumented.result).toEqual({ name: 'Renamed' })
+  })
+
+  it('M13: the per-key diff matches the old clone-then-sanitize semantics', () => {
+    const previous = {
+      chaId: 'char-a',
+      name: 'Old name',
+      desc: 'same',
+      nested: { a: 1, b: [1, 2] },
+      removed: 'gone after',
+      chats: [{ id: 'chat-1', message: [{ role: 'user', data: 'x' }] }],
+      scriptstate: { $x: '1' },
+    }
+    const next = {
+      chaId: 'char-a',
+      name: 'New name',
+      desc: 'same',
+      nested: { a: 1, b: [1, 2, 3] },
+      added: 'new field',
+      chats: [{ id: 'chat-1', message: [] }], // excluded key change must be ignored
+      scriptstate: { $x: '2' }, // excluded key change must be ignored
+    }
+
+    const patch = changedCharacterFields(previous as any, next as any)
+
+    expect(patch).toMatchObject({
+      name: 'New name',
+      nested: { a: 1, b: [1, 2, 3] },
+      added: 'new field',
+    })
+    // a deleted kept field appears as an explicit undefined; sanitize drops it
+    expect('removed' in patch).toBe(true)
+    expect(patch.removed).toBeUndefined()
+    expect(sanitizeCharacterPatch(patch)).toEqual({
+      name: 'New name',
+      nested: { a: 1, b: [1, 2, 3] },
+      added: 'new field',
+    })
+    // excluded keys never enter the patch, changed or not
+    expect('chats' in patch).toBe(false)
+    expect('scriptstate' in patch).toBe(false)
+    expect('chaId' in patch).toBe(false)
+    expect('desc' in patch).toBe(false)
+  })
+
+  it('M13: prepareCompatibleCharacterUpdate builds its factory without serializing the transcript', () => {
+    DBState.db = seedCloneCostDb() as any
+    const previous = DBState.db.characters[0]
+    const next = { ...previous, name: 'Renamed' }
+    const chatsSize = JSON.stringify(previous.chats).length
+    const rowSnapshot = currentCharacterStateSnapshot() // captured outside the measurement
+
+    const instrumented = withCloneInstrumentation(() =>
+      prepareCompatibleCharacterUpdate(previous, next as any, rowSnapshot),
+    )
+
+    expect(instrumented.maxClonedSize).toBeLessThan(chatsSize)
+    expect(instrumented.result.factories).toHaveLength(1)
   })
 })

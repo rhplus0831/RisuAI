@@ -201,6 +201,10 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       const previous = currentChatScriptstateSnapshot()
       const stateKey = '$' + namedArg['key']
       let chatId: string | undefined
+      // No `setDatabase(db)` here (M12): the in-place scriptstate write under the
+      // trusted scope plus the scoped dispatch below already persist the change
+      // (mirroring `setChatVar`). The full normalizer re-filtered every character
+      // and re-cloned the language pack on every var write for nothing.
       withTrustedServerProjectionWrite(() => {
         const db = getDatabase()
         const char = db.characters[selectedChar]
@@ -208,7 +212,6 @@ async function processCommand(command: string, pipe: string): Promise<false | st
         chat.scriptstate = chat.scriptstate ?? {}
         chat.scriptstate[stateKey] = arg
         chatId = chat.id
-        setDatabase(db)
       })
       if (chatId) {
         dispatchPatchChatScriptstateScoped(chatId, { [stateKey]: arg }, [], previous)
@@ -221,6 +224,7 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       const stateKey = '$' + namedArg['key']
       let chatId: string | undefined
       let newValue = ''
+      // No `setDatabase(db)` here either (M12) — see the `setvar` note above.
       withTrustedServerProjectionWrite(() => {
         const db = getDatabase()
         const char = db.characters[selectedChar]
@@ -229,7 +233,6 @@ async function processCommand(command: string, pipe: string): Promise<false | st
         newValue = (Number(chat.scriptstate[stateKey]) + Number(arg)).toString()
         chat.scriptstate[stateKey] = newValue
         chatId = chat.id
-        setDatabase(db)
       })
       if (chatId) {
         dispatchPatchChatScriptstateScoped(chatId, { [stateKey]: newValue }, [], previous)

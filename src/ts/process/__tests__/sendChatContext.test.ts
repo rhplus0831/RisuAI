@@ -36,6 +36,7 @@ import {
 } from '../../storage/database.svelte'
 import { DBState, selectedCharID } from '../../stores.svelte'
 import { setupSendChatContext } from '../sendChatContext'
+import { seedCloneCostDb, withCloneInstrumentation } from '../../__tests__/cloneCostHarness'
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {
@@ -427,5 +428,62 @@ describe('setupSendChatContext - selectedChar / selectedChat', () => {
     expect(ctx.selectedChar).toBe(1)
     expect(ctx.selectedChat).toBe(0)
     expect(ctx.nowChatroom.name).toBe('B')
+  })
+})
+
+describe('setupSendChatContext - M14 single-row rollback (stability/perf plan, Phase 3)', () => {
+  it('M14: the send-context rollback captures one character row, never the whole corpus', () => {
+    const seeded = seedCloneCostDb() // char-0 large (40 messages), siblings small
+    seedDb({ characters: seeded.characters as unknown as Database['characters'] })
+    selectedCharID.set(1)
+    stubCommandFetch()
+    const charactersSize = JSON.stringify(DBState.db.characters).length
+
+    // Messages already carry chatIds, so the only optimistic write is the
+    // lastInteraction stamp — its rollback snapshot must stay one row.
+    const instrumented = withCloneInstrumentation(() =>
+      setupSendChatContext({ chatProcessIndex: -1 }),
+    )
+
+    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+    expect(instrumented.result.selectedChar).toBe(1)
+  })
+
+  it('M14: a failed send-context command restores only the selected row, preserving sibling edits', async () => {
+    // Earlier tests in this file dispatch without a fetch stub; their leaked
+    // rollbacks can later rewrite rows 0/1 (their snapshots' fallback indexes).
+    // Keep this test's rollback row and sibling row at index >= 2, which no
+    // leaked legacy snapshot can ever touch.
+    const seeded = seedCloneCostDb({ characterCount: 4 })
+    seedDb({ characters: seeded.characters as unknown as Database['characters'] })
+    selectedCharID.set(2)
+    const originalLastInteraction = DBState.db.characters[2].lastInteraction
+
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 21 })
+        return jsonResponse({ error: 'nope' }, 500)
+      }) as unknown as typeof fetch,
+    )
+
+    setupSendChatContext({ chatProcessIndex: -1 })
+    expect(DBState.db.characters[2].lastInteraction).not.toBe(originalLastInteraction)
+    // a concurrent, unrelated sibling edit a whole-array restore would wipe
+    DBState.db.characters[3].name = 'Concurrent sibling edit'
+
+    await vi.waitFor(() => {
+      // bootstrap + failed lastInteraction PATCH, then the rollback has run
+      expect(calls.length).toBeGreaterThanOrEqual(2)
+      expect(DBState.db.characters[2].lastInteraction).toBe(originalLastInteraction)
+    })
+    expect(DBState.db.characters[3].name).toBe('Concurrent sibling edit')
   })
 })

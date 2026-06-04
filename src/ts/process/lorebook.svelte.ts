@@ -12,17 +12,49 @@ import { getModuleLorebooks } from './modules'
 import { CCardLib } from '@risuai/ccardlib'
 import { v4 } from 'uuid'
 import {
-  currentLorebookStateSnapshot,
+  currentLorebookCollectionScopedSnapshot,
   dispatchReplaceCharacterLorebooks,
   dispatchReplaceChatLorebooks,
   dispatchReplaceGlobalLorebookEntries,
   ensureClientLorebookEntryIds,
+  ensureGlobalLorebookListIds,
+  type LorebookStateSnapshot,
 } from '../server/lorebookBridge.svelte'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 
+// Scoped pre-edit rollback for the discrete lorebook editor actions below
+// (L32): snapshot only the one collection the action edits (`type`/`mode`
+// selects it) instead of the whole-DB clone + id-assign the broad snapshot
+// performs. `type` mirrors the editor convention: 0 = the selected character's
+// globalLore, -1 = the open global lorebook, anything else = the active chat's
+// localLore. Returns null when the target has no stable id yet — the matching
+// dispatch is skipped by the same guard, so the rollback is never needed.
+function scopedLorebookEditorSnapshot(type: number, selectedID: number): LorebookStateSnapshot | null {
+  if (type === 0) {
+    const characterId = DBState.db.characters[selectedID]?.chaId
+    return characterId
+      ? currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId })
+      : null
+  }
+  if (type === -1) {
+    // The open global book may predate id-assign; ensure the global list's ids
+    // (only that list — not the whole DB) so the edit can be dispatched.
+    ensureGlobalLorebookListIds()
+    const lorebookId = (
+      DBState.db.loreBook?.[DBState.db.loreBookPage] as { id?: string } | undefined
+    )?.id
+    return lorebookId
+      ? currentLorebookCollectionScopedSnapshot({ kind: 'global', lorebookId })
+      : null
+  }
+  const character = DBState.db.characters[selectedID]
+  const chatId = character?.chats?.[character.chatPage]?.id
+  return chatId ? currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId }) : null
+}
+
 export function addLorebook(type: number) {
-  const previous = currentLorebookStateSnapshot()
   const selectedID = get(selectedCharID)
+  const previous = scopedLorebookEditorSnapshot(type, selectedID)
   if (type === 0) {
     withTrustedServerProjectionWrite(() => {
       DBState.db.characters[selectedID].globalLore.push({
@@ -37,11 +69,13 @@ export function addLorebook(type: number) {
         selective: false,
       })
     })
-    dispatchReplaceCharacterLorebooks(
-      DBState.db.characters[selectedID].chaId,
-      DBState.db.characters[selectedID].globalLore,
-      previous,
-    )
+    if (previous) {
+      dispatchReplaceCharacterLorebooks(
+        DBState.db.characters[selectedID].chaId,
+        DBState.db.characters[selectedID].globalLore,
+        previous,
+      )
+    }
   } else if (type === -1) {
     const lorePage = DBState.db.loreBookPage
     const current = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
@@ -67,7 +101,7 @@ export function addLorebook(type: number) {
       const lorebook = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] }
       lorebook.data = nextData
     })
-    if (current.id) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
+    if (current.id && previous) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
   } else {
     const page = DBState.db.characters[selectedID].chatPage
     withTrustedServerProjectionWrite(() => {
@@ -84,13 +118,13 @@ export function addLorebook(type: number) {
       })
     })
     const chat = DBState.db.characters[selectedID].chats[page]
-    if (chat.id) dispatchReplaceChatLorebooks(chat.id, chat.localLore, previous)
+    if (chat.id && previous) dispatchReplaceChatLorebooks(chat.id, chat.localLore, previous)
   }
 }
 
 export function addLorebookFolder(type: number) {
-  const previous = currentLorebookStateSnapshot()
   const selectedID = get(selectedCharID)
+  const previous = scopedLorebookEditorSnapshot(type, selectedID)
   const id = v4()
   if (type === 0) {
     withTrustedServerProjectionWrite(() => {
@@ -106,11 +140,13 @@ export function addLorebookFolder(type: number) {
         selective: false,
       })
     })
-    dispatchReplaceCharacterLorebooks(
-      DBState.db.characters[selectedID].chaId,
-      DBState.db.characters[selectedID].globalLore,
-      previous,
-    )
+    if (previous) {
+      dispatchReplaceCharacterLorebooks(
+        DBState.db.characters[selectedID].chaId,
+        DBState.db.characters[selectedID].globalLore,
+        previous,
+      )
+    }
   } else if (type === -1) {
     const lorePage = DBState.db.loreBookPage
     const current = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
@@ -135,7 +171,7 @@ export function addLorebookFolder(type: number) {
       const lorebook = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] }
       lorebook.data = nextData
     })
-    if (current.id) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
+    if (current.id && previous) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
   } else {
     const page = DBState.db.characters[selectedID].chatPage
     withTrustedServerProjectionWrite(() => {
@@ -152,7 +188,7 @@ export function addLorebookFolder(type: number) {
       })
     })
     const chat = DBState.db.characters[selectedID].chats[page]
-    if (chat.id) dispatchReplaceChatLorebooks(chat.id, chat.localLore, previous)
+    if (chat.id && previous) dispatchReplaceChatLorebooks(chat.id, chat.localLore, previous)
   }
 }
 
@@ -766,8 +802,14 @@ export async function loadLoreBookV3Prompt() {
 }
 
 export async function importLoreBook(mode: 'global' | 'local' | 'sglobal') {
-  const previous = currentLorebookStateSnapshot()
   const selectedID = get(selectedCharID)
+  // Same editor-target convention as addLorebook: 'global' edits the selected
+  // character's globalLore (0), 'sglobal' the open global lorebook (-1), and
+  // 'local' the active chat's localLore.
+  const previous = scopedLorebookEditorSnapshot(
+    mode === 'global' ? 0 : mode === 'sglobal' ? -1 : 1,
+    selectedID,
+  )
   const page = mode === 'sglobal' ? -1 : DBState.db.characters[selectedID].chatPage
   const lorebook = (await selectSingleFile(['json', 'lorebook'])).data
   if (!lorebook) {
@@ -807,15 +849,17 @@ export async function importLoreBook(mode: 'global' | 'local' | 'sglobal') {
       }
     })
     if (mode === 'global') {
-      dispatchReplaceCharacterLorebooks(DBState.db.characters[selectedID].chaId, lore, previous)
+      if (previous) {
+        dispatchReplaceCharacterLorebooks(DBState.db.characters[selectedID].chaId, lore, previous)
+      }
     } else if (mode === 'sglobal') {
       const lorebook = DBState.db.loreBook[DBState.db.loreBookPage] as
         | { id?: string; data: loreBook[] }
         | undefined
-      if (lorebook?.id) dispatchReplaceGlobalLorebookEntries(lorebook.id, lore, previous)
+      if (lorebook?.id && previous) dispatchReplaceGlobalLorebookEntries(lorebook.id, lore, previous)
     } else {
       const chat = DBState.db.characters[selectedID].chats[page]
-      if (chat.id) dispatchReplaceChatLorebooks(chat.id, lore, previous)
+      if (chat.id && previous) dispatchReplaceChatLorebooks(chat.id, lore, previous)
     }
   } catch (error) {
     alertError(error)

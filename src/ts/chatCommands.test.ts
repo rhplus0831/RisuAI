@@ -16,12 +16,17 @@ import {
   clearCachedServerCommandRevision,
   type ChatFolderSnapshot,
   type ChatSnapshot,
+  type ServerCommandResult,
 } from './server/commands'
 import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
+// Import the heavy database module AFTER stores.svelte: importing it first
+// triggers a circular-import TDZ when the reactive moduleUpdate $effect runs
+// mid-init (see the clone-narrowing Phase 8 gotcha).
+import { setCurrentChat } from './storage/database.svelte'
 import { get } from 'svelte/store'
 import {
   appendCurrentChatUserMessageForSend,
@@ -44,6 +49,7 @@ import {
   restoreChatScopedState,
   restoreChatScriptstate,
   restoreChatSelection,
+  runOptimisticCommandSequence,
 } from './chatCommands'
 import {
   assertRollbackRestoresOnly,
@@ -868,5 +874,108 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
     expect(DBState.db.characters[0].chats[0].note).toBe('original note')
     // the snapshot also restored scriptstate to its captured value
     expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
+  })
+})
+
+describe('Phase 3 runner rejection rollback (L36)', () => {
+  it('L36: a rejecting factory in runOptimisticCommandSequence rolls back instead of silently diverging', async () => {
+    stubCommandFetch()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const rollback = vi.fn()
+
+    runOptimisticCommandSequence(
+      [
+        async () => {
+          throw new Error('sequence factory exploded')
+        },
+      ],
+      rollback,
+    )
+
+    await vi.waitFor(() => {
+      expect(rollback).toHaveBeenCalledTimes(1)
+    })
+    consoleError.mockRestore()
+  })
+
+  it('L36: a mid-sequence rejection rolls back once and skips the remaining commands', async () => {
+    stubCommandFetch()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const rollback = vi.fn()
+    const laterCommand = vi.fn(async () => ({ status: 'ok' }) as const)
+
+    runOptimisticCommandSequence(
+      [
+        async () => {
+          throw new Error('first factory exploded')
+        },
+        laterCommand as unknown as (baseRevision: number) => Promise<ServerCommandResult>,
+      ],
+      rollback,
+    )
+
+    await vi.waitFor(() => {
+      expect(rollback).toHaveBeenCalledTimes(1)
+    })
+    expect(laterCommand).not.toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+})
+
+describe('Phase 3 setCurrentChat scoped snapshot (U4)', () => {
+  it('U4: replacing the active chat captures a chat-scoped baseline, never the whole characters array', async () => {
+    DBState.db = seedCloneCostDb() as any // char-0 large (40 messages), siblings small
+    selectedCharID.set(1)
+    const charactersSize = JSON.stringify(DBState.db.characters).length
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch,
+    )
+
+    const nextChat = JSON.parse(JSON.stringify(DBState.db.characters[1].chats[0]))
+    nextChat.name = 'Renamed chat'
+
+    // The scoped capture + the compatible-update diff stay bounded to the one
+    // active chat; the large sibling (char-0) transcript is never serialized.
+    const instrumented = withCloneInstrumentation(() => {
+      setCurrentChat(nextChat as any)
+    })
+    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+    expect(DBState.db.characters[1].chats[0].name).toBe('Renamed chat')
+
+    // drain the async dispatch so it does not leak into the next test
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  it('U4: a failed update rolls back only the active chat row, preserving sibling edits', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        return jsonResponse({ error: 'nope' }, 500)
+      }) as unknown as typeof fetch,
+    )
+
+    const nextChat = JSON.parse(JSON.stringify(DBState.db.characters[0].chats[0]))
+    nextChat.name = 'Optimistic rename'
+
+    setCurrentChat(nextChat as any)
+    // a concurrent, unrelated edit to ANOTHER chat row a whole-array restore would wipe
+    DBState.db.characters[0].chats[1].name = 'Concurrent sibling edit'
+
+    await waitForCallCount(calls, 2)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(DBState.db.characters[0].chats[0].name).toBe('Chat A')
+    expect(DBState.db.characters[0].chats[1].name).toBe('Concurrent sibling edit')
   })
 })

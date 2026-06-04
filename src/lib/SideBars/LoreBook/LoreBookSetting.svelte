@@ -21,7 +21,7 @@
   import Help from 'src/lib/Others/Help.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import {
-    currentLorebookStateSnapshot,
+    currentLorebookCollectionScopedSnapshot,
     dispatchReplaceCharacterLorebooks,
     dispatchReplaceChatLorebooks,
     watchServerBackedLorebooks,
@@ -66,7 +66,12 @@
 
     const allActive = globalLore.every((book) => book.alwaysActive)
     const nextLore = globalLore.map((book) => ({ ...book, alwaysActive: !allActive }))
-    const previous = currentLorebookStateSnapshot()
+    // This action edits only the character's globalLore, so capture the scoped
+    // rollback for that one collection (L32) — not the whole-DB clone.
+    const previous = currentLorebookCollectionScopedSnapshot({
+      kind: 'character',
+      characterId: character.chaId,
+    })
 
     withTrustedServerProjectionWrite(() => {
       const liveCharacter = DBState.db.characters?.[$selectedCharID]
@@ -84,7 +89,9 @@
 
     const allActive = localLore.every((book) => book.alwaysActive)
     const nextLore = localLore.map((book) => ({ ...book, alwaysActive: !allActive }))
-    const previous = currentLorebookStateSnapshot()
+    // This action edits only the active chat's localLore, so capture the scoped
+    // rollback for that one collection (L32) — not the whole-DB clone.
+    const previous = currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId: chat.id })
 
     withTrustedServerProjectionWrite(() => {
       const liveCharacter = DBState.db.characters?.[$selectedCharID]

@@ -1,6 +1,6 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
-import { currentCharacterStateSnapshot, dispatchUpdateCharacter } from 'src/ts/characterCommands'
+import { currentCharacterRowSnapshot, dispatchUpdateCharacterScoped } from 'src/ts/characterCommands'
 import { canUseServerCommands } from 'src/ts/server/commands'
 import {
   currentLorebookStateSnapshot,
@@ -581,7 +581,13 @@ export class CharacterHandler extends MCPToolHandler {
       }
     }
     if (canUseServerCommands()) {
-      dispatchUpdateCharacter(char.chaId, patch, currentCharacterStateSnapshot())
+      // A field patch touches one character row, so its rollback needs only
+      // that row — not a deep clone of the whole characters array (L35).
+      const index =
+        DBState.db.characters?.findIndex((candidate) => candidate.chaId === char.chaId) ?? -1
+      if (index >= 0) {
+        dispatchUpdateCharacterScoped(char.chaId, patch, currentCharacterRowSnapshot(index))
+      }
     } else {
       for (const [field, value] of Object.entries(patch)) {
         // @ts-ignore

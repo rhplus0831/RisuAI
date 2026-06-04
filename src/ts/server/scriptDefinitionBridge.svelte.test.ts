@@ -41,9 +41,12 @@ vi.mock('./projectionWriteGuard.svelte', () => ({
   withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
 }))
 
-import { DBState } from '../stores.svelte'
+import { DBState, selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
-import { watchServerBackedScriptDefinitions } from './scriptDefinitionBridge.svelte'
+import {
+  collectScriptDefinitionCollectionSnapshots,
+  watchServerBackedScriptDefinitions,
+} from './scriptDefinitionBridge.svelte'
 
 const DELAY = 50
 
@@ -415,6 +418,178 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
 
     recorded.commands[0].rollback?.()
     expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
+    stop()
+  })
+})
+
+// L31 (stability/perf plan, Phase 3): scope the watcher's per-fire
+// scan-and-stringify to the mounting panel's rows. A script keystroke must no
+// longer re-stringify every character's and module's scripts/triggers.
+
+function setupMultiCharacterScriptDb(): void {
+  ;(DBState as { db: unknown }).db = {
+    characters: [
+      {
+        chaId: 'char-1',
+        // chats/chatPage keep the stores-level moduleUpdate $effect happy when
+        // these tests flip selectedCharID.
+        chats: [],
+        chatPage: 0,
+        customscript: [script('script-1', 'initial')],
+        triggerscript: [trigger('trigger-1', 'initial trigger')],
+      },
+      {
+        chaId: 'char-2',
+        chats: [],
+        chatPage: 0,
+        // The sibling carries a LARGE script body so a whole-DB stringify is
+        // distinguishable from the scoped one by serialized size.
+        customscript: [script('script-2', BIG_BODY)],
+        triggerscript: [trigger('trigger-2', 'sibling trigger')],
+      },
+    ],
+    modules: [
+      {
+        id: 'module-1',
+        regex: [script('module-script-1', 'initial module')],
+        trigger: [trigger('module-trigger-1', 'initial module trigger')],
+      },
+    ],
+  }
+}
+
+describe('watchServerBackedScriptDefinitions — scoped change detection (L31)', () => {
+  it('character scope collects only the selected character, not siblings/modules', () => {
+    setupMultiCharacterScriptDb()
+    selectedCharID.set(0)
+    const stop = watchServerBackedScriptDefinitions({
+      scope: { kind: 'character' },
+      delayMs: DELAY,
+    })
+    flushSync()
+
+    const keys = [...collectScriptDefinitionCollectionSnapshots({ kind: 'character' }).keys()].sort()
+    expect(keys).toEqual(['characterScripts:char-1', 'characterTriggers:char-1'])
+    stop()
+  })
+
+  it('module scope collects only the open module', () => {
+    setupMultiCharacterScriptDb()
+
+    const keys = [
+      ...collectScriptDefinitionCollectionSnapshots({ kind: 'module', moduleId: 'module-1' }).keys(),
+    ].sort()
+    expect(keys).toEqual(['moduleScripts:module-1', 'moduleTriggers:module-1'])
+  })
+
+  it('all scope (default) still scans the whole DB — regression', () => {
+    setupMultiCharacterScriptDb()
+
+    const keys = [...collectScriptDefinitionCollectionSnapshots().keys()].sort()
+    expect(keys).toEqual([
+      'characterScripts:char-1',
+      'characterScripts:char-2',
+      'characterTriggers:char-1',
+      'characterTriggers:char-2',
+      'moduleScripts:module-1',
+      'moduleTriggers:module-1',
+    ])
+  })
+
+  it('L31: a character-scoped fire never stringifies the sibling scripts (clone cost stays scoped)', async () => {
+    setupMultiCharacterScriptDb()
+    selectedCharID.set(0)
+    const stop = watchServerBackedScriptDefinitions({
+      scope: { kind: 'character' },
+      delayMs: DELAY,
+    })
+    flushSync()
+
+    // An edit to the selected character fires a scoped scan: the sibling's
+    // large script body is never serialized.
+    const instrumented = withCloneInstrumentation(() => {
+      DBState.db.characters[0].customscript = [script('script-1', 'edited')]
+      flushSync()
+    })
+    expect(instrumented.maxClonedSize).toBeLessThan(BIG_BODY.length)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    expect(recorded.commands.map((entry) => entry.built)).toEqual([
+      {
+        kind: 'replaceCharacterScripts',
+        baseRevision: 1,
+        characterId: 'char-1',
+        scripts: [script('script-1', 'edited')],
+      },
+    ])
+    stop()
+  })
+
+  it('character scope ignores a sibling edit but re-subscribes after a selection switch', async () => {
+    setupMultiCharacterScriptDb()
+    selectedCharID.set(0)
+    const stop = watchServerBackedScriptDefinitions({
+      scope: { kind: 'character' },
+      delayMs: DELAY,
+    })
+    flushSync()
+
+    // A sibling edit is out of scope → never dispatched.
+    DBState.db.characters[1].customscript = [script('script-2', 'sibling edit')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.commands).toEqual([])
+
+    // Switch to the sibling: the effect re-baselines (no spurious dispatch)...
+    selectedCharID.set(1)
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.commands).toEqual([])
+
+    // ...and an edit to the now-selected character IS dispatched.
+    DBState.db.characters[1].customscript = [script('script-2', 'tracked edit')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    expect(recorded.commands.map((entry) => entry.built)).toEqual([
+      {
+        kind: 'replaceCharacterScripts',
+        baseRevision: 1,
+        characterId: 'char-2',
+        scripts: [script('script-2', 'tracked edit')],
+      },
+    ])
+    stop()
+  })
+
+  it('module scope dispatches only the open module and ignores character edits', async () => {
+    setupMultiCharacterScriptDb()
+    const stop = watchServerBackedScriptDefinitions({
+      scope: { kind: 'module', moduleId: 'module-1' },
+      delayMs: DELAY,
+    })
+    flushSync()
+
+    // A character edit is out of scope for a module-scoped watcher.
+    DBState.db.characters[0].customscript = [script('script-1', 'char edit')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.commands).toEqual([])
+
+    // The open module's trigger edit IS dispatched.
+    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'module edit')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    expect(recorded.commands.map((entry) => entry.built)).toEqual([
+      {
+        kind: 'replaceModuleTriggers',
+        baseRevision: 1,
+        moduleId: 'module-1',
+        triggers: [trigger('module-trigger-1', 'module edit')],
+      },
+    ])
     stop()
   })
 })

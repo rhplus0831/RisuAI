@@ -1,4 +1,4 @@
-import { currentChatStateSnapshot, dispatchUpdateChat } from './chatCommands'
+import { currentChatScopedSnapshot, dispatchUpdateChatScoped } from './chatCommands'
 import {
   canUseServerCommands,
   createModuleCommand,
@@ -200,7 +200,10 @@ export function toggleSelectedChatModule(moduleId: string): void {
   const chat = Number.isInteger(chatIndex) ? character?.chats?.[chatIndex] : undefined
   if (!chat?.id) return
 
-  const previous = currentChatStateSnapshot()
+  // Toggling a chat's module link mutates only the active chat row, so the
+  // rollback needs just that one chat — not a deep clone of every character
+  // with every hydrated history (L34).
+  const previous = currentChatScopedSnapshot()
   const nextModules = toggledModuleIds(chat.modules, moduleId)
 
   withTrustedServerProjectionWrite(() => {
@@ -210,7 +213,7 @@ export function toggleSelectedChatModule(moduleId: string): void {
     targetChat.modules = cloneJsonValue(nextModules)
   })
 
-  dispatchUpdateChat(chat.id, { modules: nextModules }, previous)
+  dispatchUpdateChatScoped(chat.id, { modules: nextModules }, previous)
   ReloadGUIPointer.set(Math.random())
 }
 

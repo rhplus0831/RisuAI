@@ -15,6 +15,7 @@ vi.mock('./storage/fastifyStorage', () => ({
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
+import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
 import {
   createGlobalModule,
   deleteGlobalModule,
@@ -273,5 +274,79 @@ describe('module command projection helpers', () => {
         },
       },
     ])
+  })
+})
+
+describe('Phase 3 chat-scoped module toggle (L34)', () => {
+  it('L34: toggling a chat module captures a chat-scoped baseline, never the whole characters array', async () => {
+    DBState.db = seedCloneCostDb() as any // char-0 large (40 messages), siblings small
+    DBState.db.enabledModules = []
+    DBState.db.modules = [{ id: 'mod-a', name: 'Module A' }] as any
+    selectedCharID.set(1)
+    const charactersSize = JSON.stringify(DBState.db.characters).length
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch,
+    )
+
+    const instrumented = withCloneInstrumentation(() => {
+      toggleSelectedChatModule('mod-a')
+    })
+
+    // The rollback capture + dispatch payload stay bounded to the one active
+    // chat; the large sibling (char-0) transcript is never serialized.
+    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+    expect(DBState.db.characters[1].chats[0].modules).toEqual(['mod-a'])
+
+    // drain the async dispatch so it does not leak into the next test
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  it('L34: a failed toggle restores only the active chat row, preserving sibling edits', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        return jsonResponse({ error: 'nope' }, 500)
+      }) as unknown as typeof fetch,
+    )
+    DBState.db = {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Character',
+          chatPage: 0,
+          chats: [
+            { id: 'chat-a', name: 'Chat A', modules: ['mod-a'], message: [] },
+            { id: 'chat-b', name: 'Chat B', modules: [], message: [] },
+          ],
+          modules: [],
+        },
+      ],
+      characterOrder: [],
+      enabledModules: [],
+      modules: [{ id: 'mod-a', name: 'Module A' }],
+    } as any
+    selectedCharID.set(0)
+
+    toggleSelectedChatModule('mod-a')
+    expect(DBState.db.characters[0].chats[0].modules).toEqual([])
+    // a concurrent, unrelated edit to ANOTHER chat row a whole-array restore would wipe
+    DBState.db.characters[0].chats[1].name = 'Concurrent sibling edit'
+
+    await waitForCallCount(calls, 2)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(DBState.db.characters[0].chats[0].modules).toEqual(['mod-a'])
+    expect(DBState.db.characters[0].chats[1].name).toBe('Concurrent sibling edit')
   })
 })

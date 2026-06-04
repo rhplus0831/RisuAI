@@ -2465,3 +2465,53 @@ describe('server command API adapter', () => {
     ])
   })
 })
+
+describe('L36 runner rejection rollback (stability/perf plan, Phase 3)', () => {
+  it('L36: a rejected command factory rolls back once and resolves to an error result', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 7 }
+      return jsonResponse({ error: 'unexpected' }, 500)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const rollback = vi.fn()
+
+    // Pre-fix the rejection escaped `void runServerCommand(...)` as an
+    // unhandled rejection and the rollback never ran.
+    const result = await runServerCommand({
+      command: async () => {
+        throw new Error('factory exploded')
+      },
+      rollback,
+    })
+
+    expect(result).toEqual({
+      status: 'error',
+      error: 'Command factory rejected: factory exploded',
+    })
+    expect(rollback).toHaveBeenCalledTimes(1)
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
+  it('L36: a synchronous factory throw is also surfaced and rolled back', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 7 }
+      return jsonResponse({ error: 'unexpected' }, 500)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const rollback = vi.fn()
+
+    const result = await runServerCommand({
+      command: () => {
+        throw new TypeError('bad command input')
+      },
+      rollback,
+    })
+
+    expect(result.status).toBe('error')
+    expect(rollback).toHaveBeenCalledTimes(1)
+    consoleError.mockRestore()
+  })
+})

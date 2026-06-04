@@ -23,6 +23,21 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
 })
 
+// M12 spy: count setDatabase normalizer runs without changing its behavior.
+// `/setvar`/`/addvar` must not reach it (the in-place scriptstate write + the
+// scoped dispatch persist the change); `/send`'s message mutation still does.
+const setDatabaseSpy = vi.hoisted(() => ({ count: 0 }))
+vi.mock('../../storage/database.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('../../storage/database.svelte')>()
+  return {
+    ...actual,
+    setDatabase: (...args: Parameters<typeof actual.setDatabase>) => {
+      setDatabaseSpy.count += 1
+      return actual.setDatabase(...args)
+    },
+  }
+})
+
 import { safeStructuredClone } from '../../polyfill'
 import { processMultiCommand } from '../command'
 import { clearCachedServerCommandRevision } from '../../server/commands'
@@ -125,6 +140,7 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   seedDatabase()
+  setDatabaseSpy.count = 0
 })
 
 afterEach(() => {
@@ -166,6 +182,56 @@ describe('slash-command durable writes under the projection guard', () => {
         call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
     )
     expect(cmd.body.patch['$hp']).toBe('100')
+  })
+
+  it('M12: /setvar persists scriptstate without re-running the setDatabase normalizer', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    await expect(processMultiCommand('/setvar key=hp 100')).resolves.not.toThrow()
+
+    // The in-place write landed and the scoped command dispatched...
+    expect(DBState.db.characters[0].chats[0].scriptstate?.['$hp']).toBe('100')
+    const cmd = await waitForCommand(
+      calls,
+      (call) =>
+        call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
+    )
+    expect(cmd.body.patch['$hp']).toBe('100')
+    // ...without the ~680-line normalizer (and its non-English language-pack
+    // deep clone) running once per var write.
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('M12: /addvar persists the incremented value without the setDatabase normalizer', async () => {
+    seedDatabase()
+    DBState.db.characters[0].chats[0].scriptstate = { $damage: '5' }
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    await expect(processMultiCommand('/addvar key=damage 10')).resolves.not.toThrow()
+
+    expect(DBState.db.characters[0].chats[0].scriptstate?.['$damage']).toBe('15')
+    const cmd = await waitForCommand(
+      calls,
+      (call) =>
+        call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
+    )
+    expect(cmd.body.patch['$damage']).toBe('15')
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('M12 boundary: /send still runs setDatabase (message mutation is not lumped in)', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    await expect(processMultiCommand('/send hello world')).resolves.not.toBe(false)
+    await waitForCommand(
+      calls,
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+    )
+
+    expect(setDatabaseSpy.count).toBeGreaterThan(0)
   })
 
   it('/del truncates message history without throwing', async () => {

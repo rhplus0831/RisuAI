@@ -359,18 +359,26 @@ export function sanitizeCharacterPatch(patch: CharacterSnapshot): CharacterSnaps
   return sanitized
 }
 
-function changedCharacterFields(previous: character, current: character): CharacterSnapshot {
+// Diff per kept key without first deep-cloning the whole character (M13). The
+// old shape cloned `previous` and `current` in full — `chats` with every
+// hydrated history included — and then immediately stripped exactly those heavy
+// keys via `sanitizeCharacterPatch`. Skipping `CHARACTER_PATCH_EXCLUDED_KEYS`
+// before any clone keeps the diff O(kept fields); per-key JSON comparison on
+// the raw values is equivalent to comparing the cloned values (the clone was a
+// JSON round-trip, and `JSON.stringify` is stable across that round-trip).
+// Only changed kept values are cloned into the patch. Exported for the M13
+// clone-cost/parity gate.
+export function changedCharacterFields(previous: character, current: character): CharacterSnapshot {
   const patch: CharacterSnapshot = {}
-  const previousSnapshot = sanitizeCharacterPatch(
-    cloneJsonValue(previous) as unknown as CharacterSnapshot,
-  )
-  const currentSnapshot = sanitizeCharacterPatch(
-    cloneJsonValue(current) as unknown as CharacterSnapshot,
-  )
-  const keys = new Set([...Object.keys(previousSnapshot), ...Object.keys(currentSnapshot)])
+  const previousRecord = (previous ?? {}) as unknown as Record<string, unknown>
+  const currentRecord = (current ?? {}) as unknown as Record<string, unknown>
+  const keys = new Set([...Object.keys(previousRecord), ...Object.keys(currentRecord)])
   for (const key of keys) {
-    if (snapshotJson(previousSnapshot[key]) !== snapshotJson(currentSnapshot[key])) {
-      patch[key] = cloneJsonValue(currentSnapshot[key])
+    if (CHARACTER_PATCH_EXCLUDED_KEYS.has(key)) continue
+    if (snapshotJson(previousRecord[key]) !== snapshotJson(currentRecord[key])) {
+      // A deleted field clones `undefined` here, exactly like the old shape;
+      // `sanitizeCharacterPatch` drops it before the command is built.
+      patch[key] = cloneJsonValue(currentRecord[key])
     }
   }
   return patch

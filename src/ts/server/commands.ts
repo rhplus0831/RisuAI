@@ -2202,13 +2202,25 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
 ): Promise<ServerCommandResult<T>> {
   if (!canUseServerCommands()) return { status: 'unavailable' }
 
-  const baseRevision = await getServerCommandBaseRevision(input.signal)
-  if (baseRevision === null) {
-    input.rollback?.()
-    return { status: 'error', error: 'Unable to read server command revision' }
-  }
+  let result: ServerCommandResult<T>
+  try {
+    const baseRevision = await getServerCommandBaseRevision(input.signal)
+    if (baseRevision === null) {
+      input.rollback?.()
+      return { status: 'error', error: 'Unable to read server command revision' }
+    }
 
-  const result = await input.command(baseRevision)
+    result = await input.command(baseRevision)
+  } catch (error) {
+    // A command-factory rejection must roll back and surface as an error result.
+    // Without this, the fire-and-forget runners (`void runServerCommand(...)`)
+    // swallowed the rejection and the optimistic write silently diverged from
+    // the server (stability/perf plan, Phase 3 L36).
+    console.error('Server command factory rejected:', error)
+    input.rollback?.()
+    const message = error instanceof Error ? error.message : String(error)
+    return { status: 'error', error: `Command factory rejected: ${message}` }
+  }
 
   if (result.status !== 'ok') {
     input.rollback?.()

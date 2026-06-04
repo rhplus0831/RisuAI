@@ -2,7 +2,7 @@ import { untrack } from 'svelte'
 import { v4 } from 'uuid'
 import type { RisuModule } from '../process/modules'
 import type { character, customscript, triggerscript } from '../storage/database.svelte'
-import { DBState } from '../stores.svelte'
+import { DBState, selectedCharID } from '../stores.svelte'
 import {
   canUseServerCommands,
   replaceCharacterScriptsCommand,
@@ -59,8 +59,31 @@ interface PendingCollectionReplacement {
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
 let suppressRollbackDispatch = false
 
+// Mirror of the selected character id as $state so a `character`-scoped watcher
+// re-runs (and re-subscribes to the newly selected character's scripts) when the
+// user switches characters while the panel stays mounted. A bare
+// `get(selectedCharID)` read would not re-run the effect on a switch, which could
+// drop the first edit made to the newly selected character.
+let selectedCharMirror = $state(-1)
+
+/**
+ * Restrict the watcher's change-detection scan to the mounting panel's rows so a
+ * single script keystroke does not re-stringify every character's and module's
+ * scripts/triggers on every reactive fire (L31).
+ *
+ * - `all` (default): the original whole-DB scan (every character + every module).
+ * - `character`: only the selected character's customscript/triggerscript (the
+ *   CharConfig sidebar).
+ * - `module`: only the open module's regex/trigger (the module `ModuleMenu`).
+ */
+export type ScriptDefinitionWatchScope =
+  | { kind: 'all' }
+  | { kind: 'character' }
+  | { kind: 'module'; moduleId: string }
+
 export interface WatchServerBackedScriptDefinitionsOptions {
   delayMs?: number
+  scope?: ScriptDefinitionWatchScope
 }
 
 export function currentScriptDefinitionStateSnapshot(): ScriptDefinitionStateSnapshot {
@@ -241,18 +264,31 @@ export function watchServerBackedScriptDefinitions(
 ): () => void {
   if (!canUseServerCommands()) return () => {}
   const delayMs = options.delayMs ?? 300
+  const scope: ScriptDefinitionWatchScope = options.scope ?? { kind: 'all' }
   let initialized = false
   let previousSnapshots = new Map<string, string>()
   let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
+  // A character-scoped watcher must re-run when the selected character changes,
+  // so mirror the store into the $state the collector reads. Other scopes do not
+  // read the mirror, so they never re-fire on a selection change.
+  const unsubscribeSelected =
+    scope.kind === 'character'
+      ? selectedCharID.subscribe((value) => {
+          selectedCharMirror = value
+        })
+      : null
+
   const stop = $effect.root(() => {
     $effect(() => {
       const projectionApplyEpoch = getServerProjectionApplyEpoch()
-      ensureAllClientScriptDefinitionIds()
+      // Scoped fires assign missing ids (and register dependencies) only within
+      // the panel's rows; the whole-DB ensure stays on the `all` scope.
+      ensureScopedClientScriptDefinitionIds(scope)
       // The per-key stringify map is the only change-detection input and the only
       // per-fire clone: each value is one row's small scripts/triggers array, not
       // the whole characters+modules graph (which carries hydrated histories).
-      const currentSnapshots = collectScriptDefinitionCollectionSnapshots()
+      const currentSnapshots = collectScriptDefinitionCollectionSnapshots(scope)
 
       if (
         suppressRollbackDispatch ||
@@ -278,7 +314,10 @@ export function watchServerBackedScriptDefinitions(
     })
   })
 
-  return stop
+  return () => {
+    unsubscribeSelected?.()
+    stop()
+  }
 }
 
 function dispatchWatchedReplacement(
@@ -339,29 +378,123 @@ function dispatchWatchedReplacement(
   }
 }
 
-function collectScriptDefinitionCollectionSnapshots(): Map<string, string> {
+/**
+ * Build the change-detection snapshot map for the watcher's scope. Exported for
+ * the L31 clone-cost regression test, which asserts a scoped fire stringifies
+ * only the mounting panel's rows (O(panel scope)) instead of every character's
+ * and module's scripts/triggers (O(all scripts in the DB)). The `all` branch is
+ * the original whole-DB scan and stays byte-for-byte identical.
+ */
+export function collectScriptDefinitionCollectionSnapshots(
+  scope: ScriptDefinitionWatchScope = { kind: 'all' },
+): Map<string, string> {
   const snapshots = new Map<string, string>()
+
+  if (scope.kind === 'character') {
+    // Track only the selected character's rows. Reading the $state mirror (not a
+    // bare get()) re-runs the effect on a character switch, so the first edit to
+    // the newly selected character is never dropped.
+    const character = DBState.db.characters?.[selectedCharMirror]
+    if (character?.chaId) {
+      collectCharacterScriptDefinitionSnapshots(snapshots, character)
+    }
+    return snapshots
+  }
+
+  if (scope.kind === 'module') {
+    const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
+      (candidate) => candidate.id === scope.moduleId,
+    )
+    if (module) collectModuleScriptDefinitionSnapshots(snapshots, module)
+    return snapshots
+  }
+
   for (const character of DBState.db.characters ?? []) {
     if (character.chaId) {
-      snapshots.set(
-        `characterScripts:${character.chaId}`,
-        snapshotJson(character.customscript ?? []),
-      )
-      snapshots.set(
-        `characterTriggers:${character.chaId}`,
-        snapshotJson(character.triggerscript ?? []),
-      )
+      collectCharacterScriptDefinitionSnapshots(snapshots, character)
     }
   }
   for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
-    if (module.id && Array.isArray(module.regex)) {
-      snapshots.set(`moduleScripts:${module.id}`, snapshotJson(module.regex))
-    }
-    if (module.id && Array.isArray(module.trigger)) {
-      snapshots.set(`moduleTriggers:${module.id}`, snapshotJson(module.trigger))
-    }
+    collectModuleScriptDefinitionSnapshots(snapshots, module)
   }
   return snapshots
+}
+
+function collectCharacterScriptDefinitionSnapshots(
+  snapshots: Map<string, string>,
+  character: character,
+): void {
+  snapshots.set(
+    `characterScripts:${character.chaId}`,
+    snapshotJson(character.customscript ?? []),
+  )
+  snapshots.set(
+    `characterTriggers:${character.chaId}`,
+    snapshotJson(character.triggerscript ?? []),
+  )
+}
+
+function collectModuleScriptDefinitionSnapshots(
+  snapshots: Map<string, string>,
+  module: RisuModule,
+): void {
+  if (module.id && Array.isArray(module.regex)) {
+    snapshots.set(`moduleScripts:${module.id}`, snapshotJson(module.regex))
+  }
+  if (module.id && Array.isArray(module.trigger)) {
+    snapshots.set(`moduleTriggers:${module.id}`, snapshotJson(module.trigger))
+  }
+}
+
+// Scoped variant of `ensureAllClientScriptDefinitionIds` for the watcher's
+// per-fire ensure: assign missing ids (and register reactive dependencies) only
+// on the rows the scope tracks. The mutation re-reads its target inside the
+// trusted write scope — a reference captured outside it would still be the
+// read-only projection and throw.
+function ensureScopedClientScriptDefinitionIds(scope: ScriptDefinitionWatchScope): void {
+  if (scope.kind === 'all') {
+    ensureAllClientScriptDefinitionIds()
+    return
+  }
+
+  if (scope.kind === 'character') {
+    const character = DBState.db.characters?.[selectedCharMirror]
+    if (!character) return
+    if (
+      !needsScriptDefinitionIds(character.customscript ?? []) &&
+      !needsTriggerDefinitionIds(character.triggerscript ?? [])
+    ) {
+      return
+    }
+    withTrustedServerProjectionWrite(() => {
+      const target = DBState.db.characters?.[selectedCharMirror]
+      if (!target) return
+      target.customscript = ensureClientScriptDefinitionIds(target.customscript ?? [])
+      target.triggerscript = ensureClientTriggerDefinitionIds(target.triggerscript ?? [])
+    })
+    return
+  }
+
+  const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
+    (candidate) => candidate.id === scope.moduleId,
+  )
+  if (!module) return
+  const needsUpdate =
+    (Array.isArray(module.regex) && needsScriptDefinitionIds(module.regex)) ||
+    (Array.isArray(module.trigger) && needsTriggerDefinitionIds(module.trigger))
+  if (!needsUpdate) return
+  withTrustedServerProjectionWrite(() => {
+    const target = ((DBState.db.modules ?? []) as RisuModule[]).find(
+      (candidate) => candidate.id === scope.moduleId,
+    )
+    if (!target) return
+    if (Array.isArray(target.regex)) {
+      target.regex = ensureClientScriptDefinitionIds(target.regex)
+    }
+    if (Array.isArray(target.trigger)) {
+      target.trigger = ensureClientTriggerDefinitionIds(target.trigger)
+    }
+  })
 }
 
 function queueReplacement(

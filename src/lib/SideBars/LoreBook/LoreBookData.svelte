@@ -25,7 +25,7 @@
   import { DBState } from 'src/ts/stores.svelte'
   import LoreBookList from './LoreBookList.svelte'
   import {
-    currentLorebookStateSnapshot,
+    currentLorebookCollectionScopedSnapshot,
     dispatchReplaceChatLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
@@ -177,14 +177,19 @@
     })
   }
   function toggleLocalActive(check: boolean, book: loreBook) {
-    const previous = currentLorebookStateSnapshot()
+    // The toggle edits only the active chat's localLore, so capture the scoped
+    // rollback for that one collection (L32) — not the whole-DB clone.
+    const chatId = getCurrentChat()?.id
+    const previous = chatId
+      ? currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId })
+      : null
     if (check) {
       activateLocally(book)
     } else {
       deactivateLocally(book)
     }
     const chat = getCurrentChat()
-    if (chat?.id) {
+    if (chat?.id && previous) {
       dispatchReplaceChatLorebooks(chat.id, chat.localLore ?? [], previous)
     }
   }

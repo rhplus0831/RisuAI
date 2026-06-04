@@ -157,7 +157,10 @@ export interface GlobalLorebookStateSnapshot {
 }
 
 export function currentGlobalLorebookStateSnapshot(): GlobalLorebookStateSnapshot {
-  ensureAllClientLorebookIds()
+  // This narrow snapshot restores only `loreBook`/`loreBookPage`, so it only
+  // needs ids on the global list — the whole-DB id-assign (every character's
+  // globalLore, every chat's localLore, every module) was pure overhead (L32).
+  ensureGlobalLorebookListIds()
   return {
     loreBook: cloneJsonValue((DBState.db.loreBook ?? []) as GlobalLorebook[]),
     loreBookPage: DBState.db.loreBookPage ?? 0,
@@ -187,10 +190,7 @@ export function ensureClientLorebookEntryIds(entries: loreBook[]): loreBook[] {
 
 export function ensureAllClientLorebookIds(): void {
   withTrustedServerProjectionWrite(() => {
-    for (const lorebook of (DBState.db.loreBook ?? []) as GlobalLorebook[]) {
-      lorebook.id = typeof lorebook.id === 'string' && lorebook.id.trim() ? lorebook.id : v4()
-      lorebook.data = ensureClientLorebookEntryIds(lorebook.data ?? [])
-    }
+    assignGlobalLorebookListIds()
     for (const character of DBState.db.characters ?? []) {
       // Only touch a HYDRATED character's globalLore — assigning ids to a stubbed
       // one would default its absent globalLore to `[]` and mask the stub.
@@ -205,6 +205,104 @@ export function ensureAllClientLorebookIds(): void {
     for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
       if (Array.isArray(module.lorebook)) {
         module.lorebook = ensureClientLorebookEntryIds(module.lorebook)
+      }
+    }
+  })
+}
+
+// Shared by the whole-DB ensure above and the global-list-only ensure below.
+// Must run inside a trusted write scope (it re-reads `DBState.db` itself).
+function assignGlobalLorebookListIds(): void {
+  for (const lorebook of (DBState.db.loreBook ?? []) as GlobalLorebook[]) {
+    lorebook.id = typeof lorebook.id === 'string' && lorebook.id.trim() ? lorebook.id : v4()
+    lorebook.data = ensureClientLorebookEntryIds(lorebook.data ?? [])
+  }
+}
+
+/** Assign ids on the global lorebook list only (book ids + entry ids). */
+export function ensureGlobalLorebookListIds(): void {
+  withTrustedServerProjectionWrite(() => {
+    assignGlobalLorebookListIds()
+  })
+}
+
+/**
+ * Scoped pre-edit rollback for a DISCRETE editor action on ONE collection (L32):
+ * a global lorebook's entries, a character's globalLore, or a chat's localLore.
+ * Builds the same `scopeKey`+`scopedValue` rollback the watcher uses, so a failed
+ * command restores only the edited collection — without the whole-DB id-assign
+ * write and the characters+modules deep clone the broad
+ * `currentLorebookStateSnapshot` performs. Ids are ensured on the edited
+ * collection only. The broad snapshot stays for the genuine multi-collection
+ * callers (module apply, MCP edits).
+ */
+export type DiscreteLorebookEditScope =
+  | { kind: 'character'; characterId: string }
+  | { kind: 'chat'; chatId: string }
+  | { kind: 'global'; lorebookId: string }
+
+export function currentLorebookCollectionScopedSnapshot(
+  scope: DiscreteLorebookEditScope,
+): LorebookStateSnapshot {
+  ensureScopedClientLorebookIds(scope)
+  switch (scope.kind) {
+    case 'character': {
+      const character = DBState.db.characters?.find(
+        (candidate) => candidate.chaId === scope.characterId,
+      )
+      return scopedLorebookStateSnapshot(
+        `character:${scope.characterId}`,
+        snapshotJson(character?.globalLore ?? []),
+      )
+    }
+    case 'chat': {
+      const chat = findChat(scope.chatId)
+      return scopedLorebookStateSnapshot(
+        `chat:${scope.chatId}`,
+        snapshotJson(chat?.localLore ?? []),
+      )
+    }
+    case 'global': {
+      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+        (candidate) => candidate.id === scope.lorebookId,
+      )
+      return scopedLorebookStateSnapshot(
+        `global:${scope.lorebookId}`,
+        snapshotJson(lorebook?.data ?? []),
+      )
+    }
+  }
+}
+
+// Assign missing ids on the edited collection only. The target is re-read inside
+// the trusted write scope — a reference captured outside it would still be the
+// read-only projection and throw on assignment.
+function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
+  withTrustedServerProjectionWrite(() => {
+    switch (scope.kind) {
+      case 'character': {
+        const character = DBState.db.characters?.find(
+          (candidate) => candidate.chaId === scope.characterId,
+        )
+        // Mirror the whole-DB ensure's no-data-loss guard: only touch a HYDRATED
+        // character's globalLore — assigning ids to a stubbed one would default
+        // its absent globalLore to `[]` and mask the stub.
+        if (character?.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
+          character.globalLore = ensureClientLorebookEntryIds(character.globalLore ?? [])
+        }
+        return
+      }
+      case 'chat': {
+        const chat = findChat(scope.chatId)
+        if (chat) chat.localLore = ensureClientLorebookEntryIds(chat.localLore ?? [])
+        return
+      }
+      case 'global': {
+        const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+          (candidate) => candidate.id === scope.lorebookId,
+        )
+        if (lorebook) lorebook.data = ensureClientLorebookEntryIds(lorebook.data ?? [])
+        return
       }
     }
   })

@@ -163,6 +163,54 @@ const NARROWED_HOT_PATHS: GateEntry[] = [
     cloneCostGates: ['ts/globalApi.changeChatTo.test.ts', 'ts/chatCommands.test.ts'],
     rollbackGates: ['ts/chatCommands.test.ts'],
   },
+  // Landed by the stability/performance plan Phase 3 (client clone narrowing).
+  // `phase` below still refers to THIS registry's narrowing-plan phase column;
+  // these entries reuse the plan phase that landed the underlying helper.
+  {
+    area: 'Send-context single-row rollback (setupSendChatContext) — stability plan M14',
+    phase: 2,
+    severity: 'medium',
+    kind: 'snapshot',
+    helper: 'setupSendChatContext',
+    cloneCostGates: ['ts/process/__tests__/sendChatContext.test.ts'],
+    rollbackGates: ['ts/process/__tests__/sendChatContext.test.ts'],
+  },
+  {
+    area: 'Chat-scoped module toggle (toggleSelectedChatModule) — stability plan L34',
+    phase: 2,
+    severity: 'low',
+    kind: 'snapshot',
+    helper: 'toggleSelectedChatModule',
+    cloneCostGates: ['ts/moduleCommands.test.ts'],
+    rollbackGates: ['ts/moduleCommands.test.ts'],
+  },
+  {
+    area: 'MCP setCharacterInfo single-row rollback — stability plan L35',
+    phase: 2,
+    severity: 'low',
+    kind: 'snapshot',
+    helper: 'dispatchUpdateCharacterScoped',
+    cloneCostGates: ['ts/characterCommands.test.ts'],
+    rollbackGates: ['ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts'],
+  },
+  {
+    area: 'setCurrentChat chat-scoped snapshot — stability plan U4',
+    phase: 2,
+    severity: 'low',
+    kind: 'snapshot',
+    helper: 'setCurrentChat',
+    cloneCostGates: ['ts/chatCommands.test.ts'],
+    rollbackGates: ['ts/chatCommands.test.ts'],
+  },
+  {
+    area: 'Modules $effect dependency read (readModuleUpdateSignals) — stability plan L33',
+    phase: 2,
+    severity: 'low',
+    kind: 'guard',
+    helper: 'readModuleUpdateSignals',
+    cloneCostGates: ['ts/stores.modulesEffect.svelte.test.ts'],
+    rollbackGates: [],
+  },
 ]
 
 // Paths that intentionally keep a broad snapshot. Recorded with a reason so
@@ -174,9 +222,9 @@ const INTENTIONALLY_BROAD: { area: string; reason: string }[] = [
       'Genuine restructures must restore the whole collection; the plan reserves the full-array snapshot for them and only stops hot paths from reaching it.',
   },
   {
-    area: 'LoreBook sidebar / MCP lorebook callers',
+    area: 'MCP lorebook / module-apply lorebook callers',
     reason:
-      'Lower-frequency deferred callers still use the broad lorebook snapshot (Phase 2 deferred these; not a live freeze).',
+      'Lower-frequency callers (MCP character/module lorebook edits, applyModule) still use the broad lorebook snapshot; the LoreBook sidebar editors were scoped by the stability plan L32.',
   },
   {
     area: 'PersonaSettings whole-personas snapshot',

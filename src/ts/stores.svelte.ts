@@ -173,6 +173,33 @@ ReloadGUIPointer.subscribe(() => {
   resetScriptCache()
 })
 
+// The modules `$effect` below used to register its dependency on the modules
+// array via `$state.snapshot(DBState.db.modules)` — a deep clone of every
+// module (lorebook entries, scripts, and triggers included) on every fire,
+// discarded immediately (L33). `moduleUpdate()` only consumes each module's
+// identity plus its `hideIcon` / `backgroundEmbedding` fields, so reading
+// exactly those (and the array length, for adds/removes) registers every
+// signal the effect needs with zero cloning. Exported for the L33 regression
+// test, which proves an unrelated deep module edit no longer re-runs the
+// effect while the consumed fields still do.
+export interface ModuleUpdateSignalSource {
+  id?: string
+  hideIcon?: boolean
+  backgroundEmbedding?: string
+}
+
+export function readModuleUpdateSignals(
+  modules: readonly ModuleUpdateSignalSource[] | undefined,
+): void {
+  if (!modules) return
+  void modules.length
+  for (const module of modules) {
+    void module?.id
+    void module?.hideIcon
+    void module?.backgroundEmbedding
+  }
+}
+
 $effect.root(() => {
   selectedCharID.subscribe((v) => {
     selIdState.selId = v
@@ -192,7 +219,7 @@ $effect.root(() => {
     }
   })
   $effect(() => {
-    $state.snapshot(DBState.db.modules)
+    readModuleUpdateSignals(DBState?.db?.modules)
     DBState?.db?.enabledModules
     DBState?.db?.enabledModules?.length
     DBState?.db?.characters?.[selIdState.selId]?.chats?.[

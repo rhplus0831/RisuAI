@@ -291,19 +291,29 @@ export function runMessageCommand<T extends Record<string, unknown>>(
 // one fails (including conflict), the rollback is invoked once and the rest
 // are skipped. Without this, sibling `runServerCommand` calls all read the
 // same cached `baseRevision` and the later ones 409 after the first succeeds.
+// A thrown/rejected step is treated as a failure too (L36): it is surfaced and
+// rolled back instead of escaping the fire-and-forget `void` as an unhandled
+// rejection that left the optimistic write silently diverged.
 export function runOptimisticCommandSequence(
   commands: Array<(baseRevision: number) => Promise<ServerCommandResult>>,
   rollback: () => void,
 ): void {
   if (!canUseServerCommands() || commands.length === 0) return
   void (async () => {
-    for (const command of commands) {
-      const result = await runServerCommand({ command })
-      if (result.status !== 'ok') {
-        rollback()
-        return
+    let failed = false
+    try {
+      for (const command of commands) {
+        const result = await runServerCommand({ command })
+        if (result.status !== 'ok') {
+          failed = true
+          break
+        }
       }
+    } catch (error) {
+      console.error('Optimistic command sequence rejected:', error)
+      failed = true
     }
+    if (failed) rollback()
   })()
 }
 

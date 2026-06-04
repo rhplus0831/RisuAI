@@ -35,7 +35,7 @@ import {
   currentCharacterRowSnapshot,
   dispatchCompatibleCharacterUpdateScoped,
 } from '../characterCommands'
-import { currentChatStateSnapshot, dispatchCompatibleChatUpdate } from '../chatCommands'
+import { currentChatScopedSnapshot, dispatchCompatibleChatUpdateScoped } from '../chatCommands'
 import {
   createReadOnlyServerProjection,
   isServerProjectionWriteGuardEnabled,
@@ -1015,13 +1015,16 @@ export function getCurrentChat() {
 
 export function setCurrentChat(chat: Chat) {
   withTrustedServerProjectionWrite(() => {
-    const previousState = canUseServerCommands() ? currentChatStateSnapshot() : null
+    // Replacing the active chat row only mutates that one chat, so the scoped
+    // snapshot's single-chat clone serves as both the diff baseline and the
+    // rollback — never a deep clone of the whole characters array (U4).
+    const previousState = canUseServerCommands() ? currentChatScopedSnapshot() : null
     const char = getCurrentCharacter()
-    const previousChat = previousState ? $state.snapshot(char?.chats?.[char.chatPage]) : undefined
+    const previousChat = previousState?.chat
     char.chats[char.chatPage] = chat
     setCurrentCharacter(char, { dispatchServerCommand: false })
     if (previousState) {
-      dispatchCompatibleChatUpdate(previousChat, chat, previousState)
+      dispatchCompatibleChatUpdateScoped(previousChat, chat, previousState)
     }
   })
 }
