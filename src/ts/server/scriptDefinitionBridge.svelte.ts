@@ -50,7 +50,10 @@ interface PendingCollectionReplacement {
   key: string
   previous: ScriptDefinitionRollback
   timer: ReturnType<typeof setTimeout> | null
-  command: () => Promise<ServerCommandResult<Record<string, unknown>>>
+  // The command receives the coalesced rollback baseline at fire time rather than
+  // closing over a per-dispatch value, so debounced same-key edits roll back to
+  // the first baseline (see `queueReplacement`), not the intermediate one.
+  command: (rollback: ScriptDefinitionRollback) => Promise<ServerCommandResult<Record<string, unknown>>>
 }
 
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
@@ -144,7 +147,7 @@ export function dispatchReplaceCharacterScripts(
   queueReplacement(
     `characterScripts:${characterId}`,
     previous,
-    () =>
+    (rollback) =>
       runServerCommand({
         command: (baseRevision) =>
           replaceCharacterScriptsCommand({
@@ -152,7 +155,7 @@ export function dispatchReplaceCharacterScripts(
             characterId,
             scripts: cloneJsonValue(scripts) as ScriptDefinitionSnapshot[],
           }),
-        rollback: () => rollbackServerBackedScriptDefinitions(previous),
+        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
       }),
     delayMs,
   )
@@ -169,7 +172,7 @@ export function dispatchReplaceCharacterTriggers(
   queueReplacement(
     `characterTriggers:${characterId}`,
     previous,
-    () =>
+    (rollback) =>
       runServerCommand({
         command: (baseRevision) =>
           replaceCharacterTriggersCommand({
@@ -177,7 +180,7 @@ export function dispatchReplaceCharacterTriggers(
             characterId,
             triggers: cloneJsonValue(triggers) as TriggerDefinitionSnapshot[],
           }),
-        rollback: () => rollbackServerBackedScriptDefinitions(previous),
+        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
       }),
     delayMs,
   )
@@ -194,7 +197,7 @@ export function dispatchReplaceModuleScripts(
   queueReplacement(
     `moduleScripts:${moduleId}`,
     previous,
-    () =>
+    (rollback) =>
       runServerCommand({
         command: (baseRevision) =>
           replaceModuleScriptsCommand({
@@ -202,7 +205,7 @@ export function dispatchReplaceModuleScripts(
             moduleId,
             scripts: cloneJsonValue(scripts) as ScriptDefinitionSnapshot[],
           }),
-        rollback: () => rollbackServerBackedScriptDefinitions(previous),
+        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
       }),
     delayMs,
   )
@@ -219,7 +222,7 @@ export function dispatchReplaceModuleTriggers(
   queueReplacement(
     `moduleTriggers:${moduleId}`,
     previous,
-    () =>
+    (rollback) =>
       runServerCommand({
         command: (baseRevision) =>
           replaceModuleTriggersCommand({
@@ -227,7 +230,7 @@ export function dispatchReplaceModuleTriggers(
             moduleId,
             triggers: cloneJsonValue(triggers) as TriggerDefinitionSnapshot[],
           }),
-        rollback: () => rollbackServerBackedScriptDefinitions(previous),
+        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
       }),
     delayMs,
   )
@@ -364,12 +367,15 @@ function collectScriptDefinitionCollectionSnapshots(): Map<string, string> {
 function queueReplacement(
   key: string,
   previous: ScriptDefinitionRollback,
-  command: () => Promise<ServerCommandResult<Record<string, unknown>>>,
+  command: (rollback: ScriptDefinitionRollback) => Promise<ServerCommandResult<Record<string, unknown>>>,
   delay: number,
 ): void {
   const existing = pendingReplacements.get(key)
   if (existing?.timer) clearTimeout(existing.timer)
 
+  // Coalesced same-key edits keep the first dispatch's baseline, so a failed
+  // final command rolls back to the pre-first-edit value rather than an
+  // intermediate edit that was never durably committed.
   const pending: PendingCollectionReplacement = {
     key,
     previous: existing?.previous ?? previous,
@@ -378,7 +384,7 @@ function queueReplacement(
   }
   pending.timer = setTimeout(() => {
     pendingReplacements.delete(key)
-    void pending.command()
+    void pending.command(pending.previous)
   }, delay)
   pendingReplacements.set(key, pending)
 }

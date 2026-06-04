@@ -352,3 +352,69 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     stop()
   })
 })
+
+describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 4)', () => {
+  it('rolls a coalesced character-script edit back to the pre-first-edit baseline', async () => {
+    setupScriptDefinitions()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    // Edit A then edit B for the same key, both inside the debounce window so the
+    // two dispatches coalesce into a single pending command.
+    DBState.db.characters[0].customscript = [script('script-1', 'edit-A')]
+    flushSync()
+    DBState.db.characters[0].customscript = [script('script-1', 'edit-B')]
+    flushSync()
+
+    // No command fires until the debounce elapses: only the coalesced one runs.
+    expect(recorded.commands).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    // The final command sends edit-B, the latest content.
+    expect(recorded.commands.map((entry) => entry.built)).toEqual([
+      {
+        kind: 'replaceCharacterScripts',
+        baseRevision: 1,
+        characterId: 'char-1',
+        scripts: [script('script-1', 'edit-B')],
+      },
+    ])
+
+    // On failure, rollback must restore the pre-first-edit baseline ('initial'),
+    // not the intermediate 'edit-A' that was never durably committed.
+    recorded.commands[0].rollback?.()
+    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'initial')])
+    stop()
+  })
+
+  it('rolls a coalesced module-trigger edit back to the pre-first-edit baseline', async () => {
+    setupScriptDefinitions()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'edit-A')]
+    flushSync()
+    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'edit-B')]
+    flushSync()
+
+    expect(recorded.commands).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    expect(recorded.commands.map((entry) => entry.built)).toEqual([
+      {
+        kind: 'replaceModuleTriggers',
+        baseRevision: 1,
+        moduleId: 'module-1',
+        triggers: [trigger('module-trigger-1', 'edit-B')],
+      },
+    ])
+
+    recorded.commands[0].rollback?.()
+    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
+    stop()
+  })
+})
