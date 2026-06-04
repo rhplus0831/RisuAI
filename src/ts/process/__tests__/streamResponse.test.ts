@@ -167,7 +167,10 @@ describe('consumeStreamResponse', () => {
     const out = await promise
     expect(out.result).toBe('abc')
     expect(DBState.db.characters[0].chats[0].message[1].data).toBe('abc')
-    expect(processScriptFullSpy).toHaveBeenCalledTimes(3)
+    // H3 render coalescing: the microtask-paced chunks share one full-fidelity
+    // apply at settle time instead of one editoutput parse per chunk.
+    expect(processScriptFullSpy).toHaveBeenCalledTimes(1)
+    expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'abc', 'editoutput', 1)
   })
 
   it('continue mode: decrements msgIndex, prepends prefix from prior message', async () => {
@@ -292,5 +295,96 @@ describe('consumeStreamResponse', () => {
     ctrl.abort()
     // No throw, no late mutation: the listener was removed in finally.
     expect(DBState.db.characters[0].chats[0].message[1].data).toBe('done')
+  })
+})
+
+// Stability/performance plan, Phase 1 H3: token-driven display writes are
+// coalesced (at most one parse-triggering apply per animation frame, plus the
+// final settle), so an N-token stream no longer costs N whole-message parses.
+describe('H3 streaming render coalescing', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(1000))
+    processScriptFullSpy.mockReset()
+    processScriptFullSpy.mockImplementation(async (_c: unknown, data: string) => ({
+      data,
+      emoChanged: false,
+    }))
+  })
+
+  it('bounds parse work for an N-token stream: applies are O(flushes), not O(N)', async () => {
+    const currentChar = seed()
+    DBState.db.characters[0].reloadKeys = 0
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+    const tokenCount = 200
+    let accumulated = ''
+    for (let i = 0; i < tokenCount; i += 1) {
+      accumulated += `tok${i} `
+      push({ msgKey: accumulated })
+    }
+    close()
+    const out = await promise
+
+    // Final text identical to the per-chunk behavior: newest payload, reformat
+    // (trim) + editoutput applied once at full fidelity.
+    expect(out.result).toBe(accumulated)
+    expect(DBState.db.characters[0].chats[0].message[1].data).toBe(accumulated.trim())
+    // Old behavior: 200 editoutput parses + 200 display writes. Coalesced: the
+    // microtask-paced chunks drain before any animation frame elapses, so the
+    // settle apply is the only one (bound generously to tolerate one frame).
+    expect(processScriptFullSpy.mock.calls.length).toBeLessThanOrEqual(2)
+    // reloadKeys bumps == display reparses: setup (+1) + applies (<=2) +
+    // finally (+1) — bounded, instead of 202.
+    expect(DBState.db.characters[0].reloadKeys).toBeLessThanOrEqual(4)
+  })
+
+  it('flushes on the frame scheduler so the display progresses mid-stream', async () => {
+    const currentChar = seed()
+    const frames: (() => void)[] = []
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream), currentChar, ctrl.signal, {
+        renderFlushScheduler: (flush) => {
+          frames.push(flush)
+        },
+      }),
+    )
+
+    // First chunk arrives: one frame flush is scheduled; running it shows the
+    // partial text before the stream is anywhere near done.
+    push({ msgKey: 'Hello' })
+    await vi.waitFor(() => expect(frames.length).toBe(1))
+    frames.shift()!()
+    await vi.waitFor(() =>
+      expect(DBState.db.characters[0].chats[0].message[1].data).toBe('Hello'),
+    )
+
+    // Later chunks re-arm at most one further frame; without running it, the
+    // terminal settle still applies the newest payload at full fidelity.
+    push({ msgKey: 'Hello wor' })
+    push({ msgKey: 'Hello world' })
+    close()
+    const out = await promise
+    expect(out.result).toBe('Hello world')
+    expect(DBState.db.characters[0].chats[0].message[1].data).toBe('Hello world')
+    // One frame apply + one settle apply.
+    expect(processScriptFullSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('a mid-stream apply failure propagates and still runs the finally cleanup', async () => {
+    const currentChar = seed()
+    processScriptFullSpy.mockRejectedValue(new Error('script-broke'))
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+    push({ msgKey: 'boom' })
+    close()
+    await expect(promise).rejects.toThrow('script-broke')
+    expect(DBState.db.characters[0].chats[0].isStreaming).toBe(false)
+    // The apply never succeeded, so the message slot keeps its initial value.
+    expect(DBState.db.characters[0].chats[0].message[1].data).toBe('')
   })
 })

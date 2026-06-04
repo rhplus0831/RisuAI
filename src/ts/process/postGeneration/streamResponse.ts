@@ -8,6 +8,7 @@ import { trimUntilPunctuation } from '../../util'
 import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
 import type { StreamResponseChunk, requestDataResponse } from '../request/request'
 import { processScriptFull } from '../scripts'
+import { createStreamRenderCoalescer, type RenderFlushScheduler } from './streamCoalescer'
 
 type StreamingResponse = Extract<requestDataResponse, { type: 'streaming' }>
 
@@ -29,6 +30,11 @@ export interface ConsumeStreamResponseOptions {
    * streamed reformatted text for live display.
    */
   skipEditOutput?: boolean
+  /**
+   * Test seam: overrides the animation-frame scheduler the render coalescer
+   * uses. Production callers omit it (`defaultRenderFlushScheduler`).
+   */
+  renderFlushScheduler?: RenderFlushScheduler
 }
 
 export interface ConsumeStreamResponseResult {
@@ -84,6 +90,33 @@ export async function consumeStreamResponse(
   let streamAborted: boolean = abortSignal.aborted
   let result = ''
   let emoChanged = false
+  // H3 (stability/perf plan): every `.data` write + `reloadKeys` bump re-runs
+  // `risuChatParser` + `ParseMarkdown` over the whole growing message, so apply
+  // the newest accumulated chunk at most once per animation frame instead of
+  // once per token. `settle()` below guarantees the final full-fidelity apply
+  // (including `editoutput`) before this function returns.
+  const applyLatestChunk = async (): Promise<void> => {
+    let nextData: string
+    if (skipEditOutput) {
+      // The server owns `editoutput`; write the reformatted stream for display
+      // and defer final text to the terminal `done` frame.
+      nextData = reformatContent(prefix + result)
+    } else {
+      const result2 = await processScriptFull(
+        nowChatroom,
+        reformatContent(prefix + result),
+        'editoutput',
+        msgIndex,
+      )
+      nextData = result2.data
+      emoChanged = result2.emoChanged
+    }
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data = nextData
+      DBState.db.characters[selectedChar].reloadKeys += 1
+    })
+  }
+  const renderCoalescer = createStreamRenderCoalescer(applyLatestChunk, opts.renderFlushScheduler)
   const abortReader = () => {
     streamAborted = true
     void reader.cancel().catch(() => {})
@@ -111,32 +144,23 @@ export async function consumeStreamResponse(
         if (DBState.db.removeIncompleteResponse) {
           result = trimUntilPunctuation(result)
         }
-        let nextData: string
-        if (skipEditOutput) {
-          // The server owns `editoutput`; write the reformatted stream for display
-          // and defer final text to the terminal `done` frame.
-          nextData = reformatContent(prefix + result)
-        } else {
-          const result2 = await processScriptFull(
-            nowChatroom,
-            reformatContent(prefix + result),
-            'editoutput',
-            msgIndex,
-          )
-          nextData = result2.data
-          emoChanged = result2.emoChanged
+        renderCoalescer.notify()
+        if (renderCoalescer.failed) {
+          // An apply rejected (script error); stop reading and surface it via
+          // `settle()` below, like the old per-chunk await failed fast.
+          break
         }
-        withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data = nextData
-          DBState.db.characters[selectedChar].reloadKeys += 1
-        })
       }
       if (readed.done) {
         break
       }
     }
+    await renderCoalescer.settle()
   } finally {
     abortSignal.removeEventListener('abort', abortReader)
+    // When the loop threw (reader error), still apply the last received chunk;
+    // swallow apply errors here so they cannot mask the propagating one.
+    await renderCoalescer.settle().catch(() => {})
     withTrustedServerProjectionWrite(() => {
       DBState.db.characters[selectedChar].chats[selectedChat].isStreaming = false
       DBState.db.characters[selectedChar].reloadKeys += 1
