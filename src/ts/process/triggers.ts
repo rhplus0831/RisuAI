@@ -1213,7 +1213,6 @@ export async function runTrigger(
   },
 ) {
   arg.recursiveCount ??= 0
-  char = arg.displayMode ? char : safeStructuredClone(char)
   let varChanged = false
   let stopSending = arg.stopSending ?? false
   const CharacterlowLevelAccess = char.lowLevelAccess ?? false
@@ -1224,17 +1223,23 @@ export async function runTrigger(
     historyend: '',
     promptend: '',
   }
-  const triggers = char.triggerscript
-    .map((v) => {
-      v.lowLevelAccess = CharacterlowLevelAccess
-      return v
-    })
-    .concat(getModuleTriggers())
+  // Resolve the effective trigger list BEFORE any clone so a zero-trigger
+  // character returns early without paying a single clone. Each character trigger
+  // carries the character-level `lowLevelAccess`: the display path keeps its
+  // historical in-place write on the caller's definitions (it never clones nor
+  // installs the character), while the non-display path maps to fresh objects so
+  // the (now shallow) working character is not mutated in place.
+  const charTriggers = arg.displayMode
+    ? char.triggerscript.map((v) => {
+        v.lowLevelAccess = CharacterlowLevelAccess
+        return v
+      })
+    : char.triggerscript.map((v) => ({ ...v, lowLevelAccess: CharacterlowLevelAccess }))
+  const triggers = charTriggers.concat(getModuleTriggers())
   const db = getDatabase()
   const defaultVariables = parseKeyValue(char.defaultVariables).concat(
     parseKeyValue(db.templateDefaultVariables),
   )
-  let chat = arg.displayMode ? arg.chat : safeStructuredClone(arg.chat ?? char.chats[char.chatPage])
 
   const previousTriggerId = get(CurrentTriggerIdStore)
   const shouldSetTriggerId = !arg.displayMode && mode !== 'display'
@@ -1248,6 +1253,26 @@ export async function runTrigger(
     }
     return null
   }
+
+  // Trigger-bearing path. Deep-clone only the active chat (the single heavy clone
+  // this pass needs). The working character stays a shallow copy carrying the
+  // mapped trigger list and is lazily deep-cloned (`materializeChar`) only when a
+  // data effect must install it back into the projection (character desc /
+  // author-note / lorebook). The former unconditional `safeStructuredClone(char)`
+  // deep-cloned every OTHER chat's full message history on every send even though
+  // most triggers never touch durable character state.
+  let charMaterialized = arg.displayMode === true
+  const materializeChar = (): character => {
+    if (!charMaterialized) {
+      char = safeStructuredClone(char)
+      charMaterialized = true
+    }
+    return char
+  }
+  if (!arg.displayMode) {
+    char = { ...char, triggerscript: charTriggers } as character
+  }
+  let chat = arg.displayMode ? arg.chat : safeStructuredClone(arg.chat ?? char.chats[char.chatPage])
 
   let tempVars: Record<string, string> = arg.tempVars ?? {}
 
@@ -2221,6 +2246,7 @@ export async function runTrigger(
           break
         }
         case 'v2ModifyLorebook': {
+          materializeChar()
           char.globalLore = char.globalLore ?? []
           const target =
             effect.targetType === 'value'
@@ -2277,6 +2303,7 @@ export async function runTrigger(
           break
         }
         case 'v2SetLorebookActivation': {
+          materializeChar()
           char.globalLore = char.globalLore ?? []
           let index =
             effect.indexType === 'value'
@@ -2427,6 +2454,7 @@ export async function runTrigger(
           break
         }
         case 'v2SetCharacterDesc': {
+          materializeChar()
           let value =
             effect.valueType === 'value'
               ? risuChatParser(effect.value, { chara: char })
@@ -2463,6 +2491,7 @@ export async function runTrigger(
           break
         }
         case 'v2SetReplaceGlobalNote': {
+          materializeChar()
           const value =
             effect.valueType === 'value'
               ? risuChatParser(effect.value, { chara: char })
@@ -2925,6 +2954,7 @@ export async function runTrigger(
           break
         }
         case 'v2CreateLorebook': {
+          materializeChar()
           char.globalLore = char.globalLore ?? []
           const name =
             effect.nameType === 'value'
@@ -2959,6 +2989,7 @@ export async function runTrigger(
           break
         }
         case 'v2ModifyLorebookByIndex': {
+          materializeChar()
           char.globalLore = char.globalLore ?? []
           let index =
             effect.indexType === 'value'
@@ -3015,6 +3046,7 @@ export async function runTrigger(
           break
         }
         case 'v2DeleteLorebookByIndex': {
+          materializeChar()
           char.globalLore = char.globalLore ?? []
           let index =
             effect.indexType === 'value'
@@ -3045,6 +3077,7 @@ export async function runTrigger(
           break
         }
         case 'v2SetLorebookAlwaysActive': {
+          materializeChar()
           char.globalLore = char.globalLore ?? []
           let index =
             effect.indexType === 'value'
