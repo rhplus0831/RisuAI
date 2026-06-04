@@ -1,0 +1,405 @@
+import { describe, expect, it } from 'vitest'
+import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+
+/**
+ * Fix-completeness gate (Phase 8 scaffold, seeded in Phase 0).
+ *
+ * The stability/performance remediation plan (`docs/plan/`) schedules every
+ * confirmed audit finding and requires each landed fix to keep a regression
+ * test. This file is the single budget surface for that requirement, modeled
+ * on the landed `cloneCostGateCompleteness.test.ts`:
+ *
+ * - `SCHEDULED_FIXES` registers every scheduled finding id with its phase and
+ *   status. Phase 0 seeds them all as `PLANNED`; the phase that fixes a
+ *   finding flips it to `DONE` with a real `testPath` (+ `testName`), which
+ *   may point into either suite — server load-count gates are referenced by
+ *   path so this one client-side test asserts their existence.
+ * - `INTENTIONALLY_GATED` and `NO_ACTION` record the explicitly excluded ids
+ *   with reasons, so the registry universe equals the audit universe.
+ * - The self-checks parse the finding universe out of
+ *   `docs/plan/audit-stability-and-performance.md` and the routing out of
+ *   `docs/plan/active-risk-analysis.md`: a new audit id without a registry
+ *   entry, a doc/registry phase or status mismatch, a double-classified id,
+ *   or a `DONE` id whose test is missing/renamed all fail here.
+ */
+
+// `vitest run` executes from the repo root (the package.json directory), so
+// docs and both test trees hang off `process.cwd()`. (import.meta.url is not a
+// file: URL under the client vite test transform, so it cannot anchor reads.)
+const ROOT = process.cwd()
+const AUDIT_DOC = path.join(ROOT, 'docs/plan/audit-stability-and-performance.md')
+const RISK_DOC = path.join(ROOT, 'docs/plan/active-risk-analysis.md')
+
+type GateStatus = 'PLANNED' | 'DONE'
+
+interface ScheduledFix {
+  /** Audit finding id (`H*`, `M*`, `L*`, `U*`). */
+  id: string
+  /** Plan phase that owns the fix (1-7). */
+  phase: 1 | 2 | 3 | 4 | 5 | 6 | 7
+  /** Short target-fix label (mirrors active-risk-analysis.md). */
+  fix: string
+  status: GateStatus
+  /** Repo-root-relative regression test path; required once `DONE`. */
+  testPath?: string
+  /** A string the registered test must contain (helper or test title). */
+  testName?: string
+}
+
+const SCHEDULED_FIXES: ScheduledFix[] = [
+  // High (Phase 1)
+  { id: 'H1', phase: 1, fix: 'loadChatHydration guard on message.length > 0', status: 'PLANNED' },
+  { id: 'H2', phase: 1, fix: 'Scalar ChatSelectionSnapshot for changeChatTo', status: 'PLANNED' },
+  { id: 'H3', phase: 1, fix: 'Coalesce token-driven renders; final flush on done', status: 'PLANNED' },
+  // Medium
+  { id: 'M1', phase: 2, fix: 'Scoped target-chat message/hypa load', status: 'PLANNED' },
+  { id: 'M2', phase: 7, fix: 'Hoist module/script/RegExp work once per assembly', status: 'PLANNED' },
+  { id: 'M3', phase: 2, fix: 'Field-scoped command reads or per-request load memo', status: 'PLANNED' },
+  { id: 'M4', phase: 2, fix: 'Single-row loadSingleCharacterRow; in-place mask where owned', status: 'PLANNED' },
+  { id: 'M5', phase: 2, fix: 'Defer jsonPayloadBytes until metrics are enabled', status: 'PLANNED' },
+  { id: 'M6', phase: 4, fix: 'Abort proxy /fetch upstream on close; timeout backstop', status: 'PLANNED' },
+  { id: 'M7', phase: 6, fix: 'Cap embed batches; split contextual requests by token size', status: 'PLANNED' },
+  { id: 'M8', phase: 4, fix: 'Non-durable provider deadline and body cap', status: 'PLANNED' },
+  { id: 'M9', phase: 5, fix: 'Streaming bounded inflate per envelope/block', status: 'PLANNED' },
+  { id: 'M10', phase: 5, fix: 'Token-only asset scan; defer import asset report', status: 'PLANNED' },
+  { id: 'M11', phase: 5, fix: 'Settle bundle-export drain wait on close/error', status: 'PLANNED' },
+  { id: 'M12', phase: 3, fix: 'Drop redundant setDatabase(db) in /setvar and /addvar', status: 'PLANNED' },
+  { id: 'M13', phase: 3, fix: 'Clone only kept character fields', status: 'PLANNED' },
+  { id: 'M14', phase: 3, fix: 'Use currentCharacterRowSnapshot in send context', status: 'PLANNED' },
+  // Low (scheduled; L4/L7/L26 are gated below)
+  { id: 'L1', phase: 2, fix: 'Memoize getActiveModules per assembly', status: 'PLANNED' },
+  { id: 'L2', phase: 2, fix: 'Hoist invariant run-var expansion', status: 'PLANNED' },
+  { id: 'L3', phase: 7, fix: 'Hoist/compile lorebook keyword regexes', status: 'PLANNED' },
+  { id: 'L5', phase: 2, fix: 'Skip asset scan when mutation does not read assets', status: 'PLANNED' },
+  { id: 'L6', phase: 2, fix: 'Narrow message-only character/chat lookup', status: 'PLANNED' },
+  { id: 'L8', phase: 7, fix: 'Replace OFFSET 999 prune walk with bounded delete', status: 'PLANNED' },
+  { id: 'L9', phase: 7, fix: 'Drop redundant chats DELETE', status: 'PLANNED' },
+  { id: 'L10', phase: 2, fix: 'Load command-event history only when replay is requested', status: 'PLANNED' },
+  { id: 'L11', phase: 5, fix: 'cleanedUp guard before memoryEvents.subscribe', status: 'PLANNED' },
+  { id: 'L12', phase: 5, fix: 'Close proxy WS viewer on already-done jobs', status: 'PLANNED' },
+  { id: 'L13', phase: 5, fix: 'Guard detached runners and cancel-persist on close', status: 'PLANNED' },
+  { id: 'L14', phase: 5, fix: 'Heartbeat durable SSE viewer during long assembly', status: 'PLANNED' },
+  { id: 'L15', phase: 5, fix: 'Bound no-viewer proxy-job replay/buffer', status: 'PLANNED' },
+  { id: 'L16', phase: 6, fix: 'Skip empty orphan-cleanup write txn', status: 'PLANNED' },
+  { id: 'L17', phase: 6, fix: 'Bound per-chat memory batches for fairness', status: 'PLANNED' },
+  { id: 'L18', phase: 6, fix: 'Reuse the Phase 2 scoped/memoized loader in memory batches', status: 'PLANNED' },
+  { id: 'L19', phase: 6, fix: 'Aggregate Lua exec budget across hook phases', status: 'PLANNED' },
+  { id: 'L20', phase: 4, fix: 'Thread request AbortSignal into the Lua runtime', status: 'PLANNED' },
+  { id: 'L21', phase: 6, fix: 'Reuse engine safely or cache compiled prelude', status: 'PLANNED' },
+  { id: 'L22', phase: 4, fix: 'Cap streaming-provider SSE accumulation buffer', status: 'PLANNED' },
+  { id: 'L23', phase: 4, fix: 'Block embedded-private IPv6 forms', status: 'PLANNED' },
+  { id: 'L24', phase: 4, fix: 'Reject prototype keys in setObjectValue', status: 'PLANNED' },
+  { id: 'L25', phase: 4, fix: 'Count Lua egress only after URL validation', status: 'PLANNED' },
+  { id: 'L27', phase: 5, fix: 'Guard backup manifest JSON.parse', status: 'PLANNED' },
+  { id: 'L28', phase: 5, fix: 'Make legacy restore re-import transactional', status: 'PLANNED' },
+  { id: 'L29', phase: 5, fix: 'Persist writer-session origin on command events', status: 'PLANNED' },
+  { id: 'L30', phase: 5, fix: 'Re-arm reattach after completion', status: 'PLANNED' },
+  { id: 'L31', phase: 3, fix: 'Scope/throttle script-definition watcher scans', status: 'PLANNED' },
+  { id: 'L32', phase: 3, fix: 'Scope lorebook-editor clone/id-assign', status: 'PLANNED' },
+  { id: 'L33', phase: 3, fix: 'Avoid modules-array deep clone in $effect', status: 'PLANNED' },
+  { id: 'L34', phase: 3, fix: 'Chat-scoped snapshot in toggleSelectedChatModule', status: 'PLANNED' },
+  { id: 'L35', phase: 3, fix: 'Single-row snapshot in MCP setCharacterInfo', status: 'PLANNED' },
+  { id: 'L36', phase: 3, fix: 'Surface runner rejections and roll back', status: 'PLANNED' },
+  { id: 'L37', phase: 7, fix: 'Remove logs of full command/preset objects', status: 'PLANNED' },
+  { id: 'L38', phase: 7, fix: 'Remove per-render Trigger time log', status: 'PLANNED' },
+  { id: 'L39', phase: 7, fix: 'Scan transcript in place', status: 'PLANNED' },
+  { id: 'L40', phase: 7, fix: 'Memoize trigger-effect regex sites', status: 'PLANNED' },
+  // Context-dependent but scheduled
+  { id: 'U1', phase: 2, fix: 'Bulk hydration known-id check (fold into Phase 2 if cheap)', status: 'PLANNED' },
+  { id: 'U4', phase: 3, fix: 'setCurrentChat scoped snapshot cleanup', status: 'PLANNED' },
+]
+
+// Ids deliberately NOT scheduled: they stay on the RISU_PROTOCOL_METRICS
+// evidence path or an owner decision (active-risk-analysis.md "Gated").
+const INTENTIONALLY_GATED: { id: string; reason: string }[] = [
+  {
+    id: 'L4',
+    reason:
+      'targeted-assembly scriptstate persist breadth is gated with the other Tier-5 write breadth (metrics evidence required).',
+  },
+  {
+    id: 'L7',
+    reason:
+      'four create/delete routes at the Tier-5 floor were maintainer-deferred after a frequency x cost review; DELETE modules/:id also carries the removeModuleReferences cross-table blocker.',
+  },
+  {
+    id: 'L26',
+    reason:
+      'the streaming .risu export writer is gated on large real-export evidence; only the clone+normalize sub-win may ride Phase 5 if it proves free.',
+  },
+  {
+    id: 'U2',
+    reason:
+      'sprawling-resource full-bootstrap narrowing stays on the leftover.md evidence gate; the remaining broad mappings are intentional reconnect recovery.',
+  },
+]
+
+// Ids needing no fix at all: U3 plus the audit's five investigated-and-
+// dismissed candidates (assigned R1-R5 here, in the audit's bullet order).
+const NO_ACTION: { id: string; reason: string }[] = [
+  {
+    id: 'U3',
+    reason:
+      'session-bounded hydration/lorebook id Sets: bounded by corpus size, cleared on resync; foot-gun, not a leak.',
+  },
+  {
+    id: 'R1',
+    reason:
+      'inline continue/regenerate partial-text loss is unreachable: the real client always sends durable:true for server-dispatched continue/regenerate.',
+  },
+  {
+    id: 'R2',
+    reason:
+      'per-generation memory cosine-ranking is false on the live route: /generate/chat passes empty query vectors, so the ranking loop never runs.',
+  },
+  {
+    id: 'R3',
+    reason:
+      'orphan-cleanup cross-model chunk deletion is impossible by invariant: shared chunk implies identical chatMemos, so summaries are orphaned-or-kept together.',
+  },
+  {
+    id: 'R4',
+    reason:
+      'buildMemoryWindow whole-characters clone is a dead local-assembler path, already downgraded to inventory-only by the frontend-performance workstream.',
+  },
+  {
+    id: 'R5',
+    reason:
+      'addMetadataToElement per-render logs are dead code behind aiWatermarkingLawApplies() hardcoded to return false.',
+  },
+]
+
+/** Problems that make the gate fail; extracted so the negative case can prove
+ *  the self-check actually detects a missing/renamed registered test. */
+export function collectGateProblems(entries: readonly ScheduledFix[]): string[] {
+  const problems: string[] = []
+  for (const entry of entries) {
+    if (entry.status === 'PLANNED') {
+      if (entry.testPath || entry.testName) {
+        problems.push(`${entry.id}: PLANNED entries must not claim a test yet`)
+      }
+      continue
+    }
+    if (!entry.testPath) {
+      problems.push(`${entry.id}: DONE without a registered testPath`)
+      continue
+    }
+    const full = path.join(ROOT, entry.testPath)
+    if (!existsSync(full)) {
+      problems.push(`${entry.id}: registered test "${entry.testPath}" is missing`)
+      continue
+    }
+    if (entry.testName && !readFileSync(full, 'utf8').includes(entry.testName)) {
+      problems.push(`${entry.id}: test "${entry.testPath}" does not contain "${entry.testName}"`)
+    }
+  }
+  return problems
+}
+
+// --- Doc parsers (the docs are the source the registry must mirror) ---------
+
+function readDoc(file: string): string {
+  return readFileSync(file, 'utf8')
+}
+
+/** The slice of `text` under `## <heading>` up to the next `## `. */
+function sectionOf(text: string, heading: string): string {
+  const marker = `## ${heading}`
+  const start = text.indexOf(marker)
+  if (start === -1) throw new Error(`section "${heading}" not found`)
+  const rest = text.slice(start + marker.length)
+  const end = rest.indexOf('\n## ')
+  return end === -1 ? rest : rest.slice(0, end)
+}
+
+/** Every finding id the audit document declares (H/M headings, L table rows,
+ *  U bullets — the index table double-lists H/M; the Set dedupes). */
+function auditFindingIds(): string[] {
+  const text = readDoc(AUDIT_DOC)
+  const ids = new Set<string>()
+  for (const match of text.matchAll(/^### ([HM]\d+) /gm)) ids.add(match[1])
+  for (const match of text.matchAll(/^\| ([HML]\d+)(?: \[KL\])? \|/gm)) ids.add(match[1])
+  for (const match of text.matchAll(/^- (U\d+) /gm)) ids.add(match[1])
+  return [...ids].sort()
+}
+
+/** Bullet count of the audit's Investigated And Dismissed section (the R-set). */
+function auditDismissedCount(): number {
+  return [...sectionOf(readDoc(AUDIT_DOC), 'Investigated And Dismissed').matchAll(/^- /gm)].length
+}
+
+interface RiskRow {
+  id: string
+  phase: number | null
+  routing: 'scheduled' | 'done' | 'gated' | 'no-action'
+}
+
+/** Every `| <ID> | ... |` row of active-risk-analysis.md's routing tables. */
+function riskMapRows(): RiskRow[] {
+  const rows: RiskRow[] = []
+  for (const line of readDoc(RISK_DOC).split('\n')) {
+    const match = /^\| ([HMLU]\d+) \|(.+)\|\s*$/.exec(line)
+    if (!match) continue
+    const id = match[1]
+    const cells = match[2].split('|').map((cell) => cell.trim())
+    const routingCell = cells[0] ?? ''
+    const phaseMatch = /\[(\d+)\]\(/.exec(routingCell)
+    if (phaseMatch) {
+      rows.push({
+        id,
+        phase: Number(phaseMatch[1]),
+        routing: line.includes('DONE') ? 'done' : 'scheduled',
+      })
+    } else if (routingCell === 'gated') {
+      rows.push({ id, phase: null, routing: 'gated' })
+    } else if (routingCell === 'no action') {
+      rows.push({ id, phase: null, routing: 'no-action' })
+    } else {
+      // Unknown routing forms fail the mirror check below.
+      rows.push({ id, phase: null, routing: 'scheduled' })
+    }
+  }
+  return rows
+}
+
+/** The ids bulleted in active-risk-analysis.md's gated section. */
+function riskGatedIds(): string[] {
+  return [
+    ...sectionOf(readDoc(RISK_DOC), 'Gated / Owner-Decision').matchAll(/^- ([LU]\d+) /gm),
+  ].map((match) => match[1])
+}
+
+// --- The gate ---------------------------------------------------------------
+
+const SCHEDULED_IDS = SCHEDULED_FIXES.map((entry) => entry.id)
+const GATED_IDS = INTENTIONALLY_GATED.map((entry) => entry.id)
+const NO_ACTION_IDS = NO_ACTION.map((entry) => entry.id)
+const ALL_REGISTERED_IDS = [...SCHEDULED_IDS, ...GATED_IDS, ...NO_ACTION_IDS]
+
+describe('fix-completeness gate (stability/performance plan)', () => {
+  it('parses a non-vacuous finding universe from the audit', () => {
+    const ids = auditFindingIds()
+    expect(ids.length).toBeGreaterThanOrEqual(60)
+    for (const probe of ['H1', 'H3', 'M1', 'M14', 'L1', 'L40', 'U1', 'U4']) {
+      expect(ids, `audit universe should contain ${probe}`).toContain(probe)
+    }
+  })
+
+  it('classifies every audit finding id exactly once (fails on a new id)', () => {
+    const auditIds = auditFindingIds()
+    const registeredAuditIds = ALL_REGISTERED_IDS.filter((id) => !id.startsWith('R')).sort()
+
+    const duplicates = ALL_REGISTERED_IDS.filter(
+      (id, index) => ALL_REGISTERED_IDS.indexOf(id) !== index,
+    )
+    expect(duplicates, 'ids classified in more than one list').toEqual([])
+
+    const unregistered = auditIds.filter((id) => !registeredAuditIds.includes(id))
+    expect(unregistered, 'audit ids missing a registry entry').toEqual([])
+
+    const unknown = registeredAuditIds.filter((id) => !auditIds.includes(id))
+    expect(unknown, 'registered ids that are not in the audit').toEqual([])
+  })
+
+  it('registers the dismissed R-set one-to-one with the audit', () => {
+    const rIds = NO_ACTION_IDS.filter((id) => id.startsWith('R'))
+    expect(rIds).toHaveLength(auditDismissedCount())
+    expect(rIds).toEqual(rIds.map((_unused, index) => `R${index + 1}`))
+  })
+
+  it('mirrors the finding -> phase routing in active-risk-analysis.md', () => {
+    const rows = riskMapRows()
+    expect(rows.length).toBeGreaterThanOrEqual(58)
+
+    const scheduledByid = new Map(SCHEDULED_FIXES.map((entry) => [entry.id, entry]))
+    for (const row of rows) {
+      if (row.routing === 'gated') {
+        expect(GATED_IDS, `${row.id} routed "gated" in the doc`).toContain(row.id)
+        continue
+      }
+      if (row.routing === 'no-action') {
+        expect(NO_ACTION_IDS, `${row.id} routed "no action" in the doc`).toContain(row.id)
+        continue
+      }
+      const entry = scheduledByid.get(row.id)
+      expect(entry, `${row.id} is routed to a phase in the doc but not registered`).toBeDefined()
+      expect(entry?.phase, `${row.id} phase mismatch vs the doc`).toBe(row.phase)
+    }
+
+    // Bidirectional: every scheduled registry id is routed in the doc…
+    const docIds = new Set(rows.map((row) => row.id))
+    const unrouted = SCHEDULED_IDS.filter((id) => !docIds.has(id))
+    expect(unrouted, 'registered ids missing from the doc routing tables').toEqual([])
+    // …and the gated bullet list matches the gated registry exactly.
+    expect([...riskGatedIds()].sort()).toEqual([...GATED_IDS].sort())
+  })
+
+  it('keeps registry status in lockstep with the doc (DONE both places or neither)', () => {
+    const rows = riskMapRows()
+    const doneInDoc = rows
+      .filter((row) => row.routing === 'done')
+      .map((row) => row.id)
+      .sort()
+    const doneInRegistry = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
+      .map((entry) => entry.id)
+      .sort()
+    expect(doneInRegistry).toEqual(doneInDoc)
+  })
+
+  it('every DONE entry resolves to an existing registered test', () => {
+    expect(collectGateProblems(SCHEDULED_FIXES)).toEqual([])
+  })
+
+  it('fails when a DONE entry points at a missing test (negative self-proof)', () => {
+    const missing: ScheduledFix = {
+      id: 'H1',
+      phase: 1,
+      fix: 'negative case',
+      status: 'DONE',
+      testPath: 'server/fastify/__tests__/doesNotExist.test.ts',
+    }
+    expect(collectGateProblems([missing])).toEqual([
+      'H1: registered test "server/fastify/__tests__/doesNotExist.test.ts" is missing',
+    ])
+
+    const pathless: ScheduledFix = { ...missing, testPath: undefined }
+    expect(collectGateProblems([pathless])).toEqual(['H1: DONE without a registered testPath'])
+
+    const renamed: ScheduledFix = {
+      ...missing,
+      testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+      testName: 'thisTestTitleDoesNotExist',
+    }
+    expect(collectGateProblems([renamed])).toEqual([
+      'H1: test "server/fastify/__tests__/serverLoadCostHarness.test.ts" does not contain "thisTestTitleDoesNotExist"',
+    ])
+
+    const premature: ScheduledFix = {
+      ...missing,
+      status: 'PLANNED',
+    }
+    expect(collectGateProblems([premature])).toEqual([
+      'H1: PLANNED entries must not claim a test yet',
+    ])
+
+    // Positive control: a real cross-suite path + contained string passes —
+    // the negative cases above fail for the right reason, not because the
+    // checker rejects everything.
+    const real: ScheduledFix = {
+      ...missing,
+      testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+      testName: 'assertScopedLoadOnHotPath',
+    }
+    expect(collectGateProblems([real])).toEqual([])
+  })
+
+  it('records a reason for every gated and no-action id', () => {
+    for (const entry of [...INTENTIONALLY_GATED, ...NO_ACTION]) {
+      expect(
+        entry.reason.trim().length,
+        `${entry.id} needs a substantive reason`,
+      ).toBeGreaterThan(20)
+    }
+  })
+})
