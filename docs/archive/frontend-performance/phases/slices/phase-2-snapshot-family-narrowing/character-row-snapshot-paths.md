@@ -18,7 +18,7 @@ target character row.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the High `currentCharacterStateSnapshot` finding and the Low image/emotion
   finding (image/emotion lands in Phase 7).
 - `src/ts/characterCommands.ts` - `currentCharacterStateSnapshot` and

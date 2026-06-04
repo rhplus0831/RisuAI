@@ -5,7 +5,7 @@ Date: 2026-06-04
 This file routes each finding area to its target clone range and phase. It is
 not a verification log. Keep proof runs in
 [`latest-verification.md`](latest-verification.md). Keep per-finding detail in
-[`../../frontend-performance-audit.md`](../../frontend-performance-audit.md).
+[`../../frontend-performance-audit.md`](frontend-performance-audit.md).
 
 ## Summary
 

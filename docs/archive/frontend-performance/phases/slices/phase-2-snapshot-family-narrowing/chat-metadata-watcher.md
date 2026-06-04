@@ -22,7 +22,7 @@ cloning full chats.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the Critical chat-metadata-watcher finding and the High `scalarChatMetadata`
   finding.
 - `src/ts/server/chatBridge.svelte.ts` - `watchServerBackedChatMetadata`,

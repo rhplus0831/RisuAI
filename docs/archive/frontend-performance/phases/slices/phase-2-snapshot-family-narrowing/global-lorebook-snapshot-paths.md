@@ -19,7 +19,7 @@ paths with lorebook-only or single-character snapshots.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the High `lorepreset.svelte` finding and the High/Medium lorebook-trigger
   finding (shared snapshot function, two paths).
 - `src/lib/Setting/lorepreset.svelte` - `selectLorebook`, delete, and create

@@ -23,7 +23,7 @@ chat.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the High "reroll/unReroll/applyTailSlice" finding.
 - `src/ts/process/rerollNavigation.svelte.ts` - `applyTailDataSwap`.
 - `src/ts/process/rerollNavigation.svelte.ts` - `applyTailSlice`

@@ -16,7 +16,7 @@ cost once per response or message append, not per chunk.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the Critical streaming finding ("Secondary" fix) and the High non-stream
   finding ("Secondary" fix).
 - `src/ts/process/postGeneration/streamResponse.ts` - the per-chunk

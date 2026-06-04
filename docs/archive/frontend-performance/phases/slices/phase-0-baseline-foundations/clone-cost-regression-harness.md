@@ -18,7 +18,7 @@ structural snapshot assertion and rollback-correctness assertion.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the clone-site inventory (the universe a gate must eventually cover) and each
   finding's "why it is expensive" measurement.
 - `src/ts/compatibilityAdapters.test.ts` - the reference-fix tests to generalize.

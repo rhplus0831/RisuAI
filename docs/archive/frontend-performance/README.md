@@ -13,7 +13,7 @@ bug is simple: a path mutates a scalar, one row, or one chat, but clones the who
 rollback or change detection.
 
 Use `status.md` for the current state. Use
-[`../../frontend-performance-audit.md`](../../frontend-performance-audit.md) as the
+[`../../frontend-performance-audit.md`](frontend-performance-audit.md) as the
 seed inventory. The code remains the source of truth.
 
 ## Read Order
@@ -43,13 +43,13 @@ seed inventory. The code remains the source of truth.
 - Phase-level scope and exit criteria live in [`phases/`](phases/).
 - Slice definitions live in `phases/slices/[phase]/[slice-name].md`.
 - The seed audit is
-  [`../../frontend-performance-audit.md`](../../frontend-performance-audit.md). It has
+  [`../../frontend-performance-audit.md`](frontend-performance-audit.md). It has
   finding locations, costs, frequency, fixes, clone-site inventory, and rejected
   candidates.
 
 ## Source Anchors
 
-- [`../../frontend-performance-audit.md`](../../frontend-performance-audit.md) - the
+- [`../../frontend-performance-audit.md`](frontend-performance-audit.md) - the
   audit that seeded this plan (4 critical, 13 high, 6 medium, 6 low, plus the
   full clone-site inventory).
 - `src/ts/server/projectionWriteGuard.svelte.ts` -

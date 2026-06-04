@@ -33,7 +33,7 @@ narrowing reusable and provable; it does not change hot-path behavior.
 
 ## Source Anchors
 
-- [`../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
+- [`../../../frontend-performance-audit.md`](../frontend-performance-audit.md) -
   the shared root-cause note and the recommended-remediation step 2.
 - `src/ts/characterCommands.ts` - the reference `CharacterSelectionSnapshot`,
   `currentCharacterSelectionSnapshot`, `restoreCharacterSelection` (the template),

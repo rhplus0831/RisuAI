@@ -24,7 +24,7 @@ End state:
 
 ## Boundary Sources
 
-- [`../../frontend-performance-audit.md`](../../frontend-performance-audit.md) seeded
+- [`../../frontend-performance-audit.md`](frontend-performance-audit.md) seeded
   the findings, costs, hot-path frequency, severity, fixes, and clone-site
   inventory. [`status.md`](status.md) records current phase state.
 - `src/ts/server/projectionWriteGuard.svelte.ts` owns the Phase 1 guard

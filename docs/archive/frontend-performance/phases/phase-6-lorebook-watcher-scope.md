@@ -8,7 +8,7 @@ not read `chat.message`, but it still re-fires per lorebook keystroke.
 
 ## Source Anchors
 
-- [`../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
+- [`../../../frontend-performance-audit.md`](../frontend-performance-audit.md) -
   the Medium lorebook watcher finding; recommended-remediation step 7.
 - `src/ts/server/lorebookBridge.svelte.ts` -
   `collectLorebookCollectionSnapshots` (the DB-wide `snapshotJson` loop) and

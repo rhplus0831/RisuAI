@@ -10,7 +10,7 @@ regex memoization, parser string-work reduction, and a stray render-path log.
 
 ## Source Anchors
 
-- [`../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
+- [`../../../frontend-performance-audit.md`](../frontend-performance-audit.md) -
   the Low findings and the clone-site inventory; recommended-remediation step 8.
 - `src/ts/cbs.ts` - `{{history}}`/`{{charhistory}}`/`{{userhistory}}`
   per-message clone+parse+stringify.

@@ -10,7 +10,7 @@ one parser rewrite, one render-path log, and one folder/chat scan reduction.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the Low findings and the clone-site inventory.
 - `src/ts/cbs.ts`, `src/ts/observer.svelte.ts`, `src/ts/characters.ts`,
   `src/ts/process/scripts.ts`, `src/ts/parser/risuChatParser.ts`,

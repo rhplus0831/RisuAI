@@ -17,7 +17,7 @@ affected chat's `message[]`.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the Critical `currentChatStateSnapshot` finding and the High `sendMain`,
   per-message edit, and `cloneMessagesWithIds` findings; the Low `command.ts`
   `snapshotChat` finding.

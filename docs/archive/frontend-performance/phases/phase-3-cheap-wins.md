@@ -23,7 +23,7 @@ The landed shapes preserve the win while staying guard-safe:
 
 ## Source Anchors
 
-- [`../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
+- [`../../../frontend-performance-audit.md`](../frontend-performance-audit.md) -
   the `recordGeneratedReroll`, reroll-redundant-clone, and `runTrigger`
   clone-before-early-return findings; recommended-remediation step 4.
 - `src/ts/process/rerollNavigation.svelte.ts` - `recordGeneratedReroll`, the

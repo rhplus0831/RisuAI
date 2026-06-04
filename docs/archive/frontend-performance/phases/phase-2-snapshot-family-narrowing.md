@@ -12,7 +12,7 @@ Each slice keeps the full-collection snapshot for genuine restructures
 
 ## Source Anchors
 
-- [`../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
+- [`../../../frontend-performance-audit.md`](../frontend-performance-audit.md) -
   the Critical/High `currentChatStateSnapshot` / `currentCharacterStateSnapshot`
   / `currentLorebookStateSnapshot` findings and recommended-remediation step 3.
 - `src/ts/server/chatBridge.svelte.ts` - `watchServerBackedChatMetadata`,

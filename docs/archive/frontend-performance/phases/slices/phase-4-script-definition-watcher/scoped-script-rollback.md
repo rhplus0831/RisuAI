@@ -10,7 +10,7 @@ rollback only at dispatch.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the High script-definition watcher finding and the Low co-located stringify
   finding.
 - `src/ts/server/scriptDefinitionBridge.svelte.ts` -

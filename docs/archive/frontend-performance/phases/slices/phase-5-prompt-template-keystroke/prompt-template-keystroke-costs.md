@@ -10,7 +10,7 @@ double-stringifying it on each keystroke.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the High per-keystroke `promptTemplate` clone and the Medium double-stringify
   findings; the Low `PromptDataItem` finding.
 - `src/lib/Setting/Pages/PromptSettings.svelte` - `queuePromptItemUpdate`, the

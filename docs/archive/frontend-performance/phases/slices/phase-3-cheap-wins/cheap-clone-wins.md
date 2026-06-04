@@ -11,7 +11,7 @@ reroll dispatch clones, and return early in `runTrigger` before char/chat clones
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the High `recordGeneratedReroll`, the High reroll redundant-clone, and the
   Medium `runTrigger` clone-before-early-return findings.
 - `src/ts/process/rerollNavigation.svelte.ts` - `recordGeneratedReroll`, the

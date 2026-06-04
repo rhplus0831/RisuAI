@@ -14,7 +14,7 @@ fails on drift.
 - Start with the per-area findings in
   [`active-risk-analysis.md`](active-risk-analysis.md) and the per-finding detail
   and clone-site inventory in
-  [`../../frontend-performance-audit.md`](../../frontend-performance-audit.md).
+  [`../../frontend-performance-audit.md`](frontend-performance-audit.md).
 - Before editing runtime code, add a compact scope to the active slice: location,
   cloned data, hot-path trigger, target snapshot, rollback property, and proof
   command.

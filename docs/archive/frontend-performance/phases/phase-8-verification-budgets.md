@@ -8,7 +8,7 @@ narrow new paths; it makes the gate map self-checking.
 
 ## Source Anchors
 
-- [`../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
+- [`../../../frontend-performance-audit.md`](../frontend-performance-audit.md) -
   the clone-site inventory (the universe of hot paths a gate must cover) and the
   "General principle" closeout.
 - `src/ts/__tests__/cloneCostHarness.ts` - the reusable structural,

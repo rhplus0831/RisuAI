@@ -10,7 +10,7 @@ map self-checking against the audit inventory.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the clone-site inventory (the universe of hot paths) and the "General principle"
   closeout.
 - [`../phase-0-baseline-foundations/clone-cost-regression-harness.md`](../phase-0-baseline-foundations/clone-cost-regression-harness.md) -

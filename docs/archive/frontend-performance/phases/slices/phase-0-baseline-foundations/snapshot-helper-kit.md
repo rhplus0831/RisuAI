@@ -17,7 +17,7 @@ under `withTrustedServerProjectionWrite`.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the shared root-cause note and the per-finding "recommended fix" sections that
   name each helper.
 - `src/ts/characterCommands.ts` - the reference pair to mirror.

@@ -8,7 +8,7 @@ array and stringifying the whole template twice per keystroke.
 
 ## Source Anchors
 
-- [`../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
+- [`../../../frontend-performance-audit.md`](../frontend-performance-audit.md) -
   the High per-keystroke `promptTemplate` clone and the Medium double-stringify
   change-detection findings; recommended-remediation step 6.
 - `src/lib/Setting/Pages/PromptSettings.svelte` - `queuePromptItemUpdate`, the

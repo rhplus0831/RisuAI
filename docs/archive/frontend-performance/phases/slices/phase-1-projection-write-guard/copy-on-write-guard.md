@@ -16,7 +16,7 @@ re-wrap it in a fresh proxy on refreeze. Both transitions become O(1).
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the Critical guard finding and recommended-remediation step 1.
 - `src/ts/server/projectionWriteGuard.svelte.ts` -
   `withTrustedServerProjectionWrite`, `createReadOnlyServerProjection`,

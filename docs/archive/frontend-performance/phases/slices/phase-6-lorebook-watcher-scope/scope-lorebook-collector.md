@@ -9,7 +9,7 @@ instead of rebuilding a DB-wide lore stringify map on each fire.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the Medium lorebook watcher finding.
 - `src/ts/server/lorebookBridge.svelte.ts` -
   `collectLorebookCollectionSnapshots` (the all-chats-of-all-characters

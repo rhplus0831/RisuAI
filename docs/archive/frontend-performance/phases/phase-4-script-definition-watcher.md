@@ -21,7 +21,7 @@ edits and streaming tokens should not trigger full clones.
 
 ## Source Anchors
 
-- [`../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
+- [`../../../frontend-performance-audit.md`](../frontend-performance-audit.md) -
   the High script-definition watcher finding and the Low co-located stringify
   finding; recommended-remediation step 5.
 - `src/ts/server/scriptDefinitionBridge.svelte.ts` -

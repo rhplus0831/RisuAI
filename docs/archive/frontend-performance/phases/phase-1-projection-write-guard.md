@@ -37,7 +37,7 @@ are unchanged; only the snapshot strategy changed. Proof:
 
 ## Source Anchors
 
-- [`../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
+- [`../../../frontend-performance-audit.md`](../frontend-performance-audit.md) -
   the two Critical guard/streaming findings and recommended-remediation step 1.
 - `src/ts/server/projectionWriteGuard.svelte.ts` -
   `withTrustedServerProjectionWrite`, `createReadOnlyServerProjection`,

@@ -18,7 +18,7 @@ chat's `scriptstate` map plus optional `note`.
 
 ## Source Anchors
 
-- [`../../../../../frontend-performance-audit.md`](../../../../../frontend-performance-audit.md) -
+- [`../../../../../frontend-performance-audit.md`](../../../frontend-performance-audit.md) -
   the Medium/High `setVar`, `setChatVar`, and `v2SetAuthorNote` findings.
 - `src/ts/process/triggers.ts` - the `setVar` closure
   (`currentChatStateSnapshot()` -> single `scriptstate` key); short-circuits before
