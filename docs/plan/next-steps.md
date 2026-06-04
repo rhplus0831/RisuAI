@@ -3,10 +3,10 @@
 Date: 2026-06-04
 
 Phase 1 is COMPLETE (H1 `0dc7452e`, H3 `e41dc6c6`, H2 `067ab82a`). Phase 2 is
-in progress: scoped assembly load (M1, L1, L2, `c193c008`) and
-command-mutation read narrowing (M3, L5, L6, `e0e86ab1`) are DONE. Next is
-the single-character projection (M4), then the metric/bulk-read slice (M5,
-L10, U1). Every fix needs a regression test, a Phase 8 gate flip
+in progress: scoped assembly load (M1, L1, L2, `c193c008`), command-mutation
+read narrowing (M3, L5, L6, `e0e86ab1`), and the single-character projection
+(M4, `254b3112`) are DONE. Next is the metric/bulk-read slice (M5, L10, U1).
+Every fix needs a regression test, a Phase 8 gate flip
 (`fixCompletenessGate.test.ts` registry `PLANNED` -> `DONE` with the test
 path), and the matching status flip in
 [`active-risk-analysis.md`](active-risk-analysis.md) — the gate fails unless
@@ -31,12 +31,21 @@ both move together.
 
 In leverage order. Each is independent unless noted.
 
-1. Phase 2 — server load narrowing, remaining slices: the single-character
-   projection (M4), and the metric/bulk-read slice (M5, L10, U1).
+1. Phase 2 — server load narrowing, remaining slice: the metric/bulk-read
+   slice (M5, L10, U1).
 2. After Phase 2, pick Phase 3-7 by current pain. Refresh
    [`latest-verification.md`](latest-verification.md) after each phase.
 
 Done so far (Phase 1 complete; Phase 2 in progress):
+
+- M4 — single-character projection, DONE (`254b3112`):
+  `loadSingleCharacterStubRow` reads one character row + its chat rows
+  (broad fallback for embedded/uninitialized states keeps 404s identical)
+  and the route/bootstrap mask owned objects in place via
+  `maskProviderSecretsInPlace` (copying contract unchanged). Regressions:
+  `serverLoadCostHarness.test.ts` M4 block (route load-count +
+  per-character byte-identity + lorebook-stub parity + embedded fallback +
+  bootstrap byte-identity), `providerSecrets.test.ts` mask parity.
 
 - M3/L5/L6 — command-mutation read narrowing, DONE (`e0e86ab1`):
   `loadPersistedForChatMutation` + opt-in `chatScopedRead` on

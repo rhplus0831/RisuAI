@@ -1,6 +1,27 @@
 # Single-Character Projection & Mask
 
-Status: not started. Phase 2. Covers M4.
+Status: DONE (`254b3112`). Phase 2. Covers M4.
+
+## Landed Shape
+
+- `repository.loadSingleCharacterStubRow` — `WHERE id = ?` character read +
+  `WHERE character_id = ?` chat rows, same stub contract as the broad loader
+  (message-free chats, `enableLorebookStubs` strip). Falls back to the broad
+  stubbed loader for any state the row read cannot serve (uninitialized
+  settings, missing SQLite row: unknown-id 404s and pre-extraction embedded
+  characters stay identical).
+- `providerSecrets.maskProviderSecretsInPlace` — opt-in no-clone variant for
+  owned freshly-parsed objects; the copying `maskProviderSecrets` contract is
+  unchanged (it delegates to the in-place variant after its clone).
+- `routes/projection.loadSingleCharacterRow` masks just the owned row (wrapped
+  as `{ characters: [row] }` so the root-relative secret paths still apply);
+  `routes/bootstrap` masks the freshly-built stub projection in place (clearly
+  safe: nothing else references it).
+- Regressions in `server/fastify/__tests__/serverLoadCostHarness.test.ts` (M4
+  block: route load-count, per-character byte-identity vs the pre-M4 broad
+  composition, lorebook-stub parity, embedded-characters fallback, bootstrap
+  byte-identity + on-disk secrets intact) and
+  `server/fastify/__tests__/providerSecrets.test.ts` (mask parity/mutation).
 
 ## Scope
 
@@ -38,10 +59,13 @@ Narrow the row read and mask only owned fresh objects.
 
 ## Done Criteria
 
-- A load-count test shows `loadSingleCharacterRow` does a single-row read.
-- The `characterRow` payload is asserted byte-identical on a multi-character
-  fixture.
-- Gate `M4` registered in Phase 8.
+- [x] A load-count test shows `loadSingleCharacterRow` does a single-row read
+      (`M4: the characterRow projection performs zero whole-corpus payload
+      reads`).
+- [x] The `characterRow` payload is asserted byte-identical on a
+      multi-character fixture (`M4: the single-row loader is byte-identical to
+      the broad composition for every character`).
+- [x] Gate `M4` registered in Phase 8 (`fixCompletenessGate.test.ts`).
 
 ## Validation
 

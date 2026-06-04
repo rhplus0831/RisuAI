@@ -9,16 +9,17 @@ The plan schedules 57 confirmed findings (3 high, 14 medium, 40 low) from
 [`audit-stability-and-performance.md`](audit-stability-and-performance.md) across
 Phases 0-8. Phases 0 and 1 are complete: all three highs are fixed — H1
 (`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`). Phase 2 is in progress: the
-scoped-assembly-load slice (M1, L1, L2, `c193c008`) and the
-command-mutation-read-narrowing slice (M3, L5, L6, `e0e86ab1`) are DONE; next
-is the single-character projection (M4).
+scoped-assembly-load slice (M1, L1, L2, `c193c008`), the
+command-mutation-read-narrowing slice (M3, L5, L6, `e0e86ab1`), and the
+single-character projection (M4, `254b3112`) are DONE; next is the
+metric/bulk-read slice (M5, L10, U1).
 
 ## Current Snapshot
 
 All findings are routed. Phase 1 is complete; Phase 2 is in progress (M1, L1,
-L2, M3, L5, L6 done). Phases 2-7 group the mediums/lows by root cause. Phase 8
-is the standing gate (its scaffold is live and H1/H2/H3/M1/L1/L2/M3/L5/L6 are
-registered as `DONE`).
+L2, M3, L5, L6, M4 done). Phases 2-7 group the mediums/lows by root cause.
+Phase 8 is the standing gate (its scaffold is live and
+H1/H2/H3/M1/L1/L2/M3/L5/L6/M4 are registered as `DONE`).
 
 - [Phase 0](phases/phase-0-baseline-foundations.md) — COMPLETE. Shared
   large-corpus fixture + `assertScopedLoadOnHotPath` server load-count harness
@@ -31,8 +32,9 @@ registered as `DONE`).
   coalescing); H2 DONE (`067ab82a`, chat-selection scalar snapshot).
 - [Phase 2](phases/phase-2-server-load-narrowing.md) — in progress. M1, L1, L2
   DONE (`c193c008`, scoped assembly load + module memo + run-var skip); M3,
-  L5, L6 DONE (`e0e86ab1`, chat-scoped command-mutation reads). Remaining:
-  M4, M5, L10, U1 (single-character projection + metric/bulk-read slices).
+  L5, L6 DONE (`e0e86ab1`, chat-scoped command-mutation reads); M4 DONE
+  (`254b3112`, single-row `characterRow` read + in-place secret mask).
+  Remaining: M5, L10, U1 (metric/bulk-read slice).
 - [Phase 3](phases/phase-3-client-clone-narrowing.md) — not started. M12-M14,
   L31-L36, U4: client clone narrowing.
 - [Phase 4](phases/phase-4-outbound-request-lifecycle.md) — not started. M6,
@@ -62,8 +64,12 @@ dismissed list. Highlights:
   message/scriptstate/generation routes read one chat row + its parent
   character instead of the full `loadPersisted` (M3 collections, L5 assets,
   L6 characters/chats).
+- Phase 2 single-character projection is DONE (`254b3112`): the
+  `characterRow` projection reads one character + its chats
+  (`loadSingleCharacterStubRow`) and masks just that owned row via the new
+  `maskProviderSecretsInPlace` (bootstrap drops its whole-DB mask clone too).
 - Biggest remaining root: the rest of Phase 2 server broad-load narrowing
-  (next: M4 single-character projection, then M5/L10/U1).
+  (next: the M5/L10/U1 metric/bulk-read slice).
 - Gated (not scheduled): L4, L7, L26, U2 stay on the
   `RISU_PROTOCOL_METRICS` evidence path or an owner decision; U3 needs no
   action; the five dismissed candidates (R1-R5 in the audit) are non-issues.

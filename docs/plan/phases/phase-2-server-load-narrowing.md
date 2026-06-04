@@ -1,9 +1,10 @@
 # Phase 2: Server Load Narrowing (Root 1)
 
 Status: in progress — the scoped-assembly-load slice (M1, L1, L2) is DONE
-(`c193c008`) and the command-mutation-read-narrowing slice (M3, L5, L6) is
-DONE (`e0e86ab1`). Addresses the largest server root: hot paths still rebuild
-a broad in-memory `Database` when they need one row. Depends on Phase 0's server
+(`c193c008`), the command-mutation-read-narrowing slice (M3, L5, L6) is DONE
+(`e0e86ab1`), and the single-character-projection slice (M4) is DONE
+(`254b3112`). Addresses the largest server root: hot paths still rebuild a
+broad in-memory `Database` when they need one row. Depends on Phase 0's server
 load-count assertion.
 
 Goal: each hot path loads only the rows it reads. Add scoped assembly loading
@@ -45,9 +46,10 @@ Findings: M1, M3, M4, M5, L1, L2, L5, L6, L10, U1.
   M3, L5, L6 — DONE (`e0e86ab1`). Parse only the tables a command reads.
   Preserve `normalizeAllCharacterChats` dedup.
 - [`single-character-projection.md`](slices/phase-2-server-load-narrowing/single-character-projection.md) -
-  M4. `loadSingleCharacterRow` does a `WHERE id=?` single-row read (precedent
-  `loadCharacterSelectionRows`) and masks only that row; add an opt-in
-  `maskProviderSecretsInPlace` for callers that own a fresh object.
+  M4 — DONE (`254b3112`). `loadSingleCharacterStubRow` does the `WHERE id=?`
+  single-row read (precedent `loadCharacterSelectionRows`) and the route masks
+  only that row via the new opt-in `maskProviderSecretsInPlace` (bootstrap uses
+  it too); broad fallback for embedded/uninitialized states.
 - [`projection-metric-and-bulk-read.md`](slices/phase-2-server-load-narrowing/projection-metric-and-bulk-read.md) -
   M5, L10, U1. Defer `jsonPayloadBytes`, load command history only for replay,
   and target bulk-hydration id checks.
@@ -74,8 +76,11 @@ Findings: M1, M3, M4, M5, L1, L2, L5, L6, L10, U1.
       it reads (asserted by a load-count test); revision/event/output unchanged;
       `normalizeAllCharacterChats` dedup still holds. (`e0e86ab1`,
       `commandMutationReadNarrowing.test.ts`.)
-- [ ] M4: `loadSingleCharacterRow` performs a single-row read; the `characterRow`
-      projection payload is byte-identical to before.
+- [x] M4: `loadSingleCharacterRow` performs a single-row read; the `characterRow`
+      projection payload is byte-identical to before (asserted per character on
+      the multi-character fixture), bootstrap masks in place with identical
+      bytes. (`254b3112`, `serverLoadCostHarness.test.ts` M4 block +
+      `providerSecrets.test.ts`.)
 - [ ] M5: `jsonPayloadBytes` does not run when `RISU_PROTOCOL_METRICS` is off;
       metric output identical when on.
 - [ ] L1/L2/L10/U1: each narrows its cited redundant load with no behavior change.

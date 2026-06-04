@@ -45,7 +45,7 @@ consumers.
 | M1 | [2](phases/phase-2-server-load-narrowing.md) | Scoped target-chat message/hypa load. [known-leftover] | DONE (`c193c008`) |
 | M2 | [7](phases/phase-7-memoization-and-hygiene.md) | Hoist module/script/RegExp work once per assembly. | scheduled |
 | M3 | [2](phases/phase-2-server-load-narrowing.md) | Field-scoped command reads or per-request load memo. | DONE (`e0e86ab1`) |
-| M4 | [2](phases/phase-2-server-load-narrowing.md) | Single-row `loadSingleCharacterRow`; in-place mask where owned. | scheduled |
+| M4 | [2](phases/phase-2-server-load-narrowing.md) | Single-row `loadSingleCharacterRow`; in-place mask where owned. | DONE (`254b3112`) |
 | M5 | [2](phases/phase-2-server-load-narrowing.md) | Defer `jsonPayloadBytes` until metrics are enabled. | scheduled |
 | M6 | [4](phases/phase-4-outbound-request-lifecycle.md) | Abort proxy `/fetch` upstream on close; add timeout backstop. | scheduled |
 | M7 | [6](phases/phase-6-memory-and-lua.md) | Cap embed batches; split contextual requests by token size. | scheduled |

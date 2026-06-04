@@ -75,6 +75,14 @@ Recorded from the shared large-corpus fixture before any fix lands.
   scoped read parses exactly one chat row + one character row; the loader
   equivalence test proves identical records, and unknown-id / pre-extraction
   states keep the documented broad fallback.
+- Phase 2 M4 (`254b3112`): a `characterRow` projection performs **zero
+  whole-corpus payload reads** (was: a whole characters+chats table parse plus
+  a JSON deep clone of the entire masked array to `.find()` one row). The
+  single-row loader is proven byte-identical to the pre-M4 broad composition
+  for every character on the multi-character fixture (including lorebook-stub
+  and TTS-secret masking), the embedded-characters fallback is kept, and
+  bootstrap's in-place mask ships the same bytes while on-disk secrets stay
+  unmasked.
 
 ## How To Reproduce The Costs Being Fixed
 
@@ -100,3 +108,4 @@ Recorded from the shared large-corpus fixture before any fix lands.
 | 2026-06-04 | Phase 1 H2 slice (`067ab82a` fix + gate/doc flip) — PHASE 1 COMPLETE | `pnpm test` 1084/4 (+4 `chatCommands.test.ts` H2 block, +3 `globalApi.changeChatTo.test.ts`), `pnpm api:test` 1640/1, audit green, both tsc checks zero errors. Chat select: 0 clone calls (was a whole-characters clone per click). |
 | 2026-06-04 | Phase 2 scoped-assembly-load slice (`c193c008` fix + gate/doc flip) | `pnpm api:test` 1651/1 (+3 M1 `serverLoadCostHarness.test.ts`, +6 L1 `modulesMemo.test.ts`, +2 L2 `assemble.test.ts`), `pnpm test` 1084/4 (gate flip, no count change), audit green, both tsc checks zero errors. Assembly: 0 whole-corpus message/hypa reads (was 2 whole-table parses per send/preview). |
 | 2026-06-04 | Phase 2 command-mutation-read-narrowing slice (`e0e86ab1` fix + gate/doc flip) | `pnpm api:test` 1657/1 (+6 `commandMutationReadNarrowing.test.ts`), `pnpm test` 1084/4 (gate flip, no count change), audit green, both tsc checks zero errors. Message/scriptstate/generation mutation: 0 whole-corpus payload reads (was 13 per mutation). |
+| 2026-06-04 | Phase 2 single-character-projection slice (`254b3112` fix + gate/doc flip) | `pnpm api:test` 1664/1 (+5 M4 `serverLoadCostHarness.test.ts`, +2 `providerSecrets.test.ts`), `pnpm test` 1084/4 (gate flip, no count change), audit green, both tsc checks zero errors. `characterRow` projection: 0 whole-corpus payload reads + no whole-array mask clone (was a full characters+chats parse + whole-array deep clone per request); bootstrap drops its whole-stubbed-DB mask clone. |
