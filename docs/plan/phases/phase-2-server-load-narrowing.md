@@ -1,6 +1,7 @@
 # Phase 2: Server Load Narrowing (Root 1)
 
-Status: not started. Addresses the largest server root: hot paths still rebuild
+Status: in progress — the scoped-assembly-load slice (M1, L1, L2) is DONE
+(`c193c008`). Addresses the largest server root: hot paths still rebuild
 a broad in-memory `Database` when they need one row. Depends on Phase 0's server
 load-count assertion.
 
@@ -36,8 +37,9 @@ Findings: M1, M3, M4, M5, L1, L2, L5, L6, L10, U1.
 ## Slices
 
 - [`scoped-assembly-load.md`](slices/phase-2-server-load-narrowing/scoped-assembly-load.md) -
-  M1, L1, L2. Hydrate only the target chat's messages/hypaV3, leave siblings
-  `message=[]`, memoize `getActiveModules`, and hoist invariant run-var work.
+  M1, L1, L2 — DONE (`c193c008`). Hydrate only the target chat's
+  messages/hypaV3, leave siblings `message=[]`, memoize `getActiveModules`, and
+  hoist invariant run-var work.
 - [`command-mutation-read-narrowing.md`](slices/phase-2-server-load-narrowing/command-mutation-read-narrowing.md) -
   M3, L5, L6. Parse only the tables a command reads. Preserve
   `normalizeAllCharacterChats` dedup.
@@ -62,10 +64,11 @@ Findings: M1, M3, M4, M5, L1, L2, L5, L6, L10, U1.
 
 ## Exit Criteria
 
-- [ ] M1: prompt assembly hydrates only the active chat's messages/hypaV3; the
+- [x] M1: prompt assembly hydrates only the active chat's messages/hypaV3; the
       server load-count assertion shows zero `getAllChatMessagesGrouped` calls on
       the assembly path; `loadPersistedWithMessages` is unchanged for its other
-      consumers. Assembly output bytes identical.
+      consumers. Assembly output bytes identical. (`c193c008`,
+      `serverLoadCostHarness.test.ts`.)
 - [ ] M3/L5/L6: a message/scriptstate/generation mutation parses only the tables
       it reads (asserted by a load-count test); revision/event/output unchanged;
       `normalizeAllCharacterChats` dedup still holds.
@@ -74,6 +77,8 @@ Findings: M1, M3, M4, M5, L1, L2, L5, L6, L10, U1.
 - [ ] M5: `jsonPayloadBytes` does not run when `RISU_PROTOCOL_METRICS` is off;
       metric output identical when on.
 - [ ] L1/L2/L10/U1: each narrows its cited redundant load with no behavior change.
+      (L1 + L2 DONE in `c193c008` — `modulesMemo.test.ts`, `assemble.test.ts`
+      L2 describe; L10/U1 remain.)
 - [ ] Gates registered in Phase 8; full server suite + audit + TypeScript checks
       green.
 

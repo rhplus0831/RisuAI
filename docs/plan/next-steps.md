@@ -2,10 +2,11 @@
 
 Date: 2026-06-04
 
-Phase 1 is COMPLETE (H1 `0dc7452e`, H3 `e41dc6c6`, H2 `067ab82a`). Next is
-Phase 2 (server load narrowing, M1 first). Every fix needs a regression test,
-a Phase 8 gate flip (`fixCompletenessGate.test.ts` registry `PLANNED` ->
-`DONE` with the test path), and the matching status flip in
+Phase 1 is COMPLETE (H1 `0dc7452e`, H3 `e41dc6c6`, H2 `067ab82a`). Phase 2 is
+in progress: the scoped-assembly-load slice (M1, L1, L2) is DONE (`c193c008`).
+Next is command-mutation read narrowing (M3, L5, L6). Every fix needs a
+regression test, a Phase 8 gate flip (`fixCompletenessGate.test.ts` registry
+`PLANNED` -> `DONE` with the test path), and the matching status flip in
 [`active-risk-analysis.md`](active-risk-analysis.md) — the gate fails unless
 both move together.
 
@@ -28,13 +29,22 @@ both move together.
 
 In leverage order. Each is independent unless noted.
 
-1. Phase 2 — server load narrowing. Start with scoped assembly load (M1), then
-   command-mutation read narrowing (M3, L5, L6), the single-character
-   projection (M4), and the metric/bulk-read slice (M5, L10, U1).
+1. Phase 2 — server load narrowing, remaining slices: command-mutation read
+   narrowing (M3, L5, L6), the single-character projection (M4), and the
+   metric/bulk-read slice (M5, L10, U1).
 2. After Phase 2, pick Phase 3-7 by current pain. Refresh
    [`latest-verification.md`](latest-verification.md) after each phase.
 
-Done so far (Phase 1 complete):
+Done so far (Phase 1 complete; Phase 2 in progress):
+
+- M1/L1/L2 — scoped assembly load, DONE (`c193c008`):
+  `loadPersistedForAssembly` hydrates only the target chat's messages/hypaV3
+  (siblings get `message=[]`; broad loader untouched for
+  assetGc/export/save/boot), `getActiveModules` memoized per loaded
+  `Database`, and `applyCurrentChatRunVars` skips marker-free parser
+  fixed points. Regressions: `serverLoadCostHarness.test.ts` (M1 route
+  load-count + loader equivalence + embedded fallback),
+  `modulesMemo.test.ts` (L1), `assemble.test.ts` L2 describe.
 
 - H1 — `loadChatHydration` guard, DONE (`0dc7452e`): early-return on
   `message.length > 0`; scoped + zero-row-fallback regression tests in

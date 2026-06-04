@@ -42,7 +42,7 @@ consumers.
 
 | ID | Phase | Target fix | Status |
 | -- | ----- | ---------- | ------ |
-| M1 | [2](phases/phase-2-server-load-narrowing.md) | Scoped target-chat message/hypa load. [known-leftover] | scheduled |
+| M1 | [2](phases/phase-2-server-load-narrowing.md) | Scoped target-chat message/hypa load. [known-leftover] | DONE (`c193c008`) |
 | M2 | [7](phases/phase-7-memoization-and-hygiene.md) | Hoist module/script/RegExp work once per assembly. | scheduled |
 | M3 | [2](phases/phase-2-server-load-narrowing.md) | Field-scoped command reads or per-request load memo. | scheduled |
 | M4 | [2](phases/phase-2-server-load-narrowing.md) | Single-row `loadSingleCharacterRow`; in-place mask where owned. | scheduled |
@@ -61,8 +61,8 @@ consumers.
 
 | ID | Phase | Target fix | Status |
 | -- | ----- | ---------- | ------ |
-| L1 | [2](phases/phase-2-server-load-narrowing.md) | Memoize `getActiveModules` per assembly. | scheduled |
-| L2 | [2](phases/phase-2-server-load-narrowing.md) | Hoist invariant run-var expansion. | scheduled |
+| L1 | [2](phases/phase-2-server-load-narrowing.md) | Memoize `getActiveModules` per assembly. | DONE (`c193c008`) |
+| L2 | [2](phases/phase-2-server-load-narrowing.md) | Hoist invariant run-var expansion. | DONE (`c193c008`) |
 | L3 | [7](phases/phase-7-memoization-and-hygiene.md) | Hoist/compile lorebook keyword regexes. [known-leftover] | scheduled |
 | L5 | [2](phases/phase-2-server-load-narrowing.md) | Skip asset scan when mutation does not read assets. | scheduled |
 | L6 | [2](phases/phase-2-server-load-narrowing.md) | Narrow message-only character/chat lookup. | scheduled |

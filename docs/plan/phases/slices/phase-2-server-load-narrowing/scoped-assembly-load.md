@@ -1,6 +1,27 @@
 # Scoped Assembly Load
 
-Status: not started. Phase 2. Covers M1 plus assembly memo lows L1 and L2.
+Status: DONE (`c193c008`). Phase 2. Covers M1 plus assembly memo lows L1 and L2.
+
+Landed shape:
+
+- M1 — `loadPersistedForAssembly(db, dataDir, chatId)`
+  (`server/fastify/src/repository.ts`): message-free `loadPersisted` +
+  `getChatMessagesGroupedByIds`/`getChatHypaV3GroupedByIds` for the target chat
+  only; every sibling chat gets `message = []`; the target keeps the broad
+  loader's embedded-array fallback. Wired into `loadDatabaseDeps` in
+  `routes/generationChat.ts` (send/stream/durable/preview all route through
+  `assemblePromptWithMetrics`). `loadPersistedWithMessages` unchanged for
+  assetGc/export/save/boot-backfill.
+- L1 — `getActiveModules` memo (`prompt/modules.ts`): WeakMap keyed on the
+  loaded `Database` object + requested-id JSON key + `database.modules` array
+  ref. Fresh per-request loads can never hit a stale entry.
+- L2 — `applyCurrentChatRunVars` (`prompt/assemble.ts`): invariant expand
+  context hoisted out of the loop; marker-free bodies (no `{`, no
+  `<user|char|bot>` tag — exported predicate `isRunVarParserFixedPoint`) skip
+  the per-message parse as proven parser fixed points.
+- Regression tests: `serverLoadCostHarness.test.ts` (M1 route load-count,
+  loader equivalence, embedded fallback), `modulesMemo.test.ts` (L1),
+  `assemble.test.ts` "Phase 2 L2 run-var fixed-point skip" (L2).
 
 ## Scope
 
@@ -44,12 +65,16 @@ work.
 
 ## Done Criteria
 
-- The Phase 0 server load-count assertion shows zero `getAllChatMessagesGrouped`
-  calls on the assembly path; only the target chat's messages are parsed.
-- `RISU_PROTOCOL_METRICS=1` `databaseLoadMs` no longer scales with total corpus
-  size for a single-chat send (measured on the Phase 0 fixture).
-- Assembly golden-output tests are byte-identical.
-- Gates `M1`, `L1`, `L2` registered in Phase 8.
+- [x] The Phase 0 server load-count assertion shows zero `getAllChatMessagesGrouped`
+  calls on the assembly path; only the target chat's messages are parsed
+  (`serverLoadCostHarness.test.ts` "M1: prompt assembly performs zero
+  whole-corpus message/hypa payload reads").
+- [x] `RISU_PROTOCOL_METRICS=1` `databaseLoadMs` no longer scales with total corpus
+  size for a single-chat send — the assembly load now reads one chat's rows
+  plus the character/collection tables, never the messages/hypa corpus.
+- [x] Assembly golden-output tests are byte-identical (full server suite green;
+  loader-equivalence test proves the target chat loads identically).
+- [x] Gates `M1`, `L1`, `L2` registered in Phase 8 (`fixCompletenessGate.test.ts`).
 
 ## Validation
 

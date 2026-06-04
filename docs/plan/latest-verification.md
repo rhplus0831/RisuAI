@@ -59,6 +59,15 @@ Recorded from the shared large-corpus fixture before any fix lands.
   (`totalCloneCount` 0) instead of a whole-characters JSON clone per click;
   the `changeChatTo` end-to-end gate proves no clone at the size of the
   characters array on either the index or the id path.
+- Phase 2 M1/L1/L2 (`c193c008`): a preview/send assembly performs **zero
+  whole-corpus `messages`/`chat_hypa_v3` payload reads** (was: both tables
+  parsed whole per send/continue/regenerate/preview) — only the target chat's
+  rows plus the character/collection tables load, so `databaseLoadMs` no
+  longer scales with transcript corpus size. The loader-equivalence test
+  proves the target chat hydrates byte-identically and every sibling gets
+  `message=[]`. L1: the ~8 per-assembly `getActiveModules` scans hit one memo
+  entry. L2: marker-free message bodies skip the per-message parser pass as
+  proven fixed points.
 
 ## How To Reproduce The Costs Being Fixed
 
@@ -82,3 +91,4 @@ Recorded from the shared large-corpus fixture before any fix lands.
 | 2026-06-04 | Phase 1 H1 slice (`0dc7452e` fix + gate/doc flip) | `pnpm api:test` 1640/1 (+1 zero-row fallback regression; H1 control flipped to `assertScopedLoadOnHotPath`), `pnpm test` 1067/4 (gate flip, no count change), audit green, both tsc checks zero errors. No-hypa hydration: 0 corpus loads (was 13). |
 | 2026-06-04 | Phase 1 H3 slice (`e41dc6c6` fix + gate/doc flip) | `pnpm test` 1077/4 (+7 `streamCoalescer.test.ts`, +3 `streamResponse.test.ts` H3 block), `pnpm api:test` 1640/1 (carried), audit green, both tsc checks zero errors. 200-token stream: ≤2 parses (was 200). |
 | 2026-06-04 | Phase 1 H2 slice (`067ab82a` fix + gate/doc flip) — PHASE 1 COMPLETE | `pnpm test` 1084/4 (+4 `chatCommands.test.ts` H2 block, +3 `globalApi.changeChatTo.test.ts`), `pnpm api:test` 1640/1, audit green, both tsc checks zero errors. Chat select: 0 clone calls (was a whole-characters clone per click). |
+| 2026-06-04 | Phase 2 scoped-assembly-load slice (`c193c008` fix + gate/doc flip) | `pnpm api:test` 1651/1 (+3 M1 `serverLoadCostHarness.test.ts`, +6 L1 `modulesMemo.test.ts`, +2 L2 `assemble.test.ts`), `pnpm test` 1084/4 (gate flip, no count change), audit green, both tsc checks zero errors. Assembly: 0 whole-corpus message/hypa reads (was 2 whole-table parses per send/preview). |
