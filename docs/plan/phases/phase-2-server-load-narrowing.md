@@ -98,10 +98,14 @@ Findings: M1, M3, M4, M5, L1, L2, L5, L6, L10, U1.
 
 ## Validation
 
-- `RISU_PROTOCOL_METRICS=1 pnpm api:test -- server/fastify/__tests__/generation.chat.test.ts`
-  (M1, L1, L2 stage timings).
-- `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test -- server/fastify/__tests__/commandMetrics.test.ts`
-  (M3, L5, L6 mutation read cost).
-- `pnpm api:test -- server/fastify/__tests__/projection.test.ts server/fastify/__tests__/bootstrap.test.ts`
-  (M4, M5, L10, U1; payload identity).
-- `pnpm api:test`, `pnpm client-thinning:audit`, both TypeScript checks.
+- Focused Phase 2 gates:
+  `pnpm api:test -- server/fastify/__tests__/serverLoadCostHarness.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts server/fastify/__tests__/modulesMemo.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/providerSecrets.test.ts`.
+- Phase 8 registry/doc drift gate:
+  `pnpm test -- src/ts/__tests__/fixCompletenessGate.test.ts`.
+- Optional metric review commands:
+  `RISU_PROTOCOL_METRICS=1 pnpm api:test -- server/fastify/__tests__/generation.chat.test.ts`
+  (M1/L1/L2 stage timings) and
+  `RISU_COMMAND_METRIC_SUMMARY=1 pnpm api:test -- server/fastify/__tests__/commandMetrics.test.ts`
+  (M3/L5/L6 mutation read cost).
+- Full proof: `pnpm api:test`, `pnpm test`, `pnpm client-thinning:audit`, and
+  both TypeScript checks.

@@ -36,9 +36,9 @@ import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFi
 // seed from. The Phase 1 H1 guard (`loadChatHydration` early-return on
 // `message.length > 0`) has landed, so missing-hypa hydration is asserted
 // scoped below; the zero-row not-yet-extracted fallback keeps its documented
-// breadth. The remaining whole-corpus positive control (U1, bulk hydration)
-// documents CURRENT breadth — when the Phase 2 narrowing lands, flip it to
-// `assertScopedLoadOnHotPath`.
+// breadth. Phase 2 also flipped the former U1 bulk-hydration breadth control to
+// scoped gates while keeping explicit broad-fallback controls for legacy
+// pre-extraction states.
 
 interface Harness {
   app: FastifyInstance

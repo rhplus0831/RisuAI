@@ -861,9 +861,10 @@ function selectDatabaseFields(
   return fields
 }
 
-// `loadPersistedWithMessages` is the message-aware read boundary used by every
-// reader that needs a fully-hydrated `Database` (mutation engine, bootstrap,
-// projection, prompt assembly, risuSave export). Messages live in the SQLite
+// `loadPersistedWithMessages` is the message-aware read boundary used by
+// full-corpus readers that need every chat hydrated (migration/backfill,
+// export/save, and explicit broad fallbacks). Prompt assembly now uses the
+// scoped `loadPersistedForAssembly` path below. Messages live in the SQLite
 // `messages` table; `loadPersisted` returns message-free chats.
 
 type JsonRecord = Record<string, unknown>
@@ -1170,8 +1171,8 @@ export function ensureDbJsonImported(db: DatabaseSync, dataDir: string): void {
 /**
  * The bootstrap / foreign-event projection of the database: chat *metadata* only,
  * every `chat.message[]` replaced by an empty array. The client hydrates a chat's
- * messages on open. Prompt assembly keeps using `loadPersistedWithMessages` —
- * only the wire projection is stubbed.
+ * messages on open. Full-corpus consumers keep their broad loaders; only the
+ * wire projection is stubbed.
  */
 export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted {
   const persisted = loadPersisted(db, dataDir)

@@ -83,7 +83,8 @@ dismissed list. Highlights:
 ## Latest Verification
 
 See [`latest-verification.md`](latest-verification.md). Re-run and record the
-focused/full proof set before starting Phase 2 or after any later phase lands.
+focused/full proof set before starting the next phase or after any later phase
+lands.
 
 ## Start Here
 

@@ -93,9 +93,9 @@ Done so far (Phases 0-2 complete):
 
 ## Not First
 
-- Do not start a Phase 2 server narrowing by editing `loadPersistedWithMessages`
-  itself — it is shared with assetGc/export/save/import that genuinely need all
-  chats' messages. Add an assembly-specific scoped loader instead.
+- For any future server-load narrowing, do not edit `loadPersistedWithMessages`
+  itself as the hot-path shortcut — it is shared with full-corpus consumers that
+  genuinely need all chats' messages. Add a path-specific scoped loader instead.
 - Do not delete the full-collection client snapshot
   (`currentChatStateSnapshot`) or the broad SQLite loaders; create/delete/
   reorder/fork and the full-corpus consumers still need them. Only stop the hot

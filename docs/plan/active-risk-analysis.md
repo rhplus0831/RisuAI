@@ -153,8 +153,9 @@ self-host wins. Only L4, L7, L26, and U2 are fully gated.
 
 Route the 57 confirmed findings plus U1/U4 across Phases 0-8. Of those, the
 scheduled fix set excludes L4/L7/L26/U2 (gated) and U3 (no action). Phase 1
-highs are done; continue with Phase 2 server-root work. Every fix needs a
-regression test and Phase 8 gate entry.
+highs and Phase 2 server-root work are done; continue with Phase 3 unless
+current evidence points elsewhere. Every fix needs a regression test and Phase 8
+gate entry.
 
 ## Investigated And Dismissed
 

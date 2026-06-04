@@ -63,8 +63,8 @@ hot paths, but left adjacent paths broad:
 - Several decompress/buffer paths check size only after full materialization.
 
 This plan started from the green baseline in
-[`latest-verification.md`](latest-verification.md). Phases 0 and 1 have landed;
-Phase 2 is next.
+[`latest-verification.md`](latest-verification.md). Phases 0, 1, and 2 have
+landed; Phase 3 client clone narrowing is the next root in audit order.
 
 ## Prerequisites
 
@@ -130,8 +130,8 @@ Every slice must preserve these; a slice that cannot is out of scope:
 
 ## Execution Cursor
 
-Phases 0 and 1 are complete. Continue with Phase 2, then prefer Phases 3-7 in
-the order above unless current evidence points elsewhere. Phase 8 is the
+Phases 0, 1, and 2 are complete. Continue with Phase 3, then prefer Phases 4-7
+in the order above unless current evidence points elsewhere. Phase 8 is the
 standing gate.
 
 For each fix: re-check the cited symbol, add the focused regression test, narrow
