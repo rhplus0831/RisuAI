@@ -55,7 +55,7 @@ import {
   handleActiveWriterStaleResponse,
 } from './server/activeWriterSession'
 import { setCachedServerCommandRevision } from './server/commands'
-import { currentChatStateSnapshot, dispatchUpdateChat } from './chatCommands'
+import { currentChatSelectionSnapshot, dispatchSelectChat } from './chatCommands'
 import {
   readServerAssetBytes,
   serverAssetContentType,
@@ -1814,7 +1814,10 @@ export function foldChatToMessage(targetMessageIdOrIndex: string | number) {
 }
 
 export function changeChatTo(IdOrIndex: string | number) {
-  const previous = currentChatStateSnapshot()
+  // Scalar rollback (H2): selecting a chat only flips `chatPage`, so capturing
+  // the whole-characters ChatStateSnapshot here deep-cloned every hydrated
+  // transcript on the UI thread per chat click.
+  const previous = currentChatSelectionSnapshot()
   const currentCharacter = getCurrentCharacter()
   let index = -1
   if (typeof IdOrIndex === 'number') {
@@ -1836,7 +1839,7 @@ export function changeChatTo(IdOrIndex: string | number) {
   })
   const chatId = currentCharacter.chats[index]?.id
   if (chatId) {
-    dispatchUpdateChat(chatId, {}, previous, true)
+    dispatchSelectChat(chatId, previous)
   }
   ReloadGUIPointer.set(Math.random())
 }

@@ -151,6 +151,18 @@ const NARROWED_HOT_PATHS: GateEntry[] = [
     cloneCostGates: ['ts/characters.imageEmotion.test.ts'],
     rollbackGates: ['ts/characters.imageEmotion.test.ts'],
   },
+  // Landed by the stability/performance plan (docs/plan/, Phase 1 H2), not the
+  // original clone-narrowing phases; registered here because this is the one
+  // budget surface for clone-cost gates.
+  {
+    area: 'Chat-selection scalar snapshot (changeChatTo / sidebar selectChat) — stability plan H2',
+    phase: 1,
+    severity: 'high',
+    kind: 'snapshot',
+    helper: 'restoreChatSelection',
+    cloneCostGates: ['ts/globalApi.changeChatTo.test.ts', 'ts/chatCommands.test.ts'],
+    rollbackGates: ['ts/chatCommands.test.ts'],
+  },
 ]
 
 // Paths that intentionally keep a broad snapshot. Recorded with a reason so

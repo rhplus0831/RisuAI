@@ -22,10 +22,12 @@ import {
   withTrustedServerProjectionWrite,
 } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
+import { get } from 'svelte/store'
 import {
   appendCurrentChatUserMessageForSend,
   currentChatScopedSnapshot,
   currentChatScriptstateSnapshot,
+  currentChatSelectionSnapshot,
   currentChatStateSnapshot,
   dispatchCreateChat,
   dispatchCreateChatFolder,
@@ -34,12 +36,14 @@ import {
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
   dispatchReplaceMessagesScoped,
+  dispatchSelectChat,
   dispatchUpdateChat,
   dispatchUpdateChatNoteScoped,
   restoreChatFolderRowMetadata,
   restoreChatRowMetadata,
   restoreChatScopedState,
   restoreChatScriptstate,
+  restoreChatSelection,
 } from './chatCommands'
 import {
   assertRollbackRestoresOnly,
@@ -548,6 +552,95 @@ describe('Phase 0 chat-scriptstate snapshot kit', () => {
       expectUntouched: () => {
         // a whole-chat restore would have wiped this concurrent message
         expect(DBState.db.characters[0].chats[0].message).toHaveLength(41)
+      },
+    })
+  })
+})
+
+// Stability/performance plan, Phase 1 H2: chat select only flips the owning
+// character's `chatPage`, so its rollback is a scalar snapshot — never the
+// whole-characters `ChatStateSnapshot` clone the old `changeChatTo` captured
+// on every chat click.
+describe('H2 chat-selection snapshot', () => {
+  it('captures only selection scalars and performs zero clone work', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+
+    const instrumented = withCloneInstrumentation(() => currentChatSelectionSnapshot())
+    const snapshot = instrumented.result
+    expect(snapshot).toEqual({ characterId: 'char-0', selectedCharID: 0, chatPage: 0 })
+    assertSnapshotIsScalar(snapshot)
+    // Purely scalar reads: not a single clone primitive call. The old path
+    // JSON-cloned the whole characters array (hydrated transcripts included).
+    expect(instrumented.totalCloneCount).toBe(0)
+  })
+
+  it('restores only the owning character chatPage, never the selection or sibling edits', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+
+    assertRollbackRestoresOnly({
+      capture: () => currentChatSelectionSnapshot(),
+      mutate: () => {
+        // the optimistic select write
+        DBState.db.characters[0].chatPage = 1
+        // concurrent, unrelated edits a whole-array restore would wipe
+        DBState.db.characters[0].chats[0].message.push({
+          role: 'char',
+          data: 'concurrent',
+          chatId: 'msg-concurrent',
+        })
+        DBState.db.characters[1].chats[0].note = 'sibling concurrent note'
+        // a concurrent character switch the rollback must not undo
+        selectedCharID.set(1)
+      },
+      expectMutated: () => {
+        expect(DBState.db.characters[0].chatPage).toBe(1)
+      },
+      restore: (snapshot) => restoreChatSelection(snapshot),
+      expectRestored: () => {
+        expect(DBState.db.characters[0].chatPage).toBe(0)
+      },
+      expectUntouched: () => {
+        expect(DBState.db.characters[0].chats[0].message).toHaveLength(41)
+        expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent note')
+        // chat select never mutates the character selection; restore must not
+        // re-write it either (it only locates the row by it)
+        expect(get(selectedCharID)).toBe(1)
+      },
+    })
+  })
+
+  it('restores chatPage by stable chaId even when the character index shifted', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+    const snapshot = currentChatSelectionSnapshot()
+
+    DBState.db.characters[0].chatPage = 1
+    DBState.db.characters.unshift({ chaId: 'char-new', name: 'Inserted', chatPage: 9, chats: [] } as any)
+
+    restoreChatSelection(snapshot)
+
+    expect(DBState.db.characters.find((c: any) => c.chaId === 'char-0').chatPage).toBe(0)
+    // the character now sitting at the stale index is untouched
+    expect(DBState.db.characters[0].chatPage).toBe(9)
+  })
+
+  it('dispatchSelectChat sends the empty-patch select command', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    dispatchSelectChat('chat-a', currentChatSelectionSnapshot())
+    await waitForCallCount(calls, 2)
+
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      authHeader: 'chat-command-token',
+      body: {
+        baseRevision: 10,
+        patch: {},
+        select: true,
       },
     })
   })

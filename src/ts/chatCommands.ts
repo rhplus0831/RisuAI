@@ -85,6 +85,40 @@ export function restoreChatState(snapshot: ChatStateSnapshot): void {
   })
 }
 
+// Scalar chat-selection rollback (stability/perf plan, Phase 1 H2). Selecting a
+// chat only flips the owning character's `chatPage` and dispatches an
+// empty-patch select command, so its rollback never needs the heavy
+// `ChatStateSnapshot` (a synchronous JSON clone of every character with all
+// hydrated chat histories — the same class of UI stall the scalar
+// `CharacterSelectionSnapshot` removed from character select). `selectedCharID`
+// is captured to locate the row on restore, not to restore the store: chat
+// select never mutates the character selection, and re-writing it could
+// clobber a concurrent character switch. The full-collection snapshot stays
+// for genuine restructures (create/delete/reorder/fork).
+export interface ChatSelectionSnapshot {
+  characterId: string | undefined
+  selectedCharID: number
+  chatPage: number
+}
+
+export function currentChatSelectionSnapshot(): ChatSelectionSnapshot {
+  const selectedChar = get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  return {
+    characterId: character?.chaId,
+    selectedCharID: selectedChar,
+    chatPage: character?.chatPage ?? 0,
+  }
+}
+
+export function restoreChatSelection(snapshot: ChatSelectionSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
+    if (!character) return
+    character.chatPage = snapshot.chatPage
+  })
+}
+
 // Narrow single-chat rollback. Message edit/delete/bookmark/replace/send and
 // slash-command message mutation only touch the active chat row, so a rollback
 // only needs that one chat — not a JSON clone of every character's whole chat
@@ -315,6 +349,22 @@ export function dispatchUpdateChat(
         select,
       }),
     () => restoreChatState(previous),
+  )
+}
+
+// Scalar-rollback variant of `dispatchUpdateChat` for chat selection (H2): the
+// same empty-patch select command, but a failed select restores only the owning
+// character's `chatPage` instead of cloning the whole characters array.
+export function dispatchSelectChat(chatId: string, previous: ChatSelectionSnapshot): void {
+  runChatCommand(
+    (baseRevision) =>
+      updateChatCommand({
+        baseRevision,
+        chatId,
+        patch: {},
+        select: true,
+      }),
+    () => restoreChatSelection(previous),
   )
 }
 

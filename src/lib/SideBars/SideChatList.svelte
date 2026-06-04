@@ -37,6 +37,7 @@
   import { changeChatTo, createChatCopyName } from 'src/ts/globalApi.svelte'
   import { ensureAllChatsHydrated } from 'src/ts/server/chatMessageHydration.svelte'
   import {
+    currentChatSelectionSnapshot,
     currentChatStateSnapshot,
     dispatchCreateChat,
     dispatchCreateChatFolder,
@@ -45,6 +46,7 @@
     dispatchForkChat,
     dispatchReorderChats,
     dispatchReorderChatsByIds,
+    dispatchSelectChat,
     dispatchUpdateChat,
     dispatchUpdateChatFolder,
     restoreChatState,
@@ -88,7 +90,9 @@
   function selectChat(index: number): void {
     const chatId = chara.chats[index]?.id
     if (canUseServerCommands() && chatId) {
-      dispatchUpdateChat(chatId, {}, currentChatStateSnapshot(), true)
+      // Scalar rollback (H2): select only flips `chatPage`; the whole-array
+      // snapshot deep-cloned every hydrated transcript per sidebar click.
+      dispatchSelectChat(chatId, currentChatSelectionSnapshot())
       return
     }
     changeChatTo(index)
