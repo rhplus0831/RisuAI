@@ -10,7 +10,7 @@ import {
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import type { MemoryEvent, MemoryEventBus } from '../memoryEvents.js'
-import { emitProtocolMetric } from '../protocolMetrics.js'
+import { emitProtocolMetric, protocolMetricsEnabled } from '../protocolMetrics.js'
 import { writeBoundedRaw } from '../streamBackpressure.js'
 
 function formatSseComment(comment: string): string {
@@ -73,7 +73,14 @@ export function registerEventsRoutes(
     req.raw.once('close', cleanup)
 
     const currentRevision = getSchemaState(db).revision
-    const history = listPersistedCommandEventHistory(db)
+    // The full history read+map exists for replay — and for the opt-in
+    // replay metric's oldest/latest fields, so metric output stays identical
+    // when metrics are on. A fresh no-replay connect in the default config
+    // must not pay it (audit L10).
+    const history =
+      cursor.sinceRevision !== null || protocolMetricsEnabled()
+        ? listPersistedCommandEventHistory(db)
+        : ([] as readonly CommandEvent[])
     const replay =
       cursor.sinceRevision === null
         ? { status: 'ok' as const, events: [] as readonly CommandEvent[] }

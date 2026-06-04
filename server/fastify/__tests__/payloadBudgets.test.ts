@@ -25,9 +25,15 @@ vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
   return {
     ...actual,
-    emitProtocolMetric: (name: string, fields: Record<string, unknown>) => {
+    emitProtocolMetric: (
+      name: string,
+      fields: Record<string, unknown> | (() => Record<string, unknown>),
+    ) => {
       if (!actual.protocolMetricsEnabled()) return
-      capturedMetrics.push({ metric: name, ...fields } as PayloadMetric)
+      capturedMetrics.push({
+        metric: name,
+        ...(typeof fields === 'function' ? fields() : fields),
+      } as PayloadMetric)
     },
   }
 })

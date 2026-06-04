@@ -539,18 +539,22 @@ function emitProjectionMetric(
   response: unknown,
   extra: Record<string, unknown> = {},
 ): void {
-  const mode =
-    response && typeof response === 'object' && 'mode' in response
-      ? (response as { mode?: unknown }).mode
-      : undefined
+  // Thunk (audit M5): `jsonPayloadBytes` re-serializes the full response, so
+  // the fields must only be built after the metrics-enabled guard.
   emitProtocolMetric(
     'projection_response',
-    {
-      resource,
-      revision,
-      ...(typeof mode === 'string' ? { mode } : {}),
-      payloadBytes: jsonPayloadBytes(response),
-      ...extra,
+    () => {
+      const mode =
+        response && typeof response === 'object' && 'mode' in response
+          ? (response as { mode?: unknown }).mode
+          : undefined
+      return {
+        resource,
+        revision,
+        ...(typeof mode === 'string' ? { mode } : {}),
+        payloadBytes: jsonPayloadBytes(response),
+        ...extra,
+      }
     },
     logger,
   )

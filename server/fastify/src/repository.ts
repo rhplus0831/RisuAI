@@ -1244,9 +1244,41 @@ export function loadChatHydrations(
   dataDir: string,
   chatIds: readonly string[],
 ): BulkChatHydrationPayload {
+  if (chatIds.length === 0) return { chats: [], missing: [] }
+
   const messages = getChatMessagesGroupedByIds(db, chatIds)
   const hypaV3ById = getChatHypaV3GroupedByIds(db, chatIds)
   const alternatesById = getAlternateMessagesGroupedByIds(db, chatIds)
+
+  // Known-id + embedded-fallback resolution reads only the REQUESTED chat rows
+  // (`WHERE id IN`), not the whole corpus (audit U1). The chats table is the
+  // known-id authority on exactly the states where `loadPersisted` would have
+  // served it (settings present, characters extracted into SQLite — the FK ties
+  // every chat row to a character row); any other state falls back to the broad
+  // walk, which keeps the embedded-characters fallback and the exact `missing`
+  // semantics.
+  const requestedRows = sqliteIsCharacterAuthority(db) ? getChatRowsByIds(db, chatIds) : null
+  if (requestedRows !== null) {
+    const chats: ChatHydrationPayload[] = []
+    const missing: string[] = []
+    for (const chatId of chatIds) {
+      const row = requestedRows.get(chatId)
+      if (!row) {
+        missing.push(chatId)
+        continue
+      }
+      const messageRows = messages.get(chatId)
+      const fallbackMessage = Array.isArray(row.message) ? row.message : undefined
+      chats.push({
+        chatId,
+        message: messageRows && messageRows.length > 0 ? messageRows : (fallbackMessage ?? []),
+        hypaV3Data: hypaV3ById.has(chatId) ? hypaV3ById.get(chatId) : row.hypaV3Data,
+        alternates: alternatesById.get(chatId) ?? [],
+      })
+    }
+    return { chats, missing }
+  }
+
   const fallbackById = new Map<string, { message?: unknown[]; hypaV3Data?: unknown }>()
   const knownChatIds = new Set<string>()
   const requestedChatIds = new Set(chatIds)
@@ -1285,6 +1317,39 @@ export function loadChatHydrations(
 }
 
 /**
+ * Whether the SQLite character/chat tables are the known-id authority that the
+ * broad `loadPersisted` walk would have used: settings initialized AND at least
+ * one extracted character row. On a pre-extraction database (`characters`
+ * empty), `loadPersisted` serves the settings-embedded characters instead, so
+ * a scoped table read must not answer known/missing for it.
+ */
+function sqliteIsCharacterAuthority(db: DatabaseSync): boolean {
+  if (loadSettingsFromSqlite(db) === null) return false
+  const probe = db.prepare('SELECT 1 FROM characters LIMIT 1').get()
+  return probe !== undefined
+}
+
+/** The requested chat rows by id (`WHERE id IN`, chunked). Non-record payloads
+ *  are skipped — the broad walk's `eachChat` never visits them either, so the
+ *  requested id reads as missing on both paths. */
+function getChatRowsByIds(db: DatabaseSync, chatIds: readonly string[]): Map<string, JsonRecord> {
+  const byId = new Map<string, JsonRecord>()
+  const chunkSize = 500
+  for (let index = 0; index < chatIds.length; index += chunkSize) {
+    const chunk = chatIds.slice(index, index + chunkSize)
+    const placeholders = chunk.map(() => '?').join(', ')
+    const rows = db
+      .prepare(`SELECT id, data_json FROM chats WHERE id IN (${placeholders})`)
+      .all(...chunk) as unknown as Array<{ id: string; data_json: string }>
+    for (const row of rows) {
+      const parsed = JSON.parse(row.data_json) as unknown
+      if (isRecord(parsed)) byId.set(row.id, parsed)
+    }
+  }
+  return byId
+}
+
+/**
  * One character's full `globalLore` for the hydration endpoint. Reads the full,
  * un-stubbed db.json and returns `[]` for an unknown / lore-less character.
  */
@@ -1311,16 +1376,25 @@ export function loadCharacterLorebookHydrations(
   dataDir: string,
   characterIds: readonly string[],
 ): BulkCharacterLorebookHydrationPayload {
+  if (characterIds.length === 0) return { characters: [], missing: [] }
+
   const requestedCharacterIds = new Set(characterIds)
   const knownCharacterIds = new Set<string>()
   const globalLoreById = new Map<string, unknown[]>()
-  const persisted = loadPersisted(db, dataDir)
-  const characters =
-    (
-      persisted.database as {
-        characters?: Array<{ chaId?: string; globalLore?: unknown } | null>
-      } | null
-    )?.characters ?? []
+
+  // Known-id + lore resolution reads only the REQUESTED character rows
+  // (`WHERE id IN`), not the whole corpus (audit U1); the table stores the
+  // full un-stubbed `globalLore`. Same authority gate + broad fallback as
+  // `loadChatHydrations`.
+  let characters: ReadonlyArray<Record<string, unknown> | null>
+  if (sqliteIsCharacterAuthority(db)) {
+    characters = [...getCharacterRowsByIds(db, characterIds).values()]
+  } else {
+    const persisted = loadPersisted(db, dataDir)
+    characters =
+      (persisted.database as { characters?: Array<Record<string, unknown> | null> } | null)
+        ?.characters ?? []
+  }
 
   for (const character of characters) {
     if (typeof character?.chaId !== 'string') continue
@@ -1346,6 +1420,28 @@ export function loadCharacterLorebookHydrations(
   }
 
   return { characters: hydrated, missing }
+}
+
+/** The requested character rows by id (`WHERE id IN`, chunked). Non-record
+ *  payloads are skipped (read as missing, like the broad walk's guards). */
+function getCharacterRowsByIds(
+  db: DatabaseSync,
+  characterIds: readonly string[],
+): Map<string, JsonRecord> {
+  const byId = new Map<string, JsonRecord>()
+  const chunkSize = 500
+  for (let index = 0; index < characterIds.length; index += chunkSize) {
+    const chunk = characterIds.slice(index, index + chunkSize)
+    const placeholders = chunk.map(() => '?').join(', ')
+    const rows = db
+      .prepare(`SELECT id, data_json FROM characters WHERE id IN (${placeholders})`)
+      .all(...chunk) as unknown as Array<{ id: string; data_json: string }>
+    for (const row of rows) {
+      const parsed = JSON.parse(row.data_json) as unknown
+      if (isRecord(parsed)) byId.set(row.id, parsed)
+    }
+  }
+  return byId
 }
 
 export function applyImport(

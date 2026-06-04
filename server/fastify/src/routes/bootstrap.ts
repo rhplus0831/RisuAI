@@ -41,13 +41,15 @@ export function registerBootstrapRoutes(
       // reload, can discover and reattach. Server-memory only.
       activeGenerationJobs: generationJobs?.activeJobs() ?? [],
     }
+    // Thunk (audit M5): `jsonPayloadBytes` re-serializes the whole bootstrap
+    // payload, so the fields must only be built after the metrics-enabled guard.
     emitProtocolMetric(
       'bootstrap_projection',
-      {
+      () => ({
         revision,
         payloadBytes: jsonPayloadBytes(response),
         activeGenerationJobCount: response.activeGenerationJobs.length,
-      },
+      }),
       req.log,
     )
     return response

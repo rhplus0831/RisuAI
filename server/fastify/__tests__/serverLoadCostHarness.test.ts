@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -19,6 +20,7 @@ import {
   maskProviderSecrets,
   maskProviderSecretsInPlace,
 } from '../src/providerSecrets.js'
+import { emitProtocolMetric, protocolMetricsEnabled } from '../src/protocolMetrics.js'
 import { getChatMessagesGroupedByIds } from '../src/messageStore.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import {
@@ -94,6 +96,51 @@ function hydrationGet(chatId: string) {
   })
 }
 
+async function listen(): Promise<string> {
+  await harness.app.listen({ host: '127.0.0.1', port: 0 })
+  const address = harness.app.server.address() as AddressInfo
+  return `http://127.0.0.1:${address.port}`
+}
+
+async function readUntil(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  predicate: (text: string) => boolean,
+): Promise<string> {
+  const deadline = Date.now() + 2_000
+  let text = ''
+  while (Date.now() < deadline) {
+    const result = await Promise.race([
+      reader.read(),
+      new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) =>
+        setTimeout(() => reject(new Error('timed out waiting for SSE data')), 250),
+      ),
+    ])
+    if (result.done) break
+    text += Buffer.from(result.value).toString('utf8')
+    if (predicate(text)) return text
+  }
+  throw new Error(`timed out waiting for SSE data; received ${JSON.stringify(text)}`)
+}
+
+/** Run `fn` with `RISU_PROTOCOL_METRICS` forced to `value` ('' = off). */
+async function withProtocolMetricsEnv<T>(value: string, fn: () => Promise<T>): Promise<T> {
+  const previous = process.env.RISU_PROTOCOL_METRICS
+  if (value === '') {
+    delete process.env.RISU_PROTOCOL_METRICS
+  } else {
+    process.env.RISU_PROTOCOL_METRICS = value
+  }
+  try {
+    return await fn()
+  } finally {
+    if (previous === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = previous
+    }
+  }
+}
+
 describe('classifyCorpusStatement', () => {
   it('flags the whole-corpus payload loaders by their SQL', () => {
     // getAllChatMessagesGrouped
@@ -123,6 +170,12 @@ describe('classifyCorpusStatement', () => {
     expect(
       classifyCorpusStatement('SELECT id, ext, size, content_type FROM assets ORDER BY id'),
     ).toEqual({ table: 'assets' })
+    // listPersistedCommandEventHistory (L10)
+    expect(
+      classifyCorpusStatement(
+        'SELECT revision, type, resource, id, parent_id AS parentId FROM command_events ORDER BY revision ASC',
+      ),
+    ).toEqual({ table: 'command_events' })
   })
 
   it('does not flag scoped, id-only, non-corpus, or write statements', () => {
@@ -146,6 +199,12 @@ describe('classifyCorpusStatement', () => {
       classifyCorpusStatement('SELECT DISTINCT chat_id FROM messages WHERE alternate = 0'),
     ).toBeNull()
     expect(classifyCorpusStatement('SELECT chat_id FROM chat_hypa_v3')).toBeNull()
+    // The command-event prune threshold walk reads only the revision column.
+    expect(
+      classifyCorpusStatement(
+        'SELECT revision FROM command_events ORDER BY revision DESC LIMIT 1 OFFSET ?',
+      ),
+    ).toBeNull()
     expect(
       classifyCorpusStatement(
         'SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND alternate = 0',
@@ -256,24 +315,166 @@ describe('server load-count harness on the large-corpus fixture', () => {
     ).rejects.toThrow(/whole-corpus payload read/)
   })
 
-  it('detects bulk hydration breadth (U1): the bulk route loads the corpus even for one known id', async () => {
+  it('U1: bulk chat hydration performs zero whole-corpus payload reads, missing ids included', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
-    const { result: res, loadCountByTable } = await withServerLoadInstrumentation(() =>
+    // Audit U1 regression: `loadChatHydrations` paid a full `loadPersisted`
+    // just to compute known ids and the embedded fallback. The known-id check
+    // now reads only the requested chat rows; a genuinely unknown id resolves
+    // to `missing` without the broad walk.
+    const res = await assertScopedLoadOnHotPath(() =>
       harness.app.inject({
         method: 'POST',
         url: '/api/v1/projection/chatMessages/bulk',
         headers: { 'risu-auth': assertion },
-        payload: { ids: [fixture.hot.chatId] },
+        payload: { ids: [fixture.hot.chatId, fixture.noHypa.chatId, 'missing-chat'] },
       }),
     )
     expect(res.statusCode).toBe(200)
-    expect(res.json().chats).toHaveLength(1)
-    // CURRENT breadth (audit U1): `loadChatHydrations` always falls into
-    // `loadPersisted` for its known-id check. Phase 2 may narrow this; if it
-    // does, flip to `assertScopedLoadOnHotPath`.
-    expect(loadCountByTable.characters).toBeGreaterThanOrEqual(1)
+    const body = res.json()
+    expect(body.missing).toEqual(['missing-chat'])
+    expect(body.chats).toHaveLength(2)
+
+    // Each bulk row carries exactly what the single hydration route serves.
+    for (const chat of body.chats) {
+      const single = (await hydrationGet(chat.chatId)).json()
+      expect(
+        JSON.stringify({ m: chat.message, h: chat.hypaV3Data, a: chat.alternates }),
+      ).toBe(JSON.stringify({ m: single.message, h: single.hypaV3Data, a: single.alternates }))
+    }
+    expect(body.chats[0].message).toHaveLength(fixture.hot.messageCount)
+    expect(body.chats[0].hypaV3Data).toBeDefined()
+    expect(body.chats[1].hypaV3Data).toBeUndefined()
+  })
+
+  it('U1: bulk character-lorebook hydration performs zero whole-corpus payload reads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase({ ...fixture.database, enableLorebookStubs: true })
+
+    const charA = fixture.characters[0].chaId
+    const charB = fixture.characters[1].chaId
+    const res = await assertScopedLoadOnHotPath(() =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/projection/characterLorebooks/bulk',
+        headers: { 'risu-auth': assertion },
+        payload: { ids: [charA, 'missing-char', charB] },
+      }),
+    )
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.missing).toEqual(['missing-char'])
+    // The table stores the full un-stubbed globalLore; each bulk row carries
+    // exactly what the single characterLorebook hydration route serves.
+    expect(body.characters.map((row: { characterId: string }) => row.characterId)).toEqual([
+      charA,
+      charB,
+    ])
+    for (const row of body.characters) {
+      const single = (
+        await harness.app.inject({
+          method: 'GET',
+          url: `/api/v1/projection/characterLorebook?id=${row.characterId}`,
+          headers: { 'risu-auth': assertion },
+        })
+      ).json()
+      expect(row.globalLore).toHaveLength(fixture.characters[0].globalLore.length)
+      expect(JSON.stringify(row.globalLore)).toBe(JSON.stringify(single.globalLore))
+    }
+  })
+
+  it('U1: bulk hydration serves a legacy embedded-message chat row without the broad walk', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+
+    // A chats-table row that still embeds `message` with zero rows in the
+    // messages table (legacy shape). The characters table is populated, so the
+    // scoped known-id read is authoritative — and the row read already carries
+    // the embedded fallback payload. (The single-chat hydration route keeps its
+    // documented broad zero-row fallback; the bulk route is now stricter.)
+    const embedded = [
+      { role: 'user', data: 'embedded hello', chatId: 'pre-extract-m1', time: 1700000000000 },
+      { role: 'char', data: 'embedded reply', chatId: 'pre-extract-m2', time: 1700000000001 },
+    ]
+    const db = openDatabase(harness.dataDir)
+    try {
+      db.prepare(
+        'INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)',
+      ).run(
+        'pre-extract-chat',
+        fixture.hot.characterId,
+        999,
+        JSON.stringify({
+          id: 'pre-extract-chat',
+          name: 'Pre-extract',
+          note: '',
+          localLore: [],
+          message: embedded,
+        }),
+      )
+    } finally {
+      db.close()
+    }
+
+    const res = await assertScopedLoadOnHotPath(() =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/projection/chatMessages/bulk',
+        headers: { 'risu-auth': assertion },
+        payload: { ids: ['pre-extract-chat'] },
+      }),
+    )
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.missing).toEqual([])
+    expect(body.chats[0].message).toEqual(embedded)
+  })
+
+  it('U1: bulk hydration keeps the broad fallback on a pre-extraction embedded-characters database', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+
+    const embedded = [{ role: 'user', data: 'embedded hi', chatId: 'em-1', time: 1700000000000 }]
+    const db = openDatabase(harness.dataDir)
+    try {
+      // Simulate the legacy pre-extraction state: characters embedded in the
+      // settings record with empty characters/chats tables. The chats table is
+      // not the known-id authority here, so the loader must take the broad walk.
+      const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      settings.characters = [
+        {
+          chaId: 'embedded-char',
+          name: 'Embedded',
+          chats: [{ id: 'embedded-chat', name: 'E', message: embedded }],
+        },
+      ]
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      db.exec('DELETE FROM chats')
+      db.exec('DELETE FROM characters')
+      db.exec('DELETE FROM messages')
+      db.exec('DELETE FROM chat_hypa_v3')
+    } finally {
+      db.close()
+    }
+
+    const { result: res, corpusLoadCount } = await withServerLoadInstrumentation(() =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/projection/chatMessages/bulk',
+        headers: { 'risu-auth': assertion },
+        payload: { ids: ['embedded-chat', 'missing-chat'] },
+      }),
+    )
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.missing).toEqual(['missing-chat'])
+    expect(body.chats[0].message).toEqual(embedded)
+    // The broad walk is the one legitimate consumer on this state.
+    expect(corpusLoadCount).toBeGreaterThan(0)
   })
 
   it('M1: prompt assembly performs zero whole-corpus message/hypa payload reads', async () => {
@@ -583,6 +784,159 @@ describe('server load-count harness on the large-corpus fixture', () => {
     } finally {
       db.close()
     }
+  })
+
+  it('L10: a fresh (no-replay) SSE connect performs zero command-event history reads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+    const baseUrl = await listen()
+    const abort = new AbortController()
+
+    try {
+      // Audit L10 regression: every SSE connect loaded + mapped the full
+      // command-event history even when no replay cursor was sent. A fresh
+      // connect now performs zero corpus payload reads of any table.
+      await withProtocolMetricsEnv('', () =>
+        assertScopedLoadOnHotPath(async () => {
+          const res = await fetch(`${baseUrl}/api/v1/events`, {
+            headers: { 'risu-auth': assertion },
+            signal: abort.signal,
+          })
+          expect(res.status).toBe(200)
+          const reader = res.body!.getReader()
+          try {
+            await readUntil(reader, (text) => text.includes(': connected\n\n'))
+          } finally {
+            reader.releaseLock()
+          }
+        }),
+      )
+    } finally {
+      abort.abort()
+    }
+  })
+
+  it('L10: a replay connect still reads the history; so does a fresh connect with metrics on', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+    const revision = (
+      await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': assertion },
+      })
+    ).json().revision as number
+    const baseUrl = await listen()
+
+    const connect = async (url: string): Promise<void> => {
+      const abort = new AbortController()
+      try {
+        const res = await fetch(url, {
+          headers: { 'risu-auth': assertion },
+          signal: abort.signal,
+        })
+        expect(res.status).toBe(200)
+        const reader = res.body!.getReader()
+        try {
+          await readUntil(reader, (text) => text.includes(': connected\n\n'))
+        } finally {
+          reader.releaseLock()
+        }
+      } finally {
+        abort.abort()
+      }
+    }
+
+    // Replay requested: the history load is the path's legitimate breadth.
+    const replayRun = await withProtocolMetricsEnv('', () =>
+      withServerLoadInstrumentation(() =>
+        connect(`${baseUrl}/api/v1/events?sinceRevision=${revision}`),
+      ),
+    )
+    expect(replayRun.loadCountByTable.command_events).toBeGreaterThanOrEqual(1)
+
+    // Metrics on: the replay metric's oldest/latest fields keep their
+    // fidelity, so the history still loads for a fresh connect.
+    const metricsRun = await withProtocolMetricsEnv('1', () =>
+      withServerLoadInstrumentation(() => connect(`${baseUrl}/api/v1/events`)),
+    )
+    expect(metricsRun.loadCountByTable.command_events).toBeGreaterThanOrEqual(1)
+  })
+
+  it('M5: metric fields are not built when metrics are off (and are identical when on)', async () => {
+    // Unit guarantee on the real emitter: the thunk only runs after the
+    // enabled guard.
+    const thunk = vi.fn(() => ({ payloadBytes: 123 }))
+    await withProtocolMetricsEnv('', async () => {
+      emitProtocolMetric('m5_probe', thunk)
+    })
+    expect(thunk).not.toHaveBeenCalled()
+
+    const logged: Record<string, unknown>[] = []
+    const logger = { info: (payload: Record<string, unknown>) => logged.push(payload) }
+    await withProtocolMetricsEnv('1', async () => {
+      emitProtocolMetric('m5_probe', thunk, logger as never)
+      emitProtocolMetric('m5_probe_eager', { payloadBytes: 123 }, logger as never)
+    })
+    expect(thunk).toHaveBeenCalledTimes(1)
+    expect(logged[0]).toEqual({ metric: 'm5_probe', payloadBytes: 123 })
+    expect(logged[1]).toEqual({ metric: 'm5_probe_eager', payloadBytes: 123 })
+  })
+
+  it('M5: projection and bootstrap responses are serialized once when metrics are off', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+
+    // Count JSON.stringify calls that receive the route's response object.
+    // Metrics-on pays exactly one extra (the deferred `jsonPayloadBytes`);
+    // metrics-off must not — before the fix both modes paid it.
+    const countResponseStringifies = async (
+      request: () => Promise<{ statusCode: number }>,
+      isResponseShaped: (arg: unknown) => boolean,
+    ): Promise<number> => {
+      const spy = vi.spyOn(JSON, 'stringify')
+      try {
+        const res = await request()
+        expect(res.statusCode).toBe(200)
+        return spy.mock.calls.filter(([arg]) => isResponseShaped(arg)).length
+      } finally {
+        spy.mockRestore()
+      }
+    }
+
+    const hydrationShaped = (arg: unknown): boolean =>
+      !!arg &&
+      typeof arg === 'object' &&
+      (arg as { resource?: unknown }).resource === 'chatMessages' &&
+      (arg as { mode?: unknown }).mode === 'chat-messages'
+    const bootstrapShaped = (arg: unknown): boolean =>
+      !!arg &&
+      typeof arg === 'object' &&
+      (arg as { assetBaseUrl?: unknown }).assetBaseUrl === '/api/v1/assets'
+
+    const hydrate = () => hydrationGet(fixture.hot.chatId)
+    const bootstrap = () =>
+      harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': assertion },
+      })
+
+    const hydrationOff = await withProtocolMetricsEnv('', () =>
+      countResponseStringifies(hydrate, hydrationShaped),
+    )
+    const hydrationOn = await withProtocolMetricsEnv('1', () =>
+      countResponseStringifies(hydrate, hydrationShaped),
+    )
+    expect(hydrationOn).toBe(hydrationOff + 1)
+
+    const bootstrapOff = await withProtocolMetricsEnv('', () =>
+      countResponseStringifies(bootstrap, bootstrapShaped),
+    )
+    const bootstrapOn = await withProtocolMetricsEnv('1', () =>
+      countResponseStringifies(bootstrap, bootstrapShaped),
+    )
+    expect(bootstrapOn).toBe(bootstrapOff + 1)
   })
 
   it('restores the statement primitives when the instrumented body throws', async () => {

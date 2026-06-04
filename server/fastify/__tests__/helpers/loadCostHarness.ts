@@ -59,6 +59,10 @@ export const CORPUS_TABLES: Readonly<Record<string, CorpusTableSpec>> = {
   // Metadata-only, but the L5 finding is the unscoped full scan on every
   // command mutation, so an unscoped read of the metadata columns counts.
   assets: { payloadColumns: ['ext', 'size', 'content_type'], scopeColumns: ['id'] },
+  // Metadata-only, but the L10 finding is the unscoped full history read+map
+  // on every SSE connect, so an unscoped read of the event columns counts.
+  // The prune walk's revision-only threshold SELECT stays unflagged.
+  command_events: { payloadColumns: ['type', 'resource', 'parent_id'], scopeColumns: ['revision'] },
   ...Object.fromEntries(
     COLLECTION_TABLES.map((table) => [
       table,
