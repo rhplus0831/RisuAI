@@ -205,7 +205,6 @@
 
       imgs.forEach(async (img) => {
         const name = img.getAttribute('src')?.toLocaleLowerCase() || ''
-        console.log(name)
 
         if (name.length > 200 || name.includes(':')) {
           img.setAttribute('noimage', 'true')
@@ -213,7 +212,6 @@
         }
 
         const foundAsset = exactAssets.get(name)
-        console.log('Checking image:', name, 'Assets:', assets)
         if (foundAsset) {
           img.classList.add('root-loaded-image')
           img.classList.add('root-loaded-image-' + styl)
