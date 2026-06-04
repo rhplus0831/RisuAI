@@ -14,7 +14,7 @@ import {
   assetById,
   assetPath,
   isValidAssetId,
-  loadPersistedWithMessages,
+  loadPersistedForAssembly,
 } from '../repository.js'
 import {
   assemblePrompt,
@@ -342,6 +342,7 @@ export function createRequestScopedStoredAssetResolver(
 function loadDatabaseDeps(
   dataDir: string,
   db: DatabaseSync,
+  chatId: string,
   measurement?: PromptAssemblyMeasurement,
 ): RouteAssembleDeps {
   let database: Database | null = null
@@ -349,7 +350,9 @@ function loadDatabaseDeps(
   return {
     loadDatabase: () => {
       const startedAt = measurement ? protocolNowMs() : 0
-      database = loadPersistedWithMessages(db, dataDir).database as Database | null
+      // Assembly reads only the target chat's transcript (audit M1): hydrate
+      // that chat alone; every sibling chat stays `message = []`.
+      database = loadPersistedForAssembly(db, dataDir, chatId).database as Database | null
       if (measurement) {
         measurement.databaseLoadCount += 1
         measurement.databaseLoadMs += protocolDurationMs(startedAt)
@@ -376,7 +379,7 @@ async function assemblePromptWithMetrics(
     : undefined
   const metricStartedAt = measurement ? protocolNowMs() : 0
   const startedAt = Date.now()
-  const deps = loadDatabaseDeps(dataDir, db, measurement)
+  const deps = loadDatabaseDeps(dataDir, db, input.chatId, measurement)
   try {
     const result = await assemblePrompt(input, deps)
     const promptMs = Date.now() - startedAt

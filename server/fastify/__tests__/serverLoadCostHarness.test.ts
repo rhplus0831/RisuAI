@@ -6,7 +6,7 @@ import { performance } from 'node:perf_hooks'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
-import { loadPersistedWithMessages } from '../src/repository.js'
+import { loadPersistedForAssembly, loadPersistedWithMessages } from '../src/repository.js'
 import { getChatMessagesGroupedByIds } from '../src/messageStore.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import {
@@ -262,6 +262,134 @@ describe('server load-count harness on the large-corpus fixture', () => {
     // `loadPersisted` for its known-id check. Phase 2 may narrow this; if it
     // does, flip to `assertScopedLoadOnHotPath`.
     expect(loadCountByTable.characters).toBeGreaterThanOrEqual(1)
+  })
+
+  it('M1: prompt assembly performs zero whole-corpus message/hypa payload reads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    // The fixture is hydration-oriented; add the assembly settings the prompt
+    // path needs (and drop the template so the `chats` history slot renders).
+    await importDatabase({
+      ...fixture.database,
+      promptTemplate: undefined,
+      formatingOrder: ['main', 'description', 'chats', 'lastChat'],
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false,
+      },
+      mainPrompt: 'MAIN',
+      maxContext: 100_000,
+      maxResponse: 50,
+    })
+
+    // Audit M1 regression: assembly resolved its database through
+    // `loadPersistedWithMessages`, paying the whole-table messages +
+    // chat_hypa_v3 parse per send/preview. The scoped assembly loader joins
+    // only the target chat; `loadPersisted`'s character/collection reads are
+    // the path's legitimate remaining breadth.
+    const { result: res, loadCountByTable } = await withServerLoadInstrumentation(() =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/preview-prompt',
+        headers: { 'risu-auth': assertion },
+        payload: { chatId: fixture.hot.chatId, characterId: fixture.hot.characterId },
+      }),
+    )
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.stopSending).toBeUndefined()
+    // The target transcript actually hydrated: the hot chat's last message
+    // body made it into the assembled rows.
+    const lastMarker = `-0-0-${fixture.hot.messageCount - 1}`
+    expect(JSON.stringify(body.messages)).toContain(lastMarker)
+    expect(loadCountByTable.messages ?? 0).toBe(0)
+    expect(loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
+  })
+
+  it('M1: the scoped assembly loader matches the broad loader on the target chat and stubs siblings', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+
+    type LoadedChat = { id?: unknown; message?: unknown[]; hypaV3Data?: unknown }
+    const chatsById = (database: unknown): Map<string, LoadedChat> => {
+      const out = new Map<string, LoadedChat>()
+      const characters =
+        (database as { characters?: Array<{ chats?: LoadedChat[] }> })?.characters ?? []
+      for (const character of characters) {
+        for (const chat of character.chats ?? []) {
+          if (typeof chat.id === 'string') out.set(chat.id, chat)
+        }
+      }
+      return out
+    }
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const broad = chatsById(loadPersistedWithMessages(db, harness.dataDir).database)
+      const scopedRun = await withServerLoadInstrumentation(() =>
+        loadPersistedForAssembly(db, harness.dataDir, fixture.hot.chatId),
+      )
+      // Scoped: zero whole-corpus payload reads of the message/hypa tables.
+      expect(scopedRun.loadCountByTable.messages ?? 0).toBe(0)
+      expect(scopedRun.loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
+
+      const scoped = chatsById(scopedRun.result.database)
+      expect([...scoped.keys()].sort()).toEqual([...broad.keys()].sort())
+
+      // Target chat: identical to the broad loader (messages AND hypaV3Data).
+      expect(scoped.get(fixture.hot.chatId)).toEqual(broad.get(fixture.hot.chatId))
+      expect(scoped.get(fixture.hot.chatId)?.message).toHaveLength(fixture.hot.messageCount)
+
+      // Every sibling chat: `message = []`, everything else identical.
+      for (const [chatId, broadChat] of broad) {
+        if (chatId === fixture.hot.chatId) continue
+        const scopedChat = scoped.get(chatId)!
+        expect(scopedChat.message).toEqual([])
+        expect({ ...scopedChat, message: broadChat.message }).toEqual(broadChat)
+      }
+    } finally {
+      db.close()
+    }
+  })
+
+  it('M1: the scoped assembly loader keeps the embedded-copy fallback for a not-yet-extracted target chat', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+
+    const embedded = [
+      { role: 'user', data: 'embedded hello', chatId: 'pre-extract-m1', time: 1700000000000 },
+      { role: 'char', data: 'embedded reply', chatId: 'pre-extract-m2', time: 1700000000001 },
+    ]
+    const db = openDatabase(harness.dataDir)
+    try {
+      db.prepare(
+        'INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)',
+      ).run(
+        'pre-extract-chat',
+        fixture.hot.characterId,
+        999,
+        JSON.stringify({
+          id: 'pre-extract-chat',
+          name: 'Pre-extract',
+          note: '',
+          localLore: [],
+          message: embedded,
+        }),
+      )
+
+      const persisted = loadPersistedForAssembly(db, harness.dataDir, 'pre-extract-chat')
+      const characters =
+        (persisted.database as { characters?: Array<{ chats?: Array<Record<string, unknown>> }> })
+          ?.characters ?? []
+      const chat = characters
+        .flatMap((character) => character.chats ?? [])
+        .find((candidate) => candidate.id === 'pre-extract-chat')
+      expect(chat?.message).toEqual(embedded)
+    } finally {
+      db.close()
+    }
   })
 
   it('separates the broad loader from the scoped loader at the function level', async () => {

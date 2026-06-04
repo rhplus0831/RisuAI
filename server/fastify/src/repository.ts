@@ -881,6 +881,42 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
 }
 
 /**
+ * `loadPersisted` + join ONLY the target chat's messages/hypaV3 (audit M1).
+ * Prompt assembly reads exactly one chat's transcript, so it must not pay the
+ * whole-table `getAllChatMessagesGrouped` / `getAllChatHypaV3Grouped` parse.
+ * Every non-target chat gets `message = []` (downstream `eachChat`-style
+ * iteration still sees an array); the target chat keeps
+ * `loadPersistedWithMessages`'s exact semantics, including the embedded-array
+ * fallback for a not-yet-extracted chat. The broad loader stays for the
+ * genuine full-corpus consumers (assetGc / export / save / boot backfill).
+ */
+export function loadPersistedForAssembly(
+  db: DatabaseSync,
+  dataDir: string,
+  chatId: string,
+): Persisted {
+  const persisted = loadPersisted(db, dataDir)
+  const rows = getChatMessagesGroupedByIds(db, [chatId]).get(chatId)
+  const hypaGrouped = getChatHypaV3GroupedByIds(db, [chatId])
+  eachChat(persisted.database, (chat) => {
+    if (chat.id !== chatId) {
+      chat.message = []
+      return
+    }
+    if (rows && rows.length > 0) {
+      chat.message = rows
+    } else if (!Array.isArray(chat.message)) {
+      chat.message = []
+    }
+    // else: zero table rows but an embedded array → keep it (fallback).
+    if (hypaGrouped.has(chatId)) {
+      chat.hypaV3Data = hypaGrouped.get(chatId)
+    }
+  })
+  return persisted
+}
+
+/**
  * Split each chat's `message[]` into the messages table and return the
  * message-free `Persisted`. Pure SQLite write — runs inside the caller's open
  * transaction.

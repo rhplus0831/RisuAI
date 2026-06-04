@@ -12,10 +12,17 @@ import type { triggerscript } from '../../../../src/ts/process/triggers'
  * active modules for an assembly call and exposes their regex script lists for
  * `processScript`.
  *
- * Skips the SPA's `lastModules` / `lastModuleData` memoization
- * (`modules.ts:379-403`): the server runs the chain once per
- * assembly so the cache adds no value and would only complicate
- * cross-request isolation.
+ * Ports the SPA's `lastModules` / `lastModuleData` memoization
+ * (`modules.ts:400-426`) with server-safe keying (audit L1): an assembly
+ * resolves active modules ~8× across its stages (slots, lorebook, history,
+ * scripts, asset lookup, triggers) with identical inputs, so the scan +
+ * dedupe is cached per loaded `Database` object. Keying the cache on the
+ * database object (WeakMap) instead of the SPA's module-global string keeps
+ * cross-request isolation: every request loads a fresh `Database`, so a new
+ * request can never see a stale hit. The requested-id key and the
+ * `database.modules` array reference both guard recomputation, so a
+ * mid-assembly module toggle (chat/char/db id-list change) or wholesale
+ * `modules` replacement invalidates the entry.
  *
  * Module fields not in scope here (their consumers ship in later
  * slices):
@@ -37,6 +44,16 @@ function dedupeById(modules: RisuModule[]): RisuModule[] {
   return out
 }
 
+interface ActiveModulesMemoEntry {
+  /** The requested-id inputs the cached result was computed from. */
+  key: string
+  /** The `database.modules` array the cached result was filtered from. */
+  modulesRef: RisuModule[] | undefined
+  result: RisuModule[]
+}
+
+const activeModulesMemo = new WeakMap<Database, ActiveModulesMemoEntry>()
+
 export function getActiveModules(
   database: Database,
   currentChar: character | undefined,
@@ -54,12 +71,22 @@ export function getActiveModules(
     )
   }
   if (ids.length === 0) return []
+
+  // JSON keying (not the SPA's '-' join) — module ids are UUIDs containing '-'.
+  const key = JSON.stringify(ids)
+  const memo = activeModulesMemo.get(database)
+  if (memo && memo.key === key && memo.modulesRef === database.modules) {
+    return memo.result
+  }
+
   const idSet = new Set(ids)
   const all = database.modules ?? []
   const matched = all.filter(
     (m) => m && (idSet.has(m.id) || (m.namespace ? idSet.has(m.namespace) : false)),
   )
-  return dedupeById(matched)
+  const result = dedupeById(matched)
+  activeModulesMemo.set(database, { key, modulesRef: database.modules, result })
+  return result
 }
 
 export function getModuleRegexScripts(modules: RisuModule[]): customscript[] {

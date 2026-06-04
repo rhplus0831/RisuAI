@@ -735,15 +735,32 @@ function prepareRegenerateTranscript(state: AssemblyState): void {
   captureMessageReplacement(state, 'regenerate')
 }
 
+/**
+ * True when `text` is a `risuChatParser` fixed point the run-var pass may skip
+ * (audit L2). The parser only ever rewrites at a `{` opening (`{{…}}` /
+ * `{#…#}` blocks; a bare `}` or `#` with no open stack passes through
+ * unchanged) and at the `<user|char|bot>` tag pre-replace — a body containing
+ * neither comes back byte-identical with no chat-var read or write.
+ */
+export function isRunVarParserFixedPoint(text: string): boolean {
+  return !text.includes('{') && !/<(user|char|bot)>/i.test(text)
+}
+
 function applyCurrentChatRunVars(state: AssemblyState): void {
   let dirty = false
   const messages = (state.currentChat.message ??= [])
+  // Invariant across the loop (audit L2): the expand context never varies per
+  // row, so build it once instead of re-spreading per message.
+  const expandCtx: ExpandContext = { ...state.ctx, chara: state.currentChar, runVar: true }
   for (const message of messages) {
-    const result = expandVariables(message.data ?? '', {
-      ...state.ctx,
-      chara: state.currentChar,
-      runVar: true,
-    })
+    const text = message.data ?? ''
+    if (isRunVarParserFixedPoint(text)) {
+      // Skip the O(length) parse for marker-free prose; keep the historical
+      // `undefined -> ''` coercion the full pass performed.
+      message.data = text
+      continue
+    }
+    const result = expandVariables(text, expandCtx)
     message.data = result.text
     dirty ||= result.dirty
   }

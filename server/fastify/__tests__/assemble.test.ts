@@ -21,6 +21,7 @@ import {
   fillLorebookSlots,
   fillMemoryAndPostHistory,
   fillStaticSlots,
+  isRunVarParserFixedPoint,
   renderAndBudget,
   type AssembleDeps,
   type AssembleInput,
@@ -1554,5 +1555,81 @@ describe('Phase 7-12d-i assemble mutation contract', () => {
       index: 0,
       message: { role: 'user', data: 'new user', chatId: 'msg-1' },
     })
+  })
+})
+
+describe('Phase 2 L2 run-var fixed-point skip', () => {
+  const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
+
+  it('only skips bodies risuChatParser provably returns unchanged (ground truth)', async () => {
+    const { risuChatParser } = await import('../../../src/ts/parser/risuChatParser')
+    const db = makeDatabase({ maxContext: 100_000, maxResponse: 50 } as Partial<Database>)
+
+    // Marker-free prose — including bare `}` / `#}` / `<` text the parser
+    // passes through — is a fixed point: skippable AND byte-identical.
+    const fixedPoints = [
+      '',
+      'plain prose with punctuation. And a second sentence!',
+      'closing brace } alone and even a #} pair',
+      'angle brackets <notatag> <users> <charset> stay untouched',
+      'unicode 한국어 텍스트 with emoji 🙂 and newline\nsecond line',
+    ]
+    for (const text of fixedPoints) {
+      expect(isRunVarParserFixedPoint(text), `should skip: ${JSON.stringify(text)}`).toBe(true)
+      expect(risuChatParser(text, { db, runVar: true })).toBe(text)
+    }
+
+    // Anything the parser can rewrite must NOT be skipped.
+    const expandable = [
+      '{{user}}',
+      'before {{setvar::mood::bright}}after',
+      'legacy {#if block',
+      'a lone { opener is conservatively kept',
+      'tag <bot> expands',
+      'tag <USER> expands case-insensitively',
+      '<Char> too',
+    ]
+    for (const text of expandable) {
+      expect(isRunVarParserFixedPoint(text), `must not skip: ${JSON.stringify(text)}`).toBe(false)
+    }
+  })
+
+  it('keeps marker-free rows byte-identical while marker rows still expand', async () => {
+    const prose = 'Marker-free prose row. } and #} and <notatag> included.'
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          desc: 'DESC',
+          firstMessage: 'Greetings.',
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [
+                msg('user', prose, 'msg-1'),
+                msg('char', 'I am <bot>. {{setvar::mood::bright}}', 'msg-2'),
+              ],
+            }),
+          ],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput({ userMessage: 'new user' }), depsFor(db))
+    expect(result.stopSending).toBe(false)
+
+    const runVarPatch = result.mutations!.messageMutations.find((m) => m.source === 'run_var')
+    expect(runVarPatch).toMatchObject({ type: 'replace_all', source: 'run_var' })
+    const rows = (runVarPatch as { messages: Array<{ data: string }> }).messages
+    // The skipped row is byte-identical; the marker row expanded its tag and
+    // stripped the var write, which still landed in the chat-var delta.
+    expect(rows[0].data).toBe(prose)
+    expect(rows[1].data).toBe('I am Tess. ')
+    expect(result.mutations!.chatVarMutations).toEqual([
+      { key: '$mood', before: null, after: 'bright' },
+    ])
   })
 })
