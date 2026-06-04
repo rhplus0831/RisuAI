@@ -1,16 +1,19 @@
 # Phase 4: Script-Definition Watcher
 
-Status: partial audit gap. The clone-cost slice landed (`2ec1ea40`), but the
-Phase 1-5 completion audit found a debounced rollback baseline correctness gap.
-One slice. Independent; reuses the Phase 2 chat-metadata watcher's lazy per-row
-rollback pattern.
+Status: implemented. The clone-cost slice landed (`2ec1ea40`) and the debounced
+rollback baseline gap the Phase 1-5 completion audit found is now closed
+(`c1349966`). One slice. Independent; reuses the Phase 2 chat-metadata watcher's
+lazy per-row rollback pattern.
 
-Audit note: [`../phase-1-5-completion-audit.md`](../phase-1-5-completion-audit.md)
-found that rapid same-key edits inside the debounce window can roll back to the
-intermediate baseline, because `queueReplacement()` preserves
-`existing?.previous` but the queued command rollback closes over the latest
-dispatch's `previous`. Close that gap and add a failed-command regression before
-marking Phase 4 complete again.
+Audit note (resolved):
+[`../phase-1-5-completion-audit.md`](../phase-1-5-completion-audit.md) found that
+rapid same-key edits inside the debounce window could roll back to the
+intermediate baseline, because `queueReplacement()` preserved `existing?.previous`
+but the queued command rollback closed over the latest dispatch's `previous`. The
+fix makes the pending command a factory that receives the rollback baseline at
+fire time, and the debounce timer passes `pending.previous`, so a failed
+coalesced command restores the pre-first-edit slice. Covered by two failed-command
+regressions (character scripts + module triggers).
 
 Goal: stop the script-definition watcher from taking a full characters+modules
 rollback snapshot on every reactive fire. While the panel is open, script/trigger
@@ -50,6 +53,10 @@ edits and streaming tokens should not trigger full clones.
 - [x] A clone-cost regression test proves the effect fire is O(scripts) not
       O(hydrated corpus) (baseline, script edit, and streaming-token append all
       stay below the ~250 KB hydrated history); `pnpm test` is green.
+- [x] Debounced same-key edits coalesce into one command that sends the latest
+      content, and a failed coalesced command rolls the changed row back to the
+      pre-first-edit baseline (not the intermediate edit). Proven by two
+      failed-command regressions (character scripts + module triggers).
 
 ## Outcome
 
@@ -67,8 +74,15 @@ discrete callers (`modules.ts` module-apply and the MCP character/module edits)
 keep passing the full snapshot unchanged; `rollbackServerBackedScriptDefinitions`
 discriminates on the `'kind'` field and routes scoped rollbacks through the new
 `restoreScopedScriptDefinition`. Proven by
-`scriptDefinitionBridge.svelte.test.ts` (3 clone-cost + 2 scoped-rollback tests
-added; existing baseline tests unchanged).
+`scriptDefinitionBridge.svelte.test.ts` (3 clone-cost + 2 scoped-rollback +
+2 debounced-baseline tests added; existing baseline tests unchanged).
+
+The debounce coalescing follow-up (`c1349966`) makes
+`PendingCollectionReplacement.command` a factory that receives the rollback
+baseline at fire time; `queueReplacement` still keeps the first dispatch's
+baseline (`existing?.previous ?? previous`) and the debounce timer now calls
+`pending.command(pending.previous)`, so the coalesced final command rolls back to
+the pre-first-edit value rather than the intermediate edit it superseded.
 
 ## Validation
 

@@ -2,9 +2,8 @@
 
 Date: 2026-06-04
 
-Read this when choosing the next batch. First close the Phase 4 debounced
-rollback audit gap, or pick one focused Phase 7 cleanup / Phase 8 proof batch.
-Avoid broad cleanup passes.
+Read this when choosing the next batch. Pick one focused Phase 7 cleanup / Phase
+8 proof batch. Avoid broad cleanup passes.
 
 ## Start Point
 
@@ -22,19 +21,17 @@ Avoid broad cleanup passes.
 
 ## Current Best Targets
 
-Phases 0-6 have landed, but
-[`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md) found one
-Phase 4 rollback-correctness gap. The next work is either that targeted fix or
-Phase 7 (independent).
+Phases 0-6 have landed and the Phase 4 rollback-correctness gap
+[`phase-1-5-completion-audit.md`](phase-1-5-completion-audit.md) found is closed
+(`c1349966`). The next work is Phase 7 (independent).
 
 - DONE: Phases 0-6, including the `48d473dc` `runTrigger` guard fix, the Phase 5
-  `PromptDataItem` single-clone update (`64804305`), and the Phase 6 lorebook
-  watcher scope (`c6dd103c`). Broad snapshots still exist for restructures plus
-  lower-frequency or deferred callers.
-- NEXT: fix the Phase 4 script-definition watcher rapid same-key debounce
-  rollback baseline, then add the failed-command regression. Otherwise pick one
-  focused Phase 7 item. Optionally revisit the deferred Phase 5 debounce
-  coalescing.
+  `PromptDataItem` single-clone update (`64804305`), the Phase 6 lorebook
+  watcher scope (`c6dd103c`), and the Phase 4 debounced rollback baseline fix
+  (`c1349966`). Broad snapshots still exist for restructures plus lower-frequency
+  or deferred callers.
+- NEXT: pick one focused Phase 7 item. Optionally revisit the deferred Phase 5
+  debounce coalescing.
 - FIXED (`48d473dc`): `setVar`/`v2SetVar` previously wrote scriptstate directly to
   the read-only projection, so a client `manual`/slash `setVar` trigger threw under
   the Fastify guard. Now routed through `syncActiveChatScriptstate`

@@ -42,6 +42,11 @@ rollback only at dispatch.
   unchanged.
 - A failed script/trigger replacement restores only the changed character's
   `customscript`/`triggerscript` (or the changed module).
+- Rapid same-key edits inside the debounce window coalesce into one command that
+  sends the latest content; on failure it rolls back to the pre-first-edit
+  baseline, not the intermediate edit (`c1349966`). The command is a factory fed
+  `pending.previous` at fire time, so the preserved first baseline drives the
+  rollback.
 - Output (assembled scripts/triggers) is identical.
 
 ## Done When (met)
@@ -50,6 +55,8 @@ rollback only at dispatch.
   streaming-token re-invalidation while the panel is open (clone-cost harness);
   the remaining ID-ensure scan is separately justified (O(scripts) read, no clone).
 - The rollback restores only the changed row; change detection is unchanged.
+- Coalesced same-key edits roll back to the pre-first-edit baseline, proven by two
+  failed-command regressions (character scripts + module triggers).
 - `pnpm test` and `pnpm client-thinning:audit` are green.
 
 ## Validation

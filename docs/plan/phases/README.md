@@ -16,8 +16,8 @@ Concrete slices live under `slices/[phase]/[slice-name].md`.
   [`slices/phase-2-snapshot-family-narrowing/`](slices/phase-2-snapshot-family-narrowing/).
 - Phase 3, implemented: [`phase-3-cheap-wins.md`](phase-3-cheap-wins.md),
   [`slices/phase-3-cheap-wins/`](slices/phase-3-cheap-wins/).
-- Phase 4, partial audit gap (clone-cost slice landed; debounce rollback fix
-  pending):
+- Phase 4, implemented (clone-cost slice plus the debounced rollback baseline
+  fix):
   [`phase-4-script-definition-watcher.md`](phase-4-script-definition-watcher.md),
   [`slices/phase-4-script-definition-watcher/`](slices/phase-4-script-definition-watcher/).
 - Phase 5, implemented (in-place write + revision-gated reconcile; debounce

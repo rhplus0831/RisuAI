@@ -20,10 +20,20 @@ below cover Phases 1-5.
 | Phase 1: Projection Write Guard | Complete | Primary copy-on-write guard slice is implemented and covered. Optional batching remains deferred by design. |
 | Phase 2: Snapshot-Family Hot-Path Narrowing | Complete | All six listed hot-path families use scoped snapshots/rollbacks; broad snapshots remain for restructures and deferred low-frequency callers. |
 | Phase 3: Cheap High-Confidence Wins | Complete | Reroll tail/transcript wins and `runTrigger` early/lazy clone behavior are implemented and covered. |
-| Phase 4: Script-Definition Watcher | Partial | Main clone reduction landed, but a debounced rollback baseline edge can restore to the wrong value after rapid edits. |
+| Phase 4: Script-Definition Watcher | Complete (gap closed) | Main clone reduction landed; the debounced rollback baseline edge is fixed in `c1349966` and covered by two failed-command regressions. |
 | Phase 5: Prompt-Template Editor Keystroke Costs | Complete | Single-item projection write, single-item rollback, and revision-gated reconcile are implemented. Debounce coalescing remains deferred by design. |
 
-## Blocking Finding
+## Blocking Finding (RESOLVED)
+
+Resolved in `c1349966`: `PendingCollectionReplacement.command` is now a factory
+that receives the rollback baseline at fire time, and the debounce timer calls
+`pending.command(pending.previous)` — so the coalesced final command rolls back
+to the preserved first baseline rather than the latest dispatch's `previous`.
+Two failed-command regressions (character scripts + module triggers) edit the
+same key twice inside the debounce window, send the latest content, and assert
+the row restores to the pre-first-edit baseline:
+`src/ts/server/scriptDefinitionBridge.svelte.test.ts`. The original finding is
+kept below for the record.
 
 ### Phase 4 Debounced Rollback Baseline Can Drift
 
@@ -166,7 +176,8 @@ Residual caveats:
 
 ### Phase 4
 
-Status: partial.
+Status: complete (clone-cost slice + debounced rollback baseline gap closed in
+`c1349966`).
 
 Evidence that the clone-cost slice landed:
 
@@ -183,10 +194,12 @@ Evidence that the clone-cost slice landed:
   `src/ts/server/scriptDefinitionBridge.svelte.test.ts:217`,
   `src/ts/server/scriptDefinitionBridge.svelte.test.ts:281`.
 
-Completion gap:
+Completion gap (closed):
 
-- See "Phase 4 Debounced Rollback Baseline Can Drift" above. The existing tests
-  do not exercise rapid same-key edits within the debounce window.
+- The debounced rollback baseline gap is fixed in `c1349966`. Two new
+  regressions exercise rapid same-key edits within the debounce window and
+  assert the coalesced command rolls back to the pre-first-edit baseline:
+  `src/ts/server/scriptDefinitionBridge.svelte.test.ts:356`.
 
 ### Phase 5
 
@@ -222,7 +235,7 @@ Residual caveats:
 
 ## Current Action
 
-Before treating Phase 4 as fully complete, fix the script-definition watcher
-debounced rollback baseline and add the rapid-edit failure regression. Phase 7
-can still proceed independently, but this audit should remain linked from the
-workstream router until the Phase 4 rollback gap is closed.
+The Phase 4 script-definition watcher debounced rollback baseline is fixed
+(`c1349966`) and covered by the rapid-edit failure regressions, so Phases 1-5 are
+all complete. The next runtime work is Phase 7 (independent); Phase 8 remains the
+standing verification layer.
