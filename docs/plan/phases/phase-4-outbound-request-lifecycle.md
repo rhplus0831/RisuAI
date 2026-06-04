@@ -1,7 +1,14 @@
 # Phase 4: Outbound Request Lifecycle (Root 4)
 
-Status: COMPLETE (`bf1a6cb2`). Timeouts, abort propagation, and egress
-hardening landed for proxy, non-durable provider, and Lua fetch paths.
+Status: COMPLETE (`bf1a6cb2`; completion-audit closeout 2026-06-05). Timeouts,
+abort propagation, and egress hardening landed for proxy, non-durable provider,
+and Lua fetch paths. The completion audit
+([`../phase-4-completion-audit.md`](../phase-4-completion-audit.md)) found one
+gap — Lua `request()` egress fetches did not receive the originating request's
+`AbortSignal` — closed by threading the signal through `serverLuaRequest` and
+`pinnedHttpsFetch` (destroying the in-flight HTTPS request on abort), plus
+direct L22 overflow tests for the anthropic/mistral/gemini adapters and gate
+entries naming every proof.
 
 Goal: every outbound request has a generous wall-clock bound and cancels when its
 originating request ends. SSRF/egress/injection guards cover the known bypasses.
@@ -63,9 +70,12 @@ Findings: M6, M8, L20, L22, L23, L24, L25.
       aborted prematurely (the 600s default mirrors the durable reference;
       `requestAbort.test.ts` + `generationBodyCap.test.ts`).
 - [x] L20: aborting the request cancels in-flight Lua hook work
-      (`luaRuntime.test.ts` L20 block — entry, load, and host-fn checkpoints).
+      (`luaRuntime.test.ts` L20 block — entry, load, host-fn checkpoints, and
+      an in-flight `request()` egress fetch torn down on abort).
 - [x] L22: a streaming response with no delimiter is bounded, not unbounded
-      (8 MB cap in `generation/sse.ts`; `openai.test.ts` + `ollama.test.ts`).
+      (8 MB cap in `generation/sse.ts`; direct overflow tests in
+      `openai.test.ts`, `anthropic.test.ts`, `mistral.test.ts`,
+      `gemini.test.ts`, `ollama.test.ts`).
 - [x] L23: embedded-private IPv6 forms are blocked (mapped-hex / compatible /
       6to4 / NAT64 payloads in `luaRuntime.test.ts`; public transition forms
       stay reachable).

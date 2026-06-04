@@ -1,6 +1,6 @@
 # Phase 4 Completion Audit
 
-Date: 2026-06-05
+Date: 2026-06-05 (closeout applied same day — see "Closeout")
 
 Scope: Active Phase 4 outbound request lifecycle workstream in
 `docs/plan/phases/phase-4-outbound-request-lifecycle.md`, covering M6, M8,
@@ -8,17 +8,19 @@ L20, L22, L23, L24, L25, and the Phase 8 gate registration.
 
 ## Verdict
 
-Phase 4 should not be treated as fully complete yet.
+CLOSED. Phase 4 is complete.
 
-Most of the implementation and regression coverage matches the Phase 4
-checklist, but Lua egress fetches do not receive the originating request's
-`AbortSignal`. That leaves one path in the stated "Lua fetch paths" scope
-uncanceled until its own egress timeout instead of canceling promptly when the
-originating request ends.
+The original audit verdict was "not fully complete yet": most of the
+implementation and regression coverage matched the Phase 4 checklist, but Lua
+egress fetches did not receive the originating request's `AbortSignal`. That
+left one path in the stated "Lua fetch paths" scope uncanceled until its own
+egress timeout instead of canceling promptly when the originating request
+ends. The blocking finding and both coverage notes have since been closed —
+each section below records its resolution.
 
 ## Blocking Finding
 
-### Lua `request()` egress does not abort on originating request cancellation
+### Lua `request()` egress does not abort on originating request cancellation — CLOSED
 
 The Phase 4 goal says every outbound request should have a wall-clock bound and
 cancel when its originating request ends. The Phase 4 slice also scopes abort
@@ -51,6 +53,25 @@ Recommended closeout: pass the originating `AbortSignal` through
 `serverLuaRequest` and `pinnedHttpsFetch`, destroy the active HTTPS request on
 abort, and add a regression where a low-level Lua `request():await()` is
 in-flight when the request signal aborts.
+
+Resolution (2026-06-05): implemented as recommended.
+
+- `EgressDeps.fetchImpl` now receives the originating `AbortSignal` as a third
+  argument, and `serverLuaRequest` takes a `signal` parameter that the
+  `request()` host fn threads from `state.ctx.signal`.
+- `pinnedHttpsFetch` rejects immediately on an already-aborted signal,
+  destroys the in-flight HTTPS request on abort, and removes the listener on
+  socket close.
+- An abort during DNS validation or mid-fetch now throws (`LuaAbortError`)
+  instead of returning a synthetic 400, so the in-flight `:await()` raises and
+  the surrounding pcall unwinds rather than the script continuing; an abort
+  during validation also does not consume the egress rate budget.
+- Regressions added: `luaRuntime.test.ts` "L20: aborting while a Lua request()
+  egress fetch is in flight cancels the run promptly" (full runtime path, var
+  write after the await proven unreached) and "L20: an abort mid-fetch rejects
+  through serverLuaRequest instead of returning a synthetic 400" (unit path,
+  signal identity proven at the fetch seam). The Phase 8 gate's L20 entry
+  names the in-flight regression via `extraTests`.
 
 ## Satisfied Items
 
@@ -89,12 +110,16 @@ Coverage note: the Phase 8 gate entry for M8 points to the deadline regression;
 the body-cap proof is present in `generationBodyCap.test.ts`, but is not named
 by the gate entry.
 
+Resolution (2026-06-05): the gate now supports `extraTests` (validated like the
+primary proof; PLANNED entries may not claim them), and the M8 entry names the
+`generationBodyCap.test.ts` body-cap proof.
+
 ### L20: request signal threaded into Lua runtime
 
-Partially implemented. The route/job signal is threaded into assembly and
-`runServerLua`, and the runtime has pre-start, load-thread, host-function, and
-`sleep()` abort checkpoints. The Lua egress fetch gap above keeps the overall
-L20/Phase 4 scope incomplete.
+Implemented (egress-fetch gap closed 2026-06-05; see the Blocking Finding
+resolution). The route/job signal is threaded into assembly and
+`runServerLua`, and the runtime has pre-start, load-thread, host-function,
+`sleep()`, and in-flight egress-fetch abort checkpoints.
 
 Evidence:
 
@@ -126,6 +151,12 @@ Evidence:
 Coverage note: direct no-delimiter overflow tests exist for OpenAI SSE and
 Ollama NDJSON. Anthropic, Mistral, and Gemini use the same cap path but do not
 have separate direct overflow tests.
+
+Resolution (2026-06-05): direct no-delimiter overflow tests added for the
+Anthropic, Mistral, and Gemini streaming adapters (`anthropic.test.ts`,
+`mistral.test.ts`, `gemini.test.ts`, each "L22: bounds the accumulation buffer
+when upstream never sends an event delimiter"). The gate's L22 entry names all
+five adapter proofs via `extraTests`.
 
 ### L23: embedded-private IPv6 SSRF blocking
 
@@ -194,3 +225,14 @@ Evidence:
   Result: the command ran the full root suite, 118 test files passed, 1121 tests
   passed, 4 skipped. The known `127.0.0.1:3000` connection-refused noise did not
   fail the run.
+
+## Closeout Validation (2026-06-05)
+
+- `pnpm api:test` — 98 test files passed, 1697 tests passed, 1 skipped
+  (the prior baseline 1692 plus the two L20 egress-abort regressions and the
+  three L22 adapter overflow tests).
+- `pnpm test` — 118 test files passed, 1121 tests passed, 4 skipped (the
+  fix-completeness gate validates the new `extraTests` proofs for M8, L20,
+  and L22).
+- `pnpm exec tsc -p tsconfig.client-lib.json` and
+  `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit` — zero errors.
