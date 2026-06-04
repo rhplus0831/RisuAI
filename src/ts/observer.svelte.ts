@@ -115,10 +115,13 @@ let lastClaudeObserverURL: any = null
 export function registerClaudeObserver(arg: { url: string; body: any; headers: any }) {
   lastClaudeRequestTimes = 0
   lastClaudeObserverLoad = Date.now()
-  lastClaudeObserverPayload = safeStructuredClone(arg.body)
+  // Only the top-level `max_tokens` scalar is overridden, so a shallow spread
+  // replaces the full deep clone of the (potentially large) request body. The
+  // observer only reads this payload as a fetch body and never mutates nested
+  // fields, so sharing the nested references with `arg.body` is safe.
+  lastClaudeObserverPayload = { ...arg.body, max_tokens: 10 }
   lastClaudeObserverHeaders = arg.headers
   lastClaudeObserverURL = arg.url
-  lastClaudeObserverPayload.max_tokens = 10
   claudeObserver()
 }
 
