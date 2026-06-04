@@ -10,18 +10,18 @@ regex memoization, parser string-work reduction, and a stray render-path log.
 
 - [`../../frontend-performance-audit.md`](../../frontend-performance-audit.md) -
   the Low findings and the clone-site inventory; recommended-remediation step 8.
-- `src/ts/cbs.ts:364/376/399/1687` - `{{history}}`/`{{charhistory}}`/
-  `{{userhistory}}` per-message clone+parse+stringify.
-- `src/ts/observer.svelte.ts:118` - `safeStructuredClone(arg.body)` (Claude
+- `src/ts/cbs.ts` - `{{history}}`/`{{charhistory}}`/`{{userhistory}}`
+  per-message clone+parse+stringify.
+- `src/ts/observer.svelte.ts` - `safeStructuredClone(arg.body)` (Claude
   observer, gated behind an OFF-by-default experimental flag).
-- `src/ts/characters.ts:138/195/220/242/259` - image/emotion edits cloning the
+- `src/ts/characters.ts` - image/emotion edits cloning the
   full characters array + full target character.
-- `src/ts/process/scripts.ts:215` - per-token `RegExp` recompile.
+- `src/ts/process/scripts.ts` - per-token `RegExp` recompile.
 - `src/ts/parser/risuChatParser.ts` - `{{#each}}` block expansion string work.
-- `src/lib/ChatScreens/ChatBody.svelte:208/216` - per-render image lookup
+- `src/lib/ChatScreens/ChatBody.svelte` - per-render image lookup
   `console.log`s, including the full assets array.
 - `src/lib/SideBars/SideChatList.svelte` - O(folders\*chats) + O(chats^2) scan.
-- `src/lib/Setting/Pages/PersonaSettings.svelte:68` - personas double clone per
+- `src/lib/Setting/Pages/PersonaSettings.svelte` - personas double clone per
   keystroke (downgraded-to-low config-editor cleanup).
 
 ## Slices

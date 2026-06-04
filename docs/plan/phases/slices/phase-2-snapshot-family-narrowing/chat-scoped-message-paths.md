@@ -31,16 +31,15 @@ affected chat's `message[]`.
   the Critical `currentChatStateSnapshot` finding and the High `sendMain`,
   per-message edit, and `cloneMessagesWithIds` findings; the Low `command.ts`
   `snapshotChat` finding.
-- `src/ts/chatCommands.ts:73` - `currentChatStateSnapshot` (the source) and
+- `src/ts/chatCommands.ts` - `currentChatStateSnapshot` (the source) and
   `restoreChatState`; `dispatchReplaceMessages`/`dispatchUpdateMessage`/
   `dispatchDeleteMessage`/`dispatchTruncateMessages`/`dispatchAppendMessage`.
-- `src/lib/ChatScreens/DefaultChatScreen.svelte:215/275/783` - `sendMain`
+- `src/lib/ChatScreens/DefaultChatScreen.svelte` - `sendMain`
   (send/continue) and the empty-slot button.
-- `src/lib/ChatScreens/Chat.svelte:144/169/258/284/471/1194/1279/1319/1656` -
-  `cloneMessagesWithIds` and the per-message edit/delete/bookmark/partial-edit/
-  alt-greeting/fork handlers.
-- `src/ts/process/command.ts:326/336` - `mutateCurrentChatMessages` /
-  `snapshotChat` (the slash-command message mutation).
+- `src/lib/ChatScreens/Chat.svelte` - `cloneMessagesWithIds` and the per-message
+  edit/delete/bookmark/partial-edit/alt-greeting/fork handlers.
+- `src/ts/process/command.ts` - `mutateCurrentChatMessages` / `snapshotChat`
+  (the slash-command message mutation).
 
 ## Implemented Shape
 
@@ -69,7 +68,6 @@ affected chat's `message[]`.
 
 ## Validation
 
-- `pnpm test -- src/ts/chatCommands.test.ts`
 - `pnpm test -- src/ts/chatCommands.test.ts`
 - `pnpm test`
 - `pnpm client-thinning:audit`

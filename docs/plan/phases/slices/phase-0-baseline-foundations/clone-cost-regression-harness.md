@@ -25,9 +25,9 @@ structural snapshot assertion and rollback-correctness assertion.
   the clone-site inventory (the universe a gate must eventually cover) and each
   finding's "why it is expensive" measurement.
 - `src/ts/compatibilityAdapters.test.ts` - the reference-fix tests to generalize.
-- `src/ts/polyfill.ts:19` - `safeStructuredClone` (the clone primitive to
+- `src/ts/polyfill.ts` - `safeStructuredClone` (the clone primitive to
   instrument).
-- `src/ts/chatCommands.ts:68`, `src/ts/characterCommands.ts:52`, ... - the per-file
+- `src/ts/chatCommands.ts`, `src/ts/characterCommands.ts`, ... - the per-file
   `cloneJsonValue` definitions (the JSON-round-trip primitive to instrument).
 
 ## Harness Surface

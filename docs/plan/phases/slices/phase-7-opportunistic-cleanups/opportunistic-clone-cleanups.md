@@ -11,31 +11,30 @@ one parser rewrite, one render-path log, and one folder/chat scan reduction.
 
 - [`../../../../frontend-performance-audit.md`](../../../../frontend-performance-audit.md) -
   the Low findings and the clone-site inventory.
-- `src/ts/cbs.ts:364/376/399/1687`, `src/ts/observer.svelte.ts:118`,
-  `src/ts/characters.ts:138/195/220/242/259`, `src/ts/process/scripts.ts:215`,
-  `src/ts/parser/risuChatParser.ts`, `src/lib/ChatScreens/ChatBody.svelte:208/216`,
-  `src/lib/SideBars/SideChatList.svelte`,
-  `src/lib/Setting/Pages/PersonaSettings.svelte:68`.
+- `src/ts/cbs.ts`, `src/ts/observer.svelte.ts`, `src/ts/characters.ts`,
+  `src/ts/process/scripts.ts`, `src/ts/parser/risuChatParser.ts`,
+  `src/lib/ChatScreens/ChatBody.svelte`, `src/lib/SideBars/SideChatList.svelte`,
+  `src/lib/Setting/Pages/PersonaSettings.svelte`.
 
 ## Items
 
-- CBS history (`cbs.ts:376/399/1687`): shallow-copy and reparse only `.data` with
+- CBS history (`cbs.ts`): shallow-copy and reparse only `.data` with
   `JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })`.
-- Claude observer (`observer.svelte.ts:118`): shallow-spread body into
+- Claude observer (`observer.svelte.ts`): shallow-spread body into
   `{ ...arg.body, max_tokens: 10 }`.
-- Character image/emotion (`characters.ts:138/195/220/242/259`): drop the full
+- Character image/emotion (`characters.ts`): drop the full
   characters-array rollback. Reuse the character-row dispatch pattern (which still
   clones the target row) or add an image/emotion-specific snapshot if a narrower
   rollback is worthwhile.
-- Per-token regex (`scripts.ts:215`): memoize compiled `RegExp` per regex-script
+- Per-token regex (`scripts.ts`): memoize compiled `RegExp` per regex-script
   source.
 - `{{#each}}` reinjection (`risuChatParser.ts`): reduce block-expansion string
   work while preserving nested and flat output.
-- Render logs (`ChatBody.svelte:208/216`): remove the image lookup logs,
+- Render logs (`ChatBody.svelte`): remove the image lookup logs,
   including the full-assets `console.log`.
 - `SideChatList` scan: reduce folder/chat scans to one pass with the
   same ordering.
-- Personas clone (`PersonaSettings.svelte:68`): optional; drop one bounded
+- Personas clone (`PersonaSettings.svelte`): optional; drop one bounded
   `cloneJsonValue(DBState.db.personas)` pass.
 
 ## Behavior / Invariants

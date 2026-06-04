@@ -15,6 +15,11 @@ display passes) — `setVar` → `dispatchPatchChatScriptstateScoped`,
 and `command.ts` `/setvar`/`/addvar` also narrowed. Proof: scoped scriptstate +
 note failure-rollback tests in `chatCommands.test.ts`.
 
+Follow-up `48d473dc` fixed a separate guard-correctness bug in `runTrigger`:
+after the narrowed rollback, `setVar`/`v2SetVar` still synced scriptstate into
+the read-only projection directly. The sync now routes through
+`syncActiveChatScriptstate` inside `withTrustedServerProjectionWrite`.
+
 ## Scope
 
 Replace full-characters rollback on single-key scriptstate and author-note writes
@@ -25,16 +30,15 @@ chat's `scriptstate` map plus optional `note`.
 
 - [`../../../../frontend-performance-audit.md`](../../../../frontend-performance-audit.md) -
   the Medium/High `setVar`, `setChatVar`, and `v2SetAuthorNote` findings.
-- `src/ts/process/triggers.ts:1344` - the `setVar` closure
+- `src/ts/process/triggers.ts` - the `setVar` closure
   (`currentChatStateSnapshot()` -> single `scriptstate` key); short-circuits before
   the clone for `displayMode` and local vars.
-- `src/ts/process/triggers.ts:3081` - `v2SetAuthorNote`
+- `src/ts/process/triggers.ts` - `v2SetAuthorNote`
   (`currentChatStateSnapshot()` -> single `chat.note`).
-- `src/ts/parser/chatVar.svelte.ts:36` - `setChatVar`
+- `src/ts/parser/chatVar.svelte.ts` - `setChatVar`
   (`currentChatStateSnapshot()` -> single `scriptstate` key); fires only when
   `matcherArg.runVar === true` (per-send `runSendChatMessageVariables`).
-- `src/ts/process/command.ts:200/219` (and `:213/234`) - `/setvar`/`/addvar`
-  scriptstate writes.
+- `src/ts/process/command.ts` - `/setvar`/`/addvar` scriptstate writes.
 
 ## Implemented Shape
 

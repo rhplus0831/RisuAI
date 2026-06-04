@@ -53,7 +53,10 @@ restructures.
 - Scriptstate var writes: `setVar`, `setChatVar`, `/setvar`, `/addvar`, and
   `v2SetAuthorNote` cloned all characters to roll back one chat field. DONE
   (Phase 2): `ChatScriptstateSnapshot`, plus one snapshot per `runTrigger` pass.
-  Phase: [Phase 2](phases/phase-2-snapshot-family-narrowing.md).
+  Follow-up `48d473dc` fixed the separate direct-write bug where `runTrigger`
+  `setVar`/`v2SetVar` synced scriptstate into the read-only projection without the
+  guard. Phase: [Phase 2](phases/phase-2-snapshot-family-narrowing.md) +
+  [Phase 3 follow-up](phases/phase-3-cheap-wins.md).
 - Reroll and swipe: reroll clones the full transcript before slicing, and the
   `apply*` helpers cloned all characters for rollback. The rollback baseline is
   DONE (Phase 2): chat-scoped rollback. The full-transcript clone-before-slice and
@@ -120,22 +123,22 @@ Phases 4-7 are independent cleanups. Phase 8 is the standing gate.
 
 Carried from the audit so future readers do not re-open them:
 
-- `buildMemoryWindow.ts:139` - full-characters clone on the local-assembler path,
+- `buildMemoryWindow.ts` - full-characters clone on the local-assembler path,
   dead on the default `server` send route. Latent foot-gun, not a live freeze.
   Downgraded to low (inventory only).
-- `request.ts:247` - full-prompt double clone, skipped on the default server
+- `request.ts` - full-prompt double clone, skipped on the default server
   route; hot callers carry small bounded prompts. Downgraded to low.
-- `lorebook.svelte.ts:166` - combined-lorebook clone, local-assembler only; a
+- `lorebook.svelte.ts` - combined-lorebook clone, local-assembler only; a
   by-reference fix would be a correctness regression (child mode mutates in
   place). Downgraded to low.
-- `chatTemplate.ts:40` - instruct-template prompt clone, context-bounded text,
+- `chatTemplate.ts` - instruct-template prompt clone, context-bounded text,
   single-digit ms, opt-in provider. Benign.
-- `ChatBody.svelte:79` - `isEqual` over the simpleCharacter arrays hits the
+- `ChatBody.svelte` - `isEqual` over the simpleCharacter arrays hits the
   reference `===` fast path (shared references); benchmarked 0.20 ms. Benign.
-- `PersonaSettings.svelte:68` - personas double clone is bounded config, sub-ms;
+- `PersonaSettings.svelte` - personas double clone is bounded config, sub-ms;
   a cheap cleanup carried as a Phase 7 optional, not a freeze. Downgraded to
   low.
-- `protocolDiagnostics.ts:159` - small bounded counters object. Benign.
+- `protocolDiagnostics.ts` - small bounded counters object. Benign.
 
 ## Non-Goals
 

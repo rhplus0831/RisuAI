@@ -19,13 +19,12 @@ cost once per response or message append, not per chunk.
 - [`../../../../frontend-performance-audit.md`](../../../../frontend-performance-audit.md) -
   the Critical streaming finding ("Secondary" fix) and the High non-stream
   finding ("Secondary" fix).
-- `src/ts/process/postGeneration/streamResponse.ts:129` - the per-chunk
-  `withTrustedServerProjectionWrite` inside the `while (streamAborted === false)`
-  loop (line 93); the tail message is appended once at line 68, subsequent chunks
-  only touch `message[msgIndex].data` + `reloadKeys`.
-- `src/ts/process/postGeneration/nonStreamResponse.ts:98/111/116/130/138` - the
-  2-3 non-nested guarded calls per appended message (~4-6 clone pairs per
-  completion).
+- `src/ts/process/postGeneration/streamResponse.ts` - the per-chunk
+  `withTrustedServerProjectionWrite` inside the stream loop; after the tail
+  message append, subsequent chunks only touch `message[msgIndex].data` +
+  `reloadKeys`.
+- `src/ts/process/postGeneration/nonStreamResponse.ts` - the 2-3 non-nested
+  guarded calls per appended message.
 - `src/ts/process/postGeneration/orchestrateResponse.ts` -
   `consumeStreamResponse` / `applyNonStreamResponse` callers (the streaming call
   is awaited and not wrapped in an outer trusted write, so each inner call runs

@@ -14,9 +14,11 @@ map self-checking against the audit inventory.
   closeout.
 - [`../phase-0-baseline-foundations/clone-cost-regression-harness.md`](../phase-0-baseline-foundations/clone-cost-regression-harness.md) -
   the harness this slice keeps complete.
-- `src/ts/__tests__/cloneCostHarness.ts` plus existing Phase 0-2 tests in
+- `src/ts/__tests__/cloneCostHarness.ts` plus existing Phase 0-3 tests in
   `chatCommands.test.ts`, `characterCommands.test.ts`, `lorebookBridge*.test.ts`,
-  `chatBridge.svelte.test.ts`, and `rerollNavigation*.test.ts`.
+  `chatBridge.svelte.test.ts`, `rerollNavigation*.test.ts`,
+  `triggers.cloneCost.test.ts`, and
+  `src/ts/process/__tests__/triggers.projectionGuard.test.ts`.
 
 ## Target Implementation
 
@@ -36,8 +38,9 @@ map self-checking against the audit inventory.
 - Keep [`../../../latest-verification.md`](../../../latest-verification.md)
   current after each focused or full run. Record the before/after clone range for
   the slice under test. Replace the latest-run section; do not append history.
-- Record existing Phase 0-2 gates in the map, and add the matching gate as each
-  Phase 3-7 slice lands; do not mark a slice implemented without it.
+- Record existing Phase 0-3 gates in the map, including the Phase 3 reroll and
+  `runTrigger` proofs. Then add the matching gate as each Phase 4-7 slice lands;
+  do not mark a slice implemented without it.
 
 ## Done When
 

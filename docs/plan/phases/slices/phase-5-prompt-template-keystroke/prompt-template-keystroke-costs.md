@@ -16,7 +16,7 @@ double-stringifying it on each keystroke.
   optimistic write, the already-250ms-debounced server command, and the
   change-detection `$effect`.
 - `src/ts/server/commands.ts` - `peekCachedServerCommandRevision()`.
-- `src/lib/UI/PromptDataItem.svelte:49` - the per-keystroke single-PromptItem
+- `src/lib/UI/PromptDataItem.svelte` - the per-keystroke single-PromptItem
   stringify + double `clonePromptItem` (bounded; optional co-fix).
 
 ## Target Implementation
@@ -31,7 +31,7 @@ double-stringifying it on each keystroke.
    (`peekCachedServerCommandRevision()`). Only re-pull `serverValue` when that
    revision advances. A pure reference check will not work because
    `queuePromptItemUpdate` reassigns `DBState.db.promptTemplate`.
-4. (Optional) `PromptDataItem.svelte:49`: drop one of the two `clonePromptItem`
+4. (Optional) `PromptDataItem.svelte`: drop one of the two `clonePromptItem`
    passes; bounded, low.
 
 ## Behavior / Invariants

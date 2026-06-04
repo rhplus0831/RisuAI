@@ -2,7 +2,7 @@
 
 Date: 2026-06-04
 
-Read this when choosing the next batch. Pick one focused Phase 3-7 cleanup or one
+Read this when choosing the next batch. Pick one focused Phase 4-7 cleanup or one
 Phase 8 proof batch. Avoid broad cleanup passes.
 
 ## Start Point
@@ -14,7 +14,7 @@ Phase 8 proof batch. Avoid broad cleanup passes.
 - Before editing runtime code, add a compact scope to the active slice: location,
   cloned data, hot-path trigger, target snapshot, rollback property, and proof
   command.
-- Phases 3-7 are independent cleanups. The remaining snapshot-dependent item is
+- Phases 4-7 are independent cleanups. The remaining snapshot-dependent item is
   the Phase 7 image/emotion narrowing, which should reuse the Phase 0 character
   row kit; cheap wins and watcher/editor changes should still use the clone-cost
   harness when proving a win.

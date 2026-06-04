@@ -28,8 +28,8 @@ cloning full chats.
 - `src/ts/server/chatBridge.svelte.ts` - `watchServerBackedChatMetadata`,
   `collectChatCollectionSnapshots`, `scalarChatMetadata`, `queueChatPatch`,
   `queueFolderPatch`, and the narrow chat/folder row dispatch variants.
-- `src/lib/SideBars/SideChatList.svelte:75`, `ChatList.svelte:34`,
-  `CharConfig.svelte:156` - the mounting sites.
+- `src/lib/SideBars/SideChatList.svelte`, `src/lib/Others/ChatList.svelte`,
+  `src/lib/SideBars/CharConfig.svelte` - the mounting sites.
 
 ## Implemented Shape
 

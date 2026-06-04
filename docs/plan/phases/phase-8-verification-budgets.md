@@ -12,9 +12,10 @@ narrow new paths; it makes the gate map self-checking.
   "General principle" closeout.
 - `src/ts/__tests__/cloneCostHarness.ts` - the reusable structural,
   rollback-correctness, and clone-instrumentation helper.
-- Existing Phase 0-2 coverage lives across `chatCommands.test.ts`,
+- Existing Phase 0-3 coverage lives across `chatCommands.test.ts`,
   `characterCommands.test.ts`, `lorebookBridge*.test.ts`,
-  `chatBridge.svelte.test.ts`, and `rerollNavigation*.test.ts`.
+  `chatBridge.svelte.test.ts`, `rerollNavigation*.test.ts`,
+  `triggers.cloneCost.test.ts`, and `triggers.projectionGuard.test.ts`.
 
 ## Slices
 

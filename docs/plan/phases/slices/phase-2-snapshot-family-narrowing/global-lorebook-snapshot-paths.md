@@ -39,9 +39,8 @@ paths with lorebook-only or single-character snapshots.
 - [`../../../../frontend-performance-audit.md`](../../../../frontend-performance-audit.md) -
   the High `lorepreset.svelte` finding and the High/Medium lorebook-trigger
   finding (shared snapshot function, two paths).
-- `src/lib/Setting/lorepreset.svelte:28/60-66/91/119` - `selectLorebook` (per
-  entry onclick; `canUseServerCommands()` unconditionally true so the server
-  branch is live), the delete handler, the create handler.
+- `src/lib/Setting/lorepreset.svelte` - `selectLorebook`, delete, and create
+  handlers.
 - `src/ts/server/lorebookBridge.svelte.ts` - `currentLorebookStateSnapshot`,
   `currentGlobalLorebookStateSnapshot`, `restoreGlobalLorebookState`, scoped
   lorebook rollback, and the watcher id-initialization gate.

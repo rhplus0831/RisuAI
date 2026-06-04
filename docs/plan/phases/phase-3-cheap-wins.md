@@ -1,7 +1,7 @@
 # Phase 3: Cheap High-Confidence Wins
 
-Status: implemented. One slice, landed in two commits (reroll
-`ed4e0af0`, `runTrigger` `f4855e24`).
+Status: implemented. One slice, landed in two perf commits (reroll
+`ed4e0af0`, `runTrigger` `f4855e24`) plus follow-up guard fix `48d473dc`.
 
 Goal: land small behavior-preserving clone wins: reroll clone reorder/removal and
 `runTrigger` early return before cloning. No snapshot API changes.
@@ -42,10 +42,10 @@ The landed shapes preserve the win while staying guard-safe:
 
 - [x] `recordGeneratedReroll` clones O(tail) not O(transcript); the stored reroll
       is byte-identical.
-- [x] The redundant `:105` clone is removed (rows passed by reference, ids minted
-      inside the write guard) and `reroll()` no longer clones the whole transcript
-      when only the trailing group is reshaped (in-place truncate); dispatch payloads
-      are unchanged.
+- [x] The redundant reroll dispatch clone is removed (rows passed by reference,
+      ids minted inside the write guard) and `reroll()` no longer clones the whole
+      transcript when only the trailing group is reshaped (in-place truncate);
+      dispatch payloads are unchanged.
 - [x] A zero-trigger character pays no `char`/`chat` clone in `runTrigger`;
       trigger-bearing paths clone only the active chat (the whole-character clone is
       lazy — paid once, only when a data effect installs the character).
@@ -54,7 +54,7 @@ The landed shapes preserve the win while staying guard-safe:
 
 ## Found While Implementing (now fixed)
 
-- `setVar`/`v2SetVar` (`triggers.ts:1402-1404`) wrote the new scriptstate directly
+- `setVar`/`v2SetVar` wrote the new scriptstate directly
   to `getCurrentChat()` / `getCurrentCharacter()` / `getDatabase()` (the read-only
   projection) without a `withTrustedServerProjectionWrite`, so a client-side
   `manual`/slash `setVar` trigger threw under the Fastify guard. Pre-existing
@@ -70,7 +70,7 @@ The landed shapes preserve the win while staying guard-safe:
 - `pnpm exec vitest run rerollNavigation` (unit + rollback + guard suites, incl.
   the new Phase 3 clone-cost + guard-on regenerate tests)
 - `pnpm exec vitest run triggers.projectionGuard triggers.cloneCost`
-- `pnpm test` - green, 1002 passed / 4 skipped (105 files)
+- `pnpm test` - green, 1003 passed / 4 skipped (105 files)
 - `pnpm api:test` - green, 1632 passed / 1 skipped (93 files)
 - `pnpm client-thinning:audit` - green
 - Type check: `tsconfig.client-lib.json` build then

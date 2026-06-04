@@ -35,17 +35,16 @@ target character row.
 - [`../../../../frontend-performance-audit.md`](../../../../frontend-performance-audit.md) -
   the High `currentCharacterStateSnapshot` finding and the Low image/emotion
   finding (image/emotion lands in Phase 7).
-- `src/ts/characterCommands.ts:57` - `currentCharacterStateSnapshot` and
+- `src/ts/characterCommands.ts` - `currentCharacterStateSnapshot` and
   `restoreCharacterState`; `dispatchCompatibleCharacterUpdate`.
-- `src/ts/storage/database.svelte.ts:968/995` - `setCurrentCharacter` /
+- `src/ts/storage/database.svelte.ts` - `setCurrentCharacter` /
   `setCharacterByIndex` (both guarded by `canUseServerCommands()` === true, so the
   clone always fires).
 - `src/ts/process/triggers.ts` - `v2SetCharacterDesc` and
   `v2SetReplaceGlobalNote` callers of `setCurrentCharacter`; lorebook triggers
   are covered by the global-lorebook slice.
-- Lower-frequency callers: `setCharacterSupaMemory`,
-  `characterCards.ts:136/369/648/1752`, plugins/MCP, `characters.ts:904`
-  (trashTime).
+- Lower-frequency callers: `setCharacterSupaMemory`, `characterCards.ts`,
+  plugins/MCP, and `characters.ts` trash/Realm/import/card paths.
 
 ## Implemented Shape
 

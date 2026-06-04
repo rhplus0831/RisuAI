@@ -1,7 +1,8 @@
 # Cheap Clone Wins
 
-Status: landed (reroll `ed4e0af0`, `runTrigger` `f4855e24`). Phase 3.
-Independent of the Phase 0 kit; three behavior-preserving edits.
+Status: landed (reroll `ed4e0af0`, `runTrigger` `f4855e24`; follow-up guard fix
+`48d473dc`). Phase 3. Independent of the Phase 0 kit; three behavior-preserving
+edits.
 
 ## Scope
 
@@ -18,7 +19,7 @@ reroll dispatch clones, and return early in `runTrigger` before char/chat clones
   in `reroll()`.
 - `src/ts/process/triggers.ts` - `runTrigger` char/chat clones before the
   `triggers.length === 0` return.
-- `src/ts/process/sendChatCompletion.ts:25` - the `recordGeneratedReroll` caller.
+- `src/ts/process/sendChatCompletion.ts` - the `recordGeneratedReroll` caller.
 
 ## Target Implementation (as landed)
 
@@ -26,18 +27,15 @@ reroll dispatch clones, and return early in `runTrigger` before char/chat clones
    deep-cloned:
    `rerolls.push(safeStructuredClone(message.slice(previousLength)))`.
    Byte-identical and O(tail). **Landed verbatim.**
-2. Redundant reroll clones: dropped `safeStructuredClone(record.message)` at
-   `:105`; the rows are passed to the dispatch by reference (it deep-clones each
-   row via `toMessageSnapshot`). Because the dispatch's `ensureMessageId` pass
-   would otherwise mutate a refrozen read-only row, ids are now minted inside the
-   `withTrustedServerProjectionWrite` block. At `:147`, `reroll()` no longer
-   deep-clones the transcript: a shallow copy locates the truncation point + the
-   regenerate target (minted on a throwaway copy of the tail so it never mutates
-   the projection row), then the live transcript is **truncated in place**
-   (`applyRerollTruncate`) instead of installing a shallow-popped array — the
-   surviving rows are the projection's own rows (guard-safe), and the dispatch
-   payload is unchanged. (A shallow array of read-only proxy rows installed via
-   the old `applyTranscript` would have poisoned later message writes.)
+2. Redundant reroll clones: dropped `safeStructuredClone(record.message)` in
+   `applyTailSlice`; the rows are passed to dispatch by reference (the dispatch
+   still snapshots each row via `toMessageSnapshot`). IDs are minted inside the
+   `withTrustedServerProjectionWrite` block so read-only rows are not mutated.
+   `reroll()` now uses a shallow tail copy only to find the truncation point and
+   regenerate target, then truncates the live transcript in place
+   (`applyRerollTruncate`) instead of installing a shallow-popped array. The
+   surviving rows stay as the projection's own rows, and dispatch payloads are
+   unchanged.
 3. `runTrigger` early return: `triggers` is computed first (each definition mapped
    to a fresh object carrying `lowLevelAccess`, so the working character is not
    mutated in place; the display path keeps its historical in-place write) and
@@ -62,12 +60,19 @@ reroll dispatch clones, and return early in `runTrigger` before char/chat clones
 
 ## Done When (met)
 
-- `recordGeneratedReroll` clones O(tail); the redundant `:105` clone is gone;
+- `recordGeneratedReroll` clones O(tail); the redundant reroll dispatch clone is gone;
   `reroll()` no longer clones the whole transcript; `runTrigger` returns before
   cloning for zero-trigger characters and clones only the active chat otherwise
   (clone-cost harness proves each).
 - Reroll navigation, dispatched messages, and trigger output are byte-identical.
-- `pnpm test` is green (1002 / 4 skipped).
+- `pnpm test` is green (1003 / 4 skipped).
+
+## Follow-Up Guard Fix
+
+`48d473dc` fixed the pre-existing `runTrigger` `setVar`/`v2SetVar` direct-write
+bug exposed by the Phase 3 clone-cost test: scriptstate sync now runs through
+`syncActiveChatScriptstate` inside `withTrustedServerProjectionWrite`, and the
+guard-on `v2SetVar` test proves the dispatched `/chats/:id/scriptstate` patch.
 
 ## Validation
 

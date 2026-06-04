@@ -76,12 +76,14 @@ for a one-field guarded write. The legacy full-state snapshot helpers still scal
 with total hydrated history, but Phase 2 has moved the Critical/High message,
 scriptstate, reroll, character, and global-lorebook hot callers onto scoped
 snapshots. Remaining broad callers are lower-frequency restructure, import,
-sidebar/MCP, and image-emotion paths tracked in Phases 3-7.
+sidebar/MCP, watcher/editor, and image-emotion paths tracked in Phases 4-7.
 
 The reference fix `c9e728b1` narrowed character select to a scalar snapshot. With
-the guard amplifier already removed by Phase 1, Phase 2 applied the same shape to
-the main snapshot-family hot paths. The remaining phases are independent clone
-cleanups, watcher scope reductions, editor-keystroke work, and gate completeness.
+the guard amplifier removed by Phase 1, Phase 2 applied the same shape to the main
+snapshot-family hot paths. Phase 3 landed the cheap reroll and `runTrigger` wins;
+`48d473dc` then fixed the `runTrigger` `setVar`/`v2SetVar` direct projection write
+that the Phase 3 tests exposed. The remaining planned phases are watcher scope
+reductions, editor-keystroke work, low-priority cleanups, and gate completeness.
 
 ## Prerequisites
 
@@ -147,8 +149,9 @@ site is narrowed:
 
 ## Execution Cursor
 
-Phases 0, 1 (primary guard), and 2 are implemented. Start the next batch with any
-focused Phase 3-7 cleanup; Phase 8 is the standing verification layer.
+Phases 0, 1 (primary guard), 2, and 3 are implemented, and the `48d473dc`
+`runTrigger` scriptstate guard follow-up is fixed. Start the next batch with any
+focused Phase 4-7 cleanup; Phase 8 is the standing verification layer.
 
 For every narrowed path: capture a narrow rollback, restore only mutated fields,
 keep full clones for restructures, and add a regression test proving the path
