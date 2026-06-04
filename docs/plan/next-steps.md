@@ -2,7 +2,7 @@
 
 Date: 2026-06-04
 
-Read this when choosing the next batch. Pick one focused Phase 4-7 cleanup or one
+Read this when choosing the next batch. Pick one focused Phase 5-7 cleanup or one
 Phase 8 proof batch. Avoid broad cleanup passes.
 
 ## Start Point
@@ -14,24 +14,24 @@ Phase 8 proof batch. Avoid broad cleanup passes.
 - Before editing runtime code, add a compact scope to the active slice: location,
   cloned data, hot-path trigger, target snapshot, rollback property, and proof
   command.
-- Phases 4-7 are independent cleanups. The remaining snapshot-dependent item is
+- Phases 5-7 are independent cleanups. The remaining snapshot-dependent item is
   the Phase 7 image/emotion narrowing, which should reuse the Phase 0 character
   row kit; cheap wins and watcher/editor changes should still use the clone-cost
   harness when proving a win.
 
 ## Current Best Targets
 
-Phases 0, 1, 2, and 3 have landed. The next work is Phases 4-7 (independent, any
-order).
+Phases 0, 1, 2, 3, and 4 have landed. The next work is Phases 5-7 (independent,
+any order).
 
 - DONE: Phase 0 snapshot kit + clone-cost harness; Phase 1 primary guard
   copy-on-write fix; Phase 2 all six snapshot-family slices
   (`e5e183da` -> `9547ba3e`); Phase 3 cheap wins (reroll `ed4e0af0`, `runTrigger`
-  `f4855e24`). Broad snapshots still exist for restructures plus lower-frequency or
-  deferred callers.
-- NEXT: any focused Phase 4-7 cleanup — Phase 4 (script-definition watcher),
-  Phase 5 (prompt-template keystroke), Phase 6 (lorebook watcher scope), or a
-  Phase 7 opportunistic item.
+  `f4855e24`); Phase 4 script-definition watcher scoped rollback (`2ec1ea40`).
+  Broad snapshots still exist for restructures plus lower-frequency or deferred
+  callers.
+- NEXT: any focused Phase 5-7 cleanup — Phase 5 (prompt-template keystroke),
+  Phase 6 (lorebook watcher scope), or a Phase 7 opportunistic item.
 - FIXED (`48d473dc`): `setVar`/`v2SetVar` previously wrote scriptstate directly to
   the read-only projection, so a client `manual`/slash `setVar` trigger threw under
   the Fastify guard. Now routed through `syncActiveChatScriptstate`
@@ -70,6 +70,9 @@ matching suite.
   (reroll tail-clone reorder and rollback scope).
 - `pnpm test -- src/ts/process/__tests__/triggers.projectionGuard.test.ts src/ts/parser/tests/chatVar.svelte.test.ts`
   (scriptstate scope and `runTrigger` early-return).
+- `pnpm test -- src/ts/server/scriptDefinitionBridge.svelte.test.ts` (Phase 4:
+  the watcher fire stays O(scripts) with a hydrated history, and a failed
+  replacement rolls back only the changed row).
 - `pnpm test` (full client suite).
 - `pnpm api:test` (server suite - run when a change can affect projection/event
   payloads).

@@ -1,7 +1,7 @@
 # Phase 4: Script-Definition Watcher
 
-Status: planned. One slice. Independent; reuses the Phase 0 scoped-rollback
-pattern.
+Status: implemented (`2ec1ea40`). One slice. Independent; reuses the Phase 2
+chat-metadata watcher's lazy per-row rollback pattern.
 
 Goal: stop the script-definition watcher from taking a full characters+modules
 rollback snapshot on every reactive fire. While the panel is open, script/trigger
@@ -26,15 +26,40 @@ edits and streaming tokens should not trigger full clones.
 
 ## Exit Criteria
 
-- [ ] The watcher effect no longer clones `DBState.db.characters` / `modules`; a
+- [x] The watcher effect no longer clones `DBState.db.characters` / `modules`; a
       streaming token while the panel is open triggers no full characters+modules
-      clone. If the ID-ensure scan remains in the effect, account for it
-      separately or scope/move it.
-- [ ] Change detection still fires the same dispatches (per-key stringify
+      clone. The `currentScriptDefinitionStateSnapshot()` call (and the
+      `previousState` baseline) is gone from the effect; the per-key stringify map
+      is the only per-fire serialization. The `ensureAllClientScriptDefinitionIds`
+      scan stays in the effect: it is an O(scripts) read with no JSON clone and a
+      guarded write only on the first fire that finds a missing id, so it is
+      separately accounted for (not a whole-collection clone).
+- [x] Change detection still fires the same dispatches (per-key stringify
       unchanged); the rollback restores only the changed character's
-      scripts/triggers (or the changed module).
-- [ ] A clone-cost regression test proves the effect fire is O(scripts) not
-      O(hydrated corpus); `pnpm test` is green.
+      `customscript`/`triggerscript` (or the changed module's `regex`/`trigger`)
+      via the scoped `ScopedScriptDefinitionRollback`.
+- [x] A clone-cost regression test proves the effect fire is O(scripts) not
+      O(hydrated corpus) (baseline, script edit, and streaming-token append all
+      stay below the ~250 KB hydrated history); `pnpm test` is green.
+
+## Outcome
+
+`watchServerBackedScriptDefinitions` dropped the per-fire (and setup-time)
+`currentScriptDefinitionStateSnapshot()` whole-`characters`+`modules` clone. The
+effect now reads only `collectScriptDefinitionCollectionSnapshots()` (the
+existing per-key scripts/triggers stringify) for change detection and builds the
+rollback lazily inside `dispatchWatchedReplacement`, parsing the prior per-key
+snapshot string into a single-row `ScopedScriptDefinitionRollback`. A failed
+replacement restores only the changed row.
+
+The dispatch functions now accept a `ScriptDefinitionRollback` union
+(`ScriptDefinitionStateSnapshot | ScopedScriptDefinitionRollback`), so the rarer
+discrete callers (`modules.ts` module-apply and the MCP character/module edits)
+keep passing the full snapshot unchanged; `rollbackServerBackedScriptDefinitions`
+discriminates on the `'kind'` field and routes scoped rollbacks through the new
+`restoreScopedScriptDefinition`. Proven by
+`scriptDefinitionBridge.svelte.test.ts` (3 clone-cost + 2 scoped-rollback tests
+added; existing baseline tests unchanged).
 
 ## Validation
 

@@ -1,6 +1,6 @@
 # Scoped Script-Definition Rollback
 
-Status: planned. Phase 4. Independent.
+Status: implemented (`2ec1ea40`). Phase 4. Independent.
 
 ## Scope
 
@@ -17,19 +17,27 @@ rollback only at dispatch.
   `watchServerBackedScriptDefinitions`, `currentScriptDefinitionStateSnapshot`,
   `dispatchWatchedReplacement`, and `collectScriptDefinitionCollectionSnapshots`.
 
-## Target Implementation
+## Target Implementation (done)
 
-- Drop `currentScriptDefinitionStateSnapshot()` / `previousState` from the effect.
-- Use `collectScriptDefinitionCollectionSnapshots()` as the effect's only
-  change-detection input.
-- Build rollback inside `dispatchWatchedReplacement`, snapshotting only the
-  changed character or module scripts/triggers.
-- Account for the `ensureAllClientScriptDefinitionIds()` scan in the same effect:
-  scope/move it if the slice needs to prove zero deep reads, or keep the narrower
-  proof to "zero full characters+modules clones."
-- Optional (the Low finding): cache the per-key snapshot strings and only
-  re-stringify the key whose source changed, or move the snapshot into the 250 ms
-  debounce window.
+- Dropped `currentScriptDefinitionStateSnapshot()` / `previousState` from the
+  effect (and the watcher-setup baseline call).
+- `collectScriptDefinitionCollectionSnapshots()` is now the effect's only
+  change-detection input and its only per-fire serialization.
+- Rollback is built inside `dispatchWatchedReplacement`: it parses the prior
+  per-key snapshot string (`parseSnapshotArray`) into a single-row
+  `ScopedScriptDefinitionRollback` (`characterScripts` / `characterTriggers` /
+  `moduleScripts` / `moduleTriggers`). `rollbackServerBackedScriptDefinitions`
+  discriminates on `'kind'` and routes scoped rollbacks through
+  `restoreScopedScriptDefinition` (find-by-id, restore one field).
+- The dispatch functions take a `ScriptDefinitionRollback` union, so the discrete
+  full-snapshot callers (`modules.ts`, MCP) keep working without change.
+- `ensureAllClientScriptDefinitionIds()` stays in the effect: it is an
+  O(scripts) read (`.some()` per row) with no JSON clone, and a guarded write only
+  on the first fire that finds a missing id. The proof is the narrower "zero full
+  characters+modules clones" form.
+- Not done (deferred Low finding): caching per-key snapshot strings / moving the
+  stringify into the debounce window. The per-key stringify is small and bounded;
+  reopen only if profiling shows it.
 
 ## Behavior / Invariants
 
@@ -39,11 +47,11 @@ rollback only at dispatch.
   `customscript`/`triggerscript` (or the changed module).
 - Output (assembled scripts/triggers) is identical.
 
-## Done When
+## Done When (met)
 
 - The effect performs zero full characters+modules clones per fire, including on a
   streaming-token re-invalidation while the panel is open (clone-cost harness);
-  any remaining ID-ensure scan is separately justified or scoped.
+  the remaining ID-ensure scan is separately justified (O(scripts) read, no clone).
 - The rollback restores only the changed row; change detection is unchanged.
 - `pnpm test` and `pnpm client-thinning:audit` are green.
 

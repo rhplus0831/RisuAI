@@ -5,18 +5,18 @@ Date: 2026-06-04
 This is the router for the frontend deep-clone / hot-path narrowing workstream.
 Use it first, then open only the phase or slice needed for the next task.
 
-Current status reflects runtime code through `48d473dc` (`fix: route runTrigger
-setVar scriptstate writes through the projection guard`) plus the docs audit
-commit `5aa2fa63`. Phase 0 foundations, the Phase 1 primary guard fix, all six
-Phase 2 slices, Phase 3 (cheap wins), and the `runTrigger` scriptstate guard
-follow-up have landed; the next work is Phases 4-7 (independent).
+Current status reflects runtime code through `2ec1ea40` (`perf: scope
+script-definition watcher rollback to the changed row (Phase 4)`). Phase 0
+foundations, the Phase 1 primary guard fix, all six Phase 2 slices, Phase 3
+(cheap wins), the `runTrigger` scriptstate guard follow-up, and Phase 4 (script-
+definition watcher) have landed; the next work is Phases 5-7 (independent).
 
 ## Current Snapshot
 
-Analysis is complete. Phase 0-3 are implemented, and `48d473dc` fixed the
-pre-existing `runTrigger` `setVar`/`v2SetVar` direct-write bug surfaced by the
-Phase 3 clone-cost proof. Start new runtime work in Phase 4-7; keep Phase 8 as
-the standing verification layer.
+Analysis is complete. Phase 0-4 are implemented. Phase 4 dropped the
+script-definition watcher's per-fire whole-`characters`+`modules` clone, building
+a scoped single-row rollback lazily at dispatch. Start new runtime work in Phase
+5-7; keep Phase 8 as the standing verification layer.
 
 | Phase | State | Use For |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ the standing verification layer.
 | [1](phases/phase-1-projection-write-guard.md) | Implemented | Copy-on-write projection guard; batching slice deferred. |
 | [2](phases/phase-2-snapshot-family-narrowing.md) | Implemented | Six snapshot-family hot-path slices. |
 | [3](phases/phase-3-cheap-wins.md) | Implemented | Reroll transcript wins, `runTrigger` lazy clone, `48d473dc` guard follow-up. |
-| [4](phases/phase-4-script-definition-watcher.md) | Planned | Script-definition watcher scoped rollback. |
+| [4](phases/phase-4-script-definition-watcher.md) | Implemented | Script-definition watcher scoped per-row rollback (`2ec1ea40`). |
 | [5](phases/phase-5-prompt-template-keystroke.md) | Planned | Prompt-template debounce, single-item mutation, cheaper change detection. |
 | [6](phases/phase-6-lorebook-watcher-scope.md) | Planned | Lorebook watcher scoped to the mounted panel. |
 | [7](phases/phase-7-opportunistic-cleanups.md) | Planned | CBS, observer, image/emotion, regex, parser, log, and scan cleanups. |
@@ -33,16 +33,16 @@ the standing verification layer.
 ## Open Risk Router
 
 [`active-risk-analysis.md`](active-risk-analysis.md) has the full per-area
-detail. The remaining planned runtime work is Phase 4 script definitions, Phase 5
-prompt-template keystrokes, Phase 6 lorebook watcher scope, and Phase 7
-low-priority cleanups. Broad snapshots still intentionally exist for real
-restructures plus deferred lower-frequency callers such as image/emotion edits
-and LoreBook sidebar/MCP paths.
+detail. The remaining planned runtime work is Phase 5 prompt-template keystrokes,
+Phase 6 lorebook watcher scope, and Phase 7 low-priority cleanups. Broad
+snapshots still intentionally exist for real restructures plus deferred
+lower-frequency callers such as image/emotion edits and LoreBook sidebar/MCP
+paths.
 
 ## Latest Verification
 
 See [`latest-verification.md`](latest-verification.md). Latest maintained run:
-`pnpm test` green (1003 passed / 4 skipped), `pnpm api:test` green (1632 passed /
+`pnpm test` green (1008 passed / 4 skipped), `pnpm api:test` green (1632 passed /
 1 skipped), `pnpm client-thinning:audit` green, and both TypeScript checks green.
 
 ## Start Here

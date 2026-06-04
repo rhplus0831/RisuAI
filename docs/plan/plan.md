@@ -75,15 +75,19 @@ refreeze clone ~130 ms). The current guard proof shows zero clone-primitive call
 for a one-field guarded write. The legacy full-state snapshot helpers still scale
 with total hydrated history, but Phase 2 has moved the Critical/High message,
 scriptstate, reroll, character, and global-lorebook hot callers onto scoped
-snapshots. Remaining broad callers are lower-frequency restructure, import,
-sidebar/MCP, watcher/editor, and image-emotion paths tracked in Phases 4-7.
+snapshots, and Phase 4 moved the script-definition watcher onto a scoped per-row
+rollback. Remaining broad callers are lower-frequency restructure, import,
+sidebar/MCP, editor-keystroke, lorebook-watcher, and image-emotion paths tracked
+in Phases 5-7.
 
 The reference fix `c9e728b1` narrowed character select to a scalar snapshot. With
 the guard amplifier removed by Phase 1, Phase 2 applied the same shape to the main
 snapshot-family hot paths. Phase 3 landed the cheap reroll and `runTrigger` wins;
 `48d473dc` then fixed the `runTrigger` `setVar`/`v2SetVar` direct projection write
-that the Phase 3 tests exposed. The remaining planned phases are watcher scope
-reductions, editor-keystroke work, low-priority cleanups, and gate completeness.
+that the Phase 3 tests exposed. Phase 4 applied the same scoped-rollback shape to
+the script-definition watcher. The remaining planned phases are editor-keystroke
+work, the lorebook watcher scope reduction, low-priority cleanups, and gate
+completeness.
 
 ## Prerequisites
 
