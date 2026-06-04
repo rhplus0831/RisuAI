@@ -1,18 +1,14 @@
 # Phase 2: Server Load Narrowing (Root 1)
 
-Status: not started. Addresses the audit's largest cross-cutting root — the
-server still reconstitutes a broad in-memory `Database` (every character, every
-chat-metadata row, all 9 collection tables, the full asset table) on most hot
-read and write paths, even when the path reads one row. Depends on Phase 0's
-server clone-cost assertion.
+Status: not started. Addresses the largest server root: hot paths still rebuild
+a broad in-memory `Database` when they need one row. Depends on Phase 0's server
+load-count assertion.
 
-Goal: each hot path loads only the rows it reads. Add an assembly-specific scoped
-message loader and a per-request load memo / field-scoped loader, then route the
-hot read/write paths through them. Keep `loadPersisted` /
-`loadPersistedWithMessages` for their genuine full-corpus consumers
-(assetGc/export/save/import).
+Goal: each hot path loads only the rows it reads. Add scoped assembly loading
+and a per-request memo or field-scoped loader. Keep `loadPersisted` and
+`loadPersistedWithMessages` for true full-corpus consumers.
 
-Findings: **M1, M3, M4, M5, L1, L2, L5, L6, L10, U1**.
+Findings: M1, M3, M4, M5, L1, L2, L5, L6, L10, U1.
 
 ## Source Anchors
 
@@ -40,43 +36,34 @@ Findings: **M1, M3, M4, M5, L1, L2, L5, L6, L10, U1**.
 ## Slices
 
 - [`scoped-assembly-load.md`](slices/phase-2-server-load-narrowing/scoped-assembly-load.md) -
-  M1, L1, L2. New assembly-specific loader hydrates only the target chat's
-  messages/hypaV3 (`getChatMessagesGroupedByIds([chatId])` + message-free
-  `loadPersisted`), leaving siblings `message=[]`; memoize `getActiveModules` per
-  assembly; hoist the invariant run-var/module work off the per-message path.
+  M1, L1, L2. Hydrate only the target chat's messages/hypaV3, leave siblings
+  `message=[]`, memoize `getActiveModules`, and hoist invariant run-var work.
 - [`command-mutation-read-narrowing.md`](slices/phase-2-server-load-narrowing/command-mutation-read-narrowing.md) -
-  M3, L5, L6. A field-scoped SQLite loader or per-request memo so a
-  message/scriptstate/generation mutation parses only `characters` (+settings),
-  not all collections, the full asset table, or all chat rows. Preserve the
-  global `normalizeAllCharacterChats` dedup invariant.
+  M3, L5, L6. Parse only the tables a command reads. Preserve
+  `normalizeAllCharacterChats` dedup.
 - [`single-character-projection.md`](slices/phase-2-server-load-narrowing/single-character-projection.md) -
   M4. `loadSingleCharacterRow` does a `WHERE id=?` single-row read (precedent
   `loadCharacterSelectionRows`) and masks only that row; add an opt-in
   `maskProviderSecretsInPlace` for callers that own a fresh object.
 - [`projection-metric-and-bulk-read.md`](slices/phase-2-server-load-narrowing/projection-metric-and-bulk-read.md) -
-  M5, L10, U1. Defer `jsonPayloadBytes` behind the metrics-enabled guard (thunk);
-  load command-event history only when replay is requested; resolve bulk-hydration
-  `knownChatIds` via a targeted `SELECT id ... WHERE id IN (...)` instead of full
-  `loadPersisted`.
+  M5, L10, U1. Defer `jsonPayloadBytes`, load command history only for replay,
+  and target bulk-hydration id checks.
 
 ## Planned Shape
 
-- The scoped loaders already exist (`getChatMessagesGroupedByIds`,
-  `loadCharacterSelectionRows`); the work is wiring them on the hot paths and
-  adding the memo, not new storage.
+- Scoped loaders already exist (`getChatMessagesGroupedByIds`,
+  `loadCharacterSelectionRows`); this phase wires them into hot paths.
 - Every non-target chat must still get `message=[]` so downstream `eachChat` /
   memo iteration does not regress; per-chat hypaV3 embedded-fallback semantics are
   preserved.
-- Collection narrowing is safe (mutate callbacks never read a collection field);
-  character/chat narrowing for message-only routes needs care because
-  `normalizeAllCharacterChats` dedups chat/folder ids across all characters —
-  keep that invariant (load all character rows but skip the message bodies, or
-  re-validate dedup on the scoped set).
+- Collection narrowing is low risk because mutate callbacks do not read
+  collection fields. Character/chat narrowing must preserve global chat/folder
+  id dedup.
 
 ## Exit Criteria
 
 - [ ] M1: prompt assembly hydrates only the active chat's messages/hypaV3; the
-      server clone-cost assertion shows zero `getAllChatMessagesGrouped` calls on
+      server load-count assertion shows zero `getAllChatMessagesGrouped` calls on
       the assembly path; `loadPersistedWithMessages` is unchanged for its other
       consumers. Assembly output bytes identical.
 - [ ] M3/L5/L6: a message/scriptstate/generation mutation parses only the tables

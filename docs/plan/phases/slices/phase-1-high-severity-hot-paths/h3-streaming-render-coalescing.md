@@ -1,22 +1,20 @@
 # H3 — Streaming Render Coalescing
 
-Status: not started. Phase 1. Removes accidentally-quadratic per-token re-parsing
-from the streaming render path.
+Status: not started. Phase 1. Removes quadratic per-token parsing from streaming
+renders.
 
 ## Scope
 
-During a streamed response the server emits one SSE `token` frame per provider
-delta (no batching); the client accumulates the full string each token and writes
-it into `message[msgIndex].data` + bumps `reloadKeys` every frame. That deep
-mutation re-runs `risuChatParser` + `ParseMarkdown`
-(`parseAdditionalAssets` + `processScriptFull('editdisplay')` [display trigger +
-CBS] + `md.render` + `DOMPurify.sanitize`) over the **whole** growing message
-every token — ~O(length²) on the main thread. Coalesce the renders.
+During streaming, each provider delta becomes an SSE `token` frame. The client
+writes the full accumulated string to `message[msgIndex].data` and bumps
+`reloadKeys` every frame. That re-runs `risuChatParser` + `ParseMarkdown` over
+the whole growing message, making long streams ~O(length²). Coalesce the
+renders.
 
 ## Source Anchors
 
 - [`../../../audit-stability-and-performance.md`](../../../audit-stability-and-performance.md) -
-  finding **H3**.
+  finding H3.
 - `src/ts/process/request/serverChat.ts:409-412` (per-token full-string enqueue,
   no rAF/throttle).
 - `src/ts/process/postGeneration/streamResponse.ts:104-133` (per-chunk `.data`
@@ -30,16 +28,13 @@ every token — ~O(length²) on the main thread. Coalesce the renders.
 
 ## Planned Shape
 
-- Buffer incoming token frames and flush the displayed text at most once per
-  animation frame (or short timer), so the full reparse runs a bounded number of
-  times regardless of token count.
+- Buffer token frames and flush displayed text at most once per animation frame
+  or short timer.
 - Keep a final full-fidelity flush on the terminal `done` frame so the persisted
   / final text parses once at full fidelity (and `editoutput` still runs).
-- Optionally batch provider deltas into fewer, larger SSE frames server-side
-  (low-risk, helps every client) — secondary.
-- Do **not** prefix-memo `ParseMarkdown`: `editdisplay`/`display`/CBS can depend
-  on the whole message and trailing context, so a naive prefix cache could render
-  wrong mid-stream. Render coalescing is the behavior-preserving fix.
+- Optionally batch provider deltas into fewer SSE frames server-side.
+- Do not prefix-memo `ParseMarkdown`: `editdisplay`/`display`/CBS can depend on
+  the whole message and trailing context.
 
 ## Behavior / Invariants
 

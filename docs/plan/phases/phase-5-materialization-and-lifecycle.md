@@ -1,14 +1,12 @@
 # Phase 5: Materialization & Lifecycle (Root 5)
 
-Status: not started. Covers the decompress/buffer-before-cap foot-guns and the
-stream/job/import lifecycle leaks and correctness gaps.
+Status: not started. Covers bounded inflate/buffering, stream/job cleanup,
+import/restore robustness, and sync-replay correctness.
 
-Goal: bound decompression and buffering before materialization; clean up
-stream/job resources on abort/close; make import/restore robust to a corrupt or
-mid-flight failure; and close two sync-replay correctness gaps. No `.risu`
-envelope byte change — round-trip tests gate every codec touch.
+Goal: bound work before materialization, clean up on abort/close, harden
+import/restore, and keep sync replay correct. `.risu` bytes must not change.
 
-Findings: **M9, M10, M11, L11, L12, L13, L14, L15, L27, L28, L29, L30**.
+Findings: M9, M10, M11, L11, L12, L13, L14, L15, L27, L28, L29, L30.
 
 ## Source Anchors
 
@@ -31,7 +29,7 @@ Findings: **M9, M10, M11, L11, L12, L13, L14, L15, L27, L28, L29, L30**.
 ## Slices
 
 - [`materialization-and-lifecycle.md`](slices/phase-5-materialization-and-lifecycle/materialization-and-lifecycle.md) -
-  the full batch:
+  full batch:
   - M9: streaming bounded inflate — `fflate` `Gunzip`/`Decompress` with an
     `ondata` accumulator that throws past `maxExpandedBytes`, per legacy envelope
     and per block; finite default cap for `/import/bundle`'s inner `.risu`.
@@ -54,14 +52,11 @@ Findings: **M9, M10, M11, L11, L12, L13, L14, L15, L27, L28, L29, L30**.
 
 ## Planned Shape
 
-- M9: `fflate` already ships streaming `Gunzip`/`Decompress` (used in
-  `localBackupImport.ts`); output is byte-identical, only the failure mode changes
-  (early bounded abort vs full-allocate-then-reject). Round-trip import/export
-  tests must stay green.
+- M9: `fflate` already ships streaming `Gunzip`/`Decompress`; output stays
+  byte-identical, only oversize failure changes.
 - M10: the asset walker only needs each message's `data` string; the token-only
   scan must still union with the non-message references (`loadPersisted`).
-- M11: the source read stream must be explicitly destroyed (for-await only
-  auto-destroys on completion/throw, not when parked on an unsettled await).
+- M11: explicitly destroy the source read stream when close/abort parks the loop.
 - L29: stamping origin on the persisted event must not change the event payload
   the client projects; it is metadata for own-echo suppression.
 

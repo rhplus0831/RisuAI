@@ -2,10 +2,8 @@
 
 Date: 2026-06-04
 
-**Nothing is implemented yet.** The next task is **Phase 0** (foundations), then
-**Phase 1** (the three high-severity fixes). Any fix must land with a regression
-test and register its gate in
-`src/ts/__tests__/` / the server suite per Phase 8.
+Nothing is implemented yet. Start with Phase 0, then Phase 1. Every fix needs a
+regression test and a Phase 8 gate entry.
 
 ## Start Point
 
@@ -13,39 +11,31 @@ test and register its gate in
   [`active-risk-analysis.md`](active-risk-analysis.md) and the per-finding
   evidence/impact/fix detail in
   [`audit-stability-and-performance.md`](audit-stability-and-performance.md).
-- Before editing runtime code, open the active slice and confirm the audit's
-  cited location still matches the current code (line numbers drift; the symbol
-  name is the anchor). Write the scope: location, the work being narrowed/bounded,
-  the trigger, the target shape, the correctness property, and the proof command.
+- Before editing runtime code, open the active slice and re-check the cited
+  symbol. Line numbers drift.
 - Reuse the existing client clone-cost harness
   (`src/ts/__tests__/cloneCostHarness.ts`) for Root-2 clones; add the Phase 0
-  server clone-cost assertion for Root-1 loads.
+  server load-count assertion for Root-1 loads.
 
 ## Current Best Targets
 
 In leverage order. Each is independent unless noted.
 
-1. **Phase 0 — foundations.** Seeded large-corpus fixture + server clone-cost
-   assertion + fix-completeness gate scaffold. No runtime change; unblocks
-   provable narrowing.
-2. **H1 — `loadChatHydration` guard** (`server/fastify/src/repository.ts:1061`).
+1. Phase 0 — foundations. Seed the large-corpus fixture, add the server
+   load-count assertion, and scaffold the fix-completeness gate.
+2. H1 — `loadChatHydration` guard (`server/fastify/src/repository.ts:1061`).
    One-line change: early-return whenever `message.length > 0` so a non-HypaV3
-   chat-open / generation completion stops falling into the whole-corpus
-   `loadPersisted`. Highest leverage in the plan. Add a test asserting
-   `loadChatHydration` does not call `loadPersisted` for a chat with message rows
-   and no `chat_hypa_v3` row.
-3. **H3 — streaming render coalescing.** Buffer token frames and flush the
-   displayed text at most once per animation frame; keep a full-fidelity flush on
-   `done`. Most user-visible win.
-4. **H2 — `ChatSelectionSnapshot`.** Add a scalar chat-selection snapshot/restore
+   chat-open / generation completion stops falling into `loadPersisted`. Add a
+   load-count test for a chat with message rows and no `chat_hypa_v3` row.
+3. H3 — streaming render coalescing. Buffer token frames, flush at most once per
+   animation frame, and keep a full-fidelity flush on `done`.
+4. H2 — `ChatSelectionSnapshot`. Add a scalar chat-selection snapshot/restore
    pair (mirror the landed `CharacterSelectionSnapshot`) and use it in
    `changeChatTo`.
-5. **Phase 2 — server load narrowing.** Start with the scoped assembly message
-   load (M1) since the scoped loader (`getChatMessagesGroupedByIds`) already
-   exists; then the per-request load memo for command mutations (M3, L5, L6).
-6. After the highs and Phase 2, pick Phase 3-7 by which root is currently most
-   painful; refresh [`latest-verification.md`](latest-verification.md) after each
-   phase.
+5. Phase 2 — server load narrowing. Start with scoped assembly load (M1), then
+   command-mutation read narrowing (M3, L5, L6).
+6. After the highs and Phase 2, pick Phase 3-7 by current pain. Refresh
+   [`latest-verification.md`](latest-verification.md) after each phase.
 
 ## Not First
 
@@ -58,9 +48,8 @@ In leverage order. Each is independent unless noted.
   path from reaching them.
 - Do not change a narrowed rollback's restore set; it must restore exactly what
   the command mutates or it can clobber unrelated edits.
-- Do not set an aggressive provider/proxy timeout that would abort a slow but
-  valid local model; use a generous default (the durable path's 600s is the
-  reference).
+- Do not set an aggressive provider/proxy timeout; use a generous default (the
+  durable path's 600s is the reference).
 - Do not change `.risu` envelope bytes or projection/bootstrap payloads;
   narrowing changes what the server loads, not what it returns. Round-trip tests
   gate any codec/export change.
@@ -69,9 +58,9 @@ In leverage order. Each is independent unless noted.
 
 ## Proof Commands
 
-Use the smallest focused command first; broaden when a change touches shared
-load/projection/guard behavior. Add the new regression test under the matching
-suite and register it in the Phase 8 completeness gate.
+Use the smallest focused command first. Broaden when a change touches shared
+load/projection/guard behavior. Add the regression test under the matching suite
+and register it in Phase 8.
 
 - `pnpm api:test -- server/fastify/__tests__/projection.test.ts` (H1, M4, M5,
   U1, L10 — hydration/projection responses).

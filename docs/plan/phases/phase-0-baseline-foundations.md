@@ -1,12 +1,9 @@
 # Phase 0: Baseline & Harness Foundations
 
-Status: not started. No runtime behavior changes in this phase; it makes the
-later narrowing provable and the bounds testable.
+Status: not started. No runtime change.
 
-Goal: stand up the shared measurement and regression foundations every later
-phase depends on — a seeded large-corpus fixture, a server-side clone-cost
-assertion (the Root-1 analog of the existing client clone-cost harness), and a
-fix-completeness gate scaffold so no fix's proof can be silently dropped.
+Goal: add the shared proof tools: a seeded large-corpus fixture, a server
+load-count assertion, and a fix-completeness gate scaffold.
 
 ## Source Anchors
 
@@ -25,39 +22,34 @@ fix-completeness gate scaffold so no fix's proof can be silently dropped.
 - `server/fastify/src/messageStore.ts`
   (`getAllChatMessagesGrouped` vs `getChatMessagesGroupedByIds`) and
   `server/fastify/src/repository.ts` (`loadPersisted`) - the whole-corpus loaders
-  the server clone-cost assertion must be able to detect on a hot path.
+  the server load-count assertion must be able to detect on a hot path.
 
 ## Slices
 
 - [`measurement-baseline-harness.md`](slices/phase-0-baseline-foundations/measurement-baseline-harness.md) -
-  a seeded multi-character / multi-large-chat / preset-heavy / embedding-bearing
-  corpus fixture, plus a server-side test assertion
-  (`assertScopedLoadOnHotPath` / load-count spy) that fails when a hot path calls
-  the whole-corpus loader where a scoped load is intended. Re-run and record the
-  green baseline in [`../latest-verification.md`](../latest-verification.md).
+  seeded large-corpus fixture plus a server load-count assertion that fails when
+  a scoped hot path calls a whole-corpus loader. Re-run and record the baseline
+  in [`../latest-verification.md`](../latest-verification.md).
 - [`fix-completeness-gate-scaffold.md`](slices/phase-0-baseline-foundations/fix-completeness-gate-scaffold.md) -
-  a standing test that registers each scheduled fix's regression test by id
-  (`H1`..`L40`) and fails when a registered gate is missing or renamed, so a
-  later refactor cannot delete a fix's proof. Pre-seed it with the planned ids in
-  a `PLANNED` state.
+  standing test that registers each scheduled fix by id and fails when a
+  registered gate is missing or renamed. Seed planned ids as `PLANNED`.
 
 ## Planned Shape
 
-- The corpus fixture is reusable by both the server suite (load/projection/
-  command cost) and the client suite (clone cost on a hydrated store).
-- The server clone-cost assertion spies the whole-corpus loaders
+- The corpus fixture is reusable by server load/projection/command tests and
+  client clone-cost tests.
+- The server load-count assertion spies the whole-corpus loaders
   (`getAllChatMessagesGrouped`, unscoped `loadPersisted`/`loadCollectionsFromSqlite`)
   the same way the client harness spies `JSON.stringify`/`structuredClone`, and
   asserts the count is zero on a path that is supposed to be scoped.
-- The completeness gate lists every scheduled finding id and the test file that
-  proves it; in Phase 0 every id is `PLANNED`, and each later phase flips its ids
-  to a registered test path.
+- The completeness gate lists every scheduled finding id. Phase 0 marks each id
+  `PLANNED`; later phases replace that with a registered test path.
 
 ## Exit Criteria
 
 - [ ] A seeded large-corpus fixture exists and is importable from one place for
       both suites.
-- [ ] A server-side clone-cost / load-count assertion exists and can fail a test
+- [ ] A server-side load-count assertion exists and can fail a test
       when a hot path performs a whole-corpus load.
 - [ ] The fix-completeness gate scaffold exists, lists all scheduled finding ids,
       and fails if a registered (non-`PLANNED`) gate goes missing.
@@ -68,7 +60,7 @@ fix-completeness gate scaffold so no fix's proof can be silently dropped.
 ## Validation
 
 - `pnpm test` (client suite + new harness/gate tests).
-- `pnpm api:test` (server suite + new server clone-cost assertion).
+- `pnpm api:test` (server suite + new server load-count assertion).
 - `pnpm client-thinning:audit`.
 - Type check: `pnpm exec tsc -p tsconfig.client-lib.json` then
   `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`.

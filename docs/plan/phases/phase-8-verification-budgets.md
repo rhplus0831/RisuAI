@@ -1,13 +1,11 @@
 # Phase 8: Verification Budgets
 
-Status: not started (standing). The fix-completeness gate that keeps every
-scheduled fix's regression proof registered and self-checking, plus the
-maintained verification record.
+Status: not started (standing). Keeps every scheduled fix's regression proof
+registered and keeps the verification record current.
 
-Goal: prevent silent regression. Every fix in Phases 1-7 registers its regression
-test by finding id in a single completeness map; the gate fails if a registered
-gate is missing, renamed, or deleted, or if a scheduled finding lands runtime
-code without a registered proof. Refresh
+Goal: prevent silent regression. Every fix in Phases 1-7 registers its test by
+finding id. The gate fails if a registered proof is missing or if runtime code
+lands without a proof. Refresh
 [`../latest-verification.md`](../latest-verification.md) after each phase.
 
 ## Source Anchors
@@ -23,11 +21,9 @@ code without a registered proof. Refresh
 ## Slices
 
 - [`fix-completeness-gate.md`](slices/phase-8-verification-budgets/fix-completeness-gate.md) -
-  the standing completeness gate: a map from each scheduled finding id to its
-  regression test (file + name), an `INTENTIONALLY_GATED` list for L4/L7/L26/U2
-  and a `NO_ACTION` list for U3 + the five dismissed candidates, and a self-check
-  that fails on drift. Phase 0 seeds it with `PLANNED` entries; each phase flips
-  its ids to a registered test path as it lands.
+  map each scheduled id to its regression test; keep explicit
+  `INTENTIONALLY_GATED` and `NO_ACTION` lists; fail on drift. Phase 0 seeds
+  `PLANNED` entries, and later phases replace them with test paths.
 
 ## Planned Shape
 
@@ -36,8 +32,7 @@ code without a registered proof. Refresh
   longer exists fails the gate.
 - Gated/no-action/dismissed ids live in explicit lists so the gate's universe
   equals the audit's universe (no finding silently unaccounted for).
-- Mirrors the client `cloneCostGateCompleteness` self-check (scan + assert),
-  extended to cover server-side load-count gates.
+- Mirror `cloneCostGateCompleteness`, extended for server load-count gates.
 
 ## Exit Criteria
 

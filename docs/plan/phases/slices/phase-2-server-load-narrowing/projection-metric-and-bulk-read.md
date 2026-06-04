@@ -1,22 +1,20 @@
 # Projection Metric & Bulk Read
 
-Status: not started. Phase 2. Covers M5, L10, U1 — cheap read-side wins.
+Status: not started. Phase 2. Covers M5, L10, U1.
 
 ## Scope
 
-Three independent narrowings on the read path:
-- M5: `jsonPayloadBytes(response)` runs a full `JSON.stringify` of every
-  projection/bootstrap response even when `RISU_PROTOCOL_METRICS` is off, because
-  the metric helper's argument is evaluated eagerly before the enabled-guard.
+Three independent read-side narrowings:
+- M5: `jsonPayloadBytes(response)` eagerly stringifies projection/bootstrap
+  responses even when `RISU_PROTOCOL_METRICS` is off.
 - L10: every SSE connection loads + maps the full command-event history even when
   no replay is requested.
-- U1: bulk chat/lorebook hydration calls full `loadPersisted` just to compute
-  `knownChatIds` even for a small id set.
+- U1: bulk hydration calls full `loadPersisted` just to compute known ids.
 
 ## Source Anchors
 
 - [`../../../audit-stability-and-performance.md`](../../../audit-stability-and-performance.md) -
-  **M5**, **L10**, **U1**.
+  M5, L10, U1.
 - `server/fastify/src/protocolMetrics.ts:18` (`jsonPayloadBytes`), `:26-38`
   (`emitProtocolMetric` enabled-guard), `server/fastify/src/routes/projection.ts:555`
   (`emitProjectionMetric`), `server/fastify/src/routes/bootstrap.ts:45`.
@@ -27,10 +25,8 @@ Three independent narrowings on the read path:
 
 ## Planned Shape
 
-- M5: have `emitProtocolMetric` accept a thunk for expensive fields and invoke it
-  only after `protocolMetricsEnabled()`; or guard the
-  `emitProjectionMetric`/bootstrap metric block with `protocolMetricsEnabled()`
-  before calling `jsonPayloadBytes`.
+- M5: pass expensive metric fields as thunks, or guard before calling
+  `jsonPayloadBytes`.
 - L10: load command-event history only when `sinceRevision`/`Last-Event-ID`
   requests replay.
 - U1: resolve `knownChatIds`/`knownCharacterIds` via a targeted

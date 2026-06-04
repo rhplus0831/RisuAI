@@ -1,13 +1,11 @@
 # Measurement Baseline & Server Clone-Cost Harness
 
-Status: not started. Phase 0. No runtime change. Prerequisite for the provable
-narrowing in Phases 1-7.
+Status: not started. Phase 0. No runtime change.
 
 ## Scope
 
-Add the shared measurement fixture and the server-side clone-cost / load-count
-assertion, and re-record the green baseline. This is the Root-1 server analog of
-the landed client `cloneCostHarness.ts`.
+Add the shared large-corpus fixture, the server load-count assertion, and the
+fresh green baseline. This is the server analog of `cloneCostHarness.ts`.
 
 ## Source Anchors
 
@@ -24,15 +22,12 @@ the landed client `cloneCostHarness.ts`.
 
 ## Planned Shape
 
-- A seeded corpus builder (server + client importable) producing many
-  characters, many/large chats, several large presets/modules/lorebooks, and
-  embedding-bearing chats, large enough that a whole-corpus load is measurably
-  more expensive than a scoped one.
-- A server test helper `assertScopedLoadOnHotPath` (working name) that spies the
-  whole-corpus loaders and asserts a count of zero on a path intended to be
-  scoped — the assertion later phases call to prove M1/M3/M4/H1.
-- Drive `RISU_PROTOCOL_METRICS=1` / `RISU_COMMAND_METRIC_SUMMARY=1` over the
-  fixture to capture the pre-fix stage timings into
+- A seeded corpus builder usable by server and client tests. It should include
+  many characters, large chats, presets/modules/lorebooks, and embeddings.
+- A server helper such as `assertScopedLoadOnHotPath` that spies whole-corpus
+  loaders and asserts zero calls on scoped paths.
+- Run `RISU_PROTOCOL_METRICS=1` / `RISU_COMMAND_METRIC_SUMMARY=1` on the fixture
+  and record pre-fix timings in
   [`../../../latest-verification.md`](../../../latest-verification.md).
 
 ## Behavior / Invariants

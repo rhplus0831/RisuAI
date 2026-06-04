@@ -1,18 +1,17 @@
 # Memory & Lua
 
-Status: not started. Phase 6. Bundles the memory-worker bounding/fairness fixes
-and the Lua exec-budget / engine-reuse fixes. L18 depends on the Phase 2 loader.
+Status: not started. Phase 6. Bundles memory-worker bounds/fairness and Lua
+budget/engine reuse. L18 depends on the Phase 2 loader.
 
 ## Scope
 
-Make memory batches size-bounded and fair, skip the orphan-cleanup write
-transaction when nothing is orphaned, reuse the Phase 2 loader in memory batches,
-and bound Lua execution cost.
+Bound memory batches, make scheduling fair, skip empty orphan cleanup writes,
+reuse the Phase 2 loader, and bound Lua execution.
 
 ## Source Anchors
 
 - [`../../../audit-stability-and-performance.md`](../../../audit-stability-and-performance.md) -
-  **M7, L16, L17, L18, L19, L21**.
+  M7, L16, L17, L18, L19, L21.
 - `server/fastify/src/memoryEmbedJobHandler.ts:91-95/:294-307/:456-466`,
   `server/fastify/src/memoryEmbeddingAdapter.ts:143-152` (M7, L18).
 - `server/fastify/src/memoryRepository.ts:594-628` (L16),
@@ -23,25 +22,25 @@ and bound Lua execution cost.
 
 ## Item Checklist
 
-- [ ] **M7** — cap the drained embed batch; slice the `voyageContext3` contextual
+- [ ] M7 — cap the drained embed batch; slice the `voyageContext3` contextual
       request into token-aware sub-batches, committing each independently (keep
       `groupId` consistent per sub-batch).
-- [ ] **L16** — skip the orphan-cleanup `BEGIN IMMEDIATE` write txn + summary
-      re-parse when nothing is orphaned (cheap pre-check) **[known-leftover]**.
-- [ ] **L17** — round-robin / bound per-chat memory job batches so one chat's
+- [ ] L16 — skip the orphan-cleanup `BEGIN IMMEDIATE` write txn + summary
+      re-parse when nothing is orphaned (cheap pre-check) [known-leftover].
+- [ ] L17 — round-robin / bound per-chat memory job batches so one chat's
       long batch does not starve others.
-- [ ] **L18** — reuse the Phase 2 scoped/memoized loader instead of full
+- [ ] L18 — reuse the Phase 2 scoped/memoized loader instead of full
       `loadPersisted` per embed/summarize batch.
-- [ ] **L19** — aggregate Lua exec-time/engine budget across triggers + edit-hook
-      phases **[known-leftover: hosted-Lua]**.
-- [ ] **L21** — reuse/pool the wasmoon engine or cache the compiled prelude
-      **within the per-call isolation model**.
+- [ ] L19 — aggregate Lua exec-time/engine budget across triggers + edit-hook
+      phases [known-leftover: hosted-Lua].
+- [ ] L21 — reuse/pool the wasmoon engine or cache the compiled prelude
+      within the per-call isolation model.
 
 ## Behavior / Invariants
 
-- Memory work stays in the background worker (no UI hang, no chat-hot-path cost).
-- L21 must not weaken the per-call isolation security property; if pooling is
-  unsafe, cache only the compiled prelude/factory and keep a fresh engine per call.
+- Memory work stays in the background worker.
+- L21 must not weaken per-call isolation. If pooling is unsafe, cache only the
+  compiled prelude/factory.
 - Embedding/summary outputs are unchanged; only batch sizing/scheduling changes.
 
 ## Done Criteria

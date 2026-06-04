@@ -1,13 +1,13 @@
 # Fix-Completeness Gate
 
-Status: not started (standing). Phase 8. Promotes the Phase 0 scaffold into the
-maintained self-checking gate.
+Status: not started (standing). Phase 8. Turns the Phase 0 scaffold into the
+maintained gate.
 
 ## Scope
 
-Keep a single registry that maps every audit finding id to its phase, status, and
-regression test, and fail on drift. As each phase lands, flip its ids from
-`PLANNED` to `DONE` with a real `testPath`/`testName`. Refresh
+Keep one registry mapping every audit finding id to phase, status, and
+regression test. Fail on drift. As phases land, flip ids from `PLANNED` to
+`DONE` with a real `testPath`/`testName`. Refresh
 [`../../../latest-verification.md`](../../../latest-verification.md) after each
 phase.
 
@@ -27,16 +27,14 @@ phase.
 - One registry literal: `id -> { phase, status, testPath?, testName? }`, plus
   `INTENTIONALLY_GATED` (L4, L7, L26, U2) and `NO_ACTION` (U3 + the five
   dismissed R-findings).
-- Self-check assertions: every audit id is classified exactly once; every `DONE`
-  id resolves to an existing test; a new audit id with no registry entry fails the
-  gate (universe completeness).
+- Self-checks: every audit id is classified once; every `DONE` id resolves to an
+  existing test; unregistered audit ids fail the gate.
 - Server-side load-count gates are referenced by path so the single client-side
   test can assert their existence.
 
 ## Behavior / Invariants
 
-- Test-only; no runtime change. The gate is the standing guard against silently
-  dropping a fix's proof in a later refactor.
+- Test-only; no runtime change. The gate prevents silently dropping fix proofs.
 
 ## Done Criteria
 

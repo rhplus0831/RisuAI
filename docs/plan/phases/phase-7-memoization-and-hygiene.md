@@ -1,14 +1,12 @@
 # Phase 7: Memoization & Hygiene
 
-Status: not started. The remaining mediums/lows: hoist invariant per-message/
-per-render work, memoize compiled regexes, drop redundant DB work, and remove
-stray render-path logging.
+Status: not started. Covers remaining memoization, redundant DB work, and
+logging hygiene.
 
-Goal: stop recompiling regexes and re-resolving invariants inside hot loops, drop
-redundant deletes/scans, and remove warm-path `console.log`s. Each item is
-output/behavior preserving.
+Goal: stop recomputing invariants in hot loops, drop redundant deletes/scans,
+and remove warm-path `console.log`s. Behavior and output stay unchanged.
 
-Findings: **M2, L3, L8, L9, L37, L38, L39, L40**.
+Findings: M2, L3, L8, L9, L37, L38, L39, L40.
 
 ## Source Anchors
 
@@ -29,12 +27,12 @@ Findings: **M2, L3, L8, L9, L37, L38, L39, L40**.
 ## Slices
 
 - [`memoization-and-hygiene.md`](slices/phase-7-memoization-and-hygiene/memoization-and-hygiene.md) -
-  the full batch:
+  full batch:
   - M2: hoist active-module resolution + `parseScripts` + the compiled RegExp
     list once per assembly and thread it into `formatHistoryMessage`; exclude
     cbs-action scripts (which pre-expand their source per message).
   - L3: hoist/compile the lorebook keyword regexes outside the recursive
-    activation loop **[known-leftover]**.
+    activation loop [known-leftover].
   - L40: memoize the 9 `new RegExp` trigger-effect sites (reuse the existing
     `getCompiledRegex`).
   - L8: replace the `OFFSET 999` prune index-walk with a bounded delete
@@ -48,14 +46,12 @@ Findings: **M2, L3, L8, L9, L37, L38, L39, L40**.
 
 ## Planned Shape
 
-- M2's precondition holds: `processScript`'s module/script-resolution inputs
-  (`db`, `char`, `currentChat`) are invariant across the per-message loop; only
-  `data`/`chatRole`/`chatID` vary. cbs-action scripts must be excluded from the
-  precompiled list.
+- M2 precondition: module/script inputs are invariant across the per-message
+  loop; only `data`/`chatRole`/`chatID` vary. Exclude cbs-action scripts.
 - L40 reuses the `getCompiledRegex(source, flags)` cache already in `scripts.ts`
   (reset `lastIndex` on retrieval).
-- L8/L9 are pure DB-efficiency/correctness; FK cascade already deletes the chats,
-  so the explicit DELETE is redundant (verify the PRAGMA + FK are active first).
+- L8/L9 are DB efficiency/correctness fixes. Verify FK PRAGMA is active before
+  relying on cascade.
 
 ## Exit Criteria
 

@@ -4,10 +4,8 @@ Status: not started. Phase 0. No runtime change.
 
 ## Scope
 
-Stand up the standing fix-completeness gate (the Phase 8 deliverable in scaffold
-form): a registry mapping every audit finding id to its phase, status, and
-(eventually) regression test, with a self-check that fails on drift. Seed every
-scheduled id as `PLANNED`.
+Create the Phase 8 gate scaffold: a registry from finding id to phase, status,
+and eventual regression test. Seed scheduled ids as `PLANNED` and fail on drift.
 
 ## Source Anchors
 
@@ -25,15 +23,15 @@ scheduled id as `PLANNED`.
   testPath?, testName? }`.
 - Explicit `INTENTIONALLY_GATED` (L4, L7, L26, U2) and `NO_ACTION` (U3 + the five
   dismissed) lists so the registry universe equals the audit universe.
-- A self-check that fails if: a `DONE` id has no existing test at `testPath`; an
-  audit finding id is missing from the registry; or an id is double-classified.
+- A self-check that fails when a `DONE` id points to a missing test, an audit id
+  is unregistered, or an id is double-classified.
 - Lives in the client suite (it can read both client and server test paths as
   strings) like the existing completeness test.
 
 ## Behavior / Invariants
 
-- Test-only. In Phase 0 every scheduled id is `PLANNED`, so the gate passes
-  vacuously; it starts catching drift as Phase 1+ flip ids to `DONE`.
+- Test-only. In Phase 0 every scheduled id is `PLANNED`; later phases flip ids
+  to `DONE`.
 
 ## Done Criteria
 

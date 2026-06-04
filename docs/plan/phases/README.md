@@ -2,9 +2,9 @@
 
 Date: 2026-06-04
 
-Use these files for phase status, scope, exit criteria, and slice routing.
-Concrete slices live under `slices/[phase]/[slice-name].md`. Every finding ID is
-defined in
+Use these files for phase scope, exit criteria, and slice routing. Concrete
+slices live under `slices/[phase]/[slice-name].md`. Every finding ID is defined
+in
 [`../audit-stability-and-performance.md`](../audit-stability-and-performance.md);
 the finding -> phase map is in
 [`../active-risk-analysis.md`](../active-risk-analysis.md).
@@ -39,14 +39,12 @@ the finding -> phase map is in
 
 ## Slice Rules
 
-- One slice names one implementation batch or proof batch.
-- Each slice includes scope, source anchors, the work being narrowed/bounded,
-  the trigger, the target shape, the correctness/output invariant, done criteria,
+- One slice is one implementation or proof batch.
+- Each slice includes scope, anchors, target shape, invariants, done criteria,
   and validation.
-- A phase can have many slices, but a slice should be small enough for an agent
-  to pick up directly from [`../next-steps.md`](../next-steps.md).
-- Every fix lands with a regression test: a clone-cost / scoped-load assertion
-  for narrowing, a behavior test for a bound/correctness fix, a round-trip test
-  for any codec/export change. Register the gate per
+- Keep slices small enough to pick up from [`../next-steps.md`](../next-steps.md).
+- Every fix needs a regression test: clone-cost/scoped-load for narrowing,
+  behavior for bounds/correctness, round-trip for codec/export changes. Register
+  the gate per
   [`phase-8-verification-budgets.md`](phase-8-verification-budgets.md).
 - Preserve the broad path for its genuine consumer; narrow only the hot path.

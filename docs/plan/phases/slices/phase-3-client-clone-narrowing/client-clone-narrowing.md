@@ -1,20 +1,18 @@
 # Client Clone Narrowing
 
-Status: not started. Phase 3. Bundles the surviving client whole-corpus clones
-and one runner-rollback stability fix. Reuses the existing
-`src/ts/__tests__/cloneCostHarness.ts`.
+Status: not started. Phase 3. Bundles remaining client whole-corpus clones plus
+one runner-rollback fix. Reuses `src/ts/__tests__/cloneCostHarness.ts`.
 
 ## Scope
 
-Route the remaining warm/hot client callers off `cloneJsonValue(DBState.db.characters)`
-onto the existing scalar/single-row snapshot kit, drop the redundant full
-`setDatabase` normalize on var writes, and make the optimistic command runners
-roll back on failure.
+Move warm/hot callers off `cloneJsonValue(DBState.db.characters)` and onto the
+existing scalar/single-row snapshot kit. Drop redundant `setDatabase` on var
+writes. Make optimistic runners roll back on failure.
 
 ## Source Anchors
 
 - [`../../../audit-stability-and-performance.md`](../../../audit-stability-and-performance.md) -
-  **M12, M13, M14, L31-L36, U4**.
+  M12, M13, M14, L31-L36, U4.
 - `src/ts/process/command.ts:211/:232` (M12), `src/ts/storage/database.svelte.ts`
   (`setDatabase`, `setCurrentChat` U4), `src/lang/index.ts` (`changeLanguage`).
 - `src/ts/characterCommands.ts:362-377` (M13 `changedCharacterFields`),
@@ -28,38 +26,37 @@ roll back on failure.
 
 ## Item Checklist
 
-- [ ] **M12** — drop `setDatabase(db)` in `/setvar`/`/addvar` (mirror
-      `setChatVar`); do **not** include `/send`/`mutateCurrentChatMessages`.
-- [ ] **M13** — `changedCharacterFields` (and `prepareCompatibleCharacterUpdate`)
+- [ ] M12 — drop `setDatabase(db)` in `/setvar`/`/addvar` (mirror
+      `setChatVar`); do not include `/send`/`mutateCurrentChatMessages`.
+- [ ] M13 — `changedCharacterFields` (and `prepareCompatibleCharacterUpdate`)
       clone per kept key, skipping `CHARACTER_PATCH_EXCLUDED_KEYS` before any clone.
-- [ ] **M14** — `setupSendChatContext` uses `currentCharacterRowSnapshot(selectedChar)`
+- [ ] M14 — `setupSendChatContext` uses `currentCharacterRowSnapshot(selectedChar)`
       + `restoreCharacterRow`.
-- [ ] **L34** — `toggleSelectedChatModule` uses a chat-scoped snapshot.
-- [ ] **L35** — MCP `setCharacterInfo` uses a single-row snapshot.
-- [ ] **U4** — `setCurrentChat` uses `currentChatScopedSnapshot` +
+- [ ] L34 — `toggleSelectedChatModule` uses a chat-scoped snapshot.
+- [ ] L35 — MCP `setCharacterInfo` uses a single-row snapshot.
+- [ ] U4 — `setCurrentChat` uses `currentChatScopedSnapshot` +
       `dispatchCompatibleChatUpdateScoped`.
-- [ ] **L33** — avoid deep-cloning the modules array as a dependency read in the
+- [ ] L33 — avoid deep-cloning the modules array as a dependency read in the
       `stores.svelte` `$effect` (read a stable id/length signal instead).
-- [ ] **L31** — scope/throttle the script-definition watcher's per-keystroke
+- [ ] L31 — scope/throttle the script-definition watcher's per-keystroke
       scan-and-stringify.
-- [ ] **L32** — scope the discrete lorebook-editor clone + whole-DB id-assign to
-      the edited collection **[known-leftover]**.
-- [ ] **L36** — fire-and-forget command runners surface/await factory rejections
+- [ ] L32 — scope the discrete lorebook-editor clone + whole-DB id-assign to
+      the edited collection [known-leftover].
+- [ ] L36 — fire-and-forget command runners surface/await factory rejections
       and roll back (stability, not clone).
 
 ## Behavior / Invariants
 
-- Each narrowed rollback restores exactly the mutated slice; a failed command
-  does not clobber unrelated concurrent edits.
+- Narrowed rollbacks restore only the mutated slice.
 - `currentChatStateSnapshot` stays for create/delete/reorder/fork.
-- M12: the in-place mutation under the projection guard + the scoped dispatch
-  already persist; removing `setDatabase` changes nothing but cost.
+- M12: the projection guard + scoped dispatch already persist the in-place
+  mutation; removing `setDatabase` changes only cost.
 - L36 changes only the failure path (rollback + surface), never the success path.
 
 ## Done Criteria
 
-- A clone-cost test per item proves the hot path does not clone the `characters`
-  array; a rollback-correctness test per snapshot item proves restore scope.
+- Clone-cost tests prove hot paths do not clone `characters`; rollback tests
+  prove restore scope.
 - M12: non-English UI no longer deep-clones the language pack per var write.
 - L36: a failing optimistic command rolls back and surfaces (no swallowed
   rejection).

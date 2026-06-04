@@ -1,23 +1,20 @@
 # H1 — Chat-Message Hydration Fallback Guard
 
-Status: not started. Phase 1. The single highest-leverage fix in the plan: a
-one-line guard change that removes a whole-corpus parse from every chat-open and
-generation completion.
+Status: not started. Phase 1. Highest-leverage fix: a guard change that removes
+a whole-corpus parse from chat-open and generation completion.
 
 ## Scope
 
-`loadChatHydration` early-returns the cheap table-backed path only when
-`message.length > 0 && hypaV3Data !== undefined`. For a normal (non-HypaV3) chat
-`hypaV3Data` is `undefined`, so the guard fails and execution falls into the
-"defensive, not-yet-extracted" branch that calls `loadPersisted(db, dataDir)` — a
-full SQLite read + parse of every character and every chat-metadata row — which
-then yields nothing (the embedded hypaV3 is also absent). Make the messages
-table authoritative once populated.
+`loadChatHydration` only returns the table-backed path when
+`message.length > 0 && hypaV3Data !== undefined`. Normal non-HypaV3 chats have
+`hypaV3Data === undefined`, so they fall into `loadPersisted(db, dataDir)` and
+parse the corpus for no useful result. Make the messages table authoritative
+once populated.
 
 ## Source Anchors
 
 - [`../../../audit-stability-and-performance.md`](../../../audit-stability-and-performance.md) -
-  finding **H1**.
+  finding H1.
 - `server/fastify/src/repository.ts:1061` (`loadChatHydration`), the fallback at
   `:1066` (`loadPersisted` + `eachChat`).
 - `server/fastify/src/messageStore.ts` - `getChatHypaV3` (returns `undefined`
@@ -32,15 +29,15 @@ table authoritative once populated.
 - Early-return whenever `message.length > 0` (the messages table is authoritative
   for an extracted chat); a legitimately `undefined` `hypaV3Data` must not force a
   whole-corpus load.
-- Keep the `loadPersisted` fallback only for a genuinely not-yet-extracted chat:
-  `message.length === 0` (and ideally only when an embedded copy might exist).
+- Keep `loadPersisted` fallback for genuinely not-yet-extracted chats
+  (`message.length === 0`).
 - Do not change the returned shape (`{ message, hypaV3Data, alternates }`) or the
   embedded-fallback merge for the zero-rows case.
 
 ## Behavior / Invariants
 
-- A chat with message-table rows and no `chat_hypa_v3` row returns table data
-  without touching `loadPersisted`.
+- A chat with message rows and no `chat_hypa_v3` row returns table data without
+  touching `loadPersisted`.
 - A not-yet-extracted chat (zero message rows) still falls back to the embedded
   copy exactly as today.
 - `hypaV3Data` for a non-HypaV3 chat is still returned as `undefined` (the
@@ -49,10 +46,8 @@ table authoritative once populated.
 
 ## Done Criteria
 
-- A regression test asserts `loadChatHydration` does **not** call `loadPersisted`
-  for a chat that has message-table rows and no `chat_hypa_v3` row (use the Phase
-  0 load-count spy), and **does** still serve the not-yet-extracted (zero-rows)
-  fallback.
+- A regression test asserts no `loadPersisted` call for a chat with message rows
+  and no `chat_hypa_v3` row, while zero-row fallback still works.
 - `pnpm api:test -- server/fastify/__tests__/projection.test.ts` green; payloads
   unchanged.
 - Gate `H1` registered in the Phase 8 completeness map.

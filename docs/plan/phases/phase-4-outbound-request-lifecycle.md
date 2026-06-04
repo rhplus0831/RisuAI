@@ -1,16 +1,12 @@
 # Phase 4: Outbound Request Lifecycle (Root 4)
 
-Status: not started. Outbound fetches (proxy, non-durable provider, Lua) rely on
-client-disconnect abort only, bounded just by Node/undici defaults, and several
-egress guards have gaps. This phase adds preventive timeouts, propagates abort,
-and closes the egress hardening holes.
+Status: not started. Adds timeouts, abort propagation, and egress hardening for
+proxy, non-durable provider, and Lua fetch paths.
 
-Goal: every outbound request has a sane wall-clock bound and is cancelled when
-the originating request ends; the SSRF/egress/injection guards cover their
-documented bypasses. Bounds are generous enough not to abort slow-but-valid local
-models.
+Goal: every outbound request has a generous wall-clock bound and cancels when its
+originating request ends. SSRF/egress/injection guards cover the known bypasses.
 
-Findings: **M6, M8, L20, L22, L23, L24, L25**.
+Findings: M6, M8, L20, L22, L23, L24, L25.
 
 ## Source Anchors
 
@@ -30,7 +26,7 @@ Findings: **M6, M8, L20, L22, L23, L24, L25**.
 ## Slices
 
 - [`outbound-request-lifecycle.md`](slices/phase-4-outbound-request-lifecycle/outbound-request-lifecycle.md) -
-  the full batch:
+  full batch:
   - M6: proxy `/fetch` aborts the upstream on `req.raw` close
     (`AbortSignal.any([timeout.signal, closeSignal])`, listener removed in
     `finally`); add a generous Fastify `requestTimeout` backstop.
@@ -43,7 +39,7 @@ Findings: **M6, M8, L20, L22, L23, L24, L25**.
   - L22: cap the streaming-provider SSE accumulation buffer so a missing delimiter
     cannot grow it unbounded.
   - L23: unwrap 6to4 / NAT64 / IPv4-compatible embedded private addresses in the
-    IPv6 SSRF guard **[known-leftover: hosted-Lua]**.
+    IPv6 SSRF guard [known-leftover: hosted-Lua].
   - L24: reject dotted `__proto__`/`constructor`/`prototype` keys in
     `setObjectValue` (prototype pollution).
   - L25: increment the Lua egress rate counter only after `validateEgressUrl`
@@ -51,13 +47,10 @@ Findings: **M6, M8, L20, L22, L23, L24, L25**.
 
 ## Planned Shape
 
-- M6/M8 reference the durable path's existing 600s `deadlineAt` as the safe
-  default; the fix changes the failure mode (a hung/abandoned upstream is freed),
-  never the success path.
+- M6/M8 use the durable path's 600s `deadlineAt` as the reference default.
 - L20's signal must abort the wasmoon run (cooperate with the existing
   `functionTimeout`/`lua_sethook` exec limit), not just the surrounding fetch.
-- L23/L24/L25 are small defensive guards; L23/L19 also advance the hosted-Lua
-  `leftover.md` security item but are worth doing for self-host robustness now.
+- L23/L24/L25 are small defensive guards and self-host robustness wins.
 
 ## Exit Criteria
 

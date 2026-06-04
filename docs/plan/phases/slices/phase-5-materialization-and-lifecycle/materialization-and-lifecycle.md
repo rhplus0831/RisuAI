@@ -1,19 +1,19 @@
 # Materialization & Lifecycle
 
-Status: not started. Phase 5. Bundles the bounded-inflate / bounded-buffer fixes,
-the stream/job lifecycle leaks, import/restore robustness, and two sync-replay
-correctness gaps. `.risu` round-trip tests gate every codec touch.
+Status: not started. Phase 5. Bundles bounded inflate/buffering, stream/job
+cleanup, import/restore robustness, and sync-replay correctness. `.risu`
+round-trip tests gate codec changes.
 
 ## Scope
 
-Bound decompression and buffering before materialization; clean up
-stream/job/file resources on abort/close; harden import/restore; and keep
-own-echo suppression + reattach correct.
+Bound decompression/buffering before materialization. Clean up resources on
+abort/close. Harden import/restore and keep own-echo suppression + reattach
+correct.
 
 ## Source Anchors
 
 - [`../../../audit-stability-and-performance.md`](../../../audit-stability-and-performance.md) -
-  **M9, M10, M11, L11-L15, L27-L30**.
+  M9, M10, M11, L11-L15, L27-L30.
 - `server/fastify/src/risuSave/legacyEnvelopeCodec.ts:74-82`,
   `risuSave/blockCodec.ts:115-119` (M9); `risuSave/bundleExport.ts:111/:156-161`,
   `routes/save.ts:273` (M11); `assetGc.ts:82`, `risuSave/assetReferences.ts:31`,
@@ -28,36 +28,36 @@ own-echo suppression + reattach correct.
 
 ## Item Checklist
 
-- [ ] **M9** — streaming bounded inflate (`fflate` `Gunzip`/`Decompress` +
+- [ ] M9 — streaming bounded inflate (`fflate` `Gunzip`/`Decompress` +
       output-cap `ondata` accumulator) per legacy envelope and per block; finite
       default cap for `/import/bundle`'s inner `.risu`.
-- [ ] **M10** — asset GC + import asset report scan `SELECT data FROM messages`
+- [ ] M10 — asset GC + import asset report scan `SELECT data FROM messages`
       for `{{inlay...}}` tokens (no full hydrate / per-row parse), unioned with
       non-message refs; defer the import asset report.
-- [ ] **M11** — bundle export drain-wait settles on `close`/`error`; on premature
+- [ ] M11 — bundle export drain-wait settles on `close`/`error`; on premature
       close `zip.terminate()` + destroy the in-flight read stream.
-- [ ] **L11** — `cleanedUp` guard before `memoryEvents.subscribe`.
-- [ ] **L12** — close the proxy WS viewer when it attaches to an already-done job.
-- [ ] **L13** — `onClose` awaits/guards detached runners; cancel-persist checks
+- [ ] L11 — `cleanedUp` guard before `memoryEvents.subscribe`.
+- [ ] L12 — close the proxy WS viewer when it attaches to an already-done job.
+- [ ] L13 — `onClose` awaits/guards detached runners; cancel-persist checks
       DB-open before writing.
-- [ ] **L14** — heartbeat the durable SSE viewer during long assembly.
-- [ ] **L15** — bound the no-viewer proxy-job buffer / enable a replay bound.
-- [ ] **L27** — guard per-manifest `JSON.parse` in `listBackups` (skip/flag a
+- [ ] L14 — heartbeat the durable SSE viewer during long assembly.
+- [ ] L15 — bound the no-viewer proxy-job buffer / enable a replay bound.
+- [ ] L27 — guard per-manifest `JSON.parse` in `listBackups` (skip/flag a
       corrupt manifest instead of 500).
-- [ ] **L28** — wrap the legacy `db.json` restore re-import in a transaction;
+- [ ] L28 — wrap the legacy `db.json` restore re-import in a transaction;
       emit the restore event after it.
-- [ ] **L29** — persist writer-session origin on command events so reconnect
+- [ ] L29 — persist writer-session origin on command events so reconnect
       replay keeps own-echo suppression.
-- [ ] **L30** — re-arm reattach after completion so a second live-job chat
+- [ ] L30 — re-arm reattach after completion so a second live-job chat
       reattaches.
 
 ## Behavior / Invariants
 
-- M9/M11: `.risu` import/export round-trips are byte-identical; only the
-  failure/abort mode changes.
+- M9/M11: `.risu` round-trips are byte-identical; only failure/abort mode
+  changes.
 - M10: referenced/missing/orphaned asset sets are unchanged.
 - L29: stamping origin must not change the projected event payload.
-- L13/L28: no partial write on abort/failure.
+- L13/L28: abort/failure leaves no partial write.
 
 ## Done Criteria
 

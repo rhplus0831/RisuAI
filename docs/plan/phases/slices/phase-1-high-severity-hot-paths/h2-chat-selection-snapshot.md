@@ -1,20 +1,19 @@
 # H2 — Chat-Selection Scalar Snapshot
 
-Status: not started. Phase 1. Mirrors the already-landed char-select fix
-(`c9e728b1`) for the chat-select path that was left on the broad clone.
+Status: not started. Phase 1. Mirrors the landed char-select fix (`c9e728b1`)
+for chat select.
 
 ## Scope
 
-`changeChatTo` opens with `const previous = currentChatStateSnapshot()`, which
-deep-clones the entire `characters` array (and every hydrated transcript) via
-`cloneJsonValue` on the UI thread, before flipping one scalar (`chatPage`) and
-dispatching an empty-patch select. There is no scalar chat-selection snapshot
-analog to `CharacterSelectionSnapshot`. Add one and use it.
+`changeChatTo` starts with `currentChatStateSnapshot()`, deep-cloning the
+`characters` array and hydrated transcripts before flipping `chatPage` and
+dispatching an empty-patch select. Add a scalar chat-selection snapshot and use
+it here.
 
 ## Source Anchors
 
 - [`../../../audit-stability-and-performance.md`](../../../audit-stability-and-performance.md) -
-  finding **H2**.
+  finding H2.
 - `src/ts/globalApi.svelte.ts:1817` (`changeChatTo`).
 - `src/ts/chatCommands.ts:73-78` (`currentChatStateSnapshot` / `restoreChatState`,
   `cloneJsonValue`) and the scoped helpers added by the earlier workstream.
@@ -27,11 +26,9 @@ analog to `CharacterSelectionSnapshot`. Add one and use it.
 
 ## Planned Shape
 
-- Add `ChatSelectionSnapshot` + `currentChatSelectionSnapshot()` +
-  `restoreChatSelection()` in `chatCommands.ts`: capture `selectedCharID` and the
-  target character's `chatPage` (and `chaId` to relocate on restore); restore
-  locates the character by `chaId` inside `withTrustedServerProjectionWrite` and
-  writes back only `chatPage`/`selectedChar`.
+- Add `ChatSelectionSnapshot`, `currentChatSelectionSnapshot()`, and
+  `restoreChatSelection()` in `chatCommands.ts`. Capture `selectedCharID`,
+  target `chatPage`, and `chaId`; restore only `chatPage`/`selectedChar`.
 - `changeChatTo` dispatches its empty-patch select with the scalar rollback
   instead of `currentChatStateSnapshot()`.
 - Keep `currentChatStateSnapshot` for genuine restructures.
@@ -41,8 +38,7 @@ analog to `CharacterSelectionSnapshot`. Add one and use it.
 - The optimistic write (set `chatPage`, dispatch select) and the command/
   revision/event behavior are unchanged.
 - A failed select restores only `chatPage`/`selectedChar`; it must not clobber
-  unrelated concurrent character/chat edits the full-array restore would have
-  wiped (`restoreCharacterSelection` correctness property).
+  unrelated edits.
 - Rendered chat after select is identical.
 
 ## Done Criteria

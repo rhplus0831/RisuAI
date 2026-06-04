@@ -4,17 +4,14 @@ Status: not started. Phase 2. Covers M4.
 
 ## Scope
 
-`loadSingleCharacterRow` — the per-character `characterRow` projection that
-exists specifically to ship one character cheaply — calls
-`loadStubbedProjectionFields(['characters'])` (a whole-corpus SQLite read +
-parse) and then `maskProviderSecrets`, which JSON-deep-clones the **entire**
-characters array, only to `.find()` one row. Bootstrap pays the same full clone
-once per page load. Narrow both.
+`loadSingleCharacterRow` should ship one character, but it loads all characters,
+then `maskProviderSecrets` deep-clones the array before `.find()` picks one row.
+Narrow the row read and mask only owned fresh objects.
 
 ## Source Anchors
 
 - [`../../../audit-stability-and-performance.md`](../../../audit-stability-and-performance.md) -
-  **M4**.
+  M4.
 - `server/fastify/src/routes/projection.ts:519-536` (`loadSingleCharacterRow`),
   the `characterRow` branch `:358-385`.
 - `server/fastify/src/providerSecrets.ts:59-66` (`maskProviderSecrets`),
@@ -26,16 +23,13 @@ once per page load. Narrow both.
 
 ## Planned Shape
 
-- `loadSingleCharacterRow` does a `WHERE id = ?` single-row read (precedent
-  `loadCharacterSelectionRows`), strips messages on that one row, and masks only
-  it. Must still respect `enableLorebookStubs` (strip `globalLore`) for wire
-  parity with `loadStubbedProjectionFields`.
+- `loadSingleCharacterRow` does a `WHERE id = ?` read, strips messages on that
+  row, masks only it, and still respects `enableLorebookStubs`.
 - Add an opt-in `maskProviderSecretsInPlace` for callers that own a freshly
   parsed object (the SQLite loaders always do); do not change the existing
   `maskProviderSecrets` contract (it may be used on caller-shared objects).
-- The bootstrap full clone is lower-impact and harder to avoid cleanly (it masks
-  before serialization); leave it or use the in-place variant only after
-  confirming no caller reuses `persisted.database`.
+- Leave the bootstrap full clone unless it is clearly safe to use the in-place
+  variant.
 
 ## Behavior / Invariants
 
@@ -44,8 +38,7 @@ once per page load. Narrow both.
 
 ## Done Criteria
 
-- A load-count test shows `loadSingleCharacterRow` does a single-row read (no
-  whole-corpus parse or whole-array clone).
+- A load-count test shows `loadSingleCharacterRow` does a single-row read.
 - The `characterRow` payload is asserted byte-identical on a multi-character
   fixture.
 - Gate `M4` registered in Phase 8.

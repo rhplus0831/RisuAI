@@ -1,21 +1,17 @@
 # Command-Mutation Read Narrowing
 
-Status: not started. Phase 2. Covers M3, L5, L6 — the command-mutation read side
-the mutation-range workstream never narrowed.
+Status: not started. Phase 2. Covers M3, L5, L6: command-mutation read cost.
 
 ## Scope
 
-Every command mutation calls `loadPersisted`, which unconditionally runs
-`loadCollectionsFromSqlite` (all 9 collection tables + plugin storage),
-`loadCharactersFromSqlite` (every character + every chat-metadata row), and
-`getAllAssetMetadata` (full asset table) — even on message-only hot paths
-(message append/edit/delete, scriptstate PATCH, generation-result persist) whose
-mutate callbacks only touch `characters`. Narrow the read.
+Every command mutation calls `loadPersisted`, which loads collections,
+characters/chat metadata, and assets. Message/scriptstate/generation hot paths
+only touch `characters`. Narrow the read.
 
 ## Source Anchors
 
 - [`../../../audit-stability-and-performance.md`](../../../audit-stability-and-performance.md) -
-  **M3**, **L5**, **L6**.
+  M3, L5, L6.
 - `server/fastify/src/repository.ts:735/747` (`loadPersisted`),
   `:129-155` (`loadCollectionsFromSqlite`), `:288` (`loadCharactersFromSqlite`),
   `:629` (`getAllAssetMetadata`).
@@ -29,17 +25,14 @@ mutate callbacks only touch `characters`. Narrow the read.
 
 ## Planned Shape
 
-- A field-scoped SQLite loader (parse only the tables a command reads) or a
-  per-request memo of `loadCollectionsFromSqlite`/`getAllAssetMetadata` so a
-  message/scriptstate/generation mutation parses only `characters` (+ settings).
-- Note: `loadPersistedDatabaseFields`/`selectDatabaseFields` do **not** help —
+- Add a field-scoped SQLite loader or a per-request memo so each mutation parses
+  only the tables it reads.
+- Note: `loadPersistedDatabaseFields`/`selectDatabaseFields` do not help —
   they call `loadPersisted` then slice the already-parsed result. A real fix needs
   a new field-scoped read or memo.
 - L5: skip the asset-table scan for mutations that do not read assets.
-- L6: narrow the character/chat read for message-only routes (locate the one row)
-  — but preserve `normalizeAllCharacterChats`'s cross-character chat/folder-id
-  dedup invariant (load character rows without message bodies, or re-validate the
-  dedup on the scoped set).
+- L6: narrow message-only character/chat reads while preserving
+  `normalizeAllCharacterChats` cross-character dedup.
 
 ## Behavior / Invariants
 

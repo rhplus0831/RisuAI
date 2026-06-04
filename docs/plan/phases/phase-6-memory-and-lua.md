@@ -1,15 +1,12 @@
 # Phase 6: Memory & Lua
 
-Status: not started. Bounds and makes fair the Hypa V3 memory worker, and bounds
-Lua execution cost/budget. L18 reuses the Phase 2 scoped/memoized loader, so
-take it after Phase 2.
+Status: not started. Bounds memory worker batches and Lua execution. L18 depends
+on the Phase 2 scoped/memoized loader.
 
-Goal: memory batches are size-bounded and fair across chats, orphan cleanup does
-not open a write transaction when nothing is orphaned, and per-batch DB rebuilds
-reuse the Phase 2 loader; Lua has an aggregate exec budget across hook phases and
-stops re-booting a fresh engine per run where the isolation model allows.
+Goal: make memory work bounded and fair, skip empty orphan cleanup writes, reuse
+the Phase 2 loader, and add Lua execution budgeting / safe engine reuse.
 
-Findings: **M7, L16, L17, L18, L19, L21**.
+Findings: M7, L16, L17, L18, L19, L21.
 
 ## Source Anchors
 
@@ -27,34 +24,30 @@ Findings: **M7, L16, L17, L18, L19, L21**.
 
 ## Slices
 
-- [`memory-and-lua.md`](slices/phase-6-memory-and-lua/memory-and-lua.md) - the
-  full batch:
+- [`memory-and-lua.md`](slices/phase-6-memory-and-lua/memory-and-lua.md) - full
+  batch:
   - M7: cap the drained embed batch and slice the `voyageContext3` contextual
     request into token-aware sub-batches, committing each independently so one
     oversized request cannot fail unrelated chunks; keep `groupId` consistent per
     sub-batch.
   - L16: skip the orphan-cleanup `BEGIN IMMEDIATE` write transaction + summary
-    re-parse when nothing is orphaned **[known-leftover: memory-bridge]**.
+    re-parse when nothing is orphaned [known-leftover: memory-bridge].
   - L17: round-robin / bound per-chat memory job batches so one chat's long batch
     does not starve others.
   - L18: reuse the Phase 2 scoped/memoized loader instead of a full
     `loadPersisted` per embed/summarize batch.
   - L19: aggregate Lua exec-time/engine budget across triggers + edit-hook phases
-    so a card cannot stall assembly **[known-leftover: hosted-Lua]**.
+    so a card cannot stall assembly [known-leftover: hosted-Lua].
   - L21: reuse/pool the wasmoon engine or cache the compiled prelude within the
     per-call isolation model (the engine boot + prelude recompile is per
     triggerlua run).
 
 ## Planned Shape
 
-- M7: token-aware split (not just a fixed count) because chunk texts vary; the
-  contextual single-request path currently has no sizing control
-  (`embeddingMaxConcurrent` does not apply to it).
-- L16: the orphan set is usually empty; gate the transaction on a cheap pre-check
-  (no orphaned summaries -> no write).
-- L21 is the delicate one: engine reuse must not weaken the per-call isolation
-  security property the Lua VM relies on; if pooling is unsafe, cache only the
-  compiled prelude / factory and keep a fresh engine per call.
+- M7: split by token size, not just count; chunk text lengths vary.
+- L16: gate the transaction on a cheap orphan pre-check.
+- L21: engine reuse must preserve per-call isolation. If pooling is unsafe, cache
+  only the compiled prelude/factory.
 
 ## Exit Criteria
 

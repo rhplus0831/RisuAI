@@ -1,16 +1,13 @@
 # Phase 3: Client Clone Narrowing (Root 2)
 
-Status: not started. Addresses the surviving client whole-corpus deep clones the
-frontend-performance workstream's snapshot-family narrowing did not cover.
-Depends on the existing client clone-cost harness
-(`src/ts/__tests__/cloneCostHarness.ts`).
+Status: not started. Addresses the client whole-corpus clones left after the
+snapshot-family narrowing. Uses `src/ts/__tests__/cloneCostHarness.ts`.
 
-Goal: each warm/hot client path captures a scalar or single-row rollback instead
-of `cloneJsonValue(DBState.db.characters)`, and the redundant full-`setDatabase`
-normalize on var writes is dropped. Keep `currentChatStateSnapshot` for genuine
-restructures (create/delete/reorder/fork).
+Goal: hot client paths use scalar/single-row rollbacks instead of
+`cloneJsonValue(DBState.db.characters)`. Drop redundant full `setDatabase` on var
+writes. Keep `currentChatStateSnapshot` for create/delete/reorder/fork.
 
-Findings: **M12, M13, M14, L31, L32, L33, L34, L35, L36, U4**.
+Findings: M12, M13, M14, L31, L32, L33, L34, L35, L36, U4.
 
 ## Source Anchors
 
@@ -32,9 +29,9 @@ Findings: **M12, M13, M14, L31, L32, L33, L34, L35, L36, U4**.
 ## Slices
 
 - [`client-clone-narrowing.md`](slices/phase-3-client-clone-narrowing/client-clone-narrowing.md) -
-  the full batch:
+  full batch:
   - M12: drop the redundant `setDatabase(db)` in `/setvar`/`/addvar` (mirror
-    `setChatVar`); do **not** lump in `/send`/`mutateCurrentChatMessages`.
+    `setChatVar`); do not lump in `/send`/`mutateCurrentChatMessages`.
   - M13: `changedCharacterFields` clones per kept key, skipping
     `CHARACTER_PATCH_EXCLUDED_KEYS` before any clone (also
     `prepareCompatibleCharacterUpdate`).
@@ -47,21 +44,17 @@ Findings: **M12, M13, M14, L31, L32, L33, L34, L35, L36, U4**.
   - L31: scope/throttle the script-definition watcher's per-keystroke
     scan-and-stringify.
   - L32: scope the discrete lorebook-editor clone + whole-DB id-assign to the
-    edited collection **[known-leftover]**.
+    edited collection [known-leftover].
   - L36: fire-and-forget command runners surface/await factory rejections and
     roll back (a stability fix, not a clone).
 
 ## Planned Shape
 
-- The narrow snapshot kit already exists (`currentChatScopedSnapshot`,
-  `currentCharacterRowSnapshot`, `dispatchCompatibleChatUpdateScoped`,
-  `restoreCharacterRow`); this phase wires the remaining callers through it,
-  mirroring the landed Phase 2 of the frontend-performance workstream.
-- M12's redundancy is proven by `setChatVar` doing the identical mutation without
-  `setDatabase`; the projection write guard's refreeze already persists the
-  in-place mutation.
-- L36 changes the failure mode (a failed optimistic command rolls back instead of
-  silently diverging); it must not change the success path.
+- The narrow snapshot kit already exists; this phase wires remaining callers to
+  it.
+- M12 mirrors `setChatVar`, which already works without `setDatabase`.
+- L36 changes only the failure path: failed optimistic commands roll back instead
+  of silently diverging.
 
 ## Exit Criteria
 
