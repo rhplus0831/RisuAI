@@ -58,7 +58,14 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     testName: 'H1 guard: hydration of a chat WITHOUT a chat_hypa_v3 row stays scoped',
   },
   { id: 'H2', phase: 1, fix: 'Scalar ChatSelectionSnapshot for changeChatTo', status: 'PLANNED' },
-  { id: 'H3', phase: 1, fix: 'Coalesce token-driven renders; final flush on done', status: 'PLANNED' },
+  {
+    id: 'H3',
+    phase: 1,
+    fix: 'Coalesce token-driven renders; final flush on done',
+    status: 'DONE',
+    testPath: 'src/ts/process/__tests__/streamResponse.test.ts',
+    testName: 'bounds parse work for an N-token stream: applies are O(flushes), not O(N)',
+  },
   // Medium
   { id: 'M1', phase: 2, fix: 'Scoped target-chat message/hypa load', status: 'PLANNED' },
   { id: 'M2', phase: 7, fix: 'Hoist module/script/RegExp work once per assembly', status: 'PLANNED' },

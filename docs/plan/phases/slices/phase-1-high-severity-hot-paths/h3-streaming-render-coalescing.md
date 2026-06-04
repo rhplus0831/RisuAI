@@ -1,7 +1,21 @@
 # H3 — Streaming Render Coalescing
 
-Status: not started. Phase 1. Removes quadratic per-token parsing from streaming
-renders.
+Status: IMPLEMENTED (`e41dc6c6`). Phase 1. Removes quadratic per-token parsing
+from streaming renders.
+
+Landed shape: new `src/ts/process/postGeneration/streamCoalescer.ts`
+(`createStreamRenderCoalescer`: `notify()` per chunk, serialized `apply` at
+most once per animation frame on the newest payload, `settle()` final
+full-fidelity apply, first apply failure surfaced for fail-fast).
+`consumeStreamResponse` notifies the coalescer per chunk instead of writing
+`.data` + bumping `reloadKeys` per token; `settle()` runs after the loop (and
+error-swallowed in `finally` so a reader error still flushes the last received
+chunk without being masked). `editoutput` runs per flush, final text identical.
+Server-side SSE batching (the optional extra) was not needed. Proofs:
+`streamCoalescer.test.ts` unit suite + `streamResponse.test.ts` H3 block
+(200-token stream applies O(flushes) parses; frame-paced display progress via
+the `renderFlushScheduler` test seam; mid-stream script-error propagation).
+Gate `H3` flipped in `fixCompletenessGate.test.ts` + `active-risk-analysis.md`.
 
 ## Scope
 

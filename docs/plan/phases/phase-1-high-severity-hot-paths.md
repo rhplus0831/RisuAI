@@ -1,7 +1,7 @@
 # Phase 1: High-Severity Hot Paths
 
-Status: in progress. H1 landed (`0dc7452e`); H2 and H3 remain. Three
-independent slices. Depends on the Phase 0 harness.
+Status: in progress. H1 (`0dc7452e`) and H3 (`e41dc6c6`) landed; H2 remains.
+Three independent slices. Depends on the Phase 0 harness.
 
 Goal: fix the three high-severity hot paths. H1 is the highest-leverage guard,
 H2 mirrors the landed char-select fix, and H3 removes quadratic streaming parse
@@ -35,8 +35,8 @@ work.
   `CharacterSelectionSnapshot`) and use it in `changeChatTo` instead of the
   whole-`characters` `currentChatStateSnapshot()`.
 - [`h3-streaming-render-coalescing.md`](slices/phase-1-high-severity-hot-paths/h3-streaming-render-coalescing.md) -
-  coalesce token-driven renders to at most one parse per animation frame, with a
-  final full-fidelity flush on `done`.
+  DONE (`e41dc6c6`): token-driven renders coalesced to at most one parse per
+  animation frame, with a final full-fidelity flush on `done`.
 
 ## Planned Shape
 
@@ -60,10 +60,12 @@ work.
       test proves a failed select restores only `chatPage`/`selectedChar` and does
       not clobber unrelated edits. `currentChatStateSnapshot` remains for
       restructures.
-- [ ] H3: for an N-token stream the displayed message is parsed O(frames-per-sec ×
+- [x] H3: for an N-token stream the displayed message is parsed O(frames-per-sec ×
       duration) times, not O(N); rendered output and persisted text are identical
       to before; a test bounds the render/parse count for a synthetic N-token
-      stream.
+      stream. DONE (`e41dc6c6`): proofs in
+      `src/ts/process/__tests__/streamResponse.test.ts` and
+      `src/ts/process/__tests__/streamCoalescer.test.ts`.
 - [ ] Each fix registers its gate in Phase 8; full suites + audit + both
       TypeScript checks are green.
 

@@ -36,7 +36,7 @@ consumers.
 | -- | ----- | ---------- | ------ |
 | H1 | [1](phases/phase-1-high-severity-hot-paths.md) | `loadChatHydration` guard on `message.length > 0`. | DONE (`0dc7452e`) |
 | H2 | [1](phases/phase-1-high-severity-hot-paths.md) | Scalar `ChatSelectionSnapshot` for `changeChatTo`. | scheduled |
-| H3 | [1](phases/phase-1-high-severity-hot-paths.md) | Coalesce token-driven renders; final flush on `done`. | scheduled |
+| H3 | [1](phases/phase-1-high-severity-hot-paths.md) | Coalesce token-driven renders; final flush on `done`. | DONE (`e41dc6c6`) |
 
 ### Medium
 

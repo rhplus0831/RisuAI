@@ -50,6 +50,11 @@ Recorded from the shared large-corpus fixture before any fix lands.
   **0 corpus loads, ~1.6ms** (was 13 loads; ~13ms at the 9.6MB scale corpus).
   The zero-row not-yet-extracted fallback keeps its documented breadth
   (regression-tested in `serverLoadCostHarness.test.ts`).
+- Phase 1 H3 (`e41dc6c6`): a synthetic 200-token stream performs **≤2
+  editoutput parses / display writes** (`reloadKeys` ≤4 including setup +
+  finally) instead of 200 each; final text byte-identical. Real-stream parse
+  count is now bounded by frames-per-second × stream duration, not token
+  count.
 
 ## How To Reproduce The Costs Being Fixed
 
@@ -71,3 +76,4 @@ Recorded from the shared large-corpus fixture before any fix lands.
 | 2026-06-04 | Phase 0 measurement-baseline-harness slice (test-only) | `pnpm test` 1059/4, `pnpm api:test` 1639/1, audit green, both tsc checks zero errors. Pre-fix fixture measurements recorded above. |
 | 2026-06-04 | Phase 0 fix-completeness-gate-scaffold slice (test-only) — PHASE 0 COMPLETE | `pnpm test` 1067/4 (+8 `fixCompletenessGate.test.ts`), audit green, both tsc checks zero errors. Server suite untouched (1639/1 carried). Drift behavior hand-verified: doc-DONE-only, new audit id, phase reroute each fail one self-check. |
 | 2026-06-04 | Phase 1 H1 slice (`0dc7452e` fix + gate/doc flip) | `pnpm api:test` 1640/1 (+1 zero-row fallback regression; H1 control flipped to `assertScopedLoadOnHotPath`), `pnpm test` 1067/4 (gate flip, no count change), audit green, both tsc checks zero errors. No-hypa hydration: 0 corpus loads (was 13). |
+| 2026-06-04 | Phase 1 H3 slice (`e41dc6c6` fix + gate/doc flip) | `pnpm test` 1077/4 (+7 `streamCoalescer.test.ts`, +3 `streamResponse.test.ts` H3 block), `pnpm api:test` 1640/1 (carried), audit green, both tsc checks zero errors. 200-token stream: ≤2 parses (was 200). |
