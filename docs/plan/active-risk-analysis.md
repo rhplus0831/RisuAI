@@ -1,6 +1,6 @@
 # Active Risk Analysis
 
-Date: 2026-06-04
+Date: 2026-06-05
 
 This file maps every confirmed audit finding to a phase, target fix, and status.
 Evidence and fix detail live in
@@ -50,9 +50,9 @@ consumers.
 | M6  | [4](phases/phase-4-outbound-request-lifecycle.md)    | Abort proxy `/fetch` upstream on close; add timeout backstop.   | DONE (`bf1a6cb2`) |
 | M7  | [6](phases/phase-6-memory-and-lua.md)                | Cap embed batches; split contextual requests by token size.     | scheduled         |
 | M8  | [4](phases/phase-4-outbound-request-lifecycle.md)    | Add non-durable provider deadline and body cap.                 | DONE (`bf1a6cb2`) |
-| M9  | [5](phases/phase-5-materialization-and-lifecycle.md) | Streaming bounded inflate per envelope/block.                   | scheduled         |
-| M10 | [5](phases/phase-5-materialization-and-lifecycle.md) | Token-only asset scan; defer import asset report.               | scheduled         |
-| M11 | [5](phases/phase-5-materialization-and-lifecycle.md) | Settle bundle-export drain wait on `close`/`error`.             | scheduled         |
+| M9  | [5](phases/phase-5-materialization-and-lifecycle.md) | Streaming bounded inflate per envelope/block.                   | DONE (`686220d6`) |
+| M10 | [5](phases/phase-5-materialization-and-lifecycle.md) | Token-only asset scan; defer import asset report.               | DONE (`686220d6`)        |
+| M11 | [5](phases/phase-5-materialization-and-lifecycle.md) | Settle bundle-export drain wait on `close`/`error`.             | DONE (`686220d6`)        |
 | M12 | [3](phases/phase-3-client-clone-narrowing.md)        | Drop redundant `setDatabase(db)` in `/setvar`/`/addvar`.        | DONE (`0efa7ba6`) |
 | M13 | [3](phases/phase-3-client-clone-narrowing.md)        | Clone only kept character fields.                               | DONE (`0efa7ba6`) |
 | M14 | [3](phases/phase-3-client-clone-narrowing.md)        | Use `currentCharacterRowSnapshot` in send context.              | DONE (`0efa7ba6`) |
@@ -69,11 +69,11 @@ consumers.
 | L8  | [7](phases/phase-7-memoization-and-hygiene.md)       | Replace `OFFSET 999` prune walk with bounded delete.           | scheduled                         |
 | L9  | [7](phases/phase-7-memoization-and-hygiene.md)       | Drop redundant `chats` DELETE.                                 | scheduled                         |
 | L10 | [2](phases/phase-2-server-load-narrowing.md)         | Load command-event history only when replay is requested.      | DONE (`b2765994`)                 |
-| L11 | [5](phases/phase-5-materialization-and-lifecycle.md) | Add the `cleanedUp` guard before `memoryEvents.subscribe`.     | scheduled                         |
-| L12 | [5](phases/phase-5-materialization-and-lifecycle.md) | Close the proxy WS viewer on already-done jobs.                | scheduled                         |
-| L13 | [5](phases/phase-5-materialization-and-lifecycle.md) | Guard detached runners and cancel-persist on close.            | scheduled                         |
-| L14 | [5](phases/phase-5-materialization-and-lifecycle.md) | Heartbeat the durable SSE viewer during long assembly.         | scheduled                         |
-| L15 | [5](phases/phase-5-materialization-and-lifecycle.md) | Bound no-viewer proxy-job replay/buffer.                       | scheduled                         |
+| L11 | [5](phases/phase-5-materialization-and-lifecycle.md) | Add the `cleanedUp` guard before `memoryEvents.subscribe`.     | DONE (`686220d6`)                        |
+| L12 | [5](phases/phase-5-materialization-and-lifecycle.md) | Close the proxy WS viewer on already-done jobs.                | DONE (`686220d6`)                        |
+| L13 | [5](phases/phase-5-materialization-and-lifecycle.md) | Guard detached runners and cancel-persist on close.            | DONE (`686220d6`)                        |
+| L14 | [5](phases/phase-5-materialization-and-lifecycle.md) | Heartbeat the durable SSE viewer during long assembly.         | DONE (`686220d6`)                        |
+| L15 | [5](phases/phase-5-materialization-and-lifecycle.md) | Bound no-viewer proxy-job replay/buffer.                       | DONE (`686220d6`)                        |
 | L16 | [6](phases/phase-6-memory-and-lua.md)                | Skip empty orphan-cleanup write txn. [known-leftover]          | scheduled                         |
 | L17 | [6](phases/phase-6-memory-and-lua.md)                | Bound per-chat memory batches for fairness.                    | scheduled                         |
 | L18 | [6](phases/phase-6-memory-and-lua.md)                | Reuse the Phase 2 scoped/memoized loader in memory batches.    | scheduled (after Phase 2)         |
@@ -84,10 +84,10 @@ consumers.
 | L23 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Block embedded-private IPv6 forms. [known-leftover]            | DONE (`bf1a6cb2`)                 |
 | L24 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Reject prototype keys in `setObjectValue`.                     | DONE (`bf1a6cb2`)                 |
 | L25 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Count Lua egress only after URL validation.                    | DONE (`bf1a6cb2`)                 |
-| L27 | [5](phases/phase-5-materialization-and-lifecycle.md) | Guard backup manifest `JSON.parse`.                            | scheduled                         |
-| L28 | [5](phases/phase-5-materialization-and-lifecycle.md) | Make legacy restore re-import transactional.                   | scheduled                         |
-| L29 | [5](phases/phase-5-materialization-and-lifecycle.md) | Persist writer-session origin on command events.               | scheduled                         |
-| L30 | [5](phases/phase-5-materialization-and-lifecycle.md) | Re-arm reattach after completion.                              | scheduled                         |
+| L27 | [5](phases/phase-5-materialization-and-lifecycle.md) | Guard backup manifest `JSON.parse`.                            | DONE (`686220d6`)                        |
+| L28 | [5](phases/phase-5-materialization-and-lifecycle.md) | Make legacy restore re-import transactional.                   | DONE (`686220d6`)                        |
+| L29 | [5](phases/phase-5-materialization-and-lifecycle.md) | Persist writer-session origin on command events.               | DONE (`686220d6`)                        |
+| L30 | [5](phases/phase-5-materialization-and-lifecycle.md) | Re-arm reattach after completion.                              | DONE (`686220d6`)                        |
 | L31 | [3](phases/phase-3-client-clone-narrowing.md)        | Scope/throttle script-definition watcher scans.                | DONE (`0efa7ba6`)                 |
 | L32 | [3](phases/phase-3-client-clone-narrowing.md)        | Scope lorebook-editor clone/id-assign. [known-leftover]        | DONE (`0efa7ba6` + L32 follow-up) |
 | L33 | [3](phases/phase-3-client-clone-narrowing.md)        | Avoid modules-array deep clone in `$effect`.                   | DONE (`0efa7ba6`)                 |
@@ -153,7 +153,8 @@ self-host wins. Only L4, L7, L26, and U2 are fully gated.
 
 Route the 57 confirmed findings plus U1/U4 across Phases 0-8. Of those, the
 scheduled fix set excludes L4/L7/L26/U2 (gated) and U3 (no action). Phase 1
-highs, Phase 2 server-root work, and Phase 3 client clone narrowing are done.
+highs, Phase 2 server-root work, Phase 3 client clone narrowing, Phase 4
+outbound request lifecycle, and Phase 5 materialization/lifecycle are done.
 Every fix needs a regression test and Phase 8 gate entry.
 
 ## Investigated And Dismissed

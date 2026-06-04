@@ -1,7 +1,21 @@
 # Phase 5: Materialization & Lifecycle (Root 5)
 
-Status: not started. Covers bounded inflate/buffering, stream/job cleanup,
-import/restore robustness, and sync-replay correctness.
+Status: COMPLETE (`686220d6`, one batch). Covers bounded inflate/buffering,
+stream/job cleanup, import/restore robustness, and sync-replay correctness.
+
+Landed shape: streaming bounded inflate (`risuSave/boundedInflate.ts`) behind
+the legacy envelope + block codecs with a finite `/import/bundle` inner-`.risu`
+cap (M9); column-only `messages.data` inlay scan for asset GC + the import
+asset report via `collectMessageInlayReferences` (M10, report byte-identical);
+bundle-export backpressure waits settle on `close`/`error` with
+`zip.terminate()` + read-stream teardown (M11); guarded SSE live-delivery
+arming (L11), server-closed done-job WS viewers (L12), tracked detached
+runners settled before `db.close()` + `db.isOpen` finalization guards (L13),
+per-viewer durable SSE comment heartbeat (L14), no-viewer overflow aborts the
+proxy upstream (L15); corrupt-manifest-tolerant `listBackups` (L27),
+transactional legacy `db.json` restore re-import with the event persisted
+after it (L28); persisted `origin_writer_session_id` (schema v15) restored on
+replay (L29); deferred reattach re-arm (L30).
 
 Goal: bound work before materialization, clean up on abort/close, harden
 import/restore, and keep sync replay correct. `.risu` bytes must not change.
@@ -62,21 +76,21 @@ Findings: M9, M10, M11, L11, L12, L13, L14, L15, L27, L28, L29, L30.
 
 ## Exit Criteria
 
-- [ ] M9: a crafted oversized compressed `.risu` aborts during inflate at the cap
+- [x] M9: a crafted oversized compressed `.risu` aborts during inflate at the cap
       instead of fully allocating; normal import/export round-trips are
       byte-identical.
-- [ ] M10: asset GC and the import report no longer `JSON.parse` every message;
+- [x] M10: asset GC and the import report no longer `JSON.parse` every message;
       the referenced/missing/orphaned asset sets are unchanged on a fixture.
-- [ ] M11: an aborted large bundle download frees the FD and terminates the Zip
+- [x] M11: an aborted large bundle download frees the FD and terminates the Zip
       (test the close path destroys the read stream).
-- [ ] L11-L15: each lifecycle gap is closed with no leak on the simulated
+- [x] L11-L15: each lifecycle gap is closed with no leak on the simulated
       abort/close/done path.
-- [ ] L27: a corrupt manifest no longer 500s the backups list.
-- [ ] L28: a failed legacy restore re-import does not leave a partial state and the
+- [x] L27: a corrupt manifest no longer 500s the backups list.
+- [x] L28: a failed legacy restore re-import does not leave a partial state and the
       restore event fires after the import.
-- [ ] L29/L30: reconnect replay keeps own-echo suppression; a second live-job chat
+- [x] L29/L30: reconnect replay keeps own-echo suppression; a second live-job chat
       reattaches after the first completes.
-- [ ] Gates registered in Phase 8; server suite + audit + TypeScript checks green;
+- [x] Gates registered in Phase 8; server suite + audit + TypeScript checks green;
       `.risu` round-trip tests green.
 
 ## Validation

@@ -2,15 +2,15 @@
 
 Date: 2026-06-05
 
-Phases 1-4 are COMPLETE. Phase 1: H1 `0dc7452e`, H3 `e41dc6c6`, H2
+Phases 1-5 are COMPLETE. Phase 1: H1 `0dc7452e`, H3 `e41dc6c6`, H2
 `067ab82a`. Phase 2: scoped assembly load (M1, L1, L2, `c193c008`),
 command-mutation read narrowing (M3, L5, L6, `e0e86ab1`), single-character
 projection (M4, `254b3112`), and the metric/bulk-read slice (M5, L10, U1,
 `b2765994`). Phase 3: client clone narrowing (M12-M14, L31-L36, U4) plus the
 L32 watcher/global-modal ID-assignment follow-up. Phase 4: outbound request
-lifecycle (M6, M8, L20, L22-L25, `bf1a6cb2`). Next: pick Phase 5-7 by
-current pain — Phase 5 materialization/lifecycle is the next root in audit
-order.
+lifecycle (M6, M8, L20, L22-L25, `bf1a6cb2`). Phase 5: materialization and
+lifecycle cleanup (M9-M11, L11-L15, L27-L30, `686220d6`). Next: pick Phase
+6-7 by current pain — Phase 6 memory/Lua is the next root in audit order.
 Every fix needs a regression test, a Phase 8 gate flip
 (`fixCompletenessGate.test.ts` registry `PLANNED` -> `DONE` with the test
 path), and the matching status flip in
@@ -36,14 +36,45 @@ both move together.
 
 In leverage order. Each is independent unless noted.
 
-1. Phase 5 — bounded materialization and lifecycle cleanup (M9-M11, L11-L15,
-   L27-L30): the next root in audit order. Streaming bounded inflate for
-   `.risu` import, token-only asset GC scan, bundle-export drain settle, and
-   the stream-job lifecycle lows. Round-trip identity gates any codec change.
-2. Phases 6-7 by current pain. Refresh
+1. Phase 6 — memory fairness and Lua budget/engine reuse (M7, L16-L19,
+   L21): the next root in audit order. Bounded embed/summarize batches,
+   per-chat fairness, orphan-cleanup write-txn skip, the Phase 2 scoped
+   loader in memory batches, an aggregate Lua exec budget, and safe engine
+   reuse / prelude caching.
+2. Phase 7 — memoization and hygiene (M2, L3, L8, L9, L37-L40). Refresh
    [`latest-verification.md`](latest-verification.md) after each phase.
 
-Done so far (Phases 0-4 complete):
+Done so far (Phases 0-5 complete):
+
+- M9-M11, L11-L15, L27-L30 — materialization & lifecycle, DONE
+  (`686220d6`, one batch): legacy-compressed/stream envelopes and
+  compressed RISUSAVE blocks inflate through the streaming
+  `boundedInflate.ts` helpers, enforcing the expanded-size cap during
+  inflation (blocks against the cumulative remaining budget) and
+  `/import/bundle`'s inner `database.risu` gets a finite default cap (M9);
+  asset GC + the import asset report scan only the `messages.data` column
+  via `collectMessageInlayReferences` — report byte-identical to the
+  hydrated walk (M10); the bundle-export backpressure wait settles on
+  `close`/`error`, terminates the Zip, and the unwound `for await` destroys
+  the in-flight asset read stream (M11); SSE live-delivery arming is
+  guarded by `armSseLiveDelivery` (L11); a WS viewer attaching to a done
+  proxy job is closed by the server, unpinning the job (L12); detached
+  durable runners are tracked and settled before `db.close()` with
+  `db.isOpen` guards on the finalization choke points (L13); durable SSE
+  viewers heartbeat with comment frames that never enter the replay buffer
+  (L14); a no-viewer proxy job aborts its upstream once the pending buffer
+  drops frames (L15); `listBackups` skips corrupt manifests (L27); the
+  legacy `db.json` restore re-import joins the restore transaction ahead
+  of the `stateRestored` event (L28); command events persist + replay
+  `origin_writer_session_id` (schema v15) so reconnect keeps own-echo
+  suppression (L29); a reattach trigger arriving mid-stream defers and
+  re-fires when the in-flight reattach settles (L30). Regressions:
+  `risuSaveBoundedInflate.test.ts`, `risuSaveBundleImportRoute.test.ts`
+  M9 cap test, `assetGc.test.ts` M10 tests,
+  `risuSaveBundleExportRoute.test.ts` M11 abort test, `events.test.ts`
+  L11/L29 tests, `streamJobsRoutes.test.ts` L12 test,
+  `durableGeneration.test.ts` L13/L14 tests, `streamJobs.test.ts` L15
+  test, `backups.test.ts` L27/L28 tests, `reattach.test.ts` L30 test.
 
 - M6, M8, L20, L22-L25 — outbound request lifecycle, DONE (`bf1a6cb2`, one
   batch): `/proxy/fetch` aborts upstream on `req.raw` close
@@ -146,6 +177,8 @@ Done so far (Phases 0-4 complete):
   the command mutates or it can clobber unrelated edits.
 - Do not set an aggressive provider/proxy timeout; use a generous default (the
   durable path's 600s is the reference).
+- Do not let a Phase 6 memory/Lua change alter memory selection output or the
+  locked `/generate/chat` SSE vocabulary; budgets bound work, not results.
 - Do not change `.risu` envelope bytes or projection/bootstrap payloads;
   narrowing changes what the server loads, not what it returns. Round-trip tests
   gate any codec/export change.

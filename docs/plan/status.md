@@ -7,23 +7,24 @@ only the phase or slice needed for the task.
 
 The plan schedules 57 confirmed findings (3 high, 14 medium, 40 low) from
 [`audit-stability-and-performance.md`](audit-stability-and-performance.md) across
-Phases 0-8. Phases 0-4 are complete: all three highs are fixed — H1
+Phases 0-8. Phases 0-5 are complete: all three highs are fixed — H1
 (`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`) — all of Phase 2's server
 load narrowing landed — scoped assembly load (M1, L1, L2, `c193c008`),
 command-mutation read narrowing (M3, L5, L6, `e0e86ab1`), single-character
 projection (M4, `254b3112`), metric/bulk-read slice (M5, L10, U1,
 `b2765994`) — Phase 3's client clone narrowing is complete after the L32
-watcher/global-modal follow-up, and Phase 4's outbound request lifecycle
-landed in one batch (M6, M8, L20, L22-L25, `bf1a6cb2`). Next: pick Phase 5-7
-by current pain (Phase 5 materialization/lifecycle is the next root in audit
-order).
+watcher/global-modal follow-up, Phase 4's outbound request lifecycle landed
+in one batch (M6, M8, L20, L22-L25, `bf1a6cb2`), and Phase 5's
+materialization/lifecycle batch landed (M9-M11, L11-L15, L27-L30,
+`686220d6`). Next: pick Phase 6-7 by current pain (Phase 6 memory/Lua is the
+next root in audit order).
 
 ## Current Snapshot
 
-All findings are routed. Phases 0-4 are complete. Phases 5-7 group the
+All findings are routed. Phases 0-5 are complete. Phases 6-7 group the
 remaining mediums/lows by root cause. Phase 8 is the standing gate (its
-scaffold is live and H1-H3, M1, M3-M6, M8, M12-M14, L1/L2, L5/L6, L10, L20,
-L22-L25, L31-L36, U1, and U4 are registered as `DONE`, including the L32
+scaffold is live and H1-H3, M1, M3-M6, M8-M14, L1/L2, L5/L6, L10-L15, L20,
+L22-L25, L27-L36, U1, and U4 are registered as `DONE`, including the L32
 mount-time watcher/global-modal regression).
 
 - [Phase 0](phases/phase-0-baseline-foundations.md) — COMPLETE. Shared
@@ -54,8 +55,15 @@ mount-time watcher/global-modal regression).
   32 MB buffered-body cap, request signal threaded into the Lua runtime,
   8 MB streaming-buffer cap, embedded-IPv4 SSRF unwrapping, `setObjectValue`
   prototype-key guard, post-validation egress rate counting.
-- [Phase 5](phases/phase-5-materialization-and-lifecycle.md) — not started.
-  M9-M11, L11-L15, L27-L30: bounded materialization and lifecycle cleanup.
+- [Phase 5](phases/phase-5-materialization-and-lifecycle.md) — COMPLETE.
+  M9-M11, L11-L15, L27-L30 DONE (`686220d6`, one batch): streaming bounded
+  inflate per envelope/block + finite bundle inner-`.risu` cap, column-only
+  message-inlay asset scan (GC + import report), bundle-export close/error
+  settle + Zip/FD teardown, SSE arming guard, done-job WS viewer close,
+  runner-settle-before-`db.close()` shutdown, durable viewer heartbeat,
+  no-viewer overflow abort, corrupt-manifest-tolerant backups list,
+  transactional legacy restore re-import, persisted writer-session origin on
+  replayed events, and the deferred reattach re-arm.
 - [Phase 6](phases/phase-6-memory-and-lua.md) — not started. M7, L16-L19, L21:
   memory fairness and Lua budget/engine reuse.
 - [Phase 7](phases/phase-7-memoization-and-hygiene.md) — not started. M2, L3,
@@ -98,8 +106,12 @@ dismissed list. Highlights:
   buffers are capped, the Lua runtime cancels on the request signal, and the
   IPv6-embedded-IPv4 / prototype-pollution / rate-counter egress gaps are
   closed. Phase 4 is COMPLETE.
-- Remaining roots: Phase 5 bounded materialization/lifecycle (M9-M11,
-  L11-L15, L27-L30), Phase 6 memory/Lua (M7, L16-L19, L21), Phase 7
+- Phase 5 materialization/lifecycle is DONE (M9-M11, L11-L15, L27-L30,
+  `686220d6`): inflate/buffering is bounded before materialization,
+  stream/job/shutdown paths clean up on abort/close/done, import/restore is
+  atomic and corrupt-tolerant, and reconnect replay/reattach keep their
+  correctness metadata. Phase 5 is COMPLETE.
+- Remaining roots: Phase 6 memory/Lua (M7, L16-L19, L21), Phase 7
   memoization/hygiene (M2, L3, L8, L9, L37-L40).
 - Gated (not scheduled): L4, L7, L26, U2 stay on the
   `RISU_PROTOCOL_METRICS` evidence path or an owner decision; U3 needs no

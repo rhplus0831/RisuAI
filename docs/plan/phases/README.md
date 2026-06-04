@@ -1,6 +1,6 @@
 # Stability And Performance Remediation Phases
 
-Date: 2026-06-04
+Date: 2026-06-05
 
 Use these files for phase scope, exit criteria, and slice routing. Concrete
 slices live under `slices/[phase]/[slice-name].md`. Every finding ID is defined
@@ -25,8 +25,8 @@ the finding -> phase map is in
 - Phase 4, complete (Root 4 — outbound request lifecycle; M6, M8, L20,
   L22-L25): [`phase-4-outbound-request-lifecycle.md`](phase-4-outbound-request-lifecycle.md),
   [`slices/phase-4-outbound-request-lifecycle/`](slices/phase-4-outbound-request-lifecycle/).
-- Phase 5, not started (Root 5 — materialization & lifecycle):
-  [`phase-5-materialization-and-lifecycle.md`](phase-5-materialization-and-lifecycle.md),
+- Phase 5, complete (Root 5 — materialization & lifecycle; M9-M11, L11-L15,
+  L27-L30): [`phase-5-materialization-and-lifecycle.md`](phase-5-materialization-and-lifecycle.md),
   [`slices/phase-5-materialization-and-lifecycle/`](slices/phase-5-materialization-and-lifecycle/).
 - Phase 6, not started (memory & Lua):
   [`phase-6-memory-and-lua.md`](phase-6-memory-and-lua.md),

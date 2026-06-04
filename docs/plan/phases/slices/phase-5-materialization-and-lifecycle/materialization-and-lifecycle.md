@@ -1,8 +1,16 @@
 # Materialization & Lifecycle
 
-Status: not started. Phase 5. Bundles bounded inflate/buffering, stream/job
-cleanup, import/restore robustness, and sync-replay correctness. `.risu`
-round-trip tests gate codec changes.
+Status: IMPLEMENTED (`686220d6`, one batch). Phase 5. Bundles bounded
+inflate/buffering, stream/job cleanup, import/restore robustness, and
+sync-replay correctness. `.risu` round-trip tests gate codec changes.
+
+Regressions: `risuSaveBoundedInflate.test.ts` + the bundle-import inner-cap
+test (M9), `assetGc.test.ts` M10 load-cost + hydrated-walker equivalence
+tests, `risuSaveBundleExportRoute.test.ts` M11 abort test (fails pre-fix),
+`events.test.ts` L11 + L29 tests, `streamJobsRoutes.test.ts` L12 test,
+`durableGeneration.test.ts` L13 (fails pre-fix) + L14 tests,
+`streamJobs.test.ts` L15 test, `backups.test.ts` L27/L28 tests,
+`reattach.test.ts` L30 test (fails pre-fix).
 
 ## Scope
 
@@ -28,27 +36,27 @@ correct.
 
 ## Item Checklist
 
-- [ ] M9 — streaming bounded inflate (`fflate` `Gunzip`/`Decompress` +
+- [x] M9 — streaming bounded inflate (`fflate` `Gunzip`/`Decompress` +
       output-cap `ondata` accumulator) per legacy envelope and per block; finite
       default cap for `/import/bundle`'s inner `.risu`.
-- [ ] M10 — asset GC + import asset report scan `SELECT data FROM messages`
+- [x] M10 — asset GC + import asset report scan `SELECT data FROM messages`
       for `{{inlay...}}` tokens (no full hydrate / per-row parse), unioned with
       non-message refs; defer the import asset report.
-- [ ] M11 — bundle export drain-wait settles on `close`/`error`; on premature
+- [x] M11 — bundle export drain-wait settles on `close`/`error`; on premature
       close `zip.terminate()` + destroy the in-flight read stream.
-- [ ] L11 — `cleanedUp` guard before `memoryEvents.subscribe`.
-- [ ] L12 — close the proxy WS viewer when it attaches to an already-done job.
-- [ ] L13 — `onClose` awaits/guards detached runners; cancel-persist checks
+- [x] L11 — `cleanedUp` guard before `memoryEvents.subscribe`.
+- [x] L12 — close the proxy WS viewer when it attaches to an already-done job.
+- [x] L13 — `onClose` awaits/guards detached runners; cancel-persist checks
       DB-open before writing.
-- [ ] L14 — heartbeat the durable SSE viewer during long assembly.
-- [ ] L15 — bound the no-viewer proxy-job buffer / enable a replay bound.
-- [ ] L27 — guard per-manifest `JSON.parse` in `listBackups` (skip/flag a
+- [x] L14 — heartbeat the durable SSE viewer during long assembly.
+- [x] L15 — bound the no-viewer proxy-job buffer / enable a replay bound.
+- [x] L27 — guard per-manifest `JSON.parse` in `listBackups` (skip/flag a
       corrupt manifest instead of 500).
-- [ ] L28 — wrap the legacy `db.json` restore re-import in a transaction;
+- [x] L28 — wrap the legacy `db.json` restore re-import in a transaction;
       emit the restore event after it.
-- [ ] L29 — persist writer-session origin on command events so reconnect
+- [x] L29 — persist writer-session origin on command events so reconnect
       replay keeps own-echo suppression.
-- [ ] L30 — re-arm reattach after completion so a second live-job chat
+- [x] L30 — re-arm reattach after completion so a second live-job chat
       reattaches.
 
 ## Behavior / Invariants
