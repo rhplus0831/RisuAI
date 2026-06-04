@@ -19,9 +19,12 @@ import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFi
 // Phase 0 (measurement-baseline-harness): prove the server load-count harness
 // can (a) pass a genuinely scoped hot path and (b) FAIL a path that performs a
 // whole-corpus payload load — on the shared large-corpus fixture both suites
-// seed from. The whole-corpus positive controls below document CURRENT breadth
-// the plan removes: when H1 (`loadChatHydration` guard) and the Phase 2
-// narrowing land, flip each one to `assertScopedLoadOnHotPath`.
+// seed from. The Phase 1 H1 guard (`loadChatHydration` early-return on
+// `message.length > 0`) has landed, so missing-hypa hydration is asserted
+// scoped below; the zero-row not-yet-extracted fallback keeps its documented
+// breadth. The remaining whole-corpus positive control (U1, bulk hydration)
+// documents CURRENT breadth — when the Phase 2 narrowing lands, flip it to
+// `assertScopedLoadOnHotPath`.
 
 interface Harness {
   app: FastifyInstance
@@ -168,39 +171,77 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('detects the H1 fallback: hydration of a chat WITHOUT a chat_hypa_v3 row loads the whole corpus', async () => {
+  it('H1 guard: hydration of a chat WITHOUT a chat_hypa_v3 row stays scoped', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
     expect(fixture.noHypa.chatId).not.toBe(fixture.hot.chatId)
 
+    // Audit H1 regression: a legitimately `undefined` hypaV3Data used to drop
+    // this request into `loadPersisted` (13 whole-corpus payload reads on the
+    // default fixture). The guard makes the messages table authoritative once
+    // populated; this call now performs zero whole-corpus payload reads.
     const started = performance.now()
-    const { result: res, corpusLoadCount, loadCountByTable } = await withServerLoadInstrumentation(
-      () => hydrationGet(fixture.noHypa.chatId),
-    )
-    const fallbackMs = performance.now() - started
+    const res = await assertScopedLoadOnHotPath(() => hydrationGet(fixture.noHypa.chatId))
+    const scopedMs = performance.now() - started
 
     expect(res.statusCode).toBe(200)
-    expect(res.json().message).toHaveLength(fixture.noHypa.messageCount)
-    // CURRENT breadth (audit H1): the missing-hypa guard drops the request into
-    // `loadPersisted`, re-parsing every character, chat, and collection row.
-    // When the Phase 1 H1 guard lands, replace this block with
-    // `assertScopedLoadOnHotPath` around the same GET.
-    expect(corpusLoadCount).toBeGreaterThan(0)
-    expect(loadCountByTable.characters).toBeGreaterThanOrEqual(1)
-    expect(loadCountByTable.chats).toBeGreaterThanOrEqual(1)
-    expect(loadCountByTable.modules).toBeGreaterThanOrEqual(1)
-
-    // The same call FAILS the scoped-load assertion — the harness can gate.
-    await expect(
-      assertScopedLoadOnHotPath(() => hydrationGet(fixture.noHypa.chatId)),
-    ).rejects.toThrow(/whole-corpus payload read/)
+    const body = res.json()
+    expect(body.message).toHaveLength(fixture.noHypa.messageCount)
+    // A non-HypaV3 chat still reports no hypaV3Data, as before the guard.
+    expect(body.hypaV3Data).toBeUndefined()
 
     if (process.env.RISU_PROTOCOL_METRICS === '1') {
       console.info(
-        `[load-cost] H1 fallback hydration (no-hypa chat): ${fallbackMs.toFixed(1)}ms, ` +
-          `${corpusLoadCount} corpus loads: ${JSON.stringify(loadCountByTable)}`,
+        `[load-cost] H1 guarded hydration (no-hypa chat): ${scopedMs.toFixed(1)}ms, 0 corpus loads`,
       )
     }
+  })
+
+  it('H1 guard keeps the zero-row fallback: a not-yet-extracted chat hydrates from its embedded copy', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+
+    // Simulate the defensive pre-extraction state: a chat row whose data_json
+    // still embeds `message`, with zero rows in the messages table.
+    const embedded = [
+      { role: 'user', data: 'embedded hello', chatId: 'pre-extract-m1', time: 1700000000000 },
+      { role: 'char', data: 'embedded reply', chatId: 'pre-extract-m2', time: 1700000000001 },
+    ]
+    const db = openDatabase(harness.dataDir)
+    try {
+      db.prepare(
+        'INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)',
+      ).run(
+        'pre-extract-chat',
+        fixture.hot.characterId,
+        999,
+        JSON.stringify({
+          id: 'pre-extract-chat',
+          name: 'Pre-extract',
+          note: '',
+          localLore: [],
+          message: embedded,
+        }),
+      )
+    } finally {
+      db.close()
+    }
+
+    const { result: res, corpusLoadCount, loadCountByTable } = await withServerLoadInstrumentation(
+      () => hydrationGet('pre-extract-chat'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.json().message).toEqual(embedded)
+    // The zero-row fallback is the one legitimate broad consumer on this route:
+    // it still walks `loadPersisted` to find the embedded copy…
+    expect(corpusLoadCount).toBeGreaterThan(0)
+    expect(loadCountByTable.characters).toBeGreaterThanOrEqual(1)
+    expect(loadCountByTable.chats).toBeGreaterThanOrEqual(1)
+
+    // …so the scoped-load assertion still fails for it — the harness can gate.
+    await expect(
+      assertScopedLoadOnHotPath(() => hydrationGet('pre-extract-chat')),
+    ).rejects.toThrow(/whole-corpus payload read/)
   })
 
   it('detects bulk hydration breadth (U1): the bulk route loads the corpus even for one known id', async () => {

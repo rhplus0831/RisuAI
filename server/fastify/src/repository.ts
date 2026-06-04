@@ -1058,11 +1058,15 @@ export function loadChatHydration(
   const alternates = getAlternateMessages(db, chatId) as unknown[]
   let message = getChatMessages(db, chatId) as unknown[]
   let hypaV3Data = getChatHypaV3(db, chatId)
-  if (message.length > 0 && hypaV3Data !== undefined) {
+  if (message.length > 0) {
+    // The messages table is authoritative once populated: extraction writes
+    // messages and hypaV3Data together, so a missing `chat_hypa_v3` row means
+    // the chat has none. A legitimately `undefined` hypaV3Data must not drop
+    // the request into the whole-corpus `loadPersisted` fallback (audit H1).
     return { message, hypaV3Data, alternates }
   }
-  // Fallback for a chat not yet extracted into the table (defensive — startup
-  // extraction normally makes the table authoritative).
+  // Fallback for a chat not yet extracted into the table (zero message rows;
+  // defensive — startup extraction normally makes the table authoritative).
   const persisted = loadPersisted(db, dataDir)
   eachChat(persisted.database, (chat) => {
     if (chat.id !== chatId) return
