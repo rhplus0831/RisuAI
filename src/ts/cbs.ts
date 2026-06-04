@@ -146,7 +146,6 @@ export function registerCBS(arg: CBSRegisterArg) {
     getPersonaPrompt,
     risuChatParser,
     makeArray,
-    safeStructuredClone,
     parseArray,
     parseDict,
     getChatVar,
@@ -373,9 +372,9 @@ export function registerCBS(arg: CBSRegisterArg) {
             return v.role === 'user'
           })
           .map((v) => {
-            v = safeStructuredClone(v)
-            v.data = risuChatParser(v.data, matcherArg)
-            return JSON.stringify(v)
+            // Shallow-spread instead of a deep clone: only `.data` is reassigned,
+            // and the spread keeps the live `DBState` Message unmutated.
+            return JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })
           }),
       )
     },
@@ -396,9 +395,9 @@ export function registerCBS(arg: CBSRegisterArg) {
             return v.role === 'char'
           })
           .map((v) => {
-            v = safeStructuredClone(v)
-            v.data = risuChatParser(v.data, matcherArg)
-            return JSON.stringify(v)
+            // Shallow-spread instead of a deep clone: only `.data` is reassigned,
+            // and the spread keeps the live `DBState` Message unmutated.
+            return JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })
           }),
       )
     },
@@ -1684,9 +1683,9 @@ export function registerCBS(arg: CBSRegisterArg) {
           ]
             .concat(chat.message)
             .map((v) => {
-              v = safeStructuredClone(v)
-              v.data = risuChatParser(v.data, matcherArg)
-              return JSON.stringify(v)
+              // Shallow-spread instead of a deep clone: only `.data` is
+              // reassigned, and the spread keeps the live Message unmutated.
+              return JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })
             }),
         )
       }
