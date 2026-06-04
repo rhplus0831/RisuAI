@@ -1,7 +1,11 @@
 # Fix-Completeness Gate
 
-Status: not started (standing). Phase 8. Turns the Phase 0 scaffold into the
-maintained gate.
+Status: standing — the Phase 0 scaffold is live at
+`src/ts/__tests__/fixCompletenessGate.test.ts` with every id `PLANNED`. This
+slice is the maintenance contract for it: flip ids to `DONE` as fixes land.
+Flipping requires updating the registry AND
+[`../../../active-risk-analysis.md`](../../../active-risk-analysis.md)
+together — the lockstep self-check fails if only one moves.
 
 ## Scope
 

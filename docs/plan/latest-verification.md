@@ -5,13 +5,13 @@ Date: 2026-06-04
 This is the maintained proof-command log for the workstream. Update it after
 each phase or focused batch.
 
-## Baseline (Phase 0 measurement slice landed)
+## Baseline (Phase 0 complete)
 
-Re-run after the measurement-baseline-harness slice (fixture + server
-load-count harness; test-only, no runtime change):
+Re-run after both Phase 0 slices (fixture + server load-count harness +
+fix-completeness gate scaffold; test-only, no runtime change):
 
-- `pnpm test` — 1059 passed / 4 skipped (client suite; +5
-  `largeCorpusFixture.test.ts`).
+- `pnpm test` — 1067 passed / 4 skipped (client suite; +5
+  `largeCorpusFixture.test.ts`, +8 `fixCompletenessGate.test.ts`).
 - `pnpm api:test` — 1639 passed / 1 skipped (server suite; +7
   `serverLoadCostHarness.test.ts`).
 - `pnpm client-thinning:audit` — green.
@@ -62,3 +62,4 @@ Recorded from the shared large-corpus fixture before any fix lands.
 | ---- | ----- | ------ |
 | 2026-06-04 | Plan opened; no runtime change | Baseline carried from `6861494d` (above); not re-run as part of writing the plan. |
 | 2026-06-04 | Phase 0 measurement-baseline-harness slice (test-only) | `pnpm test` 1059/4, `pnpm api:test` 1639/1, audit green, both tsc checks zero errors. Pre-fix fixture measurements recorded above. |
+| 2026-06-04 | Phase 0 fix-completeness-gate-scaffold slice (test-only) — PHASE 0 COMPLETE | `pnpm test` 1067/4 (+8 `fixCompletenessGate.test.ts`), audit green, both tsc checks zero errors. Server suite untouched (1639/1 carried). Drift behavior hand-verified: doc-DONE-only, new audit id, phase reroute each fail one self-check. |

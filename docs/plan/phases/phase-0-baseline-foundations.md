@@ -1,7 +1,6 @@
 # Phase 0: Baseline & Harness Foundations
 
-Status: in progress — the measurement/harness slice is implemented; the
-fix-completeness gate scaffold remains. No runtime change.
+Status: COMPLETE (both slices implemented). No runtime change.
 
 Goal: add the shared proof tools: a seeded large-corpus fixture, a server
 load-count assertion, and a fix-completeness gate scaffold.
@@ -35,8 +34,11 @@ load-count assertion, and a fix-completeness gate scaffold.
   whole-corpus loader. Baseline re-run and recorded in
   [`../latest-verification.md`](../latest-verification.md).
 - [`fix-completeness-gate-scaffold.md`](slices/phase-0-baseline-foundations/fix-completeness-gate-scaffold.md) -
-  not started. Standing test that registers each scheduled fix by id and fails
-  when a registered gate is missing or renamed. Seed planned ids as `PLANNED`.
+  IMPLEMENTED. `src/ts/__tests__/fixCompletenessGate.test.ts` registers every
+  scheduled fix by id (`PLANNED` until its phase lands), keeps explicit
+  `INTENTIONALLY_GATED`/`NO_ACTION` lists, scrapes the finding universe from
+  the audit doc, and mirrors phase routing + status against
+  `active-risk-analysis.md` — drift in either direction fails.
 
 ## Planned Shape
 
@@ -55,7 +57,7 @@ load-count assertion, and a fix-completeness gate scaffold.
       both suites.
 - [x] A server-side load-count assertion exists and can fail a test
       when a hot path performs a whole-corpus load.
-- [ ] The fix-completeness gate scaffold exists, lists all scheduled finding ids,
+- [x] The fix-completeness gate scaffold exists, lists all scheduled finding ids,
       and fails if a registered (non-`PLANNED`) gate goes missing.
 - [x] No runtime behavior changed; the baseline in
       [`../latest-verification.md`](../latest-verification.md) is re-run and

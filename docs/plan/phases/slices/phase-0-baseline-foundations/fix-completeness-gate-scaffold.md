@@ -1,11 +1,40 @@
 # Fix-Completeness Gate Scaffold
 
-Status: not started. Phase 0. No runtime change.
+Status: implemented. Phase 0. No runtime change.
 
 ## Scope
 
 Create the Phase 8 gate scaffold: a registry from finding id to phase, status,
 and eventual regression test. Seed scheduled ids as `PLANNED` and fail on drift.
+
+## What Landed
+
+`src/ts/__tests__/fixCompletenessGate.test.ts` (8 tests, pure static — no app
+harness), the path Phase 8 expects:
+
+- `SCHEDULED_FIXES` — all 56 scheduled ids (`H1`-`H3`, the 14 mediums, the 37
+  scheduled lows, `U1`, `U4`) as `{ id, phase, fix, status: 'PLANNED' }`.
+  A landing fix flips its entry to `DONE` with a repo-root-relative
+  `testPath` (+ optional `testName` containment check); server-side gates are
+  referenced by path so this one client-suite test asserts their existence.
+- `INTENTIONALLY_GATED` (L4, L7, L26, U2) and `NO_ACTION` (U3 + the dismissed
+  R1-R5, in the audit's bullet order), each with a reason.
+- Self-checks parse the docs rather than trusting the registry:
+  - the finding universe is scraped from
+    `audit-stability-and-performance.md` (H/M headings, L table rows, U
+    bullets) — a new audit id without a registry entry fails, as does a
+    double-classified or unknown id;
+  - phase routing and gated bullets are mirrored against
+    `active-risk-analysis.md` — rerouting a finding in the doc fails the gate
+    until the registry follows (and vice versa);
+  - status is kept in lockstep: a doc row flipped to `DONE (<commit>)` fails
+    until the registry entry is `DONE` with a real test, and vice versa;
+  - `collectGateProblems` validates `DONE` entries (existing `testPath`,
+    contained `testName`, no test claimed while `PLANNED`) — proven by
+    negative cases (missing path, renamed test, pathless DONE, premature
+    PLANNED claim) plus a real-path positive control.
+- Drift behavior verified by hand: doc-DONE-only, new audit id `L41`, and a
+  phase reroute each fail exactly one self-check.
 
 ## Source Anchors
 
@@ -15,32 +44,22 @@ and eventual regression test. Seed scheduled ids as `PLANNED` and fail on drift.
 - [`../../../active-risk-analysis.md`](../../../active-risk-analysis.md) - the
   finding -> phase -> status map this gate mirrors.
 - `src/ts/__tests__/cloneCostGateCompleteness.test.ts` - the landed
-  self-checking gate to model (scan + assert; `INTENTIONALLY_BROAD` exclusions).
-
-## Planned Shape
-
-- A single registry literal: `id -> { phase, status: 'PLANNED'|'DONE',
-  testPath?, testName? }`.
-- Explicit `INTENTIONALLY_GATED` (L4, L7, L26, U2) and `NO_ACTION` (U3 + the five
-  dismissed) lists so the registry universe equals the audit universe.
-- A self-check that fails when a `DONE` id points to a missing test, an audit id
-  is unregistered, or an id is double-classified.
-- Lives in the client suite (it can read both client and server test paths as
-  strings) like the existing completeness test.
+  self-checking gate modeled (scan + assert; `INTENTIONALLY_BROAD` exclusions).
 
 ## Behavior / Invariants
 
 - Test-only. In Phase 0 every scheduled id is `PLANNED`; later phases flip ids
-  to `DONE`.
+  to `DONE`. Flipping requires updating BOTH the registry and
+  `active-risk-analysis.md` — the lockstep check enforces the pairing.
 
 ## Done Criteria
 
-- The gate scaffold exists, enumerates all audit finding ids, and passes with
-  everything `PLANNED`.
-- The gate fails in a unit test when a `DONE` entry points at a missing test (a
-  deliberate negative case proves the self-check works).
+- [x] The gate scaffold exists, enumerates all audit finding ids, and passes
+      with everything `PLANNED`.
+- [x] The gate fails in a unit test when a `DONE` entry points at a missing
+      test (the negative self-proof case).
 
 ## Validation
 
-- `pnpm test -- <the gate test path>`.
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts`.
 - `pnpm test`, both TypeScript checks.

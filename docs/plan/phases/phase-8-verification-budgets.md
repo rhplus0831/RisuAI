@@ -1,7 +1,9 @@
 # Phase 8: Verification Budgets
 
-Status: not started (standing). Keeps every scheduled fix's regression proof
-registered and keeps the verification record current.
+Status: standing — the Phase 0 scaffold is live at
+`src/ts/__tests__/fixCompletenessGate.test.ts` (all ids `PLANNED`). Keeps every
+scheduled fix's regression proof registered and keeps the verification record
+current.
 
 Goal: prevent silent regression. Every fix in Phases 1-7 registers its test by
 finding id. The gate fails if a registered proof is missing or if runtime code

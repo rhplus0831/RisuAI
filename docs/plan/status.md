@@ -7,19 +7,20 @@ only the phase or slice needed for the task.
 
 The plan schedules 57 confirmed findings (3 high, 14 medium, 40 low) from
 [`audit-stability-and-performance.md`](audit-stability-and-performance.md) across
-Phases 0-8. Phase 0's measurement slice is implemented; no runtime fix has
-landed yet.
+Phases 0-8. Phase 0 is complete (foundations only); no runtime fix has landed
+yet. Next is Phase 1 (H1 first).
 
 ## Current Snapshot
 
-All findings are routed. Finish Phase 0, then Phase 1. Phases 2-7 group the
-mediums/lows by root cause. Phase 8 is the standing gate.
+All findings are routed. Phase 0 is done; start Phase 1. Phases 2-7 group the
+mediums/lows by root cause. Phase 8 is the standing gate (its scaffold is
+live).
 
-- [Phase 0](phases/phase-0-baseline-foundations.md) — in progress. The
-  measurement slice landed (shared large-corpus fixture +
-  `assertScopedLoadOnHotPath` server load-count harness, with the H1/U1
-  breadth detections as self-proof). The fix-completeness gate scaffold is the
-  remaining slice. No runtime change.
+- [Phase 0](phases/phase-0-baseline-foundations.md) — COMPLETE. Shared
+  large-corpus fixture + `assertScopedLoadOnHotPath` server load-count harness
+  (with the H1/U1 breadth detections as self-proof), and the fix-completeness
+  gate scaffold (`src/ts/__tests__/fixCompletenessGate.test.ts`, all ids
+  `PLANNED`, doc-mirrored, fails on drift). No runtime change.
 - [Phase 1](phases/phase-1-high-severity-hot-paths.md) — not started. H1, H2,
   H3: hydration guard, chat-selection snapshot, streaming coalescing.
 - [Phase 2](phases/phase-2-server-load-narrowing.md) — not started. M1, M3, M4,
@@ -34,8 +35,9 @@ mediums/lows by root cause. Phase 8 is the standing gate.
   memory fairness and Lua budget/engine reuse.
 - [Phase 7](phases/phase-7-memoization-and-hygiene.md) — not started. M2, L3,
   L8, L9, L37-L40: memoization and hygiene.
-- [Phase 8](phases/phase-8-verification-budgets.md) — not started. All findings:
-  self-checking fix-completeness gate.
+- [Phase 8](phases/phase-8-verification-budgets.md) — standing; scaffold live
+  (`fixCompletenessGate.test.ts`). Flip ids `PLANNED` -> `DONE` (registry +
+  [`active-risk-analysis.md`](active-risk-analysis.md) together) as fixes land.
 
 ## Open Risk Router
 
