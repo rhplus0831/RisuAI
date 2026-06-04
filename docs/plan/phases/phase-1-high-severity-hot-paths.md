@@ -1,6 +1,7 @@
 # Phase 1: High-Severity Hot Paths
 
-Status: not started. Three independent slices. Depends on the Phase 0 harness.
+Status: in progress. H1 landed (`0dc7452e`); H2 and H3 remain. Three
+independent slices. Depends on the Phase 0 harness.
 
 Goal: fix the three high-severity hot paths. H1 is the highest-leverage guard,
 H2 mirrors the landed char-select fix, and H3 removes quadratic streaming parse
@@ -27,8 +28,8 @@ work.
 ## Slices
 
 - [`h1-hydration-fallback-guard.md`](slices/phase-1-high-severity-hot-paths/h1-hydration-fallback-guard.md) -
-  early-return `loadChatHydration` on `message.length > 0`; keep fallback for
-  zero-row not-yet-extracted chats.
+  DONE (`0dc7452e`): early-return `loadChatHydration` on `message.length > 0`;
+  fallback kept for zero-row not-yet-extracted chats.
 - [`h2-chat-selection-snapshot.md`](slices/phase-1-high-severity-hot-paths/h2-chat-selection-snapshot.md) -
   add a scalar `ChatSelectionSnapshot`/`restoreChatSelection` pair (mirroring
   `CharacterSelectionSnapshot`) and use it in `changeChatTo` instead of the
@@ -49,9 +50,11 @@ work.
 
 ## Exit Criteria
 
-- [ ] H1: `loadChatHydration` does not call `loadPersisted` for a chat that has
+- [x] H1: `loadChatHydration` does not call `loadPersisted` for a chat that has
       message-table rows and no `chat_hypa_v3` row; the not-yet-extracted
       (zero-rows) fallback still works. Regression test asserts the load-count.
+      DONE (`0dc7452e`): both proofs live in
+      `server/fastify/__tests__/serverLoadCostHarness.test.ts`.
 - [ ] H2: `changeChatTo` captures a scalar chat-selection snapshot; a clone-cost
       test proves it does not clone the `characters` array; a rollback-correctness
       test proves a failed select restores only `chatPage`/`selectedChar` and does

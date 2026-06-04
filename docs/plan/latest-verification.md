@@ -44,6 +44,13 @@ Recorded from the shared large-corpus fixture before any fix lands.
 - The load *count* is the durable gate signal; the timings document why the
   counts matter.
 
+## Post-Fix Measurements
+
+- Phase 1 H1 (`0dc7452e`): no-hypa chat hydration on the default fixture is now
+  **0 corpus loads, ~1.6ms** (was 13 loads; ~13ms at the 9.6MB scale corpus).
+  The zero-row not-yet-extracted fallback keeps its documented breadth
+  (regression-tested in `serverLoadCostHarness.test.ts`).
+
 ## How To Reproduce The Costs Being Fixed
 
 - Server stage timings (H1, M1, M3, M4, M5, M10): run server tests with
@@ -63,3 +70,4 @@ Recorded from the shared large-corpus fixture before any fix lands.
 | 2026-06-04 | Plan opened; no runtime change | Baseline carried from `6861494d` (above); not re-run as part of writing the plan. |
 | 2026-06-04 | Phase 0 measurement-baseline-harness slice (test-only) | `pnpm test` 1059/4, `pnpm api:test` 1639/1, audit green, both tsc checks zero errors. Pre-fix fixture measurements recorded above. |
 | 2026-06-04 | Phase 0 fix-completeness-gate-scaffold slice (test-only) — PHASE 0 COMPLETE | `pnpm test` 1067/4 (+8 `fixCompletenessGate.test.ts`), audit green, both tsc checks zero errors. Server suite untouched (1639/1 carried). Drift behavior hand-verified: doc-DONE-only, new audit id, phase reroute each fail one self-check. |
+| 2026-06-04 | Phase 1 H1 slice (`0dc7452e` fix + gate/doc flip) | `pnpm api:test` 1640/1 (+1 zero-row fallback regression; H1 control flipped to `assertScopedLoadOnHotPath`), `pnpm test` 1067/4 (gate flip, no count change), audit green, both tsc checks zero errors. No-hypa hydration: 0 corpus loads (was 13). |

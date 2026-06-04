@@ -1,7 +1,18 @@
 # H1 — Chat-Message Hydration Fallback Guard
 
-Status: not started. Phase 1. Highest-leverage fix: a guard change that removes
-a whole-corpus parse from chat-open and generation completion.
+Status: IMPLEMENTED (`0dc7452e`). Phase 1. Highest-leverage fix: a guard change
+that removes a whole-corpus parse from chat-open and generation completion.
+
+Landed shape: `loadChatHydration` early-returns whenever `message.length > 0`
+(messages table authoritative once populated; extraction writes messages and
+hypaV3Data together). The `loadPersisted` fallback remains for zero-row
+not-yet-extracted chats. Proof in
+`server/fastify/__tests__/serverLoadCostHarness.test.ts`: the no-hypa hydration
+is asserted scoped (0 corpus loads, was 13 on the default fixture), and a new
+zero-row regression (raw chats row with embedded `message`, no messages-table
+rows) proves the defensive fallback still hydrates from the embedded copy.
+Gate `H1` flipped to DONE in `fixCompletenessGate.test.ts` +
+`active-risk-analysis.md`.
 
 ## Scope
 

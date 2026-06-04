@@ -2,11 +2,10 @@
 
 Date: 2026-06-04
 
-Phase 0 is complete (fixture + server load-count harness + fix-completeness
-gate scaffold). Start Phase 1. Every fix needs a regression test, a Phase 8
-gate flip (`fixCompletenessGate.test.ts` registry `PLANNED` -> `DONE` with the
-test path), and the matching status flip in
-[`active-risk-analysis.md`](active-risk-analysis.md) — the gate fails unless
+Phase 1 is in progress: H1 landed (`0dc7452e`); H3 and H2 are next. Every fix
+needs a regression test, a Phase 8 gate flip (`fixCompletenessGate.test.ts`
+registry `PLANNED` -> `DONE` with the test path), and the matching status flip
+in [`active-risk-analysis.md`](active-risk-analysis.md) — the gate fails unless
 both move together.
 
 ## Start Point
@@ -28,21 +27,19 @@ both move together.
 
 In leverage order. Each is independent unless noted.
 
-1. H1 — `loadChatHydration` guard (`server/fastify/src/repository.ts:1061`).
-   One-line change: early-return whenever `message.length > 0` so a non-HypaV3
-   chat-open / generation completion stops falling into `loadPersisted`. The
-   load-count test exists: flip the "CURRENT breadth (audit H1)" block in
-   `server/fastify/__tests__/serverLoadCostHarness.test.ts` to
-   `assertScopedLoadOnHotPath`.
-2. H3 — streaming render coalescing. Buffer token frames, flush at most once per
+1. H3 — streaming render coalescing. Buffer token frames, flush at most once per
    animation frame, and keep a full-fidelity flush on `done`.
-3. H2 — `ChatSelectionSnapshot`. Add a scalar chat-selection snapshot/restore
+2. H2 — `ChatSelectionSnapshot`. Add a scalar chat-selection snapshot/restore
    pair (mirror the landed `CharacterSelectionSnapshot`) and use it in
    `changeChatTo`.
-4. Phase 2 — server load narrowing. Start with scoped assembly load (M1), then
+3. Phase 2 — server load narrowing. Start with scoped assembly load (M1), then
    command-mutation read narrowing (M3, L5, L6).
-5. After the highs and Phase 2, pick Phase 3-7 by current pain. Refresh
+4. After the highs and Phase 2, pick Phase 3-7 by current pain. Refresh
    [`latest-verification.md`](latest-verification.md) after each phase.
+
+Done so far: H1 — `loadChatHydration` guard, DONE (`0dc7452e`): early-return on
+`message.length > 0`; scoped + zero-row-fallback regression tests in
+`server/fastify/__tests__/serverLoadCostHarness.test.ts`.
 
 ## Not First
 

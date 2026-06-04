@@ -49,7 +49,14 @@ interface ScheduledFix {
 
 const SCHEDULED_FIXES: ScheduledFix[] = [
   // High (Phase 1)
-  { id: 'H1', phase: 1, fix: 'loadChatHydration guard on message.length > 0', status: 'PLANNED' },
+  {
+    id: 'H1',
+    phase: 1,
+    fix: 'loadChatHydration guard on message.length > 0',
+    status: 'DONE',
+    testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+    testName: 'H1 guard: hydration of a chat WITHOUT a chat_hypa_v3 row stays scoped',
+  },
   { id: 'H2', phase: 1, fix: 'Scalar ChatSelectionSnapshot for changeChatTo', status: 'PLANNED' },
   { id: 'H3', phase: 1, fix: 'Coalesce token-driven renders; final flush on done', status: 'PLANNED' },
   // Medium
