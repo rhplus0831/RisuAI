@@ -43,8 +43,9 @@ under `withTrustedServerProjectionWrite`.
   `restoreCharacterRow()` (`characterCommands.ts`)
   Captures: index/id, one cloned character row, and selection scalars.
   Restores: that character row plus `selectedCharID` / `currentChar`.
-  Used for: `setCurrentCharacter`, `setCharacterByIndex`, character field edits,
-  image/emotion.
+  Used for: `setCurrentCharacter`, `setCharacterByIndex`, and character field
+  edits routed through those helpers. Image/emotion and other lower-frequency
+  callers remain broad pending Phase 7.
 - `currentGlobalLorebookStateSnapshot()` / `restoreGlobalLorebookState()`
   (`lorebookBridge.svelte.ts`)
   Captures: `loreBook`, `loreBookPage`, and `selectedCharID`.
@@ -66,8 +67,9 @@ under `withTrustedServerProjectionWrite`.
   wrong row.
 - `ChatScriptstateSnapshot` shallow-clones only the `scriptstate` map (small
   key/value object), not the chat; `note` is a scalar.
-- Do not modify the heavy `current*StateSnapshot` / `restore*State`; they stay for
-  create/delete/reorder/fork (Prerequisite 4).
+- The heavy `current*StateSnapshot` / `restore*State` helpers remain for true
+  restructures and deferred lower-frequency callers; later slices should only keep
+  hot paths from reaching them.
 
 ## Done
 

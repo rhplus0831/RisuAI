@@ -21,19 +21,13 @@ Phase 8 proof batch. Avoid broad cleanup passes.
 
 ## Current Best Targets
 
-Phases 0, 1, 2, 3, 4, and 5 have landed. The next work is Phases 6-7 (independent,
-any order).
+Phases 0-5 have landed. The next work is Phases 6-7 (independent, any order).
 
-- DONE: Phase 0 snapshot kit + clone-cost harness; Phase 1 primary guard
-  copy-on-write fix; Phase 2 all six snapshot-family slices
-  (`e5e183da` -> `9547ba3e`); Phase 3 cheap wins (reroll `ed4e0af0`, `runTrigger`
-  `f4855e24`); Phase 4 script-definition watcher scoped rollback (`2ec1ea40`);
-  Phase 5 prompt-template keystroke narrowing (`c5fc5967` + `64804305`, with the
-  debounce-coalescing sub-step deferred). Broad snapshots still exist for
-  restructures plus lower-frequency or deferred callers.
-- NEXT: any focused Phase 6-7 cleanup — Phase 6 (lorebook watcher scope) or a
-  Phase 7 opportunistic item. Optionally revisit the deferred Phase 5 debounce
-  coalescing.
+- DONE: Phases 0-5, including the `48d473dc` `runTrigger` guard fix and the
+  Phase 5 `PromptDataItem` single-clone update (`64804305`). Broad snapshots still
+  exist for restructures plus lower-frequency or deferred callers.
+- NEXT: one focused Phase 6 or Phase 7 item. Optionally revisit the deferred
+  Phase 5 debounce coalescing.
 - FIXED (`48d473dc`): `setVar`/`v2SetVar` previously wrote scriptstate directly to
   the read-only projection, so a client `manual`/slash `setVar` trigger threw under
   the Fastify guard. Now routed through `syncActiveChatScriptstate`

@@ -78,8 +78,9 @@ scriptstate, reroll, character, and global-lorebook hot callers onto scoped
 snapshots, Phase 4 moved the script-definition watcher onto a scoped per-row
 rollback, and Phase 5 narrowed the prompt-template editor keystroke to an
 in-place single-item write plus a revision-gated reconcile. Remaining broad
-callers are lower-frequency restructure, import, sidebar/MCP, lorebook-watcher,
-and image-emotion paths tracked in Phases 6-7.
+runtime work is Phase 6's DB-wide lorebook watcher plus the Phase 7 low-priority
+cleanup inventory. Genuine restructures/imports keep broad snapshots by design
+unless a later focused slice says otherwise.
 
 The reference fix `c9e728b1` narrowed character select to a scalar snapshot. With
 the guard amplifier removed by Phase 1, Phase 2 applied the same shape to the main
@@ -145,7 +146,8 @@ site is narrowed:
 - [4. Script-Definition Watcher](phases/phase-4-script-definition-watcher.md):
   avoid full characters/modules reads per watcher fire.
 - [5. Prompt-Template Editor Keystroke Costs](phases/phase-5-prompt-template-keystroke.md):
-  debounce projection writes and avoid whole-template stringify checks.
+  write one edited item synchronously, roll back one item on command failure, and
+  revision-gate draft reconciliation; debounce coalescing remains deferred.
 - [6. Lorebook Watcher Scope](phases/phase-6-lorebook-watcher-scope.md): scope
   lorebook collection to the mounted panel.
 - [7. Opportunistic Cleanups](phases/phase-7-opportunistic-cleanups.md):
@@ -155,9 +157,9 @@ site is narrowed:
 
 ## Execution Cursor
 
-Phases 0, 1 (primary guard), 2, and 3 are implemented, and the `48d473dc`
-`runTrigger` scriptstate guard follow-up is fixed. Start the next batch with any
-focused Phase 4-7 cleanup; Phase 8 is the standing verification layer.
+Phases 0-5 are implemented. Phase 1's batching slice and Phase 5's debounce
+coalescing remain deferred optional sub-steps. Start runtime work with Phase 6 or
+Phase 7; Phase 8 remains the planned clone-cost gate-completeness layer.
 
 For every narrowed path: capture a narrow rollback, restore only mutated fields,
 keep full clones for restructures, and add a regression test proving the path

@@ -15,6 +15,9 @@ instead of rebuilding a DB-wide lore stringify map on each fire.
   `collectLorebookCollectionSnapshots` (the all-chats-of-all-characters
   `snapshotJson` loop; the `delayMs` debounce wraps only the dispatch) and
   `watchServerBackedLorebooks` (the mounting `$effect`).
+- `src/ts/server/lorebookBridge.svelte.ts` -
+  `hydratedCharacterLorebooks` / `isCharacterLorebookHydrated`; the current
+  no-data-loss guard only snapshots hydrated character `globalLore`.
 - `src/lib/Setting/lorepreset.svelte`,
   `src/lib/Setting/Pages/Module/ModuleMenu.svelte`, and
   `src/lib/SideBars/LoreBook/LoreBookSetting.svelte` - the mounting panels.
@@ -33,6 +36,8 @@ instead of rebuilding a DB-wide lore stringify map on each fire.
   `localLore` loop down to the chats of the selected character, and the open
   module instead of all modules, in `collectLorebookCollectionSnapshots`.
 - Keep `snapshotJson`; this slice reduces entries per fire, not per-entry cost.
+- Preserve the hydrated-character lorebook registry: never persist re-stubbed or
+  never-hydrated character `globalLore`.
 
 ## Behavior / Invariants
 
@@ -41,6 +46,8 @@ instead of rebuilding a DB-wide lore stringify map on each fire.
 - The debounced dispatch is unchanged.
 - Lorebook persistence and projection are unaffected (this is a change-detection
   cost only).
+- The existing no-data-loss invariant for character `globalLore` stubs remains
+  intact.
 
 ## Done When
 
@@ -50,6 +57,7 @@ instead of rebuilding a DB-wide lore stringify map on each fire.
   entries/bytes per fire).
 - An edit within the panel's scope still dispatches; nothing within scope is
   missed.
+- Existing character-lorebook hydration / no-data-loss tests stay green.
 - `pnpm test` and `pnpm client-thinning:audit` are green.
 
 ## Validation

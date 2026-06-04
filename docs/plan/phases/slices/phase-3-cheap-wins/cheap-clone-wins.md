@@ -21,32 +21,16 @@ reroll dispatch clones, and return early in `runTrigger` before char/chat clones
   `triggers.length === 0` return.
 - `src/ts/process/sendChatCompletion.ts` - the `recordGeneratedReroll` caller.
 
-## Target Implementation (as landed)
+## Implemented Shape
 
-1. Reroll tail clone: swap the slice/clone order so only the tail is
-   deep-cloned:
-   `rerolls.push(safeStructuredClone(message.slice(previousLength)))`.
-   Byte-identical and O(tail). **Landed verbatim.**
-2. Redundant reroll clones: dropped `safeStructuredClone(record.message)` in
-   `applyTailSlice`; the rows are passed to dispatch by reference (the dispatch
-   still snapshots each row via `toMessageSnapshot`). IDs are minted inside the
-   `withTrustedServerProjectionWrite` block so read-only rows are not mutated.
-   `reroll()` now uses a shallow tail copy only to find the truncation point and
-   regenerate target, then truncates the live transcript in place
-   (`applyRerollTruncate`) instead of installing a shallow-popped array. The
-   surviving rows stay as the projection's own rows, and dispatch payloads are
-   unchanged.
-3. `runTrigger` early return: `triggers` is computed first (each definition mapped
-   to a fresh object carrying `lowLevelAccess`, so the working character is not
-   mutated in place; the display path keeps its historical in-place write) and
-   `return null` runs before any clone when empty. The trigger-bearing path clones
-   only the active chat; the whole-character deep clone is **lazy**
-   (`materializeChar`), paid at most once per pass and only when a data effect
-   installs the character (`v2SetCharacterDesc`, `v2SetReplaceGlobalNote`, the six
-   `v2*Lorebook*` effects). A pure shallow character would have been re-installed
-   by `setCurrentCharacter` with read-only proxy `chats`, poisoning later writes —
-   the lazy deep clone keeps the install clean while skipping the clone entirely on
-   the common (read-only / `setVar`) trigger path.
+- `recordGeneratedReroll` clones only the reroll tail.
+- `applyTailSlice` passes rows by reference, and regenerate uses
+  `applyRerollTruncate` to truncate the live transcript instead of reinstalling a
+  cloned transcript.
+- `runTrigger` computes trigger definitions before cloning; zero-trigger passes
+  return clone-free. Trigger-bearing paths clone only the active chat unless a
+  data effect needs `materializeChar`, which performs one lazy whole-character
+  clone to avoid reinstalling read-only proxy rows.
 
 ## Behavior / Invariants
 
@@ -65,7 +49,7 @@ reroll dispatch clones, and return early in `runTrigger` before char/chat clones
   cloning for zero-trigger characters and clones only the active chat otherwise
   (clone-cost harness proves each).
 - Reroll navigation, dispatched messages, and trigger output are byte-identical.
-- `pnpm test` is green (1003 / 4 skipped).
+- Landing verification was green.
 
 ## Follow-Up Guard Fix
 

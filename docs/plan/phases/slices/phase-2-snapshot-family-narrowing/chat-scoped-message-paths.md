@@ -2,21 +2,11 @@
 
 Status: implemented. Phase 2. Depends on the Phase 0 `currentChatScopedSnapshot`.
 
-Landed: the message-edit/send paths capture `currentChatScopedSnapshot()` instead
-of `currentChatStateSnapshot()`. The dispatch surface gained chat-scoped
-parallel variants sharing a rollback core: `dispatchUpdateMessageScoped`,
-`dispatchDeleteMessageScoped`, `dispatchTruncateMessagesScoped`,
-`dispatchReplaceMessagesScoped`, `dispatchUpdateChatScoped`, and
-`dispatchCompatibleChatUpdateScoped` — each rolling back via
-`restoreChatScopedState`. The broad helpers stay for restructure/fork and
-legacy/lower-frequency callers.
-`Chat.svelte` (rm/edit/partial-edit/bookmark/disable/scissors/role),
-`DefaultChatScreen.svelte` (sendMain — double clone collapsed to
-`liveChat.message = cha` — and the empty-slot button), `command.ts`
-(`mutateCurrentChatMessages` reuses `previousChat` as the scoped rollback,
-dropping the full-corpus snapshot), and `appendCurrentChatUserMessageForSend`
-all narrowed; the fork handler keeps the full snapshot (restructure). Proof:
-`dispatchReplaceMessagesScoped` sibling-isolation rollback test in
+Implemented: send, empty-slot, per-message edit/delete/bookmark/etc., and
+slash-command message mutation now capture `currentChatScopedSnapshot()` and use
+scoped chat dispatchers that roll back via `restoreChatScopedState`.
+`sendMain` also dropped its extra current-chat clone. Fork/restructure and
+lower-frequency callers keep the broad helpers. Proofs live in
 `chatCommands.test.ts`.
 
 ## Scope

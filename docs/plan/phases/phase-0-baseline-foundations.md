@@ -69,9 +69,8 @@ narrowing reusable and provable; it does not change hot-path behavior.
       snapshot assertions and the clone-primitive instrumentation.
 - [x] The reference fix's existing tests still pass; the new kit tests reuse the
       harness's structural and rollback-correctness assertions (no behavior change).
-- [x] At Phase 0 landing, no hot-path call site was changed; `pnpm test`
-      (975 passed / 4 skipped) and `pnpm api:test` (1632 passed / 1 skipped) were
-      green, plus the audit and both type checks. Later current verification is in
+- [x] At Phase 0 landing, no hot-path call site was changed; landing verification
+      was green. Current maintained verification is in
       [`../latest-verification.md`](../latest-verification.md).
 
 ## Validation

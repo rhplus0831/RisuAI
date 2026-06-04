@@ -19,6 +19,13 @@ Principle: do not clone the whole characters array, whole `Database`, or full
 message history for scalar-only hot paths. Keep full clones for real
 restructures.
 
+Remaining runtime work:
+
+- Phase 6: scope the lorebook watcher collector to the mounted panel.
+- Phase 7: low-priority CBS, observer, image/emotion, regex, parser, render-log,
+  persona, and `SideChatList` cleanups.
+- Deferred: Phase 5 debounce coalescing.
+
 ## Risk Map
 
 - Projection write guard: implemented in Phase 1. Guarded writes now unwrap to a
@@ -109,6 +116,7 @@ restructures.
   `src/ts/process/command.ts`, `src/ts/storage/database.svelte.ts`.
 - Call sites: `src/lib/ChatScreens/DefaultChatScreen.svelte`,
   `src/lib/ChatScreens/Chat.svelte`, `src/lib/Setting/Pages/PromptSettings.svelte`,
+  `src/ts/server/promptTemplateBridge.svelte.ts`, `src/lib/UI/PromptDataItem.svelte`,
   `src/lib/Setting/lorepreset.svelte`.
 - Reference fix and proof template: `c9e728b1`,
   `src/ts/compatibilityAdapters.test.ts`.

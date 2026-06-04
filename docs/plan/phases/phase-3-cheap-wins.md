@@ -70,8 +70,5 @@ The landed shapes preserve the win while staying guard-safe:
 - `pnpm exec vitest run rerollNavigation` (unit + rollback + guard suites, incl.
   the new Phase 3 clone-cost + guard-on regenerate tests)
 - `pnpm exec vitest run triggers.projectionGuard triggers.cloneCost`
-- `pnpm test` - green, 1003 passed / 4 skipped (105 files)
-- `pnpm api:test` - green, 1632 passed / 1 skipped (93 files)
-- `pnpm client-thinning:audit` - green
-- Type check: `tsconfig.client-lib.json` build then
-  `server/fastify/tsconfig.json --noEmit` - both zero errors
+- Landing verification was green. Current maintained verification is in
+  [`../latest-verification.md`](../latest-verification.md).

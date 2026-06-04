@@ -17,18 +17,15 @@ rollback only at dispatch.
   `watchServerBackedScriptDefinitions`, `currentScriptDefinitionStateSnapshot`,
   `dispatchWatchedReplacement`, and `collectScriptDefinitionCollectionSnapshots`.
 
-## Target Implementation (done)
+## Implemented Shape
 
 - Dropped `currentScriptDefinitionStateSnapshot()` / `previousState` from the
   effect (and the watcher-setup baseline call).
 - `collectScriptDefinitionCollectionSnapshots()` is now the effect's only
   change-detection input and its only per-fire serialization.
-- Rollback is built inside `dispatchWatchedReplacement`: it parses the prior
-  per-key snapshot string (`parseSnapshotArray`) into a single-row
-  `ScopedScriptDefinitionRollback` (`characterScripts` / `characterTriggers` /
-  `moduleScripts` / `moduleTriggers`). `rollbackServerBackedScriptDefinitions`
-  discriminates on `'kind'` and routes scoped rollbacks through
-  `restoreScopedScriptDefinition` (find-by-id, restore one field).
+- Rollback is built inside `dispatchWatchedReplacement` as a single-row
+  `ScopedScriptDefinitionRollback`, then routed through
+  `restoreScopedScriptDefinition`.
 - The dispatch functions take a `ScriptDefinitionRollback` union, so the discrete
   full-snapshot callers (`modules.ts`, MCP) keep working without change.
 - `ensureAllClientScriptDefinitionIds()` stays in the effect: it is an

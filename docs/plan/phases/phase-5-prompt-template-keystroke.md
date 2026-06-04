@@ -21,8 +21,9 @@ array and stringifying the whole template twice per keystroke.
 ## Slices
 
 - [`prompt-template-keystroke-costs.md`](slices/phase-5-prompt-template-keystroke/prompt-template-keystroke-costs.md) -
-  debounce the optimistic projection write, mutate only the edited item, and
+  write the edited item synchronously, roll back one item on command failure, and
   replace double-stringify change detection with a server-revision discriminator.
+  Debounce coalescing remains deferred.
 
 ## Exit Criteria
 

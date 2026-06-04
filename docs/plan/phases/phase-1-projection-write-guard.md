@@ -76,9 +76,9 @@ are unchanged; only the snapshot strategy changed. Proof:
       per-wrap-memo fix restores fresh nested proxy identities so no consumer that
       depended on a fresh proxy per write regresses (the hydration reactivity test
       caught and now guards this).
-- [x] `pnpm test` (982 passed / 4 skipped), `pnpm api:test` (1632 passed /
-      1 skipped), and `pnpm client-thinning:audit` are green; the optimistic-write
-      guard invariants still hold.
+- [x] Landing verification was green, and the optimistic-write guard invariants
+      still hold. Current maintained verification is in
+      [`../latest-verification.md`](../latest-verification.md).
 
 ## Validation
 

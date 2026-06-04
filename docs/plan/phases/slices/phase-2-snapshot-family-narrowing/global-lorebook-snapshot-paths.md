@@ -3,31 +3,14 @@
 Status: implemented. Phase 2. Depends on the Phase 0
 `currentGlobalLorebookStateSnapshot` and the existing `scopedLorebookStateSnapshot`.
 
-Landed: `lorepreset.svelte` select/create/delete capture
-`currentGlobalLorebookStateSnapshot()` instead of `currentLorebookStateSnapshot()`,
-and `dispatchSelectGlobalLorebook` / `dispatchCreateGlobalLorebook` /
-`dispatchDeleteGlobalLorebook` now take a `GlobalLorebookStateSnapshot` and roll back
-via `restoreGlobalLorebookState` (only `loreBook` / `loreBookPage`, never the
-characters + modules clone). The 6 `triggers.ts` v2 lorebook effects route through a
-new `persistCharacterLorebookEdit(char, prevGlobalLore)` helper that captures the
-entry list BEFORE the in-place edit and rolls back via
-`scopedLorebookStateSnapshot('character:'+chaId, prevGlobalLore)` (one character's
-`globalLore` only). The redundant `setCurrentCharacter(char)` re-clone is gone —
-the helper writes back with `{ dispatchServerCommand: false }` (no character-row
-snapshot, no character PATCH, which was always an empty no-op since `globalLore` is
-excluded from character patches). Dropping `currentLorebookStateSnapshot()` from the
-trigger path also removes its per-call `ensureAllClientLorebookIds()` full-tree walk
-(the watcher still ensures ids once behind its `clientIdsInitialized` gate, and the
-dispatch ensures entry ids itself).
-
-Proof: `lorebookBridge.test.ts` "Phase 2 global-lorebook scoped dispatch" (a failed
-`dispatchSelectGlobalLorebook` restores only the pointer, sibling character edit
-survives) and `triggers.projectionGuard.test.ts` "Phase 2 trigger lorebook scoped
-rollback" (a failed v2 lorebook trigger restores only the one character's
-`globalLore`, sibling untouched). The 6 existing trigger guard tests still pass.
-
-Out of scope (still hold the broad `currentLorebookStateSnapshot`): the LoreBook
-sidebar panels, MCP risuaccess, and `lorebook.svelte.ts` / `modules.ts` callers.
+Implemented: global-lorebook select/create/delete uses
+`currentGlobalLorebookStateSnapshot()` and rolls back only `loreBook` /
+`loreBookPage`. The six v2 lorebook trigger effects persist through
+`persistCharacterLorebookEdit`, capturing the previous `globalLore` and rolling
+back one character's lorebook; the redundant character re-clone is gone. Proofs
+live in `lorebookBridge.test.ts` and `triggers.projectionGuard.test.ts`. The
+LoreBook sidebar panels, MCP risuaccess, and `lorebook.svelte.ts` / `modules.ts`
+callers still hold the broad `currentLorebookStateSnapshot`.
 
 ## Scope
 

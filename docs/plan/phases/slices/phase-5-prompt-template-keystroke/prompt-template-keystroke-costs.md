@@ -20,26 +20,17 @@ double-stringifying it on each keystroke.
 - `src/lib/UI/PromptDataItem.svelte` - the per-keystroke single-PromptItem
   stringify + double `clonePromptItem` (bounded; optional co-fix).
 
-## Target Implementation
+## Implemented Shape
 
-1. (Deferred) Debounce the projection write. Coalescing the optimistic write into
-   the 250 ms server-command timer is deferred: after step 2 the dominant
-   whole-array clone is gone and the guarded write is O(1), so this only saves the
-   per-keystroke guard wrap, while keeping the write synchronous preserves the
-   projection as authoritative for `templateCheck` warns and the revision-gated
-   reconcile. See the phase doc's Deferred note.
-2. (Done) Mutate only the edited item. `applyPromptItemProjectionWrite` finds the
-   item by id in the projection and assigns one row
-   (`template[index] = cloneJsonValue(item)`) instead of replacing the whole
-   array; `restorePromptItemProjectionWrite` does the same for the rollback. Falls
-   back to a full sync only when the projection has no row with that id yet.
-3. (Done) Cheap change detection. `reconcilePromptTemplateDraft` uses
-   `peekCachedServerCommandRevision()` as the discriminator and only re-pulls
-   `serverValue` when the revision advances; it reads `DBState.db.promptTemplate`
-   first so the caller `$effect` still re-runs on a projection change. A keystroke
-   (no revision advance) runs zero whole-template stringify passes.
-4. (Done) `PromptDataItem.svelte`: clones the edited item once per change instead
-   of twice.
+- `applyPromptItemProjectionWrite` writes one prompt item in place, and
+  `restorePromptItemProjectionWrite` restores one item on command failure. A full
+  sync remains only as the missing-row fallback.
+- `reconcilePromptTemplateDraft` uses `peekCachedServerCommandRevision()` as the
+  discriminator, so ordinary keystrokes run zero whole-template stringify passes.
+- `PromptDataItem.svelte` clones the edited item once per change instead of
+  twice.
+- Deferred: coalescing the synchronous optimistic write into the existing 250 ms
+  server-command debounce window.
 
 ## Behavior / Invariants
 

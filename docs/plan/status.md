@@ -6,11 +6,11 @@ This is the router for the frontend deep-clone / hot-path narrowing workstream.
 Use it first, then open only the phase or slice needed for the next task.
 
 Current status reflects runtime code through `64804305` (`perf: clone a prompt
-item once per change in PromptDataItem (Phase 5)`). Phase 0 foundations, the
-Phase 1 primary guard fix, all six Phase 2 slices, Phase 3 (cheap wins), the
-`runTrigger` scriptstate guard follow-up, Phase 4 (script-definition watcher),
-and Phase 5 (prompt-template keystroke) have landed; the next work is Phases 6-7
-(independent).
+item once per change in PromptDataItem (Phase 5)`) and docs through `7ea52bb6`.
+Phase 0 foundations, the Phase 1 primary guard fix, all six Phase 2 slices,
+Phase 3 (cheap wins), the `runTrigger` scriptstate guard follow-up, Phase 4
+(script-definition watcher), and Phase 5 (prompt-template keystroke) have
+landed; the next work is Phases 6-7 (independent).
 
 ## Current Snapshot
 
@@ -28,7 +28,7 @@ work in Phase 6-7; keep Phase 8 as the standing verification layer.
 | [2](phases/phase-2-snapshot-family-narrowing.md) | Implemented | Six snapshot-family hot-path slices. |
 | [3](phases/phase-3-cheap-wins.md) | Implemented | Reroll transcript wins, `runTrigger` lazy clone, `48d473dc` guard follow-up. |
 | [4](phases/phase-4-script-definition-watcher.md) | Implemented | Script-definition watcher scoped per-row rollback (`2ec1ea40`). |
-| [5](phases/phase-5-prompt-template-keystroke.md) | Implemented | Prompt-template in-place item write + revision-gated reconcile (`c5fc5967`); debounce coalescing deferred. |
+| [5](phases/phase-5-prompt-template-keystroke.md) | Implemented | Prompt-template in-place item write + revision-gated reconcile (`c5fc5967`) and `PromptDataItem` single-clone update (`64804305`); debounce coalescing deferred. |
 | [6](phases/phase-6-lorebook-watcher-scope.md) | Planned | Lorebook watcher scoped to the mounted panel. |
 | [7](phases/phase-7-opportunistic-cleanups.md) | Planned | CBS, observer, image/emotion, regex, parser, log, and scan cleanups. |
 | [8](phases/phase-8-verification-budgets.md) | Planned | Clone-cost gate completeness. |
@@ -45,10 +45,9 @@ paths.
 ## Latest Verification
 
 See [`latest-verification.md`](latest-verification.md). Latest maintained run:
-`pnpm test` green (1015 passed / 4 skipped), `pnpm api:test` green (1632 passed /
-1 skipped), `pnpm client-thinning:audit` green, and both TypeScript checks green
-(`pnpm check`/svelte-check unchanged at 10 pre-existing errors in files outside
-this workstream).
+`pnpm test`, `pnpm api:test`, `pnpm client-thinning:audit`, and both
+project-reference TypeScript checks passed. `pnpm check` remains at the
+unchanged 10-error svelte-check baseline outside this workstream.
 
 ## Start Here
 

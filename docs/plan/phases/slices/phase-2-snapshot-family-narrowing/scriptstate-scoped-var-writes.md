@@ -2,23 +2,13 @@
 
 Status: implemented. Phase 2. Depends on the Phase 0 `ChatScriptstateSnapshot`.
 
-Landed: single-key scriptstate and author-note writes capture
-`currentChatScriptstateSnapshot()` instead of `currentChatStateSnapshot()`. New
-scoped dispatchers (sharing the broad cores): `dispatchPatchChatScriptstateScoped`
-and `dispatchUpdateChatNoteScoped`, both rolling back via `restoreChatScriptstate`
-(scriptstate map + optional note, never the characters array);
-`dispatchCurrentChatScriptstatePatch` now takes a `ChatScriptstateSnapshot`. In
-`runTrigger`, a lazy-memoized `captureScriptstateRollback()` mints one snapshot
-per pass (captured on the first `setVar`/`v2SetAuthorNote`, reused after, free on
-display passes) — `setVar` → `dispatchPatchChatScriptstateScoped`,
-`v2SetAuthorNote` → `dispatchUpdateChatNoteScoped`. `chatVar.svelte.ts::setChatVar`
-and `command.ts` `/setvar`/`/addvar` also narrowed. Proof: scoped scriptstate +
-note failure-rollback tests in `chatCommands.test.ts`.
-
-Follow-up `48d473dc` fixed a separate guard-correctness bug in `runTrigger`:
-after the narrowed rollback, `setVar`/`v2SetVar` still synced scriptstate into
-the read-only projection directly. The sync now routes through
-`syncActiveChatScriptstate` inside `withTrustedServerProjectionWrite`.
+Implemented: `setVar`, `setChatVar`, `/setvar`, `/addvar`, and
+`v2SetAuthorNote` capture `currentChatScriptstateSnapshot()` and roll back via
+`restoreChatScriptstate`. `runTrigger` lazily mints one scriptstate snapshot per
+pass, reused across non-local var/note writes. Proofs live in
+`chatCommands.test.ts`, with the `48d473dc` guard follow-up proving
+`setVar`/`v2SetVar` sync now routes through `syncActiveChatScriptstate` inside
+`withTrustedServerProjectionWrite`.
 
 ## Scope
 

@@ -4,14 +4,11 @@ Status: implemented. Phase 0. Adds reusable proof helpers. No runtime code
 changes.
 
 Landed at `src/ts/__tests__/cloneCostHarness.ts` (test-only, excluded from the
-client-lib build). Surface: `assertSnapshotIsScalar` and
-`assertSnapshotOmitsCollections` (structural), `assertRollbackRestoresOnly`
-(rollback-correctness driver), `withCloneInstrumentation` (temporarily patches
-global `JSON.stringify` and `globalThis.structuredClone`, returning clone counts
-and max cloned payload size), and `seedCloneCostDb` (multi-character, one
-multi-message hydrated chat). Imported by the Phase 0 kit tests; the sanity
-baseline shows the selection snapshot performs zero whole-characters clones
-while the legacy snapshot performs one.
+client-lib build). The harness now backs the Phase 0-5 clone-cost proofs; Phase 8
+should make that proof set self-checking. Its surface covers structural snapshot
+assertions, rollback-scope assertions, clone instrumentation, and a seeded
+multi-character / multi-message DB that distinguishes full clones from scoped
+ones.
 
 ## Scope
 
@@ -47,14 +44,14 @@ structural snapshot assertion and rollback-correctness assertion.
 - Seed builders should produce a DB with multiple characters and at least one
   multi-message hydrated chat so a full clone is distinguishable from a scoped one
   by size.
-- Keep the harness independent of any specific snapshot helper so Phase 2-7
-  slices can import it directly.
+- Keep the harness independent of any specific snapshot helper so later slices can
+  import it directly.
 
 ## Done
 
-- The helper module exists and is imported by the Phase 0 snapshot-kit tests.
-- The existing reference-fix tests remain green, and the Phase 0 snapshot-kit
-  suites use the harness's structural and rollback-correctness assertions.
+- The helper module exists and is used by Phase 0-5 clone-cost proof suites.
+- The existing reference-fix tests remain green, and the snapshot-kit suites use
+  the harness's structural and rollback-correctness assertions.
 - The harness can demonstrate, on a seeded multi-chat DB, that
   `currentCharacterSelectionSnapshot` performs zero whole-characters clones while
   the legacy `currentCharacterStateSnapshot` performs one (a sanity baseline).

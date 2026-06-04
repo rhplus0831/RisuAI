@@ -7,29 +7,17 @@ latest-run section on each full or focused run; do not append history.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 prompt-template editor keystroke
-  narrowing (`c5fc5967` + `64804305`) on top of Phases 0-4.
-- Before/after clone range: BEFORE = each prompt-item keystroke cloned the whole
-  `promptTemplate` array into the projection (`DBState.db.promptTemplate =
-  clone(draft)`), the failed-command rollback cloned the whole array again, the
-  change-detection `$effect` ran two whole-template `JSON.stringify` passes per
-  reactive fire, and `PromptDataItem` cloned the edited item twice per change.
-  AFTER = `applyPromptItemProjectionWrite` writes one item in place (find-by-id),
-  `restorePromptItemProjectionWrite` rolls back one item, and
-  `reconcilePromptTemplateDraft` gates reconciliation on the cached command
-  revision (`peekCachedServerCommandRevision`), so a keystroke runs zero
-  whole-template stringify passes; `PromptDataItem` clones once per change.
-- Guard-safety / behavior note: the optimistic projection write stays synchronous
-  (kept authoritative for `templateCheck` warns and the revision-gated reconcile);
-  coalescing it into the 250 ms debounce window is deferred. The full-array sync
-  remains as a fallback only when the projection has no row for the edited id yet.
-  The server still receives the same final patch, and an external push still
-  reconciles into the draft on a real revision advance.
-- Result: green. Proofs added in `promptTemplateBridge.svelte.test.ts` (7 tests):
-  single-item clone cost (`maxClonedSize` below the multi-item array of large
-  bodies), the scoped rollback (unrelated items untouched), and the revision-gated
-  reconcile (zero stringify when the revision is unchanged; reconcile only on a
-  revision advance with differing content).
+- Runtime under test: Phase 5 (`c5fc5967` + `64804305`) on top of Phases 0-4.
+- Before: prompt-item keystrokes cloned the whole template, rollback cloned it
+  again, reconcile double-stringified each fire, and `PromptDataItem` cloned the
+  edited item twice.
+- After: one edited item is mirrored/restored; reconcile only stringifies on a
+  command-revision advance; `PromptDataItem` clones once. Debounce coalescing
+  remains deferred.
+- Result: green. `promptTemplateBridge.svelte.test.ts` proves the bridge helper
+  costs: single-item projection write, scoped rollback, and revision-gated
+  reconcile. The `PromptDataItem` single-clone change is source-inspected here and
+  has no dedicated component test.
 
 | Command                                                                                     | Result                                                                                                      |
 | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -41,9 +29,8 @@ latest-run section on each full or focused run; do not append history.
 
 ## Notes
 
-- The proof template is `src/ts/compatibilityAdapters.test.ts`: snapshot omits
-  `characters`, and failed commands roll back only the mutated slice. Phase 0
-  turns this into a reusable helper.
+- The Phase 0 kit generalizes the reference proof pattern for clone-cost and
+  rollback-scope regressions.
 - Phase 8 keeps the clone-cost gate map self-checking: each narrowed hot path
   should have a proof that it avoids whole-`Database` / whole-characters clone
   primitives, and new slices should add that proof before being marked

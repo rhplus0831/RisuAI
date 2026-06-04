@@ -47,8 +47,10 @@ seed inventory. The code remains the source of truth.
   `withTrustedServerProjectionWrite`, `createReadOnlyServerProjection`, and
   `resolveServerProjectionSource`; the Phase 1 copy-on-write guard that removed
   the former full-`Database` clone amplifier behind ~100 guarded writes.
-- `src/ts/chatCommands.ts` - `currentChatStateSnapshot` / `restoreChatState`,
-  the whole-characters rollback baseline on every message path.
+- `src/ts/chatCommands.ts` - legacy full `currentChatStateSnapshot` /
+  `restoreChatState` for true restructures and deferred callers; Phase 2 hot
+  paths use `currentChatScopedSnapshot` / `restoreChatScopedState` and
+  `currentChatScriptstateSnapshot`.
 - `src/ts/characterCommands.ts` - the reference fix
   `currentCharacterSelectionSnapshot` / `restoreCharacterSelection` plus the
   heavy `currentCharacterStateSnapshot` / `restoreCharacterState`.
@@ -60,6 +62,10 @@ seed inventory. The code remains the source of truth.
   `src/ts/process/postGeneration/nonStreamResponse.ts`,
   `src/ts/process/rerollNavigation.svelte.ts` - the streaming, completion, and
   reroll/swipe write paths.
+- `src/lib/Setting/Pages/PromptSettings.svelte`,
+  `src/ts/server/promptTemplateBridge.svelte.ts`,
+  `src/lib/UI/PromptDataItem.svelte` - Phase 5 prompt-template keystroke
+  narrowing, revision-gated reconcile, and single-clone item updates.
 - [`../structure/server-projection-and-bridges.md`](../structure/server-projection-and-bridges.md),
   [`../structure/frontend.md`](../structure/frontend.md), and
   [`../structure/data-and-events.md`](../structure/data-and-events.md) -
