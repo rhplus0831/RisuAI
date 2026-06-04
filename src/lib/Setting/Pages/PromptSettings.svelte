@@ -22,10 +22,16 @@
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
+    applyPromptItemProjectionWrite,
+    reconcilePromptTemplateDraft,
+    restorePromptItemProjectionWrite,
+  } from 'src/ts/server/promptTemplateBridge.svelte'
+  import {
     canUseServerCommands,
     createPromptItemCommand,
     deletePromptItemCommand,
     patchPromptSettingsCommand,
+    peekCachedServerCommandRevision,
     reorderPromptItemsCommand,
     runServerCommand,
     updatePromptItemCommand,
@@ -55,7 +61,7 @@
   const promptTemplateDraft = $state<{ value: PromptItem[] }>({
     value: cloneJsonValue(DBState.db.promptTemplate ?? []),
   })
-  let previousPromptTemplateServerSnapshot = snapshotJson(DBState.db.promptTemplate ?? [])
+  let previousPromptTemplateRevision = peekCachedServerCommandRevision()
   const promptSettingsDraft = createPromptSettingsDraft<Record<string, any>>('promptSettings', {})
   const jsonSchemaEnabledDraft = createPromptSettingsDraft<boolean>('jsonSchemaEnabled', false)
   const outputImageModalDraft = createPromptSettingsDraft<boolean>('outputImageModal', false)
@@ -195,12 +201,9 @@
 
   function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem): void {
     const itemId = promptItemId(promptItem)
-    const index = promptTemplateDraft.value.findIndex((item) => item.id === itemId)
-    if (index !== -1) {
-      withTrustedServerProjectionWrite(() => {
-        DBState.db.promptTemplate = cloneJsonValue(promptTemplateDraft.value)
-      })
-    }
+    // Mirror only the edited item into the projection in place — no whole-array
+    // clone per keystroke.
+    applyPromptItemProjectionWrite(promptTemplateDraft.value, itemId)
     if (!canUseServerCommands()) return
     if (pendingPromptItemUpdates.has(itemId)) {
       clearTimeout(pendingPromptItemUpdates.get(itemId))
@@ -223,9 +226,8 @@
             if (snapshotJson(promptTemplateDraft.value[index]) === snapshotJson(attemptedItem)) {
               promptTemplateDraft.value[index] = cloneJsonValue(previousItem)
               promptTemplateDraft.value = [...promptTemplateDraft.value]
-              withTrustedServerProjectionWrite(() => {
-                DBState.db.promptTemplate = cloneJsonValue(promptTemplateDraft.value)
-              })
+              // Restore only the edited item in the projection (not the array).
+              restorePromptItemProjectionWrite(itemId, previousItem)
             }
           },
         })
@@ -356,17 +358,19 @@
     executeTokenize(promptTemplateDraft.value)
   })
   $effect(() => {
-    const serverValue = DBState.db.promptTemplate ?? []
-    const serverSnapshot = snapshotJson(serverValue)
-    const draftSnapshot = snapshotJson(promptTemplateDraft.value)
-
-    if (
-      serverSnapshot !== previousPromptTemplateServerSnapshot &&
-      serverSnapshot !== draftSnapshot
-    ) {
-      promptTemplateDraft.value = cloneJsonValue(serverValue)
+    // Reconcile the draft from the projection only when the cached server command
+    // revision advances (a real server push / command response), not on every
+    // keystroke. `reconcilePromptTemplateDraft` reads `DBState.db.promptTemplate`
+    // so this effect still re-runs on a projection change; the whole-template
+    // stringify now happens only on a revision advance, never per keystroke.
+    const { revision, nextDraft } = reconcilePromptTemplateDraft(
+      promptTemplateDraft.value,
+      previousPromptTemplateRevision,
+    )
+    previousPromptTemplateRevision = revision
+    if (nextDraft) {
+      promptTemplateDraft.value = nextDraft
     }
-    previousPromptTemplateServerSnapshot = serverSnapshot
   })
   $effect(() => {
     withTrustedServerProjectionWrite(() => {
