@@ -5,6 +5,10 @@ import {
   runMistral,
   runMistralStream,
 } from '../src/generation/mistral.js'
+import {
+  MAX_STREAM_BUFFER_CHARS,
+  STREAM_BUFFER_OVERFLOW_ERROR,
+} from '../src/generation/sse.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -557,5 +561,23 @@ describe('runMistralStream', () => {
       { kind: 'token', content: 'split' },
       { kind: 'done', finishReason: 'stop' },
     ])
+  })
+
+  it('L22: bounds the accumulation buffer when upstream never sends an event delimiter', async () => {
+    // > MAX_STREAM_BUFFER_CHARS of delimiter-less bytes, streamed in 1 MB
+    // chunks. Without the cap the adapter would buffer the whole stream.
+    const chunk = 'x'.repeat(1024 * 1024)
+    vi.stubGlobal('fetch', async () =>
+      sseUpstream(Array.from({ length: MAX_STREAM_BUFFER_CHARS / chunk.length + 2 }, () => chunk)),
+    )
+    const resolved = resolveMistralRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const f of runMistralStream(resolved)) frames.push(f)
+    expect(frames).toEqual([{ kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }])
   })
 })

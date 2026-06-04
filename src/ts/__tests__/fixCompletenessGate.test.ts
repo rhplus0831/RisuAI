@@ -45,6 +45,9 @@ interface ScheduledFix {
   testPath?: string
   /** A string the registered test must contain (helper or test title). */
   testName?: string
+  /** Additional regression proofs for fixes whose coverage spans more than one
+   *  test (e.g. M8's deadline + body-cap halves). Validated like the primary. */
+  extraTests?: Array<{ testPath: string; testName: string }>
 }
 
 const SCHEDULED_FIXES: ScheduledFix[] = [
@@ -133,6 +136,12 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     status: 'DONE',
     testPath: 'server/fastify/__tests__/requestAbort.test.ts',
     testName: 'M8: the signal aborts once the deadline elapses, with no client disconnect',
+    extraTests: [
+      {
+        testPath: 'server/fastify/__tests__/generationBodyCap.test.ts',
+        testName: 'M8: a non-streaming adapter fails closed on an over-cap upstream body',
+      },
+    ],
   },
   { id: 'M9', phase: 5, fix: 'Streaming bounded inflate per envelope/block', status: 'PLANNED' },
   {
@@ -246,6 +255,13 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     status: 'DONE',
     testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
     testName: 'L20: aborting mid-dispatch cancels in-flight hook work well before the exec limit',
+    extraTests: [
+      {
+        testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
+        testName:
+          'L20: aborting while a Lua request() egress fetch is in flight cancels the run promptly',
+      },
+    ],
   },
   { id: 'L21', phase: 6, fix: 'Reuse engine safely or cache compiled prelude', status: 'PLANNED' },
   {
@@ -255,6 +271,27 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     status: 'DONE',
     testPath: 'server/fastify/__tests__/openai.test.ts',
     testName: 'L22: bounds the accumulation buffer when upstream never sends an event delimiter',
+    extraTests: [
+      {
+        testPath: 'server/fastify/__tests__/anthropic.test.ts',
+        testName:
+          'L22: bounds the accumulation buffer when upstream never sends an event delimiter',
+      },
+      {
+        testPath: 'server/fastify/__tests__/mistral.test.ts',
+        testName:
+          'L22: bounds the accumulation buffer when upstream never sends an event delimiter',
+      },
+      {
+        testPath: 'server/fastify/__tests__/gemini.test.ts',
+        testName:
+          'L22: bounds the accumulation buffer when upstream never sends an event delimiter',
+      },
+      {
+        testPath: 'server/fastify/__tests__/ollama.test.ts',
+        testName: 'L22: bounds the line buffer when upstream never sends a newline',
+      },
+    ],
   },
   {
     id: 'L23',
@@ -430,7 +467,7 @@ export function collectGateProblems(entries: readonly ScheduledFix[]): string[] 
   const problems: string[] = []
   for (const entry of entries) {
     if (entry.status === 'PLANNED') {
-      if (entry.testPath || entry.testName) {
+      if (entry.testPath || entry.testName || entry.extraTests) {
         problems.push(`${entry.id}: PLANNED entries must not claim a test yet`)
       }
       continue
@@ -439,13 +476,19 @@ export function collectGateProblems(entries: readonly ScheduledFix[]): string[] 
       problems.push(`${entry.id}: DONE without a registered testPath`)
       continue
     }
-    const full = path.join(ROOT, entry.testPath)
-    if (!existsSync(full)) {
-      problems.push(`${entry.id}: registered test "${entry.testPath}" is missing`)
-      continue
-    }
-    if (entry.testName && !readFileSync(full, 'utf8').includes(entry.testName)) {
-      problems.push(`${entry.id}: test "${entry.testPath}" does not contain "${entry.testName}"`)
+    const proofs = [
+      { testPath: entry.testPath, testName: entry.testName },
+      ...(entry.extraTests ?? []),
+    ]
+    for (const proof of proofs) {
+      const full = path.join(ROOT, proof.testPath)
+      if (!existsSync(full)) {
+        problems.push(`${entry.id}: registered test "${proof.testPath}" is missing`)
+        continue
+      }
+      if (proof.testName && !readFileSync(full, 'utf8').includes(proof.testName)) {
+        problems.push(`${entry.id}: test "${proof.testPath}" does not contain "${proof.testName}"`)
+      }
     }
   }
   return problems

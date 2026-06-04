@@ -115,8 +115,13 @@ export interface EgressDeps {
   /** Resolve a hostname to all of its addresses. Defaults to `dns.lookup(host, {all:true})`. */
   lookup?: (host: string) => Promise<Array<{ address: string; family: number }>>
   /** Perform the actual fetch against a pre-validated address set. Defaults to a
-   * pinned `https.request`. */
-  fetchImpl?: (url: string, addresses: string[]) => Promise<{ status: number; data: string }>
+   * pinned `https.request`. Receives the originating request's abort signal so an
+   * in-flight egress fetch dies with the request that spawned it (audit L20). */
+  fetchImpl?: (
+    url: string,
+    addresses: string[],
+    signal?: AbortSignal,
+  ) => Promise<{ status: number; data: string }>
   /** Clock seam for the rate limiter. Defaults to `Date.now`. */
   now?: () => number
 }
@@ -312,8 +317,13 @@ export async function validateEgressUrl(
 function pinnedHttpsFetch(
   url: string,
   addresses: string[],
+  signal?: AbortSignal,
 ): Promise<{ status: number; data: string }> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('request aborted'))
+      return
+    }
     const pinned = addresses[0]
     const pinnedLookup = (
       _hostname: string,
@@ -345,6 +355,14 @@ function pinnedHttpsFetch(
         res.on('end', () => resolve({ status: res.statusCode ?? 0, data: body }))
       },
     )
+    // Abort propagation (audit L20): when the originating request ends, the
+    // in-flight egress socket is torn down instead of waiting out
+    // REQUEST_TIMEOUT_MS. `destroy(err)` fires the 'error' handler → reject.
+    const onAbort = (): void => {
+      req.destroy(new Error('request aborted'))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    req.on('close', () => signal?.removeEventListener('abort', onAbort))
     req.on('timeout', () => req.destroy(new Error('request timeout')))
     req.on('error', (error) => reject(error))
     req.end()
@@ -360,6 +378,7 @@ export async function serverLuaRequest(
   url: string,
   deps: EgressDeps = {},
   rateState: RequestRateState = sharedRateState,
+  signal?: AbortSignal,
 ): Promise<string> {
   const now = deps.now ? deps.now() : Date.now()
   if (rateState.resetAt + REQUEST_WINDOW_MS < now) {
@@ -382,14 +401,22 @@ export async function serverLuaRequest(
     const failure = verdict as Extract<EgressVerdict, { ok: false }>
     return JSON.stringify({ status: failure.status, data: failure.data })
   }
+  // An abort during DNS validation must not consume the egress budget or open
+  // a socket (audit L20): throw so the in-flight `:await()` terminates the run.
+  if (signal?.aborted) throw new LuaAbortError('request aborted')
   // Count only validated requests (audit L25): a blocked URL must not consume
   // the egress budget, or a single misbehaving script could starve legit calls.
   rateState.count++
   try {
     const fetchImpl = deps.fetchImpl ?? pinnedHttpsFetch
-    const result = await fetchImpl(url, verdict.addresses)
+    const result = await fetchImpl(url, verdict.addresses, signal)
     return JSON.stringify({ status: result.status, data: result.data })
-  } catch {
+  } catch (error) {
+    // Abort is a cancellation, not a fetch failure: rethrow (audit L20) so the
+    // Lua `:await()` raises and the surrounding pcall unwinds, instead of the
+    // script continuing on a synthetic 400.
+    if (signal?.aborted) throw new LuaAbortError('request aborted')
+    if (error instanceof LuaAbortError) throw error
     return JSON.stringify({ status: 400, data: 'internal error' })
   }
 }
@@ -932,7 +959,12 @@ function declareHostFunctions(engine: LuaEngine, state: RuntimeState): void {
   // ── Gated: SSRF-guarded egress ──
   declare('request', async (id: string, url: string) => {
     if (!canLowLevel(id)) return
-    return serverLuaRequest(String(url ?? ''), state.ctx.egress, state.ctx.rateState ?? sharedRateState)
+    return serverLuaRequest(
+      String(url ?? ''),
+      state.ctx.egress,
+      state.ctx.rateState ?? sharedRateState,
+      state.ctx.signal,
+    )
   })
 
   // ── Gated: sleep (capped per-call + per-run) ──

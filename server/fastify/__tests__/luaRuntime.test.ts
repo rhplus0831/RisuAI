@@ -296,6 +296,29 @@ describe('server Lua runtime — request() egress guard (SSRF)', () => {
     expect((JSON.parse(ok) as { status: number }).status).toBe(200)
     expect(rate.count).toBe(1)
   })
+
+  it('L20: an abort mid-fetch rejects through serverLuaRequest instead of returning a synthetic 400', async () => {
+    const controller = new AbortController()
+    const rate: RequestRateState = { count: 0, resetAt: 0 }
+    let seenSignal: AbortSignal | undefined
+    const deps: EgressDeps = {
+      lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+      // Mimics pinnedHttpsFetch: settles only when the originating request's
+      // signal destroys the in-flight socket.
+      fetchImpl: (_url, _addresses, signal) => {
+        seenSignal = signal
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('socket destroyed')), {
+            once: true,
+          })
+        })
+      },
+    }
+    const pending = serverLuaRequest('https://example.test/x', deps, rate, controller.signal)
+    setTimeout(() => controller.abort(), 20)
+    await expect(pending).rejects.toThrow('request aborted')
+    expect(seenSignal).toBe(controller.signal)
+  })
 })
 
 describe('server Lua runtime — request() binding + low-level gate', () => {
@@ -413,6 +436,47 @@ describe('server Lua runtime — request-signal abort (L20)', () => {
     expect(result.res).toBeUndefined()
     expect(elapsed).toBeLessThan(5_000)
     expect(engine.varChanged).toBe(false)
+  })
+
+  it('L20: aborting while a Lua request() egress fetch is in flight cancels the run promptly', async () => {
+    const controller = new AbortController()
+    let fetchStarted = false
+    const egress: EgressDeps = {
+      lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+      // Mimics pinnedHttpsFetch: never resolves on its own (a slow upstream);
+      // rejects only when the originating request's signal tears the socket down.
+      fetchImpl: (_url, _addresses, signal) =>
+        new Promise((_resolve, reject) => {
+          fetchStarted = true
+          signal?.addEventListener('abort', () => reject(new Error('request aborted')), {
+            once: true,
+          })
+        }),
+    }
+    const { ctx, engine } = makeRuntime({ egress, rateState: { count: 0, resetAt: 0 } })
+    ctx.signal = controller.signal
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        request(id, 'https://example.test/slow'):await()
+        setChatVar(id, 'mood', 'survived-abort')
+        return data
+      end)
+    `
+    setTimeout(() => controller.abort(), 100)
+    const started = Date.now()
+    const result = await runServerLua(
+      { code, mode: 'editRequest', data: rows('x'), lowLevelAccess: true, execTimeoutMs: 60_000 },
+      ctx,
+    )
+    const elapsed = Date.now() - started
+
+    expect(fetchStarted).toBe(true)
+    expect(result.aborted).toBe(true)
+    expect(result.timedOut).toBe(false)
+    expect(result.res).toBeUndefined()
+    expect(elapsed).toBeLessThan(5_000)
+    // The script never continued past the in-flight await.
+    expect(engine.getVar('mood')).toBe('null')
   })
 })
 
