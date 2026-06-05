@@ -1,7 +1,7 @@
 # Phase 1: High-Severity Hot Paths
 
-Status: COMPLETE. H1 (`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`). Three
-independent slices; depended on the Phase 0 harness.
+Status: complete. H1 (`0dc7452e`), H2 (`067ab82a`), and H3 (`e41dc6c6`)
+landed as independent slices after Phase 0.
 
 Goal: fix the three high-severity hot paths. H1 is the highest-leverage guard,
 H2 mirrors the landed char-select fix, and H3 removes quadratic streaming parse
@@ -28,15 +28,15 @@ work.
 ## Slices
 
 - [`h1-hydration-fallback-guard.md`](slices/phase-1-high-severity-hot-paths/h1-hydration-fallback-guard.md) -
-  DONE (`0dc7452e`): early-return `loadChatHydration` on `message.length > 0`;
+  Done (`0dc7452e`): early-return `loadChatHydration` on `message.length > 0`;
   fallback kept for zero-row not-yet-extracted chats.
 - [`h2-chat-selection-snapshot.md`](slices/phase-1-high-severity-hot-paths/h2-chat-selection-snapshot.md) -
-  DONE (`067ab82a`): scalar `ChatSelectionSnapshot`/`restoreChatSelection` pair
+  Done (`067ab82a`): scalar `ChatSelectionSnapshot`/`restoreChatSelection` pair
   (mirroring `CharacterSelectionSnapshot`) used by `changeChatTo` and the
   sidebar `selectChat` instead of the whole-`characters`
   `currentChatStateSnapshot()`.
 - [`h3-streaming-render-coalescing.md`](slices/phase-1-high-severity-hot-paths/h3-streaming-render-coalescing.md) -
-  DONE (`e41dc6c6`): token-driven renders coalesced to at most one parse per
+  Done (`e41dc6c6`): token-driven renders coalesced to at most one parse per
   animation frame, with a final full-fidelity flush on `done`.
 
 ## Planned Shape
@@ -78,10 +78,12 @@ work.
 
 ## Validation
 
-- H1: `pnpm api:test -- server/fastify/__tests__/projection.test.ts` plus a new
+- H1: `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/projection.test.ts`
+  plus a new
   `loadChatHydration` load-count test.
-- H2: `pnpm test -- src/ts/chatCommands.test.ts src/ts/compatibilityAdapters.test.ts`.
-- H3: `pnpm test -- src/lib/ChatScreens` plus the parser suite (bounded
+- H2: `pnpm exec vitest run src/ts/chatCommands.test.ts`.
+- H3: `pnpm exec vitest run src/ts/process/__tests__/streamResponse.test.ts`
+  plus the coalescer suite (bounded
   render-count test); browser profiler spot-check on a long stream.
 - `pnpm test`, `pnpm api:test`, `pnpm client-thinning:audit`.
 - Type check: `pnpm exec tsc -p tsconfig.client-lib.json` then

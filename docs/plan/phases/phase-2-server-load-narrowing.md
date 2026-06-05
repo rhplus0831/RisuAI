@@ -1,12 +1,14 @@
 # Phase 2: Server Load Narrowing (Root 1)
 
-Status: COMPLETE — the scoped-assembly-load slice (M1, L1, L2) is DONE
-(`c193c008`), the command-mutation-read-narrowing slice (M3, L5, L6) is DONE
-(`e0e86ab1`), the single-character-projection slice (M4) is DONE (`254b3112`),
-and the projection-metric-and-bulk-read slice (M5, L10, U1) is DONE
-(`b2765994`). Addressed the largest server root: hot paths no longer rebuild a
-broad in-memory `Database` when they need one row. Depended on Phase 0's
-server load-count assertion.
+Status: complete. Addressed the largest server root: hot paths no longer
+rebuild a broad in-memory `Database` when they need one row.
+
+Done slices:
+
+- M1/L1/L2: scoped assembly load, `c193c008`.
+- M3/L5/L6: command-mutation read narrowing, `e0e86ab1`.
+- M4: single-character projection, `254b3112`.
+- M5/L10/U1: projection metrics and bulk reads, `b2765994`.
 
 Goal: each hot path loads only the rows it reads. Add scoped assembly loading
 and a per-request memo or field-scoped loader. Keep `loadPersisted` and
@@ -99,7 +101,15 @@ Findings: M1, M3, M4, M5, L1, L2, L5, L6, L10, U1.
 ## Validation
 
 - Focused Phase 2 gates:
-  `pnpm api:test -- server/fastify/__tests__/serverLoadCostHarness.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts server/fastify/__tests__/modulesMemo.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/providerSecrets.test.ts`.
+
+  ```bash
+  pnpm exec vitest run --config server/fastify/vitest.config.ts \
+    server/fastify/__tests__/serverLoadCostHarness.test.ts \
+    server/fastify/__tests__/commandMutationReadNarrowing.test.ts \
+    server/fastify/__tests__/modulesMemo.test.ts \
+    server/fastify/__tests__/assemble.test.ts \
+    server/fastify/__tests__/providerSecrets.test.ts
+  ```
 - Phase 8 registry/doc drift gate:
   `pnpm test -- src/ts/__tests__/fixCompletenessGate.test.ts`.
 - Optional metric review commands:

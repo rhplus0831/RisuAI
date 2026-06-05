@@ -1,6 +1,7 @@
 # Phase 6: Memory & Lua
 
-Status: COMPLETE. M7, L16, L17, L18, L19, L21 DONE (`ca798c01`, one batch).
+Status: complete (`ca798c01`, one batch). Covers M7, L16, L17, L18, L19, and
+L21.
 
 Goal: make memory work bounded and fair, skip empty orphan cleanup writes, reuse
 a scoped loader, and add Lua execution budgeting / safe engine reuse.
@@ -26,7 +27,7 @@ Findings: M7, L16, L17, L18, L19, L21.
 ## Slices
 
 - [`memory-and-lua.md`](slices/phase-6-memory-and-lua/memory-and-lua.md) - full
-  batch, DONE (`ca798c01`):
+  batch, done (`ca798c01`):
   - M7: the embed/summarize batch handlers drain at most
     `MEMORY_JOB_BATCH_MAX_JOBS` (32) jobs per tick, and the `voyageContext3`
     contextual request is sliced into token-aware sub-batches (~12k-token
@@ -46,14 +47,10 @@ Findings: M7, L16, L17, L18, L19, L21.
     `LuaExecBudget` (per assembly, threaded through every hook seam); a
     constrained run gets `min(execTimeoutMs, remaining)` and an exhausted
     budget short-circuits before any engine boots (~30s aggregate default).
-  - L21: the static prelude pre-runs on pooled engines with the host-fn
-    surface declared once and the per-call state bound via a binder; each call
-    still gets an engine of its own and closes it (isolation by
-    construction). Every engine boot — background refill *and* a run's fresh
-    boot (empty pool or custom limit) — serializes behind a shared boot gate
-    and starts only while no run is in flight, with the run counted active
-    atomically with its engine claim; engine boots during a pending Lua
-    continuation crash wasmoon (completion-audit closeout).
+  - L21: pooled engines pre-run the static prelude and bind per-call state at
+    use time. Each call gets its own engine and closes it. All engine boots now
+    serialize behind a shared boot gate while no Lua run is active
+    (completion-audit closeout).
 
 ## Landed Shape Notes
 
@@ -62,10 +59,9 @@ Findings: M7, L16, L17, L18, L19, L21.
 - L16 gates the transaction on the cheap orphan pre-check (EXISTS probe + the
   in-memory orphan filter).
 - L21 pooling is safe because pooled engines have never run user code and are
-  discarded after exactly one call; only the boot + prelude compile moves off
-  the hot path. The prelude and user code now load as two chunks — the only
-  observable deltas are error-message chunk names/line offsets and that user
-  top-level code can no longer see the wrapper's internal locals.
+  discarded after one call. Only boot + prelude compile moved off the hot path.
+  The only observable deltas are error-message chunk names/line offsets and
+  that user top-level code can no longer see wrapper locals.
 - L21 fresh boots park behind active runs (completion-audit closeout): a run
   that cannot be served from the pool waits for `activeLuaRuns` to drain, then
   holds the boot gate while it boots, so no boot ever overlaps a pending
@@ -92,7 +88,19 @@ Findings: M7, L16, L17, L18, L19, L21.
 
 ## Validation
 
-- `pnpm api:test -- server/fastify/__tests__/memory*.test.ts` (M7, L16, L17, L18).
-- `pnpm api:test -- server/fastify/__tests__/luaRuntime*.test.ts` (L19, L21).
+- M7/L16/L17/L18:
+
+  ```bash
+  pnpm exec vitest run --config server/fastify/vitest.config.ts \
+    server/fastify/__tests__/memoryEmbedJobHandler.test.ts \
+    server/fastify/__tests__/memoryWorker.test.ts
+  ```
+
+- L19/L21:
+
+  ```bash
+  pnpm exec vitest run --config server/fastify/vitest.config.ts \
+    server/fastify/__tests__/luaRuntime.test.ts
+  ```
 - `pnpm api:test`, both TypeScript checks. See
   [`../latest-verification.md`](../latest-verification.md).

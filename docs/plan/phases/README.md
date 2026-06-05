@@ -15,23 +15,23 @@ the finding -> phase map is in
 - Phase 1, complete (the three high-severity fixes):
   [`phase-1-high-severity-hot-paths.md`](phase-1-high-severity-hot-paths.md),
   [`slices/phase-1-high-severity-hot-paths/`](slices/phase-1-high-severity-hot-paths/).
-- Phase 2, complete (Root 1 — server broad-load narrowing; all four slices
+- Phase 2, complete (Root 1: server broad-load narrowing; all four slices
   landed: M1/L1/L2, M3/L5/L6, M4, M5/L10/U1):
   [`phase-2-server-load-narrowing.md`](phase-2-server-load-narrowing.md),
   [`slices/phase-2-server-load-narrowing/`](slices/phase-2-server-load-narrowing/).
-- Phase 3, complete (Root 2 — client clone narrowing; M12-M14, L31-L36, U4):
+- Phase 3, complete (Root 2: client clone narrowing; M12-M14, L31-L36, U4):
   [`phase-3-client-clone-narrowing.md`](phase-3-client-clone-narrowing.md),
   [`slices/phase-3-client-clone-narrowing/`](slices/phase-3-client-clone-narrowing/).
-- Phase 4, complete (Root 4 — outbound request lifecycle; M6, M8, L20,
+- Phase 4, complete (Root 4: outbound request lifecycle; M6, M8, L20,
   L22-L25): [`phase-4-outbound-request-lifecycle.md`](phase-4-outbound-request-lifecycle.md),
   [`slices/phase-4-outbound-request-lifecycle/`](slices/phase-4-outbound-request-lifecycle/).
-- Phase 5, complete (Root 5 — materialization & lifecycle; M9-M11, L11-L15,
+- Phase 5, complete (Root 5: materialization & lifecycle; M9-M11, L11-L15,
   L27-L30): [`phase-5-materialization-and-lifecycle.md`](phase-5-materialization-and-lifecycle.md),
   [`slices/phase-5-materialization-and-lifecycle/`](slices/phase-5-materialization-and-lifecycle/).
 - Phase 6, complete (memory & Lua; M7, L16-L19, L21):
   [`phase-6-memory-and-lua.md`](phase-6-memory-and-lua.md),
   [`slices/phase-6-memory-and-lua/`](slices/phase-6-memory-and-lua/).
-- Phase 7, complete (memoization & hygiene; M2, L3, L8, L9, L37-L40 — the
+- Phase 7, complete (memoization & hygiene; M2, L3, L8, L9, L37-L40; the
   last scheduled batch):
   [`phase-7-memoization-and-hygiene.md`](phase-7-memoization-and-hygiene.md),
   [`slices/phase-7-memoization-and-hygiene/`](slices/phase-7-memoization-and-hygiene/).

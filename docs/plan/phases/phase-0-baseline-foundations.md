@@ -1,6 +1,6 @@
 # Phase 0: Baseline & Harness Foundations
 
-Status: COMPLETE (both slices implemented). No runtime change.
+Status: complete. Both slices landed. No runtime change.
 
 Goal: add the shared proof tools: a seeded large-corpus fixture, a server
 load-count assertion, and a fix-completeness gate scaffold.
@@ -27,14 +27,14 @@ load-count assertion, and a fix-completeness gate scaffold.
 ## Slices
 
 - [`measurement-baseline-harness.md`](slices/phase-0-baseline-foundations/measurement-baseline-harness.md) -
-  IMPLEMENTED. Seeded large-corpus fixture
+  Done. Seeded large-corpus fixture
   (`src/ts/__tests__/largeCorpusFixture.ts`) plus the server load-count
   assertion (`server/fastify/__tests__/helpers/loadCostHarness.ts`,
   `assertScopedLoadOnHotPath`) that fails when a scoped hot path calls a
   whole-corpus loader. Baseline re-run and recorded in
   [`../latest-verification.md`](../latest-verification.md).
 - [`fix-completeness-gate-scaffold.md`](slices/phase-0-baseline-foundations/fix-completeness-gate-scaffold.md) -
-  IMPLEMENTED. `src/ts/__tests__/fixCompletenessGate.test.ts` registers every
+  Done. `src/ts/__tests__/fixCompletenessGate.test.ts` registers every
   scheduled fix by id (`PLANNED` until its phase lands), keeps explicit
   `INTENTIONALLY_GATED`/`NO_ACTION` lists, scrapes the finding universe from
   the audit doc, and mirrors phase routing + status against

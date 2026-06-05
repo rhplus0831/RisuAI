@@ -1,21 +1,19 @@
 # Phase 5: Materialization & Lifecycle (Root 5)
 
-Status: COMPLETE (`686220d6`, one batch). Covers bounded inflate/buffering,
+Status: complete (`686220d6`, one batch). Covers bounded inflate/buffering,
 stream/job cleanup, import/restore robustness, and sync-replay correctness.
 
-Landed shape: streaming bounded inflate (`risuSave/boundedInflate.ts`) behind
-the legacy envelope + block codecs with a finite `/import/bundle` inner-`.risu`
-cap (M9); column-only `messages.data` inlay scan for asset GC + the import
-asset report via `collectMessageInlayReferences` (M10, report byte-identical);
-bundle-export backpressure waits settle on `close`/`error` with
-`zip.terminate()` + read-stream teardown (M11); guarded SSE live-delivery
-arming (L11), server-closed done-job WS viewers (L12), tracked detached
-runners settled before `db.close()` + `db.isOpen` finalization guards (L13),
-per-viewer durable SSE comment heartbeat (L14), no-viewer overflow aborts the
-proxy upstream (L15); corrupt-manifest-tolerant `listBackups` (L27),
-transactional legacy `db.json` restore re-import with the event persisted
-after it (L28); persisted `origin_writer_session_id` (schema v15) restored on
-replay (L29); deferred reattach re-arm (L30).
+Landed shape:
+
+- M9: streaming bounded inflate in `risuSave/boundedInflate.ts`, plus a finite
+  `/import/bundle` inner-`.risu` cap.
+- M10: column-only `messages.data` inlay scan for asset GC and import reports.
+- M11: bundle-export close/error settle, `zip.terminate()`, and read-stream
+  teardown.
+- L11-L15: guarded SSE arming, done-job WS close, detached-runner shutdown,
+  durable SSE heartbeat, no-viewer overflow abort.
+- L27-L30: corrupt-manifest-tolerant backups, transactional legacy restore,
+  persisted writer-session origin, deferred reattach re-arm.
 
 Goal: bound work before materialization, clean up on abort/close, harden
 import/restore, and keep sync replay correct. `.risu` bytes must not change.
@@ -95,9 +93,26 @@ Findings: M9, M10, M11, L11, L12, L13, L14, L15, L27, L28, L29, L30.
 
 ## Validation
 
-- `pnpm api:test -- server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts`
-  (M9, M11; round-trip identity).
-- `pnpm api:test -- server/fastify/__tests__/backups.test.ts` (L27, L28).
-- `pnpm api:test -- server/fastify/__tests__/events.test.ts server/fastify/__tests__/durableGeneration.test.ts`
-  (L11-L15, L29, L30).
+- M9/M11 round-trip identity:
+
+  ```bash
+  pnpm exec vitest run --config server/fastify/vitest.config.ts \
+    server/fastify/__tests__/risuSaveBundleExportRoute.test.ts \
+    server/fastify/__tests__/risuSaveExportRoute.test.ts
+  ```
+
+- L27/L28:
+
+  ```bash
+  pnpm exec vitest run --config server/fastify/vitest.config.ts \
+    server/fastify/__tests__/backups.test.ts
+  ```
+
+- L11-L15/L29/L30:
+
+  ```bash
+  pnpm exec vitest run --config server/fastify/vitest.config.ts \
+    server/fastify/__tests__/events.test.ts \
+    server/fastify/__tests__/durableGeneration.test.ts
+  ```
 - `pnpm api:test`, both TypeScript checks.

@@ -1,238 +1,67 @@
 # Phase 4 Completion Audit
 
-Date: 2026-06-05 (closeout applied same day — see "Closeout")
+Date: 2026-06-05
 
-Scope: Active Phase 4 outbound request lifecycle workstream in
-`docs/plan/phases/phase-4-outbound-request-lifecycle.md`, covering M6, M8,
-L20, L22, L23, L24, L25, and the Phase 8 gate registration.
+Scope: Phase 4 outbound request lifecycle: M6, M8, L20, L22, L23, L24, L25,
+and Phase 8 gate registration.
 
 ## Verdict
 
-CLOSED. Phase 4 is complete.
+Closed. Phase 4 is complete.
 
-The original audit verdict was "not fully complete yet": most of the
-implementation and regression coverage matched the Phase 4 checklist, but Lua
-egress fetches did not receive the originating request's `AbortSignal`. That
-left one path in the stated "Lua fetch paths" scope uncanceled until its own
-egress timeout instead of canceling promptly when the originating request
-ends. The blocking finding and both coverage notes have since been closed —
-each section below records its resolution.
+The original audit found one blocking gap: Lua `request()` egress fetches did
+not receive the originating request's `AbortSignal`. They had their own
+10-second egress timeout, but they did not cancel promptly when the request
+ended.
 
-## Blocking Finding
+## Closeout
 
-### Lua `request()` egress does not abort on originating request cancellation — CLOSED
+Implemented on 2026-06-05:
 
-The Phase 4 goal says every outbound request should have a wall-clock bound and
-cancel when its originating request ends. The Phase 4 slice also scopes abort
-propagation to proxy, non-durable provider, and Lua fetch paths.
+- `request()` now threads `state.ctx.signal` through `serverLuaRequest`.
+- `EgressDeps.fetchImpl` receives the originating signal.
+- `pinnedHttpsFetch` rejects immediately on already-aborted signals, destroys
+  the active HTTPS request on abort, and removes its listener on socket close.
+- Abort during DNS validation or mid-fetch throws `LuaAbortError` instead of
+  returning a synthetic 400.
+- Abort during validation no longer consumes the egress rate budget.
 
-The implementation threads `ctx.signal` into `runServerLua`, and host functions
-check that signal before dispatch. However, once Lua `request()` has entered the
-egress fetch, the signal is not passed into `serverLuaRequest` or the pinned
-HTTPS fetch:
+Regressions:
 
-- `server/fastify/src/prompt/luaRuntime.ts:933` declares `request()` and calls
-  `serverLuaRequest(String(url ?? ''), state.ctx.egress, state.ctx.rateState ??
-  sharedRateState)` without passing `state.ctx.signal`.
-- `server/fastify/src/prompt/luaRuntime.ts:359` defines `serverLuaRequest`
-  without a signal parameter.
-- `server/fastify/src/prompt/luaRuntime.ts:312` defines `pinnedHttpsFetch`
-  without a signal parameter or abort listener.
-- `server/fastify/src/prompt/luaRuntime.ts:61` still gives Lua egress its own
-  10 second wall-clock timeout, so this is bounded, but not canceled by the
-  originating request as Phase 4 requires.
-
-Current L20 tests cover an already-aborted signal and abort during `sleep()` /
-host-function checkpoints, but they do not cover abort while a Lua egress
-request is in flight:
-
-- `server/fastify/__tests__/luaRuntime.test.ts:370`
-- `server/fastify/__tests__/luaRuntime.test.ts:389`
-
-Recommended closeout: pass the originating `AbortSignal` through
-`serverLuaRequest` and `pinnedHttpsFetch`, destroy the active HTTPS request on
-abort, and add a regression where a low-level Lua `request():await()` is
-in-flight when the request signal aborts.
-
-Resolution (2026-06-05): implemented as recommended.
-
-- `EgressDeps.fetchImpl` now receives the originating `AbortSignal` as a third
-  argument, and `serverLuaRequest` takes a `signal` parameter that the
-  `request()` host fn threads from `state.ctx.signal`.
-- `pinnedHttpsFetch` rejects immediately on an already-aborted signal,
-  destroys the in-flight HTTPS request on abort, and removes the listener on
-  socket close.
-- An abort during DNS validation or mid-fetch now throws (`LuaAbortError`)
-  instead of returning a synthetic 400, so the in-flight `:await()` raises and
-  the surrounding pcall unwinds rather than the script continuing; an abort
-  during validation also does not consume the egress rate budget.
-- Regressions added: `luaRuntime.test.ts` "L20: aborting while a Lua request()
-  egress fetch is in flight cancels the run promptly" (full runtime path, var
-  write after the await proven unreached) and "L20: an abort mid-fetch rejects
-  through serverLuaRequest instead of returning a synthetic 400" (unit path,
-  signal identity proven at the fetch seam). The Phase 8 gate's L20 entry
-  names the in-flight regression via `extraTests`.
+- `luaRuntime.test.ts`: aborting while a Lua `request()` egress fetch is
+  in-flight cancels promptly.
+- `luaRuntime.test.ts`: abort mid-fetch rejects through `serverLuaRequest`
+  instead of returning a synthetic 400.
+- The Phase 8 L20 gate entry names the in-flight regression via `extraTests`.
 
 ## Satisfied Items
 
-### M6: proxy `/fetch` abort-on-close and request timeout backstop
+- M6: `/api/v1/proxy/fetch` aborts upstream on client close, combines that
+  signal with the timeout, and removes listeners in `finally`.
+- M8: non-durable provider calls use the durable 600s deadline reference and
+  32 MB bounded body reads.
+- L20: route/job signals reach assembly and Lua. The runtime now checks abort
+  before start, during load, at host functions, during `sleep()`, and during
+  egress fetch.
+- L22: streaming adapters share the 8 MB accumulation cap. Direct no-delimiter
+  overflow tests cover OpenAI, Ollama, Anthropic, Mistral, and Gemini.
+- L23: the IPv6 SSRF guard unwraps mapped-hex, IPv4-compatible, 6to4, and NAT64
+  embedded IPv4 forms.
+- L24: `setObjectValue` drops `__proto__`, `constructor`, and `prototype` path
+  segments.
+- L25: Lua egress rate counting happens only after URL validation.
+- Phase 8: M6, M8, L20, L22, L23, L24, and L25 are registered as `DONE`.
 
-Implemented. `/api/v1/proxy/fetch` creates a close-driven abort signal, combines
-it with the optional timeout using `AbortSignal.any`, passes that signal to
-upstream `fetch`, and removes the close listener in `finally`.
+## Validation
 
-Evidence:
+Initial focused run widened to the full suites:
 
-- `server/fastify/src/routes/proxy.ts:49`
-- `server/fastify/src/routes/proxy.ts:57`
-- `server/fastify/src/routes/proxy.ts:67`
-- `server/fastify/src/routes/proxy.ts:103`
-- `server/fastify/src/app.ts:65`
-- `server/fastify/src/app.ts:96`
-- `server/fastify/__tests__/proxy.test.ts:337`
-- `server/fastify/__tests__/proxy.test.ts:342`
+- `pnpm api:test`: 98 files, 1692 passed, 1 skipped.
+- `pnpm test`: 118 files, 1121 passed, 4 skipped.
 
-### M8: non-durable provider deadline and buffered body cap
+Closeout run:
 
-Implemented. `attachAbort` defaults to the durable 600 second reference,
-aborts on `req.raw` close, unrefs its timer, and cleans up listener/timer state.
-Buffered provider bodies go through the 32 MB bounded read helpers.
-
-Evidence:
-
-- `server/fastify/src/requestAbort.ts:13`
-- `server/fastify/src/requestAbort.ts:28`
-- `server/fastify/src/generation/body.ts:11`
-- `server/fastify/__tests__/requestAbort.test.ts:24`
-- `server/fastify/__tests__/generationBodyCap.test.ts:57`
-
-Coverage note: the Phase 8 gate entry for M8 points to the deadline regression;
-the body-cap proof is present in `generationBodyCap.test.ts`, but is not named
-by the gate entry.
-
-Resolution (2026-06-05): the gate now supports `extraTests` (validated like the
-primary proof; PLANNED entries may not claim them), and the M8 entry names the
-`generationBodyCap.test.ts` body-cap proof.
-
-### L20: request signal threaded into Lua runtime
-
-Implemented (egress-fetch gap closed 2026-06-05; see the Blocking Finding
-resolution). The route/job signal is threaded into assembly and
-`runServerLua`, and the runtime has pre-start, load-thread, host-function,
-`sleep()`, and in-flight egress-fetch abort checkpoints.
-
-Evidence:
-
-- `server/fastify/src/routes/generationChat.ts:846`
-- `server/fastify/src/routes/generationChat.ts:1522`
-- `server/fastify/src/routes/generationChat.ts:1842`
-- `server/fastify/src/prompt/assemble.ts:451`
-- `server/fastify/src/prompt/assemble.ts:618`
-- `server/fastify/src/prompt/luaRuntime.ts:696`
-- `server/fastify/src/prompt/luaRuntime.ts:997`
-- `server/fastify/src/prompt/luaRuntime.ts:1032`
-
-### L22: streaming-provider accumulation buffer cap
-
-Implemented. The shared stream buffer cap is 8 MB, and the streaming adapters
-check it after draining complete events or lines.
-
-Evidence:
-
-- `server/fastify/src/generation/sse.ts:13`
-- `server/fastify/src/generation/openai.ts:352`
-- `server/fastify/src/generation/anthropic.ts:337`
-- `server/fastify/src/generation/mistral.ts:391`
-- `server/fastify/src/generation/gemini.ts:453`
-- `server/fastify/src/generation/ollama.ts:299`
-- `server/fastify/__tests__/openai.test.ts:549`
-- `server/fastify/__tests__/ollama.test.ts:516`
-
-Coverage note: direct no-delimiter overflow tests exist for OpenAI SSE and
-Ollama NDJSON. Anthropic, Mistral, and Gemini use the same cap path but do not
-have separate direct overflow tests.
-
-Resolution (2026-06-05): direct no-delimiter overflow tests added for the
-Anthropic, Mistral, and Gemini streaming adapters (`anthropic.test.ts`,
-`mistral.test.ts`, `gemini.test.ts`, each "L22: bounds the accumulation buffer
-when upstream never sends an event delimiter"). The gate's L22 entry names all
-five adapter proofs via `extraTests`.
-
-### L23: embedded-private IPv6 SSRF blocking
-
-Implemented. The IPv6 guard unwraps mapped-hex, IPv4-compatible, 6to4, and
-well-known NAT64 embedded IPv4 forms and classifies the embedded address.
-
-Evidence:
-
-- `server/fastify/src/prompt/luaRuntime.ts:175`
-- `server/fastify/src/prompt/luaRuntime.ts:227`
-- `server/fastify/__tests__/luaRuntime.test.ts:194`
-
-### L24: prototype-key rejection in `setObjectValue`
-
-Implemented. `setObjectValue` drops entries whose dotted key contains
-`__proto__`, `constructor`, or `prototype`, preventing prototype traversal and
-pollution.
-
-Evidence:
-
-- `server/fastify/src/generation/additionalParams.ts:110`
-- `server/fastify/src/generation/additionalParams.ts:112`
-- `server/fastify/__tests__/additionalParams.test.ts:168`
-
-### L25: Lua egress rate counter increments only after validation
-
-Implemented. `serverLuaRequest` validates the URL first and increments the
-egress rate counter only after validation succeeds.
-
-Evidence:
-
-- `server/fastify/src/prompt/luaRuntime.ts:376`
-- `server/fastify/src/prompt/luaRuntime.ts:385`
-- `server/fastify/__tests__/luaRuntime.test.ts:280`
-
-### Phase 8 gate registration
-
-Implemented for the Phase 4 IDs. M6, M8, L20, L22, L23, L24, and L25 are marked
-`DONE` with test paths and names in the fix completeness gate.
-
-Evidence:
-
-- `src/ts/__tests__/fixCompletenessGate.test.ts:116`
-- `src/ts/__tests__/fixCompletenessGate.test.ts:130`
-- `src/ts/__tests__/fixCompletenessGate.test.ts:243`
-- `src/ts/__tests__/fixCompletenessGate.test.ts:252`
-- `src/ts/__tests__/fixCompletenessGate.test.ts:260`
-- `src/ts/__tests__/fixCompletenessGate.test.ts:269`
-- `src/ts/__tests__/fixCompletenessGate.test.ts:277`
-
-## Validation Performed
-
-- `pnpm api:test -- server/fastify/__tests__/proxy.test.ts
-  server/fastify/__tests__/requestAbort.test.ts
-  server/fastify/__tests__/generationBodyCap.test.ts
-  server/fastify/__tests__/luaRuntime.test.ts
-  server/fastify/__tests__/additionalParams.test.ts
-  server/fastify/__tests__/openai.test.ts
-  server/fastify/__tests__/ollama.test.ts`
-
-  Result: the command ran the full Fastify suite, 98 test files passed, 1692
-  tests passed, 1 skipped.
-
-- `pnpm test -- src/ts/__tests__/fixCompletenessGate.test.ts`
-
-  Result: the command ran the full root suite, 118 test files passed, 1121 tests
-  passed, 4 skipped. The known `127.0.0.1:3000` connection-refused noise did not
-  fail the run.
-
-## Closeout Validation (2026-06-05)
-
-- `pnpm api:test` — 98 test files passed, 1697 tests passed, 1 skipped
-  (the prior baseline 1692 plus the two L20 egress-abort regressions and the
-  three L22 adapter overflow tests).
-- `pnpm test` — 118 test files passed, 1121 tests passed, 4 skipped (the
-  fix-completeness gate validates the new `extraTests` proofs for M8, L20,
-  and L22).
-- `pnpm exec tsc -p tsconfig.client-lib.json` and
-  `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit` — zero errors.
+- `pnpm api:test`: 98 files, 1697 passed, 1 skipped.
+- `pnpm test`: 118 files, 1121 passed, 4 skipped.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: zero errors.

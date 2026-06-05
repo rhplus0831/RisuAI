@@ -1,14 +1,17 @@
 # Phase 4: Outbound Request Lifecycle (Root 4)
 
-Status: COMPLETE (`bf1a6cb2`; completion-audit closeout 2026-06-05). Timeouts,
-abort propagation, and egress hardening landed for proxy, non-durable provider,
-and Lua fetch paths. The completion audit
-([`../phase-4-completion-audit.md`](../phase-4-completion-audit.md)) found one
-gap — Lua `request()` egress fetches did not receive the originating request's
-`AbortSignal` — closed by threading the signal through `serverLuaRequest` and
-`pinnedHttpsFetch` (destroying the in-flight HTTPS request on abort), plus
-direct L22 overflow tests for the anthropic/mistral/gemini adapters and gate
-entries naming every proof.
+Status: complete (`bf1a6cb2`; closeout on 2026-06-05). Timeouts, abort
+propagation, and egress hardening landed for proxy, non-durable provider, and
+Lua fetch paths.
+
+Closeout notes:
+
+- Lua `request()` egress fetches now receive the originating `AbortSignal`.
+- `serverLuaRequest` and `pinnedHttpsFetch` destroy in-flight HTTPS work on
+  abort.
+- Direct L22 overflow tests cover the Anthropic, Mistral, and Gemini adapters.
+- Gate entries name every proof. See
+  [`../phase-4-completion-audit.md`](../phase-4-completion-audit.md).
 
 Goal: every outbound request has a generous wall-clock bound and cancels when its
 originating request ends. SSRF/egress/injection guards cover the known bypasses.
@@ -87,9 +90,19 @@ Findings: M6, M8, L20, L22, L23, L24, L25.
 
 ## Validation
 
-- `pnpm api:test -- server/fastify/__tests__/proxy.test.ts server/fastify/__tests__/generation.test.ts`
-  (M6, M8, L22).
-- `pnpm api:test -- server/fastify/__tests__/luaRuntime*.test.ts` (L20, L23, L25;
-  add SSRF/abort/rate-counter cases).
+- M6/M8/L22:
+
+  ```bash
+  pnpm exec vitest run --config server/fastify/vitest.config.ts \
+    server/fastify/__tests__/proxy.test.ts \
+    server/fastify/__tests__/generation.test.ts
+  ```
+
+- L20/L23/L25:
+
+  ```bash
+  pnpm exec vitest run --config server/fastify/vitest.config.ts \
+    server/fastify/__tests__/luaRuntime.test.ts
+  ```
 - A `setObjectValue` prototype-pollution unit test (L24).
 - `pnpm api:test`, both TypeScript checks.

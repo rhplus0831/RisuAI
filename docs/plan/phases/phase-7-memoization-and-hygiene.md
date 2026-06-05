@@ -1,7 +1,7 @@
 # Phase 7: Memoization & Hygiene
 
-Status: COMPLETE. M2, L3, L8, L9, L37, L38, L39, L40 DONE (`151c6978`, one
-batch). This was the last scheduled batch of the plan.
+Status: complete (`151c6978`, one batch). Covers M2, L3, L8, L9, L37, L38,
+L39, and L40. This was the last scheduled batch.
 
 Goal: stop recomputing invariants in hot loops, drop redundant deletes/scans,
 and remove warm-path `console.log`s. Behavior and output stay unchanged.
@@ -28,7 +28,7 @@ Findings: M2, L3, L8, L9, L37, L38, L39, L40.
 ## Slices
 
 - [`memoization-and-hygiene.md`](slices/phase-7-memoization-and-hygiene/memoization-and-hygiene.md) -
-  full batch, DONE (`151c6978`):
+  full batch, done (`151c6978`):
   - M2: `processScript` resolves modules + parses the script DSL + compiles
     each script's RegExp once per assembly via a `PreparedScript` list
     memoized per loaded `Database` (WeakMap; refs of
@@ -47,11 +47,7 @@ Findings: M2, L3, L8, L9, L37, L38, L39, L40.
     (FK pragma verified ON); `deleteCharacterRow` records the cascaded
     `chats` write so the `writtenTables` metric stays truthful; the unused
     `deleteCharacterChats` helper is removed.
-  - L37: the per-command `splited`/`pipe` dumps, the `test_lorebook` full
-    report dump, and `downloadPreset`'s full preset log are removed; the
-    completion audit caught `importPreset`'s remaining object dumps (the
-    msgpack `decoded` envelope, the parsed `pre`, and the per-prompt ST-mapping
-    `p`/'Prompt not found' logs), removed in the closeout —
+  - L37: command, preset, and import object dumps are gone.
     `src/ts/storage/database.svelte.ts` now has zero `console.log` calls.
   - L38: the per-render `console.log('Trigger time', ...)` is removed.
   - L39: `findGeneratedAssistantMessage` scans the transcript
@@ -59,10 +55,9 @@ Findings: M2, L3, L8, L9, L37, L38, L39, L40.
 
 ## Landed Shape Notes
 
-- M2 went in as a memo inside `scripts.ts` (keyed per loaded `Database`)
-  rather than an explicit parameter threaded through `formatHistoryMessage` —
-  every `processScript` call site (history per-message walk, first message,
-  editinput, editoutput) shares the prepared list without signature churn.
+- M2 went in as a memo inside `scripts.ts`, keyed per loaded `Database`.
+  Every `processScript` call site shares the prepared list without signature
+  churn.
   `getActiveModules` returns a stable `NO_ACTIVE_MODULES` constant for the
   empty case so the memo can key on its result by reference.
 - L40's memo lives within one trigger pass for setVar-style triggers: the
@@ -73,12 +68,9 @@ Findings: M2, L3, L8, L9, L37, L38, L39, L40.
   its event in the same transaction — the revision window equals the former
   keep-latest-N-rows walk. The keep-window semantics are themselves the
   regression proof (a gapped revision deletes below the window).
-- L37 closed in two steps (completion-audit closeout): the batch removed the
-  command/`downloadPreset` logs, the audit closeout removed `importPreset`'s
-  four remaining dumps and added `database.importPreset.test.ts` — no-log spy
-  proofs over a real `.risupreset` binary round-trip and an ST/json mapping
-  that deliberately hits the unknown-identifier and missing-prompt branches,
-  both registered as L37 `extraTests` in the Phase 8 gate.
+- L37 closed in two steps. The batch removed command/`downloadPreset` logs; the
+  closeout removed `importPreset` logs and added `database.importPreset.test.ts`.
+  Both proofs are registered as L37 `extraTests`.
 
 ## Exit Criteria
 
@@ -97,8 +89,21 @@ Findings: M2, L3, L8, L9, L37, L38, L39, L40.
 
 ## Validation
 
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/scripts.test.ts server/fastify/__tests__/lorebook.test.ts` (M2, L3 compile-count).
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/events.test.ts server/fastify/__tests__/repositoryWriterKit.test.ts` (L8, L9).
+- M2/L3 compile-count:
+
+  ```bash
+  pnpm exec vitest run --config server/fastify/vitest.config.ts \
+    server/fastify/__tests__/scripts.test.ts \
+    server/fastify/__tests__/lorebook.test.ts
+  ```
+
+- L8/L9:
+
+  ```bash
+  pnpm exec vitest run --config server/fastify/vitest.config.ts \
+    server/fastify/__tests__/events.test.ts \
+    server/fastify/__tests__/repositoryWriterKit.test.ts
+  ```
 - `pnpm exec vitest run src/ts/process` (L37, L38, L39, L40).
 - `pnpm test`, `pnpm api:test`, both TypeScript checks. See
   [`../latest-verification.md`](../latest-verification.md).
