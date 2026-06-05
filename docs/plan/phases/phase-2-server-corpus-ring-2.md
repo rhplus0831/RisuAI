@@ -1,0 +1,81 @@
+# Phase 2: Server Corpus-Path Ring 2 (Root 1)
+
+Status: pending.
+
+Goal: finish what v1 Phase 2 started — the second ring of server paths that
+still parse, normalize, clone, or rewrite the whole corpus for single-row
+work. Wire the existing scoped kit (`chatScopedRead`,
+`loadPersistedForChatMutation`, single-row loaders, the writer kit) into the
+missed callers.
+
+Findings: M5, M6, L3, L13, L14, L16, K1, K2.
+
+## Source Anchors
+
+- [`../audit-stability-and-performance-v2.md`](../audit-stability-and-performance-v2.md) -
+  M5, M6, L3, L13, L14, L16; K1/K2 under Known-Item Overlaps.
+- M5: `server/fastify/src/routes/commands.ts` (character PATCH double
+  `ensureCharacterCollection`; chat PATCH), `commands/characters.ts`
+  (`repairCharacterRecord`), `commands/chats.ts`
+  (`normalizeAllCharacterChats`).
+- M6: `server/fastify/src/routes/projection.ts` (field branch),
+  `repository.ts` (`loadPersistedDatabaseFields`,
+  `loadStubbedProjectionFields`, `COLLECTION_TABLE_MAP`).
+- L3: `server/fastify/src/routes/generation.ts`
+  (`handleServerIntentCompletion`).
+- L13: `server/fastify/src/routes/realmImport.ts` (`appendRealmCharacter`).
+- L14: `server/fastify/src/messageStore.ts` (`replaceActiveChatMessages`,
+  `applyChatMessageDiff`, `stableEqual`).
+- L16: `server/fastify/src/routes/projection.ts` (bulk routes' double
+  `requireAuth`).
+- K1: `server/fastify/src/routes/generationChat.ts`
+  (`persistServerGenerationResult` -> `applyTargetedCommandMutation` without
+  `chatScopedRead`).
+- K2: `server/fastify/src/assetGc.ts` (`runAssetGc` -> `loadPersisted`).
+
+## Planned Shape
+
+- M5 needs a modules-aware scoped read: the chat PATCH validates
+  `patch.modules` via `ensureModuleRecords`/`validateNormalModuleLinks`, so
+  either extend the scoped read to carry modules or fall back to broad only
+  when `patch.modules` is present. The duplicate repair pass on character
+  PATCH collapses into a single-row repair.
+- M6 mirrors `loadSingleCharacterStubRow`: parse only the tables behind the
+  requested `fieldKeys`; skip `loadCharactersFromSqlite` unless `characters`
+  is requested.
+- K1 is wiring, not new machinery: pass `chatScopedRead` on the finalization
+  persist, keeping the broad read for the var-write case (v1-L4 stays
+  gated).
+- K2 reuses the message-free/scoped loaders for the GC's non-message
+  references; the Phase 5 (v1) token scan already covers messages.
+- L14: compare lengths + tail for the append case (or per-row fingerprints)
+  instead of stringifying the unchanged prefix; byte-identical persisted
+  rows.
+
+## Exit Criteria
+
+- [ ] M5: character/chat PATCH parse + repair only the target row (load-count
+      assertion), modules validation preserved; persisted rows and events
+      byte-identical.
+- [ ] M6: a foreign `preset`/`plugin`/`moduleEnabled` field projection
+      performs zero characters-table reads; payload byte-identical.
+- [ ] L3/L13/K1/K2: each cited path shows zero whole-corpus loads on the
+      load-count harness, with output identity tests.
+- [ ] L14: appending one message to an N-message chat performs O(1) prefix
+      comparisons; delete/truncate paths unchanged.
+- [ ] L16: bulk routes verify auth exactly once; 401 behavior unchanged.
+- [ ] Gates registered; focused suites + TypeScript checks green;
+      [`../latest-verification.md`](../latest-verification.md) updated.
+
+## Validation
+
+```bash
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/serverLoadCostHarness.test.ts \
+  server/fastify/__tests__/commandMutationReadNarrowing.test.ts \
+  server/fastify/__tests__/projection.test.ts \
+  server/fastify/__tests__/assetGc.test.ts
+RISU_COMMAND_METRIC_SUMMARY=1 pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/commandMetrics.test.ts
+pnpm api:test
+```

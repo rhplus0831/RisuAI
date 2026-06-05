@@ -5,10 +5,13 @@ import path from 'node:path'
 /**
  * Fix-completeness gate (Phase 8 scaffold, seeded in Phase 0).
  *
- * The stability/performance remediation plan (`docs/plan/`) schedules every
+ * The v1 stability/performance remediation plan (closed 2026-06-05, archived
+ * at `docs/archive/audit-stability-and-performance/`) scheduled every
  * confirmed audit finding and requires each landed fix to keep a regression
  * test. This file is the single budget surface for that requirement, modeled
- * on the landed `cloneCostGateCompleteness.test.ts`:
+ * on the landed `cloneCostGateCompleteness.test.ts`. It stays live against
+ * the archived docs as the standing maintenance check; the open v2 plan in
+ * `docs/plan/` has its own gate (see the v2 Phase 0 slice):
  *
  * - `SCHEDULED_FIXES` registers every scheduled finding id with its phase and
  *   status. Phase 0 seeds them all as `PLANNED`; the phase that fixes a
@@ -17,9 +20,9 @@ import path from 'node:path'
  *   path so this one client-side test asserts their existence.
  * - `INTENTIONALLY_GATED` and `NO_ACTION` record the explicitly excluded ids
  *   with reasons, so the registry universe equals the audit universe.
- * - The self-checks parse the finding universe out of
- *   `docs/plan/audit-stability-and-performance.md` and the routing out of
- *   `docs/plan/active-risk-analysis.md`: a new audit id without a registry
+ * - The self-checks parse the finding universe out of the archived
+ *   `audit-stability-and-performance.md` and the routing out of the archived
+ *   `active-risk-analysis.md`: a new audit id without a registry
  *   entry, a doc/registry phase or status mismatch, a double-classified id,
  *   or a `DONE` id whose test is missing/renamed all fail here.
  */
@@ -28,8 +31,9 @@ import path from 'node:path'
 // docs and both test trees hang off `process.cwd()`. (import.meta.url is not a
 // file: URL under the client vite test transform, so it cannot anchor reads.)
 const ROOT = process.cwd()
-const AUDIT_DOC = path.join(ROOT, 'docs/plan/audit-stability-and-performance.md')
-const RISK_DOC = path.join(ROOT, 'docs/plan/active-risk-analysis.md')
+const ARCHIVED_PLAN = 'docs/archive/audit-stability-and-performance'
+const AUDIT_DOC = path.join(ROOT, ARCHIVED_PLAN, 'audit-stability-and-performance.md')
+const RISK_DOC = path.join(ROOT, ARCHIVED_PLAN, 'active-risk-analysis.md')
 
 type GateStatus = 'PLANNED' | 'DONE'
 

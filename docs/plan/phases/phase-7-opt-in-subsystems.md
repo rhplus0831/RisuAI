@@ -1,0 +1,79 @@
+# Phase 7: Opt-In Subsystems (Root 5)
+
+Status: pending. Independent; order by pain. Largest finding count, but most
+fixes are small and local (several are one-liners).
+
+Goal: make the translate/TTS/MCP/file-import subsystems stop leaking,
+hanging, truncating, and over-working once enabled. These paths were outside
+every prior workstream's scope; they carry the audit's hardest breakage
+(silent data loss, permanent feature death, unbounded growth).
+
+Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
+
+## Source Anchors
+
+- [`../audit-stability-and-performance-v2.md`](../audit-stability-and-performance-v2.md) -
+  M15, M16, M18-M22, L48-L59; K3 under Known-Item Overlaps.
+- Translate: `src/ts/translator/translator.ts` (M15 parallel-array cache,
+  M16 google `DoingChat` gap + `console.log(html)`, L58/L59 callers in
+  `Suggestion.svelte`/`ChatBody.svelte`),
+  `src/ts/translator/bergamotTranslator.ts` (M19 poisoned chain).
+- TTS: `src/ts/process/tts.ts` (M18 AudioContext per playback, L48 HF retry
+  loop).
+- MCP: `src/ts/process/mcp/mcplib.ts` (M20 no deadlines, L54 SSE listener
+  leak, L57 logs), `mcp.ts` (L55 tool-list rebuild),
+  `filesystemclient.ts` (L56 directory-handle loss).
+- Files/import: `src/ts/process/processzip.ts` (M21 precedence bug),
+  `src/ts/process/files/multisend.ts` (M22 .po cap, L52 logs, L53 pdf
+  bytes), `src/ts/process/files/inlays.ts` (L49 onload hang),
+  `src/ts/parser/parser.svelte.ts` (L50 blobUrlCache, K3 fetch-before-cache
+  ordering), `src/ts/characterCards.ts` + `src/ts/pngChunk.ts` (L51 double
+  decode).
+
+## Planned Shape
+
+- Stability one-liners first: M21 (parenthesize AND add the mid-stream byte
+  cap + `file.terminate()` — the parens alone are insufficient for
+  data-descriptor entries), M22 (delete the test cap), M19 (catch/reset the
+  chain), M16 (remove the log).
+- M15: Map keyed `${reverse}|${text}` with LRU bound; de-dup before push;
+  reset on chat switch. M16's second half extends the `DoingChat`
+  suppression to non-exp translators so streaming messages are not
+  re-translated per frame.
+- M18: one lazily-created module-level AudioContext (resume on gesture), or
+  close-per-call in `onended`; cover the gptsovits gain path and `stopTTS`.
+- M20: bounded deadline through `fetchNative` + timeout-raced SSE-resolution
+  promises that remove their listeners (also closes L54); surface timeouts
+  as RPC errors, not hangs.
+- K3 is an ordering fix only: consult `blobUrlCache` before fetching asset
+  bytes; the bulk-byte route stays on its leftover.md gate.
+- Success-path outputs must not change: translation results, TTS audio,
+  MCP tool dispatch, and import results stay identical; the fixes bound
+  failure and repeat-work modes.
+
+## Exit Criteria
+
+- [ ] M21: an oversized charx asset entry is abandoned mid-stream under the
+      cap (memory assertion); valid imports byte-identical.
+- [ ] M22: a >100-line .po file translates fully (fixture test).
+- [ ] M19: a rejected bergamot translate recovers on the next call.
+- [ ] M18: repeated TTS playbacks hold at most one live AudioContext
+      (counting assertion via a stubbed constructor).
+- [ ] M15: translate lookups are O(1) and the cache is bounded; M16:
+      streaming with google auto-translate performs zero mid-stream
+      translateHTML runs and zero html logs.
+- [ ] M20/L54: a hung MCP server fails the operation within the deadline,
+      removes its listeners, and surfaces an error result.
+- [ ] L48-L53, L55-L59, K3: each has a focused behavior/counting test per
+      its target fix in the risk map.
+- [ ] Gates registered; focused suites + TypeScript checks green;
+      [`../latest-verification.md`](../latest-verification.md) updated.
+
+## Validation
+
+```bash
+pnpm exec vitest run src/ts/process/coldstorage.test.ts src/ts/process/ttsHooks.test.ts
+pnpm exec vitest run src/ts/characters.importChat.test.ts src/ts/storage/risuSave.test.ts
+pnpm test && pnpm client-thinning:audit
+pnpm exec tsc -p tsconfig.client-lib.json
+```
