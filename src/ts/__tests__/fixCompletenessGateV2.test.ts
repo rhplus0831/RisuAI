@@ -275,7 +275,27 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L14', 2, 'Delta-aware transcript persist diff.'),
+  done(
+    'L14',
+    2,
+    'Delta-aware transcript persist diff.',
+    'server/fastify/__tests__/messageStore.test.ts',
+    'L14: append-only tail persistence writes byte-identical rows without prefix diff work',
+    [
+      {
+        testPath: 'server/fastify/__tests__/messageStore.test.ts',
+        testName: 'L14: edit and truncate replacements still exercise the generic diff path',
+      },
+      {
+        testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+        testName: 'L14: append-only message diff cost stays constant with long prefixes',
+      },
+      {
+        testPath: 'server/fastify/__tests__/generation.chat.test.ts',
+        testName: 'runs a Lua input trigger that rewrites the transcript + persists it',
+      },
+    ],
+  ),
   planned('L15', 8, '`PRAGMA synchronous = NORMAL`.'),
   done(
     'L16',
@@ -1114,6 +1134,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M6',
       'L3',
       'L13',
+      'L14',
       'L16',
       'K1',
       'K2',

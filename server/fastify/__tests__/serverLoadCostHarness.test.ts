@@ -25,7 +25,14 @@ import {
   maskProviderSecretsInPlace,
 } from '../src/providerSecrets.js'
 import { emitProtocolMetric, protocolMetricsEnabled } from '../src/protocolMetrics.js'
-import { getChatMessagesGroupedByIds } from '../src/messageStore.js'
+import {
+  appendActiveChatMessageTail,
+  applyChatMessageDiff,
+  getChatMessageDiffInstrumentation,
+  getChatMessagesGroupedByIds,
+  replaceChatMessages,
+  resetChatMessageDiffInstrumentation,
+} from '../src/messageStore.js'
 import { resourceProjectionFields } from '../src/routes/projection.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import {
@@ -503,6 +510,41 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect((hydrated.json().message as Array<{ chatId: string }>).map((m) => m.chatId)).toEqual([
       'h2-load-msg-1',
     ])
+  })
+
+  it('L14: append-only message diff cost stays constant with long prefixes', () => {
+    const db = openDatabase(harness.dataDir)
+    try {
+      const base = Array.from({ length: 256 }, (_, index) => ({
+        chatId: `l14-msg-${index}`,
+        role: index % 2 === 0 ? 'user' : 'char',
+        data: `message ${index}`,
+      }))
+      const next = [...base, { chatId: 'l14-msg-tail', role: 'char', data: 'new tail' }]
+      replaceChatMessages(db, 'l14-chat', base)
+
+      resetChatMessageDiffInstrumentation()
+      expect(appendActiveChatMessageTail(db, 'l14-chat', next, base.length)).toBe(true)
+      expect(getChatMessageDiffInstrumentation()).toMatchObject({
+        stableEqualCalls: 0,
+        stableEqualStringifies: 0,
+        appendFastPathRows: 1,
+      })
+
+      resetChatMessageDiffInstrumentation()
+      applyChatMessageDiff(db, 'l14-chat', next, [
+        ...next.slice(0, 200),
+        { ...next[200], data: 'edited prefix row' },
+        ...next.slice(201),
+      ])
+      expect(getChatMessageDiffInstrumentation().stableEqualCalls).toBeGreaterThan(100)
+
+      resetChatMessageDiffInstrumentation()
+      applyChatMessageDiff(db, 'l14-chat', next, next.slice(0, next.length - 1))
+      expect(getChatMessageDiffInstrumentation().stableEqualCalls).toBeGreaterThan(100)
+    } finally {
+      db.close()
+    }
   })
 
   it('U1: bulk character-lorebook hydration performs zero whole-corpus payload reads', async () => {

@@ -18,6 +18,7 @@ import {
 } from '../repository.js'
 import {
   assemblePrompt,
+  getMessageMutationFirstChangedIndex,
   runServerPostGeneration,
   type AssembleDeps,
   type AssembleInput,
@@ -34,7 +35,9 @@ import { applyTargetedCommandMutation } from '../commands/mutations.js'
 import {
   addAlternateMessage,
   activeMessageIdExistsOutsideChat,
+  appendActiveChatMessageTail,
   clearAlternateMessages,
+  countChatMessages,
   replaceActiveChatMessages,
   writeGenerationChatMessage,
 } from '../messageStore.js'
@@ -461,6 +464,27 @@ function createAssemblyTranscriptMessage(input: unknown, index: number) {
   return createMessageRecord(draft, `submitMessages[${index}]`)
 }
 
+function canAppendAssemblyReplacement(
+  mutations: AssembleMutationPayload,
+  replacementLength: number,
+  persistedLength: number,
+): boolean {
+  if (replacementLength <= persistedLength) return false
+  if (mutations.messageMutations.length === 0) return false
+
+  for (const mutation of mutations.messageMutations) {
+    if (mutation.type === 'append') {
+      if (mutation.index < persistedLength) return false
+      continue
+    }
+    const firstChangedIndex = getMessageMutationFirstChangedIndex(mutation)
+    if (firstChangedIndex === undefined || firstChangedIndex < persistedLength) {
+      return false
+    }
+  }
+  return true
+}
+
 /**
  * Persist the assembly-time chat-var delta the assembler computed
  * (`mutations.chatVarMutations`) and, when a submit-time
@@ -548,7 +572,13 @@ function persistAssemblyMutations(args: {
               throw new ValidationError(`Duplicate message id: ${message.chatId}`)
             }
           }
-          replaceActiveChatMessages(targetDb, args.input.chatId, replacement)
+          const persistedLength = countChatMessages(targetDb, args.input.chatId)
+          const appended =
+            canAppendAssemblyReplacement(args.mutations, replacement.length, persistedLength) &&
+            appendActiveChatMessageTail(targetDb, args.input.chatId, replacement, persistedLength)
+          if (!appended) {
+            replaceActiveChatMessages(targetDb, args.input.chatId, replacement)
+          }
         }
         const eventTemplate = persistMessages
           ? COMMAND_EVENT_CATALOG.messagesReplaced

@@ -37,6 +37,31 @@ interface MessageRow {
   json: string
 }
 
+export interface ChatMessageDiffInstrumentation {
+  genericDiffRuns: number
+  stableEqualCalls: number
+  stableEqualStringifies: number
+  appendFastPathRows: number
+}
+
+const chatMessageDiffInstrumentation: ChatMessageDiffInstrumentation = {
+  genericDiffRuns: 0,
+  stableEqualCalls: 0,
+  stableEqualStringifies: 0,
+  appendFastPathRows: 0,
+}
+
+export function resetChatMessageDiffInstrumentation(): void {
+  chatMessageDiffInstrumentation.genericDiffRuns = 0
+  chatMessageDiffInstrumentation.stableEqualCalls = 0
+  chatMessageDiffInstrumentation.stableEqualStringifies = 0
+  chatMessageDiffInstrumentation.appendFastPathRows = 0
+}
+
+export function getChatMessageDiffInstrumentation(): ChatMessageDiffInstrumentation {
+  return { ...chatMessageDiffInstrumentation }
+}
+
 /**
  * Idempotent DDL. Safe to call on fresh + already-migrated databases. The
  * `alternate` column carries reroll candidates; fresh databases get it here
@@ -356,17 +381,46 @@ export function writeGenerationChatMessage(
   return { ok: true, messageId: row.uid, displaced: JSON.parse(existing.json) as JsonRecord }
 }
 
-function insertChatMessages(db: DatabaseSync, chatId: string, messages: readonly unknown[]): void {
+function insertChatMessages(
+  db: DatabaseSync,
+  chatId: string,
+  messages: readonly unknown[],
+  startSeq = 0,
+): void {
   if (messages.length === 0) return
   recordTableWrite('messages')
   const insert = db.prepare(
     'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
   )
-  messages.forEach((raw, seq) => {
+  messages.forEach((raw, index) => {
     const message = readMessageObject(raw)
     const row = toRow(message)
+    const seq = startSeq + index
     insert.run(chatId, seq, row.uid, row.role, row.data, row.disabled, row.json)
   })
+}
+
+/**
+ * Persist a caller-proven append-only replacement by inserting only the desired
+ * tail. Returns false when the current active transcript no longer has the
+ * expected prefix length, so callers can fall back to the generic diff path.
+ */
+export function appendActiveChatMessageTail(
+  db: DatabaseSync,
+  chatId: string,
+  messages: readonly unknown[],
+  prefixLength: number,
+): boolean {
+  if (!Number.isInteger(prefixLength) || prefixLength < 0) {
+    throw new Error('append prefix length must be a non-negative integer')
+  }
+  if (messages.length <= prefixLength) return false
+  if (countChatMessages(db, chatId) !== prefixLength) return false
+
+  const tail = messages.slice(prefixLength)
+  chatMessageDiffInstrumentation.appendFastPathRows += tail.length
+  insertChatMessages(db, chatId, tail, prefixLength)
+  return true
 }
 
 /**
@@ -391,8 +445,14 @@ export function deleteChatMessages(db: DatabaseSync, chatId: string): void {
   db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId)
 }
 
+function stringifyForStableEqual(value: unknown): string {
+  chatMessageDiffInstrumentation.stableEqualStringifies += 1
+  return JSON.stringify(value)
+}
+
 function stableEqual(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b)
+  chatMessageDiffInstrumentation.stableEqualCalls += 1
+  return stringifyForStableEqual(a) === stringifyForStableEqual(b)
 }
 
 /**
@@ -412,6 +472,7 @@ export function applyChatMessageDiff(
   base: readonly unknown[],
   next: readonly unknown[],
 ): void {
+  chatMessageDiffInstrumentation.genericDiffRuns += 1
   let prefix = 0
   const shared = Math.min(base.length, next.length)
   while (prefix < shared && stableEqual(base[prefix], next[prefix])) prefix++

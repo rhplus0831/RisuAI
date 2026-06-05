@@ -6,6 +6,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { openDatabase } from '../src/db.js'
 import {
   addAlternateMessage,
+  appendActiveChatMessageTail,
   applyChatMessageDiff,
   clearAlternateMessages,
   countAlternateMessages,
@@ -18,7 +19,9 @@ import {
   getAlternateMessages,
   getChatHypaV3,
   getChatMessages,
+  getChatMessageDiffInstrumentation,
   replaceChatMessages,
+  resetChatMessageDiffInstrumentation,
   setChatHypaV3,
 } from '../src/messageStore.js'
 import {
@@ -51,7 +54,12 @@ afterEach(() => {
   }
 })
 
-function msg(uid: string, role: 'user' | 'char', data: string, extra: Record<string, unknown> = {}) {
+function msg(
+  uid: string,
+  role: 'user' | 'char',
+  data: string,
+  extra: Record<string, unknown> = {},
+) {
   return { chatId: uid, role, data, ...extra }
 }
 
@@ -197,6 +205,14 @@ describe('applyChatMessageDiff surgical writes', () => {
       .all(chatId) as { seq: number; rowid: number }[]
   }
 
+  function persistedActiveRows(db: DatabaseSync, chatId: string) {
+    return db
+      .prepare(
+        'SELECT seq, uid, role, data, disabled, json, alternate FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq',
+      )
+      .all(chatId)
+  }
+
   it('appends exactly one row and leaves prior rows physically untouched', () => {
     const db = makeDb(makeDataDir())
     const base = [msg('m1', 'user', 'a'), msg('m2', 'char', 'b')]
@@ -247,6 +263,65 @@ describe('applyChatMessageDiff surgical writes', () => {
 
     expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'user', 'a')])
     expect(rowids(db, 'chat-1')).toEqual([before[0]])
+  })
+
+  it('L14: append-only tail persistence writes byte-identical rows without prefix diff work', () => {
+    const expectedDb = makeDb(makeDataDir())
+    const db = makeDb(makeDataDir())
+    const base = Array.from({ length: 64 }, (_, index) =>
+      msg(`m${index}`, index % 2 === 0 ? 'user' : 'char', `row ${index}`, {
+        time: index,
+      }),
+    )
+    const tail = msg('m64', 'char', 'tail', {
+      disabled: true,
+      generationInfo: { model: 'test-model' },
+    })
+    const next = [...base, tail]
+
+    replaceChatMessages(expectedDb, 'chat-1', next)
+    replaceChatMessages(db, 'chat-1', base)
+    addAlternateMessage(db, 'chat-1', msg('alt', 'char', 'candidate'))
+
+    resetChatMessageDiffInstrumentation()
+    const appended = appendActiveChatMessageTail(db, 'chat-1', next, base.length)
+
+    expect(appended).toBe(true)
+    expect(getChatMessageDiffInstrumentation()).toMatchObject({
+      stableEqualCalls: 0,
+      stableEqualStringifies: 0,
+      appendFastPathRows: 1,
+    })
+    expect(persistedActiveRows(db, 'chat-1')).toEqual(persistedActiveRows(expectedDb, 'chat-1'))
+    expect(getAlternateMessages(db, 'chat-1')).toEqual([msg('alt', 'char', 'candidate')])
+  })
+
+  it('L14: edit and truncate replacements still exercise the generic diff path', () => {
+    const editDb = makeDb(makeDataDir())
+    const truncateDb = makeDb(makeDataDir())
+    const base = Array.from({ length: 32 }, (_, index) =>
+      msg(`m${index}`, index % 2 === 0 ? 'user' : 'char', `row ${index}`),
+    )
+    replaceChatMessages(editDb, 'chat-1', base)
+    replaceChatMessages(truncateDb, 'chat-1', base)
+
+    resetChatMessageDiffInstrumentation()
+    applyChatMessageDiff(editDb, 'chat-1', base, [
+      ...base.slice(0, 20),
+      msg('m20', 'user', 'edited'),
+      ...base.slice(21),
+    ])
+    const editStats = getChatMessageDiffInstrumentation()
+    expect(editStats.genericDiffRuns).toBe(1)
+    expect(editStats.stableEqualCalls).toBeGreaterThan(10)
+    expect(editStats.stableEqualStringifies).toBeGreaterThan(20)
+
+    resetChatMessageDiffInstrumentation()
+    applyChatMessageDiff(truncateDb, 'chat-1', base, base.slice(0, base.length - 1))
+    const truncateStats = getChatMessageDiffInstrumentation()
+    expect(truncateStats.genericDiffRuns).toBe(1)
+    expect(truncateStats.stableEqualCalls).toBeGreaterThan(10)
+    expect(truncateStats.stableEqualStringifies).toBeGreaterThan(20)
   })
 })
 
@@ -314,7 +389,11 @@ describe('repository message-aware load/write', () => {
         {
           chaId: 'c',
           chats: [
-            { id: 'chat-1', message: [msg('m1', 'user', 'hi')], hypaV3Data: { mainChunks: [{ t: 1 }] } },
+            {
+              id: 'chat-1',
+              message: [msg('m1', 'user', 'hi')],
+              hypaV3Data: { mainChunks: [{ t: 1 }] },
+            },
             { id: 'chat-2', message: [], hypaV3Data: undefined },
           ],
         },
@@ -335,7 +414,10 @@ describe('repository message-aware load/write', () => {
     const db = makeDb(dataDir)
     const database = {
       characters: [
-        { chaId: 'c', chats: [{ id: 'chat-1', message: [msg('m1', 'user', 'a'), msg('m2', 'char', 'b')] }] },
+        {
+          chaId: 'c',
+          chats: [{ id: 'chat-1', message: [msg('m1', 'user', 'a'), msg('m2', 'char', 'b')] }],
+        },
       ],
     }
     writePersistedWithMessages(db, dataDir, seedHydrated(structuredClone(database)))
@@ -382,7 +464,13 @@ describe('repository message-aware load/write', () => {
       characters: [
         {
           chaId: 'c',
-          chats: [{ id: 'chat-1', name: 'Already migrated', message: [msg('m1', 'user', 'already in sqlite')] }],
+          chats: [
+            {
+              id: 'chat-1',
+              name: 'Already migrated',
+              message: [msg('m1', 'user', 'already in sqlite')],
+            },
+          ],
         },
       ],
     }
@@ -395,7 +483,9 @@ describe('repository message-aware load/write', () => {
       characters: Array<{ chats: Array<{ id: string; message: unknown[] }> }>
     }
     expect(hydrated.characters[0].chats[0].id).toBe('chat-1')
-    expect(hydrated.characters[0].chats[0].message).toEqual([msg('m1', 'user', 'already in sqlite')])
+    expect(hydrated.characters[0].chats[0].message).toEqual([
+      msg('m1', 'user', 'already in sqlite'),
+    ])
   })
 
   it('ensureDbJsonImported imports a legacy db.json into SQLite', () => {

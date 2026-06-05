@@ -187,6 +187,18 @@ export type AssembleMessageMutation =
       messages: Message[]
     }
 
+const MESSAGE_MUTATION_FIRST_CHANGED_INDEX = Symbol('messageMutationFirstChangedIndex')
+
+type MessageMutationWithFirstChangedIndex = AssembleMessageMutation & {
+  [MESSAGE_MUTATION_FIRST_CHANGED_INDEX]?: number
+}
+
+export function getMessageMutationFirstChangedIndex(
+  mutation: AssembleMessageMutation,
+): number | undefined {
+  return (mutation as MessageMutationWithFirstChangedIndex)[MESSAGE_MUTATION_FIRST_CHANGED_INDEX]
+}
+
 export interface AssembleAdditionalSystemPromptMutation {
   type: 'insert_prompt_row'
   source: 'additional_sys_prompt'
@@ -498,6 +510,28 @@ function equalJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
+function firstChangedMessageIndex(
+  before: readonly Message[],
+  after: readonly Message[],
+): number | undefined {
+  const shared = Math.min(before.length, after.length)
+  let index = 0
+  while (index < shared && equalJson(before[index], after[index])) index++
+  if (index === before.length && index === after.length) return undefined
+  return index
+}
+
+function markFirstChangedIndex(
+  mutation: AssembleMessageMutation,
+  firstChangedIndex: number,
+): AssembleMessageMutation {
+  Object.defineProperty(mutation, MESSAGE_MUTATION_FIRST_CHANGED_INDEX, {
+    value: firstChangedIndex,
+    enumerable: false,
+  })
+  return mutation
+}
+
 function valueOrNull(value: string | number | boolean | undefined): ChatVarMutationValue {
   return value === undefined ? null : value
 }
@@ -519,15 +553,21 @@ function captureMessageReplacement(
 ): void {
   const before = state.messageMutationCheckpoint ?? []
   const after = cloneMessages(state.currentChat.message ?? [])
-  if (equalJson(before, after)) return
+  const firstChangedIndex = firstChangedMessageIndex(before, after)
+  if (firstChangedIndex === undefined) return
 
-  state.messageMutations?.push({
-    type: 'replace_all',
-    source,
-    beforeLength: before.length,
-    afterLength: after.length,
-    messages: after,
-  })
+  state.messageMutations?.push(
+    markFirstChangedIndex(
+      {
+        type: 'replace_all',
+        source,
+        beforeLength: before.length,
+        afterLength: after.length,
+        messages: after,
+      },
+      firstChangedIndex,
+    ),
+  )
   state.messageMutationCheckpoint = cloneMessages(after)
 }
 

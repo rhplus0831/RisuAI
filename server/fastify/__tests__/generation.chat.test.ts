@@ -17,6 +17,10 @@ import {
   assertCommandMetricGate,
   type CommandMutationMetric,
 } from './helpers/commandMetricGates.js'
+import {
+  getChatMessageDiffInstrumentation,
+  resetChatMessageDiffInstrumentation,
+} from '../src/messageStore.js'
 
 const subtle = webcrypto.subtle
 
@@ -1232,7 +1236,13 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       `),
     )
 
+    resetChatMessageDiffInstrumentation()
     const events = await sendBase(assertion)
+    expect(getChatMessageDiffInstrumentation()).toMatchObject({
+      stableEqualCalls: 0,
+      stableEqualStringifies: 0,
+      appendFastPathRows: 2,
+    })
 
     // Assembled prompt: the input trigger's char row renders in the `chats` slot.
     const prompt = events.find((e) => e.type === 'prompt')!
