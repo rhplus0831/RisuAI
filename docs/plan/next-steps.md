@@ -2,43 +2,26 @@
 
 Date: 2026-06-05
 
-The plan is open; nothing has started. The next batch is Phase 0.
+Phase 0 is complete. The next batch is Phase 1.
 
-## Next Batch: Phase 0 (Baseline & Gate)
+## Next Batch: Phase 1 (High-Severity Hot Paths)
 
-No runtime change. Six agent-sized slices, defined in
-[`phases/phase-0-baseline-and-gate.md`](phases/phase-0-baseline-and-gate.md):
+Three high-severity runtime slices plus one proof refresh, defined in
+[`phases/phase-1-high-severity-hot-paths.md`](phases/phase-1-high-severity-hot-paths.md):
 
-1. v2 gate doc universe parser
-   ([slice](phases/slices/phase-0-baseline-and-gate/v2-gate-doc-universe.md)):
-   create the v2 sibling gate file and parse the ID universe from
-   [`audit-stability-and-performance-v2.md`](audit-stability-and-performance-v2.md)
-   plus K1-K4 from [`active-risk-analysis.md`](active-risk-analysis.md) and
-   the R1-R13 dismissed set.
-2. v2 gate routing registry
-   ([slice](phases/slices/phase-0-baseline-and-gate/v2-gate-routing-registry.md)):
-   parse [`active-risk-analysis.md`](active-risk-analysis.md), seed scheduled
-   IDs as `PLANNED`, and classify L12/I1-I18/R1-R13.
-3. v2 gate invariants and self-proof
-   ([slice](phases/slices/phase-0-baseline-and-gate/v2-gate-invariants-self-proof.md)):
-   add `DONE` test validation, doc/registry drift checks, and negative
-   self-proofs. The v1 gate stays untouched against the archive.
-4. Render-count harness
-   ([slice](phases/slices/phase-0-baseline-and-gate/render-count-harness.md)):
-   add the test-only helper that counts `ParseMarkdown`/`risuChatParser` /
-   `processScriptFull('editdisplay')` across a simulated `ReloadGUIPointer`
-   bump.
-5. Render-count baseline
-   ([slice](phases/slices/phase-0-baseline-and-gate/render-count-baseline.md)):
-   assert the current H3/M17/L40 pre-fix behavior and record the observed
-   counts in [`latest-verification.md`](latest-verification.md).
-6. Verification refresh
-   ([slice](phases/slices/phase-0-baseline-and-gate/verification-refresh.md)):
-   re-run the full proof set and record the Phase 0 baseline in
-   [`latest-verification.md`](latest-verification.md).
-
-After Phase 0, proceed to Phase 1 (H1, H2, H3) — one slice per finding, in
-the order H2 (worst routine-action cost), H3, H1.
+1. H2 chat-create targeted writer kit
+   ([slice](phases/slices/phase-1-high-severity-hot-paths/chat-create-targeted-writer-kit.md)):
+   route chat-create away from whole-corpus reads while preserving output.
+2. H3 var-only GUI reload narrowing
+   ([slice](phases/slices/phase-1-high-severity-hot-paths/var-only-gui-reload-narrowing.md)):
+   stop var-only bumps from remounting/re-parsing every visible message and
+   wiping script caches.
+3. H1 trigger interpreter budget and abort
+   ([slice](phases/slices/phase-1-high-severity-hot-paths/trigger-interpreter-budget-and-abort.md)):
+   add abort, wall-clock, loop, and recursion bounds.
+4. Phase 1 verification refresh
+   ([slice](phases/slices/phase-1-high-severity-hot-paths/phase-1-verification-refresh.md)):
+   flip the v2 gate entries for H1-H3 and refresh the proof log.
 
 ## Guardrails
 

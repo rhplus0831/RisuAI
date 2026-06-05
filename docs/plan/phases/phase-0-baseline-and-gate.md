@@ -1,6 +1,6 @@
 # Phase 0: Baseline & Gate
 
-Status: next. Foundations only; no runtime change.
+Status: complete. Foundations only; no runtime change.
 
 Goal: the shared prerequisites for every later phase — a v2 fix-completeness
 gate, a client render-count probe, and a re-confirmed green baseline.
@@ -52,19 +52,19 @@ implementation-sized units plus one proof-only refresh.
 
 ## Exit Criteria
 
-- [ ] v2 gate universe parser: H/M/L/I/K and R ID counts are extracted from the
+- [x] v2 gate universe parser: H/M/L/I/K and R ID counts are extracted from the
       v2 docs without mixing the archived v1 universe.
-- [ ] v2 gate registry: every scheduled ID (H1-H3, M1-M22, L1-L11 minus L12,
+- [x] v2 gate registry: every scheduled ID (H1-H3, M1-M22, L1-L11 minus L12,
       L13-L59, K1-K4) is registered `PLANNED`; gated L12 and no-action
       I1-I18/R1-R13 are recorded with reasons.
-- [ ] v2 gate invariants: doc/registry drift self-checks pass, `DONE` test
+- [x] v2 gate invariants: doc/registry drift self-checks pass, `DONE` test
       paths are validated, and negative self-proofs exist.
-- [ ] Render-count harness: a helper counts full-parse invocations across a
+- [x] Render-count harness: a helper counts full-parse invocations across a
       simulated `ReloadGUIPointer` bump on N mounted messages and observes
       cache wipe behavior.
-- [ ] Render-count baseline: the pre-fix baseline (N parses per bump, caches
+- [x] Render-count baseline: the pre-fix baseline (N parses per bump, caches
       wiped) is asserted and recorded.
-- [ ] Baseline re-run recorded in
+- [x] Baseline re-run recorded in
       [`../latest-verification.md`](../latest-verification.md): v2 gate,
       render-count baseline, `pnpm test`, `pnpm api:test`,
       `pnpm client-thinning:audit`, both TypeScript checks.

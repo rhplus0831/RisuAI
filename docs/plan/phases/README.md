@@ -10,10 +10,10 @@ in
 the finding -> phase map is in
 [`../active-risk-analysis.md`](../active-risk-analysis.md).
 
-- Phase 0, next (foundations; no runtime change):
+- Phase 0, complete (foundations; no runtime change):
   [`phase-0-baseline-and-gate.md`](phase-0-baseline-and-gate.md),
   [`slices/phase-0-baseline-and-gate/`](slices/phase-0-baseline-and-gate/).
-- Phase 1, pending (the three high-severity fixes: H1, H2, H3):
+- Phase 1, next (the three high-severity fixes: H1, H2, H3):
   [`phase-1-high-severity-hot-paths.md`](phase-1-high-severity-hot-paths.md),
   [`slices/phase-1-high-severity-hot-paths/`](slices/phase-1-high-severity-hot-paths/).
 - Phase 2, pending (Root 1: server corpus-path ring 2; M5, M6, L3, L13, L14,

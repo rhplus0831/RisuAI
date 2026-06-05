@@ -7,12 +7,15 @@ after each change to a narrowed or bounded path.
 
 ## Current State
 
-- Plan state: open. No phase has started; Phase 0 is next.
+- Plan state: open. Phase 0 is complete; Phase 1 is next.
 - Gate state: the v1 gate
   (`src/ts/__tests__/fixCompletenessGate.test.ts`) stays live against the
-  archived v1 docs. The v2 gate does not exist yet (Phase 0).
-- Scheduled IDs: all `PENDING`. Gated: L12 + v1 carry-overs. No-action:
-  I1-I18.
+  archived v1 docs. The v2 gate
+  (`src/ts/__tests__/fixCompletenessGateV2.test.ts`) is live against the v2
+  docs and active-risk routing.
+- Scheduled IDs: H1-H3, M1-M22, L1-L11 except L12, L13-L59, and K1-K4 are
+  registered `PLANNED` in the v2 gate. Gated: L12 + v1 carry-overs.
+  No-action: I1-I18 and R1-R13.
 
 ## Baseline (carried from the v1 close)
 
@@ -27,8 +30,27 @@ v2 starting point:
 - `pnpm check` retains its pre-existing svelte-check baseline outside this
   workstream.
 
-Phase 0 must re-run the full set and record it here before the first runtime
-change.
+The Phase 0 refresh below is the current no-runtime-change baseline before the
+first runtime fix.
+
+## Phase 0 Baseline Refresh
+
+Recorded on 2026-06-05 after the v2 gate and render-count baseline landed:
+
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV2.test.ts src/ts/__tests__/fixCompletenessGate.test.ts`:
+  passed, 2 files / 26 tests. The v2 gate is green alongside the frozen v1
+  gate.
+- `pnpm exec vitest run src/ts/__tests__/renderCountBaseline.test.ts`:
+  passed, 1 file / 1 test. Fixed baseline `N=5`; observed/asserted
+  `mountedMessages=5`, `parsesAfterBump.parseMarkdown=5`,
+  `parsesAfterBump.risuChatParser=5`, `parsesAfterBump.editDisplay=5`,
+  `editDisplayRunsAfterBump=5`, and `cacheWiped=true`.
+- `pnpm test`: passed, 1152 passed / 4 skipped (125 files).
+- `pnpm api:test`: passed, 1737 passed / 1 skipped (99 files).
+- `pnpm client-thinning:audit`: passed.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: passed with zero diagnostics.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: passed with zero
+  diagnostics after the client-lib build.
 
 ## Audit-Time Measurements
 
@@ -62,3 +84,16 @@ Recorded during the 2026-06-05 v2 audit (evidence in
 - 2026-06-05, plan opened: baseline carried from the v1 close (`ea0dc34a`,
   `pnpm test` 1132/4, `pnpm api:test` 1737/1, audit green, TypeScript clean);
   both TypeScript checks re-run clean at v2 audit time. No runtime change.
+- 2026-06-05, Phase 0 render-count baseline:
+  `pnpm exec vitest run src/ts/__tests__/renderCountBaseline.test.ts` passed.
+  Fixed `N=5` visible mounted messages; observed `mountedMessages=5`,
+  `parsesAfterBump.parseMarkdown=5`, `parsesAfterBump.risuChatParser=5`,
+  `parsesAfterBump.editDisplay=5`, `editDisplayRunsAfterBump=5`, and
+  `cacheWiped=true`. This records the pre-fix H3/M17/L40 contract only; the
+  full Phase 0 verification refresh is recorded below.
+- 2026-06-05, Phase 0 verification refresh: full proof set passed. v2+v1
+  gates passed (2 files / 26 tests); render-count baseline passed (1 file / 1
+  test, `N=5` with all post-bump parse counts at 5 and caches wiped);
+  `pnpm test` passed (1152/4, 125 files); `pnpm api:test` passed (1737/1, 99
+  files); client-thinning audit passed; both TypeScript checks passed with the
+  client-lib build run before the strict Fastify check.

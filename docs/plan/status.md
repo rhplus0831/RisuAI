@@ -7,24 +7,25 @@ open only the phase or slice tied to the current task.
 
 ## Snapshot
 
-- Plan state: open. No phase has started; Phase 0 is next.
+- Plan state: open. Phase 0 is complete; Phase 1 is next.
 - Findings covered: 102 confirmed v2 audit findings (3 high, 22 medium,
   59 low, 18 informational) plus the K1-K4 known-overlap residuals.
-- Scheduled IDs (all `PENDING`): H1-H3, M1-M22, L1-L11 (except L12),
-  L13-L59, K1-K4.
+- Scheduled IDs: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and K1-K4 are
+  registered `PLANNED` in the v2 gate. No fix IDs are `DONE` yet.
 - Gated IDs: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates. I1-I18 need no action.
 - Standing v1 gate: `src/ts/__tests__/fixCompletenessGate.test.ts` stays live
-  against the archived v1 docs. Phase 0 adds the v2 gate.
-- Baseline carried from the v1 close: `pnpm test` 1132/4, `pnpm api:test`
-  1737/1, audit green, both TypeScript checks zero errors. See
+  against the archived v1 docs. The v2 gate
+  `src/ts/__tests__/fixCompletenessGateV2.test.ts` is now live.
+- Current Phase 0 baseline: `pnpm test` 1152/4, `pnpm api:test` 1737/1,
+  audit green, both TypeScript checks zero errors. See
   [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
 
-- [Phase 0](phases/phase-0-baseline-and-gate.md): next. v2 gate scaffold,
+- [Phase 0](phases/phase-0-baseline-and-gate.md): complete. v2 gate scaffold,
   render-count probe, baseline refresh. No runtime change.
-- [Phase 1](phases/phase-1-high-severity-hot-paths.md): pending. H1 trigger
+- [Phase 1](phases/phase-1-high-severity-hot-paths.md): next. H1 trigger
   budget/abort, H2 chat-create narrowing, H3 remount decoupling.
 - [Phase 2](phases/phase-2-server-corpus-ring-2.md): pending. Server
   corpus-path ring 2 (M5, M6, L3, L13, L14, L16, K1, K2).
