@@ -193,6 +193,74 @@ type MessageMutationWithFirstChangedIndex = AssembleMessageMutation & {
   [MESSAGE_MUTATION_FIRST_CHANGED_INDEX]?: number
 }
 
+export interface AssemblyMessageFullTranscriptCloneCounts {
+  initialMessages: number
+  messageReplacement: number
+  submitTranscript: number
+  restoration: number
+  postGenerationCheckpoint: number
+}
+
+export interface AssemblyMessageCaptureInstrumentation {
+  fullTranscriptClones: AssemblyMessageFullTranscriptCloneCounts
+  fullTranscriptStringifies: number
+  rowStringifies: number
+  messageReplacementComparisons: number
+  messageReplacementCaptures: Partial<
+    Record<Exclude<AssembleMutationSource, 'user_message'>, number>
+  >
+}
+
+const assemblyMessageCaptureInstrumentation: AssemblyMessageCaptureInstrumentation = {
+  fullTranscriptClones: {
+    initialMessages: 0,
+    messageReplacement: 0,
+    submitTranscript: 0,
+    restoration: 0,
+    postGenerationCheckpoint: 0,
+  },
+  fullTranscriptStringifies: 0,
+  rowStringifies: 0,
+  messageReplacementComparisons: 0,
+  messageReplacementCaptures: {},
+}
+
+export function resetAssemblyMessageCaptureInstrumentation(): void {
+  assemblyMessageCaptureInstrumentation.fullTranscriptClones.initialMessages = 0
+  assemblyMessageCaptureInstrumentation.fullTranscriptClones.messageReplacement = 0
+  assemblyMessageCaptureInstrumentation.fullTranscriptClones.submitTranscript = 0
+  assemblyMessageCaptureInstrumentation.fullTranscriptClones.restoration = 0
+  assemblyMessageCaptureInstrumentation.fullTranscriptClones.postGenerationCheckpoint = 0
+  assemblyMessageCaptureInstrumentation.fullTranscriptStringifies = 0
+  assemblyMessageCaptureInstrumentation.rowStringifies = 0
+  assemblyMessageCaptureInstrumentation.messageReplacementComparisons = 0
+  assemblyMessageCaptureInstrumentation.messageReplacementCaptures = {}
+}
+
+export function getAssemblyMessageCaptureInstrumentation(): AssemblyMessageCaptureInstrumentation {
+  return {
+    fullTranscriptClones: { ...assemblyMessageCaptureInstrumentation.fullTranscriptClones },
+    fullTranscriptStringifies: assemblyMessageCaptureInstrumentation.fullTranscriptStringifies,
+    rowStringifies: assemblyMessageCaptureInstrumentation.rowStringifies,
+    messageReplacementComparisons:
+      assemblyMessageCaptureInstrumentation.messageReplacementComparisons,
+    messageReplacementCaptures: {
+      ...assemblyMessageCaptureInstrumentation.messageReplacementCaptures,
+    },
+  }
+}
+
+function recordFullTranscriptClone(reason: keyof AssemblyMessageFullTranscriptCloneCounts): void {
+  assemblyMessageCaptureInstrumentation.fullTranscriptClones[reason]++
+}
+
+function recordMessageReplacementCapture(
+  source: Exclude<AssembleMutationSource, 'user_message'>,
+): void {
+  assemblyMessageCaptureInstrumentation.messageReplacementCaptures[source] =
+    (assemblyMessageCaptureInstrumentation.messageReplacementCaptures[source] ?? 0) + 1
+}
+
 export function getMessageMutationFirstChangedIndex(
   mutation: AssembleMessageMutation,
 ): number | undefined {
@@ -459,6 +527,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
 
   const { promptTemplate, usingPromptTemplate } = normalizeTemplate(database, currentChar)
   const formatOrder = buildFormatOrder(database)
+  const initialMessages = cloneMessages(currentChat.message ?? [], 'initialMessages')
 
   return {
     input,
@@ -477,8 +546,8 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     isContinue: input.mode === 'continue',
     presetId: input.presetId,
     loadoutId: input.loadoutId,
-    initialMessages: cloneMessages(currentChat.message ?? []),
-    messageMutationCheckpoint: cloneMessages(currentChat.message ?? []),
+    initialMessages,
+    messageMutationCheckpoint: initialMessages,
     initialScriptstate: cloneScriptstate(currentChat.scriptstate),
     messageMutations: [],
     additionalSystemPromptMutations: [],
@@ -496,8 +565,12 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
   }
 }
 
-function cloneMessages(messages: Message[] | undefined): Message[] {
-  return structuredClone(messages ?? [])
+function cloneMessages(
+  messages: readonly Message[] | undefined,
+  reason: keyof AssemblyMessageFullTranscriptCloneCounts,
+): Message[] {
+  recordFullTranscriptClone(reason)
+  return structuredClone(messages ?? []) as Message[]
 }
 
 function cloneScriptstate(
@@ -506,7 +579,9 @@ function cloneScriptstate(
   return structuredClone(scriptstate ?? {}) as Record<string, string | number | boolean>
 }
 
-function equalJson(a: unknown, b: unknown): boolean {
+function equalMessageRows(a: Message, b: Message): boolean {
+  if (a === b) return true
+  assemblyMessageCaptureInstrumentation.rowStringifies += 2
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
@@ -516,7 +591,7 @@ function firstChangedMessageIndex(
 ): number | undefined {
   const shared = Math.min(before.length, after.length)
   let index = 0
-  while (index < shared && equalJson(before[index], after[index])) index++
+  while (index < shared && equalMessageRows(before[index], after[index])) index++
   if (index === before.length && index === after.length) return undefined
   return index
 }
@@ -552,9 +627,12 @@ function captureMessageReplacement(
   source: Exclude<AssembleMutationSource, 'user_message'>,
 ): void {
   const before = state.messageMutationCheckpoint ?? []
-  const after = cloneMessages(state.currentChat.message ?? [])
-  const firstChangedIndex = firstChangedMessageIndex(before, after)
+  const afterRows = state.currentChat.message ?? []
+  assemblyMessageCaptureInstrumentation.messageReplacementComparisons++
+  const firstChangedIndex = firstChangedMessageIndex(before, afterRows)
   if (firstChangedIndex === undefined) return
+
+  const after = cloneMessages(afterRows, 'messageReplacement')
 
   state.messageMutations?.push(
     markFirstChangedIndex(
@@ -568,7 +646,19 @@ function captureMessageReplacement(
       firstChangedIndex,
     ),
   )
-  state.messageMutationCheckpoint = cloneMessages(after)
+  recordMessageReplacementCapture(source)
+  state.messageMutationCheckpoint = after
+}
+
+function setMessageMutationCheckpointRow(
+  state: AssemblyState,
+  index: number,
+  message: Message,
+): void {
+  const checkpoint = state.messageMutationCheckpoint ?? []
+  const next = checkpoint.slice()
+  next[index] = message
+  state.messageMutationCheckpoint = next
 }
 
 function appendUserMessageRow(state: AssemblyState): void {
@@ -590,13 +680,14 @@ function appendUserMessageRow(state: AssemblyState): void {
       name: null as unknown as undefined,
     } as Message
     messages[lastIndex] = message
+    const checkpointMessage = structuredClone(message) as Message
     state.messageMutations?.push({
       type: 'append',
       source: 'user_message',
       index: lastIndex,
-      message: structuredClone(message),
+      message: checkpointMessage,
     })
-    state.messageMutationCheckpoint = cloneMessages(messages)
+    setMessageMutationCheckpointRow(state, lastIndex, checkpointMessage)
     return
   }
 
@@ -609,13 +700,14 @@ function appendUserMessageRow(state: AssemblyState): void {
   } as Message
   const index = messages.length
   messages.push(message)
+  const checkpointMessage = structuredClone(message) as Message
   state.messageMutations?.push({
     type: 'append',
     source: 'user_message',
     index,
-    message: structuredClone(message),
+    message: checkpointMessage,
   })
-  state.messageMutationCheckpoint = cloneMessages(messages)
+  setMessageMutationCheckpointRow(state, index, checkpointMessage)
 }
 
 /**
@@ -694,7 +786,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
   // `appendUserMessageRow`, mirroring the browser's `cha.push(...)` after the
   // trigger.
   const rewritten = result.chat.message ?? []
-  if (!equalJson(rewritten, priorMessages)) {
+  if (firstChangedMessageIndex(priorMessages, rewritten) !== undefined) {
     state.currentChat = result.chat
     state.inputTriggerRewroteTranscript = true
     captureMessageReplacement(state, 'input_trigger')
@@ -810,29 +902,38 @@ export function isRunVarParserFixedPoint(text: string): boolean {
   return !text.includes('{') && !/<(user|char|bot)>/i.test(text)
 }
 
-function applyCurrentChatRunVars(state: AssemblyState): void {
-  let dirty = false
+function applyCurrentChatRunVars(
+  state: AssemblyState,
+  options: { captureMessageMutation?: boolean } = {},
+): void {
+  let chatVarDirty = false
+  let messageDirty = false
   const messages = (state.currentChat.message ??= [])
   // Invariant across the loop (audit L2): the expand context never varies per
   // row, so build it once instead of re-spreading per message.
   const expandCtx: ExpandContext = { ...state.ctx, chara: state.currentChar, runVar: true }
   for (const message of messages) {
+    const original = message.data
     const text = message.data ?? ''
     if (isRunVarParserFixedPoint(text)) {
       // Skip the O(length) parse for marker-free prose; keep the historical
       // `undefined -> ''` coercion the full pass performed.
       message.data = text
+      messageDirty ||= original !== text
       continue
     }
     const result = expandVariables(text, expandCtx)
     message.data = result.text
-    dirty ||= result.dirty
+    messageDirty ||= original !== result.text
+    chatVarDirty ||= result.dirty
   }
-  if (dirty) {
+  if (chatVarDirty) {
     state.varChanged = true
     syncWorkingScriptstate(state)
   }
-  captureMessageReplacement(state, 'run_var')
+  if (messageDirty && options.captureMessageMutation !== false) {
+    captureMessageReplacement(state, 'run_var')
+  }
 }
 
 function buildChatVarMutations(state: AssemblyState): AssembleChatVarMutation[] {
@@ -868,7 +969,7 @@ function buildRestorationPayload(state: AssemblyState): AssembleRestorationPaylo
     characterId: state.input.characterId,
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
-    messages: cloneMessages(state.initialMessages ?? []),
+    messages: cloneMessages(state.initialMessages ?? [], 'restoration'),
     scriptstate: Object.keys(scriptstate).length > 0 ? scriptstate : undefined,
   }
 }
@@ -879,7 +980,8 @@ function buildRestorationPayload(state: AssemblyState): AssembleRestorationPaylo
  * {@link submitTranscriptChanged}.
  */
 function captureSubmitTranscript(state: AssemblyState): void {
-  state.submitMessages = cloneMessages(state.currentChat.message ?? [])
+  if (!submitTranscriptChanged(state)) return
+  state.submitMessages = cloneMessages(state.currentChat.message ?? [], 'submitTranscript')
 }
 
 /**
@@ -1027,7 +1129,9 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
 
   state.currentTokens = (state.currentTokens ?? 0) + history.addedTokens
   state.historyMessages = history.messages
-  captureMessageReplacement(state, history.triggerResult ? 'start_trigger' : 'history_normalize')
+  if (history.triggerResult) {
+    captureMessageReplacement(state, 'start_trigger')
+  }
 
   // Bias rows (SPA `index.svelte.ts:265-273`): merge the global + per-
   // character bias lists, unescape `\n` / `\r` / `\\`, then variable-
@@ -1706,7 +1810,7 @@ async function runOutputTrigger(state: AssemblyState): Promise<boolean> {
   state.varChanged = !!state.varChanged || result.varChanged
   syncWorkingScriptstate(state)
   state.currentChat = result.chat
-  // No-op when the trigger left the transcript untouched (`equalJson` guard).
+  // No-op when the trigger left the transcript untouched.
   captureMessageReplacement(state, 'output_trigger')
   return !!result.sendAIprompt
 }
@@ -1759,13 +1863,14 @@ export async function runServerPostGeneration(
   appendAssistantRow(state, editedText, input, isContinue, continueIndex)
 
   // The run-var pass rewrites the assistant body (stripping `{{setvar}}` etc.); that
-  // rewrite is the *final text*, surfaced on `done`, not a transcript mutation — so
-  // discard the run-var capture and re-baseline the message checkpoint to the
-  // post-run-var transcript before the output trigger.
-  state.messageMutationCheckpoint = cloneMessages(state.currentChat.message ?? [])
-  applyCurrentChatRunVars(state)
+  // rewrite is the *final text*, surfaced on `done`, not a transcript mutation.
+  // Re-baseline once after the pass so any later output-trigger edit is isolated.
+  applyCurrentChatRunVars(state, { captureMessageMutation: false })
   state.messageMutations = []
-  state.messageMutationCheckpoint = cloneMessages(state.currentChat.message ?? [])
+  state.messageMutationCheckpoint = cloneMessages(
+    state.currentChat.message ?? [],
+    'postGenerationCheckpoint',
+  )
 
   const resendChat = await runOutputTrigger(state)
 

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
+import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { openDatabase } from '../src/db.js'
 import {
@@ -21,8 +21,10 @@ import {
   fillLorebookSlots,
   fillMemoryAndPostHistory,
   fillStaticSlots,
+  getAssemblyMessageCaptureInstrumentation,
   isRunVarParserFixedPoint,
   renderAndBudget,
+  resetAssemblyMessageCaptureInstrumentation,
   type AssembleDeps,
   type AssembleInput,
 } from '../src/prompt/assemble.js'
@@ -998,26 +1000,22 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         summaryIdsMissingChunks: [],
         summaryIdsMissingEmbeddings: ['summary-needs-embed'],
         chunkIdsMissingEmbeddings: ['chunk-needs-embed'],
-        chunkIdsMissingSummaries: [
-          'chunk-needs-summary',
-          'chunk-needs-summary-without-embedding',
-        ],
+        chunkIdsMissingSummaries: ['chunk-needs-summary', 'chunk-needs-summary-without-embedding'],
         followUpEligible: true,
       })
       expect(first.promptMemoryFollowUpDiagnostics).toMatchObject({
         attempted: true,
         jobsCreated: 3,
         existingJobs: 0,
-        summarizeChunkIds: [
-          'chunk-needs-summary',
-          'chunk-needs-summary-without-embedding',
-        ],
+        summarizeChunkIds: ['chunk-needs-summary', 'chunk-needs-summary-without-embedding'],
         embedChunkIds: ['chunk-needs-embed'],
         errors: [],
       })
-      expect(listMemoryJobs(memoryDb, { chatId: 'chat-1' }).map((job) => job.kind).sort()).toEqual(
-        ['embed', 'summarize', 'summarize'],
-      )
+      expect(
+        listMemoryJobs(memoryDb, { chatId: 'chat-1' })
+          .map((job) => job.kind)
+          .sort(),
+      ).toEqual(['embed', 'summarize', 'summarize'])
 
       const second = beginAssembly(
         baseInput(),
@@ -1555,6 +1553,301 @@ describe('Phase 7-12d-i assemble mutation contract', () => {
       index: 0,
       message: { role: 'user', data: 'new user', chatId: 'msg-1' },
     })
+  })
+})
+
+describe('Phase 3 M1 assembly message capture dirty flags', () => {
+  const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
+
+  const m1Db = (
+    messages: Message[] = [],
+    overrides: { db?: Partial<Database>; char?: Partial<character>; chat?: Partial<Chat> } = {},
+  ): Database =>
+    makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          name: 'Tess',
+          desc: 'DESC',
+          firstMessage: 'Greetings.',
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: messages as never,
+              ...overrides.chat,
+            }),
+          ],
+          ...overrides.char,
+        } as Partial<character>),
+      ],
+      ...overrides.db,
+    } as Partial<Database>)
+
+  const captureCount = (
+    source: keyof ReturnType<
+      typeof getAssemblyMessageCaptureInstrumentation
+    >['messageReplacementCaptures'],
+  ): number => getAssemblyMessageCaptureInstrumentation().messageReplacementCaptures[source] ?? 0
+
+  function expectNoFullTranscriptStringify(): void {
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptStringifies).toBe(0)
+  }
+
+  it('does not clone or stringify unchanged capture stages for a plain send', async () => {
+    resetAssemblyMessageCaptureInstrumentation()
+
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'plain user text' }),
+      depsFor(m1Db([msg('user', 'plain history text', 'msg-1')])),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual([
+      'user_message',
+    ])
+    const metrics = getAssemblyMessageCaptureInstrumentation()
+    expect(metrics.fullTranscriptClones.messageReplacement).toBe(0)
+    expect(metrics.fullTranscriptClones.submitTranscript).toBe(0)
+    expect(metrics.messageReplacementComparisons).toBe(0)
+    expect(metrics.messageReplacementCaptures).toEqual({})
+    expectNoFullTranscriptStringify()
+  })
+
+  it('keeps run-var fixed-point rows out of message capture but captures a real rewrite once', async () => {
+    resetAssemblyMessageCaptureInstrumentation()
+    const fixed = await assemblePrompt(
+      baseInput({ mode: 'preview', userMessage: undefined }),
+      depsFor(m1Db([msg('user', 'marker-free history', 'msg-1')])),
+    )
+
+    expect(fixed.stopSending).toBe(false)
+    expect(fixed.mutations?.messageMutations).toEqual([])
+    expect(captureCount('run_var')).toBe(0)
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
+      0,
+    )
+    expectNoFullTranscriptStringify()
+
+    resetAssemblyMessageCaptureInstrumentation()
+    const rewritten = await assemblePrompt(
+      baseInput({ mode: 'preview', userMessage: undefined }),
+      depsFor(m1Db([msg('char', 'I am <bot>. {{setvar::mood::bright}}', 'msg-1')])),
+    )
+
+    expect(rewritten.stopSending).toBe(false)
+    expect(captureCount('run_var')).toBe(1)
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
+      1,
+    )
+    const runVarPatch = rewritten.mutations?.messageMutations.find(
+      (mutation) => mutation.source === 'run_var',
+    )
+    expect(runVarPatch).toMatchObject({
+      type: 'replace_all',
+      source: 'run_var',
+      beforeLength: 1,
+      afterLength: 1,
+      messages: [{ role: 'char', data: 'I am Tess. ', chatId: 'msg-1' }],
+    })
+    expect(rewritten.mutations?.chatVarMutations).toEqual([
+      { key: '$mood', before: null, after: 'bright' },
+    ])
+    expectNoFullTranscriptStringify()
+  })
+
+  it('persists chat-var-only dirty state without forcing a message replacement capture', async () => {
+    resetAssemblyMessageCaptureInstrumentation()
+
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'new user' }),
+      depsFor(
+        m1Db([], {
+          char: {
+            triggerscript: [
+              startTrigger([{ type: 'setvar', operator: '=', var: 'score', value: '9' }]),
+            ] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.mutations?.varChanged).toBe(true)
+    expect(result.mutations?.chatVarMutations).toEqual([
+      { key: '$score', before: null, after: '9' },
+    ])
+    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual([
+      'user_message',
+    ])
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
+      0,
+    )
+    expect(captureCount('start_trigger')).toBe(0)
+    expectNoFullTranscriptStringify()
+  })
+
+  it('captures input-trigger transcript rewrites once and keeps restoration at the original transcript', async () => {
+    resetAssemblyMessageCaptureInstrumentation()
+
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'new user' }),
+      depsFor(
+        m1Db([], {
+          char: {
+            triggerscript: [
+              {
+                comment: '',
+                type: 'input',
+                conditions: [],
+                effect: [{ type: 'impersonate', role: 'char', value: 'input row' }],
+              },
+            ] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual([
+      'input_trigger',
+      'user_message',
+    ])
+    expect(captureCount('input_trigger')).toBe(1)
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
+      1,
+    )
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.submitTranscript).toBe(1)
+    expect(result.submitTranscriptChanged).toBe(true)
+    expect(
+      result.submitMessages?.map((message) => ({ role: message.role, data: message.data })),
+    ).toEqual([
+      { role: 'char', data: 'input row' },
+      { role: 'user', data: 'new user' },
+    ])
+    expect(result.restoration?.messages).toEqual([])
+    expectNoFullTranscriptStringify()
+  })
+
+  it('captures editinput rewrites once after the appended user checkpoint', async () => {
+    resetAssemblyMessageCaptureInstrumentation()
+
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'hi' }),
+      depsFor(
+        m1Db([], {
+          char: {
+            customscript: [
+              { in: 'hi', out: 'HELLO', type: 'editinput', flag: '', ableFlag: false },
+            ] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual([
+      'user_message',
+      'editinput',
+    ])
+    expect(captureCount('editinput')).toBe(1)
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
+      1,
+    )
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.submitTranscript).toBe(1)
+    expect(
+      result.submitMessages?.map((message) => ({ role: message.role, data: message.data })),
+    ).toEqual([{ role: 'user', data: 'HELLO' }])
+    expect(result.restoration?.messages).toEqual([])
+    expectNoFullTranscriptStringify()
+  })
+
+  it('captures start-trigger chat edits once and preserves stop/error restoration baseline', async () => {
+    resetAssemblyMessageCaptureInstrumentation()
+
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'new user' }),
+      depsFor(
+        m1Db([msg('user', 'before start trigger', 'msg-1')], {
+          char: {
+            triggerscript: [
+              startTrigger([
+                { type: 'modifychat', index: '0', value: 'edited by trigger' },
+                { type: 'impersonate', role: 'char', value: 'added by trigger' },
+              ]),
+            ] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual([
+      'user_message',
+      'start_trigger',
+    ])
+    expect(captureCount('start_trigger')).toBe(1)
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
+      1,
+    )
+    const startPatch = result.mutations?.messageMutations.find(
+      (mutation) => mutation.source === 'start_trigger',
+    )
+    expect(startPatch).toMatchObject({
+      type: 'replace_all',
+      source: 'start_trigger',
+      beforeLength: 2,
+      afterLength: 3,
+      messages: [
+        { role: 'user', data: 'edited by trigger', chatId: 'msg-1' },
+        { role: 'user', data: 'new user' },
+        { role: 'char', data: 'added by trigger' },
+      ],
+    })
+    expect(result.restoration?.messages).toEqual([
+      { role: 'user', data: 'before start trigger', chatId: 'msg-1' },
+    ])
+    expectNoFullTranscriptStringify()
+  })
+
+  it('captures regenerate truncation once and leaves the restoration transcript intact', async () => {
+    resetAssemblyMessageCaptureInstrumentation()
+
+    const result = await assemblePrompt(
+      baseInput({
+        mode: 'regenerate',
+        userMessage: undefined,
+        regenerateMessageId: 'msg-char-1',
+      }),
+      depsFor(
+        m1Db([
+          msg('user', 'try again', 'msg-user-1'),
+          { ...(msg('char', 'old reply', 'msg-char-1') as any), saying: 'char-tess' } as never,
+        ]),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.mutations?.messageMutations).toEqual([
+      {
+        type: 'replace_all',
+        source: 'regenerate',
+        beforeLength: 2,
+        afterLength: 1,
+        messages: [msg('user', 'try again', 'msg-user-1')],
+      },
+    ])
+    expect(captureCount('regenerate')).toBe(1)
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
+      1,
+    )
+    expect(result.restoration?.messages).toEqual([
+      { role: 'user', data: 'try again', chatId: 'msg-user-1' },
+      { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-tess' },
+    ])
+    expectNoFullTranscriptStringify()
   })
 })
 

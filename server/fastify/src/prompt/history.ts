@@ -37,8 +37,8 @@ import { runStartTrigger, type TriggerRunResult } from './triggers.js'
  *     `maxThoughtTagDepth` clamp: always stripped from `content`,
  *     captured into `chat.thoughts: string[]` when
  *     `maxThoughtDepth === -1 || maxThoughtDepth - totalCount <= index`.
- *   - Per-message `memo` defaults to `msg.chatId`, backfilling
- *     `msg.chatId` with a UUID v4 when missing (mirrors `formatHistoryMessage.ts:69-71`).
+ *   - Per-message `memo` defaults to `msg.chatId`, using a local UUID v4 when
+ *     missing so prompt rows keep stable shape without mutating the transcript.
  *
  * Multimodal inlays + `{{asset_prompt::}}`. Adds an
  * `AssetLookup` DI seam so the route layer can resolve inlay ids and
@@ -306,9 +306,7 @@ async function formatHistoryMessage(
     currentChat,
   )
 
-  if (!msg.chatId) {
-    msg.chatId = randomUUID()
-  }
+  const memo = msg.chatId || randomUUID()
 
   const multimodals: MultiModal[] = []
 
@@ -343,7 +341,7 @@ async function formatHistoryMessage(
   const chat: OpenAIChat = {
     role: msg.role === 'user' ? 'user' : 'assistant',
     content: formatted,
-    memo: msg.chatId,
+    memo,
   }
   if (thoughts.length > 0) chat.thoughts = thoughts
   if (multimodals.length > 0) chat.multimodals = multimodals

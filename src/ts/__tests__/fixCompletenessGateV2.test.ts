@@ -175,7 +175,44 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('M1', 3, 'Dirty-flag `captureMessageReplacement`; compare before clone.'),
+  done(
+    'M1',
+    3,
+    'Dirty-flag `captureMessageReplacement`; compare before clone.',
+    'server/fastify/__tests__/assemble.test.ts',
+    'does not clone or stringify unchanged capture stages for a plain send',
+    [
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName:
+          'keeps run-var fixed-point rows out of message capture but captures a real rewrite once',
+      },
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName:
+          'captures input-trigger transcript rewrites once and keeps restoration at the original transcript',
+      },
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName: 'captures editinput rewrites once after the appended user checkpoint',
+      },
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName:
+          'captures start-trigger chat edits once and preserves stop/error restoration baseline',
+      },
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName:
+          'captures regenerate truncation once and leaves the restoration transcript intact',
+      },
+      {
+        testPath: 'server/fastify/__tests__/generation.chat.test.ts',
+        testName:
+          'leaves a plain send transcript to the browser (no route message write) (slice 3b-4)',
+      },
+    ],
+  ),
   planned('M2', 3, 'Marker fixed-point guard in `formatHistoryMessage`.'),
   planned('M3', 3, 'Render stable template cards once; preflight tokenizes cached rows.'),
   planned('M4', 3, 'Memoize charhistory/userhistory/lorebook callbacks per assembly.'),
@@ -1106,7 +1143,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M1'
+      entry.id === 'M2'
         ? {
             ...entry,
             testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
@@ -1116,7 +1153,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'M1: PLANNED entries must not claim proof fields',
+      'M2: PLANNED entries must not claim proof fields',
     )
   })
 
@@ -1130,6 +1167,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'H1',
       'H2',
       'H3',
+      'M1',
       'M5',
       'M6',
       'L3',
@@ -1144,7 +1182,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects DONE entries without a registered test path and test name', () => {
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M1'
+      entry.id === 'M2'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1154,9 +1192,9 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M1: status mismatch (registry DONE, docs PENDING)',
-        'M1: DONE without a registered testPath',
-        'M1: DONE without a registered testName',
+        'M2: status mismatch (registry DONE, docs PENDING)',
+        'M2: DONE without a registered testPath',
+        'M2: DONE without a registered testName',
       ]),
     )
   })
@@ -1164,7 +1202,7 @@ describe('v2 fix-completeness gate routing registry', () => {
   it('validates primary and extra DONE test proofs against existing test files', () => {
     const missingExtraTestName = ['missing extra proof title', 'assembled at runtime'].join(' ')
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M1'
+      entry.id === 'M2'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1182,8 +1220,8 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M1: status mismatch (registry DONE, docs PENDING)',
-        `M1: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
+        'M2: status mismatch (registry DONE, docs PENDING)',
+        `M2: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
       ]),
     )
   })
@@ -1217,12 +1255,12 @@ describe('v2 fix-completeness gate routing registry', () => {
     const riskText = readDoc(RISK_DOC)
     const withDoneDocRow = replaceRiskRow(
       riskText,
-      'M1',
-      '| M1 | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Dirty-flag `captureMessageReplacement`; compare before clone. | DONE |',
+      'M2',
+      '| M2 | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Marker fixed-point guard in `formatHistoryMessage`. | DONE |',
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'M1: status mismatch (registry PLANNED, docs DONE)',
+      'M2: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 
