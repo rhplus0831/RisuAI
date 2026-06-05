@@ -7,14 +7,17 @@ import {
   createEmbedMemoryJobBatchHandler,
   createEmbedMemoryJobHandler,
 } from '../src/memoryEmbedJobHandler.js'
-import { MemoryWorker } from '../src/memoryWorker.js'
+import { MEMORY_JOB_BATCH_MAX_JOBS, MemoryWorker } from '../src/memoryWorker.js'
 import {
   cancelMemoryJob,
   createMemoryChunk,
   enqueueMemoryJob,
   getMemoryJob,
   listMemoryEmbeddings,
+  listMemoryJobs,
 } from '../src/memoryRepository.js'
+import { writePersistedWithMessages } from '../src/repository.js'
+import { assertScopedLoadOnHotPath } from './helpers/loadCostHarness.js'
 
 const dataDirs: string[] = []
 
@@ -485,6 +488,229 @@ describe('embed memory job handler', () => {
         status: 'pending',
         error: 'voyage exploded',
       })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('M7: caps the drained embed batch at MEMORY_JOB_BATCH_MAX_JOBS per tick', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      const total = MEMORY_JOB_BATCH_MAX_JOBS + 1
+      for (let i = 1; i <= total; i++) {
+        const suffix = String(i).padStart(2, '0')
+        seedBatchJob(db, { id: `job-${suffix}`, chunkId: `chunk-${suffix}`, text: `chunk ${i}` })
+      }
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            sleep: async () => {},
+            embed: async () => ({ model: 'custom', vectors: [new Float32Array([1])], dim: 1 }),
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(listMemoryJobs(db, { status: 'completed' })).toHaveLength(MEMORY_JOB_BATCH_MAX_JOBS)
+      expect(listMemoryJobs(db, { status: 'pending' })).toHaveLength(1)
+
+      expect(await worker.tick()).toBe(true)
+      expect(listMemoryJobs(db, { status: 'pending' })).toHaveLength(0)
+      expect(listMemoryJobs(db, { status: 'completed' })).toHaveLength(total)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('M7: slices a contextual batch into token-aware sub-batches with per-sub-batch group ids', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      // 40 chars ≈ 10 tokens each; a 20-token budget fits exactly two chunks.
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        text: 'a'.repeat(40),
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        text: 'b'.repeat(40),
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-3',
+        chunkId: 'chunk-3',
+        text: 'c'.repeat(40),
+        model: 'voyageContext3',
+      })
+      const embedGroups = vi.fn(async (opts: { groups: readonly (readonly string[])[] }) => ({
+        model: 'voyage-context-3',
+        groups: [opts.groups[0].map((_text, index) => new Float32Array([index + 1]))],
+        dim: 1,
+      }))
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            embedGroups: embedGroups as never,
+            contextualSubBatchTokenBudget: 20,
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(embedGroups).toHaveBeenCalledTimes(2)
+      expect((embedGroups.mock.calls as any[][])[0][0].groups).toEqual([
+        ['a'.repeat(40), 'b'.repeat(40)],
+      ])
+      expect((embedGroups.mock.calls as any[][])[1][0].groups).toEqual([['c'.repeat(40)]])
+
+      const embeddings = listMemoryEmbeddings(db, { chatId: 'chat-1', model: 'voyageContext3' })
+      expect(embeddings.map((embedding) => embedding.chunkId).sort()).toEqual([
+        'chunk-1',
+        'chunk-2',
+        'chunk-3',
+      ])
+      const byChunk = new Map(embeddings.map((embedding) => [embedding.chunkId, embedding]))
+      // groupId is consistent within a sub-batch and distinct across sub-batches.
+      expect(byChunk.get('chunk-2')?.groupId).toBe(byChunk.get('chunk-1')?.groupId)
+      expect(byChunk.get('chunk-3')?.groupId).not.toBe(byChunk.get('chunk-1')?.groupId)
+      expect(byChunk.get('chunk-1')?.groupIndex).toBe(0)
+      expect(byChunk.get('chunk-2')?.groupIndex).toBe(1)
+      expect(byChunk.get('chunk-3')?.groupIndex).toBe(0)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed' })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed' })
+      expect(getMemoryJob(db, 'job-3')).toMatchObject({ status: 'completed' })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('M7: a failing contextual sub-batch is committed independently and does not fail unrelated chunks', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        text: 'a'.repeat(40),
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        text: 'b'.repeat(40),
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-3',
+        chunkId: 'chunk-3',
+        text: 'c'.repeat(40),
+        model: 'voyageContext3',
+      })
+      let call = 0
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            contextualSubBatchTokenBudget: 20,
+            embedGroups: async (opts) => {
+              call += 1
+              if (call === 1) return { error: 'voyage exploded', code: 'upstream' }
+              return {
+                model: 'voyage-context-3',
+                groups: [opts.groups[0].map(() => new Float32Array([1]))],
+                dim: 1,
+              }
+            },
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      // Sub-batch 1 (chunk-1, chunk-2) failed alone…
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({
+        status: 'pending',
+        error: 'voyage exploded',
+      })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({
+        status: 'pending',
+        error: 'voyage exploded',
+      })
+      // …while sub-batch 2 (chunk-3) committed its embedding and completed.
+      expect(getMemoryJob(db, 'job-3')).toMatchObject({ status: 'completed', error: null })
+      expect(
+        listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((embedding) => embedding.chunkId),
+      ).toEqual(['chunk-3'])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L18: the default loader performs zero whole-corpus payload reads per batch', async () => {
+    const dataDir = makeDataDir()
+    const db = openDatabase(dataDir)
+    try {
+      writePersistedWithMessages(db, dataDir, {
+        _version: 4,
+        database: {
+          ...database(),
+          characters: [
+            {
+              chaId: 'char-1',
+              type: 'character',
+              name: 'Tess',
+              chats: [
+                { id: 'chat-1', name: 'main', message: [{ role: 'user', data: 'hello' }] },
+                { id: 'chat-2', name: 'side', message: [{ role: 'user', data: 'bye' }] },
+              ],
+            },
+          ],
+        },
+        assets: [],
+      } as never)
+      seedBatchJob(db, { id: 'job-1', chunkId: 'chunk-1', text: 'chunk one' })
+      const embed = vi.fn(async () => ({
+        model: 'custom',
+        vectors: [new Float32Array([0.5])],
+        dim: 1,
+      }))
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          // No loadDatabase injection: the default dataDir path is under test.
+          embed: createEmbedMemoryJobBatchHandler({ db, dataDir, embed }),
+        },
+      })
+
+      // hypa_v3_presets is the one collection the memory path legitimately
+      // reads whole (it is the settings source); everything else must stay
+      // scoped — no characters/chats/messages/collection payload parses.
+      await assertScopedLoadOnHotPath(() => worker.tick(), {
+        allowTables: ['hypa_v3_presets'],
+      })
+
+      // The scoped read still resolved the provider request from settings.
+      expect(embed).toHaveBeenCalledOnce()
+      expect((embed.mock.calls as any[][])[0][0]).toMatchObject({
+        request: {
+          provider: 'custom',
+          endpoint: 'https://example.test/v1/embeddings',
+          apiKey: 'sk-test',
+        },
+      })
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(1)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed' })
     } finally {
       db.close()
     }

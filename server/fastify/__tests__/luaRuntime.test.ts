@@ -8,11 +8,14 @@ import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { createTriggerVarEngine, type TriggerVarEngine } from '../src/prompt/triggerVars.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import {
+  createLuaExecBudget,
   isBlockedAddress,
-  validateEgressUrl,
-  serverLuaRequest,
-  runServerLua,
+  readLuaEngineAcquireStats,
   runLuaEditTrigger,
+  runServerLua,
+  serverLuaRequest,
+  settleLuaEnginePool,
+  validateEgressUrl,
   type EgressDeps,
   type RequestRateState,
   type ServerLuaRuntimeContext,
@@ -495,6 +498,119 @@ describe('server Lua runtime — interactive APIs fail explicitly', () => {
     expect(result.interactiveInvoked).toBe(true)
     // The handler threw at alertInput, so the row was never rewritten.
     expect(result.res).toBeUndefined()
+  })
+})
+
+describe('server Lua runtime — aggregate exec budget (L19)', () => {
+  it('L19: an exhausted aggregate budget short-circuits before booting an engine', async () => {
+    const { ctx } = makeRuntime()
+    ctx.execBudget = { totalMs: 100, usedMs: 100 }
+    const before = readLuaEngineAcquireStats()
+
+    const result = await runServerLua(
+      { code: 'while true do end', mode: 'editRequest', data: rows('x') },
+      ctx,
+    )
+
+    expect(result.timedOut).toBe(true)
+    expect(result.error).toBe('aggregate Lua execution budget exhausted')
+    expect(result.res).toBeUndefined()
+    const after = readLuaEngineAcquireStats()
+    expect(after.pooledAcquires + after.freshAcquires).toBe(
+      before.pooledAcquires + before.freshAcquires,
+    )
+  })
+
+  it('L19: runaway hooks across a trigger loop are bounded by the aggregate budget, not per-run limits', async () => {
+    const chat = makeChat()
+    const runawayEffect = {
+      comment: 'runaway',
+      type: 'request',
+      conditions: [],
+      effect: [{ type: 'triggerlua', code: 'while true do end' }],
+    }
+    const char = makeChar({
+      chats: [chat],
+      // Three runaway hooks: with the default 3000ms per-run limit alone this
+      // loop would stall for ~9s; the shared budget bounds the whole pass.
+      triggerscript: [runawayEffect, runawayEffect, runawayEffect] as never,
+    })
+    const { ctx } = makeRuntime({ chat, char })
+    const { char: _char, ...editCtx } = ctx
+    const budget = createLuaExecBudget(300)
+
+    const input = rows('survives')
+    const started = Date.now()
+    const out = await runLuaEditTrigger(char, 'editRequest', input, {}, {
+      ...editCtx,
+      execBudget: budget,
+    })
+    const elapsed = Date.now() - started
+
+    // Identity fallback: every run timed out / was budget-blocked.
+    expect(out).toEqual(input)
+    // Bounded by ~the budget (plus scheduling slack), well under one per-run
+    // limit per hook.
+    expect(elapsed).toBeLessThan(2_500)
+    expect(budget.usedMs).toBeGreaterThanOrEqual(300)
+  })
+})
+
+describe('server Lua runtime — pre-warmed engines (L21)', () => {
+  it('L21: a default-limit run serves from the warm pool without a hot-path boot, output identical', async () => {
+    // Prime: this run may boot inline, but its completion refills the pool.
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[#data].content = data[#data].content .. ' [' .. meta.tag .. ']'
+        return data
+      end)
+    `
+    const prime = makeRuntime()
+    const fresh = await runServerLua(
+      { code, mode: 'editRequest', data: rows('alpha', 'omega'), meta: { tag: 'EDIT' } },
+      prime.ctx,
+    )
+    await settleLuaEnginePool()
+
+    const before = readLuaEngineAcquireStats()
+    const { ctx } = makeRuntime()
+    const pooled = await runServerLua(
+      { code, mode: 'editRequest', data: rows('alpha', 'omega'), meta: { tag: 'EDIT' } },
+      ctx,
+    )
+    const after = readLuaEngineAcquireStats()
+
+    // The second run came from the pool — no fresh boot on the hot path.
+    expect(after.pooledAcquires).toBe(before.pooledAcquires + 1)
+    expect(after.freshAcquires).toBe(before.freshAcquires)
+    // Pooled and fresh-boot runs produce identical results.
+    expect(pooled).toEqual(fresh)
+    expect((pooled.res as OpenAIChat[])[1].content).toBe('omega [EDIT]')
+  })
+
+  it('L21: pooled engines never leak Lua globals between runs (per-call isolation preserved)', async () => {
+    const readMarker = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = tostring(MARKER)
+        return data
+      end)
+    `
+    // Run A plants a global on its engine…
+    const writer = makeRuntime()
+    const wrote = await runServerLua(
+      { code: `MARKER = 'leaked'\n${readMarker}`, mode: 'editRequest', data: rows('x') },
+      writer.ctx,
+    )
+    expect((wrote.res as OpenAIChat[])[0].content).toBe('leaked')
+
+    // …and run B (a pooled engine under the same default limit) must not see it.
+    await settleLuaEnginePool()
+    const reader = makeRuntime()
+    const read = await runServerLua(
+      { code: readMarker, mode: 'editRequest', data: rows('x') },
+      reader.ctx,
+    )
+    expect((read.res as OpenAIChat[])[0].content).toBe('nil')
   })
 })
 

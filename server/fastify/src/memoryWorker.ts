@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import {
   claimNextMemoryJob,
   completeMemoryJob,
+  listPendingMemoryJobChatIds,
   recoverRunningMemoryJobs,
   retryOrFailMemoryJob,
   type MemoryJob,
@@ -11,6 +12,15 @@ import {
 import { buildMemoryJobEvent, emitMemoryEventSafely, type MemoryEventSink } from './memoryEvents.js'
 
 export const MEMORY_WORKER_DEFAULT_POLL_INTERVAL_MS = 1_000
+
+/**
+ * Cap on the jobs a single batch-handler invocation may drain (the first
+ * claimed job plus `claimNext` calls). Bounds one chat's batch so a long
+ * imported-chat backlog neither materializes into one huge provider request
+ * (audit M7) nor holds the single-flight worker for the whole backlog while
+ * other chats wait (audit L17).
+ */
+export const MEMORY_JOB_BATCH_MAX_JOBS = 32
 
 export type MemoryJobHandler = (job: MemoryJob) => void | Promise<void>
 
@@ -52,6 +62,9 @@ export class MemoryWorker {
   private timer: NodeJS.Timeout | null = null
   private inFlight: Promise<boolean> | null = null
   private active = false
+  /** Per-chat serve recency for the round-robin claim (audit L17). */
+  private readonly chatLastServedAt = new Map<string, number>()
+  private serveSequence = 0
 
   constructor(opts: MemoryWorkerOptions) {
     this.db = opts.db
@@ -124,11 +137,45 @@ export class MemoryWorker {
     this.timer.unref()
   }
 
+  /**
+   * Round-robin claim across chats (audit L17): serve the pending chat that
+   * was served least recently, so one chat's long embed/summarize backlog
+   * cannot starve other chats' jobs. Never-served chats keep their FIFO order
+   * (oldest pending job first), which preserves the single-chat behavior.
+   */
+  private claimNextJobFairly(): MemoryJob | null {
+    const pendingChatIds = listPendingMemoryJobChatIds(
+      this.db,
+      this.retry.now === undefined ? {} : { now: this.retry.now },
+    )
+    if (pendingChatIds.length === 0) return null
+
+    // Drop chats with nothing pending so the recency map stays bounded.
+    const live = new Set(pendingChatIds)
+    for (const chatId of [...this.chatLastServedAt.keys()]) {
+      if (!live.has(chatId)) this.chatLastServedAt.delete(chatId)
+    }
+
+    let pick = pendingChatIds[0]
+    let pickServedAt = this.chatLastServedAt.get(pick) ?? 0
+    for (const chatId of pendingChatIds) {
+      const servedAt = this.chatLastServedAt.get(chatId) ?? 0
+      if (servedAt < pickServedAt) {
+        pick = chatId
+        pickServedAt = servedAt
+      }
+    }
+
+    const job = claimNextMemoryJob(
+      this.db,
+      this.retry.now === undefined ? { chatId: pick } : { chatId: pick, now: this.retry.now },
+    )
+    if (job) this.chatLastServedAt.set(pick, ++this.serveSequence)
+    return job
+  }
+
   private async processOne(): Promise<boolean> {
-    const job =
-      this.retry.now === undefined
-        ? claimNextMemoryJob(this.db)
-        : claimNextMemoryJob(this.db, { now: this.retry.now })
+    const job = this.claimNextJobFairly()
     if (!job) return false
     this.emitJob(job)
 

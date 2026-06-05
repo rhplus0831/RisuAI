@@ -445,6 +445,82 @@ describe('memory repository orphan cleanup', () => {
     }
   })
 
+  it('opens no write transaction when the chat has no summaries at all (L16)', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      const execCalls: string[] = []
+      const preparedSql: string[] = []
+      const originalExec = db.exec.bind(db)
+      const originalPrepare = db.prepare.bind(db)
+      db.exec = ((sql: string) => {
+        execCalls.push(sql)
+        return originalExec(sql)
+      }) as typeof db.exec
+      db.prepare = ((sql: string) => {
+        preparedSql.push(sql)
+        return originalPrepare(sql)
+      }) as typeof db.prepare
+
+      expect(
+        cleanupOrphanedMemory(db, {
+          chatId: 'chat-1',
+          currentChatMemos: ['memo-a'],
+        }),
+      ).toEqual({ summariesDeleted: 0, chunksDeleted: 0 })
+
+      expect(execCalls.filter((sql) => sql.includes('BEGIN'))).toEqual([])
+      // The cheap EXISTS probe ran, but the summary metadata re-parse did not.
+      expect(preparedSql.some((sql) => sql.includes('SELECT 1 AS present'))).toBe(true)
+      expect(preparedSql.some((sql) => sql.includes('SELECT *'))).toBe(false)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('opens no write transaction when summaries exist but none are orphaned (L16)', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-kept',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'kept chunk',
+        status: 'summarized',
+      })
+      createMemorySummary(db, {
+        id: 'summary-kept',
+        chatId: 'chat-1',
+        chunkId: 'chunk-kept',
+        model: 'model-a',
+        text: 'kept summary',
+        metadata: { chatMemos: ['memo-a'] },
+        tokens: 3,
+      })
+
+      const execCalls: string[] = []
+      const originalExec = db.exec.bind(db)
+      db.exec = ((sql: string) => {
+        execCalls.push(sql)
+        return originalExec(sql)
+      }) as typeof db.exec
+
+      expect(
+        cleanupOrphanedMemory(db, {
+          chatId: 'chat-1',
+          currentChatMemos: ['memo-a', 'memo-b'],
+        }),
+      ).toEqual({ summariesDeleted: 0, chunksDeleted: 0 })
+
+      expect(execCalls.filter((sql) => sql.includes('BEGIN'))).toEqual([])
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
+        'summary-kept',
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
   it('deletes partially matching memo sets and remains idempotent', () => {
     const db = openDatabase(makeDataDir())
     try {

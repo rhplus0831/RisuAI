@@ -1045,6 +1045,57 @@ export function loadPersistedForAssembly(
 }
 
 /**
+ * Memory-job-scoped database read (audit L18). The embed/summarize batch
+ * handlers read only settings-level fields (the hypa settings/presets/keys
+ * and the summary-model routing fields) plus chat EXISTENCE
+ * (`assertChatExists`), so they must not pay `loadPersisted`'s whole
+ * characters+chats payload parse, its 9-collection-table parse, or the
+ * assets metadata scan on every batch. Load the settings row, override
+ * `hypaV3Presets` from its table (the only collection the memory paths
+ * read), and stub `characters` to id-only chat rows.
+ *
+ * States the scoped read cannot serve fall back to the broad loader so
+ * behavior stays identical: an uninitialized settings table returns the same
+ * `null`, and a pre-extraction database (no character rows but an embedded
+ * `characters` array in the settings JSON) keeps its embedded fallback.
+ */
+export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: string): unknown {
+  const settings = loadSettingsFromSqlite(db)
+  if (settings === null) return loadPersisted(db, dataDir).database
+
+  const charRows = db
+    .prepare('SELECT id, position FROM characters ORDER BY position')
+    .all() as unknown as Array<Pick<CharacterRow, 'id' | 'position'>>
+  if (charRows.length === 0 && Array.isArray(settings.characters)) {
+    return loadPersisted(db, dataDir).database
+  }
+
+  const chatRows = db
+    .prepare('SELECT id, character_id FROM chats ORDER BY character_id, position')
+    .all() as unknown as Array<Pick<ChatRow, 'id' | 'character_id'>>
+  const chatsByCharId = new Map<string, Array<{ id: string }>>()
+  for (const row of chatRows) {
+    const list = chatsByCharId.get(row.character_id) ?? []
+    list.push({ id: row.id })
+    chatsByCharId.set(row.character_id, list)
+  }
+  settings.characters = charRows.map((row) => ({
+    chaId: row.id,
+    chats: chatsByCharId.get(row.id) ?? [],
+  }))
+
+  // Mirror `loadCollectionsFromSqlite`: the table wins only when non-empty,
+  // otherwise any embedded settings value is kept.
+  const presetRows = db
+    .prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position')
+    .all() as unknown as Array<{ data_json: string }>
+  if (presetRows.length > 0) {
+    settings.hypaV3Presets = presetRows.map((row) => JSON.parse(row.data_json))
+  }
+  return settings
+}
+
+/**
  * Split each chat's `message[]` into the messages table and return the
  * message-free `Persisted`. Pure SQLite write — runs inside the caller's open
  * transaction.

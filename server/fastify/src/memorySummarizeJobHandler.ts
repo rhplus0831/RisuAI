@@ -16,8 +16,8 @@ import {
   resolveMemorySummaryModel,
   type MemorySummaryModelRequest,
 } from './memorySummaryModel.js'
-import { loadPersisted } from './repository.js'
-import type { MemoryJobBatchHandler } from './memoryWorker.js'
+import { loadPersistedDatabaseForMemoryJob } from './repository.js'
+import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler } from './memoryWorker.js'
 
 export interface SummarizeMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -89,7 +89,10 @@ export function createSummarizeMemoryJobBatchHandler(
     const settings = resolveHypaV3Settings(database)
     const maxConcurrent = Math.max(1, settings.summarizationMaxConcurrent)
     const jobs = [firstJob]
-    while (true) {
+    // Bounded drain (audit M7/L17): leave any overflow pending for later
+    // ticks instead of holding the single-flight worker for one chat's
+    // whole backlog.
+    while (jobs.length < MEMORY_JOB_BATCH_MAX_JOBS) {
       const next = context.claimNext({ chatId: firstJob.chatId, kind: 'summarize' })
       if (!next) break
       jobs.push(next)
@@ -339,10 +342,12 @@ function parseSummarizePayload(payload: unknown): HypaV3SummarizeJobPayload {
 }
 
 function loadDatabase(opts: SummarizeMemoryJobHandlerOptions): Database {
+  // Memory-job-scoped read (audit L18): settings + hypa presets + chat-id
+  // stubs only — `assertChatExists` needs chat ids, never chat payloads.
   const database = opts.loadDatabase
     ? opts.loadDatabase()
     : opts.dataDir
-      ? loadPersisted(opts.db, opts.dataDir).database
+      ? loadPersistedDatabaseForMemoryJob(opts.db, opts.dataDir)
       : null
   if (!isRecord(database)) {
     throw new Error('persisted database is missing')

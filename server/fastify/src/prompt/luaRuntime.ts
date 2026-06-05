@@ -39,11 +39,27 @@ import { tokenize, encodingForModel } from './tokens.js'
  * 2. **`json.lua` is read from disk at boot**, path resolved relative to this module
  *    (`import.meta.url`) so it is deterministic under `pnpm api:test` regardless of
  *    cwd. Mounted once into a module-singleton {@link LuaFactory}.
- * 3. **Per-call engine isolation.** The factory (wasm + mounted json.lua) is a
- *    singleton, but `createEngine` runs per {@link runServerLua} call and is closed in
- *    `finally`, so one chat's Lua globals never leak into another. Access-control sets
- *    (`safeIds`/`lowLevelIds`/`editDisplayIds`) are per-call closures rather than the
- *    browser's module-level sets.
+ * 3. **Per-call engine isolation, pre-warmed (audit L21).** The factory (wasm +
+ *    mounted json.lua) is a singleton; each {@link runServerLua} call still gets an
+ *    engine of its own and closes it in `finally`, so one chat's Lua globals never
+ *    leak into another. To keep the per-send hot path from paying the engine boot +
+ *    prelude compile every run, a small pool holds engines that are pre-booted with
+ *    the host-fn surface declared (bound lazily via {@link declareHostFunctions}'s
+ *    state binder) and the static prelude already executed. Pool engines have never
+ *    run user code and are discarded after exactly one call — isolation is preserved
+ *    by construction. The prelude and the user code now load as two chunks (the
+ *    browser compiles them as one); the only observable deltas are error-message
+ *    chunk names/line offsets and that user top-level code can no longer see the
+ *    wrapper's internal locals (`editRequestFuncs` etc.), which scripts reach through
+ *    `listenEdit` anyway. Access-control sets (`safeIds`/`lowLevelIds`/
+ *    `editDisplayIds`) remain per-call closures rather than the browser's
+ *    module-level sets.
+ * 5. **Aggregate exec budget (audit L19).** Callers may hand every run of one
+ *    request the same {@link LuaExecBudget}; each run's wall clock is charged
+ *    against it, a constrained run gets `min(execTimeoutMs, remaining)`, and an
+ *    exhausted budget short-circuits before any engine boots — so a card stacking
+ *    many runaway hooks is bounded by ~`totalMs` (+ at most one per-run limit for
+ *    a dispatch already in flight), not `hooks × execTimeoutMs`.
  * 4. **`OpenAIChat` round-trip** is byte-faithful for the text-send subset (proven by
  *    the editRequest unit test).
  */
@@ -64,6 +80,31 @@ const MAX_RESPONSE_BYTES = 2_000_000
 /** `sleep()` caps: per-call and per-run (the browser caps neither). */
 const MAX_SLEEP_MS = 2000
 const MAX_TOTAL_SLEEP_MS = 6000
+
+/**
+ * Default aggregate Lua wall-clock budget per request (audit L19). Shared by
+ * every hook phase (input/output triggers, editinput/editRequest/editoutput)
+ * of one assembly+post-generation pass, so a card stacking many runaway
+ * `triggerlua` hooks cannot stall the send for `hooks × per-run-limit`.
+ * Generous: 10× the per-run default.
+ */
+export const DEFAULT_LUA_AGGREGATE_BUDGET_MS = 30_000
+
+/**
+ * Mutable aggregate budget threaded through {@link ServerLuaRuntimeContext}.
+ * `usedMs` accumulates each run's wall clock (engine acquire + load +
+ * dispatch, including host-fn waits).
+ */
+export interface LuaExecBudget {
+  totalMs: number
+  usedMs: number
+}
+
+export function createLuaExecBudget(
+  totalMs: number = DEFAULT_LUA_AGGREGATE_BUDGET_MS,
+): LuaExecBudget {
+  return { totalMs, usedMs: 0 }
+}
 
 // Banned egress targets carried over from the browser (`scriptings.ts:344`).
 const BANNED_URL_PREFIXES = [
@@ -424,14 +465,17 @@ export async function serverLuaRequest(
 // ── The Lua prelude (ported verbatim from `scriptings.ts:1262`) ──────────────
 
 /**
- * The browser's `luaCodeWrapper` (`scriptings.ts:1262-1413`), copied byte-for-byte.
- * It is pure Lua — `require 'json'`, the `getChat`/`LLM`/`log` JSON wrappers,
- * `listenEdit`, `getState`/`setState`, `async`, and `callListenMain` — and is the
- * contract the edit-hook dispatch depends on, so it must stay identical for
- * `callListenMain` to round-trip.
+ * The browser's `luaCodeWrapper` body (`scriptings.ts:1262-1413`), copied
+ * byte-for-byte minus the trailing `${code}` interpolation. It is pure Lua —
+ * `require 'json'`, the `getChat`/`LLM`/`log` JSON wrappers, `listenEdit`,
+ * `getState`/`setState`, `async`, and `callListenMain` — and is the contract
+ * the edit-hook dispatch depends on, so it must stay identical for
+ * `callListenMain` to round-trip. It is static, so prepared engines run it
+ * once at warm-up (audit L21) and the user code loads as its own chunk; the
+ * wrapper's top-level statements define globals/closures only and call no
+ * host functions, which is what makes the pre-run safe.
  */
-function luaCodeWrapper(code: string): string {
-  return `
+const LUA_PRELUDE = `
 json = require 'json'
 
 function getChat(id, index)
@@ -578,10 +622,7 @@ callListenMain = async(function(type, id, value, meta)
 
     return json.encode(realValue)
 end)
-
-${code}
 `
-}
 
 // ── Runtime context + state ─────────────────────────────────────────────────
 
@@ -620,6 +661,13 @@ export interface ServerLuaRuntimeContext {
    * bounded by the exec limit.
    */
   signal?: AbortSignal
+  /**
+   * Aggregate exec budget shared by every Lua run of one request (audit L19).
+   * Each run charges its wall clock; a constrained run gets
+   * `min(execTimeoutMs, remaining)` and an exhausted budget short-circuits
+   * before any engine boots.
+   */
+  execBudget?: LuaExecBudget
 }
 
 interface RuntimeState {
@@ -707,7 +755,35 @@ class LuaAbortError extends Error {}
 // ── Host functions (the disposition table, README §Host-function disposition) ─
 
 /**
- * Declare the full browser host-fn surface on `engine`, bound to `state`:
+ * Sentinel state a prepared engine carries until {@link runServerLua} binds the
+ * real per-call state (audit L21). The prelude's top-level statements call no
+ * host functions, so this is belt-and-braces: its pre-aborted signal makes any
+ * unexpected pre-bind host call throw {@link LuaAbortError} instead of touching
+ * a stale chat.
+ */
+const UNBOUND_RUNTIME_STATE: RuntimeState = (() => {
+  const aborted = new AbortController()
+  aborted.abort()
+  return {
+    ctx: {
+      chat: { message: [] } as unknown as Chat,
+      database: {} as Database,
+      selectedCharID: 0,
+      chatPage: 0,
+      varEngine: null as unknown as TriggerVarEngine,
+      signal: aborted.signal,
+    },
+    safeIds: new Set<string>(),
+    lowLevelIds: new Set<string>(),
+    editDisplayIds: new Set<string>(),
+    stopSending: false,
+    interactiveInvoked: false,
+    sleptMs: 0,
+  }
+})()
+
+/**
+ * Declare the full browser host-fn surface on `engine`:
  *   - **Pure** fns operate on the server's in-memory chat / vars / char / db;
  *   - **Gated** fns (`request`) run behind the SSRF guard + low-level access;
  *   - **Deferred** privileged fns (`LLM`/`similarity`/`generateImage`/image getters/
@@ -717,8 +793,14 @@ class LuaAbortError extends Error {}
  *     are no-ops.
  * Mirrors the `id`-gating from `scriptings.ts` (`safeIds` for safe writes,
  * `editDisplayIds` additionally for `setChatVar`, `lowLevelIds` for privileged).
+ *
+ * The per-call {@link RuntimeState} is bound through the returned setter rather
+ * than a parameter (audit L21): the host fns close over a mutable `state`, so
+ * the (engine-boot-time) declaration can happen once at pool warm-up while each
+ * call rebinds its own state before running user code.
  */
-function declareHostFunctions(engine: LuaEngine, state: RuntimeState): void {
+function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
+  let state: RuntimeState = UNBOUND_RUNTIME_STATE
   const declare = (name: string, fn: (...args: any[]) => unknown) => {
     // Every host fn is the abort checkpoint (L20): once the request signal
     // fires, the next host call throws, terminating the surrounding pcall.
@@ -1005,6 +1087,118 @@ function declareHostFunctions(engine: LuaEngine, state: RuntimeState): void {
       result: 'Error: LLM access is not available in server prompt assembly (deferred)',
     }
   })
+
+  return (next) => {
+    state = next
+  }
+}
+
+// ── Prepared engines: warm pool + acquire (audit L21) ───────────────────────
+
+/** An engine that is booted, host-fn-declared, and prelude-loaded, waiting for
+ *  exactly one call's state bind. Never reused after a run. */
+interface PreparedLuaEngine {
+  engine: LuaEngine
+  bindState: (state: RuntimeState) => void
+}
+
+/** Idle prepared engines kept warm for default-limit runs. Small: each holds a
+ *  Lua state inside the shared wasm module. */
+const LUA_ENGINE_POOL_TARGET = 2
+const luaEnginePool: PreparedLuaEngine[] = []
+let luaEnginePoolFill: Promise<void> | null = null
+/**
+ * Runs currently inside {@link runServerLua}. Engine boots mutate the shared
+ * wasm module's function table; doing that while another engine has a pending
+ * Lua continuation (an in-flight `:await()`) crashes wasmoon with "null
+ * function or function signature mismatch". So the pool refills only from the
+ * last run's `finally` (when nothing is in flight), and
+ * {@link acquirePreparedEngine} awaits any refill still in progress before a
+ * run starts.
+ */
+let activeLuaRuns = 0
+
+/** Acquire counters (test seam): proves the hot path served from the pool
+ *  without booting, while refills happen off-path. */
+export interface LuaEngineAcquireStats {
+  engineBoots: number
+  pooledAcquires: number
+  freshAcquires: number
+}
+
+const luaEngineStats: LuaEngineAcquireStats = {
+  engineBoots: 0,
+  pooledAcquires: 0,
+  freshAcquires: 0,
+}
+
+export function readLuaEngineAcquireStats(): LuaEngineAcquireStats {
+  return { ...luaEngineStats }
+}
+
+/** Test seam: resolves once any in-flight pool refill settles. */
+export async function settleLuaEnginePool(): Promise<void> {
+  while (luaEnginePoolFill) await luaEnginePoolFill
+}
+
+/** Boot an engine, declare the host-fn surface (state unbound), and pre-run
+ *  the static prelude. The prelude is trusted fixed code, so its load is
+ *  bounded by the default limit regardless of the caller's. */
+async function createPreparedEngine(functionTimeoutMs: number): Promise<PreparedLuaEngine> {
+  const factory = await getLuaFactory()
+  const engine = await factory.createEngine({
+    injectObjects: true,
+    functionTimeout: functionTimeoutMs,
+  })
+  luaEngineStats.engineBoots++
+  try {
+    const bindState = declareHostFunctions(engine)
+    await runStringWithTimeout(engine, LUA_PRELUDE, DEFAULT_EXEC_TIMEOUT_MS)
+    return { engine, bindState }
+  } catch (error) {
+    engine.global.close()
+    throw error
+  }
+}
+
+/** Refill the pool, but only while no run is in flight (see
+ *  {@link activeLuaRuns}); the last finishing run kicks it again. */
+function refillLuaEnginePoolWhenIdle(): void {
+  if (activeLuaRuns > 0) return
+  if (luaEnginePoolFill || luaEnginePool.length >= LUA_ENGINE_POOL_TARGET) return
+  luaEnginePoolFill = (async () => {
+    try {
+      while (luaEnginePool.length < LUA_ENGINE_POOL_TARGET) {
+        luaEnginePool.push(await createPreparedEngine(DEFAULT_EXEC_TIMEOUT_MS))
+      }
+    } catch {
+      // Transient boot failure: the next acquire simply falls back to a
+      // fresh inline boot, exactly the pre-pool behavior.
+    } finally {
+      luaEnginePoolFill = null
+    }
+  })()
+}
+
+/**
+ * Pop a pre-warmed engine when the run uses the default exec limit (pool
+ * engines are created with the default `functionTimeout`, which is fixed at
+ * engine creation); any custom/budget-tightened limit boots fresh with that
+ * limit, exactly the pre-pool behavior. An in-flight refill is awaited first —
+ * a brief, bounded wait that keeps engine boots from overlapping the run's
+ * Lua execution (see {@link activeLuaRuns}).
+ */
+async function acquirePreparedEngine(execTimeoutMs: number): Promise<PreparedLuaEngine> {
+  while (luaEnginePoolFill) await luaEnginePoolFill
+  if (execTimeoutMs === DEFAULT_EXEC_TIMEOUT_MS) {
+    const pooled = luaEnginePool.shift()
+    if (pooled) {
+      luaEngineStats.pooledAcquires++
+      return pooled
+    }
+  }
+  luaEngineStats.freshAcquires++
+  return createPreparedEngine(execTimeoutMs)
 }
 
 // Bounded load.
@@ -1044,9 +1238,10 @@ async function runStringWithTimeout(
 // ── runScripted equivalent ──────────────────────────────────────────────────
 
 /**
- * Server port of `runScripted` (`scriptings.ts:62`), Lua only. Creates a fresh
- * engine (decision 3), declares the host-fn surface, runs the wrapped user code
- * under the exec limit, mints an access key, dispatches by `mode`, and returns a
+ * Server port of `runScripted` (`scriptings.ts:62`), Lua only. Acquires an
+ * engine of its own (pre-warmed when possible — decision 3 / audit L21), binds
+ * the per-call state into the host-fn surface, runs the user code under the
+ * exec limit, mints an access key, dispatches by `mode`, and returns a
  * structured result. Load/dispatch errors are captured (not thrown) the way the
  * browser swallows them — but a timeout or interactive-API invocation is surfaced
  * on the result so callers can act on it.
@@ -1073,6 +1268,26 @@ export async function runServerLua(
     }
   }
 
+  // An exhausted aggregate budget never boots an engine either (L19); the
+  // caller's hook loop degrades to identity instead of stalling assembly.
+  const budget = ctx.execBudget
+  if (budget && budget.usedMs >= budget.totalMs) {
+    return {
+      stopSending: false,
+      res: undefined,
+      timedOut: true,
+      interactiveInvoked: false,
+      error: 'aggregate Lua execution budget exhausted',
+    }
+  }
+  // A constrained run gets only what is left of the budget. The dispatch's
+  // engine-level `functionTimeout` stays at its creation value, so the worst
+  // overshoot past the budget is one per-run limit.
+  const effectiveTimeoutMs = budget
+    ? Math.max(1, Math.min(execTimeoutMs, budget.totalMs - budget.usedMs))
+    : execTimeoutMs
+  const runStartedAt = Date.now()
+
   const state: RuntimeState = {
     ctx,
     safeIds: new Set<string>(),
@@ -1083,11 +1298,9 @@ export async function runServerLua(
     sleptMs: 0,
   }
 
-  const factory = await getLuaFactory()
-  const engine = await factory.createEngine({
-    injectObjects: true,
-    functionTimeout: execTimeoutMs,
-  })
+  const prepared = await acquirePreparedEngine(effectiveTimeoutMs)
+  const engine = prepared.engine
+  activeLuaRuns++
 
   const result: ServerLuaResult = {
     stopSending: false,
@@ -1097,10 +1310,10 @@ export async function runServerLua(
   }
 
   try {
-    declareHostFunctions(engine, state)
+    prepared.bindState(state)
 
     try {
-      await runStringWithTimeout(engine, luaCodeWrapper(opts.code), execTimeoutMs, signal)
+      await runStringWithTimeout(engine, opts.code, effectiveTimeoutMs, signal)
     } catch (error) {
       // A load failure (syntax error or a top-level runaway loop) leaves nothing to
       // dispatch. Record it and return identity, mirroring the browser's
@@ -1177,7 +1390,15 @@ export async function runServerLua(
     result.stopSending = state.stopSending
     result.interactiveInvoked = state.interactiveInvoked
     if (signal?.aborted) result.aborted = true
+    // Charge the aggregate budget with this run's wall clock (L19).
+    if (budget) budget.usedMs += Date.now() - runStartedAt
+    // One call per engine: closing here (never returning to the pool) is what
+    // preserves per-call isolation (L21).
     engine.global.close()
+    activeLuaRuns--
+    // Replace what this run consumed — off the hot path, and only once no
+    // other run is mid-flight.
+    refillLuaEnginePoolWhenIdle()
   }
 }
 

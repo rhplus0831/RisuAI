@@ -57,7 +57,13 @@ import {
 import { finalizeRequestBudget } from './budgetFinalize.js'
 import { runTrigger, type TriggerRunContext, type TriggerRunResult } from './triggers.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
-import { runLuaEditTrigger, runServerLua, type ServerLuaEditTriggerContext } from './luaRuntime.js'
+import {
+  createLuaExecBudget,
+  runLuaEditTrigger,
+  runServerLua,
+  type LuaExecBudget,
+  type ServerLuaEditTriggerContext,
+} from './luaRuntime.js'
 import { processScript } from './scripts.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
 import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
@@ -284,6 +290,12 @@ export interface AssemblyState {
   isContinue: boolean
   /** Abort signal from `AssembleDeps.signal`, handed to every Lua run (L20). */
   signal?: AbortSignal
+  /**
+   * Aggregate Lua exec budget shared by every hook phase of this request
+   * (input/output triggers, editinput/editRequest/editoutput — audit L19), so
+   * a card stacking runaway hooks cannot stall assembly indefinitely.
+   */
+  luaExecBudget?: LuaExecBudget
   /** Recorded identity only; applying a non-active preset/loadout happens elsewhere. */
   presetId?: string
   loadoutId?: string
@@ -449,6 +461,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     usingPromptTemplate,
     formatOrder,
     signal: deps.signal,
+    luaExecBudget: createLuaExecBudget(),
     isContinue: input.mode === 'continue',
     presetId: input.presetId,
     loadoutId: input.loadoutId,
@@ -616,6 +629,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
           char: currentChar,
           model: db.aiModel,
           signal: state.signal,
+          execBudget: state.luaExecBudget,
         },
       )
       // The host fns mutate `chat` in place (its `.message` array is reassigned by
@@ -1283,6 +1297,7 @@ function buildLuaEditTriggerContext(state: AssemblyState): {
     varEngine,
     model: db.aiModel,
     signal: state.signal,
+    execBudget: state.luaExecBudget,
     moduleTriggers: getModuleTriggers(getActiveModules(db, state.currentChar, state.currentChat)),
   }
   return { editCtx, varEngine }
@@ -1636,6 +1651,7 @@ async function runOutputTrigger(state: AssemblyState): Promise<boolean> {
           char: currentChar,
           model: db.aiModel,
           signal: state.signal,
+          execBudget: state.luaExecBudget,
         },
       )
       return { chat, stopSending: result.stopSending }

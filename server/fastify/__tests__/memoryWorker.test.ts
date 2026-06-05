@@ -12,7 +12,11 @@ import {
   listMemoryJobs,
 } from '../src/memoryRepository.js'
 import type { MemoryEvent } from '../src/memoryEvents.js'
-import { MemoryWorker, type MemoryJobHandler } from '../src/memoryWorker.js'
+import {
+  MEMORY_JOB_BATCH_MAX_JOBS,
+  MemoryWorker,
+  type MemoryJobHandler,
+} from '../src/memoryWorker.js'
 
 const dataDirs: string[] = []
 
@@ -205,6 +209,73 @@ describe('memory worker lifecycle and dispatch', () => {
         status: 'completed',
         error: null,
       })
+    } finally {
+      db.close()
+    }
+  })
+
+  it("L17: round-robins claims across chats so one chat's backlog cannot starve another", async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, { id: 'job-a-1', chatId: 'chat-a', kind: 'chunk', payload: {} })
+      enqueueMemoryJob(db, { id: 'job-a-2', chatId: 'chat-a', kind: 'chunk', payload: {} })
+      enqueueMemoryJob(db, { id: 'job-a-3', chatId: 'chat-a', kind: 'chunk', payload: {} })
+      enqueueMemoryJob(db, { id: 'job-b-1', chatId: 'chat-b', kind: 'chunk', payload: {} })
+      enqueueMemoryJob(db, { id: 'job-b-2', chatId: 'chat-b', kind: 'chunk', payload: {} })
+
+      const handled: string[] = []
+      const worker = new MemoryWorker({
+        db,
+        handlers: {
+          chunk: (job) => {
+            handled.push(job.id)
+          },
+        },
+      })
+
+      while (await worker.tick()) {
+        // drain
+      }
+
+      // Strict FIFO would run all of chat-a before chat-b; the fair claim
+      // alternates between the pending chats instead.
+      expect(handled).toEqual(['job-a-1', 'job-b-1', 'job-a-2', 'job-b-2', 'job-a-3'])
+    } finally {
+      db.close()
+    }
+  })
+
+  it("L17: one chat's batch is bounded to a single tick and the other chat is served next", async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, { id: 'job-a-1', chatId: 'chat-a', kind: 'chunk', payload: {} })
+      enqueueMemoryJob(db, { id: 'job-a-2', chatId: 'chat-a', kind: 'chunk', payload: {} })
+      enqueueMemoryJob(db, { id: 'job-a-3', chatId: 'chat-a', kind: 'chunk', payload: {} })
+      enqueueMemoryJob(db, { id: 'job-b-1', chatId: 'chat-b', kind: 'chunk', payload: {} })
+
+      const batches: string[][] = []
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          chunk: async (firstJob, context) => {
+            const jobs = [firstJob]
+            while (jobs.length < MEMORY_JOB_BATCH_MAX_JOBS) {
+              const next = context.claimNext({ chatId: firstJob.chatId, kind: 'chunk' })
+              if (!next) break
+              jobs.push(next)
+            }
+            batches.push(jobs.map((job) => job.id))
+            for (const job of jobs) context.complete(job.id)
+          },
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+      expect(await worker.tick()).toBe(true)
+      expect(await worker.tick()).toBe(false)
+
+      expect(batches).toEqual([['job-a-1', 'job-a-2', 'job-a-3'], ['job-b-1']])
+      expect(listMemoryJobs(db, { status: 'pending' })).toHaveLength(0)
     } finally {
       db.close()
     }

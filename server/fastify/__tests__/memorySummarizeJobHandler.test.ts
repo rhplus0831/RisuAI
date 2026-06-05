@@ -18,6 +18,8 @@ import {
   updateMemoryChunkStatus,
 } from '../src/memoryRepository.js'
 import type { SummaryAdapterResult } from '../src/memorySummaryAdapter.js'
+import { writePersistedWithMessages } from '../src/repository.js'
+import { assertScopedLoadOnHotPath } from './helpers/loadCostHarness.js'
 
 const dataDirs: string[] = []
 
@@ -511,6 +513,107 @@ describe('summarize memory job handler', () => {
       expect(getMemoryJob(db, 'job-2')).toMatchObject({
         status: 'pending',
         error: 'summarize job job-1 is no longer running',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L18: the default loader performs zero whole-corpus payload reads per batch', async () => {
+    const dataDir = makeDataDir()
+    const db = openDatabase(dataDir)
+    try {
+      writePersistedWithMessages(db, dataDir, {
+        _version: 4,
+        database: {
+          ...database(),
+          characters: [
+            {
+              chaId: 'char-1',
+              type: 'character',
+              name: 'Tess',
+              chats: [
+                { id: 'chat-1', name: 'main', message: [{ role: 'user', data: 'hello' }] },
+                { id: 'chat-2', name: 'side', message: [{ role: 'user', data: 'bye' }] },
+              ],
+            },
+          ],
+        },
+        assets: [],
+      } as never)
+      seedChunkAndJob(db)
+      const summarize = vi.fn(async () => ({ text: 'summary text', tokens: 12 }))
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          // No loadDatabase injection: the default dataDir path is under test.
+          summarize: createSummarizeMemoryJobBatchHandler({ db, dataDir, summarize }),
+        },
+      })
+
+      // hypa_v3_presets is the one collection the memory path legitimately
+      // reads whole (it is the settings source); everything else must stay
+      // scoped — chat existence is checked via id-only stubs, never the
+      // characters/chats/messages payload parse.
+      await assertScopedLoadOnHotPath(() => worker.tick(), {
+        allowTables: ['hypa_v3_presets'],
+      })
+
+      expect(summarize).toHaveBeenCalledOnce()
+      expect(listMemorySummaries(db, { chatId: 'chat-1' })).toHaveLength(1)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed' })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L18: an unknown chat fails with the same chat-not-found error through the scoped loader', async () => {
+    const dataDir = makeDataDir()
+    const db = openDatabase(dataDir)
+    try {
+      writePersistedWithMessages(db, dataDir, {
+        _version: 4,
+        database: {
+          ...database(),
+          characters: [
+            {
+              chaId: 'char-1',
+              type: 'character',
+              name: 'Tess',
+              chats: [{ id: 'chat-1', name: 'main', message: [] }],
+            },
+          ],
+        },
+        assets: [],
+      } as never)
+      createMemoryChunk(db, {
+        id: 'chunk-x',
+        chatId: 'chat-9',
+        messageId: 'm1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'assistant: orphaned',
+      })
+      enqueueMemoryJob(db, {
+        id: 'job-x',
+        chatId: 'chat-9',
+        kind: 'summarize',
+        payload: payload('chunk-x'),
+      })
+      const summarize = vi.fn(async () => ({ text: 'should not run', tokens: 1 }))
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          summarize: createSummarizeMemoryJobBatchHandler({ db, dataDir, summarize }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(summarize).not.toHaveBeenCalled()
+      expect(getMemoryJob(db, 'job-x')).toMatchObject({
+        status: 'pending',
+        error: 'chat data not found for chat chat-9',
       })
     } finally {
       db.close()

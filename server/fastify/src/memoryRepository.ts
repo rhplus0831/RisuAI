@@ -603,6 +603,17 @@ export function cleanupOrphanedMemory(
     return { summariesDeleted: 0, chunksDeleted: 0 }
   }
 
+  // Cheap pre-check (audit L16): the overwhelming case is a chat with no
+  // summaries at all — an id-only EXISTS probe skips the summary metadata
+  // re-parse and the write transaction entirely.
+  const hasSummaries = getRow<{ present: number }>(
+    db.prepare('SELECT 1 AS present FROM memory_summaries WHERE chat_id = ? LIMIT 1'),
+    input.chatId,
+  )
+  if (!hasSummaries) {
+    return { summariesDeleted: 0, chunksDeleted: 0 }
+  }
+
   const currentChatMemos = new Set(input.currentChatMemos)
   const orphanedSummaries = listMemorySummaries(db, { chatId: input.chatId }).filter((summary) => {
     const chatMemos = readSummaryChatMemos(summary)
@@ -610,6 +621,13 @@ export function cleanupOrphanedMemory(
   })
   const summaryIds = orphanedSummaries.map((summary) => summary.id)
   const chunkIds = [...new Set(orphanedSummaries.map((summary) => summary.chunkId))]
+
+  // Nothing orphaned → no `BEGIN IMMEDIATE` write transaction (audit L16).
+  // The deletes below would be no-ops; opening a write txn on every
+  // generation just contends with the writer for nothing.
+  if (summaryIds.length === 0 && chunkIds.length === 0) {
+    return { summariesDeleted: 0, chunksDeleted: 0 }
+  }
 
   db.exec('BEGIN IMMEDIATE')
   try {
@@ -816,6 +834,30 @@ export function listMemoryJobs(
     ...values,
   )
   return rows.map(mapMemoryJobRow)
+}
+
+/**
+ * Chat ids with at least one runnable (`pending`, due) job, ordered by their
+ * oldest pending job (FIFO across fresh chats). Id-only aggregate — no payload
+ * columns — so the worker's fairness scan (audit L17) stays off the corpus
+ * read path.
+ */
+export function listPendingMemoryJobChatIds(
+  db: DatabaseSync,
+  filter: { now?: string | Date } = {},
+): string[] {
+  const now = normalizeTimestamp(filter.now)
+  const rows = allRows<{ chat_id: string }>(
+    db.prepare(`
+        SELECT chat_id, MIN(created_at) AS oldest_created_at
+        FROM memory_jobs
+        WHERE status = 'pending' AND next_run_at <= ?
+        GROUP BY chat_id
+        ORDER BY oldest_created_at, chat_id
+      `),
+    now,
+  )
+  return rows.map((row) => row.chat_id)
 }
 
 export function claimNextMemoryJob(

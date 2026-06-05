@@ -19,8 +19,16 @@ import {
   listMemoryEmbeddings,
   type MemoryJob,
 } from './memoryRepository.js'
-import { loadPersisted } from './repository.js'
-import type { MemoryJobBatchHandler } from './memoryWorker.js'
+import { loadPersistedDatabaseForMemoryJob } from './repository.js'
+import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler } from './memoryWorker.js'
+
+/**
+ * Default token budget per contextual (`voyageContext3`) sub-batch request
+ * (audit M7). Approximated at ~4 chars/token; conservative against the
+ * provider's request limits so a long imported chat's first embedding pass
+ * never materializes into one uncapped request.
+ */
+export const CONTEXTUAL_EMBED_SUB_BATCH_TOKEN_BUDGET = 12_000
 
 export interface EmbedMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -34,6 +42,9 @@ export interface EmbedMemoryJobHandlerOptions {
   ) => Promise<Awaited<ReturnType<typeof embedTextGroups>>>
   sleep?: (ms: number) => Promise<void>
   now?: () => number
+  /** Token budget per contextual sub-batch (test seam; defaults to
+   *  {@link CONTEXTUAL_EMBED_SUB_BATCH_TOKEN_BUDGET}). */
+  contextualSubBatchTokenBudget?: number
 }
 
 interface HypaV3EmbedJobPayload {
@@ -88,7 +99,10 @@ export function createEmbedMemoryJobBatchHandler(
     const settings = resolveHypaV3Settings(database)
     const maxConcurrent = Math.max(1, settings.embeddingMaxConcurrent)
     const jobs = [firstJob]
-    while (true) {
+    // Bounded drain (audit M7/L17): leave any overflow pending for later
+    // ticks instead of materializing one chat's whole backlog into a single
+    // batch (and a single worker turn).
+    while (jobs.length < MEMORY_JOB_BATCH_MAX_JOBS) {
       const next = context.claimNext({ chatId: firstJob.chatId, kind: 'embed' })
       if (!next) break
       jobs.push(next)
@@ -96,15 +110,20 @@ export function createEmbedMemoryJobBatchHandler(
 
     const orderedJobs = [...jobs].sort(compareEmbedJobs)
     if (isContextualVoyageBatch(orderedJobs)) {
-      const results = await executeContextualEmbedJobs({
-        opts,
-        jobs: orderedJobs,
-        database,
-        settings,
-        embedGroups,
-        acquireRateLimit,
-      })
-      commitBatchResults(opts, context, results)
+      // Token-aware sub-batches, each committed independently (audit M7): an
+      // oversized or failing sub-batch retries alone instead of failing the
+      // unrelated chunks drained alongside it.
+      for (const subBatch of planContextualSubBatches(opts, orderedJobs)) {
+        const results = await executeContextualEmbedJobs({
+          opts,
+          jobs: subBatch,
+          database,
+          settings,
+          embedGroups,
+          acquireRateLimit,
+        })
+        commitBatchResults(opts, context, results)
+      }
       return
     }
 
@@ -242,6 +261,56 @@ async function executeEmbedJob(input: {
     groupId: null,
     groupIndex: null,
   }
+}
+
+/** ~4 chars/token approximation for contextual sub-batch sizing (M7). */
+function approximateTokenCount(text: string): number {
+  return Math.ceil(text.length / 4)
+}
+
+/**
+ * Slice an ordered contextual batch into token-aware sub-batches (audit M7).
+ * Greedy walk in batch order: a sub-batch closes once adding the next chunk
+ * would exceed the token budget (an oversized single chunk still travels
+ * alone). A job whose chunk cannot be resolved is isolated into its own
+ * sub-batch, so `executeContextualEmbedJobs` fails just that job with the
+ * existing error message instead of poisoning unrelated chunks.
+ */
+function planContextualSubBatches(
+  opts: EmbedMemoryJobHandlerOptions,
+  jobs: readonly MemoryJob[],
+): MemoryJob[][] {
+  const budget = Math.max(
+    1,
+    opts.contextualSubBatchTokenBudget ?? CONTEXTUAL_EMBED_SUB_BATCH_TOKEN_BUDGET,
+  )
+  const subBatches: MemoryJob[][] = []
+  let current: MemoryJob[] = []
+  let currentTokens = 0
+  const flush = (): void => {
+    if (current.length > 0) {
+      subBatches.push(current)
+      current = []
+      currentTokens = 0
+    }
+  }
+  for (const job of jobs) {
+    const payload = tryParseEmbedPayload(job.payload)
+    const chunk = payload ? getMemoryChunk(opts.db, payload.chunkId) : null
+    if (!chunk || chunk.chatId !== job.chatId) {
+      flush()
+      subBatches.push([job])
+      continue
+    }
+    const tokens = approximateTokenCount(chunk.text)
+    if (current.length > 0 && currentTokens + tokens > budget) {
+      flush()
+    }
+    current.push(job)
+    currentTokens += tokens
+  }
+  flush()
+  return subBatches
 }
 
 async function executeContextualEmbedJobs(input: {
@@ -454,10 +523,12 @@ function parseEmbedPayload(payload: unknown): HypaV3EmbedJobPayload {
 }
 
 function loadDatabase(opts: EmbedMemoryJobHandlerOptions): Database {
+  // Memory-job-scoped read (audit L18): settings + hypa presets + chat-id
+  // stubs only — never the whole characters/chats/collections payload parse.
   const database = opts.loadDatabase
     ? opts.loadDatabase()
     : opts.dataDir
-      ? loadPersisted(opts.db, opts.dataDir).database
+      ? loadPersistedDatabaseForMemoryJob(opts.db, opts.dataDir)
       : null
   if (!isRecord(database)) {
     throw new Error('persisted database is missing')
