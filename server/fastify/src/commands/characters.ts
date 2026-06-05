@@ -96,40 +96,27 @@ export function repairCharacterCollectionRow(
 ): CharacterRecord {
   const character =
     input && typeof input === 'object' && !Array.isArray(input) ? (input as JsonRecord) : {}
-  return repairCharacterRecord(
-    {
-      name: `Character ${index + 1}`,
-      firstMessage: '',
-      desc: '',
-      notes: '',
-      chats: [],
-      chatFolders: [],
-      chatPage: 0,
-      viewScreen: 'none',
-      bias: [],
-      emotionImages: [],
-      globalLore: [],
-      sdData: [],
-      customscript: [],
-      triggerscript: [],
-      utilityBot: false,
-      exampleMessage: '',
-      creatorNotes: '',
-      systemPrompt: '',
-      postHistoryInstructions: '',
-      alternateGreetings: [],
-      tags: [],
-      creator: '',
-      characterVersion: '',
-      personality: '',
-      scenario: '',
-      firstMsgIndex: -1,
-      replaceGlobalNote: '',
-      additionalText: '',
-      ...character,
-    },
-    options,
-  )
+  return repairCharacterRecord({ ...characterCollectionRowDefaults(index), ...character }, options)
+}
+
+export function buildPatchedCharacterCollectionRow(
+  input: unknown,
+  patch: JsonRecord,
+  characterId: string,
+  index = 0,
+  options: { assetDb?: DatabaseSync } = {},
+): CharacterRecord {
+  const character =
+    input && typeof input === 'object' && !Array.isArray(input) ? (input as JsonRecord) : {}
+  const patched = {
+    ...characterCollectionRowDefaults(index),
+    ...character,
+    chats: [],
+    ...patch,
+    chaId: characterId,
+  }
+  validateCharacterRecord(patched, 'character', options)
+  return patched as CharacterRecord
 }
 
 export function repairCharacterRecord(
@@ -141,6 +128,39 @@ export function repairCharacterRecord(
     typeof character.chaId === 'string' && character.chaId.trim() ? character.chaId : randomUUID()
   validateCharacterRecord(character, 'character', options)
   return character
+}
+
+function characterCollectionRowDefaults(index: number): JsonRecord {
+  return {
+    name: `Character ${index + 1}`,
+    firstMessage: '',
+    desc: '',
+    notes: '',
+    chats: [],
+    chatFolders: [],
+    chatPage: 0,
+    viewScreen: 'none',
+    bias: [],
+    emotionImages: [],
+    globalLore: [],
+    sdData: [],
+    customscript: [],
+    triggerscript: [],
+    utilityBot: false,
+    exampleMessage: '',
+    creatorNotes: '',
+    systemPrompt: '',
+    postHistoryInstructions: '',
+    alternateGreetings: [],
+    tags: [],
+    creator: '',
+    characterVersion: '',
+    personality: '',
+    scenario: '',
+    firstMsgIndex: -1,
+    replaceGlobalNote: '',
+    additionalText: '',
+  }
 }
 
 export function readCharacterPatch(

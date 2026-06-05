@@ -7,18 +7,18 @@ after each change to a narrowed or bounded path.
 
 ## Current State
 
-- Plan state: open. Phase 1 H1-H3 are implemented and proof-refreshed;
-  Phase 2 is the next fix batch. The 2026-06-06 API proof is green after the
-  stale H2 chat-create metric expectation was refreshed.
+- Plan state: open. Phase 1 H1-H3 and Phase 2's M5, M6, L3, L13, L14, L16,
+  K1, and K2 are implemented and proof-refreshed; Phase 2 is closed after the
+  2026-06-06 client-thinning audit blocker was fixed and re-run clean.
 - Gate state: the v1 gate
   (`src/ts/__tests__/fixCompletenessGate.test.ts`) stays live against the
   archived v1 docs. The v2 gate
   (`src/ts/__tests__/fixCompletenessGateV2.test.ts`) is live against the v2
   docs and active-risk routing.
-- Scheduled IDs: H1-H3 are registered `DONE` in the v2 gate and
-  [`active-risk-analysis.md`](active-risk-analysis.md). M1-M22, L1-L11 except
-  L12, L13-L59, and K1-K4 remain `PLANNED`. Gated: L12 + v1 carry-overs.
-  No-action: I1-I18 and R1-R13.
+- Scheduled IDs: H1-H3 plus Phase 2's M5, M6, L3, L13, L14, L16, K1, and K2
+  are registered `DONE` in the v2 gate and
+  [`active-risk-analysis.md`](active-risk-analysis.md). Remaining scheduled
+  rows stay `PLANNED`; gated/no-action rows are unchanged.
 
 ## Baseline (carried from the v1 close)
 
@@ -83,6 +83,72 @@ as `DONE` in both `src/ts/__tests__/fixCompletenessGateV2.test.ts` and
 Focused H1-H3 assertions, both gates, root test, client-thinning audit, and
 TypeScript checks are green. Full API-suite proof is green with the H2
 targeted chat-create expectation in `commandMessageFreeCeiling.test.ts`.
+
+## Phase 2 Verification Refresh
+
+Recorded on 2026-06-06 KST after M5, M6, L3, L13, L14, L16, K1, and K2
+landed. Those Phase 2 IDs are confirmed `DONE` in both
+`src/ts/__tests__/fixCompletenessGateV2.test.ts` and
+[`active-risk-analysis.md`](active-risk-analysis.md). The focused runtime
+proofs, gates, root test suite, API suite, client-thinning audit, and
+TypeScript checks passed. The initial audit blocker was fixed by making
+character PATCH build an id-preserving patched row instead of calling the
+import/bootstrap repair helper that can mint ids.
+
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/serverLoadCostHarness.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts server/fastify/__tests__/projection.test.ts server/fastify/__tests__/assetGc.test.ts`:
+  passed, 4 files / 88 tests.
+- `RISU_COMMAND_METRIC_SUMMARY=1 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandMetrics.test.ts`:
+  passed, 1 file / 1 test. The default Vitest reporter did not print the
+  optional JSON summary, but the test asserted the measured command families:
+  settings -> `targeted-settings`, plugin storage ->
+  `targeted-plugin-storage`, chat PATCH -> `targeted-chat-row`, character
+  select -> `targeted-character-selection`, message families ->
+  `targeted-message` with `dbJsonWriteMs === 0`, generation ->
+  `targeted-generation`, and narrowed written-table sets.
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/messageStore.test.ts server/fastify/__tests__/realmImport.test.ts server/fastify/__tests__/auth.test.ts`:
+  passed, 5 files / 171 tests.
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts`:
+  passed, 2 files / 26 tests. The live v2 gate expects H1-H3 plus M5, M6,
+  L3, L13, L14, L16, K1, and K2 as the only scheduled `DONE` entries.
+- `pnpm test`: passed, 125 files; 1155 passed / 4 skipped (1159). The run
+  printed repeated `ECONNREFUSED 127.0.0.1:3000` local-service probe noise but
+  exited 0.
+- `pnpm api:test`: passed, 99 files; 1765 passed / 1 skipped (1766).
+- `pnpm client-thinning:audit`: passed (`Client-thinning audit passed.`).
+  The previous A4R3 blocker on
+  `PATCH /api/v1/commands/characters/:characterId` is fixed; the command path
+  no longer calls `repairCharacterCollectionRow()`.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: passed with zero diagnostics.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: passed with zero
+  diagnostics after the client-lib build.
+- Blocker-remediation focused re-run:
+  `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts server/fastify/__tests__/serverLoadCostHarness.test.ts`
+  passed, 3 files / 148 tests;
+  `pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV2.test.ts`
+  passed, 1 file / 18 tests; code Prettier check, both TypeScript checks, and
+  `git diff --check` passed.
+
+Phase 2 focused proof summaries:
+
+- M5: character PATCH and non-module chat PATCH stayed scoped with
+  `corpusLoadCount === 0`, wrote only the target row, preserved sibling rows,
+  and kept the explicit broad fallback only for `patch.modules`.
+- M6/L16: `preset`, `plugin`, and `moduleEnabled` field projections were
+  byte-identical to broad composition with `characters === 0` and `chats ===
+  0`; both bulk projection routes returned 401 without auth and verified an
+  authenticated request exactly once.
+- L3/L13/K1/K2: server-intent completion, Realm character append, and
+  message-only generation finalization all reported `corpusLoadCount === 0`
+  with zero whole-corpus character/chat/message payload loads. Asset GC read
+  asset metadata once, deleted only the orphan asset, and recorded zero
+  character/chat/message/hypa and collection-table payload hydrates.
+- K1 broad-path guard: chat-variable generation finalization intentionally
+  kept the broad write path, loaded character/chat rows, loaded no messages,
+  and reported `mutationPath: targeted-generation`, `dbJsonWriteMs: 0`, and
+  broad-table writes plus `messages`.
+- L14: append-only transcript persistence recorded `stableEqualCalls === 0`,
+  `stableEqualStringifies === 0`, and `appendFastPathRows === 1`; edit and
+  truncate replacements still exercised the generic diff path.
 
 ## Phase 0 Baseline Refresh
 
@@ -155,3 +221,12 @@ Recorded during the 2026-06-05 v2 audit (evidence in
   `server/fastify/__tests__/commandMessageFreeCeiling.test.ts` passed (9
   tests), the v2 gate passed (18 tests), and `pnpm api:test` passed (1744
   passed / 1 skipped, 99 files).
+- 2026-06-06, Phase 2 verification refresh: focused Phase 2 suites passed
+  (88 tests, 1 metrics test, 171 generation/message/Realm/auth tests);
+  v1+v2 gates passed (26 tests); `pnpm test` passed (1155/4, 125 files);
+  `pnpm api:test` passed (1765/1, 99 files); both TypeScript checks passed.
+  After the A4R3 command-path id-minting blocker in
+  `PATCH /api/v1/commands/characters/:characterId` was fixed,
+  `pnpm client-thinning:audit` passed, the focused command/load-cost
+  remediation suite passed (148 tests), the v2 gate passed (18 tests), and
+  Phase 2 closed.

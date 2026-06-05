@@ -1,6 +1,6 @@
 # Phase 2: Server Corpus-Path Ring 2 (Root 1)
 
-Status: next.
+Status: complete.
 
 Goal: finish what v1 Phase 2 started — the second ring of server paths that
 still parse, normalize, clone, or rewrite the whole corpus for single-row
@@ -85,17 +85,17 @@ Findings: M5, M6, L3, L13, L14, L16, K1, K2.
 
 ## Exit Criteria
 
-- [ ] M5: character/chat PATCH parse + repair only the target row (load-count
+- [x] M5: character/chat PATCH parse + repair only the target row (load-count
       assertion), modules validation preserved; persisted rows and events
       byte-identical.
-- [ ] M6: a foreign `preset`/`plugin`/`moduleEnabled` field projection
+- [x] M6: a foreign `preset`/`plugin`/`moduleEnabled` field projection
       performs zero characters-table reads; payload byte-identical.
-- [ ] L3/L13/K1/K2: each cited path shows zero whole-corpus loads on the
+- [x] L3/L13/K1/K2: each cited path shows zero whole-corpus loads on the
       load-count harness, with output identity tests.
-- [ ] L14: appending one message to an N-message chat performs O(1) prefix
+- [x] L14: appending one message to an N-message chat performs O(1) prefix
       comparisons; delete/truncate paths unchanged.
-- [ ] L16: bulk routes verify auth exactly once; 401 behavior unchanged.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] L16: bulk routes verify auth exactly once; 401 behavior unchanged.
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation

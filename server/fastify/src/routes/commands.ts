@@ -81,6 +81,7 @@ import {
   requireLoadoutIndex,
 } from '../commands/loadouts.js'
 import {
+  buildPatchedCharacterCollectionRow,
   createCharacterRecord,
   ensureCharacterCollection,
   ensureDatabaseObject as ensureCharacterDatabaseObject,
@@ -88,7 +89,6 @@ import {
   readCharacterId,
   readCharacterOrder,
   readCharacterPatch,
-  repairCharacterCollectionRow,
   requireCharacterIndex,
   selectedCharacterId,
   validateCharacterOrderAssetRefs,
@@ -2635,13 +2635,10 @@ export function registerCommandRoutes(
           if (index === -1) {
             throw new EntityNotFoundError(`Character not found: ${characterId}`)
           }
-          const patched = repairCharacterCollectionRow(
-            {
-              ...(characters[index] as Record<string, unknown>),
-              chats: [],
-              ...patch,
-              chaId: characterId,
-            },
+          const patched = buildPatchedCharacterCollectionRow(
+            characters[index],
+            patch,
+            characterId,
             index,
           )
           characters[index] = patched
