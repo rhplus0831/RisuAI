@@ -1,6 +1,6 @@
 # Phase 2: Server Corpus-Path Ring 2 (Root 1)
 
-Status: pending.
+Status: next.
 
 Goal: finish what v1 Phase 2 started — the second ring of server paths that
 still parse, normalize, clone, or rewrite the whole corpus for single-row

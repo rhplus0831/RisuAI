@@ -1,7 +1,10 @@
 # Phase 1: High-Severity Hot Paths
 
-Status: pending. The three high-severity v2 findings, one slice each, in the
-order H2 -> H3 -> H1.
+Status: proof-refreshed on 2026-06-06. H2, H3, and H1 are `DONE` in the v2
+gate and active-risk map. Focused H1-H3 suites, both gates, `pnpm test`,
+client-thinning audit, TypeScript checks, and full `pnpm api:test` passed.
+The H2 chat-create ceiling assertion now expects the targeted
+`targeted-character-row` path.
 
 Goal: remove the worst routine-action corpus-scaling stall (H2), stop the
 whole-screen cold re-parse per variable write (H3), and make the V2 trigger
@@ -66,20 +69,23 @@ Findings: H1, H2, H3.
 
 ## Exit Criteria
 
-- [ ] H2: chat-create performs zero whole-corpus message reads and zero
+- [x] H2: chat-create performs zero whole-corpus message reads and zero
       whole-DB clones (load-count assertion); created chat + selection +
       revision/event output byte-identical to the broad path on the fixture.
-- [ ] H3: the render-count probe shows a var-only `ReloadGUIPointer` bump
+- [x] H3: the render-count probe shows a var-only `ReloadGUIPointer` bump
       re-parses only the affected messages (0 or per-message), not all N;
       `processScriptCache`/`compiledRegexCache` survive var-only bumps;
       module/settings reloads still refresh everything.
-- [ ] H1: a never-breaking `v2Loop`, a huge `v2LoopNTimes`, and a low-level
+- [x] H1: a never-breaking `v2Loop`, a huge `v2LoopNTimes`, and a low-level
       self-recursive trigger all terminate within the budget; client
       disconnect aborts a running trigger pass; normal trigger suites pass
       byte-identical.
-- [ ] Gates registered (v2 gate flips H1-H3 to `DONE`); focused suites +
+- [x] Gates registered (v2 gate flips H1-H3 to `DONE`); focused suites +
       TypeScript checks green; [`../latest-verification.md`](../latest-verification.md)
       updated.
+- [x] Full `pnpm api:test` green. 2026-06-06 proof passed 99 files; 1744
+      passed / 1 skipped after refreshing the H2 chat-create ceiling
+      expectation in `server/fastify/__tests__/commandMessageFreeCeiling.test.ts`.
 
 ## Validation
 
@@ -89,5 +95,10 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts \
   server/fastify/__tests__/serverLoadCostHarness.test.ts
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/triggers.test.ts
 pnpm exec vitest run src/ts/process/__tests__/streamResponse.test.ts src/ts/process/triggers.regexMemo.test.ts
-pnpm test && pnpm api:test
+pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts
+pnpm test
+pnpm api:test
+pnpm client-thinning:audit
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```

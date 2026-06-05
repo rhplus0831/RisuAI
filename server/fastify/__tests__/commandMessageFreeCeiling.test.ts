@@ -15,8 +15,9 @@ import {
 // Phase 6 (the message-free ceiling) regression. Each test PROVES a Tier-5
 // route's floor was correct and the documented blocker is load-bearing. Phase 8
 // has since landed the unblock prerequisites for the high-value subset, so the
-// two deletes and the two script/trigger PUTs have graduated below the floor
-// (asserted here at their new range; detailed proof in commandFloorUnblock.test.ts):
+// two deletes, chat-create, and the two script/trigger PUTs have graduated below
+// the floor (asserted here at their new range; detailed proof in
+// commandFloorUnblock.test.ts and commandMutationReadNarrowing.test.ts):
 //
 //   * DELETE characters/:id and DELETE chats/:id GRADUATED to
 //     `targeted-character-row` (Phase 8b + follow-up): the orphan cleanup now
@@ -25,9 +26,10 @@ import {
 //   * DELETE modules/:id stays `message-free`: `removeModuleReferences` strips
 //     the id across characters, chats, the loadouts collection, and settings, so
 //     no single-table lever applies and it writes the full broad set.
-//   * POST characters/:id/chats stays `hydrated`: the duplicate-message-id
-//     validation scans every chat's messages corpus-wide, a real message-load
-//     dependency.
+//   * POST characters/:id/chats GRADUATED to `targeted-character-row` (H2): the
+//     duplicate-message-id validation is handled by the indexed
+//     `activeMessageIdExists` lookup, so the route keeps corpus-wide uniqueness
+//     without hydrating every chat message.
 //   * POST characters, POST characters/create-and-select, POST modules stay
 //     `message-free` (their dropped id-repair side effects are the recorded
 //     unblock conditions, not done here).
@@ -333,12 +335,12 @@ describe('Phase 6 message-dependent delete floors', () => {
 })
 
 describe('Phase 6 message-validation create floor', () => {
-  it('POST characters/:id/chats stays hydrated and validates message ids corpus-wide', async () => {
+  it('POST characters/:id/chats uses targeted H2 chat-create and validates message ids corpus-wide', async () => {
     const revision = await importDatabase(seedDatabase())
 
     // The new chat reuses a message id that lives in a DIFFERENT character's
-    // chat. Detecting it requires the full message corpus — the message-load
-    // dependency that pins this route to `hydrated`.
+    // chat. H2 keeps that corpus-wide uniqueness check without a hydrated
+    // message load by using the active-message uid index.
     const rejected = await inject({
       method: 'POST',
       url: '/api/v1/commands/characters/char-a/chats',
@@ -356,7 +358,7 @@ describe('Phase 6 message-validation create floor', () => {
     // The rejected create wrote no new chat row.
     expect(readChatIds('char-a')).toEqual(['chat-a-1', 'chat-a-2'])
 
-    // A unique-id create succeeds and reports the `hydrated` floor.
+    // A unique-id create succeeds through the H2 targeted character-row path.
     const { metric } = await runCommand({
       method: 'POST',
       url: '/api/v1/commands/characters/char-a/chats',
@@ -369,7 +371,8 @@ describe('Phase 6 message-validation create floor', () => {
         },
       },
     })
-    expect(metric.mutationPath).toBe('hydrated')
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters', 'chats', 'messages'])
     assertCommandMetricGate(metric)
     // unshift: the new chat lands at the head of char-a's chats.
     expect(readChatIds('char-a')).toEqual(['chat-a-new', 'chat-a-1', 'chat-a-2'])
