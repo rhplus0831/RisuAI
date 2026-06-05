@@ -13,6 +13,7 @@ import {
 } from '../src/routes/generationChat.js'
 import { LLMFormat } from '../../../src/ts/model/types'
 import {
+  BROAD_WRITE_TABLES,
   assertCommandMetricGate,
   type CommandMutationMetric,
 } from './helpers/commandMetricGates.js'
@@ -179,7 +180,9 @@ interface ProtocolMetric {
   eventType?: string
   mutationPath?: string
   dbJsonWriteMs?: number
+  loadMs?: number
   totalMs?: number
+  writtenTables?: string[]
 }
 
 const EXPECTED_PROMPT_ASSEMBLY_STAGES = [
@@ -267,13 +270,17 @@ describe('per-generation stored asset cache', () => {
   it('caches stored asset reads by normalized asset id and purpose', () => {
     const assetId = 'a'.repeat(64)
     const reads: string[] = []
-    const resolver = createRequestScopedStoredAssetResolver(null as any, '/data', (_db, _dataDir, id, purpose) => {
-      reads.push(`${purpose}:${id}`)
-      return {
-        type: purpose === 'inlay' ? 'audio' : 'image',
-        base64: `data:${purpose}:${id}`,
-      }
-    })
+    const resolver = createRequestScopedStoredAssetResolver(
+      null as any,
+      '/data',
+      (_db, _dataDir, id, purpose) => {
+        reads.push(`${purpose}:${id}`)
+        return {
+          type: purpose === 'inlay' ? 'audio' : 'image',
+          base64: `data:${purpose}:${id}`,
+        }
+      },
+    )
 
     const first = resolver(assetId, 'asset_prompt')
     const second = resolver(`assets/${assetId}.png`, 'asset_prompt')
@@ -879,14 +886,15 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(durable.find((entry) => entry.metric === 'generation_persistence')).toMatchObject({
         status: 'ok',
       })
-      expect(
-        durable.find(
-          (entry) => entry.metric === 'command_mutation' && entry.type === 'generation.persisted',
-        ),
-      ).toMatchObject({
+      const durablePersistMetric = durable.find(
+        (entry) => entry.metric === 'command_mutation' && entry.type === 'generation.persisted',
+      )
+      expect(durablePersistMetric).toMatchObject({
         mutationPath: 'targeted-generation',
         dbJsonWriteMs: 0,
+        writtenTables: ['messages'],
       })
+      assertCommandMetricGate(durablePersistMetric as CommandMutationMetric)
 
       if (process.env.RISU_GENERATION_METRIC_SUMMARY === '1') {
         console.log(
@@ -1942,6 +1950,61 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(2)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
+  })
+
+  it('K1: chat-variable generation finalization keeps broad writes and reports truthful metrics', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        triggerscript: [
+          {
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [{ type: 'setvar', operator: '=', var: 'mood', value: 'happy' }],
+          },
+        ],
+      }),
+    )
+
+    await withProtocolMetrics(async (metrics) => {
+      const before = metrics.length
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      expect(res.statusCode).toBe(200)
+      const done = doneFrame(parseEvents(res.body))
+      expect(done.postGeneration?.messagePatch?.chatVarMutations).toEqual([
+        { key: '$mood', before: null, after: 'happy' },
+      ])
+      expect(done.postGeneration?.revision).toBe(2)
+
+      const commandMetric = metrics
+        .slice(before)
+        .find(
+          (entry) => entry.metric === 'command_mutation' && entry.type === 'generation.persisted',
+        )
+      expect(commandMetric).toMatchObject({
+        mutationPath: 'targeted-generation',
+        dbJsonWriteMs: 0,
+        writtenTables: [...BROAD_WRITE_TABLES, 'messages'].sort(),
+      })
+      expect(commandMetric?.loadMs).toBeGreaterThanOrEqual(0)
+      expect(commandMetric?.totalMs).toBeGreaterThanOrEqual(0)
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
   })
 

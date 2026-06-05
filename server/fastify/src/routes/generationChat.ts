@@ -1078,11 +1078,14 @@ function attachGenerationViewer(
   // leave the stream silent past idle-proxy timeouts before the first token.
   // Comments are invisible to the SSE block parser and are written directly to
   // this viewer's socket — they never enter the job's replay buffer.
-  const heartbeat = setInterval(() => {
-    if (!reply.raw.writableEnded) {
-      writeBoundedRaw(reply.raw, ': heartbeat\n\n')
-    }
-  }, viewerHeartbeatMs ?? job.heartbeatSec * 1000)
+  const heartbeat = setInterval(
+    () => {
+      if (!reply.raw.writableEnded) {
+        writeBoundedRaw(reply.raw, ': heartbeat\n\n')
+      }
+    },
+    viewerHeartbeatMs ?? job.heartbeatSec * 1000,
+  )
   heartbeat.unref()
   req.raw.once('close', () => {
     clearInterval(heartbeat)
@@ -1189,6 +1192,7 @@ function persistServerGenerationResult(args: {
     eventSink: args.eventSink,
     mutationPath: 'targeted-generation',
     writeDatabase: hasScriptstateWrite,
+    chatScopedRead: hasScriptstateWrite ? undefined : { chatId: args.chatId },
     mutate(database, targetDb) {
       const characters = normalizeAllCharacterChats(database)
       const { chat } = requireChatLocation(characters, args.chatId)

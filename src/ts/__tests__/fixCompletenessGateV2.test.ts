@@ -327,7 +327,24 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L57', 7, 'Wire the debug flag; gate MCP logs.'),
   planned('L58', 7, 'Epoch-guard `translateSuggest` writes.'),
   planned('L59', 7, 'Skip retrying translation network errors in `markParsing`.'),
-  planned('K1', 2, 'Wire `chatScopedRead` into generation finalization persist (v1-L6 residual).'),
+  done(
+    'K1',
+    2,
+    'Wire `chatScopedRead` into generation finalization persist (v1-L6 residual).',
+    'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+    'K1: message-only generation finalization performs zero loadPersisted-shaped corpus reads',
+    [
+      {
+        testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+        testName: 'K1: chat-variable generation finalization keeps the broad write path',
+      },
+      {
+        testPath: 'server/fastify/__tests__/generation.chat.test.ts',
+        testName:
+          'K1: chat-variable generation finalization keeps broad writes and reports truthful metrics',
+      },
+    ],
+  ),
   planned('K2', 2, 'Message-free/scoped load for the asset-GC sweep (v1-M10 residual).'),
   planned(
     'K3',
@@ -965,7 +982,7 @@ describe('v2 fix-completeness gate doc universe', () => {
 
     expect(rows).toHaveLength(4)
     expect(ids).toEqual(rangeIds('K', 4))
-    expect(rows.map((row) => row.status)).toEqual(['PENDING', 'PENDING', 'PENDING', 'PENDING'])
+    expect(rows.map((row) => row.status)).toEqual(['DONE', 'PENDING', 'PENDING', 'PENDING'])
 
     expect(rows[0].targetFix).toContain('v1-L6 residual')
     expect(rows[1].targetFix).toContain('v1-M10 residual')
@@ -1086,6 +1103,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L3',
       'L13',
       'L16',
+      'K1',
     ])
     expect(doneEntries.every(hasProofFields)).toBe(true)
   })

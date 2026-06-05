@@ -7,6 +7,7 @@ import { performance } from 'node:perf_hooks'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
+import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
   loadPersisted,
   loadPersistedForAssembly,
@@ -29,6 +30,7 @@ import {
   classifyCorpusStatement,
   withServerLoadInstrumentation,
 } from './helpers/loadCostHarness.js'
+import type { GenerationChatRouteOptions } from '../src/routes/generationChat.js'
 import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
 
 // Phase 0 (measurement-baseline-harness): prove the server load-count harness
@@ -49,7 +51,7 @@ interface Harness {
 let harness: Harness
 let assertion: string
 
-async function startHarness(): Promise<Harness> {
+async function startHarness(generationChat?: GenerationChatRouteOptions): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-load-cost-'))
   const { app } = await buildApp({
@@ -65,6 +67,7 @@ async function startHarness(): Promise<Harness> {
     // Background DB consumers would pollute the process-global statement spy.
     assetGc: false,
     memoryWorker: false,
+    generationChat,
   })
   return { app, dataDir }
 }
@@ -79,6 +82,13 @@ afterEach(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
+async function restartHarness(generationChat: GenerationChatRouteOptions): Promise<void> {
+  await harness.app.close()
+  rmSync(harness.dataDir, { recursive: true, force: true })
+  harness = await startHarness(generationChat)
+  ;({ assertion } = await setupAuthedClient(harness.app))
+}
+
 async function importDatabase(database: unknown): Promise<number> {
   const res = await harness.app.inject({
     method: 'POST',
@@ -88,6 +98,37 @@ async function importDatabase(database: unknown): Promise<number> {
   })
   expect(res.statusCode).toBe(200)
   return res.json().revision as number
+}
+
+function createPausedProvider(text: string): {
+  generationChat: GenerationChatRouteOptions
+  waitForProvider: Promise<void>
+  release: () => void
+} {
+  let resolveReady!: () => void
+  let resolveRelease!: () => void
+  const waitForProvider = new Promise<void>((resolve) => {
+    resolveReady = resolve
+  })
+  const releasePromise = new Promise<void>((resolve) => {
+    resolveRelease = resolve
+  })
+
+  return {
+    waitForProvider,
+    release: resolveRelease,
+    generationChat: {
+      dispatchProvider: () => {
+        async function* source(): AsyncGenerator<CompletionStreamFrame> {
+          resolveReady()
+          await releasePromise
+          yield { kind: 'token', content: text }
+          yield { kind: 'done', finishReason: 'stop' }
+        }
+        return source()
+      },
+    },
+  }
 }
 
 function hydrationGet(chatId: string) {
@@ -1016,6 +1057,114 @@ describe('server load-count harness on the large-corpus fixture', () => {
     } finally {
       fetchMock.mockRestore()
     }
+  })
+
+  it('K1: message-only generation finalization performs zero loadPersisted-shaped corpus reads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const paused = createPausedProvider('K1 scoped finalization reply')
+    await restartHarness(paused.generationChat)
+    await importDatabase(fixture.database)
+
+    const request = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: fixture.hot.chatId,
+        characterId: fixture.hot.characterId,
+        mode: 'send',
+        userMessage: 'hi',
+        durable: true,
+      },
+    })
+    await paused.waitForProvider
+
+    const {
+      result: res,
+      corpusLoadCount,
+      loadCountByTable,
+    } = await withServerLoadInstrumentation(async () => {
+      paused.release()
+      return request
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('K1 scoped finalization reply')
+    expect(corpusLoadCount).toBe(0)
+    expect(loadCountByTable.characters ?? 0).toBe(0)
+    expect(loadCountByTable.chats ?? 0).toBe(0)
+    expect(loadCountByTable.messages ?? 0).toBe(0)
+
+    const hydration = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/projection/chatMessages?id=${fixture.hot.chatId}`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(hydration.statusCode).toBe(200)
+    expect(hydration.json().message.at(-1)).toMatchObject({
+      role: 'char',
+      data: 'K1 scoped finalization reply',
+    })
+  })
+
+  it('K1: chat-variable generation finalization keeps the broad write path', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const database = structuredClone(fixture.database)
+    const characters = database.characters as Array<Record<string, unknown>>
+    characters[0] = {
+      ...characters[0],
+      triggerscript: [
+        {
+          comment: '',
+          type: 'output',
+          conditions: [],
+          effect: [{ type: 'setvar', operator: '=', var: 'k1flag', value: '1' }],
+        },
+      ],
+    }
+    const paused = createPausedProvider('K1 broad finalization reply')
+    await restartHarness(paused.generationChat)
+    await importDatabase(database)
+
+    const request = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: fixture.hot.chatId,
+        characterId: fixture.hot.characterId,
+        mode: 'send',
+        userMessage: 'hi',
+        durable: true,
+      },
+    })
+    await paused.waitForProvider
+
+    const {
+      result: res,
+      corpusLoadCount,
+      loadCountByTable,
+    } = await withServerLoadInstrumentation(async () => {
+      paused.release()
+      return request
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('K1 broad finalization reply')
+    expect(corpusLoadCount).toBeGreaterThan(0)
+    expect(loadCountByTable.characters ?? 0).toBeGreaterThanOrEqual(1)
+    expect(loadCountByTable.chats ?? 0).toBeGreaterThanOrEqual(1)
+    expect(loadCountByTable.messages ?? 0).toBe(0)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toMatchObject({
+      $k1flag: '1',
+    })
   })
 
   it('M4: bootstrap in-place masking matches the copying mask byte-for-byte', async () => {
