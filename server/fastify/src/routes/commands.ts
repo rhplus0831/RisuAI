@@ -88,6 +88,7 @@ import {
   readCharacterId,
   readCharacterOrder,
   readCharacterPatch,
+  repairCharacterCollectionRow,
   requireCharacterIndex,
   selectedCharacterId,
   validateCharacterOrderAssetRefs,
@@ -251,6 +252,49 @@ function emitCommandEventForRequest(
  *  path, which treats a non-array collection field as empty). */
 function asArray(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : []
+}
+
+function characterOrderIncludes(order: readonly unknown[], characterId: string): boolean {
+  return order.some((entry) => {
+    if (entry === characterId) return true
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false
+    const data = (entry as Record<string, unknown>).data
+    return Array.isArray(data) && data.includes(characterId)
+  })
+}
+
+function characterOrderWithout(order: readonly unknown[], characterId: string): unknown[] {
+  const next: unknown[] = []
+  for (const entry of order) {
+    if (entry === characterId) continue
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      next.push(entry)
+      continue
+    }
+    const folder = entry as Record<string, unknown>
+    const data = Array.isArray(folder.data)
+      ? folder.data.filter((id) => id !== characterId)
+      : folder.data
+    if (Array.isArray(data) && data.length === 0) continue
+    next.push({ ...folder, data })
+  }
+  return next
+}
+
+function updateCharacterOrderForPatchedRow(
+  target: Record<string, unknown>,
+  characterId: string,
+  character: Record<string, unknown>,
+): void {
+  const currentOrder = Array.isArray(target.characterOrder) ? target.characterOrder : []
+  const active = !character.trashTime && characterId !== '§temp'
+  if (!active) {
+    target.characterOrder = characterOrderWithout(currentOrder, characterId)
+    return
+  }
+  target.characterOrder = characterOrderIncludes(currentOrder, characterId)
+    ? currentOrder
+    : [...currentOrder, characterId]
 }
 
 /** The shared narrow write for every translator-preset route: a full
@@ -2577,27 +2621,33 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        characterScopedRead: { characterId },
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
-          const characters = ensureCharacterCollection(target)
-          const index = requireCharacterIndex(characters, characterId)
-          characters[index] = {
-            ...characters[index],
-            ...patch,
-            chaId: characterId,
-          }
-          // Re-normalize: a `trashTime` patch re-runs the characterOrder /
-          // currentChar repair (settings scalars); sibling-row de-dup is
-          // validate-only (Prerequisite 2). `chats`/`globalLore`/`chatFolders`/
-          // `modules` are excluded patch keys, so the one character row is the
-          // whole change.
-          const normalized = ensureCharacterCollection(target)
-          writeSingleCharacterRow(
-            innerDb,
-            characterId,
-            normalized[requireCharacterIndex(normalized, characterId)],
+          const characters = Array.isArray(target.characters) ? target.characters : []
+          const index = characters.findIndex(
+            (character) =>
+              !!character &&
+              typeof character === 'object' &&
+              !Array.isArray(character) &&
+              (character as Record<string, unknown>).chaId === characterId,
           )
+          if (index === -1) {
+            throw new EntityNotFoundError(`Character not found: ${characterId}`)
+          }
+          const patched = repairCharacterCollectionRow(
+            {
+              ...(characters[index] as Record<string, unknown>),
+              chats: [],
+              ...patch,
+              chaId: characterId,
+            },
+            index,
+          )
+          characters[index] = patched
+          writeSingleCharacterRow(innerDb, characterId, patched)
           if (Object.prototype.hasOwnProperty.call(patch, 'trashTime')) {
+            updateCharacterOrderForPatchedRow(target, characterId, patched)
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
@@ -2826,6 +2876,7 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const selectUpdated = readChatOptionalBoolean(body.select, 'select') ?? false
       const patch = readChatPatch(body.patch, { allowEmpty: selectUpdated })
+      const hasModulePatch = Object.prototype.hasOwnProperty.call(patch, 'modules')
       const result = applyTargetedCommandMutation<{
         chatId: string
         selectedChatId: string | null
@@ -2835,12 +2886,15 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        ...(hasModulePatch ? {} : { chatScopedRead: { chatId } }),
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
+          const target = hasModulePatch
+            ? ensureModuleCommandDatabase(database)
+            : ensureCharacterDatabaseObject(database)
           const characters = normalizeAllCharacterChats(target)
-          const modules = ensureModuleRecords(target)
           const { character, chatIndex } = requireChatLocation(characters, chatId)
-          if (patch.modules) {
+          if (hasModulePatch) {
+            const modules = ensureModuleRecords(target)
             validateNormalModuleLinks(modules, patch.modules as string[], 'patch.modules')
           }
           if (patch.folderId) {

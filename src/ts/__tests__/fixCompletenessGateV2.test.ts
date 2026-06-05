@@ -120,8 +120,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/triggers.test.ts',
-        testName:
-          'H1: low-level self-recursive v2RunTrigger cannot bypass the hard depth cap',
+        testName: 'H1: low-level self-recursive v2RunTrigger cannot bypass the hard depth cap',
       },
       {
         testPath: 'server/fastify/__tests__/triggers.test.ts',
@@ -180,7 +179,28 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('M2', 3, 'Marker fixed-point guard in `formatHistoryMessage`.'),
   planned('M3', 3, 'Render stable template cards once; preflight tokenizes cached rows.'),
   planned('M4', 3, 'Memoize charhistory/userhistory/lorebook callbacks per assembly.'),
-  planned('M5', 2, 'Single-row scoped read + repair for character/chat PATCH.'),
+  done(
+    'M5',
+    2,
+    'Single-row scoped read + repair for character/chat PATCH.',
+    'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
+    'M5: character PATCH repairs and writes the target row without whole-corpus reads',
+    [
+      {
+        testPath: 'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
+        testName:
+          'M5: chat PATCH without modules uses chatScopedRead and preserves selected chat state',
+      },
+      {
+        testPath: 'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
+        testName: 'M5: chat PATCH takes the explicit broad fallback only for patch.modules',
+      },
+      {
+        testPath: 'server/fastify/__tests__/commandSingleRowPaths.test.ts',
+        testName: 'PATCH chats/:id with select:true co-writes the parent character row',
+      },
+    ],
+  ),
   planned('M6', 2, 'Field-scoped projection loaders that skip the characters parse.'),
   planned('M7', 4, 'Assign `replace_all` messages without `structuredClone`.'),
   planned('M8', 4, '`getItem` reads one key, not a whole-DB snapshot.'),
@@ -1006,7 +1026,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
 
     const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
-    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'H2', 'H3'])
+    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'H2', 'H3', 'M5'])
     expect(doneEntries.every(hasProofFields)).toBe(true)
   })
 

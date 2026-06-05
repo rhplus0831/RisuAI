@@ -3,6 +3,7 @@ import { bumpRevision, getSchemaState } from '../db.js'
 import {
   RevisionMismatchError,
   ValidationError,
+  loadPersistedForCharacterMutation,
   loadCharacterSelectionRows,
   loadPersisted,
   loadPersistedForChatMutation,
@@ -13,6 +14,7 @@ import {
   stripChatMessages,
   syncChatMessages,
   writeCharacterSelectionRows,
+  type CharacterMutationTarget,
   type ChatMutationTarget,
 } from '../repository.js'
 import {
@@ -87,6 +89,7 @@ export interface TargetedCommandMutationArgs<TExtra extends Record<string, unkno
    * scoped read must never be written back whole.
    */
   chatScopedRead?: ChatMutationTarget
+  characterScopedRead?: CharacterMutationTarget
   mutate: (
     database: unknown,
     db: DatabaseSync,
@@ -139,11 +142,16 @@ export type TargetedMutationPath =
 export function applyTargetedCommandMutation<TExtra extends Record<string, unknown> = {}>(
   args: TargetedCommandMutationArgs<TExtra>,
 ): JsonCommandMutationResult<TExtra> {
+  if (args.chatScopedRead && args.characterScopedRead) {
+    throw new Error('chatScopedRead cannot be combined with characterScopedRead')
+  }
   if (args.chatScopedRead && args.writeDatabase) {
-    // A chat-scoped read holds ONE character; writing it back through the
-    // replaceAll* writers would delete every other character. Hard error so
-    // the combination can never ship.
     throw new Error('chatScopedRead cannot be combined with writeDatabase')
+  }
+  if (args.characterScopedRead && args.writeDatabase) {
+    // A scoped read holds only part of the character/chat corpus; writing it
+    // back through replaceAll* writers would delete unrelated rows.
+    throw new Error('scoped reads cannot be combined with writeDatabase')
   }
   let transactionOpen = false
   const totalStartedAt = protocolNowMs()
@@ -165,7 +173,9 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     const loadStartedAt = protocolNowMs()
     const persisted = args.chatScopedRead
       ? loadPersistedForChatMutation(args.db, args.dataDir, args.chatScopedRead)
-      : loadPersisted(args.db, args.dataDir)
+      : args.characterScopedRead
+        ? loadPersistedForCharacterMutation(args.db, args.dataDir, args.characterScopedRead)
+        : loadPersisted(args.db, args.dataDir)
     loadMs = protocolDurationMs(loadStartedAt)
 
     // The callback owns its targeted SQLite writes (kit writers); capture which

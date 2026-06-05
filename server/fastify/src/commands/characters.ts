@@ -59,37 +59,7 @@ export function ensureCharacterCollection(database: JsonRecord): CharacterRecord
   const characters = (database.characters as unknown[]).map((raw, index) => {
     const character =
       raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
-    const record = repairCharacterRecord({
-      name: `Character ${index + 1}`,
-      firstMessage: '',
-      desc: '',
-      notes: '',
-      chats: [],
-      chatFolders: [],
-      chatPage: 0,
-      viewScreen: 'none',
-      bias: [],
-      emotionImages: [],
-      globalLore: [],
-      sdData: [],
-      customscript: [],
-      triggerscript: [],
-      utilityBot: false,
-      exampleMessage: '',
-      creatorNotes: '',
-      systemPrompt: '',
-      postHistoryInstructions: '',
-      alternateGreetings: [],
-      tags: [],
-      creator: '',
-      characterVersion: '',
-      personality: '',
-      scenario: '',
-      firstMsgIndex: -1,
-      replaceGlobalNote: '',
-      additionalText: '',
-      ...character,
-    })
+    const record = repairCharacterCollectionRow(character, index)
     if (seen.has(record.chaId)) {
       record.chaId = randomUUID()
     }
@@ -119,7 +89,50 @@ export function createCharacterRecord(
   return character
 }
 
-function repairCharacterRecord(
+export function repairCharacterCollectionRow(
+  input: unknown,
+  index = 0,
+  options: { assetDb?: DatabaseSync } = {},
+): CharacterRecord {
+  const character =
+    input && typeof input === 'object' && !Array.isArray(input) ? (input as JsonRecord) : {}
+  return repairCharacterRecord(
+    {
+      name: `Character ${index + 1}`,
+      firstMessage: '',
+      desc: '',
+      notes: '',
+      chats: [],
+      chatFolders: [],
+      chatPage: 0,
+      viewScreen: 'none',
+      bias: [],
+      emotionImages: [],
+      globalLore: [],
+      sdData: [],
+      customscript: [],
+      triggerscript: [],
+      utilityBot: false,
+      exampleMessage: '',
+      creatorNotes: '',
+      systemPrompt: '',
+      postHistoryInstructions: '',
+      alternateGreetings: [],
+      tags: [],
+      creator: '',
+      characterVersion: '',
+      personality: '',
+      scenario: '',
+      firstMsgIndex: -1,
+      replaceGlobalNote: '',
+      additionalText: '',
+      ...character,
+    },
+    options,
+  )
+}
+
+export function repairCharacterRecord(
   input: unknown,
   options: { assetDb?: DatabaseSync } = {},
 ): CharacterRecord {

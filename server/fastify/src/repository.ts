@@ -170,9 +170,7 @@ export function replaceAllCollectionsInTable(db: DatabaseSync, database: unknown
   db.exec('DELETE FROM plugin_custom_storage')
   const storage = database.pluginCustomStorage
   if (isRecord(storage)) {
-    const stmt = db.prepare(
-      'INSERT INTO plugin_custom_storage (key, value_json) VALUES (?, ?)',
-    )
+    const stmt = db.prepare('INSERT INTO plugin_custom_storage (key, value_json) VALUES (?, ?)')
     for (const [key, value] of Object.entries(storage)) {
       stmt.run(key, JSON.stringify(value ?? null))
     }
@@ -189,9 +187,9 @@ export function createSettingsTable(db: DatabaseSync): void {
 }
 
 function loadSettingsFromSqlite(db: DatabaseSync): Record<string, unknown> | null {
-  const row = db
-    .prepare('SELECT data_json FROM settings WHERE id = 1')
-    .get() as { data_json: string } | undefined
+  const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+    | { data_json: string }
+    | undefined
   if (!row) return null
   const parsed = JSON.parse(row.data_json)
   return isRecord(parsed) ? parsed : null
@@ -279,6 +277,10 @@ export interface CharacterSelectionRows {
   settings: JsonRecord
 }
 
+export interface CharacterMutationTarget {
+  characterId: string
+}
+
 export interface CharacterSelectionProjection {
   characterId: string
   currentChar: number
@@ -292,7 +294,9 @@ function loadCharactersFromSqlite(db: DatabaseSync): unknown[] {
   if (charRows.length === 0) return []
 
   const chatRows = db
-    .prepare('SELECT id, character_id, position, data_json FROM chats ORDER BY character_id, position')
+    .prepare(
+      'SELECT id, character_id, position, data_json FROM chats ORDER BY character_id, position',
+    )
     .all() as unknown as ChatRow[]
 
   const chatsByCharId = new Map<string, unknown[]>()
@@ -321,9 +325,7 @@ export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown)
 
   if (characters.length === 0) return
 
-  const insertChar = db.prepare(
-    'INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)',
-  )
+  const insertChar = db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)')
   const insertChat = db.prepare(
     'INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)',
   )
@@ -726,7 +728,6 @@ function dbJsonPath(dataDir: string): string {
   return path.join(dataDir, 'db.json')
 }
 
-
 export function emptyPersisted(): Persisted {
   return { _version: PERSISTED_VERSION, database: null, assets: [] }
 }
@@ -751,6 +752,29 @@ export function loadPersisted(db: DatabaseSync, _dataDir: string): Persisted {
   }
 }
 
+export function loadPersistedForCharacterMutation(
+  db: DatabaseSync,
+  dataDir: string,
+  target: CharacterMutationTarget,
+): Persisted {
+  const settings = loadSettingsFromSqlite(db)
+  if (settings === null) return loadPersisted(db, dataDir)
+
+  const charRow = db
+    .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
+    .get(target.characterId) as CharacterRow | undefined
+  if (!charRow) return loadPersisted(db, dataDir)
+
+  const character = JSON.parse(charRow.data_json) as unknown
+  if (!isRecord(character)) return loadPersisted(db, dataDir)
+  character.chaId = target.characterId
+
+  return {
+    _version: PERSISTED_VERSION,
+    database: { ...settings, characters: [character] },
+    assets: [],
+  }
+}
 
 export function loadPersistedDatabaseFields(
   db: DatabaseSync,
@@ -998,7 +1022,10 @@ export function loadPersistedForChatMutation(
   const character = JSON.parse(charRow.data_json) as Record<string, unknown>
   if (!isRecord(character)) return loadPersisted(db, dataDir)
   const chat = JSON.parse(chatRow.data_json) as unknown
-  character.chats = [chat]
+  const chatRows = db
+    .prepare('SELECT id, position FROM chats WHERE character_id = ? ORDER BY position')
+    .all(chatRow.character_id) as unknown as Array<Pick<ChatRow, 'id' | 'position'>>
+  character.chats = chatRows.map((row) => (row.id === chatRow.id ? chat : { id: row.id }))
 
   return {
     _version: PERSISTED_VERSION,

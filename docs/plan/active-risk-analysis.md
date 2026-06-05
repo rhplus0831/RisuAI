@@ -55,7 +55,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M2  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Marker fixed-point guard in `formatHistoryMessage`.              | PENDING |
 | M3  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Render stable template cards once; preflight tokenizes cached rows. | PENDING |
 | M4  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Memoize charhistory/userhistory/lorebook callbacks per assembly. | PENDING |
-| M5  | [2](phases/phase-2-server-corpus-ring-2.md)      | Single-row scoped read + repair for character/chat PATCH.        | PENDING |
+| M5  | [2](phases/phase-2-server-corpus-ring-2.md)      | Single-row scoped read + repair for character/chat PATCH.        | DONE    |
 | M6  | [2](phases/phase-2-server-corpus-ring-2.md)      | Field-scoped projection loaders that skip the characters parse.  | PENDING |
 | M7  | [4](phases/phase-4-client-clone-ring-2.md)       | Assign `replace_all` messages without `structuredClone`.         | PENDING |
 | M8  | [4](phases/phase-4-client-clone-ring-2.md)       | `getItem` reads one key, not a whole-DB snapshot.                | PENDING |

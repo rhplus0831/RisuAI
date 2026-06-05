@@ -5,10 +5,7 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
-import {
-  loadPersisted,
-  loadPersistedForChatMutation,
-} from '../src/repository.js'
+import { loadPersisted, loadPersistedForChatMutation } from '../src/repository.js'
 import { applyTargetedCommandMutation } from '../src/commands/mutations.js'
 import { normalizeAllCharacterChats } from '../src/commands/chats.js'
 import { setupAuthedClient } from './helpers/auth.js'
@@ -126,8 +123,9 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
     const targetCharacterId = fixture.hot.characterId
-    const existingHotMessages = (await hydrationGet(fixture.hot.chatId)).json()
-      .message as Array<{ chatId: string }>
+    const existingHotMessages = (await hydrationGet(fixture.hot.chatId)).json().message as Array<{
+      chatId: string
+    }>
 
     const { result: created, loadCountByTable } = await withServerLoadInstrumentation(() =>
       command('POST', `/api/v1/commands/characters/${targetCharacterId}/chats`, {
@@ -184,17 +182,137 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       db.close()
     }
 
-    const createdMessages = (await hydrationGet('h2-created-chat')).json()
-      .message as Array<{ chatId: string }>
+    const createdMessages = (await hydrationGet('h2-created-chat')).json().message as Array<{
+      chatId: string
+    }>
     expect(createdMessages.map((message) => message.chatId)).toEqual([
       'h2-created-msg-1',
       'h2-created-msg-2',
     ])
-    const hotAfter = (await hydrationGet(fixture.hot.chatId)).json()
-      .message as Array<{ chatId: string }>
+    const hotAfter = (await hydrationGet(fixture.hot.chatId)).json().message as Array<{
+      chatId: string
+    }>
     expect(hotAfter.map((message) => message.chatId)).toEqual(
       existingHotMessages.map((message) => message.chatId),
     )
+  })
+
+  it('M5: character PATCH repairs and writes the target row without whole-corpus reads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+
+    const res = await assertScopedLoadOnHotPath(() =>
+      command('PATCH', `/api/v1/commands/characters/${fixture.hot.characterId}`, {
+        baseRevision: revision,
+        patch: { name: 'M5 renamed character', desc: 'target row only' },
+      }),
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      revision: revision + 1,
+      characterId: fixture.hot.characterId,
+      event: {
+        type: 'character.updated',
+        resource: 'characterRow',
+        id: fixture.hot.characterId,
+      },
+    })
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const target = db
+        .prepare('SELECT data_json FROM characters WHERE id = ?')
+        .get(fixture.hot.characterId) as { data_json: string }
+      expect(JSON.parse(target.data_json)).toMatchObject({
+        chaId: fixture.hot.characterId,
+        name: 'M5 renamed character',
+        desc: 'target row only',
+      })
+      const sibling = db
+        .prepare('SELECT data_json FROM characters WHERE id = ?')
+        .get('corpus-char-1') as { data_json: string }
+      expect(JSON.parse(sibling.data_json).name).toBe('Corpus Character 1')
+    } finally {
+      db.close()
+    }
+  })
+
+  it('M5: chat PATCH without modules uses chatScopedRead and preserves selected chat state', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+
+    const { result: res, corpusLoadCount } = await withServerLoadInstrumentation(() =>
+      command('PATCH', `/api/v1/commands/chats/${fixture.noHypa.chatId}`, {
+        baseRevision: revision,
+        select: true,
+        patch: { name: 'M5 renamed chat', note: 'scoped metadata' },
+      }),
+    )
+
+    expect(corpusLoadCount).toBe(0)
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      revision: revision + 1,
+      chatId: fixture.noHypa.chatId,
+      selectedChatId: fixture.noHypa.chatId,
+      event: {
+        type: 'chat.updated',
+        resource: 'characterRow',
+        id: fixture.noHypa.chatId,
+        parentId: fixture.noHypa.characterId,
+      },
+    })
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const chat = db
+        .prepare('SELECT data_json FROM chats WHERE id = ?')
+        .get(fixture.noHypa.chatId) as { data_json: string }
+      expect(JSON.parse(chat.data_json)).toMatchObject({
+        id: fixture.noHypa.chatId,
+        name: 'M5 renamed chat',
+        note: 'scoped metadata',
+      })
+      const sibling = db
+        .prepare('SELECT data_json FROM chats WHERE id = ?')
+        .get(fixture.hot.chatId) as { data_json: string }
+      expect(JSON.parse(sibling.data_json).name).toBe('Chat 0-0')
+      const character = db
+        .prepare('SELECT data_json FROM characters WHERE id = ?')
+        .get(fixture.noHypa.characterId) as { data_json: string }
+      expect(JSON.parse(character.data_json).chatPage).toBe(1)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('M5: chat PATCH takes the explicit broad fallback only for patch.modules', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+
+    const {
+      result: res,
+      corpusLoadCount,
+      loadCountByTable,
+    } = await withServerLoadInstrumentation(() =>
+      command('PATCH', `/api/v1/commands/chats/${fixture.hot.chatId}`, {
+        baseRevision: revision,
+        patch: { modules: ['corpus-module-1'] },
+      }),
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(corpusLoadCount).toBeGreaterThan(0)
+    expect(loadCountByTable.modules).toBeGreaterThanOrEqual(1)
+
+    const scoped = await assertScopedLoadOnHotPath(() =>
+      command('PATCH', `/api/v1/commands/chats/${fixture.hot.chatId}`, {
+        baseRevision: res.json().revision,
+        patch: { note: 'non-module patch stayed scoped after module edit' },
+      }),
+    )
+    expect(scoped.statusCode).toBe(200)
   })
 
   it('M3/L5/L6: the full message lifecycle stays scoped (append, patch, delete, truncate, replace, generation-result)', async () => {
@@ -277,9 +395,11 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     // The chained writes landed: hydrate the chat (itself scoped, H1).
     const hydrated = await hydrationGet(chatId)
     expect(hydrated.statusCode).toBe(200)
-    expect(
-      (hydrated.json().message as Array<{ chatId: string }>).map((m) => m.chatId),
-    ).toEqual(['scoped-msg-2', 'scoped-msg-3', 'scoped-gen-1'])
+    expect((hydrated.json().message as Array<{ chatId: string }>).map((m) => m.chatId)).toEqual([
+      'scoped-msg-2',
+      'scoped-msg-3',
+      'scoped-gen-1',
+    ])
   })
 
   it('returns identical rows to the broad loader for both chat-id and message-id targets', async () => {
@@ -303,13 +423,17 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       expect(scopedRun.corpusLoadCount).toBe(0)
 
       const scoped = scopedRun.result.database as {
-        characters: Array<{ chats: unknown[] }>
+        characters: Array<{ chats: Array<{ id?: string }> }>
       }
       expect(scoped.characters).toHaveLength(1)
-      expect(scoped.characters[0].chats).toHaveLength(1)
+      expect(scoped.characters[0].chats).toHaveLength(broadChar.chats.length)
       // Identical payload parses: same character (modulo the chats narrowing)
-      // and the same chat record.
+      // and the same target chat record; sibling chats are id-only stubs so
+      // chatPage/selectedChatId math stays correct without parsing them.
       expect(scoped.characters[0].chats[0]).toEqual(broadChat)
+      expect(scoped.characters[0].chats.slice(1)).toEqual(
+        broadChar.chats.slice(1).map((chat) => ({ id: chat.id })),
+      )
       expect({ ...scoped.characters[0], chats: broadChar.chats }).toEqual(broadChar)
 
       // Message-id targeting resolves the same chat through the uid index.
@@ -363,9 +487,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
         ],
       }
       db.exec('DELETE FROM settings')
-      db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(
-        JSON.stringify(embedded),
-      )
+      db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(embedded))
 
       // The chats table has no row for the target → broad fallback returns the
       // embedded characters…
