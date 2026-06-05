@@ -7,8 +7,8 @@ only the phase or slice needed for the task.
 
 The plan schedules 57 confirmed findings (3 high, 14 medium, 40 low) from
 [`audit-stability-and-performance.md`](audit-stability-and-performance.md) across
-Phases 0-8. Phases 0-6 are complete: all three highs are fixed — H1
-(`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`) — all of Phase 2's server
+Phases 0-8. ALL SCHEDULED PHASES (0-7) ARE COMPLETE: all three highs are fixed
+— H1 (`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`) — all of Phase 2's server
 load narrowing landed — scoped assembly load (M1, L1, L2, `c193c008`),
 command-mutation read narrowing (M3, L5, L6, `e0e86ab1`), single-character
 projection (M4, `254b3112`), metric/bulk-read slice (M5, L10, U1,
@@ -16,24 +16,24 @@ projection (M4, `254b3112`), metric/bulk-read slice (M5, L10, U1,
 watcher/global-modal follow-up, Phase 4's outbound request lifecycle landed
 in one batch (M6, M8, L20, L22-L25, `bf1a6cb2`), Phase 5's
 materialization/lifecycle batch landed (M9-M11, L11-L15, L27-L30,
-`686220d6`), and Phase 6's memory/Lua batch landed (M7, L16-L19, L21,
-`ca798c01`). Next: Phase 7 memoization/hygiene (M2, L3, L8, L9, L37-L40) is
-the only scheduled work left.
+`686220d6`), Phase 6's memory/Lua batch landed (M7, L16-L19, L21,
+`ca798c01`), and Phase 7's memoization/hygiene batch landed (M2, L3, L8, L9,
+L37-L40, `151c6978`). No scheduled work remains; Phase 8 stays the standing
+gate.
 
 ## Current Snapshot
 
-All findings are routed. Phases 0-6 are complete. Phase 7 groups the
-remaining mediums/lows (memoization and hygiene). Phase 8 is the standing
-gate (its scaffold is live and H1-H3, M1, M3-M14, L1/L2, L5/L6, L10-L25,
-L27-L36, U1, and U4 are registered as `DONE`, including the L32 mount-time
-watcher/global-modal regression).
+All findings are routed and all scheduled findings are DONE. Phase 8 is the
+standing gate (its scaffold is live and every scheduled id — H1-H3, M1-M14,
+L1-L3, L5/L6, L8-L25, L27-L40, U1, U4 — is registered as `DONE` with its
+regression test). The only non-DONE ids are the gated owner-decision items
+(L4, L7, L26, U2) and U3 (no action).
 
 - [Phase 0](phases/phase-0-baseline-foundations.md) — COMPLETE. Shared
   large-corpus fixture + `assertScopedLoadOnHotPath` server load-count harness
   (with breadth detections as self-proof), and the fix-completeness gate
   scaffold (`src/ts/__tests__/fixCompletenessGate.test.ts`, seeded in Phase 0
-  with planned ids, now carrying H1/H2/H3 as `DONE`, doc-mirrored, fails on
-  drift). No runtime change.
+  with planned ids, doc-mirrored, fails on drift). No runtime change.
 - [Phase 1](phases/phase-1-high-severity-hot-paths.md) — COMPLETE. H1 DONE
   (`0dc7452e`, hydration guard); H3 DONE (`e41dc6c6`, streaming render
   coalescing); H2 DONE (`067ab82a`, chat-selection scalar snapshot).
@@ -73,11 +73,20 @@ watcher/global-modal regression).
   fairness, the memory-job-scoped `loadPersistedDatabaseForMemoryJob` loader,
   the shared per-request `LuaExecBudget`, and the pre-warmed Lua engine pool
   (prelude pre-run, host fns bound per call, one engine per call).
-- [Phase 7](phases/phase-7-memoization-and-hygiene.md) — not started. M2, L3,
-  L8, L9, L37-L40: memoization and hygiene.
+- [Phase 7](phases/phase-7-memoization-and-hygiene.md) — COMPLETE. M2, L3,
+  L8, L9, L37-L40 DONE (`151c6978`, one batch): per-assembly prepared-script
+  memo (modules + DSL parse + compiled RegExps once per assembly, cbs
+  excluded), memoized lorebook keyword-key regexes, memoized trigger-effect
+  regexes (9 sites through `getCompiledRegex`), keep-window command-event
+  prune (no `OFFSET 999` walk per write), FK-cascade character delete (no
+  redundant `chats` DELETE), and the warm/render-path `console.log` removals
+  (command pipe dumps, preset dump, per-render `Trigger time`, in-place
+  transcript scan).
 - [Phase 8](phases/phase-8-verification-budgets.md) — standing; scaffold live
-  (`fixCompletenessGate.test.ts`). Flip ids `PLANNED` -> `DONE` (registry +
-  [`active-risk-analysis.md`](active-risk-analysis.md) together) as fixes land.
+  (`fixCompletenessGate.test.ts`). Every scheduled id is now `DONE` (registry +
+  [`active-risk-analysis.md`](active-risk-analysis.md) stay in enforced
+  lockstep). Future fixes (e.g. a gated item getting scheduled) flip ids the
+  same way: registry + doc together.
 
 ## Open Risk Router
 
@@ -85,59 +94,25 @@ watcher/global-modal regression).
 routing (finding -> phase -> target fix), the gated exclusions, and the
 dismissed list. Highlights:
 
-- All three highs are DONE: H1 (`0dc7452e`) hydration guard, H3 (`e41dc6c6`)
-  streaming render coalescing, H2 (`067ab82a`) chat-selection scalar snapshot.
-- Phase 2 scoped assembly load is DONE (`c193c008`): M1 target-chat-only
-  message/hypa hydration, L1 `getActiveModules` memo, L2 run-var fixed-point
-  skip.
-- Phase 2 command-mutation read narrowing is DONE (`e0e86ab1`): the targeted
-  message/scriptstate/generation routes read one chat row + its parent
-  character instead of the full `loadPersisted` (M3 collections, L5 assets,
-  L6 characters/chats).
-- Phase 2 single-character projection is DONE (`254b3112`): the
-  `characterRow` projection reads one character + its chats
-  (`loadSingleCharacterStubRow`) and masks just that owned row via the new
-  `maskProviderSecretsInPlace` (bootstrap drops its whole-DB mask clone too).
-- Phase 2 metric/bulk-read slice is DONE (`b2765994`): metric fields defer
-  behind the `RISU_PROTOCOL_METRICS` guard (M5), the SSE route loads
-  command-event history only for replay (L10), and bulk hydration resolves
-  known ids from the requested rows only (U1). Phase 2 is COMPLETE.
-- Phase 3 client clone narrowing is DONE (M12-M14, L31-L36, U4): client hot/warm
-  paths use the scalar/single-row/chat-scoped snapshot kit instead of
-  whole-corpus deep clones; script-definition and lorebook watcher/editor
-  surfaces scan/id-assign only their panel scope; fire-and-forget runners roll
-  back surfaced factory rejections. Phase 3 is COMPLETE.
-- Phase 4 outbound request lifecycle is DONE (M6, M8, L20, L22-L25,
-  `bf1a6cb2`): the proxy and non-durable provider paths abort on disconnect
-  and at a generous 600s deadline, buffered provider bodies and streaming
-  buffers are capped, the Lua runtime cancels on the request signal, and the
-  IPv6-embedded-IPv4 / prototype-pollution / rate-counter egress gaps are
-  closed. Phase 4 is COMPLETE.
-- Phase 5 materialization/lifecycle is DONE (M9-M11, L11-L15, L27-L30,
-  `686220d6`): inflate/buffering is bounded before materialization,
-  stream/job/shutdown paths clean up on abort/close/done, import/restore is
-  atomic and corrupt-tolerant, and reconnect replay/reattach keep their
-  correctness metadata. Phase 5 is COMPLETE.
-- Phase 6 memory/Lua is DONE (M7, L16-L19, L21, `ca798c01`): memory batches
-  are bounded (drain cap + token-aware contextual sub-batches committed
-  independently) and fair (round-robin per-chat claims), the no-orphan
-  cleanup path opens no write txn, memory handlers load through the scoped
-  memory-job loader, and Lua runs share an aggregate exec budget on a
-  pre-warmed per-call engine. Phase 6 is COMPLETE.
-- Remaining root: Phase 7 memoization/hygiene (M2, L3, L8, L9, L37-L40).
-- Gated (not scheduled): L4, L7, L26, U2 stay on the
-  `RISU_PROTOCOL_METRICS` evidence path or an owner decision; U3 needs no
-  action; the five dismissed candidates (R1-R5 in the audit) are non-issues.
+- Every scheduled finding is DONE; see the phase list above for the
+  per-batch summaries and commits.
+- Remaining open items are intentionally NOT scheduled: L4, L7, L26, U2 stay
+  on the `RISU_PROTOCOL_METRICS` evidence path or an owner decision; U3 needs
+  no action; the five dismissed candidates (R1-R5 in the audit) are
+  non-issues.
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). Re-run and record the
-focused/full proof set before starting the next phase or after any later phase
-lands.
+See [`latest-verification.md`](latest-verification.md). The Phase 7 closing
+run: `pnpm test` 1130/4, `pnpm api:test` 1737/1, audit green, both TypeScript
+checks zero errors. Re-run and record the proof set after any future change to
+the touched paths.
 
 ## Start Here
 
-- Use [`next-steps.md`](next-steps.md) to choose the next task and proof command.
+- The scheduled workstream is finished. For any follow-up,
+  [`next-steps.md`](next-steps.md) records the closed state and the
+  maintenance posture.
 - Use [`active-risk-analysis.md`](active-risk-analysis.md) for the per-finding
   routing and the gated/dismissed exclusions.
 - Use [`plan.md`](plan.md) for the goal, prerequisites, invariants, and phase

@@ -63,10 +63,9 @@ hot paths, but left adjacent paths broad:
 - Several decompress/buffer paths check size only after full materialization.
 
 This plan started from the green baseline in
-[`latest-verification.md`](latest-verification.md). Phases 0, 1, and 2 have
-landed, and Phase 3 is complete after the L32 watcher/global-modal
-ID-assignment follow-up. Phase 4 outbound request lifecycle is the next root in
-audit order.
+[`latest-verification.md`](latest-verification.md). All scheduled phases
+(0-7) have landed; only the standing Phase 8 gate and the gated
+owner-decision items remain.
 
 ## Prerequisites
 
@@ -132,11 +131,13 @@ Every slice must preserve these; a slice that cannot is out of scope:
 
 ## Execution Cursor
 
-Phases 0-6 are complete. Phase 7 is the only scheduled work left. Phase 8 is
-the standing gate.
+Phases 0-7 are complete — every scheduled finding is fixed and gated. Phase 8
+is the standing gate; it stays live to catch regressions and to receive any
+future evidence-gated items (L4, L7, L26, U2) an owner decides to schedule.
 
-For each fix: re-check the cited symbol, add the focused regression test, narrow
-or bound the path, keep true full-corpus consumers broad, and register the gate.
+For any future fix: re-check the cited symbol, add the focused regression test,
+narrow or bound the path, keep true full-corpus consumers broad, and register
+the gate.
 
 ## Not In This Plan
 

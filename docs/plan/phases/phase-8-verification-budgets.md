@@ -2,10 +2,11 @@
 
 Status: standing — the Phase 0 scaffold is live at
 `src/ts/__tests__/fixCompletenessGate.test.ts`. It seeded scheduled ids as
-`PLANNED`; landed fixes flip to `DONE` with a test path. Phase 1 (`H1`, `H2`,
-`H3`) and Phase 2 (`M1`, `M3`, `M4`, `M5`, `L1`, `L2`, `L5`, `L6`, `L10`,
-`U1`) are currently `DONE`. Keeps every scheduled fix's regression proof
-registered and keeps the verification record current.
+`PLANNED`; landed fixes flip to `DONE` with a test path. EVERY scheduled id is
+now `DONE` (Phases 1-7 all complete; the Phase 7 batch `M2`, `L3`, `L8`, `L9`,
+`L37`-`L40` was the last). Keeps every scheduled fix's regression proof
+registered and keeps the verification record current; a future-scheduled gated
+item (L4, L7, L26, U2) would enter the registry the same way.
 
 Goal: prevent silent regression. Every fix in Phases 1-7 registers its test by
 finding id. The gate fails if a registered proof is missing or if runtime code

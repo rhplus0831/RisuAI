@@ -31,7 +31,8 @@ the finding -> phase map is in
 - Phase 6, complete (memory & Lua; M7, L16-L19, L21):
   [`phase-6-memory-and-lua.md`](phase-6-memory-and-lua.md),
   [`slices/phase-6-memory-and-lua/`](slices/phase-6-memory-and-lua/).
-- Phase 7, not started (memoization & hygiene):
+- Phase 7, complete (memoization & hygiene; M2, L3, L8, L9, L37-L40 — the
+  last scheduled batch):
   [`phase-7-memoization-and-hygiene.md`](phase-7-memoization-and-hygiene.md),
   [`slices/phase-7-memoization-and-hygiene/`](slices/phase-7-memoization-and-hygiene/).
 - Phase 8, standing (verification budgets; scaffold live):

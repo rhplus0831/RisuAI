@@ -43,7 +43,7 @@ consumers.
 | ID  | Phase                                                | Target fix                                                      | Status            |
 | --- | ---------------------------------------------------- | --------------------------------------------------------------- | ----------------- |
 | M1  | [2](phases/phase-2-server-load-narrowing.md)         | Scoped target-chat message/hypa load. [known-leftover]          | DONE (`c193c008`) |
-| M2  | [7](phases/phase-7-memoization-and-hygiene.md)       | Hoist module/script/RegExp work once per assembly.              | scheduled         |
+| M2  | [7](phases/phase-7-memoization-and-hygiene.md)       | Hoist module/script/RegExp work once per assembly.              | DONE (`151c6978`) |
 | M3  | [2](phases/phase-2-server-load-narrowing.md)         | Field-scoped command reads or per-request load memo.            | DONE (`e0e86ab1`) |
 | M4  | [2](phases/phase-2-server-load-narrowing.md)         | Single-row `loadSingleCharacterRow`; in-place mask where owned. | DONE (`254b3112`) |
 | M5  | [2](phases/phase-2-server-load-narrowing.md)         | Defer `jsonPayloadBytes` until metrics are enabled.             | DONE (`b2765994`) |
@@ -63,11 +63,11 @@ consumers.
 | --- | ---------------------------------------------------- | -------------------------------------------------------------- | --------------------------------- |
 | L1  | [2](phases/phase-2-server-load-narrowing.md)         | Memoize `getActiveModules` per assembly.                       | DONE (`c193c008`)                 |
 | L2  | [2](phases/phase-2-server-load-narrowing.md)         | Hoist invariant run-var expansion.                             | DONE (`c193c008`)                 |
-| L3  | [7](phases/phase-7-memoization-and-hygiene.md)       | Hoist/compile lorebook keyword regexes. [known-leftover]       | scheduled                         |
+| L3  | [7](phases/phase-7-memoization-and-hygiene.md)       | Hoist/compile lorebook keyword regexes. [known-leftover]       | DONE (`151c6978`)                 |
 | L5  | [2](phases/phase-2-server-load-narrowing.md)         | Skip asset scan when mutation does not read assets.            | DONE (`e0e86ab1`)                 |
 | L6  | [2](phases/phase-2-server-load-narrowing.md)         | Narrow message-only character/chat lookup.                     | DONE (`e0e86ab1`)                 |
-| L8  | [7](phases/phase-7-memoization-and-hygiene.md)       | Replace `OFFSET 999` prune walk with bounded delete.           | scheduled                         |
-| L9  | [7](phases/phase-7-memoization-and-hygiene.md)       | Drop redundant `chats` DELETE.                                 | scheduled                         |
+| L8  | [7](phases/phase-7-memoization-and-hygiene.md)       | Replace `OFFSET 999` prune walk with bounded delete.           | DONE (`151c6978`)                 |
+| L9  | [7](phases/phase-7-memoization-and-hygiene.md)       | Drop redundant `chats` DELETE.                                 | DONE (`151c6978`)                 |
 | L10 | [2](phases/phase-2-server-load-narrowing.md)         | Load command-event history only when replay is requested.      | DONE (`b2765994`)                 |
 | L11 | [5](phases/phase-5-materialization-and-lifecycle.md) | Add the `cleanedUp` guard before `memoryEvents.subscribe`.     | DONE (`686220d6`)                        |
 | L12 | [5](phases/phase-5-materialization-and-lifecycle.md) | Close the proxy WS viewer on already-done jobs.                | DONE (`686220d6`)                        |
@@ -94,10 +94,10 @@ consumers.
 | L34 | [3](phases/phase-3-client-clone-narrowing.md)        | Use a chat-scoped snapshot in `toggleSelectedChatModule`.      | DONE (`0efa7ba6`)                 |
 | L35 | [3](phases/phase-3-client-clone-narrowing.md)        | Use a single-row snapshot in MCP `setCharacterInfo`.           | DONE (`0efa7ba6`)                 |
 | L36 | [3](phases/phase-3-client-clone-narrowing.md)        | Surface runner rejections and roll back.                       | DONE (`0efa7ba6`)                 |
-| L37 | [7](phases/phase-7-memoization-and-hygiene.md)       | Remove logs of full command/preset objects.                    | scheduled                         |
-| L38 | [7](phases/phase-7-memoization-and-hygiene.md)       | Remove per-render `Trigger time` log.                          | scheduled                         |
-| L39 | [7](phases/phase-7-memoization-and-hygiene.md)       | Scan transcript in place.                                      | scheduled                         |
-| L40 | [7](phases/phase-7-memoization-and-hygiene.md)       | Memoize trigger-effect regex sites.                            | scheduled                         |
+| L37 | [7](phases/phase-7-memoization-and-hygiene.md)       | Remove logs of full command/preset objects.                    | DONE (`151c6978`)                 |
+| L38 | [7](phases/phase-7-memoization-and-hygiene.md)       | Remove per-render `Trigger time` log.                          | DONE (`151c6978`)                 |
+| L39 | [7](phases/phase-7-memoization-and-hygiene.md)       | Scan transcript in place.                                      | DONE (`151c6978`)                 |
+| L40 | [7](phases/phase-7-memoization-and-hygiene.md)       | Memoize trigger-effect regex sites.                            | DONE (`151c6978`)                 |
 
 ### Context-dependent
 
