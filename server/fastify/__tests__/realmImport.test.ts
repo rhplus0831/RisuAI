@@ -1,6 +1,6 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -10,7 +10,19 @@ import * as fflate from 'fflate'
 import { buildApp } from '../src/app.js'
 import { DatabaseSync } from 'node:sqlite'
 import { getAllAssetMetadata, loadPersisted, type Persisted } from '../src/repository.js'
-import { openDatabase } from '../src/db.js'
+import { getSchemaState, openDatabase } from '../src/db.js'
+
+const cryptoMock = vi.hoisted(() => ({
+  randomUuidOverride: undefined as string | undefined,
+}))
+
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:crypto')>()
+  return {
+    ...actual,
+    randomUUID: () => cryptoMock.randomUuidOverride ?? actual.randomUUID(),
+  }
+})
 
 function queryAssets(dataDir: string) {
   const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
@@ -23,7 +35,32 @@ function queryAssets(dataDir: string) {
 
 function loadPersistedFromDir(dataDir: string): Persisted {
   const db = openDatabase(dataDir)
-  try { return loadPersisted(db, dataDir) } finally { db.close() }
+  try {
+    return loadPersisted(db, dataDir)
+  } finally {
+    db.close()
+  }
+}
+
+function commandEventCount(dataDir: string): number {
+  const db = openDatabase(dataDir)
+  try {
+    const row = db.prepare('SELECT COUNT(*) AS count FROM command_events').get() as {
+      count: number
+    }
+    return row.count
+  } finally {
+    db.close()
+  }
+}
+
+function currentRevision(dataDir: string): number {
+  const db = openDatabase(dataDir)
+  try {
+    return getSchemaState(db).revision
+  } finally {
+    db.close()
+  }
 }
 
 const subtle = webcrypto.subtle
@@ -566,6 +603,75 @@ describe('Realm character import route', () => {
     expect(character.vits).toMatchObject({
       files: { 'voice.wav': expect.stringMatching(/^[a-f0-9]{64}$/) },
     })
+  })
+
+  it('rejects duplicate Realm character ids without bumping revision or emitting events', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ card: realmCard(), img: 'main-img' }))
+        return
+      }
+      if (req.url === '/resource/main-img') {
+        res.writeHead(200, { 'content-type': 'image/png' })
+        res.end('main image')
+        return
+      }
+      if (req.url === '/resource/emotion-img') {
+        res.writeHead(200, { 'content-type': 'image/png' })
+        res.end('emotion image')
+        return
+      }
+      if (req.url === '/resource/theme-css') {
+        res.writeHead(200, { 'content-type': 'text/css' })
+        res.end('body { color: red; }')
+        return
+      }
+      if (req.url === '/resource/voice-wav') {
+        res.writeHead(200, { 'content-type': 'audio/wav' })
+        res.end('voice data')
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const duplicateCharacterId = '11111111-1111-4111-8111-111111111111'
+    cryptoMock.randomUuidOverride = duplicateCharacterId
+
+    try {
+      const { assertion } = await setupAuthedClient(harness.app)
+      const baseRevision = await importEmptyDatabase(harness.app, assertion)
+      const first = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+        payload: { id: 'realm-id', baseRevision },
+      })
+
+      expect(first.statusCode).toBe(200)
+      expect(first.json().characterId).toBe(duplicateCharacterId)
+      const revisionAfterFirstImport = currentRevision(harness.dataDir)
+      const eventsAfterFirstImport = commandEventCount(harness.dataDir)
+
+      const duplicate = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+        payload: { id: 'realm-id', baseRevision: revisionAfterFirstImport },
+      })
+
+      expect(duplicate.statusCode).toBe(400)
+      expect(duplicate.json()).toEqual({
+        error: `Duplicate character id: ${duplicateCharacterId}`,
+      })
+      expect(currentRevision(harness.dataDir)).toBe(revisionAfterFirstImport)
+      expect(commandEventCount(harness.dataDir)).toBe(eventsAfterFirstImport)
+      const persisted = loadPersistedFromDir(harness.dataDir)
+      expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(1)
+    } finally {
+      cryptoMock.randomUuidOverride = undefined
+    }
   })
 
   it('requires explicit confirmation before importing low-level-access cards', async () => {

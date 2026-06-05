@@ -79,6 +79,13 @@ export interface TargetedCommandMutationArgs<TExtra extends Record<string, unkno
   mutationPath: string
   writeDatabase?: boolean
   /**
+   * For mutations that can validate and write entirely through targeted SQLite
+   * reads/writers (for example appending a brand-new row), skip the broad
+   * database shape load and pass `undefined` to the callback. Incompatible with
+   * whole-database write-back and scoped reads.
+   */
+  skipDatabaseLoad?: boolean
+  /**
    * Opt-in narrowed read for callbacks that only locate one chat row and
    * mutate it / do kit-writer message writes (audit M3/L5/L6): load the target
    * chat row + its parent character via {@link loadPersistedForChatMutation},
@@ -145,6 +152,12 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
   if (args.chatScopedRead && args.characterScopedRead) {
     throw new Error('chatScopedRead cannot be combined with characterScopedRead')
   }
+  if (args.skipDatabaseLoad && (args.chatScopedRead || args.characterScopedRead)) {
+    throw new Error('skipDatabaseLoad cannot be combined with scoped reads')
+  }
+  if (args.skipDatabaseLoad && args.writeDatabase) {
+    throw new Error('skipDatabaseLoad cannot be combined with writeDatabase')
+  }
   if (args.chatScopedRead && args.writeDatabase) {
     throw new Error('chatScopedRead cannot be combined with writeDatabase')
   }
@@ -171,22 +184,27 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     }
 
     const loadStartedAt = protocolNowMs()
-    const persisted = args.chatScopedRead
-      ? loadPersistedForChatMutation(args.db, args.dataDir, args.chatScopedRead)
-      : args.characterScopedRead
-        ? loadPersistedForCharacterMutation(args.db, args.dataDir, args.characterScopedRead)
-        : loadPersisted(args.db, args.dataDir)
+    const persisted = args.skipDatabaseLoad
+      ? undefined
+      : args.chatScopedRead
+        ? loadPersistedForChatMutation(args.db, args.dataDir, args.chatScopedRead)
+        : args.characterScopedRead
+          ? loadPersistedForCharacterMutation(args.db, args.dataDir, args.characterScopedRead)
+          : loadPersisted(args.db, args.dataDir)
     loadMs = protocolDurationMs(loadStartedAt)
 
     // The callback owns its targeted SQLite writes (kit writers); capture which
     // physical tables it — and any broad fallback — actually touched.
     beginTableWriteCapture()
     const cloneMutateStartedAt = protocolNowMs()
-    const mutation = args.mutate(persisted.database, args.db)
+    const mutation = args.mutate(persisted?.database, args.db)
     cloneMutateMs = protocolDurationMs(cloneMutateStartedAt)
 
     const sqliteSyncStartedAt = protocolNowMs()
     if (args.writeDatabase) {
+      if (!persisted) {
+        throw new Error('writeDatabase requires a loaded database')
+      }
       stripChatMessages(persisted)
       replaceAllCharactersInTable(args.db, persisted.database)
       replaceAllCollectionsInTable(args.db, persisted.database)

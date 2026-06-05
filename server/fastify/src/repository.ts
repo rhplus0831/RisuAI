@@ -451,6 +451,40 @@ export function writeSingleCharacterRow(
   )
 }
 
+export function characterRowExists(db: DatabaseSync, characterId: string): boolean {
+  const row = db
+    .prepare('SELECT 1 AS found FROM characters WHERE id = ? LIMIT 1')
+    .get(characterId) as { found: number } | undefined
+  return !!row
+}
+
+export function nextCharacterRowPosition(db: DatabaseSync): number {
+  const row = db
+    .prepare('SELECT COALESCE(MAX(position) + 1, 0) AS position FROM characters')
+    .get() as { position: number }
+  return row.position
+}
+
+/** INSERT one brand-new character row at the supplied position. `chats` is
+ *  stripped to match the storage contract (chats live in the `chats` table). */
+export function insertCharacterRow(
+  db: DatabaseSync,
+  position: number,
+  character: JsonRecord,
+): void {
+  const characterId = character.chaId
+  if (typeof characterId !== 'string' || characterId.trim() === '') {
+    throw new ValidationError('character.chaId must be a non-empty string')
+  }
+  const { chats: _chats, ...charWithoutChats } = character
+  recordTableWrite('characters')
+  db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)').run(
+    characterId,
+    position,
+    JSON.stringify(charWithoutChats),
+  )
+}
+
 /** `UPDATE chats WHERE id=?` for one chat row. `message` / `hypaV3Data` are
  *  stripped to match the storage contract (they live in the message store). */
 export function writeSingleChatRow(db: DatabaseSync, chatId: string, chat: JsonRecord): void {
@@ -536,6 +570,50 @@ export function insertCharacterChatRow(
     position,
     JSON.stringify(chatClean),
   )
+}
+
+export function updateSettingsForCharacterAppend(
+  db: DatabaseSync,
+  characterId: string,
+  character: JsonRecord,
+  nextCharacterCount: number,
+): void {
+  const settings = loadSettingsFromSqlite(db)
+  if (settings === null) {
+    throw new ValidationError('database must be an object before character commands can run')
+  }
+
+  if (!Number.isInteger(settings.currentChar as number)) {
+    settings.currentChar = nextCharacterCount > 0 ? 0 : -1
+  }
+  if ((settings.currentChar as number) >= nextCharacterCount) {
+    settings.currentChar = nextCharacterCount > 0 ? nextCharacterCount - 1 : -1
+  }
+  if ((settings.currentChar as number) < -1) {
+    settings.currentChar = nextCharacterCount > 0 ? 0 : -1
+  }
+
+  if (!Array.isArray(settings.characterOrder)) {
+    settings.characterOrder = []
+  }
+  if (!character.trashTime && characterId !== '§temp') {
+    const order = settings.characterOrder as unknown[]
+    if (!characterOrderContains(order, characterId)) {
+      order.push(characterId)
+    }
+  }
+
+  writeSettingsOnly(db, settings)
+}
+
+function characterOrderContains(order: readonly unknown[], characterId: string): boolean {
+  for (const entry of order) {
+    if (entry === characterId) return true
+    if (isRecord(entry) && Array.isArray(entry.data) && entry.data.includes(characterId)) {
+      return true
+    }
+  }
+  return false
 }
 
 function collectionTableForField(field: string): string {

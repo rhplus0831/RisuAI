@@ -947,6 +947,77 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(loadCountByTable.chats ?? 0).toBe(0)
   })
 
+  it('L13: Realm character append performs zero loadPersisted-shaped corpus reads', async () => {
+    const baseRevision = await importDatabase({
+      characters: [],
+      characterOrder: [],
+      currentChar: -1,
+    })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.startsWith('https://realm.risuai.net/api/v1/download/dynamic/realm-id')) {
+        return new Response(
+          JSON.stringify({
+            img: 'main-img',
+            card: {
+              spec: 'chara_card_v2',
+              spec_version: '2.0',
+              data: {
+                name: 'Realm Scoped',
+                description: 'narrow append',
+                personality: '',
+                scenario: '',
+                first_mes: 'hello',
+                mes_example: '',
+                creator_notes: '',
+                system_prompt: '',
+                post_history_instructions: '',
+                alternate_greetings: [],
+                tags: [],
+                creator: '',
+                character_version: '1',
+                extensions: { risuai: {} },
+              },
+            },
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        )
+      }
+      if (url === 'https://sv.risuai.xyz/resource/main-img') {
+        return new Response('main image', { headers: { 'content-type': 'image/png' } })
+      }
+      return new Response('', { status: 404 })
+    })
+
+    try {
+      const {
+        result: res,
+        corpusLoadCount,
+        loadCountByTable,
+      } = await withServerLoadInstrumentation(() =>
+        harness.app.inject({
+          method: 'POST',
+          url: '/api/v1/import/realm-character',
+          headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+          payload: { id: 'realm-id', baseRevision },
+        }),
+      )
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toMatchObject({
+        characterId: expect.any(String),
+        event: { type: 'character.created', resource: 'character' },
+      })
+      expect(corpusLoadCount).toBe(0)
+      expect(loadCountByTable.characters ?? 0).toBe(0)
+      expect(loadCountByTable.chats ?? 0).toBe(0)
+      expect(loadCountByTable.messages ?? 0).toBe(0)
+      expect(loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
+    } finally {
+      fetchMock.mockRestore()
+    }
+  })
+
   it('M4: bootstrap in-place masking matches the copying mask byte-for-byte', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({ ...fixture.database, openAIKey: 'sk-bootstrap-secret' })

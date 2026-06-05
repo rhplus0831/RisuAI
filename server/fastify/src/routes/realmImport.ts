@@ -16,27 +16,29 @@ import {
   type CommandEventSink,
 } from '../commands/events.js'
 import {
-  applyJsonCommandMutation,
+  TARGETED_MUTATION_PATHS,
+  applyTargetedCommandMutation,
   readBaseRevision,
   type JsonCommandMutationResult,
 } from '../commands/mutations.js'
-import {
-  createCharacterRecord,
-  ensureCharacterCollection,
-  ensureDatabaseObject as ensureCharacterDatabaseObject,
-  findCharacterIndex,
-} from '../commands/characters.js'
+import { createCharacterRecord } from '../commands/characters.js'
 import {
   ValidationError,
   addAsset,
   assetPath,
   assetsDir,
+  characterRowExists,
   CONTENT_TYPE_EXTENSIONS,
   getAssetMetadataById,
+  insertCharacterChatRow,
+  insertCharacterRow,
   insertAssetMetadataBatch,
+  nextCharacterRowPosition,
   type AddAssetResult,
   type PersistedAsset,
+  updateSettingsForCharacterAppend,
 } from '../repository.js'
+import { replaceActiveChatMessages, setChatHypaV3 } from '../messageStore.js'
 import { importRateLimit } from '../routeRateLimits.js'
 import {
   LowLevelAccessImportError,
@@ -536,25 +538,52 @@ function appendRealmCharacter(args: {
 }): JsonCommandMutationResult<{ characterId: string }> {
   const baseRevision = getSchemaState(args.db).revision
   const characterRecord = createCharacterRecord(args.character, { assetDb: args.db })
-  return applyJsonCommandMutation<{ characterId: string }>({
+  return applyTargetedCommandMutation<{ characterId: string }>({
     db: args.db,
     dataDir: args.dataDir,
     baseRevision,
     eventSink: args.eventSink,
-    mutate(database) {
-      const target = ensureCharacterDatabaseObject(database)
-      const characters = ensureCharacterCollection(target)
-      if (findCharacterIndex(characters, characterRecord.chaId) !== -1) {
+    mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+    skipDatabaseLoad: true,
+    mutate(_database, innerDb) {
+      if (characterRowExists(innerDb, characterRecord.chaId)) {
         throw new ValidationError(`Duplicate character id: ${characterRecord.chaId}`)
       }
-      characters.push(characterRecord)
-      ensureCharacterCollection(target)
+      const position = nextCharacterRowPosition(innerDb)
+      insertCharacterRow(innerDb, position, characterRecord)
+      insertRealmCharacterChats(innerDb, characterRecord.chaId, characterRecord)
+      updateSettingsForCharacterAppend(
+        innerDb,
+        characterRecord.chaId,
+        characterRecord,
+        position + 1,
+      )
       return {
         event: { ...COMMAND_EVENT_CATALOG.characterCreated, id: characterRecord.chaId },
         extra: { characterId: characterRecord.chaId },
       }
     },
   })
+}
+
+function insertRealmCharacterChats(
+  db: DatabaseSync,
+  characterId: string,
+  character: JsonRecord,
+): void {
+  const chats = Array.isArray(character.chats) ? character.chats : []
+  for (let position = 0; position < chats.length; position++) {
+    const chat = readOptionalRecord(chats[position])
+    if (!chat || typeof chat.id !== 'string') continue
+
+    insertCharacterChatRow(db, characterId, position, chat)
+    if (Array.isArray(chat.message) && chat.message.length > 0) {
+      replaceActiveChatMessages(db, chat.id, chat.message)
+    }
+    if (chat.hypaV3Data !== undefined) {
+      setChatHypaV3(db, chat.id, chat.hypaV3Data)
+    }
+  }
 }
 
 async function readCharxCard(

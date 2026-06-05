@@ -261,7 +261,20 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L9', 3, 'Expand depth-prompt bodies once; preflight reuses.'),
   planned('L10', 3, 'Cap `{{#each}}` expansion size.'),
   planned('L11', 3, 'Cheap CBS tag-name normalization.'),
-  planned('L13', 2, 'Targeted writes for Realm character append.'),
+  done(
+    'L13',
+    2,
+    'Targeted writes for Realm character append.',
+    'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+    'L13: Realm character append performs zero loadPersisted-shaped corpus reads',
+    [
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName:
+          'rejects duplicate Realm character ids without bumping revision or emitting events',
+      },
+    ],
+  ),
   planned('L14', 2, 'Delta-aware transcript persist diff.'),
   planned('L15', 8, '`PRAGMA synchronous = NORMAL`.'),
   done(
@@ -1071,6 +1084,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M5',
       'M6',
       'L3',
+      'L13',
       'L16',
     ])
     expect(doneEntries.every(hasProofFields)).toBe(true)

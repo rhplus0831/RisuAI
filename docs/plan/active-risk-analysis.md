@@ -90,7 +90,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L10 | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Cap `{{#each}}` expansion size.                                   | PENDING |
 | L11 | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Cheap CBS tag-name normalization.                                 | PENDING |
 | L12 | gated                                            | Lua pool/boot serialization is the documented wasmoon constraint. | -       |
-| L13 | [2](phases/phase-2-server-corpus-ring-2.md)      | Targeted writes for Realm character append.                       | PENDING |
+| L13 | [2](phases/phase-2-server-corpus-ring-2.md)      | Targeted writes for Realm character append.                       | DONE    |
 | L14 | [2](phases/phase-2-server-corpus-ring-2.md)      | Delta-aware transcript persist diff.                              | PENDING |
 | L15 | [8](phases/phase-8-server-bounds.md)             | `PRAGMA synchronous = NORMAL`.                                    | PENDING |
 | L16 | [2](phases/phase-2-server-corpus-ring-2.md)      | Single auth verification on the bulk routes.                      | DONE    |
