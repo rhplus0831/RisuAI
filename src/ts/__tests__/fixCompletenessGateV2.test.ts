@@ -345,7 +345,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('K2', 2, 'Message-free/scoped load for the asset-GC sweep (v1-M10 residual).'),
+  done(
+    'K2',
+    2,
+    'Message-free/scoped load for the asset-GC sweep (v1-M10 residual).',
+    'server/fastify/__tests__/assetGc.test.ts',
+    'preserves references from settings, collection rows, character rows, chat rows, and messages',
+    [
+      {
+        testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+        testName: 'K2: asset GC avoids loadPersisted-shaped corpus reads',
+      },
+    ],
+  ),
   planned(
     'K3',
     7,
@@ -982,7 +994,7 @@ describe('v2 fix-completeness gate doc universe', () => {
 
     expect(rows).toHaveLength(4)
     expect(ids).toEqual(rangeIds('K', 4))
-    expect(rows.map((row) => row.status)).toEqual(['DONE', 'PENDING', 'PENDING', 'PENDING'])
+    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'PENDING', 'PENDING'])
 
     expect(rows[0].targetFix).toContain('v1-L6 residual')
     expect(rows[1].targetFix).toContain('v1-M10 residual')
@@ -1104,6 +1116,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L13',
       'L16',
       'K1',
+      'K2',
     ])
     expect(doneEntries.every(hasProofFields)).toBe(true)
   })

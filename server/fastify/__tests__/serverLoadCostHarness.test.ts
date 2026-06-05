@@ -6,15 +6,18 @@ import path from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { runAssetGc } from '../src/assetGc.js'
 import { openDatabase } from '../src/db.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
+  insertAssetMetadataBatch,
   loadPersisted,
   loadPersistedForAssembly,
   loadPersistedWithMessages,
   loadSingleCharacterStubRow,
   loadStubProjection,
   loadStubbedProjectionFields,
+  type PersistedAsset,
 } from '../src/repository.js'
 import {
   MASKED_PROVIDER_SECRET,
@@ -152,6 +155,10 @@ function selectFields(
   return fields
 }
 
+function asset(id: string): PersistedAsset {
+  return { id, ext: 'png', size: 1, contentType: 'image/png' }
+}
+
 async function withJsonStringifySizeInstrumentation<T>(
   fn: () => Promise<T>,
 ): Promise<{ result: T; stringifyCount: number; maxStringifiedSize: number }> {
@@ -276,6 +283,11 @@ describe('classifyCorpusStatement', () => {
     expect(classifyCorpusStatement('SELECT json FROM chat_hypa_v3 WHERE chat_id = ?')).toBeNull()
     expect(
       classifyCorpusStatement('SELECT id, ext, size, content_type FROM assets WHERE id = ?'),
+    ).toBeNull()
+    expect(
+      classifyCorpusStatement(
+        "SELECT json_extract(data_json, '$.image') AS image FROM characters ORDER BY position",
+      ),
     ).toBeNull()
     // Id-only scans stay cheap and do not count.
     expect(
@@ -1165,6 +1177,68 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toMatchObject({
       $k1flag: '1',
     })
+  })
+
+  it('K2: asset GC avoids loadPersisted-shaped corpus reads', async () => {
+    const settingRef = '1'.repeat(64)
+    const collectionRef = '2'.repeat(64)
+    const characterRef = '3'.repeat(64)
+    const messageRef = '4'.repeat(64)
+    const orphan = '5'.repeat(64)
+    await importDatabase({
+      userIcon: settingRef,
+      modules: [{ assets: [['module', collectionRef]] }],
+      personas: [{ icon: collectionRef }],
+      botPresets: [{ image: collectionRef }],
+      characters: [
+        {
+          chaId: 'k2-char',
+          image: characterRef,
+          chats: [
+            {
+              id: 'k2-chat',
+              message: [
+                {
+                  chatId: 'k2-message',
+                  role: 'user',
+                  data: `message {{inlay::${messageRef}}}`,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      insertAssetMetadataBatch(db, [
+        asset(settingRef),
+        asset(collectionRef),
+        asset(characterRef),
+        asset(messageRef),
+        asset(orphan),
+      ])
+
+      const observed = await withServerLoadInstrumentation(() =>
+        runAssetGc(harness.dataDir, { db, graceMs: 0, now: () => Date.now() }),
+      )
+
+      expect(observed.result.deletedAssetIds).toEqual([orphan])
+      expect(observed.loadCountByTable.assets).toBe(1)
+      expect(observed.loadCountByTable.characters ?? 0).toBe(0)
+      expect(observed.loadCountByTable.chats ?? 0).toBe(0)
+      expect(observed.loadCountByTable.modules ?? 0).toBe(0)
+      expect(observed.loadCountByTable.personas ?? 0).toBe(0)
+      expect(observed.loadCountByTable.bot_presets ?? 0).toBe(0)
+      expect(observed.loadCountByTable.messages ?? 0).toBe(0)
+      expect(observed.loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
+      expect(
+        observed.corpusLoads.filter((load) => load.table !== 'assets').map((load) => load.table),
+      ).toEqual([])
+    } finally {
+      db.close()
+    }
   })
 
   it('M4: bootstrap in-place masking matches the copying mask byte-for-byte', async () => {

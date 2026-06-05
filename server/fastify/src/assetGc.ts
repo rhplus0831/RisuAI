@@ -7,9 +7,10 @@ import {
   deleteAssetMetadataByIds,
   getAllAssetMetadata,
   isValidAssetId,
-  loadPersisted,
+  type PersistedAsset,
 } from './repository.js'
 import {
+  type RisuSaveAssetReport,
   buildRisuSaveAssetReport,
   collectMessageInlayReferences,
 } from './risuSave/assetReferences.js'
@@ -44,6 +45,30 @@ export interface AssetGcResult {
   scannedOrphans: number
 }
 
+type JsonRecord = Record<string, unknown>
+
+interface CollectionReferenceRow {
+  value: unknown
+}
+
+interface CharacterReferenceRow {
+  id: string
+  image: unknown
+  emotionImagesJson: unknown
+  additionalAssetsJson: unknown
+  ccAssetsJson: unknown
+  vitsFilesJson: unknown
+  prebuiltAssetExcludeJson: unknown
+  gptSoVitsAssetId: unknown
+}
+
+interface ChatReferenceRow {
+  id: string
+  characterId: string
+  dataId: unknown
+  messageJson: unknown
+}
+
 function fileAgeMs(file: string, now: number): number | null {
   try {
     const stat = fs.statSync(file)
@@ -54,13 +79,178 @@ function fileAgeMs(file: string, now: number): number | null {
   }
 }
 
+function readRecord(value: unknown): JsonRecord | null {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : null
+}
+
+function readJsonFragment(value: unknown): unknown {
+  if (typeof value !== 'string') return undefined
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+function setIfPresent(record: JsonRecord, key: string, value: unknown): void {
+  if (value !== null && value !== undefined) record[key] = value
+}
+
+function loadSettingsReferenceShape(db: DatabaseSync): JsonRecord | null {
+  const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+    | { data_json: string }
+    | undefined
+  if (!row) return null
+  const parsed = JSON.parse(row.data_json) as unknown
+  return readRecord(parsed)
+}
+
+function collectionRows(db: DatabaseSync, tableName: string, fieldPath: string): unknown[] {
+  const rows = db
+    .prepare(`SELECT json_extract(data_json, ?) AS value FROM ${tableName} ORDER BY position`)
+    .all(fieldPath) as unknown as CollectionReferenceRow[]
+  return rows.map((row) => row.value)
+}
+
+function collectionRowsWithJsonFragment(
+  db: DatabaseSync,
+  tableName: string,
+  fieldPath: string,
+): unknown[] {
+  return collectionRows(db, tableName, fieldPath).map(readJsonFragment)
+}
+
+function applyCollectionOverride(
+  database: JsonRecord,
+  field: string,
+  rows: unknown[],
+  buildRow: (value: unknown) => JsonRecord,
+): void {
+  if (rows.length === 0) return
+  database[field] = rows.map(buildRow)
+}
+
+function loadCharacterReferenceRows(db: DatabaseSync): CharacterReferenceRow[] {
+  return db
+    .prepare(
+      `
+      SELECT
+        id,
+        json_extract(data_json, '$.image') AS image,
+        json_extract(data_json, '$.emotionImages') AS emotionImagesJson,
+        json_extract(data_json, '$.additionalAssets') AS additionalAssetsJson,
+        json_extract(data_json, '$.ccAssets') AS ccAssetsJson,
+        json_extract(data_json, '$.vits.files') AS vitsFilesJson,
+        json_extract(data_json, '$.prebuiltAssetExclude') AS prebuiltAssetExcludeJson,
+        json_extract(data_json, '$.gptSoVitsConfig.ref_audio_data.assetId') AS gptSoVitsAssetId
+      FROM characters
+      ORDER BY position
+    `,
+    )
+    .all() as unknown as CharacterReferenceRow[]
+}
+
+function loadChatReferenceRows(db: DatabaseSync): ChatReferenceRow[] {
+  return db
+    .prepare(
+      `
+      SELECT
+        id,
+        character_id AS characterId,
+        json_extract(data_json, '$.id') AS dataId,
+        json_extract(data_json, '$.message') AS messageJson
+      FROM chats
+      ORDER BY character_id, position
+    `,
+    )
+    .all() as unknown as ChatReferenceRow[]
+}
+
+function buildMinimalCharacter(row: CharacterReferenceRow, chats: unknown[]): JsonRecord {
+  const character: JsonRecord = { chats }
+  setIfPresent(character, 'image', row.image)
+  setIfPresent(character, 'emotionImages', readJsonFragment(row.emotionImagesJson))
+  setIfPresent(character, 'additionalAssets', readJsonFragment(row.additionalAssetsJson))
+  setIfPresent(character, 'ccAssets', readJsonFragment(row.ccAssetsJson))
+  setIfPresent(character, 'prebuiltAssetExclude', readJsonFragment(row.prebuiltAssetExcludeJson))
+  const vitsFiles = readJsonFragment(row.vitsFilesJson)
+  if (vitsFiles !== undefined) character.vits = { files: vitsFiles }
+  if (row.gptSoVitsAssetId !== null && row.gptSoVitsAssetId !== undefined) {
+    character.gptSoVitsConfig = { ref_audio_data: { assetId: row.gptSoVitsAssetId } }
+  }
+  return character
+}
+
+function buildMinimalChat(row: ChatReferenceRow): JsonRecord {
+  const chat: JsonRecord = {}
+  if (typeof row.dataId === 'string') chat.id = row.dataId
+  const message = readJsonFragment(row.messageJson)
+  if (message !== undefined) chat.message = message
+  return chat
+}
+
+function loadAssetGcReferenceDatabase(db: DatabaseSync): unknown {
+  const settings = loadSettingsReferenceShape(db)
+  if (settings === null) return null
+
+  const database: JsonRecord = { ...settings }
+
+  applyCollectionOverride(
+    database,
+    'modules',
+    collectionRowsWithJsonFragment(db, 'modules', '$.assets'),
+    (assets) => ({
+      assets,
+    }),
+  )
+  applyCollectionOverride(
+    database,
+    'personas',
+    collectionRows(db, 'personas', '$.icon'),
+    (icon) => ({
+      icon,
+    }),
+  )
+  applyCollectionOverride(
+    database,
+    'botPresets',
+    collectionRows(db, 'bot_presets', '$.image'),
+    (image) => ({ image }),
+  )
+
+  const characterRows = loadCharacterReferenceRows(db)
+  if (characterRows.length > 0 || !Array.isArray(settings.characters)) {
+    const chatsByCharacterId = new Map<string, unknown[]>()
+    for (const row of loadChatReferenceRows(db)) {
+      const chats = chatsByCharacterId.get(row.characterId) ?? []
+      chats.push(buildMinimalChat(row))
+      chatsByCharacterId.set(row.characterId, chats)
+    }
+    database.characters = characterRows.map((row) =>
+      buildMinimalCharacter(row, chatsByCharacterId.get(row.id) ?? []),
+    )
+  }
+
+  return database
+}
+
+export function buildAssetGcRisuSaveAssetReport(
+  db: DatabaseSync,
+  assets: readonly PersistedAsset[],
+): RisuSaveAssetReport {
+  const database = loadAssetGcReferenceDatabase(db)
+  return buildRisuSaveAssetReport(database, assets, collectMessageInlayReferences(db, database))
+}
+
 /**
  * Reference-counted, server-side asset garbage collection.
  *
- * Walks the in-memory persisted `Database` to compute the referenced asset set
- * (via the same walker `risuSave` uses for its orphan report), then deletes
- * content-addressed assets that nothing references — reference-counting across
- * the whole corpus, so a `sha256`-shared asset is only reclaimed at zero
+ * Walks a minimal, message-free reference projection to compute the referenced
+ * asset set (via the same walker `risuSave` uses for its orphan report), then
+ * deletes content-addressed assets that nothing references — reference-counting
+ * across the whole corpus, so a `sha256`-shared asset is only reclaimed at zero
  * references. A grace window (by file mtime) protects just-uploaded bytes.
  *
  * The metadata read-modify-write is fully synchronous (no `await`), so it is
@@ -84,15 +274,11 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
 
   // Message inlay references come from a column-only `messages.data` token scan
   // (audit M10) — no whole-corpus message hydrate / per-row JSON.parse on this
-  // periodic synchronous sweep. The message-free projection covers every other
-  // reference; the referenced/orphaned sets are identical to the hydrated walk.
-  const persisted = loadPersisted(opts.db, dataDir)
+  // periodic synchronous sweep. The scoped reference projection covers every
+  // other field the broad report walker used to inspect, without loading assets
+  // twice or hydrating the character/chat corpus into a persisted Database.
   const assets = getAllAssetMetadata(opts.db)
-  const report = buildRisuSaveAssetReport(
-    persisted.database,
-    assets,
-    collectMessageInlayReferences(opts.db, persisted.database),
-  )
+  const report = buildAssetGcRisuSaveAssetReport(opts.db, assets)
   result.scannedOrphans = report.orphaned.length
 
   const referencedIds = new Set(report.referenced.map((reference) => reference.id))

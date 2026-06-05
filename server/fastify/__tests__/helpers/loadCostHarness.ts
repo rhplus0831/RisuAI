@@ -89,6 +89,47 @@ function normalizeSql(sql: string): string {
   return sql.toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
+function splitSelectExpressions(selectList: string): string[] {
+  const raw = selectList.replace(/^select\s+/, '')
+  const expressions: string[] = []
+  let start = 0
+  let depth = 0
+  let quote: string | null = null
+  for (let i = 0; i < raw.length; i++) {
+    const char = raw[i]
+    if (quote !== null) {
+      if (char === quote) quote = null
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+      continue
+    }
+    if (char === '(') {
+      depth++
+      continue
+    }
+    if (char === ')') {
+      depth = Math.max(0, depth - 1)
+      continue
+    }
+    if (char === ',' && depth === 0) {
+      expressions.push(raw.slice(start, i).trim())
+      start = i + 1
+    }
+  }
+  expressions.push(raw.slice(start).trim())
+  return expressions.filter(Boolean)
+}
+
+function expressionReturnsRawColumn(expression: string, column: string): boolean {
+  const withoutAlias = expression
+    .replace(/\s+as\s+[a-z0-9_]+$/i, '')
+    .replace(/\s+[a-z0-9_]+$/i, '')
+    .trim()
+  return new RegExp(`^(?:[a-z0-9_]+\\.)?${column}$`).test(withoutAlias)
+}
+
 /**
  * Classify one SQL statement. Returns the corpus table it whole-corpus-reads,
  * or `null` for writes, non-corpus tables, id-only scans, and row-scoped reads.
@@ -103,10 +144,12 @@ export function classifyCorpusStatement(sql: string): { table: string } | null {
   if (!spec) return null
 
   // Payload column must appear in the select list (before FROM); id-only
-  // existence/count scans stay cheap and do not count.
+  // existence/count scans stay cheap and do not count. Scalar JSON extraction
+  // over a bounded set of known fields is also not a raw row-payload hydrate.
   const selectList = normalized.slice(0, fromMatch.index)
+  const expressions = splitSelectExpressions(selectList)
   const readsPayload = spec.payloadColumns.some((column) =>
-    new RegExp(`\\b${column}\\b`).test(selectList),
+    expressions.some((expression) => expressionReturnsRawColumn(expression, column)),
   )
   if (!readsPayload) return null
 

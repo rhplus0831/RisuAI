@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { runAssetGc } from '../src/assetGc.js'
+import { buildAssetGcRisuSaveAssetReport, runAssetGc } from '../src/assetGc.js'
 import {
   assetsDir,
   getAllAssetMetadata,
@@ -26,6 +26,11 @@ const ORPHAN_OLD = 'c'.repeat(64)
 const ORPHAN_FRESH = 'd'.repeat(64)
 const STRAY_OLD = 'e'.repeat(64)
 const STRAY_FRESH = 'f'.repeat(64)
+const SETTINGS_REF = '1'.repeat(64)
+const COLLECTION_REF = '2'.repeat(64)
+const CHARACTER_REF = '3'.repeat(64)
+const CHAT_ROW_REF = '4'.repeat(64)
+const MESSAGE_REF = '5'.repeat(64)
 
 const GRACE_MS = 60 * 60_000
 const NOW = 10_000_000_000
@@ -54,6 +59,16 @@ function seedDatabase(database: unknown, assets: PersistedAsset[]): void {
   insertAssetMetadataBatch(db, assets)
 }
 
+function embedChatRowMessage(chatId: string, messageData: string): void {
+  const row = db.prepare('SELECT data_json FROM chats WHERE id = ?').get(chatId) as
+    | { data_json: string }
+    | undefined
+  if (!row) throw new Error(`missing chat row ${chatId}`)
+  const chat = JSON.parse(row.data_json) as Record<string, unknown>
+  chat.message = [{ chatId: `${chatId}-embedded-message`, role: 'user', data: messageData }]
+  db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chat), chatId)
+}
+
 beforeEach(() => {
   dataDir = mkdtempSync(path.join(tmpdir(), 'risu-asset-gc-'))
   db = openDatabase(dataDir)
@@ -72,7 +87,12 @@ describe('runAssetGc', () => {
         { chaId: 'char-b', image: SHARED },
       ],
     }
-    seedDatabase(database, [asset(REFERENCED), asset(SHARED), asset(ORPHAN_OLD), asset(ORPHAN_FRESH)])
+    seedDatabase(database, [
+      asset(REFERENCED),
+      asset(SHARED),
+      asset(ORPHAN_OLD),
+      asset(ORPHAN_FRESH),
+    ])
     const refFile = writeAssetFile(REFERENCED, OLD_MTIME)
     const sharedFile = writeAssetFile(SHARED, OLD_MTIME)
     const orphanOldFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
@@ -208,6 +228,72 @@ describe('runAssetGc', () => {
     expect(scoped.referenced.map((reference) => reference.id)).toContain(SHARED)
     expect(scoped.missing.map((reference) => reference.id)).toEqual([MISSING])
     expect(scoped.orphaned.map((entry) => entry.id)).toEqual([ORPHAN_OLD])
+  })
+
+  it('preserves references from settings, collection rows, character rows, chat rows, and messages', () => {
+    const database = {
+      userIcon: SETTINGS_REF,
+      customBackground: `assets/${SETTINGS_REF}.png`,
+      modules: [{ assets: [['module-ref', COLLECTION_REF]] }],
+      personas: [{ icon: COLLECTION_REF }],
+      botPresets: [{ image: `assets/${COLLECTION_REF}.png` }],
+      characters: [
+        {
+          chaId: 'char-a',
+          image: CHARACTER_REF,
+          emotionImages: [['happy', `assets/${CHARACTER_REF}.png`]],
+          additionalAssets: [['sheet', CHARACTER_REF]],
+          ccAssets: [{ uri: CHARACTER_REF }],
+          vits: { files: { voice: CHARACTER_REF } },
+          prebuiltAssetExclude: [CHARACTER_REF],
+          gptSoVitsConfig: { ref_audio_data: { assetId: CHARACTER_REF } },
+          chats: [
+            {
+              id: 'chat-a',
+              message: [
+                {
+                  chatId: 'message-a',
+                  role: 'user',
+                  data: `message table {{inlayeddata::${MESSAGE_REF}}}`,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+    seedDatabase(database, [
+      asset(SETTINGS_REF),
+      asset(COLLECTION_REF),
+      asset(CHARACTER_REF),
+      asset(CHAT_ROW_REF),
+      asset(MESSAGE_REF),
+      asset(ORPHAN_OLD),
+    ])
+    embedChatRowMessage('chat-a', `embedded chat row {{inlay::${CHAT_ROW_REF}}}`)
+    const referencedFiles = [
+      writeAssetFile(SETTINGS_REF, OLD_MTIME),
+      writeAssetFile(COLLECTION_REF, OLD_MTIME),
+      writeAssetFile(CHARACTER_REF, OLD_MTIME),
+      writeAssetFile(CHAT_ROW_REF, OLD_MTIME),
+      writeAssetFile(MESSAGE_REF, OLD_MTIME),
+    ]
+    const orphanFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
+
+    const broad = buildRepositoryRisuSaveAssetReport(dataDir, db)
+    const scoped = buildAssetGcRisuSaveAssetReport(db, getAllAssetMetadata(db))
+
+    expect(scoped).toEqual(broad)
+    expect(scoped.referenced.map((reference) => reference.id).sort()).toEqual(
+      [SETTINGS_REF, COLLECTION_REF, CHARACTER_REF, CHAT_ROW_REF, MESSAGE_REF].sort(),
+    )
+
+    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+
+    expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
+    expect(result.scannedOrphans).toBe(1)
+    for (const file of referencedFiles) expect(existsSync(file)).toBe(true)
+    expect(existsSync(orphanFile)).toBe(false)
   })
 
   it('keeps assets referenced only by SQLite chat-message inlay tokens', () => {
