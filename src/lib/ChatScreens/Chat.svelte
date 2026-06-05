@@ -41,8 +41,6 @@
     SizeStore,
   } from 'src/ts/stores.svelte'
   import { capitalize, getUserIcon, getUserName, sleep } from 'src/ts/util'
-  import { onDestroy, onMount } from 'svelte'
-  import { type Unsubscriber } from 'svelte/store'
   import { v4 as uuidv4, v4 } from 'uuid'
   import { language } from '../../lang'
   import {
@@ -373,21 +371,8 @@
   )
 
   $effect.pre(() => {
+    void $ReloadGUIPointer
     displaya(message)
-  })
-
-  const unsubscribers: Unsubscriber[] = []
-
-  onMount(() => {
-    unsubscribers.push(
-      ReloadGUIPointer.subscribe((v) => {
-        displaya(message)
-      }),
-    )
-  })
-
-  onDestroy(() => {
-    unsubscribers.forEach((u) => u())
   })
 
   function RenderGUIHtml(html: string) {

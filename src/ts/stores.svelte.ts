@@ -39,6 +39,7 @@ export const MobileGUIStack = writable(0)
 export const MobileSideBar = writable(0)
 export const SettingsMenuIndex = writable(-1)
 export const ReloadGUIPointer = writable(0)
+export const VariableReloadGUIPointer = writable(0)
 export const ReloadChatPointer = writable({} as Record<number, number>)
 export const ScrollToMessageStore = $state({ value: -1 })
 export const OpenRealmStore = writable(false)
@@ -168,10 +169,28 @@ export const customSideBarConfigDialogStore = $state({
 //Set might be more ideal, however since Svelte doesn't support reactive Sets, using array for now
 export const hotReloading = $state<string[]>([])
 
-ReloadGUIPointer.subscribe(() => {
+export function reloadGuiAfterDefinitionChange() {
   ReloadChatPointer.set({})
   resetScriptCache()
-})
+  ReloadGUIPointer.update((value) => value + 1)
+}
+
+export function reloadGuiDisplay() {
+  ReloadGUIPointer.update((value) => value + 1)
+}
+
+export function refreshVariableOnlyGui() {
+  VariableReloadGUIPointer.update((value) => value + 1)
+}
+
+export function reloadChatAt(index: number | string) {
+  const chatIndex = Number(index)
+  if (!Number.isFinite(chatIndex)) return
+  ReloadChatPointer.update((value) => ({
+    ...value,
+    [chatIndex]: (value[chatIndex] ?? 0) + 1,
+  }))
+}
 
 // The modules `$effect` below used to register its dependency on the modules
 // array via `$state.snapshot(DBState.db.modules)` — a deep clone of every

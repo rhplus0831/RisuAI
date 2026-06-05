@@ -1,7 +1,7 @@
 <script lang="ts">
   import { XIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { ReloadGUIPointer } from 'src/ts/stores.svelte'
+  import { reloadGuiAfterDefinitionChange } from 'src/ts/stores.svelte'
   import { alertConfirm } from 'src/ts/alert'
   import type { customscript } from 'src/ts/storage/database.svelte'
   import Check from '../../UI/GUI/CheckInput.svelte'
@@ -119,14 +119,14 @@
         size="sm"
         bind:value={value.comment}
         onchange={(e) => {
-          $ReloadGUIPointer += 1
+          reloadGuiAfterDefinitionChange()
         }}
       />
       <span class="text-textcolor mt-4">Modification Type</span>
       <SelectInput
         bind:value={value.type}
         onchange={(e) => {
-          $ReloadGUIPointer += 1
+          reloadGuiAfterDefinitionChange()
         }}
       >
         <OptionInput value="editinput">{language.editInput}</OptionInput>
@@ -145,7 +145,7 @@
         size="sm"
         bind:value={value.out}
         onInput={(e) => {
-          $ReloadGUIPointer += 1
+          reloadGuiAfterDefinitionChange()
         }}
       />
       {#if value.ableFlag}

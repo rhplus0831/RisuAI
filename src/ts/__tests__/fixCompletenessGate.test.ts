@@ -612,7 +612,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Memoize trigger-effect regex sites',
     status: 'DONE',
     testPath: 'src/ts/process/triggers.regexMemo.test.ts',
-    testName: 'L40: v2RegexTest compiles a pattern shared by two effects once per pass',
+    testName: 'H3/L40: v2RegexTest memo survives variable-only trigger refreshes, output unchanged',
     extraTests: [
       {
         testPath: 'src/ts/process/triggers.regexMemo.test.ts',

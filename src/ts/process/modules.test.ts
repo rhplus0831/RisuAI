@@ -96,6 +96,7 @@ vi.mock('../stores.svelte', () => ({
   HideIconStore: { set: vi.fn() },
   moduleBackgroundEmbedding: { set: vi.fn() },
   ReloadGUIPointer: { set: vi.fn() },
+  reloadGuiAfterDefinitionChange: vi.fn(),
 }))
 
 vi.mock('../moduleCommands', () => ({

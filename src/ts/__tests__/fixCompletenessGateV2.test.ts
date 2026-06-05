@@ -126,11 +126,35 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/commands.test.ts',
-        testName: 'rejects command-created chat ids and message ids already used by another character',
+        testName:
+          'rejects command-created chat ids and message ids already used by another character',
       },
     ],
   ),
-  planned('H3', 1, 'Decouple `ReloadGUIPointer` from whole-screen remount + cache wipe.'),
+  done(
+    'H3',
+    1,
+    'Decouple `ReloadGUIPointer` from whole-screen remount + cache wipe.',
+    'src/ts/__tests__/renderCountBaseline.test.ts',
+    'H3: var-only GUI refresh does not remount/reparse mounted chat messages or reset script caches',
+    [
+      {
+        testPath: 'src/ts/__tests__/renderCostHarness.test.ts',
+        testName:
+          'drives a definition-level GUI reload that reparses mounted chat messages and resets caches',
+      },
+      {
+        testPath: 'src/ts/process/triggers.regexMemo.test.ts',
+        testName:
+          'H3: v2UpdateGUI bumps only the variable-only GUI pointer and preserves script caches',
+      },
+      {
+        testPath: 'src/ts/process/triggers.regexMemo.test.ts',
+        testName:
+          'H3/L40: v2RegexTest memo survives variable-only trigger refreshes, output unchanged',
+      },
+    ],
+  ),
   planned('M1', 3, 'Dirty-flag `captureMessageReplacement`; compare before clone.'),
   planned('M2', 3, 'Marker fixed-point guard in `formatHistoryMessage`.'),
   planned('M3', 3, 'Render stable template cards once; preflight tokenizes cached rows.'),
@@ -961,7 +985,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
 
     const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
-    expect(doneEntries.map((entry) => entry.id)).toEqual(['H2'])
+    expect(doneEntries.map((entry) => entry.id)).toEqual(['H2', 'H3'])
     expect(doneEntries.every(hasProofFields)).toBe(true)
   })
 

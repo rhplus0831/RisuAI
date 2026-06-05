@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-// Initialize the stores module first: its top-level ReloadGUIPointer.subscribe
-// fires synchronously and calls resetScriptCache(), which TDZ-throws if
-// ./scripts is the entry import and has not finished evaluating yet.
+// Initialize the shared stores before importing the script cache helpers.
 import '../stores.svelte'
 import { getCompiledRegex, resetScriptCache } from './scripts'
 

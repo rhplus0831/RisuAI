@@ -2,6 +2,7 @@ import { asBuffer } from 'src/ts/util'
 import { getChatVar, getGlobalChatVar, setChatVar } from '../parser/chatVar.svelte'
 import { hasher, type simpleCharacterArgument, risuChatParser } from '../parser/parser.svelte'
 import { LuaEngine, LuaFactory } from 'wasmoon'
+import { get } from 'svelte/store'
 import {
   getCharacterByIndex,
   getCurrentCharacter,
@@ -13,8 +14,7 @@ import {
   type character,
   type triggerscript,
 } from '../storage/database.svelte'
-import { get } from 'svelte/store'
-import { DBState, ReloadChatPointer, ReloadGUIPointer, selectedCharID } from '../stores.svelte'
+import { DBState, reloadChatAt, reloadGuiDisplay, selectedCharID } from '../stores.svelte'
 import { alertSelect, alertError, alertInput, alertNormal, alertConfirm } from '../alert'
 import { HypaProcesser } from './memory/hypamemory'
 import { generateAIImage } from './stableDiff'
@@ -283,17 +283,14 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
+        reloadGuiDisplay()
       })
 
       declareAPI('reloadChat', (id: string, index: number) => {
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        ReloadChatPointer.update((v) => {
-          v[index] = (v[index] ?? 0) + 1
-          return v
-        })
+        reloadChatAt(index)
       })
 
       //Low Level Access

@@ -47,33 +47,35 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-describe('Phase 0 render-count baseline', () => {
-  it('captures the pre-fix H3/M17/L40 ReloadGUIPointer full-parse contract', async () => {
-    const result = await runRenderCostHarness({ messageCount: BASELINE_MESSAGE_COUNT })
+describe('H3 var-only GUI reload narrowing', () => {
+  it('H3: var-only GUI refresh does not remount/reparse mounted chat messages or reset script caches', async () => {
+    const result = await runRenderCostHarness({
+      messageCount: BASELINE_MESSAGE_COUNT,
+      reloadKind: 'variable-only',
+    })
 
     expect(result.mountedMessages).toBe(BASELINE_MESSAGE_COUNT)
     expect(result.visibleMessageTexts).toHaveLength(BASELINE_MESSAGE_COUNT)
 
-    // Baseline/pre-fix contract: Phase 1 H3 intentionally flips this after reload narrowing.
     expect({
       parseMarkdown: result.parsesAfterBump.parseMarkdown,
       risuChatParser: result.parsesAfterBump.risuChatParser,
       editDisplay: result.parsesAfterBump.editDisplay,
       editDisplayRunsAfterBump: result.editDisplayRunsAfterBump,
     }).toEqual({
-      parseMarkdown: result.mountedMessages,
-      risuChatParser: result.mountedMessages,
-      editDisplay: result.mountedMessages,
-      editDisplayRunsAfterBump: result.mountedMessages,
+      parseMarkdown: 0,
+      risuChatParser: 0,
+      editDisplay: 0,
+      editDisplayRunsAfterBump: 0,
     })
 
     expect(result.cacheWarmBeforeBump).toBe(true)
-    expect(result.cacheWiped).toBe(true)
+    expect(result.cacheWiped).toBe(false)
     expect(result.cacheProof).toMatchObject({
       regexCacheWarmBeforeBump: true,
-      regexCacheWipedAfterBump: true,
+      regexCacheWipedAfterBump: false,
       scriptCacheWarmBeforeBump: true,
-      scriptCacheWipedAfterBump: true,
+      scriptCacheWipedAfterBump: false,
     })
   }, 60000)
 })

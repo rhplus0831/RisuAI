@@ -24,9 +24,7 @@ vi.mock('./modules', async (importActual) => {
   }
 })
 
-// Initialize the stores module first: its top-level ReloadGUIPointer.subscribe
-// fires synchronously and calls resetScriptCache(), which TDZ-throws if
-// ./scripts is the entry import and has not finished evaluating yet.
+// Initialize the shared stores before importing the script processing helpers.
 import '../stores.svelte'
 import { processScriptFull, resetScriptCache } from './scripts'
 import { safeStructuredClone } from '../polyfill'

@@ -45,7 +45,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | --- | ---------------------------------------------- | ---------------------------------------------------------------- | ------- |
 | H1  | [1](phases/phase-1-high-severity-hot-paths.md) | Signal + wall-clock budget + iteration/recursion caps in `runTrigger`. | PENDING |
 | H2  | [1](phases/phase-1-high-severity-hot-paths.md) | Chat-create via the targeted writer kit (fork-route shape).      | DONE    |
-| H3  | [1](phases/phase-1-high-severity-hot-paths.md) | Decouple `ReloadGUIPointer` from whole-screen remount + cache wipe. | PENDING |
+| H3  | [1](phases/phase-1-high-severity-hot-paths.md) | Decouple `ReloadGUIPointer` from whole-screen remount + cache wipe. | DONE    |
 
 ### Medium
 

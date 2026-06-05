@@ -12,7 +12,7 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
-import { DBState, ReloadGUIPointer, selectedCharID } from './stores.svelte'
+import { DBState, reloadGuiAfterDefinitionChange, selectedCharID } from './stores.svelte'
 import type { RisuModule } from './process/modules'
 import type { character } from './storage/database.svelte'
 import { get } from 'svelte/store'
@@ -43,7 +43,7 @@ export function restoreModuleState(snapshot: ModuleStateSnapshot): void {
     DBState.db.modules = cloneJsonValue(snapshot.modules)
     DBState.db.enabledModules = cloneJsonValue(snapshot.enabledModules)
     DBState.db.characters = cloneJsonValue(snapshot.characters)
-    ReloadGUIPointer.set(Math.random())
+    reloadGuiAfterDefinitionChange()
   })
 }
 
@@ -125,7 +125,7 @@ export function setGlobalModuleEnabled(moduleId: string, enabled: boolean): void
   } else {
     DBState.db.enabledModules = DBState.db.enabledModules.filter((id) => id !== moduleId)
   }
-  ReloadGUIPointer.set(Math.random())
+  reloadGuiAfterDefinitionChange()
 }
 
 export function createGlobalModule(module: RisuModule): void {
@@ -136,7 +136,7 @@ export function createGlobalModule(module: RisuModule): void {
   }
 
   DBState.db.modules.push(module)
-  ReloadGUIPointer.set(Math.random())
+  reloadGuiAfterDefinitionChange()
 }
 
 export function updateGlobalModule(moduleId: string, module: RisuModule): void {
@@ -149,7 +149,7 @@ export function updateGlobalModule(moduleId: string, module: RisuModule): void {
   const index = DBState.db.modules.findIndex((candidate) => candidate.id === moduleId)
   if (index !== -1) {
     DBState.db.modules[index] = module
-    ReloadGUIPointer.set(Math.random())
+    reloadGuiAfterDefinitionChange()
   }
 }
 
@@ -162,7 +162,7 @@ export function deleteGlobalModule(moduleId: string): void {
 
   DBState.db.enabledModules = DBState.db.enabledModules.filter((id) => id !== moduleId)
   DBState.db.modules = DBState.db.modules.filter((module) => module.id !== moduleId)
-  ReloadGUIPointer.set(Math.random())
+  reloadGuiAfterDefinitionChange()
 }
 
 export function dispatchReorderModules(previous: ModuleStateSnapshot): void {
@@ -214,7 +214,7 @@ export function toggleSelectedChatModule(moduleId: string): void {
   })
 
   dispatchUpdateChatScoped(chat.id, { modules: nextModules }, previous)
-  ReloadGUIPointer.set(Math.random())
+  reloadGuiAfterDefinitionChange()
 }
 
 export function toggleSelectedCharacterModule(moduleId: string): void {
@@ -232,7 +232,7 @@ export function toggleSelectedCharacterModule(moduleId: string): void {
   })
 
   dispatchReorderCharacterModules(character.chaId, previous)
-  ReloadGUIPointer.set(Math.random())
+  reloadGuiAfterDefinitionChange()
 }
 
 export function toggledModuleIds(

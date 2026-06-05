@@ -14,7 +14,7 @@
   } from '@lucide/svelte'
 
   import type { Chat, ChatFolder, character } from 'src/ts/storage/database.svelte'
-  import { DBState, ReloadGUIPointer } from 'src/ts/stores.svelte'
+  import { DBState, reloadGuiDisplay } from 'src/ts/stores.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
 
   import CheckInput from '../UI/GUI/CheckInput.svelte'
@@ -115,7 +115,7 @@
     }
     chara.chats.unshift(chat)
     changeChatTo(0)
-    $ReloadGUIPointer += 1
+    reloadGuiDisplay()
   }
 
   function forkChat(sourceChat: Chat): void {
@@ -337,7 +337,7 @@
                     chara.chatFolders[i].folded = folded
                   }
                   dispatchUpdateChatFolder(folder.id, { folded }, previous)
-                  $ReloadGUIPointer += 1
+                  reloadGuiDisplay()
                 }
               }}
               class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
@@ -428,7 +428,7 @@
                     const d = await alertConfirm(`${language.removeConfirm}${folder.name}`)
                     if (d) {
                       const previous = currentChatStateSnapshot()
-                      $ReloadGUIPointer += 1
+                      reloadGuiDisplay()
                       if (!canUseServerCommands()) {
                         const folders = chara.chatFolders
                         folders.splice(i, 1)
@@ -463,7 +463,7 @@
                     onclick={() => {
                       if (!editMode) {
                         selectChat(index)
-                        $ReloadGUIPointer += 1
+                        reloadGuiDisplay()
                       }
                     }}
                     class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
@@ -587,7 +587,7 @@
                             if (!canUseServerCommands()) {
                               changeChatTo(0)
                             }
-                            $ReloadGUIPointer += 1
+                            reloadGuiDisplay()
                             if (!canUseServerCommands()) {
                               let chats = chara.chats
                               chats.splice(chara.chats.indexOf(chat), 1)
@@ -616,7 +616,7 @@
               onclick={() => {
                 if (!editMode) {
                   selectChat(i)
-                  $ReloadGUIPointer += 1
+                  reloadGuiDisplay()
                 }
               }}
               class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
@@ -739,7 +739,7 @@
                       if (!canUseServerCommands()) {
                         changeChatTo(0)
                       }
-                      $ReloadGUIPointer += 1
+                      reloadGuiDisplay()
                       if (!canUseServerCommands()) {
                         let chats = chara.chats
                         chats.splice(i, 1)
@@ -825,7 +825,7 @@
             chara.chatFolders = folders
           }
           dispatchCreateChatFolder(chara.chaId, folder, previous)
-          $ReloadGUIPointer += 1
+          reloadGuiDisplay()
         }}
       >
         <FolderPlusIcon size={18} />

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 // L40 (Phase 7): trigger effects compiled `new RegExp(...)` on every effect
 // execution (9 sites across v1/v2 effects and conditions). They now reuse the
@@ -21,16 +22,18 @@ vi.mock('./modules', async (importActual) => {
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
 })
 
-// Initialize the stores module first: its top-level ReloadGUIPointer.subscribe
-// fires synchronously and calls resetScriptCache(), which TDZ-throws if
-// ./scripts is the entry import and has not finished evaluating yet.
 import '../stores.svelte'
-import { resetScriptCache } from './scripts'
+import { getCompiledRegex, resetScriptCache } from './scripts'
 import { runTrigger } from './triggers'
 import { safeStructuredClone } from '../polyfill'
 import { clearCachedServerCommandRevision } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from '../stores.svelte'
+import {
+  DBState,
+  ReloadGUIPointer,
+  VariableReloadGUIPointer,
+  selectedCharID,
+} from '../stores.svelte'
 import type { character } from '../storage/database.svelte'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -116,6 +119,8 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   resetScriptCache()
+  ReloadGUIPointer.set(0)
+  VariableReloadGUIPointer.set(0)
   seedDb()
   stubCommandFetch()
 })
@@ -125,14 +130,36 @@ afterEach(() => {
   selectedCharID.set(-1)
 })
 
-// NOTE on memo lifetime: a var-writing trigger pass bumps ReloadGUIPointer at
-// its end, whose subscription calls resetScriptCache() — so the compiled-regex
-// memo lives within one trigger pass for setVar-style triggers (and across
-// renders for display-mode passes, which only write tempVars). The compile
-// counts below therefore assert per-pass reuse: the same pattern used by two
-// effects in one pass compiles once (it compiled once per effect before L40).
+// NOTE on memo lifetime: H3 routes var-writing trigger refreshes away from the
+// definition-level GUI reload, so `resetScriptCache()` is not called at the end
+// of a setVar pass. The compile counts below therefore assert both within-pass
+// reuse and cross-pass survival for variable-only trigger updates.
 describe('trigger-effect compiled regex memoization (L40)', () => {
-  it('L40: v2RegexTest compiles a pattern shared by two effects once per pass, output unchanged', async () => {
+  it('H3: v2UpdateGUI bumps only the variable-only GUI pointer and preserves script caches', async () => {
+    const regexBefore = getCompiledRegex('h3-update-gui-cache-proof', 'g')
+    const char = characterWithTriggers([
+      {
+        comment: 'update-gui',
+        type: 'manual',
+        conditions: [],
+        effect: [{ type: 'v2UpdateGUI' }],
+      },
+    ])
+
+    const broadBefore = get(ReloadGUIPointer)
+    const variableBefore = get(VariableReloadGUIPointer)
+
+    await runTrigger(char, 'manual', {
+      chat: char.chats[char.chatPage],
+      manualName: 'update-gui',
+    })
+
+    expect(get(ReloadGUIPointer)).toBe(broadBefore)
+    expect(get(VariableReloadGUIPointer)).toBe(variableBefore + 1)
+    expect(getCompiledRegex('h3-update-gui-cache-proof', 'g')).toBe(regexBefore)
+  })
+
+  it('H3/L40: v2RegexTest memo survives variable-only trigger refreshes, output unchanged', async () => {
     const regexTestEffect = (outputVar: string) => ({
       type: 'v2RegexTest',
       valueType: 'value',
@@ -174,9 +201,8 @@ describe('trigger-effect compiled regex memoization (L40)', () => {
     expect(second?.chat.scriptstate?.['$out2']).toBe('1')
     // Two effects, one compile within the pass (formerly one per effect).
     expect(compilesAfterFirstPass).toBe(1)
-    // The setVar pass reset the cache at its end, so the second pass compiles
-    // once more — still one per pass, not one per effect.
-    expect(compiles.get('l40-w[a-z]+d')).toBe(2)
+    // H3 keeps the memo warm across variable-only trigger refreshes.
+    expect(compiles.get('l40-w[a-z]+d')).toBe(1)
   })
 
   it('L40: v2ReplaceString reuses the memoized regex within a pass and replaces identically', async () => {

@@ -15,7 +15,7 @@ import {
   DBState,
   LoadingStatusState,
   selIdState,
-  ReloadGUIPointer,
+  reloadGuiDisplay,
   bodyIntercepterStore,
 } from './stores.svelte'
 import { loadPlugins } from './plugins/plugins.svelte'
@@ -1841,7 +1841,7 @@ export function changeChatTo(IdOrIndex: string | number) {
   if (chatId) {
     dispatchSelectChat(chatId, previous)
   }
-  ReloadGUIPointer.set(Math.random())
+  reloadGuiDisplay()
 }
 
 export function createChatCopyName(originalName: string, type: 'Copy' | 'Branch'): string {

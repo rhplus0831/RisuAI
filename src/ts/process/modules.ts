@@ -33,9 +33,8 @@ import {
   DBState,
   HideIconStore,
   moduleBackgroundEmbedding,
-  ReloadGUIPointer,
+  reloadGuiAfterDefinitionChange,
 } from '../stores.svelte'
-import { get } from 'svelte/store'
 import { createGlobalModule } from '../moduleCommands'
 import {
   currentLorebookStateSnapshot,
@@ -635,7 +634,7 @@ export function moduleUpdate() {
   HideIconStore.set(getCurrentCharacter()?.hideChatIcon || moduleHideIcon)
 
   if (lastModuleIds !== ids) {
-    ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
+    reloadGuiAfterDefinitionChange()
     lastModuleIds = ids
   }
 }

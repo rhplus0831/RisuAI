@@ -7,6 +7,10 @@ import {
   HideIconStore,
   ReloadChatPointer,
   ReloadGUIPointer,
+  VariableReloadGUIPointer,
+  refreshVariableOnlyGui,
+  reloadGuiAfterDefinitionChange,
+  reloadGuiDisplay,
   selectedCharID,
 } from '../stores.svelte'
 
@@ -36,6 +40,7 @@ export interface RenderCostHarnessResult {
 
 export interface RenderCostHarnessOptions {
   messageCount: number
+  reloadKind?: 'variable-only' | 'definition' | 'display'
 }
 
 interface RenderCostSeed {
@@ -109,6 +114,7 @@ export function seedRenderCostMessages(messageCount: number): RenderCostSeed {
   selectedCharID.set(0)
   ReloadChatPointer.set({})
   ReloadGUIPointer.set(0)
+  VariableReloadGUIPointer.set(0)
   HideIconStore.set(false)
   DBState.db = {
     characters: [character],
@@ -241,6 +247,7 @@ export async function runRenderCostHarness(
   const previousDb = DBState.db
   const previousSelectedChar = get(selectedCharID)
   const previousReloadGui = get(ReloadGUIPointer)
+  const previousVariableReloadGui = get(VariableReloadGUIPointer)
   const previousReloadChat = get(ReloadChatPointer)
   const previousHideIcon = get(HideIconStore)
   const target = document.createElement('div')
@@ -296,7 +303,17 @@ export async function runRenderCostHarness(
     const cacheBefore = await warmCachesBeforeBump(scriptsModule, proofCharacter)
     const countsAtBump = snapshotCounts()
 
-    ReloadGUIPointer.update((value) => value + 1)
+    switch (options.reloadKind ?? 'variable-only') {
+      case 'definition':
+        reloadGuiAfterDefinitionChange()
+        break
+      case 'display':
+        reloadGuiDisplay()
+        break
+      case 'variable-only':
+        refreshVariableOnlyGui()
+        break
+    }
     await waitForVisibleMessages(target, visibleMessageTexts)
 
     const parsesAfterBump = subtractCounts(snapshotCounts(), countsAtBump)
@@ -325,6 +342,7 @@ export async function runRenderCostHarness(
     selectedCharID.set(previousSelectedChar)
     ReloadChatPointer.set(previousReloadChat)
     ReloadGUIPointer.set(previousReloadGui)
+    VariableReloadGUIPointer.set(previousVariableReloadGui)
     HideIconStore.set(previousHideIcon)
   }
 }

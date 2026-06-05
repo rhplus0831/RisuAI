@@ -25,7 +25,7 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
-import { DBState, ReloadGUIPointer, selectedCharID } from './stores.svelte'
+import { DBState, reloadGuiDisplay, selectedCharID } from './stores.svelte'
 import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
 import { v4 } from 'uuid'
 
@@ -81,7 +81,7 @@ export function restoreChatState(snapshot: ChatStateSnapshot): void {
   withTrustedServerProjectionWrite(() => {
     DBState.db.characters = cloneJsonValue(snapshot.characters)
     selectedCharID.set(snapshot.selectedCharID)
-    ReloadGUIPointer.set(Math.random())
+    reloadGuiDisplay()
   })
 }
 

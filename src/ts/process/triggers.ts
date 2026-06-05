@@ -15,16 +15,14 @@ import { tokenize } from '../tokenizer'
 import { getModuleTriggers } from './modules'
 import { get } from 'svelte/store'
 import {
-  ReloadChatPointer,
-  ReloadGUIPointer,
   CurrentTriggerIdStore,
   DBState,
+  refreshVariableOnlyGui,
+  reloadChatAt,
 } from '../stores.svelte'
 import { processMultiCommand } from './command'
 // L40: trigger effects re-ran `new RegExp(...)` on every execution; reuse the
-// compiled-regex memo (lastIndex resets on retrieval). Imported after
-// '../stores.svelte' so the scripts module's store subscription is live before
-// './scripts' evaluates (see scripts.regexCache.test.ts on the TDZ ordering).
+// compiled-regex memo (lastIndex resets on retrieval).
 import { getCompiledRegex } from './scripts'
 import { parseKeyValue, sleep } from '../util'
 import { alertError, alertInput, alertNormal, alertSelect } from '../alert'
@@ -2792,14 +2790,11 @@ export async function runTrigger(
           break
         }
         case 'v2UpdateGUI': {
-          ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
+          refreshVariableOnlyGui()
           break
         }
         case 'v2UpdateChatAt': {
-          ReloadChatPointer.update((v) => {
-            v[effect.index] = (v[effect.index] ?? 0) + 1
-            return v
-          })
+          reloadChatAt(effect.index)
           break
         }
         case 'v2Wait': {
@@ -3417,7 +3412,7 @@ export async function runTrigger(
   }
   if (varChanged) {
     syncActiveChatScriptstate()
-    ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
+    refreshVariableOnlyGui()
   }
 
   if (shouldSetTriggerId && mode !== 'manual') {
