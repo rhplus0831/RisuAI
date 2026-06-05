@@ -14,8 +14,9 @@ v1 finding IDs are referenced as `v1-*`.
 
 - Confirmed findings: 102 total: 3 high, 22 medium, 59 low, 18 informational.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
-  known-overlap residuals K1-K4. H1-H3, Phase 3 M1, plus Phase 2 M5, M6, L3,
-  L13, L14, L16, K1, and K2 are `DONE`; the rest are `PENDING`.
+  known-overlap residuals K1-K4. H1-H3, Phase 3 M1, M2, L8, and L9, plus
+  Phase 2 M5, M6, L3, L13, L14, L16, K1, and K2 are `DONE`; the rest are
+  `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -53,7 +54,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | ID  | Phase                                            | Target fix                                                      | Status  |
 | --- | ------------------------------------------------ | ---------------------------------------------------------------- | ------- |
 | M1  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Dirty-flag `captureMessageReplacement`; compare before clone.    | DONE    |
-| M2  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Marker fixed-point guard in `formatHistoryMessage`.              | PENDING |
+| M2  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Marker fixed-point guard in `formatHistoryMessage`.              | DONE    |
 | M3  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Render stable template cards once; preflight tokenizes cached rows. | PENDING |
 | M4  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Memoize charhistory/userhistory/lorebook callbacks per assembly. | PENDING |
 | M5  | [2](phases/phase-2-server-corpus-ring-2.md)      | Single-row scoped read + repair for character/chat PATCH.        | DONE    |
@@ -86,8 +87,8 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L5  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Hoist per-message normalization out of `searchMatch`.             | PENDING |
 | L6  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Memoize trigger/effect regexes; hoist transcript joins.           | PENDING |
 | L7  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Trigger-presence check before the `runTrigger` clones.            | PENDING |
-| L8  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Hoist `SEND_NAME_WRAPPER` expansion once per assembly.            | PENDING |
-| L9  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Expand depth-prompt bodies once; preflight reuses.                | PENDING |
+| L8  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Hoist `SEND_NAME_WRAPPER` expansion once per assembly.            | DONE    |
+| L9  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Expand depth-prompt bodies once; preflight reuses.                | DONE    |
 | L10 | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Cap `{{#each}}` expansion size.                                   | PENDING |
 | L11 | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Cheap CBS tag-name normalization.                                 | PENDING |
 | L12 | gated                                            | Lua pool/boot serialization is the documented wasmoon constraint. | -       |

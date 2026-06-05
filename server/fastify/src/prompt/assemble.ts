@@ -40,6 +40,7 @@ import {
   NO_ASSETS,
   type AssetLookup,
   type EditProcessHook,
+  type PreparedDepthPrompt,
 } from './history.js'
 import { buildAssetLookup, type ResolveStoredAsset } from './assetLookup.js'
 import { buildMemoryWindow } from './memory.js'
@@ -80,6 +81,7 @@ import {
 } from '../memoryRepository.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
+import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 
 /**
  * Root prompt assembly entry point.
@@ -386,6 +388,11 @@ export interface AssemblyState {
   positionParser?: (text: string, loc: string) => string
   /** Depth-positioned lore the history splicer consumes. */
   depthPrompts?: LoreEntryActive[]
+  /**
+   * Depth prompt bodies expanded during history token preflight and reused
+   * during the final post-memory splice.
+   */
+  preparedDepthPrompts?: PreparedDepthPrompt[]
   /** Running token estimate: `maxResponse + 50 + preflight.addedTokens`. */
   currentTokens?: number
   /** From `preflightTemplateTokens`: the template contains a `memory` card. */
@@ -891,16 +898,7 @@ function prepareRegenerateTranscript(state: AssemblyState): void {
   captureMessageReplacement(state, 'regenerate')
 }
 
-/**
- * True when `text` is a `risuChatParser` fixed point the run-var pass may skip
- * (audit L2). The parser only ever rewrites at a `{` opening (`{{…}}` /
- * `{#…#}` blocks; a bare `}` or `#` with no open stack passes through
- * unchanged) and at the `<user|char|bot>` tag pre-replace — a body containing
- * neither comes back byte-identical with no chat-var read or write.
- */
-export function isRunVarParserFixedPoint(text: string): boolean {
-  return !text.includes('{') && !/<(user|char|bot)>/i.test(text)
-}
+export { isRisuChatParserFixedPoint as isRunVarParserFixedPoint } from './parserFixedPoint.js'
 
 function applyCurrentChatRunVars(
   state: AssemblyState,
@@ -915,7 +913,7 @@ function applyCurrentChatRunVars(
   for (const message of messages) {
     const original = message.data
     const text = message.data ?? ''
-    if (isRunVarParserFixedPoint(text)) {
+    if (isRisuChatParserFixedPoint(text)) {
       // Skip the O(length) parse for marker-free prose; keep the historical
       // `undefined -> ''` coercion the full pass performed.
       message.data = text
@@ -1129,6 +1127,7 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
 
   state.currentTokens = (state.currentTokens ?? 0) + history.addedTokens
   state.historyMessages = history.messages
+  state.preparedDepthPrompts = history.preparedDepthPrompts
   if (history.triggerResult) {
     captureMessageReplacement(state, 'start_trigger')
   }
@@ -1197,7 +1196,13 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   // depth/reverse_depth index math (excluding `depth === 0`, which the
   // template/postEverything path owns).
   if (state.report) {
-    applyDepthPrompts(unformated.chats, ctx, currentChar, state.report)
+    applyDepthPrompts(
+      unformated.chats,
+      ctx,
+      currentChar,
+      state.report,
+      state.preparedDepthPrompts,
+    )
   }
 
   // Start-trigger `additonalSysPrompt` placement (SPA `:285-304`).

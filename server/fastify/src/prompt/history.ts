@@ -4,10 +4,16 @@ import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.sv
 import { expandVariables, type ExpandContext } from './variables.js'
 import { processScript } from './scripts.js'
 import { getActiveModules, getModuleAssets } from './modules.js'
-import { getDepthPrompts, resolvePosition, type LorebookActivationReport } from './lorebook.js'
+import {
+  getDepthPrompts,
+  resolvePosition,
+  type LoreEntryActive,
+  type LorebookActivationReport,
+} from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { runStartTrigger, type TriggerRunResult } from './triggers.js'
+import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 
 /**
  * History walk ported from the SPA's `buildHistoryWindow.ts`,
@@ -281,16 +287,19 @@ async function formatHistoryMessage(
   assetLookup: AssetLookup,
   moduleAssets: [string, string, string][],
   editProcess: EditProcessHook,
+  preparedSendNameWrapper?: string,
 ): Promise<OpenAIChat> {
   const db = ctx.database
-  const sendName = !!db.promptSettings?.sendName
   const maxThoughtDepth = db.promptSettings?.maxThoughtTagDepth ?? -1
 
-  const preExpanded = expandVariables(msg.data ?? '', {
-    ...ctx,
-    chara: currentChar,
-    role: msg.role,
-  }).text
+  const rawData = msg.data ?? ''
+  const preExpanded = isRisuChatParserFixedPoint(rawData)
+    ? rawData
+    : expandVariables(rawData, {
+        ...ctx,
+        chara: currentChar,
+        role: msg.role,
+      }).text
 
   // Lua `editprocess` runs through the runtime before regex `processScript`.
   // A browser no-op, so identity unless the assembler supplies the VM hook.
@@ -314,16 +323,8 @@ async function formatHistoryMessage(
   formatted = inlayResult.text
   for (const m of inlayResult.multimodals) pushMultimodal(multimodals, m)
 
-  if (usingPromptTemplate && sendName) {
-    // SPA passes `chara: findCharacterbyIdwithCache(msg.saying).name` here,
-    // but the `{{char}}` cbs callback reads the active currentChar from
-    // scope before consulting `matcherArg.chara` (cbs.ts:184), so the
-    // override is dead code in practice. We mirror the effective behavior.
-    const wrapped = expandVariables(SEND_NAME_WRAPPER, {
-      ...ctx,
-      chara: currentChar,
-    }).text
-    formatted = wrapped.replace('{{slot}}', formatted)
+  if (usingPromptTemplate && preparedSendNameWrapper) {
+    formatted = preparedSendNameWrapper.replace('{{slot}}', formatted)
   }
 
   const { content: postThoughts, thoughts } = extractThoughts(
@@ -382,6 +383,34 @@ export interface HistoryWindowResult {
    * database when true (the `expandVariables` → `dirty` pattern).
    */
   varChanged: boolean
+  /**
+   * Depth prompts expanded once during history token preflight. The final
+   * splice still computes insertion indexes against the live post-memory
+   * message array.
+   */
+  preparedDepthPrompts: PreparedDepthPrompt[]
+}
+
+export interface PreparedDepthPrompt {
+  active: LoreEntryActive
+  content: string
+}
+
+export function prepareDepthPrompts(
+  ctx: ExpandContext,
+  currentChar: character,
+  report: LorebookActivationReport,
+): PreparedDepthPrompt[] {
+  return getDepthPrompts(report).map((active) => {
+    const body = resolvePosition(active.prompt, report)
+    return {
+      active,
+      content: expandVariables(body, {
+        ...ctx,
+        chara: currentChar,
+      }).text,
+    }
+  })
 }
 
 export async function buildHistoryWindow(
@@ -398,6 +427,14 @@ export async function buildHistoryWindow(
   const moduleAssets = getModuleAssets(getActiveModules(db, currentChar, currentChat))
   const { encoding, options } = tokenizerOptionsFromDb(db)
   let addedTokens = 0
+  const preparedSendNameWrapper =
+    usingPromptTemplate && db.promptSettings?.sendName
+      ? expandVariables(SEND_NAME_WRAPPER, {
+          ...ctx,
+          chara: currentChar,
+        }).text
+      : undefined
+  let preparedDepthPrompts: PreparedDepthPrompt[] = []
 
   for (const example of exampleMessage(ctx, currentChar)) {
     messages.push(example)
@@ -479,6 +516,7 @@ export async function buildHistoryWindow(
         currentChat,
         triggerResult,
         varChanged,
+        preparedDepthPrompts,
       }
     }
   }
@@ -495,6 +533,7 @@ export async function buildHistoryWindow(
       assetLookup,
       moduleAssets,
       editProcess,
+      preparedSendNameWrapper,
     )
     messages.push(formatted)
     addedTokens += tokenizeChat(formatted, encoding, options)
@@ -505,13 +544,9 @@ export async function buildHistoryWindow(
   // the SPA's `index.svelte.ts:275-283` call order; here we only
   // tokenize so the assemble root sees a single `addedTokens` total.
   if (report) {
-    for (const dp of getDepthPrompts(report)) {
-      const body = resolvePosition(dp.prompt, report)
-      const content = expandVariables(body, {
-        ...ctx,
-        chara: currentChar,
-      }).text
-      addedTokens += tokenizeChat({ role: dp.role, content }, encoding, options)
+    preparedDepthPrompts = prepareDepthPrompts(ctx, currentChar, report)
+    for (const { active, content } of preparedDepthPrompts) {
+      addedTokens += tokenizeChat({ role: active.role, content }, encoding, options)
     }
   }
 
@@ -522,6 +557,7 @@ export async function buildHistoryWindow(
     currentChat,
     triggerResult,
     varChanged,
+    preparedDepthPrompts,
   }
 }
 
@@ -559,10 +595,10 @@ export function applyDepthPrompts(
   ctx: ExpandContext,
   currentChar: character,
   report: LorebookActivationReport,
+  preparedDepthPrompts?: PreparedDepthPrompt[],
 ): OpenAIChat[] {
-  for (const dp of getDepthPrompts(report)) {
-    const body = resolvePosition(dp.prompt, report)
-    const content = expandVariables(body, { ...ctx, chara: currentChar }).text
+  const rows = preparedDepthPrompts ?? prepareDepthPrompts(ctx, currentChar, report)
+  for (const { active: dp, content } of rows) {
     const idx = dp.pos === 'depth' ? dp.depth : messages.length - dp.depth
     messages.splice(idx, 0, { role: dp.role, content })
   }

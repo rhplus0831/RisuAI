@@ -213,7 +213,13 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('M2', 3, 'Marker fixed-point guard in `formatHistoryMessage`.'),
+  done(
+    'M2',
+    3,
+    'Marker fixed-point guard in `formatHistoryMessage`.',
+    'server/fastify/__tests__/assemble.test.ts',
+    'skips expandVariables for marker-free history rows but expands markers and legacy tags',
+  ),
   planned('M3', 3, 'Render stable template cards once; preflight tokenizes cached rows.'),
   planned('M4', 3, 'Memoize charhistory/userhistory/lorebook callbacks per assembly.'),
   done(
@@ -294,8 +300,20 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L5', 3, 'Hoist per-message normalization out of `searchMatch`.'),
   planned('L6', 3, 'Memoize trigger/effect regexes; hoist transcript joins.'),
   planned('L7', 3, 'Trigger-presence check before the `runTrigger` clones.'),
-  planned('L8', 3, 'Hoist `SEND_NAME_WRAPPER` expansion once per assembly.'),
-  planned('L9', 3, 'Expand depth-prompt bodies once; preflight reuses.'),
+  done(
+    'L8',
+    3,
+    'Hoist `SEND_NAME_WRAPPER` expansion once per assembly.',
+    'server/fastify/__tests__/assemble.test.ts',
+    'expands SEND_NAME_WRAPPER once per history window and reuses it for rows',
+  ),
+  done(
+    'L9',
+    3,
+    'Expand depth-prompt bodies once; preflight reuses.',
+    'server/fastify/__tests__/assemble.test.ts',
+    'expands depth-prompt bodies once for preflight and reuses them for final splice',
+  ),
   planned('L10', 3, 'Cap `{{#each}}` expansion size.'),
   planned('L11', 3, 'Cheap CBS tag-name normalization.'),
   done(
@@ -1143,7 +1161,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M2'
+      entry.id === 'M3'
         ? {
             ...entry,
             testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
@@ -1153,7 +1171,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'M2: PLANNED entries must not claim proof fields',
+      'M3: PLANNED entries must not claim proof fields',
     )
   })
 
@@ -1168,9 +1186,12 @@ describe('v2 fix-completeness gate routing registry', () => {
       'H2',
       'H3',
       'M1',
+      'M2',
       'M5',
       'M6',
       'L3',
+      'L8',
+      'L9',
       'L13',
       'L14',
       'L16',
@@ -1182,7 +1203,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects DONE entries without a registered test path and test name', () => {
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M2'
+      entry.id === 'M3'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1192,9 +1213,9 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M2: status mismatch (registry DONE, docs PENDING)',
-        'M2: DONE without a registered testPath',
-        'M2: DONE without a registered testName',
+        'M3: status mismatch (registry DONE, docs PENDING)',
+        'M3: DONE without a registered testPath',
+        'M3: DONE without a registered testName',
       ]),
     )
   })
@@ -1202,7 +1223,7 @@ describe('v2 fix-completeness gate routing registry', () => {
   it('validates primary and extra DONE test proofs against existing test files', () => {
     const missingExtraTestName = ['missing extra proof title', 'assembled at runtime'].join(' ')
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M2'
+      entry.id === 'M3'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1220,8 +1241,8 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M2: status mismatch (registry DONE, docs PENDING)',
-        `M2: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
+        'M3: status mismatch (registry DONE, docs PENDING)',
+        `M3: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
       ]),
     )
   })
@@ -1255,12 +1276,12 @@ describe('v2 fix-completeness gate routing registry', () => {
     const riskText = readDoc(RISK_DOC)
     const withDoneDocRow = replaceRiskRow(
       riskText,
-      'M2',
-      '| M2 | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Marker fixed-point guard in `formatHistoryMessage`. | DONE |',
+      'M3',
+      '| M3 | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Render stable template cards once; preflight tokenizes cached rows. | DONE |',
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'M2: status mismatch (registry PLANNED, docs DONE)',
+      'M3: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 

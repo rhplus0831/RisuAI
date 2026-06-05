@@ -521,7 +521,7 @@ describe('Phase 7-5b buildHistoryWindow memo / chatId backfill', () => {
     expect(result.messages.find((m) => m.content === 'hi')?.memo).toBe('msg-42')
   })
 
-  it('backfills missing msg.chatId with a uuid (mutated in place)', async () => {
+  it('uses a local uuid memo for missing msg.chatId without mutating the transcript', async () => {
     const msg = makeMessage({ role: 'user', data: 'hi' })
     // simulate a Message without a pre-assigned chatId
     delete (msg as { chatId?: string }).chatId
@@ -540,7 +540,7 @@ describe('Phase 7-5b buildHistoryWindow memo / chatId backfill', () => {
     )
     const formatted = result.messages.find((m) => m.content === 'hi')
     expect(formatted?.memo).toMatch(/^[0-9a-f-]{36}$/i)
-    expect((msg as { chatId?: string }).chatId).toBe(formatted?.memo)
+    expect((msg as { chatId?: string }).chatId).toBeUndefined()
   })
 })
 

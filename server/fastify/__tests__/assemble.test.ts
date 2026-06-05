@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { openDatabase } from '../src/db.js'
@@ -28,7 +28,10 @@ import {
   type AssembleDeps,
   type AssembleInput,
 } from '../src/prompt/assemble.js'
+import { applyDepthPrompts, buildHistoryWindow } from '../src/prompt/history.js'
+import type { LoreEntryActive, LorebookActivationReport } from '../src/prompt/lorebook.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
+import * as promptVariables from '../src/prompt/variables.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -43,6 +46,7 @@ function makeDataDir(): string {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const dataDir of dataDirs.splice(0)) {
     rmSync(dataDir, { recursive: true, force: true })
   }
@@ -1924,5 +1928,174 @@ describe('Phase 2 L2 run-var fixed-point skip', () => {
     expect(result.mutations!.chatVarMutations).toEqual([
       { key: '$mood', before: null, after: 'bright' },
     ])
+  })
+})
+
+describe('Phase 3 M2/L8/L9 history expansion cost', () => {
+  const msg = (role: Message['role'], data: string, chatId: string): Message =>
+    ({ role, data, chatId }) as Message
+
+  const active = (overrides: Partial<LoreEntryActive> = {}): LoreEntryActive => ({
+    depth: 0,
+    pos: '',
+    prompt: '',
+    role: 'system',
+    order: 100,
+    priority: 100,
+    tokens: 0,
+    source: '',
+    inject: null,
+    ...overrides,
+  })
+
+  const report = (actives: LoreEntryActive[]): LorebookActivationReport => ({
+    actives,
+    disabledUIPrompts: [],
+    matchLog: [],
+  })
+
+  it('skips expandVariables for marker-free history rows but expands markers and legacy tags', async () => {
+    const prose = 'Marker-free prose row. } #} <notatag> stay byte-identical.'
+    const db = makeDatabase({
+      username: 'Alex',
+      aiModel: 'gpt4',
+      characters: [
+        makeCharacter({
+          name: 'Lyra',
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                msg('user', prose, 'plain-row'),
+                msg('user', 'hello {{user}}', 'macro-row'),
+                msg('char', '<bot> answers <user>', 'tag-row'),
+              ],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const spy = vi.spyOn(promptVariables, 'expandVariables')
+
+    const result = await buildHistoryWindow(
+      { database: db },
+      db.characters[0],
+      db.characters[0].chats[0],
+    )
+
+    expect(result.messages.find((m) => m.memo === 'plain-row')?.content).toBe(prose)
+    expect(result.messages.find((m) => m.memo === 'macro-row')?.content).toBe('hello Alex')
+    expect(result.messages.find((m) => m.memo === 'tag-row')?.content).toBe('Lyra answers Alex')
+    expect(spy.mock.calls.filter(([input]) => input === prose)).toHaveLength(0)
+    expect(spy.mock.calls.filter(([input]) => input === 'hello {{user}}')).toHaveLength(1)
+    expect(spy.mock.calls.filter(([input]) => input === '<bot> answers <user>')).toHaveLength(1)
+  })
+
+  it('expands SEND_NAME_WRAPPER once per history window and reuses it for rows', async () => {
+    const db = makeDatabase({
+      aiModel: 'gpt4',
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: true,
+        utilOverride: false,
+      },
+      characters: [
+        makeCharacter({
+          name: 'Lyra',
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                msg('user', 'one', 'one'),
+                msg('char', 'two', 'two'),
+                msg('user', 'three', 'three'),
+              ],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const spy = vi.spyOn(promptVariables, 'expandVariables')
+
+    const result = await buildHistoryWindow(
+      { database: db },
+      db.characters[0],
+      db.characters[0].chats[0],
+      true,
+    )
+
+    expect(result.messages.find((m) => m.memo === 'one')?.content).toBe(
+      "<Lyra's Message>\none\n</Lyra's Message>",
+    )
+    expect(result.messages.find((m) => m.memo === 'two')?.content).toBe(
+      "<Lyra's Message>\ntwo\n</Lyra's Message>",
+    )
+    expect(result.messages.find((m) => m.memo === 'three')?.content).toBe(
+      "<Lyra's Message>\nthree\n</Lyra's Message>",
+    )
+    expect(
+      spy.mock.calls.filter(([input]) =>
+        String(input).startsWith("<{{char}}'s Message>\n{{slot}}"),
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('expands depth-prompt bodies once for preflight and reuses them for final splice', async () => {
+    const db = makeDatabase({
+      username: 'Alex',
+      aiModel: 'gpt4',
+      characters: [makeCharacter({ firstMessage: '' })],
+    } as Partial<Database>)
+    const activationReport = report([
+      active({
+        pos: 'reverse_depth',
+        depth: 1,
+        prompt: 'tail says {{user}}',
+        source: 'reverse-depth-cbs',
+      }),
+      active({
+        pos: 'depth',
+        depth: 1,
+        prompt: 'depth says {{user}}',
+        source: 'depth-cbs',
+      }),
+    ])
+    const spy = vi.spyOn(promptVariables, 'expandVariables')
+
+    const history = await buildHistoryWindow(
+      { database: db },
+      db.characters[0],
+      db.characters[0].chats[0],
+      false,
+      undefined,
+      activationReport,
+    )
+    expect(spy.mock.calls.filter(([input]) => input === 'depth says {{user}}')).toHaveLength(1)
+    expect(spy.mock.calls.filter(([input]) => input === 'tail says {{user}}')).toHaveLength(1)
+
+    const messages: OpenAIChat[] = [
+      { role: 'system', content: 'NewChat' },
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'reply' },
+    ]
+    applyDepthPrompts(
+      messages,
+      { database: db },
+      db.characters[0],
+      activationReport,
+      history.preparedDepthPrompts,
+    )
+
+    expect(messages.map((m) => m.content)).toEqual([
+      'NewChat',
+      'depth says Alex',
+      'first',
+      'tail says Alex',
+      'reply',
+    ])
+    expect(spy.mock.calls.filter(([input]) => input === 'depth says {{user}}')).toHaveLength(1)
+    expect(spy.mock.calls.filter(([input]) => input === 'tail says {{user}}')).toHaveLength(1)
   })
 })
