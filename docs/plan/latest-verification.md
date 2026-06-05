@@ -171,8 +171,12 @@ server/fastify/vitest.config.ts --reporter=verbose serverLoadCostHarness`):
   code + proven by the L21 tests passing): booting engines on wasmoon's
   shared wasm module while another engine has a pending `:await()`
   continuation crashes with "null function or function signature mismatch" —
-  the pool refills only while no run is in flight and acquire awaits an
-  in-flight refill.
+  every boot (background refill *and* a run's fresh boot) serializes behind a
+  shared boot gate and starts only while no run is in flight, with the run
+  counted active atomically with its engine claim (completion-audit closeout:
+  a run suspended in an in-flight `:await()` defers a concurrent custom-limit
+  run's fresh boot until it drains; the regression fails pre-fix at the
+  boot-overlap assertion).
 - Phase 4 M6/M8/L20/L22-L25 (`bf1a6cb2`) — PHASE 4 COMPLETE: a client
   disconnect mid-`/proxy/fetch` now **aborts the upstream connection**
   (proven by holding an upstream open and destroying the client socket; the

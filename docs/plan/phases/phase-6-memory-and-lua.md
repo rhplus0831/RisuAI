@@ -49,8 +49,11 @@ Findings: M7, L16, L17, L18, L19, L21.
   - L21: the static prelude pre-runs on pooled engines with the host-fn
     surface declared once and the per-call state bound via a binder; each call
     still gets an engine of its own and closes it (isolation by
-    construction). The pool refills only while no run is in flight — engine
-    boots during a pending Lua continuation crash wasmoon.
+    construction). Every engine boot — background refill *and* a run's fresh
+    boot (empty pool or custom limit) — serializes behind a shared boot gate
+    and starts only while no run is in flight, with the run counted active
+    atomically with its engine claim; engine boots during a pending Lua
+    continuation crash wasmoon (completion-audit closeout).
 
 ## Landed Shape Notes
 
@@ -63,6 +66,12 @@ Findings: M7, L16, L17, L18, L19, L21.
   the hot path. The prelude and user code now load as two chunks — the only
   observable deltas are error-message chunk names/line offsets and that user
   top-level code can no longer see the wrapper's internal locals.
+- L21 fresh boots park behind active runs (completion-audit closeout): a run
+  that cannot be served from the pool waits for `activeLuaRuns` to drain, then
+  holds the boot gate while it boots, so no boot ever overlaps a pending
+  `:await()` continuation. The wait is bounded by the in-flight runs' exec
+  limits; sustained pooled traffic could in principle delay a parked
+  fresh-booter, which is acceptable on this single-user host.
 
 ## Exit Criteria
 
