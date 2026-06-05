@@ -11,6 +11,39 @@ slice family over `assemble.ts`/`history.ts`/`templates.ts`/`lorebook.ts`/
 Findings: M1, M2, M3, M4, L4, L5, L6, L7, L8, L9, L10, L11. (I16's parser
 nesting-stack cap may ride along if free.)
 
+## Slices
+
+- M1:
+  [`slices/phase-3-assembly-cbs-and-triggers/assembly-message-capture-dirty-flags.md`](slices/phase-3-assembly-cbs-and-triggers/assembly-message-capture-dirty-flags.md)
+  - skip full-transcript clone/stringify captures when no message mutation
+    happened.
+- M2 + L8 + L9:
+  [`slices/phase-3-assembly-cbs-and-triggers/history-fixed-point-and-depth-preflight.md`](slices/phase-3-assembly-cbs-and-triggers/history-fixed-point-and-depth-preflight.md)
+  - fixed-point history rows, one `SEND_NAME_WRAPPER` expansion, and reusable
+    depth-prompt preflight rows.
+- M3:
+  [`slices/phase-3-assembly-cbs-and-triggers/template-stable-card-render-cache.md`](slices/phase-3-assembly-cbs-and-triggers/template-stable-card-render-cache.md)
+  - render stable template cards once per assembly and reuse them for preflight
+    and final render.
+- M4:
+  [`slices/phase-3-assembly-cbs-and-triggers/cbs-history-lore-callback-memo.md`](slices/phase-3-assembly-cbs-and-triggers/cbs-history-lore-callback-memo.md)
+  - memoize `{{charhistory}}`, `{{userhistory}}`, and `{{lorebook}}`
+    callbacks within an assembly.
+- L4 + L5:
+  [`slices/phase-3-assembly-cbs-and-triggers/lorebook-sticky-vars-and-search-normalization.md`](slices/phase-3-assembly-cbs-and-triggers/lorebook-sticky-vars-and-search-normalization.md)
+  - persist sticky lorebook activation vars and reuse normalized search corpus
+    data.
+- L6 + L7:
+  [`slices/phase-3-assembly-cbs-and-triggers/trigger-regex-transcript-and-empty-clone.md`](slices/phase-3-assembly-cbs-and-triggers/trigger-regex-transcript-and-empty-clone.md)
+  - skip no-trigger clones and memoize trigger regex/transcript work.
+- L10 + L11:
+  [`slices/phase-3-assembly-cbs-and-triggers/parser-each-cap-and-tag-normalization.md`](slices/phase-3-assembly-cbs-and-triggers/parser-each-cap-and-tag-normalization.md)
+  - cap pathological `{{#each}}` expansion and cheapen CBS tag-name
+    normalization; optionally fold in I16.
+- Proof:
+  [`slices/phase-3-assembly-cbs-and-triggers/phase-3-verification-refresh.md`](slices/phase-3-assembly-cbs-and-triggers/phase-3-verification-refresh.md)
+  - refresh gates, focused proofs, full validation, and latest verification.
+
 ## Source Anchors
 
 - [`../audit-stability-and-performance-v2.md`](../audit-stability-and-performance-v2.md) -

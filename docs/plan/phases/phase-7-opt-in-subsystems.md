@@ -10,6 +10,50 @@ every prior workstream's scope; they carry the audit's hardest breakage
 
 Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
 
+## Slices
+
+- M15/M16:
+  [`slices/phase-7-opt-in-subsystems/translation-cache-and-streaming-guards.md`](slices/phase-7-opt-in-subsystems/translation-cache-and-streaming-guards.md)
+  - bound the auto-translate cache and suppress streaming-frame Google/default
+    translation work and HTML logs.
+- L58/L59:
+  [`slices/phase-7-opt-in-subsystems/translation-ui-race-and-retry-bounds.md`](slices/phase-7-opt-in-subsystems/translation-ui-race-and-retry-bounds.md)
+  - epoch-guard translated suggestions and stop `markParsing` from retrying
+    network translation failures through the full parse pipeline.
+- M19:
+  [`slices/phase-7-opt-in-subsystems/bergamot-chain-recovery.md`](slices/phase-7-opt-in-subsystems/bergamot-chain-recovery.md)
+  - keep bergamot serialization without permanently poisoning the promise
+    chain after a rejected translation.
+- M18/L48:
+  [`slices/phase-7-opt-in-subsystems/tts-context-and-hf-retry-bounds.md`](slices/phase-7-opt-in-subsystems/tts-context-and-hf-retry-bounds.md)
+  - reuse or close TTS `AudioContext`s and cap HuggingFace retry/translation
+    work.
+- M20/L54/L57:
+  [`slices/phase-7-opt-in-subsystems/mcp-deadlines-listeners-and-debug-logs.md`](slices/phase-7-opt-in-subsystems/mcp-deadlines-listeners-and-debug-logs.md)
+  - add MCP request/handshake/SSE deadlines, remove unresolved listeners, and
+    gate MCP debug logs.
+- L55/L56:
+  [`slices/phase-7-opt-in-subsystems/mcp-internal-tool-index-and-filesystem-handle.md`](slices/phase-7-opt-in-subsystems/mcp-internal-tool-index-and-filesystem-handle.md)
+  - cache internal MCP tool schemas, index tool dispatch, and preserve the
+    FileSystem directory handle across client recreation.
+- M21:
+  [`slices/phase-7-opt-in-subsystems/charx-import-stream-cap.md`](slices/phase-7-opt-in-subsystems/charx-import-stream-cap.md)
+  - fix the CharX size guard and enforce the asset byte cap while streaming.
+- M22/L52/L53:
+  [`slices/phase-7-opt-in-subsystems/file-send-po-pdf-and-logs.md`](slices/phase-7-opt-in-subsystems/file-send-po-pdf-and-logs.md)
+  - remove the `.po` test cap, stop file-send console logs, and pass raw PDF
+    bytes to pdfjs.
+- L49/L50/K3:
+  [`slices/phase-7-opt-in-subsystems/inlay-image-and-blob-cache-bounds.md`](slices/phase-7-opt-in-subsystems/inlay-image-and-blob-cache-bounds.md)
+  - make inlay image writes fail instead of hang, bound/revoke blob URLs, and
+    check the blob cache before fetching asset bytes.
+- L51:
+  [`slices/phase-7-opt-in-subsystems/png-card-import-single-pass.md`](slices/phase-7-opt-in-subsystems/png-card-import-single-pass.md)
+  - avoid decoding PNG character-card asset chunks twice for progress.
+- Proof:
+  [`slices/phase-7-opt-in-subsystems/phase-7-verification-refresh.md`](slices/phase-7-opt-in-subsystems/phase-7-verification-refresh.md)
+  - refresh gates, focused proofs, full validation, and latest verification.
+
 ## Source Anchors
 
 - [`../audit-stability-and-performance-v2.md`](../audit-stability-and-performance-v2.md) -

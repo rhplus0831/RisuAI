@@ -8,6 +8,34 @@ lifecycle state and reconnect behavior.
 
 Findings: M11, M12, M14, L35, L36, L45, L46, L47.
 
+## Slices
+
+- M11/M12:
+  [`slices/phase-6-bridges-lifecycle-network/bridge-apply-epoch-echo-guards.md`](slices/phase-6-bridges-lifecycle-network/bridge-apply-epoch-echo-guards.md)
+  - suppress foreign projection echoes from lorebook and character-profile
+    watchers.
+- M14:
+  [`slices/phase-6-bridges-lifecycle-network/dom-observer-idempotent-bindings.md`](slices/phase-6-bridges-lifecycle-network/dom-observer-idempotent-bindings.md)
+  - bind code-block/BGM DOM observers once and remove the unbounded polling
+    listener accumulation.
+- L35:
+  [`slices/phase-6-bridges-lifecycle-network/character-row-hypav3-carryover.md`](slices/phase-6-bridges-lifecycle-network/character-row-hypav3-carryover.md)
+  - carry hydrated `hypaV3Data` through character-row refreshes independently
+    of message length.
+- L36:
+  [`slices/phase-6-bridges-lifecycle-network/prereroll-map-bounds.md`](slices/phase-6-bridges-lifecycle-network/prereroll-map-bounds.md)
+  - bound the pre-reroll response buffers and clear stale entries on lifecycle
+    boundaries.
+- L45:
+  [`slices/phase-6-bridges-lifecycle-network/server-projection-reconnect-backoff.md`](slices/phase-6-bridges-lifecycle-network/server-projection-reconnect-backoff.md)
+  - add capped exponential backoff with jitter for command-event reconnects.
+- L46/L47:
+  [`slices/phase-6-bridges-lifecycle-network/mcp-sse-dedup-and-fetchnative-log.md`](slices/phase-6-bridges-lifecycle-network/mcp-sse-dedup-and-fetchnative-log.md)
+  - bound MCP legacy SSE dedup ids and remove the `fetchNative` body log.
+- Proof:
+  [`slices/phase-6-bridges-lifecycle-network/phase-6-verification-refresh.md`](slices/phase-6-bridges-lifecycle-network/phase-6-verification-refresh.md)
+  - refresh gates, focused proofs, full validation, and latest verification.
+
 ## Source Anchors
 
 - [`../audit-stability-and-performance-v2.md`](../audit-stability-and-performance-v2.md) -

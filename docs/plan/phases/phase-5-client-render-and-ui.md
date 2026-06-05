@@ -9,6 +9,33 @@ list scans.
 
 Findings: M13, M17, L38, L39, L40, L41, L42, L43, L44.
 
+## Slices
+
+- M13:
+  [`slices/phase-5-client-render-and-ui/prompt-template-tokenize-debounce.md`](slices/phase-5-client-render-and-ui/prompt-template-tokenize-debounce.md)
+  - debounce prompt-template token counts and memoize per-item tokenization.
+- M17/L40:
+  [`slices/phase-5-client-render-and-ui/chatbody-content-keyed-parse-memo.md`](slices/phase-5-client-render-and-ui/chatbody-content-keyed-parse-memo.md)
+  - add a bounded module-level parse/translate-detection memo for `ChatBody`.
+- L38/L39:
+  [`slices/phase-5-client-render-and-ui/parser-render-fast-paths.md`](slices/phase-5-client-render-and-ui/parser-render-fast-paths.md)
+  - remove parser logs and fast-path thought/tool parsing.
+- L41:
+  [`slices/phase-5-client-render-and-ui/partial-edit-shared-hover-handler.md`](slices/phase-5-client-render-and-ui/partial-edit-shared-hover-handler.md)
+  - share partial-edit hover tracking across visible messages.
+- L42:
+  [`slices/phase-5-client-render-and-ui/grid-catalog-derived-lists.md`](slices/phase-5-client-render-and-ui/grid-catalog-derived-lists.md)
+  - derive and key `GridCatalog` character lists.
+- L43:
+  [`slices/phase-5-client-render-and-ui/module-settings-derived-search.md`](slices/phase-5-client-render-and-ui/module-settings-derived-search.md)
+  - derive and key `ModuleSettings` search results.
+- L44:
+  [`slices/phase-5-client-render-and-ui/sidebar-character-list-signature.md`](slices/phase-5-client-render-and-ui/sidebar-character-list-signature.md)
+  - replace sidebar list deep-compare with a cheap signature or derived memo.
+- Proof:
+  [`slices/phase-5-client-render-and-ui/phase-5-verification-refresh.md`](slices/phase-5-client-render-and-ui/phase-5-verification-refresh.md)
+  - refresh gates, focused proofs, full validation, and latest verification.
+
 ## Source Anchors
 
 - [`../audit-stability-and-performance-v2.md`](../audit-stability-and-performance-v2.md) -

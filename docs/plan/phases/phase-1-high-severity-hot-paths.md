@@ -9,6 +9,21 @@ interpreter budgeted and abortable (H1).
 
 Findings: H1, H2, H3.
 
+## Slices
+
+- H2:
+  [`slices/phase-1-high-severity-hot-paths/chat-create-targeted-writer-kit.md`](slices/phase-1-high-severity-hot-paths/chat-create-targeted-writer-kit.md)
+  - route chat-create through the targeted writer kit.
+- H3:
+  [`slices/phase-1-high-severity-hot-paths/var-only-gui-reload-narrowing.md`](slices/phase-1-high-severity-hot-paths/var-only-gui-reload-narrowing.md)
+  - decouple var-only GUI reloads from whole-screen remounts and cache wipes.
+- H1:
+  [`slices/phase-1-high-severity-hot-paths/trigger-interpreter-budget-and-abort.md`](slices/phase-1-high-severity-hot-paths/trigger-interpreter-budget-and-abort.md)
+  - add signal, wall-clock budget, loop caps, and recursion bounds.
+- Proof:
+  [`slices/phase-1-high-severity-hot-paths/phase-1-verification-refresh.md`](slices/phase-1-high-severity-hot-paths/phase-1-verification-refresh.md)
+  - refresh gates, full validation, and latest verification.
+
 ## Source Anchors
 
 - [`../audit-stability-and-performance-v2.md`](../audit-stability-and-performance-v2.md) -

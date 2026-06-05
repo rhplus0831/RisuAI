@@ -11,6 +11,26 @@ a full closing verification run is recorded.
 Findings: none (verification budget over H1-H3, M1-M22, the scheduled L set,
 and K1-K4).
 
+## Slices
+
+- Maintenance:
+  [`slices/phase-9-verification-budgets/standing-gate-maintenance.md`](slices/phase-9-verification-budgets/standing-gate-maintenance.md)
+  - repeat the flip-contract check whenever a Phase 1-8 fix lands.
+- Final registry sweep:
+  [`slices/phase-9-verification-budgets/registry-universe-final-sweep.md`](slices/phase-9-verification-budgets/registry-universe-final-sweep.md)
+  - prove every scheduled ID is `DONE` or explicitly re-gated, with no
+    remaining `PLANNED` / `PENDING` drift.
+- Gate self-proof freeze:
+  [`slices/phase-9-verification-budgets/gate-self-proof-freeze.md`](slices/phase-9-verification-budgets/gate-self-proof-freeze.md)
+  - keep the v2 negative self-proofs alive and confirm the v1 gate stays
+    frozen against its archive.
+- Closing proof:
+  [`slices/phase-9-verification-budgets/closing-full-verification-run.md`](slices/phase-9-verification-budgets/closing-full-verification-run.md)
+  - run the full closeout command set and record the final proof log.
+- Archive:
+  [`slices/phase-9-verification-budgets/archive-plan-and-gate-repoint.md`](slices/phase-9-verification-budgets/archive-plan-and-gate-repoint.md)
+  - move the closed v2 plan to the archive and repoint the live gates.
+
 ## Standing Contract
 
 - The v2 gate (`src/ts/__tests__/fixCompletenessGateV2.test.ts`, authored in

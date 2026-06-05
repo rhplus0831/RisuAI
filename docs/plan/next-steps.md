@@ -6,23 +6,35 @@ The plan is open; nothing has started. The next batch is Phase 0.
 
 ## Next Batch: Phase 0 (Baseline & Gate)
 
-No runtime change. Two slices, defined in
+No runtime change. Six agent-sized slices, defined in
 [`phases/phase-0-baseline-and-gate.md`](phases/phase-0-baseline-and-gate.md):
 
-1. v2 fix-completeness gate scaffold
-   ([slice](phases/slices/phase-0-baseline-and-gate/v2-gate-scaffold.md)):
-   a sibling of the v1 gate that parses
+1. v2 gate doc universe parser
+   ([slice](phases/slices/phase-0-baseline-and-gate/v2-gate-doc-universe.md)):
+   create the v2 sibling gate file and parse the ID universe from
    [`audit-stability-and-performance-v2.md`](audit-stability-and-performance-v2.md)
-   and [`active-risk-analysis.md`](active-risk-analysis.md) (ID classes
-   `H/M/L/I/K`, statuses `PENDING`/`DONE`, the R1-R13 dismissed set), seeds
-   every scheduled ID as `PLANNED`, and self-checks doc/registry drift. The
-   v1 gate stays untouched against the archive.
-2. Render-count probe + baseline refresh
-   ([slice](phases/slices/phase-0-baseline-and-gate/render-count-probe.md)):
-   a client-side probe counting `ParseMarkdown`/`risuChatParser` invocations
-   across a simulated `ReloadGUIPointer` bump (the H3/Phase 5 proof signal),
-   plus a re-run of the existing corpus fixture + server load-count harness
-   to confirm the carried baseline. Record both in
+   plus K1-K4 from [`active-risk-analysis.md`](active-risk-analysis.md) and
+   the R1-R13 dismissed set.
+2. v2 gate routing registry
+   ([slice](phases/slices/phase-0-baseline-and-gate/v2-gate-routing-registry.md)):
+   parse [`active-risk-analysis.md`](active-risk-analysis.md), seed scheduled
+   IDs as `PLANNED`, and classify L12/I1-I18/R1-R13.
+3. v2 gate invariants and self-proof
+   ([slice](phases/slices/phase-0-baseline-and-gate/v2-gate-invariants-self-proof.md)):
+   add `DONE` test validation, doc/registry drift checks, and negative
+   self-proofs. The v1 gate stays untouched against the archive.
+4. Render-count harness
+   ([slice](phases/slices/phase-0-baseline-and-gate/render-count-harness.md)):
+   add the test-only helper that counts `ParseMarkdown`/`risuChatParser` /
+   `processScriptFull('editdisplay')` across a simulated `ReloadGUIPointer`
+   bump.
+5. Render-count baseline
+   ([slice](phases/slices/phase-0-baseline-and-gate/render-count-baseline.md)):
+   assert the current H3/M17/L40 pre-fix behavior and record the observed
+   counts in [`latest-verification.md`](latest-verification.md).
+6. Verification refresh
+   ([slice](phases/slices/phase-0-baseline-and-gate/verification-refresh.md)):
+   re-run the full proof set and record the Phase 0 baseline in
    [`latest-verification.md`](latest-verification.md).
 
 After Phase 0, proceed to Phase 1 (H1, H2, H3) — one slice per finding, in
@@ -72,7 +84,8 @@ Client focused runs:
 ```bash
 pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/characterCommands.test.ts src/ts/moduleCommands.test.ts
 pnpm exec vitest run src/ts/process/__tests__/streamResponse.test.ts
-pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts
+pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV2.test.ts src/ts/__tests__/fixCompletenessGate.test.ts
+pnpm exec vitest run src/ts/__tests__/renderCountBaseline.test.ts
 ```
 
 Full proof set:

@@ -7,6 +7,44 @@ are one-line fixes (M7, M8); the rest mirror landed v1 shapes.
 
 Findings: M7, M8, M9, M10, L32, L33, L34, L37, K4.
 
+## Slices
+
+- M7:
+  [`slices/phase-4-client-clone-ring-2/replace-all-message-patch-no-clone.md`](slices/phase-4-client-clone-ring-2/replace-all-message-patch-no-clone.md)
+  - assign private `replace_all` message arrays without recloning the
+    transcript.
+- M8:
+  [`slices/phase-4-client-clone-ring-2/plugin-storage-key-read-snapshot.md`](slices/phase-4-client-clone-ring-2/plugin-storage-key-read-snapshot.md)
+  - read and detach one plugin storage key instead of snapshotting the whole
+    database.
+- M9:
+  [`slices/phase-4-client-clone-ring-2/chat-metadata-allowed-key-diff.md`](slices/phase-4-client-clone-ring-2/chat-metadata-allowed-key-diff.md)
+  - diff only allowed chat metadata keys and clone only changed values.
+- M10:
+  [`slices/phase-4-client-clone-ring-2/module-command-snapshot-narrowing.md`](slices/phase-4-client-clone-ring-2/module-command-snapshot-narrowing.md)
+  - split global module and character-module rollback snapshots.
+- L32:
+  [`slices/phase-4-client-clone-ring-2/send-family-targeted-chat-mutations.md`](slices/phase-4-client-clone-ring-2/send-family-targeted-chat-mutations.md)
+  - remove remaining `setDatabase` normalizer calls from send-family slash
+    command message edits.
+- L33:
+  [`slices/phase-4-client-clone-ring-2/remove-char-trash-single-row.md`](slices/phase-4-client-clone-ring-2/remove-char-trash-single-row.md)
+  - make trash removal capture only the targeted character row.
+- L34:
+  [`slices/phase-4-client-clone-ring-2/select-supa-memory-flag-patch.md`](slices/phase-4-client-clone-ring-2/select-supa-memory-flag-patch.md)
+  - patch only `supaMemory` when selection auto-enables Hypa V3 memory.
+- L37:
+  [`slices/phase-4-client-clone-ring-2/language-change-same-code-cache.md`](slices/phase-4-client-clone-ring-2/language-change-same-code-cache.md)
+  - early-return when `changeLanguage` receives the already-applied language
+    code.
+- K4:
+  [`slices/phase-4-client-clone-ring-2/lorebook-editor-keystroke-scope.md`](slices/phase-4-client-clone-ring-2/lorebook-editor-keystroke-scope.md)
+  - debounce or scope lorebook entry typing so it no longer clones the whole
+    collection per keystroke.
+- Proof:
+  [`slices/phase-4-client-clone-ring-2/phase-4-verification-refresh.md`](slices/phase-4-client-clone-ring-2/phase-4-verification-refresh.md)
+  - refresh gates, focused proofs, full validation, and latest verification.
+
 ## Source Anchors
 
 - [`../audit-stability-and-performance-v2.md`](../audit-stability-and-performance-v2.md) -

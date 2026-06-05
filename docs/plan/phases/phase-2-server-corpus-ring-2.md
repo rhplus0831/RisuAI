@@ -10,6 +10,37 @@ missed callers.
 
 Findings: M5, M6, L3, L13, L14, L16, K1, K2.
 
+## Slices
+
+- M5:
+  [`slices/phase-2-server-corpus-ring-2/character-chat-patch-scoped-reads.md`](slices/phase-2-server-corpus-ring-2/character-chat-patch-scoped-reads.md)
+  - narrow character/chat PATCH reads and repair to the target row.
+- M6 + L16:
+  [`slices/phase-2-server-corpus-ring-2/projection-field-scoped-loaders.md`](slices/phase-2-server-corpus-ring-2/projection-field-scoped-loaders.md)
+  - field-scoped projection loaders plus single auth verification on bulk
+    projection routes.
+- L3:
+  [`slices/phase-2-server-corpus-ring-2/server-intent-completion-settings-loader.md`](slices/phase-2-server-corpus-ring-2/server-intent-completion-settings-loader.md)
+  - replace server-intent completion's full-corpus read with a settings-sized
+    completion database.
+- L13:
+  [`slices/phase-2-server-corpus-ring-2/realm-import-targeted-character-append.md`](slices/phase-2-server-corpus-ring-2/realm-import-targeted-character-append.md)
+  - persist Realm character append through targeted character/chat writers.
+- K1:
+  [`slices/phase-2-server-corpus-ring-2/generation-finalization-chat-scoped-read.md`](slices/phase-2-server-corpus-ring-2/generation-finalization-chat-scoped-read.md)
+  - wire `chatScopedRead` into generation finalization when no chat variables
+    are written.
+- K2:
+  [`slices/phase-2-server-corpus-ring-2/asset-gc-scoped-reference-scan.md`](slices/phase-2-server-corpus-ring-2/asset-gc-scoped-reference-scan.md)
+  - remove asset-GC's full persisted corpus read while preserving orphan
+    detection.
+- L14:
+  [`slices/phase-2-server-corpus-ring-2/message-diff-append-fast-path.md`](slices/phase-2-server-corpus-ring-2/message-diff-append-fast-path.md)
+  - make append transcript persistence avoid O(N) prefix stringify work.
+- Proof:
+  [`slices/phase-2-server-corpus-ring-2/phase-2-verification-refresh.md`](slices/phase-2-server-corpus-ring-2/phase-2-verification-refresh.md)
+  - refresh gates, focused proofs, full validation, and latest verification.
+
 ## Source Anchors
 
 - [`../audit-stability-and-performance-v2.md`](../audit-stability-and-performance-v2.md) -

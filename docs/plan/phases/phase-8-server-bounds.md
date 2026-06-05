@@ -11,6 +11,66 @@ fairness, durability, and deadline bounds; one scheduled semantic correction
 Findings: L1, L2, L15, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26,
 L27, L28, L29, L30, L31. (I3's unused-index drop may ride along if free.)
 
+## Slices
+
+- L1:
+  [`slices/phase-8-server-bounds/generation-deadline-bounds.md`](slices/phase-8-server-bounds/generation-deadline-bounds.md)
+  - make durable and non-durable generation deadlines configurable or sliding
+    without killing active streams.
+- L2/L17:
+  [`slices/phase-8-server-bounds/terminal-job-retention-sweeps.md`](slices/phase-8-server-bounds/terminal-job-retention-sweeps.md)
+  - prune terminal finalization retry rows and terminal memory jobs while
+    leaving live work untouched.
+- L15:
+  [`slices/phase-8-server-bounds/sqlite-wal-synchronous-normal.md`](slices/phase-8-server-bounds/sqlite-wal-synchronous-normal.md)
+  - set `PRAGMA synchronous = NORMAL` after enabling WAL and record the
+    durability trade-off.
+- L18:
+  [`slices/phase-8-server-bounds/memory-worker-backlog-drain.md`](slices/phase-8-server-bounds/memory-worker-backlog-drain.md)
+  - reschedule the memory worker immediately after productive ticks.
+- L19:
+  [`slices/phase-8-server-bounds/memory-job-failure-cascade-scope.md`](slices/phase-8-server-bounds/memory-job-failure-cascade-scope.md)
+  - keep transient failures from cascading across independent memory jobs.
+- L20:
+  [`slices/phase-8-server-bounds/memory-summary-fetch-sharing.md`](slices/phase-8-server-bounds/memory-summary-fetch-sharing.md)
+  - share one summary metadata read between orphan cleanup and memory
+    selection.
+- L21/L22:
+  [`slices/phase-8-server-bounds/memory-embedding-chunk-bounds.md`](slices/phase-8-server-bounds/memory-embedding-chunk-bounds.md)
+  - enforce per-chunk embed size ceilings and make contextual split policy
+    explicit and observable.
+- L23/L24:
+  [`slices/phase-8-server-bounds/realm-json-asset-batch-cleanup.md`](slices/phase-8-server-bounds/realm-json-asset-batch-cleanup.md)
+  - batch JSON-card asset persistence and delete persisted assets if character
+    append fails.
+- L25:
+  [`slices/phase-8-server-bounds/bundle-export-open-or-skip.md`](slices/phase-8-server-bounds/bundle-export-open-or-skip.md)
+  - open bundle assets at stream time and degrade missing files into
+    `missingFiles`.
+- L26:
+  [`slices/phase-8-server-bounds/legacy-storage-atomic-write.md`](slices/phase-8-server-bounds/legacy-storage-atomic-write.md)
+  - use temp-file, fsync, and rename for legacy storage writes.
+- L28:
+  [`slices/phase-8-server-bounds/risusave-json-import-single-clone.md`](slices/phase-8-server-bounds/risusave-json-import-single-clone.md)
+  - remove the extra full-corpus JSON clone from non-multipart `.risu` import.
+- L29:
+  [`slices/phase-8-server-bounds/realm-charx-download-cap.md`](slices/phase-8-server-bounds/realm-charx-download-cap.md)
+  - cap Realm `.charx` staging downloads before they can grow toward 2 GB.
+- L27:
+  [`slices/phase-8-server-bounds/hub-forward-abort-timeout.md`](slices/phase-8-server-bounds/hub-forward-abort-timeout.md)
+  - add abort, deadline, and bounded streaming behavior to hub forwards.
+- L30:
+  [`slices/phase-8-server-bounds/vertex-token-inflight-dedupe.md`](slices/phase-8-server-bounds/vertex-token-inflight-dedupe.md)
+  - dedupe concurrent cold Vertex token exchanges with an in-flight promise.
+- L31:
+  [`slices/phase-8-server-bounds/proxy-default-deadline.md`](slices/phase-8-server-bounds/proxy-default-deadline.md)
+  - apply a default proxy deadline when `risu-timeout-ms` is absent and cap
+    excessive client values.
+- Proof:
+  [`slices/phase-8-server-bounds/phase-8-verification-refresh.md`](slices/phase-8-server-bounds/phase-8-verification-refresh.md)
+  - refresh gates, focused server proofs, full validation, and latest
+    verification.
+
 ## Source Anchors
 
 - [`../audit-stability-and-performance-v2.md`](../audit-stability-and-performance-v2.md) -
