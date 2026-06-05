@@ -196,8 +196,13 @@ server/fastify/vitest.config.ts --reporter=verbose serverLoadCostHarness`):
   (PRAGMA probed ON in the regression) removes the chat rows, the
   end-to-end delete keeps byte/metric parity (`writtenTables` unchanged),
   and sibling rows keep their rowids. The command warm path, the
-  `editdisplay` render path, and `downloadPreset` write **nothing to
-  console.log** (spy proofs). The terminal assistant lookup scans the
+  `editdisplay` render path, and `downloadPreset`/`importPreset` write
+  **nothing to console.log** (spy proofs; completion-audit closeout removed
+  `importPreset`'s four remaining object dumps — `database.svelte.ts` now has
+  zero `console.log` calls, and the preset-import regressions cover a real
+  `.risupreset` binary round-trip plus an ST/json mapping through the
+  unknown-identifier and missing-prompt branches, failing against reinstated
+  logs on both paths). The terminal assistant lookup scans the
   transcript **in place** — a booby-trapped `Symbol.iterator` proves no
   copy (the old spread+reverse implementation throws on it).
 - Phase 4 M6/M8/L20/L22-L25 (`bf1a6cb2`) — PHASE 4 COMPLETE: a client

@@ -20,8 +20,8 @@ Findings: M2, L3, L8, L9, L37, L38, L39, L40.
   keep-window), `server/fastify/src/routes/commands.ts` (character delete),
   `server/fastify/src/repository.ts` (`deleteCharacterRow` FK cascade).
 - `src/ts/process/command.ts`, `src/ts/storage/database.svelte.ts`
-  (`downloadPreset`), `src/ts/process/scripts.ts` (`processScriptFull`
-  editdisplay), `src/ts/process/serverBackedSendChat.ts`
+  (`downloadPreset`/`importPreset`), `src/ts/process/scripts.ts`
+  (`processScriptFull` editdisplay), `src/ts/process/serverBackedSendChat.ts`
   (`findGeneratedAssistantMessage`), `src/ts/process/triggers.ts`
   (`getCompiledRegex` reuse).
 
@@ -48,7 +48,11 @@ Findings: M2, L3, L8, L9, L37, L38, L39, L40.
     `chats` write so the `writtenTables` metric stays truthful; the unused
     `deleteCharacterChats` helper is removed.
   - L37: the per-command `splited`/`pipe` dumps, the `test_lorebook` full
-    report dump, and `downloadPreset`'s full preset log are removed.
+    report dump, and `downloadPreset`'s full preset log are removed; the
+    completion audit caught `importPreset`'s remaining object dumps (the
+    msgpack `decoded` envelope, the parsed `pre`, and the per-prompt ST-mapping
+    `p`/'Prompt not found' logs), removed in the closeout —
+    `src/ts/storage/database.svelte.ts` now has zero `console.log` calls.
   - L38: the per-render `console.log('Trigger time', ...)` is removed.
   - L39: `findGeneratedAssistantMessage` scans the transcript
     newest-to-oldest in place (no copy + reverse per terminal settle).
@@ -69,6 +73,12 @@ Findings: M2, L3, L8, L9, L37, L38, L39, L40.
   its event in the same transaction — the revision window equals the former
   keep-latest-N-rows walk. The keep-window semantics are themselves the
   regression proof (a gapped revision deletes below the window).
+- L37 closed in two steps (completion-audit closeout): the batch removed the
+  command/`downloadPreset` logs, the audit closeout removed `importPreset`'s
+  four remaining dumps and added `database.importPreset.test.ts` — no-log spy
+  proofs over a real `.risupreset` binary round-trip and an ST/json mapping
+  that deliberately hits the unknown-identifier and missing-prompt branches,
+  both registered as L37 `extraTests` in the Phase 8 gate.
 
 ## Exit Criteria
 

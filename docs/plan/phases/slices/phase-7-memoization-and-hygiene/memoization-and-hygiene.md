@@ -22,8 +22,9 @@ remove warm/render-path logging.
   `server/fastify/src/routes/commands.ts` character delete +
   `repository.ts` `deleteCharacterRow` FK cascade (L9).
 - `src/ts/process/command.ts`, `src/ts/storage/database.svelte.ts`
-  (`downloadPreset`) (L37), `src/ts/process/scripts.ts` (`processScriptFull`
-  editdisplay) (L38), `src/ts/process/serverBackedSendChat.ts`
+  (`downloadPreset`/`importPreset`) (L37), `src/ts/process/scripts.ts`
+  (`processScriptFull` editdisplay) (L38),
+  `src/ts/process/serverBackedSendChat.ts`
   (`findGeneratedAssistantMessage`) (L39),
   `src/ts/process/triggers.ts` → `scripts.ts` `getCompiledRegex` (L40).
 
@@ -45,7 +46,10 @@ remove warm/render-path logging.
 - [x] L9 — the redundant `chats` DELETE is dropped; the FK cascade (PRAGMA
       verified ON in the regression) removes the chat rows;
       `deleteCharacterRow` records the cascaded write for the metric budget.
-- [x] L37 — the stray `console.log`s of full command/preset objects are gone.
+- [x] L37 — the stray `console.log`s of full command/preset objects are gone
+      (batch removed the command/`downloadPreset` logs; the completion-audit
+      closeout removed `importPreset`'s four remaining dumps —
+      `database.svelte.ts` now has zero `console.log` calls).
 - [x] L38 — the `console.log('Trigger time', ...)` per-render log is gone.
 - [x] L39 — `findGeneratedAssistantMessage` scans the transcript in place.
 
@@ -82,7 +86,10 @@ remove warm/render-path logging.
 - `server/fastify/__tests__/events.test.ts` — L8 keep-window test.
 - `server/fastify/__tests__/repositoryWriterKit.test.ts` — L9 cascade test;
   `commandFloorUnblock.test.ts` keeps the end-to-end delete byte/metric parity.
-- `src/ts/process/__tests__/command.projectionGuard.test.ts` — L37 no-log test.
+- `src/ts/process/__tests__/command.projectionGuard.test.ts` — L37 no-log test;
+  `src/ts/storage/database.importPreset.test.ts` — L37 preset-import no-log
+  tests (`.risupreset` binary round-trip + ST/json mapping with
+  unknown-identifier and missing-prompt branches; completion-audit closeout).
 - `src/ts/process/scripts.editdisplay.test.ts` — L38 display-pass no-log test.
 - `src/ts/process/serverBackedSendChat.findMessage.test.ts` — L39 in-place
   scan tests.

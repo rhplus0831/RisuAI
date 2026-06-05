@@ -48,11 +48,14 @@ There is no scheduled work left in this plan. What remains is maintenance:
   (L8); character delete relies on the `chats.character_id ON DELETE
   CASCADE` with the cascaded write still recorded in `writtenTables`, and
   the unused `deleteCharacterChats` helper is gone (L9); the command
-  pipe/preset/`Trigger time` logs are removed (L37, L38); the terminal
+  pipe/preset/`Trigger time` logs are removed — the completion-audit
+  closeout also removed `importPreset`'s four remaining object dumps, so
+  `database.svelte.ts` has zero `console.log` calls (L37, L38); the terminal
   assistant lookup scans the transcript in place (L39). Regressions:
   `scripts.test.ts` M2 block, `lorebook.test.ts` L3 block, `events.test.ts`
   L8 test, `repositoryWriterKit.test.ts` L9 test,
-  `command.projectionGuard.test.ts` L37 test,
+  `command.projectionGuard.test.ts` L37 test +
+  `database.importPreset.test.ts` preset-import no-log tests,
   `scripts.editdisplay.test.ts` (L38),
   `serverBackedSendChat.findMessage.test.ts` (L39),
   `triggers.regexMemo.test.ts` (L40).

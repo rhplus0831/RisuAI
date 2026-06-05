@@ -80,7 +80,8 @@ regression test). The only non-DONE ids are the gated owner-decision items
   regexes (9 sites through `getCompiledRegex`), keep-window command-event
   prune (no `OFFSET 999` walk per write), FK-cascade character delete (no
   redundant `chats` DELETE), and the warm/render-path `console.log` removals
-  (command pipe dumps, preset dump, per-render `Trigger time`, in-place
+  (command pipe dumps, preset dumps — `importPreset`'s remaining four closed
+  in the completion-audit closeout, per-render `Trigger time`, in-place
   transcript scan).
 - [Phase 8](phases/phase-8-verification-budgets.md) — standing; scaffold live
   (`fixCompletenessGate.test.ts`). Every scheduled id is now `DONE` (registry +
