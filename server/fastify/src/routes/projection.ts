@@ -69,14 +69,7 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   promptItem: ['promptTemplate'],
   // persona select/delete also mirror the legacy profile scalars into settings
   // (when mirrorLegacyProfile is on), so a foreign refresh must reship them too.
-  persona: [
-    'personas',
-    'selectedPersona',
-    'username',
-    'userIcon',
-    'personaPrompt',
-    'userNote',
-  ],
+  persona: ['personas', 'selectedPersona', 'username', 'userIcon', 'personaPrompt', 'userNote'],
   // `module` (create/delete) stays broad: create can normalize sibling arrays
   // and delete cross-writes characters/chats/loadouts via removeModuleReferences.
   // The narrower update/enable/reorder commands emit the module-scoped resources
@@ -199,7 +192,6 @@ export function registerProjectionRoutes(
       schema: bulkChatMessagesBodySchema,
     },
     async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
       if ((req as { validationError?: unknown }).validationError) {
         invalidBulkChatIdsReply(reply)
         return
@@ -238,7 +230,6 @@ export function registerProjectionRoutes(
       schema: bulkCharacterLorebooksBodySchema,
     },
     async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
       if ((req as { validationError?: unknown }).validationError) {
         invalidBulkCharacterLorebookIdsReply(reply)
         return

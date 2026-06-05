@@ -56,7 +56,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M3  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Render stable template cards once; preflight tokenizes cached rows. | PENDING |
 | M4  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Memoize charhistory/userhistory/lorebook callbacks per assembly. | PENDING |
 | M5  | [2](phases/phase-2-server-corpus-ring-2.md)      | Single-row scoped read + repair for character/chat PATCH.        | DONE    |
-| M6  | [2](phases/phase-2-server-corpus-ring-2.md)      | Field-scoped projection loaders that skip the characters parse.  | PENDING |
+| M6  | [2](phases/phase-2-server-corpus-ring-2.md)      | Field-scoped projection loaders that skip the characters parse.  | DONE    |
 | M7  | [4](phases/phase-4-client-clone-ring-2.md)       | Assign `replace_all` messages without `structuredClone`.         | PENDING |
 | M8  | [4](phases/phase-4-client-clone-ring-2.md)       | `getItem` reads one key, not a whole-DB snapshot.                | PENDING |
 | M9  | [4](phases/phase-4-client-clone-ring-2.md)       | Allowed-keys diff for `changedChatMetadata` (v1-M13 shape).      | PENDING |
@@ -93,7 +93,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L13 | [2](phases/phase-2-server-corpus-ring-2.md)      | Targeted writes for Realm character append.                       | PENDING |
 | L14 | [2](phases/phase-2-server-corpus-ring-2.md)      | Delta-aware transcript persist diff.                              | PENDING |
 | L15 | [8](phases/phase-8-server-bounds.md)             | `PRAGMA synchronous = NORMAL`.                                    | PENDING |
-| L16 | [2](phases/phase-2-server-corpus-ring-2.md)      | Single auth verification on the bulk routes.                      | PENDING |
+| L16 | [2](phases/phase-2-server-corpus-ring-2.md)      | Single auth verification on the bulk routes.                      | DONE    |
 | L17 | [8](phases/phase-8-server-bounds.md)             | Retention sweep for terminal memory jobs.                         | PENDING |
 | L18 | [8](phases/phase-8-server-bounds.md)             | Fast-path reschedule after a productive worker tick.              | PENDING |
 | L19 | [8](phases/phase-8-server-bounds.md)             | Scope the fail-cascade to contextual groups.                      | PENDING |

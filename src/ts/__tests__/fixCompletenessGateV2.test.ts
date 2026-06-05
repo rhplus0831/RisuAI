@@ -201,7 +201,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('M6', 2, 'Field-scoped projection loaders that skip the characters parse.'),
+  done(
+    'M6',
+    2,
+    'Field-scoped projection loaders that skip the characters parse.',
+    'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+    'M6: foreign field projections skip character and chat table payload reads',
+    [
+      {
+        testPath: 'server/fastify/__tests__/projection.test.ts',
+        testName: 'M6: foreign field projections are byte-identical to the broad composition',
+      },
+      {
+        testPath: 'server/fastify/__tests__/projection.test.ts',
+        testName: 'selects character fields with chat and lorebook stubs',
+      },
+    ],
+  ),
   planned('M7', 4, 'Assign `replace_all` messages without `structuredClone`.'),
   planned('M8', 4, '`getItem` reads one key, not a whole-DB snapshot.'),
   planned('M9', 4, 'Allowed-keys diff for `changedChatMetadata` (v1-M13 shape).'),
@@ -232,7 +248,13 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L13', 2, 'Targeted writes for Realm character append.'),
   planned('L14', 2, 'Delta-aware transcript persist diff.'),
   planned('L15', 8, '`PRAGMA synchronous = NORMAL`.'),
-  planned('L16', 2, 'Single auth verification on the bulk routes.'),
+  done(
+    'L16',
+    2,
+    'Single auth verification on the bulk routes.',
+    'server/fastify/__tests__/auth.test.ts',
+    'rejects unauthenticated requests and verifies authenticated requests exactly once',
+  ),
   planned('L17', 8, 'Retention sweep for terminal memory jobs.'),
   planned('L18', 8, 'Fast-path reschedule after a productive worker tick.'),
   planned('L19', 8, 'Scope the fail-cascade to contextual groups.'),
@@ -1026,7 +1048,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
 
     const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
-    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'H2', 'H3', 'M5'])
+    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'H2', 'H3', 'M5', 'M6', 'L16'])
     expect(doneEntries.every(hasProofFields)).toBe(true)
   })
 

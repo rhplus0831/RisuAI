@@ -778,35 +778,97 @@ export function loadPersistedForCharacterMutation(
 
 export function loadPersistedDatabaseFields(
   db: DatabaseSync,
-  dataDir: string,
+  _dataDir: string,
   fieldKeys: readonly string[],
 ): Record<string, unknown> {
-  const persisted = loadPersisted(db, dataDir)
-  const database = persisted.database
-  if (!isRecord(database)) return {}
-  return selectDatabaseFields(database, fieldKeys)
+  return loadDatabaseFieldsFromSqlite(db, fieldKeys).fields
 }
 
 export function loadStubbedProjectionFields(
   db: DatabaseSync,
-  dataDir: string,
+  _dataDir: string,
   fieldKeys: readonly string[],
 ): Record<string, unknown> {
-  const persisted = loadPersisted(db, dataDir)
-  const database = persisted.database
-  if (!isRecord(database)) return {}
-
-  const fields = selectDatabaseFields(database, fieldKeys)
+  const { fields, settings } = loadDatabaseFieldsFromSqlite(db, fieldKeys)
   // Preserve the wire projection contract for any targeted resource that ships
   // characters: chat payloads and optional character lorebooks stay lazy.
   eachChat(fields, (chat) => {
     chat.message = []
     delete chat.hypaV3Data
   })
-  if (database.enableLorebookStubs === true) {
+  if (settings?.enableLorebookStubs === true) {
     stripCharacterGlobalLore(fields)
   }
   return fields
+}
+
+function loadDatabaseFieldsFromSqlite(
+  db: DatabaseSync,
+  fieldKeys: readonly string[],
+): { fields: Record<string, unknown>; settings: Record<string, unknown> | null } {
+  const settings = loadSettingsFromSqlite(db)
+  if (settings === null) return { fields: {}, settings: null }
+
+  const fields: Record<string, unknown> = {}
+  for (const key of fieldKeys) {
+    if (key === 'characters') {
+      const sqliteChars = loadCharactersFromSqlite(db)
+      if (sqliteChars.length > 0 || !Array.isArray(settings.characters)) {
+        fields.characters = sqliteChars
+      } else {
+        fields.characters = settings.characters
+      }
+      continue
+    }
+
+    if (key === 'pluginCustomStorage') {
+      const storage = loadPluginCustomStorageFieldFromSqlite(db)
+      if (storage !== null) fields.pluginCustomStorage = storage
+      else if (!Object.prototype.hasOwnProperty.call(settings, 'pluginCustomStorage')) {
+        fields.pluginCustomStorage = {}
+      }
+      continue
+    }
+
+    const tableName = COLLECTION_TABLE_MAP[key]
+    if (tableName !== undefined) {
+      const collection = loadCollectionFieldFromSqlite(db, tableName)
+      if (collection !== null) {
+        fields[key] = collection
+      } else if (Object.prototype.hasOwnProperty.call(settings, key)) {
+        fields[key] = settings[key]
+      } else if (key !== 'promptTemplate' && !Object.prototype.hasOwnProperty.call(settings, key)) {
+        fields[key] = []
+      }
+      continue
+    }
+
+    if (Object.prototype.hasOwnProperty.call(settings, key)) {
+      fields[key] = settings[key]
+    }
+  }
+
+  return { fields, settings }
+}
+
+function loadCollectionFieldFromSqlite(db: DatabaseSync, tableName: string): unknown[] | null {
+  const rows = db
+    .prepare(`SELECT data_json FROM ${tableName} ORDER BY position`)
+    .all() as unknown as Array<{ data_json: string }>
+  if (rows.length === 0) return null
+  return rows.map((row) => JSON.parse(row.data_json))
+}
+
+function loadPluginCustomStorageFieldFromSqlite(db: DatabaseSync): Record<string, unknown> | null {
+  const rows = db
+    .prepare('SELECT key, value_json FROM plugin_custom_storage')
+    .all() as unknown as Array<{ key: string; value_json: string }>
+  if (rows.length === 0) return null
+  const storage: Record<string, unknown> = {}
+  for (const row of rows) {
+    storage[row.key] = JSON.parse(row.value_json)
+  }
+  return storage
 }
 
 /**

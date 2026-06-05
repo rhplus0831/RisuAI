@@ -22,6 +22,7 @@ import {
 } from '../src/providerSecrets.js'
 import { emitProtocolMetric, protocolMetricsEnabled } from '../src/protocolMetrics.js'
 import { getChatMessagesGroupedByIds } from '../src/messageStore.js'
+import { resourceProjectionFields } from '../src/routes/projection.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import {
   assertScopedLoadOnHotPath,
@@ -95,6 +96,19 @@ function hydrationGet(chatId: string) {
     url: `/api/v1/projection/chatMessages?id=${chatId}`,
     headers: { 'risu-auth': assertion },
   })
+}
+
+function selectFields(
+  database: Record<string, unknown>,
+  fieldKeys: readonly string[],
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {}
+  for (const key of fieldKeys) {
+    if (Object.prototype.hasOwnProperty.call(database, key)) {
+      fields[key] = database[key]
+    }
+  }
+  return fields
 }
 
 async function withJsonStringifySizeInstrumentation<T>(
@@ -266,7 +280,9 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.hypaV3Data).toBeDefined()
 
     if (process.env.RISU_PROTOCOL_METRICS === '1') {
-      console.info(`[load-cost] scoped hydration (hot chat): ${scopedMs.toFixed(1)}ms, 0 corpus loads`)
+      console.info(
+        `[load-cost] scoped hydration (hot chat): ${scopedMs.toFixed(1)}ms, 0 corpus loads`,
+      )
     }
   })
 
@@ -326,9 +342,11 @@ describe('server load-count harness on the large-corpus fixture', () => {
       db.close()
     }
 
-    const { result: res, corpusLoadCount, loadCountByTable } = await withServerLoadInstrumentation(
-      () => hydrationGet('pre-extract-chat'),
-    )
+    const {
+      result: res,
+      corpusLoadCount,
+      loadCountByTable,
+    } = await withServerLoadInstrumentation(() => hydrationGet('pre-extract-chat'))
     expect(res.statusCode).toBe(200)
     expect(res.json().message).toEqual(embedded)
     // The zero-row fallback is the one legitimate broad consumer on this route:
@@ -338,9 +356,9 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(loadCountByTable.chats).toBeGreaterThanOrEqual(1)
 
     // …so the scoped-load assertion still fails for it — the harness can gate.
-    await expect(
-      assertScopedLoadOnHotPath(() => hydrationGet('pre-extract-chat')),
-    ).rejects.toThrow(/whole-corpus payload read/)
+    await expect(assertScopedLoadOnHotPath(() => hydrationGet('pre-extract-chat'))).rejects.toThrow(
+      /whole-corpus payload read/,
+    )
   })
 
   it('U1: bulk chat hydration performs zero whole-corpus payload reads, missing ids included', async () => {
@@ -367,9 +385,9 @@ describe('server load-count harness on the large-corpus fixture', () => {
     // Each bulk row carries exactly what the single hydration route serves.
     for (const chat of body.chats) {
       const single = (await hydrationGet(chat.chatId)).json()
-      expect(
-        JSON.stringify({ m: chat.message, h: chat.hypaV3Data, a: chat.alternates }),
-      ).toBe(JSON.stringify({ m: single.message, h: single.hypaV3Data, a: single.alternates }))
+      expect(JSON.stringify({ m: chat.message, h: chat.hypaV3Data, a: chat.alternates })).toBe(
+        JSON.stringify({ m: single.message, h: single.hypaV3Data, a: single.alternates }),
+      )
     }
     expect(body.chats[0].message).toHaveLength(fixture.hot.messageCount)
     expect(body.chats[0].hypaV3Data).toBeDefined()
@@ -749,7 +767,9 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.character.chaId).toBe(fixture.hot.characterId)
     // The stub contract holds: chats present, message-free; secrets masked.
     expect(body.character.chats).toHaveLength(3)
-    expect(body.character.chats.every((chat: { message: unknown[] }) => chat.message.length === 0)).toBe(true)
+    expect(
+      body.character.chats.every((chat: { message: unknown[] }) => chat.message.length === 0),
+    ).toBe(true)
     expect(body.character.oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
   })
 
@@ -841,6 +861,50 @@ describe('server load-count harness on the large-corpus fixture', () => {
       expect(row?.chaId).toBe('embedded-char')
       // The fallback applies the same stub contract: message-free chats.
       expect((row?.chats as Array<Record<string, unknown>>)[0].message).toEqual([])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('M6: foreign field projections skip character and chat table payload reads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const database = {
+      ...fixture.database,
+      botPresets: [{ id: 'preset-a', name: 'Preset A', openAIKey: 'sk-preset-secret' }],
+      botPresetsId: 3,
+      currentPluginProvider: 'plugin-a',
+      enabledModules: ['mod-a'],
+      modules: [{ id: 'mod-a', name: 'Module A', description: '' }],
+      plugins: [{ id: 'plugin-a', name: 'Plugin A', enabled: true }],
+    }
+    const revision = await importDatabase(database)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const broadDatabase = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
+      for (const resource of ['preset', 'plugin', 'moduleEnabled'] as const) {
+        const fieldKeys = resourceProjectionFields(resource)
+        expect(fieldKeys).not.toBeNull()
+        const expected = {
+          revision,
+          resource,
+          mode: 'fields',
+          fields: maskProviderSecrets(selectFields(broadDatabase, fieldKeys!)),
+        }
+
+        const observed = await withServerLoadInstrumentation(() =>
+          harness.app.inject({
+            method: 'GET',
+            url: `/api/v1/projection/${resource}`,
+            headers: { 'risu-auth': assertion },
+          }),
+        )
+
+        expect(observed.result.statusCode).toBe(200)
+        expect(observed.result.body).toBe(JSON.stringify(expected))
+        expect(observed.loadCountByTable.characters ?? 0).toBe(0)
+        expect(observed.loadCountByTable.chats ?? 0).toBe(0)
+      }
     } finally {
       db.close()
     }

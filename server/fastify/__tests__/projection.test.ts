@@ -3,9 +3,15 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../src/app.js'
-import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
+import { MASKED_PROVIDER_SECRET, maskProviderSecrets } from '../src/providerSecrets.js'
 import { jsonPayloadBytes } from '../src/protocolMetrics.js'
-import { ensureDbJsonImported, loadPersistedDatabaseFields, loadStubbedProjectionFields, writePersistedWithMessages } from '../src/repository.js'
+import {
+  ensureDbJsonImported,
+  loadPersisted,
+  loadPersistedDatabaseFields,
+  loadStubbedProjectionFields,
+  writePersistedWithMessages,
+} from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { fullBootstrapFallbackClass, resourceProjectionFields } from '../src/routes/projection.js'
 import type { FastifyInstance } from 'fastify'
@@ -94,6 +100,19 @@ async function getProjection(resource: string, query = '') {
     url: `/api/v1/projection/${resource}${query}`,
     headers: { 'risu-auth': assertion },
   })
+}
+
+function selectFields(
+  database: Record<string, unknown>,
+  fieldKeys: readonly string[],
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {}
+  for (const key of fieldKeys) {
+    if (Object.prototype.hasOwnProperty.call(database, key)) {
+      fields[key] = database[key]
+    }
+  }
+  return fields
 }
 
 describe('targeted projection route (lazy-projection Phase 2)', () => {
@@ -500,7 +519,55 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     const reorderedBody = (await getProjection('moduleReordered')).json()
     expect(reorderedBody.mode).toBe('fields')
     expect(Object.keys(reorderedBody.fields)).toEqual(['modules'])
-    expect(reorderedBody.fields.modules.map((m: { id: string }) => m.id)).toEqual(['mod-b', 'mod-a'])
+    expect(reorderedBody.fields.modules.map((m: { id: string }) => m.id)).toEqual([
+      'mod-b',
+      'mod-a',
+    ])
+  })
+
+  it('M6: foreign field projections are byte-identical to the broad composition', async () => {
+    const revision = await importDatabase({
+      botPresets: [{ id: 'preset-a', name: 'Preset A', openAIKey: 'sk-preset-secret' }],
+      botPresetsId: 3,
+      currentPluginProvider: 'plugin-a',
+      enabledModules: ['mod-a'],
+      modules: [{ id: 'mod-a', name: 'Module A', description: '' }],
+      plugins: [{ id: 'plugin-a', name: 'Plugin A', enabled: true }],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          chats: [
+            {
+              id: 'chat-a',
+              message: [{ role: 'user', data: 'hello' }],
+              hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+            },
+          ],
+        },
+      ],
+    })
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const database = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
+      for (const resource of ['preset', 'plugin', 'moduleEnabled'] as const) {
+        const fieldKeys = resourceProjectionFields(resource)
+        expect(fieldKeys).not.toBeNull()
+        const expected = {
+          revision,
+          resource,
+          mode: 'fields',
+          fields: maskProviderSecrets(selectFields(database, fieldKeys!)),
+        }
+
+        const res = await getProjection(resource)
+        expect(res.statusCode).toBe(200)
+        expect(res.body).toBe(JSON.stringify(expected))
+      }
+    } finally {
+      db.close()
+    }
   })
 
   it('narrows script/trigger refreshes to the affected character or module table', async () => {
@@ -525,7 +592,10 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       method: 'PUT',
       url: '/api/v1/commands/characters/char-a/scripts',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: charRevision, scripts: [{ id: 's1', type: 'regex', in: 'a', out: 'b' }] },
+      payload: {
+        baseRevision: charRevision,
+        scripts: [{ id: 's1', type: 'regex', in: 'a', out: 'b' }],
+      },
     })
     expect(charScripts.statusCode).toBe(200)
     expect(charScripts.json().event.resource).toBe('scriptDefinition')
@@ -541,7 +611,10 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       method: 'PUT',
       url: '/api/v1/commands/modules/mod-a/scripts',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: moduleRevision, scripts: [{ id: 'ms1', type: 'regex', in: 'a', out: 'b' }] },
+      payload: {
+        baseRevision: moduleRevision,
+        scripts: [{ id: 'ms1', type: 'regex', in: 'a', out: 'b' }],
+      },
     })
     expect(moduleScripts.statusCode).toBe(200)
     expect(moduleScripts.json().event.resource).toBe('moduleScriptDefinition')
@@ -651,7 +724,12 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
           chatFolders: [],
           chatPage: 0,
         },
-        { chaId: 'char-b', name: 'Babbage', globalLore: [], chats: [{ id: 'chat-b', message: [] }] },
+        {
+          chaId: 'char-b',
+          name: 'Babbage',
+          globalLore: [],
+          chats: [{ id: 'chat-b', message: [] }],
+        },
       ],
       characterOrder: ['char-a', 'char-b'],
     })
@@ -888,7 +966,9 @@ describe('targeted projection field loader', () => {
         },
         assets: [],
       })
-      expect(loadPersistedDatabaseFields(db, harness.dataDir, ['botPresets', 'botPresetsId'])).toEqual({
+      expect(
+        loadPersistedDatabaseFields(db, harness.dataDir, ['botPresets', 'botPresetsId']),
+      ).toEqual({
         botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
         botPresetsId: 2,
       })
@@ -924,7 +1004,11 @@ describe('targeted projection field loader', () => {
         assets: [],
       })
       expect(
-        loadStubbedProjectionFields(db, harness.dataDir, ['characters', 'characterOrder', 'currentChar']),
+        loadStubbedProjectionFields(db, harness.dataDir, [
+          'characters',
+          'characterOrder',
+          'currentChar',
+        ]),
       ).toEqual({
         characters: [
           {
