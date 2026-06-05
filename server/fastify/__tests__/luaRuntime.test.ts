@@ -612,6 +612,91 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
     )
     expect((read.res as OpenAIChat[])[0].content).toBe('nil')
   })
+
+  it('L21: a fresh boot never overlaps an active run with a pending Lua continuation', async () => {
+    // Engine boots mutate the shared wasm module; booting while another engine
+    // sits in an in-flight `:await()` continuation crashes wasmoon. Run A
+    // suspends inside request():await(); run B uses a custom exec limit, so it
+    // can never be served from the pool and MUST fresh-boot — that boot has to
+    // wait until A drains.
+    await settleLuaEnginePool()
+
+    let resolveFetch!: (result: { status: number; data: string }) => void
+    let markFetchStarted!: () => void
+    const fetchInFlight = new Promise<void>((resolve) => {
+      markFetchStarted = resolve
+    })
+    const egress: EgressDeps = {
+      lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+      fetchImpl: () =>
+        new Promise((resolve) => {
+          markFetchStarted()
+          resolveFetch = resolve
+        }),
+    }
+    const a = makeRuntime({ egress, rateState: { count: 0, resetAt: 0 } })
+    const codeA = `
+      listenEdit('editRequest', function(id, data, meta)
+        request(id, 'https://example.test/slow'):await()
+        setChatVar(id, 'aDone', 'yes')
+        return data
+      end)
+    `
+    const settleOrder: string[] = []
+    const before = readLuaEngineAcquireStats()
+    const runA = runServerLua(
+      {
+        code: codeA,
+        mode: 'editRequest',
+        data: rows('a'),
+        lowLevelAccess: true,
+        execTimeoutMs: 60_000,
+      },
+      a.ctx,
+    ).then((result) => {
+      settleOrder.push('A')
+      return result
+    })
+    await fetchInFlight
+    const duringA = readLuaEngineAcquireStats()
+    expect(duringA.freshAcquires).toBe(before.freshAcquires + 1)
+
+    const b = makeRuntime()
+    const codeB = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = data[1].content .. ' [B]'
+        return data
+      end)
+    `
+    const runB = runServerLua(
+      { code: codeB, mode: 'editRequest', data: rows('b'), execTimeoutMs: 10_000 },
+      b.ctx,
+    ).then((result) => {
+      settleOrder.push('B')
+      return result
+    })
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    // While A holds a pending continuation, B's fresh boot is parked: no new
+    // engine boot occurred and B has not settled.
+    const whileSuspended = readLuaEngineAcquireStats()
+    expect(whileSuspended.engineBoots).toBe(duringA.engineBoots)
+    expect(whileSuspended.freshAcquires).toBe(duringA.freshAcquires)
+    expect(settleOrder).toEqual([])
+
+    resolveFetch({ status: 200, data: 'ok' })
+    const resultA = await runA
+    const resultB = await runB
+
+    // Strict ordering: A drained first, only then did B boot and run.
+    expect(settleOrder).toEqual(['A', 'B'])
+    expect(resultA.error).toBeUndefined()
+    expect(a.engine.getVar('aDone')).toBe('yes')
+    expect(resultB.error).toBeUndefined()
+    expect((resultB.res as OpenAIChat[])[0].content).toBe('b [B]')
+    const after = readLuaEngineAcquireStats()
+    expect(after.freshAcquires).toBe(duringA.freshAcquires + 1)
+  })
 })
 
 describe('server Lua runtime — runLuaEditTrigger entry', () => {

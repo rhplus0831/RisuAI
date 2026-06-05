@@ -1106,17 +1106,38 @@ interface PreparedLuaEngine {
  *  Lua state inside the shared wasm module. */
 const LUA_ENGINE_POOL_TARGET = 2
 const luaEnginePool: PreparedLuaEngine[] = []
-let luaEnginePoolFill: Promise<void> | null = null
+/** Pending while any engine boot is in flight — a background pool refill or a
+ *  run's fresh boot. Acquires await it before touching the pool, and no boot
+ *  starts while it is held, so boots never overlap each other or a starting
+ *  run. */
+let luaEngineBootGate: Promise<void> | null = null
 /**
  * Runs currently inside {@link runServerLua}. Engine boots mutate the shared
  * wasm module's function table; doing that while another engine has a pending
  * Lua continuation (an in-flight `:await()`) crashes wasmoon with "null
- * function or function signature mismatch". So the pool refills only from the
- * last run's `finally` (when nothing is in flight), and
- * {@link acquirePreparedEngine} awaits any refill still in progress before a
- * run starts.
+ * function or function signature mismatch". So *every* boot path — the
+ * background pool refill and a run's fresh boot alike — starts only while this
+ * is zero and holds {@link luaEngineBootGate} for its duration, and
+ * {@link acquirePreparedEngine} counts the run active in the same tick it
+ * claims an engine, leaving no window between acquire and run start.
  */
 let activeLuaRuns = 0
+/** Fresh-boot acquires parked until the active runs drain (see
+ *  {@link activeLuaRuns}); resolved by the last finishing run's `finally`. */
+let luaRunsDrainedWaiters: Array<() => void> = []
+
+function waitForLuaRunsDrained(): Promise<void> {
+  return new Promise((resolve) => {
+    luaRunsDrainedWaiters.push(resolve)
+  })
+}
+
+function notifyLuaRunsDrained(): void {
+  if (activeLuaRuns > 0 || luaRunsDrainedWaiters.length === 0) return
+  const waiters = luaRunsDrainedWaiters
+  luaRunsDrainedWaiters = []
+  for (const resolve of waiters) resolve()
+}
 
 /** Acquire counters (test seam): proves the hot path served from the pool
  *  without booting, while refills happen off-path. */
@@ -1136,9 +1157,9 @@ export function readLuaEngineAcquireStats(): LuaEngineAcquireStats {
   return { ...luaEngineStats }
 }
 
-/** Test seam: resolves once any in-flight pool refill settles. */
+/** Test seam: resolves once any in-flight boot (refill or fresh) settles. */
 export async function settleLuaEnginePool(): Promise<void> {
-  while (luaEnginePoolFill) await luaEnginePoolFill
+  while (luaEngineBootGate) await luaEngineBootGate
 }
 
 /** Boot an engine, declare the host-fn surface (state unbound), and pre-run
@@ -1165,8 +1186,8 @@ async function createPreparedEngine(functionTimeoutMs: number): Promise<Prepared
  *  {@link activeLuaRuns}); the last finishing run kicks it again. */
 function refillLuaEnginePoolWhenIdle(): void {
   if (activeLuaRuns > 0) return
-  if (luaEnginePoolFill || luaEnginePool.length >= LUA_ENGINE_POOL_TARGET) return
-  luaEnginePoolFill = (async () => {
+  if (luaEngineBootGate || luaEnginePool.length >= LUA_ENGINE_POOL_TARGET) return
+  luaEngineBootGate = (async () => {
     try {
       while (luaEnginePool.length < LUA_ENGINE_POOL_TARGET) {
         luaEnginePool.push(await createPreparedEngine(DEFAULT_EXEC_TIMEOUT_MS))
@@ -1175,30 +1196,64 @@ function refillLuaEnginePoolWhenIdle(): void {
       // Transient boot failure: the next acquire simply falls back to a
       // fresh inline boot, exactly the pre-pool behavior.
     } finally {
-      luaEnginePoolFill = null
+      luaEngineBootGate = null
     }
   })()
 }
 
 /**
- * Pop a pre-warmed engine when the run uses the default exec limit (pool
+ * Acquire an engine for one run, counting the run active before returning.
+ *
+ * Pops a pre-warmed engine when the run uses the default exec limit (pool
  * engines are created with the default `functionTimeout`, which is fixed at
  * engine creation); any custom/budget-tightened limit boots fresh with that
- * limit, exactly the pre-pool behavior. An in-flight refill is awaited first —
- * a brief, bounded wait that keeps engine boots from overlapping the run's
- * Lua execution (see {@link activeLuaRuns}).
+ * limit, exactly the pre-pool behavior. Every path serializes against engine
+ * boots: an in-flight boot (refill or another run's fresh boot) is awaited
+ * before the pool is touched, and a fresh boot of our own waits for all
+ * active runs to drain and then holds the boot gate itself — a boot must
+ * never overlap a run's pending Lua continuation (see {@link activeLuaRuns}).
  */
 async function acquirePreparedEngine(execTimeoutMs: number): Promise<PreparedLuaEngine> {
-  while (luaEnginePoolFill) await luaEnginePoolFill
-  if (execTimeoutMs === DEFAULT_EXEC_TIMEOUT_MS) {
-    const pooled = luaEnginePool.shift()
-    if (pooled) {
-      luaEngineStats.pooledAcquires++
-      return pooled
+  for (;;) {
+    if (luaEngineBootGate) {
+      await luaEngineBootGate
+      continue
+    }
+    if (execTimeoutMs === DEFAULT_EXEC_TIMEOUT_MS) {
+      const pooled = luaEnginePool.shift()
+      if (pooled) {
+        luaEngineStats.pooledAcquires++
+        // Claimed in the same tick as the gate check above: the run is
+        // counted active before any boot path can re-inspect the world.
+        activeLuaRuns++
+        return pooled
+      }
+    }
+    // A fresh boot is needed (empty pool or custom limit). Park until nothing
+    // is mid-run, then re-evaluate from the top — a refill or another acquire
+    // may have moved first while we waited.
+    if (activeLuaRuns > 0) {
+      await waitForLuaRunsDrained()
+      continue
+    }
+    // Sole booter: hold the gate so no new run starts (and no refill begins)
+    // while this engine boots.
+    let releaseBootGate!: () => void
+    luaEngineBootGate = new Promise((resolve) => {
+      releaseBootGate = resolve
+    })
+    try {
+      luaEngineStats.freshAcquires++
+      const prepared = await createPreparedEngine(execTimeoutMs)
+      // Counted active before the gate lifts, so a parked fresh-booter
+      // re-parks behind this run instead of booting alongside it.
+      activeLuaRuns++
+      return prepared
+    } finally {
+      luaEngineBootGate = null
+      releaseBootGate()
     }
   }
-  luaEngineStats.freshAcquires++
-  return createPreparedEngine(execTimeoutMs)
 }
 
 // Bounded load.
@@ -1298,9 +1353,10 @@ export async function runServerLua(
     sleptMs: 0,
   }
 
+  // The acquire itself counts this run active (so engine boots can never
+  // interleave between acquire and run start); the finally below releases it.
   const prepared = await acquirePreparedEngine(effectiveTimeoutMs)
   const engine = prepared.engine
-  activeLuaRuns++
 
   const result: ServerLuaResult = {
     stopSending: false,
@@ -1396,8 +1452,10 @@ export async function runServerLua(
     // preserves per-call isolation (L21).
     engine.global.close()
     activeLuaRuns--
-    // Replace what this run consumed — off the hot path, and only once no
-    // other run is mid-flight.
+    // Wake any fresh-boot acquire parked on the drain (it re-checks the gate
+    // and the run count before booting), then replace what this run consumed —
+    // off the hot path, and only once no other run is mid-flight.
+    notifyLuaRunsDrained()
     refillLuaEnginePoolWhenIdle()
   }
 }

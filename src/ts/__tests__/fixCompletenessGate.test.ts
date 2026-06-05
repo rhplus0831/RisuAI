@@ -400,6 +400,11 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
         testName:
           'L21: pooled engines never leak Lua globals between runs (per-call isolation preserved)',
       },
+      {
+        testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
+        testName:
+          'L21: a fresh boot never overlaps an active run with a pending Lua continuation',
+      },
     ],
   },
   {
