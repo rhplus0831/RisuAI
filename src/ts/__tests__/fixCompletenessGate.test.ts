@@ -574,6 +574,17 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     status: 'DONE',
     testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
     testName: 'L37: command processing logs nothing to console.log on the warm path',
+    extraTests: [
+      {
+        testPath: 'src/ts/storage/database.importPreset.test.ts',
+        testName: 'L37: a .risupreset binary import logs nothing to console.log',
+      },
+      {
+        testPath: 'src/ts/storage/database.importPreset.test.ts',
+        testName:
+          'L37: an ST/json preset import logs nothing to console.log, unknown and missing prompts included',
+      },
+    ],
   },
   {
     id: 'L38',

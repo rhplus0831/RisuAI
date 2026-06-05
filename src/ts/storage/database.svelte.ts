@@ -2709,7 +2709,6 @@ export async function importPreset(
       data = await decodeRPack(data)
     }
     const decoded = await decodeMsgpack(fflate.decompressSync(data))
-    console.log(decoded)
     if ((decoded.presetVersion === 0 || decoded.presetVersion === 2) && decoded.type === 'preset') {
       pre = {
         ...presetTemplate,
@@ -2720,7 +2719,6 @@ export async function importPreset(
     }
   } else {
     pre = { ...presetTemplate, ...JSON.parse(Buffer.from(f.data).toString('utf-8')) }
-    console.log(pre)
   }
   let db = DBState.db
   if (pre.presetVersion && pre.presetVersion >= 3) {
@@ -2821,7 +2819,6 @@ export async function importPreset(
             break
           }
           default: {
-            console.log(p)
             pr.promptTemplate.push({
               type: 'plain',
               type2: 'normal',
@@ -2830,8 +2827,6 @@ export async function importPreset(
             })
           }
         }
-      } else {
-        console.log('Prompt not found', prompt)
       }
     }
     if (pre?.assistant_prefill) {
