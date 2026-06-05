@@ -48,6 +48,10 @@ Vite proxies `/api` to `RISU_API_PROXY_TARGET` or `http://localhost:6002`.
 Fastify defaults to `0.0.0.0:6002`. Vite dev changes only how the SPA bundle is
 served; `src/ts/platform.ts` still makes the browser Fastify-backed.
 
+Fastify also sets explicit runtime safety bounds: a 600s request-receive
+timeout, shared SSE/raw backpressure caps, and abort helpers for generation and
+proxy request lifetimes.
+
 To serve a built SPA through Fastify:
 
 ```sh

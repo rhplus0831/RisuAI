@@ -11,7 +11,7 @@ Hypa V3 memory, imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/index.ts`      | Loads config, calls `buildApp()`, listens on host/port.                                                                                                                                                     |
 | `server/fastify/src/app.ts`        | Composition root: Fastify plugins, content parsers, SQLite open/migrations, legacy import, auth, active-writer guard, routes, workers, timers, optional static SPA.                                         |
 | `server/fastify/src/config.ts`     | `RISU_API_HOST`, `RISU_API_PORT`, `RISU_API_DATA_DIR`, body/import limits, `TRUST_PROXY`, static root, hub/Realm URLs.                                                                                      |
-| `server/fastify/src/db.ts`         | SQLite schema v14, migrations, schema version, domain revision, memory/message/event table setup.                                                                                                           |
+| `server/fastify/src/db.ts`         | SQLite schema v15, migrations, schema version, domain revision, memory/message/event/finalization retry tables.                                                                                             |
 | `server/fastify/src/repository.ts` | Current domain repository over SQLite table families; imports legacy `db.json` into SQLite and renames it to `db.json.migrated`; owns asset metadata, backups/restores, projections, import/export helpers. |
 
 `buildApp()` is test-friendly. `BuildAppOptions` can inject generation behavior,
@@ -31,6 +31,8 @@ memory worker behavior, command/memory event sinks, and asset-GC behavior.
   jobs, durable chat generation jobs.
 - Timers: stream/generation job GC, durable generation finalization retry sweep,
   periodic asset GC.
+- Runtime bounds: 600s request-receive timeout, bounded SSE/raw write buffers,
+  and request-abort helpers for generation/proxy flows.
 - The active-writer `preHandler`, registered after bootstrap/auth and before
   server-owned mutation routes.
 - `onClose` cleanup for memory worker, timers, job registries, and SQLite.
@@ -71,6 +73,8 @@ The current domain store is SQLite, not live `data/db.json`.
   reroll alternates are alternate rows in `messages`.
 - Memory jobs/chunks/summaries/embeddings and command-event replay history are
   also SQLite tables.
+- Durable-generation finalization retry rows live in SQLite and are swept by
+  `generationFinalizationRetry.ts` / `generationChat.ts`.
 
 Command mutations go through helpers in `server/fastify/src/commands/mutations.ts`:
 
@@ -89,7 +93,7 @@ server-owned default state and does not accept a browser-provided database.
 The live chat path is server-owned:
 
 1. Browser `sendChat` preflights with `resolveServerPromptAssembly()` and the
-   shared `resolveProviderCapability()` table in `src/ts/process/request/`.
+   shared provider-capability table in `src/ts/process/request/`.
 2. Supported sends POST raw inputs to `/api/v1/generate/chat`; unsupported shapes
    hard-fail instead of falling back to browser-local assembly.
 3. `server/fastify/src/prompt/assemble.ts` builds the prompt, runs non-interactive

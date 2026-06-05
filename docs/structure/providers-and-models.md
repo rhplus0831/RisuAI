@@ -37,15 +37,15 @@ sentinels back to current stored secrets.
 
 ## Capability Table
 
-`src/ts/process/request/providerCapability.ts` is shared by browser and server
-paths. It returns:
+`src/ts/process/request/providerCapability.ts` is the shared pure provider
+routing decision table. Given resolved model metadata and the narrow config it
+needs, it returns either a server provider name (`routable: true`) or a stable
+unsupported reason category.
 
-- `server`: supported by Fastify assembly/dispatch.
-- `local`: retained legacy/test arm, not selected by the live Fastify runtime.
-- `unsupported`: hard-failed in Fastify mode.
-
-Do not fork this table in server-only code. It keeps browser preflight,
-`/api/v1/generate/chat`, and `/api/v1/generate/completion` aligned.
+Do not fork this table in server-only code. Browser preflight and Fastify route
+handlers map its verdict into chat/completion-specific `server` or
+`unsupported` behavior so `/api/v1/generate/chat` and
+`/api/v1/generate/completion` stay aligned.
 
 ## Chat Generation Vs Completion
 

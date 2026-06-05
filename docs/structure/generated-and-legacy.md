@@ -5,21 +5,21 @@ generated, local-only, historical, or intentionally no-port.
 
 ## Do Not Hand-Edit As Source
 
-| Path                                            | Why                                                                                                                                    |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `dist/`                                         | Vite build output. Regenerate with `pnpm build` or `pnpm buildsite`.                                                                   |
-| `node_modules/`, `server/fastify/node_modules/` | Installed dependencies.                                                                                                                |
-| `test-results/`                                 | Playwright/test output.                                                                                                                |
-| `*.tsbuildinfo`                                 | TypeScript incremental build artifacts, including `tsconfig.client-lib.tsbuildinfo`.                                                   |
-| `data/`                                         | Local runtime state: `risu.db`, asset bytes, backups, auth files, legacy `db.json` import artifacts. Useful for debugging, not source. |
-| `scripts/` when present                         | Ignored local scratch/tooling directory.                                                                                               |
-| `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                            |
-| `public/assets/`                                | Bundled Bergamot/browser translator workers. Only touch when intentionally updating vendor assets.                                     |
-| `public/plugin_start.7z`                        | Packaged starter plugin archive.                                                                                                       |
-| `src/ts/rpack/`                                 | Vendored rpack implementation; excluded from Prettier.                                                                                 |
-| `src/ts/process/__fixtures__/expected/`         | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`.                                                                |
-| `src/ts/process/__fixtures__/upstream/`         | Upstream fixture corpus for request/provider tests.                                                                                    |
-| `*.snap` under test fixtures                    | Vitest snapshots; update through the relevant test workflow.                                                                           |
+| Path                                            | Why                                                                                                                                            |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dist/`                                         | Vite build output. Regenerate with `pnpm build` or `pnpm buildsite`.                                                                           |
+| `node_modules/`, `server/fastify/node_modules/` | Installed dependencies.                                                                                                                        |
+| `test-results/`                                 | Playwright/test output.                                                                                                                        |
+| `*.tsbuildinfo`                                 | TypeScript incremental build artifacts, including `tsconfig.client-lib.tsbuildinfo`.                                                           |
+| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth, optional `data/dev`, legacy import artifacts. Useful for debugging, not source. |
+| `scripts/` when present                         | Ignored local scratch/tooling directory.                                                                                                       |
+| `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                    |
+| `public/assets/`                                | Bundled Bergamot/browser translator workers. Only touch when intentionally updating vendor assets.                                             |
+| `public/plugin_start.7z`                        | Packaged starter plugin archive.                                                                                                               |
+| `src/ts/rpack/`                                 | Vendored rpack implementation; excluded from Prettier.                                                                                         |
+| `src/ts/process/__fixtures__/expected/`         | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`.                                                                        |
+| `src/ts/process/__fixtures__/upstream/`         | Upstream fixture corpus for request/provider tests.                                                                                            |
+| `*.snap` under test fixtures                    | Vitest snapshots; update through the relevant test workflow.                                                                                   |
 
 `docs/archive/fastify/other/coverage/*.md` and other archive files are source
 documentation, but they are historical. Prefer `STRUCTURE.md` and
@@ -82,8 +82,9 @@ state is not written back to live `db.json`.
   the mobile branch in `src/App.svelte`.
 - `src/lib/UI/3DLoader.svelte` and `src/ts/3d/threeload.ts` are legacy and not
   imported by the current app shell.
-- `src/lib/UI/NewGUI/` and `src/ts/sync/` are empty or stale-looking directories;
-  do not infer active UI/sync support from their presence.
+- Old worktrees may contain `src/lib/UI/NewGUI/` or `src/ts/sync/`; both are
+  absent from the current tree and should not be reintroduced as active UI/sync
+  surfaces without a new plan.
 - `src/lib/Others/WelcomeRisu.svelte` exists, but the current shell no longer
   imports it.
 

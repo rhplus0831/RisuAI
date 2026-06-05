@@ -17,6 +17,8 @@ through command helpers or explicit server-owned mutation routes.
   are handed to reattach logic, hydration starts, and events subscribe.
 - Full recovery uses `fetchServerBootstrapProjectionReadOnly()` so passive
   resync does not steal writer ownership from another browser session.
+- Running durable generation jobs arrive in bootstrap as `activeGenerationJobs`
+  and are handed to `src/ts/process/reattach.ts`.
 
 Important files:
 
@@ -38,7 +40,9 @@ events serially:
 - `character.selected` uses the narrow `characterSelection` resource.
 - Gaps, replay-unavailable responses, projection failures, unknown resources, or
   server-requested full mode fall back to read-only full bootstrap.
-- Memory events bypass projection refresh and update Hypa V3 job/progress UI.
+- Memory events bypass projection refresh and update Hypa V3 job/progress UI
+  through `memoryJobEvents.ts`; `memoryJobRefresh.ts` polls active jobs for the
+  modal when needed.
 
 Server replay is backed by SQLite `command_events` and retained for
 `COMMAND_EVENT_HISTORY_LIMIT` revisions. Memory events are live progress
@@ -83,13 +87,14 @@ as commands.
 
 Bridge files:
 
-| File                               | Role                                                                          |
-| ---------------------------------- | ----------------------------------------------------------------------------- |
-| `settingsBridge.svelte.ts`         | Debounced settings groups, equality-noop suppression, rollback-aware patches. |
-| `characterBridge.svelte.ts`        | Character profile and compatible-character command bridging.                  |
-| `chatBridge.svelte.ts`             | Chat metadata and chat-folder command bridging.                               |
-| `lorebookBridge.svelte.ts`         | Global/character/chat/module lorebook replacement, hydrated-lorebook guards.  |
-| `scriptDefinitionBridge.svelte.ts` | Character/module script and trigger replacement commands.                     |
+| File                               | Role                                                                            |
+| ---------------------------------- | ------------------------------------------------------------------------------- |
+| `settingsBridge.svelte.ts`         | Debounced settings groups, equality-noop suppression, rollback-aware patches.   |
+| `characterBridge.svelte.ts`        | Character profile and compatible-character command bridging.                    |
+| `chatBridge.svelte.ts`             | Chat metadata and chat-folder command bridging.                                 |
+| `lorebookBridge.svelte.ts`         | Global/character/chat/module lorebook replacement, hydrated-lorebook guards.    |
+| `promptTemplateBridge.svelte.ts`   | Prompt-template optimistic writes, rollback, and revision-gated reconciliation. |
+| `scriptDefinitionBridge.svelte.ts` | Character/module script and trigger replacement commands.                       |
 
 Common ideas, not a single mandatory implementation pattern:
 

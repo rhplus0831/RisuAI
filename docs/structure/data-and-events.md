@@ -6,14 +6,14 @@ needs persistence.
 
 ## Persistence Split
 
-| Store            | Path                                                     | Contents                                                                                                                                                                                                                                                                                     |
-| ---------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite           | `data/risu.db`                                           | `schema_version` with current domain revision; settings; characters/chats; collection tables; plugin storage; asset metadata; chat messages and reroll alternates; per-chat `hypaV3Data`; Hypa V3 memory tables/jobs; command-event replay history; durable generation finalization retries. |
-| Asset bytes      | `data/assets/<sha256>.<ext>`                             | Content-addressed bytes for images, audio, video, fonts, CSS, ONNX, inlay signatures, and other supported asset types. Metadata is in SQLite `assets`.                                                                                                                                       |
-| Backups          | `data/backups/<id>/`                                     | Snapshot `risu.db`, `assets/`, `save/`, and `manifest.json`. Older backups may carry `db.json`; restore imports it for compatibility.                                                                                                                                                        |
-| Legacy `db.json` | `data/db.json`                                           | Not current storage. On boot, `ensureDbJsonImported()` imports a legacy file into SQLite and renames it to `db.json.migrated`.                                                                                                                                                               |
-| Legacy storage   | `data/save/<hex-key>`                                    | Compatibility byte store for active `/api/v1/storage/*` routes. Writes/removes are active-writer guarded but do not bump the domain revision.                                                                                                                                                |
-| Auth files       | `data/__password`, `data/__known_public_key_hashes.json` | Single-user password data and registered browser public-key hashes.                                                                                                                                                                                                                          |
+| Store            | Path                                                     | Contents                                                                                                                                                                                                                                |
+| ---------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQLite           | `data/risu.db`                                           | `schema_version` with current domain revision; settings; characters/chats; collection tables; plugin storage; asset metadata; chat messages/rerolls; memory tables/jobs; command-event replay; durable generation finalization retries. |
+| Asset bytes      | `data/assets/<sha256>.<ext>`                             | Content-addressed bytes for images, audio, video, fonts, CSS, ONNX, inlay signatures, and other supported asset types. Metadata is in SQLite `assets`.                                                                                  |
+| Backups          | `data/backups/<id>/`                                     | Snapshot `risu.db`, `manifest.json`, and `assets/` plus legacy `save/` when those directories exist. Older backups may carry `db.json`; restore imports it for compatibility.                                                           |
+| Legacy `db.json` | `data/db.json`                                           | Not current storage. On boot, `ensureDbJsonImported()` imports a legacy file into SQLite and renames it to `db.json.migrated`.                                                                                                          |
+| Legacy storage   | `data/save/<hex-key>`                                    | Compatibility byte store for active `/api/v1/storage/*` routes. Writes/removes are active-writer guarded but do not bump the domain revision.                                                                                           |
+| Auth files       | `data/__password`, `data/__known_public_key_hashes.json` | Single-user password data and registered browser public-key hashes.                                                                                                                                                                     |
 
 Primary boundaries:
 
@@ -22,6 +22,8 @@ Primary boundaries:
 - `server/fastify/src/repository.ts` loads/writes SQLite-backed domain state,
   handles legacy `db.json` import, asset metadata, projections, import/export,
   and backup/restore.
+- Collection tables include bot presets, prompt templates, personas, loadouts,
+  lorebooks, modules, plugins, translator presets, and Hypa V3 presets.
 - `server/fastify/src/messageStore.ts` owns `messages`, `chat_hypa_v3`, and
   reroll alternates.
 - `server/fastify/src/commands/mutations.ts` owns revision-checked command

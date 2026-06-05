@@ -20,19 +20,21 @@ SvelteKit-style `src/routes/`; navigation is store/render-switch driven.
 
 ## Directory Guide
 
-| Path                   | Purpose                                                              |
-| ---------------------- | -------------------------------------------------------------------- |
-| `src/lib/ChatScreens/` | Chat rendering and interaction components.                           |
-| `src/lib/SideBars/`    | Sidebar, character config, chat list, lorebook, scripts, navigation. |
-| `src/lib/Setting/`     | Settings pages, model/module/plugin settings, wrapper controls.      |
-| `src/lib/Mobile/`      | Mobile shell components.                                             |
-| `src/lib/LiteUI/`      | Unwired lite shell support components.                               |
-| `src/lib/Playground/`  | Parser/tokenizer/MCP/image/translation/tooling playgrounds.          |
-| `src/lib/UI/`          | Shared UI primitives, GUI controls, model pickers, Realm UI.         |
-| `src/lib/Others/`      | Modals, alerts, editor, loadout, Hypa V3, popup/misc pieces.         |
-| `src/lang/`            | Localization data.                                                   |
-| `src/etc/`             | Bundled docs/media/tokenizer seed data imported by the client.       |
-| `src/styles.css`       | Global Tailwind v4 import, theme variables, app CSS.                 |
+| Path                                   | Purpose                                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------- |
+| `src/lib/ChatScreens/`                 | Chat rendering and interaction components.                                    |
+| `src/lib/SideBars/`                    | Sidebar, character config, chat list, lorebook, scripts, navigation.          |
+| `src/lib/Setting/`                     | Settings pages, model/module/plugin settings, wrappers, field layout helpers. |
+| `src/lib/Setting/Pages/`               | Concrete pages: model, module, prompt, display, language, advanced.           |
+| `src/lib/Mobile/`                      | Mobile shell components.                                                      |
+| `src/lib/LiteUI/`                      | Unwired lite shell support components.                                        |
+| `src/lib/Playground/`                  | Parser/tokenizer/MCP/image/translation/tooling playgrounds.                   |
+| `src/lib/UI/`                          | Shared UI primitives, GUI controls, model pickers, Realm UI.                  |
+| `src/lib/UI/GUI/`, `src/lib/UI/Realm/` | Dense GUI primitives and Realm-specific UI.                                   |
+| `src/lib/Others/`                      | Modals, alerts, editor, loadout, Hypa V3, popup/misc pieces.                  |
+| `src/lang/`                            | Localization data.                                                            |
+| `src/etc/`                             | Bundled docs/media/tokenizer seed data imported by the client.                |
+| `src/styles.css`                       | Global Tailwind v4 import, theme variables, app CSS.                          |
 
 Useful `src/ts` areas:
 
@@ -100,6 +102,7 @@ Bridge files convert UI-local edits to commands:
 - `characterBridge.svelte.ts`
 - `chatBridge.svelte.ts`
 - `lorebookBridge.svelte.ts`
+- `promptTemplateBridge.svelte.ts`
 - `scriptDefinitionBridge.svelte.ts`
 
 Some bridge helpers perform trusted optimistic writes and roll back on command
@@ -112,8 +115,9 @@ when needed.
 `sendChat` in `src/ts/process/index.svelte.ts` is the browser coordinator.
 Fastify mode uses server prompt assembly and server provider dispatch:
 
-1. `resolveServerPromptAssembly()` plus `resolveProviderCapability()` decides
-   `server` or `unsupported`.
+1. `resolveServerPromptAssembly()` plus the shared provider-capability table
+   feed the preflight wrapper; live Fastify outcomes are `server` or
+   `unsupported`.
 2. `src/ts/process/serverBackedSendChat.ts` builds the server request, maps
    legacy inlay ids to server asset refs, calls the `/chat` or preview route,
    applies server message patches, collects prompt/token/info data, and exposes

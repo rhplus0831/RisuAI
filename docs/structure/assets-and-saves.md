@@ -91,9 +91,10 @@ progress and terminal status frames.
 | `server/fastify/src/repository.ts`     | Snapshot creation, manifest writing, SQLite table restore, file swaps. |
 | `src/ts/server/backups.ts`             | Browser adapter for backup routes.                                     |
 
-Backups live under `data/backups/<id>/` and currently snapshot `risu.db`,
-`assets/`, `save/`, and `manifest.json`. Create, restore, and delete are
-authenticated and active-writer guarded; list is authenticated read-only.
+Backups live under `data/backups/<id>/` and snapshot `risu.db`,
+`manifest.json`, `assets/` when present, and optional legacy `save/`. Create,
+restore, and delete are authenticated and active-writer guarded; list is
+authenticated read-only.
 
 Restore swaps asset/save directories and restores the SQLite tables listed in
 `SQLITE_BACKUP_TABLES` via `ATTACH`, then emits `state.restored`. Older backups
