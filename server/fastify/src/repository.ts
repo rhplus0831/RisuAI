@@ -195,6 +195,12 @@ function loadSettingsFromSqlite(db: DatabaseSync): Record<string, unknown> | nul
   return isRecord(parsed) ? parsed : null
 }
 
+export function loadServerIntentCompletionSettings(
+  db: DatabaseSync,
+): Record<string, unknown> | null {
+  return loadSettingsFromSqlite(db)
+}
+
 export function extractSettings(database: Record<string, unknown>): Record<string, unknown> {
   const settings: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(database)) {

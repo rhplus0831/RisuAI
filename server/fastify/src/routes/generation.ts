@@ -38,7 +38,7 @@ import { resolveOllamaRequest, runOllama, runOllamaStream } from '../generation/
 import { resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import { requireAuth } from '../http.js'
 import type { DatabaseSync } from 'node:sqlite'
-import { loadPersisted } from '../repository.js'
+import { loadServerIntentCompletionSettings } from '../repository.js'
 import { dispatchChatProvider } from '../prompt/chatDispatch.js'
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
 import { attachAbort } from '../requestAbort.js'
@@ -347,6 +347,10 @@ function buildCompletionDatabase(db: Database, body: CompletionRequestBody): Dat
     ] as Database['characters']
   }
   return next
+}
+
+function settingsToCompletionDatabase(settings: Record<string, unknown>): Database {
+  return settings as unknown as Database
 }
 
 function badRequest(reply: FastifyReply, error: string): void {
@@ -1217,7 +1221,6 @@ async function handleServerIntentCompletion(
   reply: FastifyReply,
   body: CompletionRequestBody,
   db: DatabaseSync,
-  dataDir: string,
 ): Promise<void> {
   if (body.provider !== undefined || body.model !== undefined || body.options !== undefined) {
     return badRequest(
@@ -1251,14 +1254,14 @@ async function handleServerIntentCompletion(
     return badRequest(reply, 'currentCharName must be a string when provided')
   }
 
-  const persisted = loadPersisted(db, dataDir)
-  if (!persisted.database) {
+  const settings = loadServerIntentCompletionSettings(db)
+  if (settings === null) {
     return badRequest(reply, 'database is not initialized')
   }
 
   const { signal, cleanup } = attachAbort(req)
   try {
-    const database = buildCompletionDatabase(persisted.database as Database, body)
+    const database = buildCompletionDatabase(settingsToCompletionDatabase(settings), body)
     const frames = await dispatchChatProvider({
       database,
       formated: messages as OpenAIChat[],
@@ -1295,7 +1298,7 @@ export function registerGenerationRoutes(
 
       const body = (req.body ?? {}) as CompletionRequestBody
       if (body.kind === SERVER_INTENT_KIND) {
-        await handleServerIntentCompletion(req, reply, body, db, dataDir)
+        await handleServerIntentCompletion(req, reply, body, db)
         return
       }
 

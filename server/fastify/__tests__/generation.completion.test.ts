@@ -260,6 +260,179 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     expect(res.json()).toEqual({ type: 'success', result: 'server-owned pong' })
   })
 
+  it('server-intent completion preserves the uninitialized database response', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        kind: 'server-intent',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'database is not initialized' })
+  })
+
+  it('server-intent completion preserves model-mode selection and provider payload options', async () => {
+    writeDatabase({
+      aiModel: 'gpt4o',
+      subModel: 'gpt4om',
+      openAIKey: 'sk-server-owned',
+      seperateModelsForAxModels: true,
+      seperateModels: {
+        memory: 'gpt41',
+        emotion: 'gpt41-mini',
+        otherAx: 'gpt41-nano',
+        translate: 'gpt-5-mini',
+      },
+    })
+    const sentBodies: Array<Record<string, unknown>> = []
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      sentBodies.push(JSON.parse(init.body as string))
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'server mode ok' } }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const modes = [
+      ['model', 'gpt4o'],
+      ['submodel', 'gpt4om'],
+      ['memory', 'gpt41'],
+      ['emotion', 'gpt41-mini'],
+      ['otherAx', 'gpt41-nano'],
+      ['translate', 'gpt-5-mini'],
+    ] as const
+    for (const [mode] of modes) {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/completion',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          kind: 'server-intent',
+          messages: [{ role: 'user', content: `hi ${mode}` }],
+          stream: false,
+          mode,
+          maxTokens: 321,
+          temperature: 0.42,
+        },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ type: 'success', result: 'server mode ok' })
+    }
+
+    expect(sentBodies).toHaveLength(modes.length)
+    expect(sentBodies.map((body) => body.model)).toEqual(modes.map(([, model]) => model))
+    for (const body of sentBodies) {
+      expect(body.stream).toBe(false)
+      expect(body.max_tokens).toBe(321)
+      expect(body.temperature).toBe(0.42)
+    }
+  })
+
+  it('server-intent completion preserves staticModel and streaming response bytes', async () => {
+    writeDatabase({
+      aiModel: 'gpt4o',
+      openAIKey: 'sk-server-owned',
+    })
+    let sent: Record<string, unknown> | null = null
+    const enc = new TextEncoder()
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(init.body as string)
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            enc.encode(
+              `data: ${JSON.stringify({ choices: [{ delta: { content: 'streamed' } }] })}\n\n`,
+            ),
+          )
+          controller.enqueue(enc.encode('data: [DONE]\n\n'))
+          controller.close()
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        kind: 'server-intent',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+        staticModel: 'gpt4om',
+        maxTokens: 11,
+        temperature: 0.25,
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('text/event-stream')
+    expect(res.body).toBe(
+      `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'streamed' })}\n\n` +
+        `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
+    )
+    expect(sent).toMatchObject({
+      model: 'gpt4om',
+      stream: true,
+      max_tokens: 11,
+      temperature: 0.25,
+    })
+  })
+
+  it('server-intent completion synthesizes the current character name for horde cleanup', async () => {
+    writeDatabase({
+      aiModel: 'horde:::auto',
+      hordeConfig: { apiKey: 'hk-server-owned' },
+      instructChatTemplate: 'gpt2',
+      maxContext: 100,
+      maxResponse: 20,
+      username: 'User',
+    })
+    globalThis.fetch = (async (url: string) => {
+      const asString = String(url)
+      if (asString.endsWith('/generate/text/async')) {
+        return new Response(JSON.stringify({ id: 'horde-job' }), {
+          status: 202,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          done: true,
+          generations: [{ text: 'clean result\nGuide: trailing role text' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        kind: 'server-intent',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        currentCharName: 'Guide',
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ type: 'success', result: 'clean result' })
+  })
+
   it('server-intent completion rejects provider wire fields', async () => {
     writeDatabase({})
     const { assertion } = await setupAuthedClient(harness.app)

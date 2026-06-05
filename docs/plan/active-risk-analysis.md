@@ -80,7 +80,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | --- | ------------------------------------------------ | ----------------------------------------------------------------- | ------- |
 | L1  | [8](phases/phase-8-server-bounds.md)             | Configurable/sliding durable deadline (pair with the non-durable twin). | PENDING |
 | L2  | [8](phases/phase-8-server-bounds.md)             | Delete/TTL terminal finalization-retry rows.                      | PENDING |
-| L3  | [2](phases/phase-2-server-corpus-ring-2.md)      | Settings-only loader for server-intent completion.                | PENDING |
+| L3  | [2](phases/phase-2-server-corpus-ring-2.md)      | Settings-only loader for server-intent completion.                | DONE    |
 | L4  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Persist lorebook sticky-activation chat-var writes.               | PENDING |
 | L5  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Hoist per-message normalization out of `searchMatch`.             | PENDING |
 | L6  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Memoize trigger/effect regexes; hoist transcript joins.           | PENDING |

@@ -236,7 +236,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('M22', 7, 'Remove the `.po` 100-line test cap.'),
   planned('L1', 8, 'Configurable/sliding durable deadline (pair with the non-durable twin).'),
   planned('L2', 8, 'Delete/TTL terminal finalization-retry rows.'),
-  planned('L3', 2, 'Settings-only loader for server-intent completion.'),
+  done(
+    'L3',
+    2,
+    'Settings-only loader for server-intent completion.',
+    'server/fastify/__tests__/generation.completion.test.ts',
+    'server-intent completion preserves model-mode selection and provider payload options',
+    [
+      {
+        testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+        testName: 'L3: server-intent completion performs zero loadPersisted-shaped corpus reads',
+      },
+      {
+        testPath: 'server/fastify/__tests__/generation.completion.test.ts',
+        testName: 'server-intent completion preserves staticModel and streaming response bytes',
+      },
+    ],
+  ),
   planned('L4', 3, 'Persist lorebook sticky-activation chat-var writes.'),
   planned('L5', 3, 'Hoist per-message normalization out of `searchMatch`.'),
   planned('L6', 3, 'Memoize trigger/effect regexes; hoist transcript joins.'),
@@ -1048,7 +1064,15 @@ describe('v2 fix-completeness gate routing registry', () => {
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
 
     const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
-    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'H2', 'H3', 'M5', 'M6', 'L16'])
+    expect(doneEntries.map((entry) => entry.id)).toEqual([
+      'H1',
+      'H2',
+      'H3',
+      'M5',
+      'M6',
+      'L3',
+      'L16',
+    ])
     expect(doneEntries.every(hasProofFields)).toBe(true)
   })
 

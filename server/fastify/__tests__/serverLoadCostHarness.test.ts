@@ -910,6 +910,43 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
+  it('L3: server-intent completion performs zero loadPersisted-shaped corpus reads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase({
+      ...fixture.database,
+      aiModel: 'echo_model',
+      subModel: 'echo_model',
+      echoMessage: 'settings-sized pong',
+      echoDelay: 0,
+      maxResponse: 50,
+      temperature: 50,
+    })
+
+    const {
+      result: res,
+      corpusLoadCount,
+      loadCountByTable,
+    } = await withServerLoadInstrumentation(() =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/completion',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          kind: 'server-intent',
+          messages: [{ role: 'user', content: 'hi' }],
+          stream: false,
+          mode: 'model',
+        },
+      }),
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ type: 'success', result: 'settings-sized pong' })
+    expect(corpusLoadCount).toBe(0)
+    expect(loadCountByTable.characters ?? 0).toBe(0)
+    expect(loadCountByTable.chats ?? 0).toBe(0)
+  })
+
   it('M4: bootstrap in-place masking matches the copying mask byte-for-byte', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({ ...fixture.database, openAIKey: 'sk-bootstrap-secret' })
