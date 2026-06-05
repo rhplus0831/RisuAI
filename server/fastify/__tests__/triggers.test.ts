@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type {
   Chat,
   Database,
@@ -9,6 +9,7 @@ import type { triggerCondition, triggerscript } from '../../../src/ts/process/tr
 import { getModuleTriggers } from '../src/prompt/modules.js'
 import {
   collectTriggers,
+  createTriggerExecutionBudget,
   evaluateConditions,
   matchesTrigger,
   runTrigger,
@@ -735,6 +736,128 @@ describe('Phase 7-9d-i V2 control flow', () => {
     expect(result?.additonalSysPrompt.start).toBe('sys\n\n')
     expect(result?.chat.message[0].data).toBe('edited')
     expect(result?.chat.message.at(-1)).toEqual({ role: 'user', data: 'hi' })
+  })
+})
+
+describe('H1 trigger budget and abort', () => {
+  it('H1: stops a never-breaking v2Loop at the shared loop-back ceiling', async () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    try {
+      const budget = createTriggerExecutionBudget({
+        wallClockMs: 60_000,
+        maxLoopBackEdges: 5,
+        maxEffectSteps: 1_000,
+      })
+      const effects = [
+        eff({ type: 'v2Loop', indent: 0 }),
+        eff({ type: 'v2SetVar', operator: '+=', var: 'count', valueType: 'value', value: '1', indent: 1 }),
+        eff({ type: 'v2EndIndent', indent: 1, endOfLoop: true }),
+      ]
+      const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
+
+      const result = await runTrigger(ctx, char, 'output', {
+        chat: makeChat(),
+        triggerBudget: budget,
+      })
+
+      expect(result).not.toBeNull()
+      expect(budget.stoppedReason).toBe('loopBackEdges')
+      expect(Number(result?.chat.scriptstate?.['$count'])).toBeGreaterThan(0)
+      expect(Number(result?.chat.scriptstate?.['$count'])).toBeLessThanOrEqual(6)
+      expect(debug).toHaveBeenCalledWith(
+        expect.stringContaining('loopBackEdges'),
+      )
+    } finally {
+      debug.mockRestore()
+    }
+  })
+
+  it('H1: stops a huge v2LoopNTimes at the shared loop-back ceiling', async () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    try {
+      const budget = createTriggerExecutionBudget({
+        wallClockMs: 60_000,
+        maxLoopBackEdges: 4,
+        maxEffectSteps: 1_000,
+      })
+      const effects = [
+        eff({ type: 'v2LoopNTimes', valueType: 'value', value: '1000000', indent: 0 }),
+        eff({ type: 'v2SetVar', operator: '+=', var: 'count', valueType: 'value', value: '1', indent: 1 }),
+        eff({ type: 'v2EndIndent', indent: 1, endOfLoop: true }),
+      ]
+      const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
+
+      const result = await runTrigger(ctx, char, 'output', {
+        chat: makeChat(),
+        triggerBudget: budget,
+      })
+
+      expect(result).not.toBeNull()
+      expect(budget.stoppedReason).toBe('loopBackEdges')
+      expect(Number(result?.chat.scriptstate?.['$count'])).toBeGreaterThan(0)
+      expect(Number(result?.chat.scriptstate?.['$count'])).toBeLessThanOrEqual(5)
+      expect(debug).toHaveBeenCalledWith(
+        expect.stringContaining('loopBackEdges'),
+      )
+    } finally {
+      debug.mockRestore()
+    }
+  })
+
+  it('H1: low-level self-recursive v2RunTrigger cannot bypass the hard depth cap', async () => {
+    const budget = createTriggerExecutionBudget({
+      wallClockMs: 60_000,
+      maxEffectSteps: 1_000,
+      maxRecursionDepth: 3,
+    })
+    const self = makeTrigger({
+      comment: 'self',
+      type: 'manual',
+      effect: [eff({ type: 'v2RunTrigger', target: 'self', indent: 0 })],
+    })
+    const char = makeChar({ lowLevelAccess: true, triggerscript: [self] })
+
+    const result = await runTrigger(ctx, char, 'manual', {
+      chat: makeChat(),
+      manualName: 'self',
+      triggerBudget: budget,
+    })
+
+    expect(result).not.toBeNull()
+    expect(budget.stoppedReason).toBeUndefined()
+    expect(budget.effectSteps).toBeLessThanOrEqual(4)
+  })
+
+  it('H1: aborts a running trigger pass through AbortSignal', async () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    try {
+      const controller = new AbortController()
+      const budget = createTriggerExecutionBudget({
+        wallClockMs: 60_000,
+        maxLoopBackEdges: 10_000,
+        maxEffectSteps: 100_000,
+      })
+      const effects = [
+        eff({ type: 'v2Loop', indent: 0 }),
+        eff({ type: 'v2SetVar', operator: '+=', var: 'count', valueType: 'value', value: '1', indent: 1 }),
+        eff({ type: 'v2EndIndent', indent: 1, endOfLoop: true }),
+      ]
+      const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
+
+      setTimeout(() => controller.abort(), 0)
+      const result = await runTrigger(makeCtx({ signal: controller.signal }), char, 'output', {
+        chat: makeChat(),
+        triggerBudget: budget,
+      })
+
+      expect(result).not.toBeNull()
+      expect(controller.signal.aborted).toBe(true)
+      expect(budget.stoppedReason).toBe('aborted')
+      expect(Number(result?.chat.scriptstate?.['$count'])).toBeGreaterThan(0)
+      expect(debug).toHaveBeenCalledWith(expect.stringContaining('aborted'))
+    } finally {
+      debug.mockRestore()
+    }
   })
 })
 

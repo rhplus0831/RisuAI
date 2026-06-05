@@ -107,7 +107,28 @@ function noAction(id: string, reason: string): RegistryReason {
 }
 
 const SCHEDULED_FIXES: ScheduledFix[] = [
-  planned('H1', 1, 'Signal + wall-clock budget + iteration/recursion caps in `runTrigger`.'),
+  done(
+    'H1',
+    1,
+    'Signal + wall-clock budget + iteration/recursion caps in `runTrigger`.',
+    'server/fastify/__tests__/triggers.test.ts',
+    'H1: stops a never-breaking v2Loop at the shared loop-back ceiling',
+    [
+      {
+        testPath: 'server/fastify/__tests__/triggers.test.ts',
+        testName: 'H1: stops a huge v2LoopNTimes at the shared loop-back ceiling',
+      },
+      {
+        testPath: 'server/fastify/__tests__/triggers.test.ts',
+        testName:
+          'H1: low-level self-recursive v2RunTrigger cannot bypass the hard depth cap',
+      },
+      {
+        testPath: 'server/fastify/__tests__/triggers.test.ts',
+        testName: 'H1: aborts a running trigger pass through AbortSignal',
+      },
+    ],
+  ),
   done(
     'H2',
     1,
@@ -965,7 +986,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'H1'
+      entry.id === 'M1'
         ? {
             ...entry,
             testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
@@ -975,7 +996,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'H1: PLANNED entries must not claim proof fields',
+      'M1: PLANNED entries must not claim proof fields',
     )
   })
 
@@ -985,13 +1006,13 @@ describe('v2 fix-completeness gate routing registry', () => {
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
 
     const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
-    expect(doneEntries.map((entry) => entry.id)).toEqual(['H2', 'H3'])
+    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'H2', 'H3'])
     expect(doneEntries.every(hasProofFields)).toBe(true)
   })
 
   it('rejects DONE entries without a registered test path and test name', () => {
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'H1'
+      entry.id === 'M1'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1001,9 +1022,9 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'H1: status mismatch (registry DONE, docs PENDING)',
-        'H1: DONE without a registered testPath',
-        'H1: DONE without a registered testName',
+        'M1: status mismatch (registry DONE, docs PENDING)',
+        'M1: DONE without a registered testPath',
+        'M1: DONE without a registered testName',
       ]),
     )
   })
@@ -1011,7 +1032,7 @@ describe('v2 fix-completeness gate routing registry', () => {
   it('validates primary and extra DONE test proofs against existing test files', () => {
     const missingExtraTestName = ['missing extra proof title', 'assembled at runtime'].join(' ')
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'H1'
+      entry.id === 'M1'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1029,8 +1050,8 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'H1: status mismatch (registry DONE, docs PENDING)',
-        `H1: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
+        'M1: status mismatch (registry DONE, docs PENDING)',
+        `M1: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
       ]),
     )
   })
@@ -1064,12 +1085,12 @@ describe('v2 fix-completeness gate routing registry', () => {
     const riskText = readDoc(RISK_DOC)
     const withDoneDocRow = replaceRiskRow(
       riskText,
-      'H1',
-      '| H1 | [1](phases/phase-1-high-severity-hot-paths.md) | Signal + wall-clock budget + iteration/recursion caps in `runTrigger`. | DONE |',
+      'M1',
+      '| M1 | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Dirty-flag `captureMessageReplacement`; compare before clone. | DONE |',
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'H1: status mismatch (registry PLANNED, docs DONE)',
+      'M1: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 

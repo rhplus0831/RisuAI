@@ -149,6 +149,13 @@ export interface TriggerRunContext {
   selectedCharID: number
   /** Index into the selected character's `chats`. */
   chatPage: number
+  /** Originating request/durable-job abort signal. */
+  signal?: AbortSignal
+  /**
+   * Shared JS trigger interpreter budget. Recursive trigger calls reuse this
+   * object so low-level scripts cannot reset the wall clock or iteration caps.
+   */
+  triggerBudget?: TriggerExecutionBudget
   /**
    * VM runner for `triggerlua` effects. When provided, a `triggerlua` effect
    * runs the server Lua VM; when absent, it stays the no-op fall-through it was
@@ -173,6 +180,7 @@ export interface TriggerRunArg {
   displayMode?: boolean
   displayData?: string
   tempVars?: Record<string, string>
+  triggerBudget?: TriggerExecutionBudget
 }
 
 /**
@@ -253,13 +261,145 @@ const requestAllowList = [
   ...safeSubset,
 ]
 
+export const DEFAULT_TRIGGER_WALL_CLOCK_BUDGET_MS = 3_000
+export const DEFAULT_TRIGGER_MAX_EFFECT_STEPS = 100_000
+export const DEFAULT_TRIGGER_MAX_LOOP_BACK_EDGES = 10_000
+export const DEFAULT_TRIGGER_MAX_RECURSION_DEPTH = 10
+
+type TriggerBudgetStopReason =
+  | 'aborted'
+  | 'wallClock'
+  | 'effectSteps'
+  | 'loopBackEdges'
+
+export interface TriggerExecutionBudget {
+  startedAtMs: number
+  wallClockMs: number
+  effectSteps: number
+  maxEffectSteps: number
+  loopBackEdges: number
+  maxLoopBackEdges: number
+  maxRecursionDepth: number
+  now: () => number
+  stoppedReason?: TriggerBudgetStopReason
+  logged?: boolean
+}
+
+export interface TriggerExecutionBudgetOptions {
+  wallClockMs?: number
+  maxEffectSteps?: number
+  maxLoopBackEdges?: number
+  maxRecursionDepth?: number
+  now?: () => number
+}
+
+export function createTriggerExecutionBudget(
+  opts: TriggerExecutionBudgetOptions = {},
+): TriggerExecutionBudget {
+  const now = opts.now ?? Date.now
+  return {
+    startedAtMs: now(),
+    wallClockMs: opts.wallClockMs ?? DEFAULT_TRIGGER_WALL_CLOCK_BUDGET_MS,
+    effectSteps: 0,
+    maxEffectSteps: opts.maxEffectSteps ?? DEFAULT_TRIGGER_MAX_EFFECT_STEPS,
+    loopBackEdges: 0,
+    maxLoopBackEdges: opts.maxLoopBackEdges ?? DEFAULT_TRIGGER_MAX_LOOP_BACK_EDGES,
+    maxRecursionDepth:
+      opts.maxRecursionDepth ?? DEFAULT_TRIGGER_MAX_RECURSION_DEPTH,
+    now,
+  }
+}
+
 function emptySysPrompt(): additonalSysPrompt {
   return { start: '', historyend: '', promptend: '' }
 }
 
 /** Yield to the event loop; mirrors the SPA loop lag guard (`triggers.ts:1911`). */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (!signal) {
+      setTimeout(resolve, ms)
+      return
+    }
+    if (signal.aborted) {
+      resolve()
+      return
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+function markTriggerStopped(
+  budget: TriggerExecutionBudget,
+  reason: TriggerBudgetStopReason,
+  detail: string,
+): void {
+  budget.stoppedReason ??= reason
+  if (budget.logged) return
+  budget.logged = true
+  console.debug(`[prompt.triggers] stopped trigger execution early: ${reason} (${detail})`)
+}
+
+function shouldStopTriggerExecution(
+  ctx: TriggerRunContext,
+  budget: TriggerExecutionBudget,
+  detail: string,
+): boolean {
+  if (ctx.signal?.aborted) {
+    markTriggerStopped(budget, 'aborted', detail)
+    return true
+  }
+  if (budget.stoppedReason) {
+    return true
+  }
+  if (
+    Number.isFinite(budget.wallClockMs) &&
+    budget.now() - budget.startedAtMs >= budget.wallClockMs
+  ) {
+    markTriggerStopped(budget, 'wallClock', detail)
+    return true
+  }
+  return false
+}
+
+function chargeTriggerEffectStep(
+  ctx: TriggerRunContext,
+  budget: TriggerExecutionBudget,
+  effectType: string,
+): boolean {
+  if (shouldStopTriggerExecution(ctx, budget, `before effect ${effectType}`)) {
+    return true
+  }
+  budget.effectSteps++
+  if (budget.effectSteps > budget.maxEffectSteps) {
+    markTriggerStopped(budget, 'effectSteps', effectType)
+    return true
+  }
+  return false
+}
+
+function chargeTriggerLoopBack(
+  ctx: TriggerRunContext,
+  budget: TriggerExecutionBudget,
+  effectType: string,
+): boolean {
+  if (shouldStopTriggerExecution(ctx, budget, `before ${effectType} loop-back`)) {
+    return true
+  }
+  budget.loopBackEdges++
+  if (budget.loopBackEdges > budget.maxLoopBackEdges) {
+    markTriggerStopped(budget, 'loopBackEdges', effectType)
+    return true
+  }
+  return false
 }
 
 /**
@@ -417,6 +557,8 @@ export async function runTrigger(
   mode: TriggerMode,
   arg: TriggerRunArg,
 ): Promise<TriggerRunResult | null> {
+  const budget =
+    arg.triggerBudget ?? ctx.triggerBudget ?? createTriggerExecutionBudget()
   let recursiveCount = arg.recursiveCount ?? 0
   const workingChar = arg.displayMode ? char : structuredClone(char)
   let stopSending = arg.stopSending ?? false
@@ -459,10 +601,36 @@ export async function runTrigger(
   // `arg.displayData` in place. The result surfaces `displayState.data`.
   const displayState = { data: arg.displayData }
 
+  const buildResult = (): TriggerRunResult => {
+    // Terminal additional-system-prompt token accounting
+    // (`triggers.ts:3321-3330`). Populated by `systemprompt` effects.
+    let tokens = 0
+    const encoding = encodingForModel(ctx.model)
+    if (additonalSysPrompt.start) tokens += tokenize(additonalSysPrompt.start, encoding)
+    if (additonalSysPrompt.historyend)
+      tokens += tokenize(additonalSysPrompt.historyend, encoding)
+    if (additonalSysPrompt.promptend)
+      tokens += tokenize(additonalSysPrompt.promptend, encoding)
+
+    return {
+      additonalSysPrompt,
+      chat,
+      tokens,
+      stopSending,
+      sendAIprompt,
+      displayData: displayState.data,
+      tempVars: arg.tempVars,
+      varChanged: engine.varChanged || recursionVarChanged,
+    }
+  }
+
   const selected = triggers.filter((trigger) =>
     matchesTrigger(trigger, mode, arg.manualName),
   )
   for (const trigger of selected) {
+    if (shouldStopTriggerExecution(ctx, budget, 'before trigger conditions')) {
+      return buildResult()
+    }
     if (!evaluateConditions(trigger.conditions ?? [], engine, chat, expand)) {
       continue
     }
@@ -478,8 +646,14 @@ export async function runTrigger(
 
     // Index-based walk (7-9d): V2 control flow advances/rewinds `index`.
     const effects = trigger.effect ?? []
+    if (shouldStopTriggerExecution(ctx, budget, 'before effect loop')) {
+      return buildResult()
+    }
     for (let index = 0; index < effects.length; index++) {
       const effect = effects[index]
+      if (chargeTriggerEffectStep(ctx, budget, effect.type)) {
+        return buildResult()
+      }
       // Display/request effect allowlist guards (`triggers.ts:1444-1449`).
       // Skipped effects never touch indent; control flow stays intact
       // because every control-flow op lives in `safeSubset`.
@@ -562,7 +736,7 @@ export async function runTrigger(
           break
         }
         case 'runtrigger': {
-          if (recursiveCount < 10 || trigger.lowLevelAccess) {
+          if (recursiveCount < budget.maxRecursionDepth) {
             recursiveCount++
             const r = await runTrigger(ctx, workingChar, 'manual', {
               chat,
@@ -570,6 +744,7 @@ export async function runTrigger(
               additonalSysPrompt,
               stopSending,
               manualName: effect.value,
+              triggerBudget: budget,
             })
             if (r) {
               additonalSysPrompt = r.additonalSysPrompt
@@ -577,6 +752,9 @@ export async function runTrigger(
               engine.setChat(chat)
               stopSending = r.stopSending
               recursionVarChanged ||= r.varChanged
+            }
+            if (shouldStopTriggerExecution(ctx, budget, 'after runtrigger')) {
+              return buildResult()
             }
           }
           break
@@ -758,8 +936,13 @@ export async function runTrigger(
                   if (loopCounts[key] >= valueNum) {
                     index = originalIndex
                   } else {
+                    if (chargeTriggerLoopBack(ctx, budget, ef.type)) {
+                      return buildResult()
+                    }
                     break
                   }
+                } else if (chargeTriggerLoopBack(ctx, budget, ef.type)) {
+                  return buildResult()
                 }
                 break
               }
@@ -768,8 +951,11 @@ export async function runTrigger(
             // Lag guard (`triggers.ts:1908-1913`).
             loopCounts['loopTimes'] = (loopCounts['loopTimes'] ?? 0) + 1
             if (loopCounts['loopTimes'] > 100) {
-              await sleep(1)
+              await sleep(1, ctx.signal)
               loopCounts['loopTimes'] = 0
+              if (shouldStopTriggerExecution(ctx, budget, 'after v2 loop yield')) {
+                return buildResult()
+              }
             }
           }
 
@@ -790,7 +976,7 @@ export async function runTrigger(
           break
         }
         case 'v2RunTrigger': {
-          if (recursiveCount < 10 || trigger.lowLevelAccess) {
+          if (recursiveCount < budget.maxRecursionDepth) {
             recursiveCount++
             const r = await runTrigger(ctx, workingChar, 'manual', {
               chat,
@@ -798,6 +984,7 @@ export async function runTrigger(
               additonalSysPrompt,
               stopSending,
               manualName: effect.target,
+              triggerBudget: budget,
             })
             if (r) {
               additonalSysPrompt = r.additonalSysPrompt
@@ -805,6 +992,9 @@ export async function runTrigger(
               engine.setChat(chat)
               stopSending = r.stopSending
               recursionVarChanged ||= r.varChanged
+            }
+            if (shouldStopTriggerExecution(ctx, budget, 'after v2RunTrigger')) {
+              return buildResult()
             }
           }
           break
@@ -865,6 +1055,9 @@ export async function runTrigger(
             if (r.stopSending) {
               stopSending = true
             }
+            if (shouldStopTriggerExecution(ctx, budget, 'after triggerlua')) {
+              return buildResult()
+            }
           }
           break
         }
@@ -892,26 +1085,7 @@ export async function runTrigger(
     }
   }
 
-  // Terminal additional-system-prompt token accounting
-  // (`triggers.ts:3321-3330`). Populated by `systemprompt` effects.
-  let tokens = 0
-  const encoding = encodingForModel(ctx.model)
-  if (additonalSysPrompt.start) tokens += tokenize(additonalSysPrompt.start, encoding)
-  if (additonalSysPrompt.historyend)
-    tokens += tokenize(additonalSysPrompt.historyend, encoding)
-  if (additonalSysPrompt.promptend)
-    tokens += tokenize(additonalSysPrompt.promptend, encoding)
-
-  return {
-    additonalSysPrompt,
-    chat,
-    tokens,
-    stopSending,
-    sendAIprompt,
-    displayData: displayState.data,
-    tempVars: arg.tempVars,
-    varChanged: engine.varChanged || recursionVarChanged,
-  }
+  return buildResult()
 }
 
 /**
@@ -939,6 +1113,7 @@ export async function runStartTrigger(
     selectedCharID:
       ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0),
     chatPage: ctx.chatPage ?? char.chatPage ?? 0,
+    signal: ctx.signal,
   }
   return runTrigger(runCtx, char, 'start', { chat })
 }

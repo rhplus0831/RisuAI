@@ -53,6 +53,8 @@ export interface ExpandContext {
   chara?: string | character
   /** Recursion guard for direct callers; defaults to the parser's own. */
   callStack?: number
+  /** Originating request/durable-job abort signal for downstream trigger handoffs. */
+  signal?: AbortSignal
 }
 
 export interface ExpandResult {

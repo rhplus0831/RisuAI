@@ -442,7 +442,7 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
 export function beginAssembly(input: AssembleInput, deps: AssembleDeps): AssemblyState {
   const { database, currentChar, currentChat, selectedCharID, chatPage } = resolveScope(input, deps)
 
-  const ctx: ExpandContext = { database, selectedCharID, chatPage }
+  const ctx: ExpandContext = { database, selectedCharID, chatPage, signal: deps.signal }
   const unformated = createEmptyUnformatedSlots()
 
   const { promptTemplate, usingPromptTemplate } = normalizeTemplate(database, currentChar)
@@ -617,6 +617,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
     database: db,
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
+    signal: state.signal,
     runLua: async ({ code, mode, lowLevelAccess, chat, varEngine }) => {
       const result = await runServerLua(
         { code, mode, lowLevelAccess },
@@ -1639,6 +1640,7 @@ async function runOutputTrigger(state: AssemblyState): Promise<boolean> {
     database: db,
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
+    signal: state.signal,
     runLua: async ({ code, mode, lowLevelAccess, chat, varEngine }) => {
       const result = await runServerLua(
         { code, mode, lowLevelAccess },
