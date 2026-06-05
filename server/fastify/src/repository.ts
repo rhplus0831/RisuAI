@@ -465,11 +465,17 @@ export function deleteCharacterChatRow(
 }
 
 /** Delete one character's row and compact the positions of the rows after it so
- *  the `characters` table stays contiguous (matching the broad rewrite). Pairs
- *  with `deleteCharacterChats` + the message-store deletes for a character
- *  removal. Remaining rows keep their rowids (UPDATE/DELETE, no reINSERT). */
+ *  the `characters` table stays contiguous (matching the broad rewrite). The
+ *  `chats.character_id` FK declares `ON DELETE CASCADE` and `openDatabase`
+ *  sets `PRAGMA foreign_keys = ON`, so this single DELETE also removes the
+ *  character's chat rows (audit L9 — the explicit chats DELETE was redundant).
+ *  Pairs with the message-store deletes for a character removal. Remaining
+ *  rows keep their rowids (UPDATE/DELETE, no reINSERT). */
 export function deleteCharacterRow(db: DatabaseSync, characterId: string): void {
   recordTableWrite('characters')
+  // The FK cascade physically writes the chats table; record it so the
+  // command-metric `writtenTables` budget stays truthful.
+  recordTableWrite('chats')
   const row = db.prepare('SELECT position FROM characters WHERE id = ?').get(characterId) as
     | { position: number }
     | undefined
@@ -477,13 +483,6 @@ export function deleteCharacterRow(db: DatabaseSync, characterId: string): void 
   if (row) {
     db.prepare('UPDATE characters SET position = position - 1 WHERE position > ?').run(row.position)
   }
-}
-
-/** Delete every chat row belonging to a character in one statement. The chats'
- *  message / hypa rows are cleaned separately via the message-store deletes. */
-export function deleteCharacterChats(db: DatabaseSync, characterId: string): void {
-  recordTableWrite('chats')
-  db.prepare('DELETE FROM chats WHERE character_id = ?').run(characterId)
 }
 
 /** Re-stamp one character's chat rows in place: `position` = array index and the

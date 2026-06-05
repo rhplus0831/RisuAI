@@ -37,10 +37,8 @@ export async function processMultiCommand(command: string) {
     }
   }
   splited.push(command.slice(lastIndex))
-  console.log(splited)
   for (let i = 0; i < splited.length; i++) {
     const result = await processCommand(splited[i].trim(), pipe)
-    console.log(pipe)
     if (result === false) {
       return false
     } else {
@@ -249,7 +247,6 @@ async function processCommand(command: string, pipe: string): Promise<false | st
     }
     case 'test_lorebook': {
       const p = await loadLoreBookV3Prompt()
-      console.log(p)
       alertNormal(p.actives.map((e) => e.prompt).join('§'))
       return JSON.stringify(p)
     }

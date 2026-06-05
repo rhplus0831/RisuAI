@@ -21,6 +21,11 @@ import {
   DBState,
 } from '../stores.svelte'
 import { processMultiCommand } from './command'
+// L40: trigger effects re-ran `new RegExp(...)` on every execution; reuse the
+// compiled-regex memo (lastIndex resets on retrieval). Imported after
+// '../stores.svelte' so the scripts module's store subscription is live before
+// './scripts' evaluates (see scripts.regexCache.test.ts on the TDZ ordering).
+import { getCompiledRegex } from './scripts'
 import { parseKeyValue, sleep } from '../util'
 import { alertError, alertInput, alertNormal, alertSelect } from '../alert'
 import type { OpenAIChat } from './index.svelte'
@@ -1508,7 +1513,7 @@ export async function runTrigger(
         } else if (condition.type2 === 'loose') {
           pass = da.toLowerCase().includes(val.toLowerCase())
         } else if (condition.type2 === 'regex') {
-          pass = new RegExp(val).test(da)
+          pass = getCompiledRegex(val, '').test(da)
         }
       }
       if (!pass) {
@@ -1721,7 +1726,7 @@ export async function runTrigger(
           }
 
           const effectValue = risuChatParser(effect.value, { chara: char })
-          const regex = new RegExp(effect.regex, effect.flags)
+          const regex = getCompiledRegex(effect.regex, effect.flags)
           const regexResult = regex.exec(effectValue)
           const result = effect.result
             .replace(/\$[0-9]+/g, (match) => {
@@ -2207,7 +2212,7 @@ export async function runTrigger(
             effect.flagsType === 'value'
               ? risuChatParser(effect.flags, { chara: char })
               : getVar(risuChatParser(effect.flags, { chara: char }))
-          let regex = new RegExp(regexValue, flagsValue)
+          let regex = getCompiledRegex(regexValue, flagsValue)
           let regexResult = regex.exec(value)
           let resultValue =
             effect.resultType === 'value'
@@ -2426,10 +2431,10 @@ export async function runTrigger(
               const regexMatch = delimiter.match(/^\/(.+)\/([gimuy]*)$/)
               if (regexMatch) {
                 const [, pattern, flags] = regexMatch
-                const regex = new RegExp(pattern, flags)
+                const regex = getCompiledRegex(pattern, flags)
                 result = source.split(regex)
               } else {
-                const regex = new RegExp(delimiter)
+                const regex = getCompiledRegex(delimiter, '')
                 result = source.split(regex)
               }
             } catch (error) {
@@ -2901,7 +2906,7 @@ export async function runTrigger(
           } else if (condition === 'loose') {
             pass = da.toLowerCase().includes(value.toLowerCase())
           } else if (condition === 'regex') {
-            pass = new RegExp(value).test(da)
+            pass = getCompiledRegex(value, '').test(da)
           }
           setVar(risuChatParser(effect.outputVar, { chara: char }), pass ? '1' : '0')
           break
@@ -2934,7 +2939,7 @@ export async function runTrigger(
             effect.nameType === 'value'
               ? risuChatParser(effect.name, { chara: char })
               : getVar(risuChatParser(effect.name, { chara: char }))
-          const regex = new RegExp(name, 'i')
+          const regex = getCompiledRegex(name, 'i')
           const matchingIndices: number[] = []
           for (let i = 0; i < char.globalLore.length; i++) {
             const lore = char.globalLore[i]
@@ -3123,7 +3128,7 @@ export async function runTrigger(
               effect.flagsType === 'value'
                 ? risuChatParser(effect.flags, { chara: char })
                 : getVar(risuChatParser(effect.flags, { chara: char }))
-            const regex = new RegExp(regexPattern, flags)
+            const regex = getCompiledRegex(regexPattern, flags)
             const result = regex.test(value)
             setVar(risuChatParser(effect.outputVar, { chara: char }), result ? '1' : '0')
           } catch (error) {
@@ -3357,7 +3362,7 @@ export async function runTrigger(
                 ? risuChatParser(effect.flags, { chara: char })
                 : getVar(risuChatParser(effect.flags, { chara: char }))
 
-            const regex = new RegExp(regexPattern, flags)
+            const regex = getCompiledRegex(regexPattern, flags)
             const result = source.replace(regex, (...args) => {
               const match = args[0]
               const groups = args.slice(1, -2)

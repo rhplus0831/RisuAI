@@ -54,6 +54,12 @@ interface ActiveModulesMemoEntry {
 
 const activeModulesMemo = new WeakMap<Database, ActiveModulesMemoEntry>()
 
+/** Stable result for the no-active-modules case so downstream memos (audit M2:
+ *  the prepared-script cache keys on this function's result by reference) get a
+ *  reference-equal value instead of a fresh `[]` per call. Read-only by
+ *  contract — every consumer only iterates it. */
+const NO_ACTIVE_MODULES: RisuModule[] = []
+
 export function getActiveModules(
   database: Database,
   currentChar: character | undefined,
@@ -70,7 +76,7 @@ export function getActiveModules(
         .filter((s) => s.length > 0),
     )
   }
-  if (ids.length === 0) return []
+  if (ids.length === 0) return NO_ACTIVE_MODULES
 
   // JSON keying (not the SPA's '-' join) — module ids are UUIDs containing '-'.
   const key = JSON.stringify(ids)

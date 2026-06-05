@@ -175,6 +175,42 @@ interface RecursivePromptEntry {
 }
 
 /**
+ * Compiled `/pattern/flags` lorebook-key cache (audit L3). The recursive
+ * `while (matching)` activation loop re-runs `searchMatch` over the same
+ * entry keys once per pass, and the regex path used to compile
+ * `new RegExp(pattern, flags)` per message × per key × per pass. Compile
+ * once, memoized by the raw key string; `lastIndex` resets on retrieval so
+ * a cached global/sticky regex behaves exactly like a fresh compile.
+ * Malformed keys (no leading `/`, no closing `/`, bad pattern) cache `null`
+ * — the caller returns false for the whole query, matching the SPA
+ * (`lorebook.svelte.ts:155`). Bounded like the SPA's `getCompiledRegex`
+ * (drop the oldest entry past 1000).
+ */
+const compiledLoreKeyRegexCache = new Map<string, RegExp | null>()
+
+function getCompiledLoreKeyRegex(regexString: string): RegExp | null {
+  let cached = compiledLoreKeyRegexCache.get(regexString)
+  if (cached === undefined) {
+    const flagsIdx = regexString.lastIndexOf('/')
+    if (!regexString.startsWith('/') || flagsIdx <= 0) {
+      cached = null
+    } else {
+      try {
+        cached = new RegExp(regexString.slice(1, flagsIdx), regexString.slice(flagsIdx + 1))
+      } catch {
+        cached = null
+      }
+    }
+    compiledLoreKeyRegexCache.set(regexString, cached)
+    if (compiledLoreKeyRegexCache.size > 1000) {
+      compiledLoreKeyRegexCache.delete(compiledLoreKeyRegexCache.keys().next().value!)
+    }
+  }
+  if (cached) cached.lastIndex = 0
+  return cached
+}
+
+/**
  * Ports `searchMatch` from
  * `src/ts/process/lorebook.svelte.ts:97-239`. Walks the last
  * `searchDepth` messages, builds SPA-shaped `\x01{{name}}:body\x01`
@@ -236,19 +272,13 @@ function searchMatch(
   if (arg.regex) {
     for (const m of mList) {
       for (const regexString of trimmedKeys) {
-        if (!regexString.startsWith('/')) return false
-        const flagsIdx = regexString.lastIndexOf('/')
-        if (flagsIdx <= 0) return false
-        const pattern = regexString.slice(1, flagsIdx)
-        const flags = regexString.slice(flagsIdx + 1)
-        try {
-          const r = new RegExp(pattern, flags)
-          if (r.test(m.data)) {
-            matchLog.push({ prompt: m.prompt, source: m.source, activated: regexString })
-            return true
-          }
-        } catch {
-          return false
+        // L3: compiled once per key string (memoized across messages, passes,
+        // and activations) instead of per message × per key × per pass.
+        const r = getCompiledLoreKeyRegex(regexString)
+        if (!r) return false
+        if (r.test(m.data)) {
+          matchLog.push({ prompt: m.prompt, source: m.source, activated: regexString })
+          return true
         }
       }
     }

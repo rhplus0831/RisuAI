@@ -209,7 +209,6 @@ import {
 } from '../messageStore.js'
 import {
   deleteCharacterChatRow,
-  deleteCharacterChats,
   deleteCharacterRow,
   deletePluginStorageKey,
   EntityNotFoundError,
@@ -2649,8 +2648,9 @@ export function registerCommandRoutes(
           const removedChatIds = ensureCharacterChats(character).map((chat) => chat.id)
           characters.splice(index, 1)
           ensureCharacterCollection(target)
+          // The chats.character_id ON DELETE CASCADE removes the chat rows with
+          // the character row (audit L9) — no explicit chats DELETE needed.
           deleteCharacterRow(innerDb, characterId)
-          deleteCharacterChats(innerDb, characterId)
           for (const chatId of removedChatIds) {
             deleteChatMessages(innerDb, chatId)
             deleteChatHypaV3(innerDb, chatId)

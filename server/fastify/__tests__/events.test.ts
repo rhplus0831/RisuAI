@@ -260,6 +260,36 @@ describe('Phase 9-5a command events stream', () => {
     }
   })
 
+  it('L8: prunes by revision keep-window with a bounded range delete, not an OFFSET walk', () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-event-prune-'))
+    const db = openDatabase(dataDir)
+    try {
+      // Contiguous case: identical retention to the former keep-latest-N-rows
+      // walk — the newest `historyLimit` revisions survive.
+      for (let revision = 1; revision <= 5; revision++) {
+        persistCommandEvent(db, { type: 'settings.updated', revision, resource: 'settings' }, 3)
+      }
+      expect(listPersistedCommandEventHistory(db).map((event) => event.revision)).toEqual([
+        3, 4, 5,
+      ])
+
+      // Keep-window semantics: retention is the revision window ending at the
+      // just-persisted revision (12 - 3 = 9; everything <= 9 is deleted), not
+      // a count of surviving rows. One range DELETE bounds the work.
+      persistCommandEvent(db, { type: 'settings.updated', revision: 12, resource: 'settings' }, 3)
+      expect(listPersistedCommandEventHistory(db).map((event) => event.revision)).toEqual([12])
+
+      // Below the window nothing is deleted (negative threshold is a no-op).
+      persistCommandEvent(db, { type: 'settings.updated', revision: 13, resource: 'settings' }, 1000)
+      expect(listPersistedCommandEventHistory(db).map((event) => event.revision)).toEqual([
+        12, 13,
+      ])
+    } finally {
+      db.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
   it('keeps memory event bus delivery best-effort across throwing subscribers', () => {
     const bus = createMemoryEventBus()
     const event: MemoryEvent = {

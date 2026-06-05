@@ -819,3 +819,115 @@ describe('Phase 7-6d module regex scripts join the chain', () => {
     expect(out).toBe('Abc')
   })
 })
+
+// M2 (Phase 7): the history walk calls `processScript` once per window message
+// with identical script inputs. The per-script invariants (module resolution,
+// `parseScripts`, flag/outScript prep, RegExp compile) must be paid once per
+// assembly, not once per message. Compile counts are observed by swapping the
+// global RegExp constructor for a counting subclass — `new RegExp(...)` inside
+// `prepareOne` resolves the global binding at call time.
+function countRegexCompiles<T>(fn: () => T): { result: T; compiles: Map<string, number> } {
+  const RealRegExp = globalThis.RegExp
+  const compiles = new Map<string, number>()
+  class CountingRegExp extends RealRegExp {
+    constructor(pattern: string | RegExp, flags?: string) {
+      super(pattern as string, flags)
+      const key = typeof pattern === 'string' ? pattern : pattern.source
+      compiles.set(key, (compiles.get(key) ?? 0) + 1)
+    }
+  }
+  ;(globalThis as { RegExp: RegExpConstructor }).RegExp =
+    CountingRegExp as unknown as RegExpConstructor
+  try {
+    return { result: fn(), compiles }
+  } finally {
+    ;(globalThis as { RegExp: RegExpConstructor }).RegExp = RealRegExp
+  }
+}
+
+describe('M2 per-assembly prepared-script memo', () => {
+  it('M2: a simulated history window compiles each script regex once, not once per message', () => {
+    const mkDb = () =>
+      makeDatabase({
+        presetRegex: [
+          regex('m2-pat-alpha\\d+', 'A', 'editprocess'),
+          regex('m2-pat-beta\\d+', 'B', 'editprocess'),
+        ],
+      })
+
+    // Baseline: a fresh database per call (memo can never hit) fixes expected output.
+    const coldDb = mkDb()
+    const expected: string[] = []
+    for (let i = 0; i < 25; i++) {
+      expected.push(
+        processScript(ctxFor(mkDb()), coldDb.characters[0], `m2-pat-alpha${i} m2-pat-beta${i}`, 'editprocess', { chatRole: 'user' }, i, coldDb.characters[0].chats[0]),
+      )
+    }
+
+    // Hot path: one database across the whole window, like buildHistoryWindow.
+    const db = mkDb()
+    const ctx = ctxFor(db)
+    const char = db.characters[0]
+    const chat = char.chats[0]
+    const { result: outputs, compiles } = countRegexCompiles(() => {
+      const out: string[] = []
+      for (let i = 0; i < 25; i++) {
+        out.push(
+          processScript(ctx, char, `m2-pat-alpha${i} m2-pat-beta${i}`, 'editprocess', { chatRole: 'user' }, i, chat),
+        )
+      }
+      return out
+    })
+
+    // Output bytes are identical to the per-call cold baseline.
+    expect(outputs).toEqual(expected)
+    // Each script regex compiled exactly once for the whole 25-message window.
+    expect(compiles.get('m2-pat-alpha\\d+')).toBe(1)
+    expect(compiles.get('m2-pat-beta\\d+')).toBe(1)
+  })
+
+  it('M2: cbs-action scripts still compile per message (their source pre-expands per call)', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('m2-cbs-src', 'X', 'editprocess', '<cbs>', true)],
+    })
+    const ctx = ctxFor(db)
+    const char = db.characters[0]
+    const chat = char.chats[0]
+    const { result: outputs, compiles } = countRegexCompiles(() => {
+      const out: string[] = []
+      for (let i = 0; i < 5; i++) {
+        out.push(processScript(ctx, char, 'm2-cbs-src tail', 'editprocess', {}, i, chat))
+      }
+      return out
+    })
+    expect(outputs).toEqual(['X tail', 'X tail', 'X tail', 'X tail', 'X tail'])
+    expect(compiles.get('m2-cbs-src')).toBe(5)
+  })
+
+  it('M2: replacing the script list invalidates the memo (no stale prepared scripts)', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('m2-stale-a', 'ONE', 'editprocess')],
+    })
+    const ctx = ctxFor(db)
+    const char = db.characters[0]
+    expect(processScript(ctx, char, 'm2-stale-a', 'editprocess')).toBe('ONE')
+
+    // A replaced presetRegex array (new reference) must recompute the prep.
+    db.presetRegex = [regex('m2-stale-a', 'TWO', 'editprocess')]
+    expect(processScript(ctx, char, 'm2-stale-a', 'editprocess')).toBe('TWO')
+  })
+
+  it('M2: an invalid precompiled regex stays a per-script no-op and the chain continues', () => {
+    const db = makeDatabase({
+      presetRegex: [
+        regex('(m2-unbalanced', 'never', 'editprocess'),
+        regex('m2-ok', 'fine', 'editprocess'),
+      ],
+    })
+    const ctx = ctxFor(db)
+    const char = db.characters[0]
+    // Twice: once cold, once through the memo.
+    expect(processScript(ctx, char, 'm2-ok', 'editprocess')).toBe('fine')
+    expect(processScript(ctx, char, 'm2-ok', 'editprocess')).toBe('fine')
+  })
+})

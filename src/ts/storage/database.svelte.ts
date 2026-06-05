@@ -2652,7 +2652,6 @@ export async function downloadPreset(id: number, type: 'json' | 'risupreset' | '
   saveCurrentPreset()
   let db = getDatabase()
   let pres = safeStructuredClone(db.botPresets[id])
-  console.log(pres)
   pres.openAIKey = ''
   pres.forceReplaceUrl = ''
   pres.forceReplaceUrl2 = ''

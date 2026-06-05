@@ -1388,3 +1388,99 @@ describe('Phase 7-11c buildLorebookContext', () => {
     expect(slots.lorebook.map((r) => r.content)).toEqual(['hi YY'])
   })
 })
+// L3 (Phase 7): the recursive activation loop re-runs `searchMatch` over the
+// same regex-form keys once per pass × per message; the compiled key regex is
+// memoized so one activation compiles each key string at most once. Compile
+// counts are observed by swapping the global RegExp constructor for a counting
+// subclass — `new RegExp(...)` in the cache miss path resolves the global
+// binding at call time.
+function countRegexCompiles<T>(fn: () => T): { result: T; compiles: Map<string, number> } {
+  const RealRegExp = globalThis.RegExp
+  const compiles = new Map<string, number>()
+  class CountingRegExp extends RealRegExp {
+    constructor(pattern: string | RegExp, flags?: string) {
+      super(pattern as string, flags)
+      const key = typeof pattern === 'string' ? pattern : pattern.source
+      compiles.set(key, (compiles.get(key) ?? 0) + 1)
+    }
+  }
+  ;(globalThis as { RegExp: RegExpConstructor }).RegExp =
+    CountingRegExp as unknown as RegExpConstructor
+  try {
+    return { result: fn(), compiles }
+  } finally {
+    ;(globalThis as { RegExp: RegExpConstructor }).RegExp = RealRegExp
+  }
+}
+
+describe('L3 lorebook keyword regex memoization', () => {
+  it('L3: compiles each regex key once across messages, recursive passes, and entries', () => {
+    const messages = Array.from({ length: 8 }, (_, i) =>
+      makeMessage({ data: `filler message ${i} l3-needle-${i}`, chatId: `l3-m-${i}` }),
+    )
+    const { result: report, compiles } = countRegexCompiles(() =>
+      activateLorebook({
+        database: makeDb({ loreBookDepth: 8 } as Partial<Database>),
+        currentChar: makeChar({
+          globalLore: [
+            // Activates on the real messages; its content feeds the recursive layer.
+            makeLore({
+              alwaysActive: false,
+              useRegex: true,
+              key: '/l3-needle-[0-9]+/i',
+              content: 'recursive body with l3-bridge token.',
+            }),
+            // Activates only via the recursive layer (second pass).
+            makeLore({
+              alwaysActive: false,
+              useRegex: true,
+              key: '/l3-bridge/',
+              content: 'Second-layer body.',
+            }),
+            // Never matches: searched against every message on every pass.
+            makeLore({
+              alwaysActive: false,
+              useRegex: true,
+              key: '/l3-never-matches-zzz/',
+              content: 'Never activates.',
+            }),
+          ],
+        }),
+        currentChat: makeChat({ message: messages }),
+      }),
+    )
+
+    // Both reachable entries activated (the second through recursion).
+    expect(report.actives.map((a) => a.prompt).sort()).toEqual([
+      'Second-layer body.',
+      'recursive body with l3-bridge token.',
+    ])
+    // Each key string compiled exactly once for the whole activation.
+    expect(compiles.get('l3-needle-[0-9]+')).toBe(1)
+    expect(compiles.get('l3-bridge')).toBe(1)
+    expect(compiles.get('l3-never-matches-zzz')).toBe(1)
+  })
+
+  it('L3: a malformed regex key still deactivates the query without throwing (cached miss)', () => {
+    const run = () =>
+      activateLorebook({
+        database: makeDb(),
+        currentChar: makeChar({
+          globalLore: [
+            makeLore({
+              alwaysActive: false,
+              useRegex: true,
+              key: '/l3-unclosed(/',
+              content: 'Never activates.',
+            }),
+          ],
+        }),
+        currentChat: makeChat({
+          message: [makeMessage({ data: 'l3-unclosed( literal text' })],
+        }),
+      })
+    // Twice: once compiling (and caching the failure), once from the cache.
+    expect(run().actives).toEqual([])
+    expect(run().actives).toEqual([])
+  })
+})

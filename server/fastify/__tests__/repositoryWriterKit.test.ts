@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { openDatabase } from '../src/db.js'
 import {
+  deleteCharacterRow,
   deletePluginStorageKey,
   loadPersisted,
   writePersistedWithMessages,
@@ -256,5 +257,22 @@ describe('targeted writer kit', () => {
     expect(readPluginStorage()).toEqual({ fresh: { mode: 'added' } })
     expect(allCollectionRowids()).toEqual(collectionsBefore)
     expect(rowids('characters', 'id')).toEqual(charsBefore)
+  })
+
+  it('L9: deleteCharacterRow alone cascades the chats rows via the FK (no explicit chats DELETE)', () => {
+    // Precondition the cascade depends on: the pragma is actually enabled on
+    // this connection (a connection-level setting, not a schema property).
+    expect(db.prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 })
+
+    const siblingChatsBefore = rowids('chats', 'id')
+    expect(Object.keys(siblingChatsBefore).sort()).toEqual(['chat-a-1', 'chat-a-2', 'chat-b-1'])
+
+    deleteCharacterRow(db, 'char-a')
+
+    // The single characters DELETE removed char-a's chat rows through
+    // `chats.character_id ON DELETE CASCADE`; char-b and its chat are intact
+    // (same rowid — no DELETE+reINSERT churn).
+    expect(rowids('characters', 'id')).toEqual({ 'char-b': expect.any(Number) })
+    expect(rowids('chats', 'id')).toEqual({ 'chat-b-1': siblingChatsBefore['chat-b-1'] })
   })
 })

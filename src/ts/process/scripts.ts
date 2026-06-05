@@ -157,7 +157,6 @@ export async function processScriptFull(
     const currentChar = getCurrentCharacter()
     if (currentChar) {
       try {
-        const perf = performance.now()
         const d = await runTrigger(currentChar, 'display', {
           chat: getCurrentChat(),
           displayMode: true,
@@ -165,7 +164,6 @@ export async function processScriptFull(
         })
 
         data = d?.displayData ?? data
-        console.log('Trigger time', performance.now() - perf)
       } catch (e) {
         console.error(e)
       }

@@ -66,14 +66,20 @@ function isServerChatGenerationOk(
   return served.status === 'ok' && 'req' in served
 }
 
-function findGeneratedAssistantMessage(chat: Chat, generationId: string): Message | undefined {
+// Exported for the L39 regression test; not part of the public API.
+export function findGeneratedAssistantMessage(chat: Chat, generationId: string): Message | undefined {
   const byId = chat.message.find((message) => message.chatId === generationId)
   if (byId?.role === 'char') return byId
-  return [...chat.message]
-    .reverse()
-    .find(
-      (message) => message.role === 'char' && message.generationInfo?.generationId === generationId,
-    )
+  // Scan newest-to-oldest in place (audit L39) — the former
+  // `[...chat.message].reverse().find(...)` copied the whole transcript on
+  // every terminal lookup just to find the last match.
+  for (let i = chat.message.length - 1; i >= 0; i--) {
+    const message = chat.message[i]
+    if (message.role === 'char' && message.generationInfo?.generationId === generationId) {
+      return message
+    }
+  }
+  return undefined
 }
 
 function serverChatMode(args: {

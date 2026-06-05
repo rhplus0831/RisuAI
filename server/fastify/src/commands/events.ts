@@ -109,7 +109,7 @@ export function persistCommandEvent(
     event.parentId ?? null,
     event.origin?.writerSessionId ?? null,
   )
-  pruneCommandEventHistory(db, historyLimit)
+  pruneCommandEventHistory(db, historyLimit, event.revision)
 }
 
 export function persistRevisionedCommandEvent(
@@ -149,22 +149,25 @@ export function selectPersistedCommandEventReplay(
   )
 }
 
-function pruneCommandEventHistory(db: DatabaseSync, historyLimit: number): void {
+/**
+ * Bounded keep-window prune (audit L8). Retention is the `historyLimit`-wide
+ * revision window ending at the just-persisted revision: everything at or
+ * below `latestRevision - historyLimit` is deleted with one primary-key range
+ * DELETE. The former implementation walked the newest `historyLimit` rows
+ * with `ORDER BY revision DESC LIMIT 1 OFFSET 999` on every command write to
+ * find the same threshold. Revisions bump once per persisted event
+ * (`bumpRevision` callers all persist inside the same transaction), so the
+ * revision window equals the former keep-latest-N-rows retention.
+ */
+function pruneCommandEventHistory(
+  db: DatabaseSync,
+  historyLimit: number,
+  latestRevision: number,
+): void {
   if (!Number.isSafeInteger(historyLimit) || historyLimit < 1) {
     throw new RangeError('Command event history limit must be a positive safe integer')
   }
-  const threshold = db
-    .prepare(
-      `
-        SELECT revision
-        FROM command_events
-        ORDER BY revision DESC
-        LIMIT 1 OFFSET ?
-      `,
-    )
-    .get(historyLimit - 1) as { revision: number } | undefined
-  if (!threshold) return
-  db.prepare('DELETE FROM command_events WHERE revision < ?').run(threshold.revision)
+  db.prepare('DELETE FROM command_events WHERE revision <= ?').run(latestRevision - historyLimit)
 }
 
 interface PersistedCommandEventRow {

@@ -250,4 +250,24 @@ describe('slash-command durable writes under the projection guard', () => {
     )
     expect(cmd.body.messages.length).toBe(1)
   })
+
+  it('L37: command processing logs nothing to console.log on the warm path', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const logSpy = vi.spyOn(console, 'log')
+
+    try {
+      // A piped multi-command exercises both former log sites: the parsed
+      // `splited` dump and the per-step `pipe` dump.
+      await expect(processMultiCommand('/setvar key=hp 100|/getvar key=hp')).resolves.toBe('100')
+      await waitForCommand(
+        calls,
+        (call) =>
+          call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
+      )
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
+  })
 })

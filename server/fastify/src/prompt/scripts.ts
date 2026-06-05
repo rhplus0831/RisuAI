@@ -1,9 +1,11 @@
 import type {
   Chat,
+  Database,
   character,
   customscript,
 } from '../../../../src/ts/storage/database.svelte'
 import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
+import type { RisuModule } from '../../../../src/ts/process/modules'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { getActiveModules, getModuleRegexScripts } from './modules.js'
 
@@ -46,6 +48,18 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  *   - `@@repeat_back` adds an r-null guard the SPA elides
  *     (`scripts.ts:306` accesses `r[0]` blindly).
  *
+ * Per-assembly prepared-script memo (audit M2): the history walk runs
+ * `processScript` once per window message with identical script inputs, so
+ * the module-regex resolution, the `parseScripts` pass, and the per-script
+ * invariant prep (flag sanitation, outScript templating, RegExp compile)
+ * are hoisted into a `PreparedScript` list memoized per loaded `Database`
+ * (WeakMap, same request-scoped keying as the `getActiveModules` memo —
+ * a fresh request loads a fresh `Database`, so it can never hit a stale
+ * entry). Only `data` / `cbsConditions` / `chatID` vary per message.
+ * `cbs`-action scripts are excluded from regex precompilation: they
+ * pre-expand `script.in` through `expandVariables` per message and cannot
+ * share a compiled RegExp.
+ *
  * Deferred:
  *   - script-cache (`generateScriptCacheKey` / `getScriptCache` /
  *     `cacheScript`)
@@ -80,6 +94,30 @@ interface ParsedScript {
   script: customscript
   order: number
   actions: string[]
+}
+
+/** A `ParsedScript` plus every per-script invariant `applyOne` used to
+ *  recompute per message: the sanitized flag, the prepped replacement
+ *  template, the move-action classification, and — for non-`cbs` scripts —
+ *  the compiled RegExp (audit M2). */
+interface PreparedScript {
+  script: customscript
+  order: number
+  actions: string[]
+  /** Final sanitized flag (move actions already defanged `g`). */
+  flag: string
+  /** Replacement template with `$n` / `{{data}}` / trailing-`\n` rules applied. */
+  outScript: string
+  isMoveTop: boolean
+  isMoveBottom: boolean
+  /** `cbs`-action scripts pre-expand `script.in` per message; their RegExp
+   *  compiles per call and `reg` stays `null`. */
+  isCbs: boolean
+  /** Precompiled regex for non-cbs scripts (`lastIndex` reset before each
+   *  use). `null` when `in` is empty, the script is cbs, or the source failed
+   *  to compile (formerly a throw per message swallowed by `processScript`'s
+   *  per-script catch — the apply stays a no-op either way). */
+  reg: RegExp | null
 }
 
 function parseScripts(rawScripts: customscript[]): {
@@ -229,18 +267,12 @@ function applyRepeatBack(
   }
 }
 
-function applyOne(
-  ctx: ExpandContext,
-  char: character,
-  data: string,
-  parsed: ParsedScript,
-  cbsConditions: CbsConditions | undefined,
-  chatID: number,
-  currentChat: Chat | undefined,
-): string {
+/** Hoists the per-script invariant prep out of the per-message apply
+ *  (audit M2): flag resolution + sanitation, outScript templating, move
+ *  classification, and the RegExp compile for non-cbs scripts. */
+function prepareOne(parsed: ParsedScript): PreparedScript {
   const script = parsed.script
   const actions = parsed.actions
-  if (!script.in) return data
 
   // Flag default: 'g' (SPA scripts.ts:182). script.flag is honored only
   // when ableFlag === true (scripts.ts:183-185).
@@ -271,13 +303,58 @@ function applyOne(
 
   flag = sanitizeFlag(flag)
 
-  // `cbs` action: pre-expand the input regex source (scripts.ts:211-213).
-  let regexIn = script.in
-  if (actions.includes('cbs')) {
-    regexIn = expandVariables(regexIn, { ...ctx, cbsConditions }).text
+  const isCbs = actions.includes('cbs')
+  let reg: RegExp | null = null
+  if (!isCbs && script.in) {
+    try {
+      reg = new RegExp(script.in, flag)
+    } catch {
+      // Formerly thrown per message inside applyOne and swallowed by
+      // processScript's per-script catch; the apply stays a no-op.
+    }
   }
 
-  const reg = new RegExp(regexIn, flag)
+  return {
+    script,
+    order: parsed.order,
+    actions,
+    flag,
+    outScript,
+    isMoveTop,
+    isMoveBottom,
+    isCbs,
+    reg,
+  }
+}
+
+function applyOne(
+  ctx: ExpandContext,
+  char: character,
+  data: string,
+  prepared: PreparedScript,
+  cbsConditions: CbsConditions | undefined,
+  chatID: number,
+  currentChat: Chat | undefined,
+): string {
+  const script = prepared.script
+  const actions = prepared.actions
+  if (!script.in) return data
+
+  const { flag, outScript, isMoveTop, isMoveBottom } = prepared
+
+  let reg: RegExp
+  if (prepared.isCbs) {
+    // `cbs` action: pre-expand the input regex source (scripts.ts:211-213).
+    // Per-message by design — the expansion depends on cbsConditions.
+    const regexIn = expandVariables(script.in, { ...ctx, cbsConditions }).text
+    reg = new RegExp(regexIn, flag)
+  } else {
+    if (!prepared.reg) return data
+    reg = prepared.reg
+    // The shared compiled regex carries `lastIndex` across messages; reset so
+    // a reused global/sticky regex behaves exactly like a fresh compile.
+    reg.lastIndex = 0
+  }
 
   const isAction = outScript.startsWith('@@') || actions.length > 0
   if (isAction) {
@@ -313,6 +390,58 @@ function applyOne(
   return expandVariables(replaced, { ...ctx, cbsConditions }).text
 }
 
+interface PreparedScriptsMemoEntry {
+  /** Inputs the prepared list was computed from, compared by reference. A
+   *  request loads a fresh `Database`, so within one assembly these refs are
+   *  stable across the whole per-message walk. */
+  charRef: character
+  presetRegexRef: customscript[] | undefined
+  customscriptRef: customscript[] | undefined
+  activeModulesRef: RisuModule[]
+  prepared: PreparedScript[]
+}
+
+const preparedScriptsMemo = new WeakMap<Database, PreparedScriptsMemoEntry>()
+
+/** Resolves the sorted, prepared script list for one (db, char, chat) input
+ *  set, memoized per loaded `Database` (audit M2). The first-message call
+ *  (no `currentChat`) and the per-message calls key to different active-module
+ *  sets, but each runs the prep at most once per assembly. */
+function getPreparedScripts(
+  db: Database,
+  char: character,
+  currentChat: Chat | undefined,
+): PreparedScript[] {
+  const activeModules = getActiveModules(db, char, currentChat)
+  const memo = preparedScriptsMemo.get(db)
+  if (
+    memo &&
+    memo.charRef === char &&
+    memo.presetRegexRef === db.presetRegex &&
+    memo.customscriptRef === char.customscript &&
+    memo.activeModulesRef === activeModules
+  ) {
+    return memo.prepared
+  }
+
+  const rawScripts = (db.presetRegex ?? [])
+    .concat(char.customscript ?? [])
+    .concat(getModuleRegexScripts(activeModules))
+  const { parsed, orderChanged } = parseScripts(rawScripts)
+  if (orderChanged) {
+    parsed.sort((a, b) => b.order - a.order)
+  }
+  const prepared = parsed.map(prepareOne)
+  preparedScriptsMemo.set(db, {
+    charRef: char,
+    presetRegexRef: db.presetRegex,
+    customscriptRef: char.customscript,
+    activeModulesRef: activeModules,
+    prepared,
+  })
+  return prepared
+}
+
 export function processScript(
   ctx: ExpandContext,
   char: character,
@@ -322,20 +451,10 @@ export function processScript(
   chatID: number = -1,
   currentChat: Chat | undefined = undefined,
 ): string {
-  const db = ctx.database
-  const moduleRegex = getModuleRegexScripts(
-    getActiveModules(db, char, currentChat),
-  )
-  const rawScripts = (db.presetRegex ?? [])
-    .concat(char.customscript ?? [])
-    .concat(moduleRegex)
-  const { parsed, orderChanged } = parseScripts(rawScripts)
-  if (orderChanged) {
-    parsed.sort((a, b) => b.order - a.order)
-  }
+  const prepared = getPreparedScripts(ctx.database, char, currentChat)
 
   let current = data
-  for (const p of parsed) {
+  for (const p of prepared) {
     if (p.script.type !== mode) continue
     try {
       current = applyOne(
