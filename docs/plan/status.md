@@ -18,16 +18,19 @@ in one batch (M6, M8, L20, L22-L25, `bf1a6cb2`), Phase 5's
 materialization/lifecycle batch landed (M9-M11, L11-L15, L27-L30,
 `686220d6`), Phase 6's memory/Lua batch landed (M7, L16-L19, L21,
 `ca798c01`), and Phase 7's memoization/hygiene batch landed (M2, L3, L8, L9,
-L37-L40, `151c6978`). No scheduled work remains; Phase 8 stays the standing
-gate.
+L37-L40, `151c6978`). No scheduled work remains. Phase 8 is now CLOSED as a
+phase — every exit criterion is met and its closing full verification run is
+recorded — with the gate test staying live as the standing maintenance check.
+THE PLAN IS FULLY DISCHARGED.
 
 ## Current Snapshot
 
-All findings are routed and all scheduled findings are DONE. Phase 8 is the
-standing gate (its scaffold is live and every scheduled id — H1-H3, M1-M14,
-L1-L3, L5/L6, L8-L25, L27-L40, U1, U4 — is registered as `DONE` with its
-regression test). The only non-DONE ids are the gated owner-decision items
-(L4, L7, L26, U2) and U3 (no action).
+All findings are routed and all scheduled findings are DONE. Phase 8 is
+complete (its gate is live and every scheduled id — H1-H3, M1-M14, L1-L3,
+L5/L6, L8-L25, L27-L40, U1, U4 — is registered as `DONE` with its regression
+test; the closing full run is in
+[`latest-verification.md`](latest-verification.md)). The only non-DONE ids are
+the gated owner-decision items (L4, L7, L26, U2) and U3 (no action).
 
 - [Phase 0](phases/phase-0-baseline-foundations.md) — COMPLETE. Shared
   large-corpus fixture + `assertScopedLoadOnHotPath` server load-count harness
@@ -83,11 +86,12 @@ regression test). The only non-DONE ids are the gated owner-decision items
   (command pipe dumps, preset dumps — `importPreset`'s remaining four closed
   in the completion-audit closeout, per-render `Trigger time`, in-place
   transcript scan).
-- [Phase 8](phases/phase-8-verification-budgets.md) — standing; scaffold live
-  (`fixCompletenessGate.test.ts`). Every scheduled id is now `DONE` (registry +
+- [Phase 8](phases/phase-8-verification-budgets.md) — COMPLETE; the gate stays
+  live as the standing maintenance check (`fixCompletenessGate.test.ts`).
+  Every scheduled id is `DONE` (registry +
   [`active-risk-analysis.md`](active-risk-analysis.md) stay in enforced
-  lockstep). Future fixes (e.g. a gated item getting scheduled) flip ids the
-  same way: registry + doc together.
+  lockstep) and the closing full run is recorded. Future fixes (e.g. a gated
+  item getting scheduled) flip ids the same way: registry + doc together.
 
 ## Open Risk Router
 
@@ -104,10 +108,11 @@ dismissed list. Highlights:
 
 ## Latest Verification
 
-See [`latest-verification.md`](latest-verification.md). The Phase 7 closing
-run: `pnpm test` 1130/4, `pnpm api:test` 1737/1, audit green, both TypeScript
-checks zero errors. Re-run and record the proof set after any future change to
-the touched paths.
+See [`latest-verification.md`](latest-verification.md). The Phase 8 closing
+run (the plan's final proof set): `pnpm test` 1132/4 (122 files),
+`pnpm api:test` 1737/1 (99 files), audit green, both TypeScript checks zero
+errors. Re-run and record the proof set after any future change to the
+touched paths.
 
 ## Start Here
 

@@ -12,14 +12,19 @@ lifecycle (M6, M8, L20, L22-L25, `bf1a6cb2`). Phase 5: materialization and
 lifecycle cleanup (M9-M11, L11-L15, L27-L30, `686220d6`). Phase 6:
 memory/Lua bounds and reuse (M7, L16-L19, L21, `ca798c01`). Phase 7:
 memoization and hygiene (M2, L3, L8, L9, L37-L40, `151c6978`) — the last
-scheduled batch. The 57-finding audit is fully discharged: every scheduled id
-is DONE with a regression test and a Phase 8 gate entry; the only open ids are
-the gated owner-decision items (L4, L7, L26, U2 — evidence-gated) and U3 (no
-action).
+scheduled batch. Phase 8 is closed: every exit criterion is met and the
+closing full run (`pnpm test` 1132/4, `pnpm api:test` 1737/1, audit green,
+both tsc checks zero errors) is recorded in
+[`latest-verification.md`](latest-verification.md); the gate test stays live
+as the standing maintenance check. The 57-finding audit is fully discharged:
+every scheduled id is DONE with a regression test and a Phase 8 gate entry;
+the only open ids are the gated owner-decision items (L4, L7, L26, U2 —
+evidence-gated) and U3 (no action).
 
 ## Current Posture
 
-There is no scheduled work left in this plan. What remains is maintenance:
+There is no scheduled work left in this plan — all phases (0-8) are closed.
+What remains is maintenance:
 
 1. Keep the Phase 8 gate green: `fixCompletenessGate.test.ts` enforces that
    every DONE id keeps its regression test and that the registry stays in

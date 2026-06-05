@@ -63,9 +63,9 @@ hot paths, but left adjacent paths broad:
 - Several decompress/buffer paths check size only after full materialization.
 
 This plan started from the green baseline in
-[`latest-verification.md`](latest-verification.md). All scheduled phases
-(0-7) have landed; only the standing Phase 8 gate and the gated
-owner-decision items remain.
+[`latest-verification.md`](latest-verification.md). All phases (0-8) are
+closed; only the gated owner-decision items remain, and the Phase 8 gate test
+stays live as the standing maintenance check.
 
 ## Prerequisites
 
@@ -131,9 +131,10 @@ Every slice must preserve these; a slice that cannot is out of scope:
 
 ## Execution Cursor
 
-Phases 0-7 are complete — every scheduled finding is fixed and gated. Phase 8
-is the standing gate; it stays live to catch regressions and to receive any
-future evidence-gated items (L4, L7, L26, U2) an owner decides to schedule.
+Phases 0-8 are complete — every scheduled finding is fixed and gated, and the
+Phase 8 closing verification run is recorded. The gate test stays live to
+catch regressions and to receive any future evidence-gated items (L4, L7,
+L26, U2) an owner decides to schedule.
 
 For any future fix: re-check the cited symbol, add the focused regression test,
 narrow or bound the path, keep true full-corpus consumers broad, and register

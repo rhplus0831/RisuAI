@@ -35,7 +35,8 @@ the finding -> phase map is in
   last scheduled batch):
   [`phase-7-memoization-and-hygiene.md`](phase-7-memoization-and-hygiene.md),
   [`slices/phase-7-memoization-and-hygiene/`](slices/phase-7-memoization-and-hygiene/).
-- Phase 8, standing (verification budgets; scaffold live):
+- Phase 8, complete (verification budgets; the gate stays live as the
+  standing maintenance check):
   [`phase-8-verification-budgets.md`](phase-8-verification-budgets.md),
   [`slices/phase-8-verification-budgets/`](slices/phase-8-verification-budgets/).
 

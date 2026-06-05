@@ -1,12 +1,16 @@
 # Phase 8: Verification Budgets
 
-Status: standing — the Phase 0 scaffold is live at
+Status: COMPLETE (2026-06-05) — the gate stays live as the standing
+maintenance check. The Phase 0 scaffold is live at
 `src/ts/__tests__/fixCompletenessGate.test.ts`. It seeded scheduled ids as
 `PLANNED`; landed fixes flip to `DONE` with a test path. EVERY scheduled id is
 now `DONE` (Phases 1-7 all complete; the Phase 7 batch `M2`, `L3`, `L8`, `L9`,
-`L37`-`L40` was the last). Keeps every scheduled fix's regression proof
-registered and keeps the verification record current; a future-scheduled gated
-item (L4, L7, L26, U2) would enter the registry the same way.
+`L37`-`L40` was the last), and the Phase 8 closing verification run is
+recorded in [`../latest-verification.md`](../latest-verification.md). The gate
+keeps every scheduled fix's regression proof registered; a future-scheduled
+gated item (L4, L7, L26, U2) would enter the registry the same way, and any
+later change to a narrowed/bounded path re-runs the proof set and refreshes
+the verification log.
 
 Goal: prevent silent regression. Every fix in Phases 1-7 registers its test by
 finding id. The gate fails if a registered proof is missing or if runtime code
@@ -47,8 +51,9 @@ lands without a proof. Refresh
       renamed.
 - [x] The gate fails if a new finding id appears in the audit without a registry
       entry (universe completeness).
-- [ ] [`../latest-verification.md`](../latest-verification.md) is refreshed after
-      each phase with the maintained full/focused run.
+- [x] [`../latest-verification.md`](../latest-verification.md) is refreshed after
+      each phase with the maintained full/focused run (every Phase 1-7 batch has
+      its run-log row, plus the Phase 8 closing full run).
 
 ## Validation
 
