@@ -3691,10 +3691,9 @@ describe('Phase 9-3b chat record and folder commands', () => {
           id: 'chat-c',
           name: 'C chat',
           note: '',
-          message: [],
+          message: [{ role: 'user', data: 'created hello', chatId: 'msg-created' }],
           localLore: [],
         },
-        select: true,
       },
     })
     expect(created.statusCode).toBe(200)
@@ -3710,6 +3709,21 @@ describe('Phase 9-3b chat record and folder commands', () => {
       chatId: 'chat-c',
       selectedChatId: 'chat-c',
     })
+    await expect(persistedChatMessages(harness.app, assertion, 'chat-c')).resolves.toEqual([
+      { role: 'user', data: 'created hello', chatId: 'msg-created' },
+    ])
+    const createdBootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const createdCharacter = createdBootstrap.json().database.characters[0]
+    expect(createdCharacter.chatPage).toBe(0)
+    expect(createdCharacter.chats.map((chat: { id: string }) => chat.id)).toEqual([
+      'chat-c',
+      'chat-a',
+      'chat-b',
+    ])
 
     const updated = await harness.app.inject({
       method: 'PATCH',
@@ -3890,6 +3904,78 @@ describe('Phase 9-3b chat record and folder commands', () => {
       bookmarks: ['msg-a'],
       bookmarkNames: { 'msg-a': 'Pinned' },
     })
+  })
+
+  it('creates a chat at the head while select:false preserves the selected chat', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            { id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] },
+            { id: 'chat-b', name: 'B chat', note: '', message: [], localLore: [] },
+          ],
+          chatFolders: [],
+          chatPage: 1,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        select: false,
+        chat: {
+          id: 'chat-c',
+          name: 'C chat',
+          note: '',
+          message: [
+            { role: 'user', data: 'first', chatId: 'msg-c-1' },
+            { role: 'char', data: 'second', chatId: 'msg-c-2' },
+          ],
+          localLore: [],
+        },
+      },
+    })
+
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toMatchObject({
+      revision: 2,
+      chatId: 'chat-c',
+      selectedChatId: 'chat-b',
+      event: {
+        type: 'chat.created',
+        resource: 'chat',
+        id: 'chat-c',
+        parentId: 'char-a',
+      },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const character = bootstrap.json().database.characters[0]
+    expect(character.chatPage).toBe(2)
+    expect(character.chats.map((chat: { id: string }) => chat.id)).toEqual([
+      'chat-c',
+      'chat-a',
+      'chat-b',
+    ])
+    await expect(persistedChatMessages(harness.app, assertion, 'chat-c')).resolves.toEqual([
+      { role: 'user', data: 'first', chatId: 'msg-c-1' },
+      { role: 'char', data: 'second', chatId: 'msg-c-2' },
+    ])
+    await expect(persistedChatMessages(harness.app, assertion, 'chat-a')).resolves.toEqual([])
+    await expect(persistedChatMessages(harness.app, assertion, 'chat-b')).resolves.toEqual([])
   })
 
   it('updates chat metadata without rewriting message rows', async () => {

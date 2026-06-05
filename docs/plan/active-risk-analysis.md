@@ -14,7 +14,7 @@ v1 finding IDs are referenced as `v1-*`.
 
 - Confirmed findings: 102 total: 3 high, 22 medium, 59 low, 18 informational.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
-  known-overlap residuals K1-K4. All `PENDING`.
+  known-overlap residuals K1-K4. H2 is `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -44,7 +44,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | ID  | Phase                                          | Target fix                                                       | Status  |
 | --- | ---------------------------------------------- | ---------------------------------------------------------------- | ------- |
 | H1  | [1](phases/phase-1-high-severity-hot-paths.md) | Signal + wall-clock budget + iteration/recursion caps in `runTrigger`. | PENDING |
-| H2  | [1](phases/phase-1-high-severity-hot-paths.md) | Chat-create via the targeted writer kit (fork-route shape).      | PENDING |
+| H2  | [1](phases/phase-1-high-severity-hot-paths.md) | Chat-create via the targeted writer kit (fork-route shape).      | DONE    |
 | H3  | [1](phases/phase-1-high-severity-hot-paths.md) | Decouple `ReloadGUIPointer` from whole-screen remount + cache wipe. | PENDING |
 
 ### Medium

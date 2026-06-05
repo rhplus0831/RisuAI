@@ -122,6 +122,81 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     }
   })
 
+  it('H2: chat-create performs zero whole-corpus message/hypa reads while writing only the new transcript', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+    const targetCharacterId = fixture.hot.characterId
+    const existingHotMessages = (await hydrationGet(fixture.hot.chatId)).json()
+      .message as Array<{ chatId: string }>
+
+    const { result: created, loadCountByTable } = await withServerLoadInstrumentation(() =>
+      command('POST', `/api/v1/commands/characters/${targetCharacterId}/chats`, {
+        baseRevision: revision,
+        select: false,
+        chat: {
+          id: 'h2-created-chat',
+          name: 'H2 created',
+          note: '',
+          localLore: [],
+          message: [
+            { role: 'user', data: 'targeted create 1', chatId: 'h2-created-msg-1' },
+            { role: 'char', data: 'targeted create 2', chatId: 'h2-created-msg-2' },
+          ],
+        },
+      }),
+    )
+
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toMatchObject({
+      revision: revision + 1,
+      chatId: 'h2-created-chat',
+      // The hot fixture starts on chatPage 0; select:false keeps that selection
+      // even though the new chat is inserted at position 0.
+      selectedChatId: fixture.hot.chatId,
+      event: {
+        type: 'chat.created',
+        resource: 'chat',
+        id: 'h2-created-chat',
+        parentId: targetCharacterId,
+      },
+    })
+    // A regression to `loadPersistedWithMessages` would whole-table read both
+    // message payload families. The targeted path only does id/scoped lookups.
+    expect(loadCountByTable.messages ?? 0).toBe(0)
+    expect(loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const chatRows = db
+        .prepare('SELECT id FROM chats WHERE character_id = ? ORDER BY position')
+        .all(targetCharacterId) as Array<{ id: string }>
+      expect(chatRows.map((row) => row.id).slice(0, 4)).toEqual([
+        'h2-created-chat',
+        fixture.hot.chatId,
+        `corpus-chat-0-1`,
+        `corpus-chat-0-2`,
+      ])
+      const charRow = db
+        .prepare('SELECT data_json FROM characters WHERE id = ?')
+        .get(targetCharacterId) as { data_json: string }
+      expect((JSON.parse(charRow.data_json) as { chatPage?: number }).chatPage).toBe(1)
+    } finally {
+      db.close()
+    }
+
+    const createdMessages = (await hydrationGet('h2-created-chat')).json()
+      .message as Array<{ chatId: string }>
+    expect(createdMessages.map((message) => message.chatId)).toEqual([
+      'h2-created-msg-1',
+      'h2-created-msg-2',
+    ])
+    const hotAfter = (await hydrationGet(fixture.hot.chatId)).json()
+      .message as Array<{ chatId: string }>
+    expect(hotAfter.map((message) => message.chatId)).toEqual(
+      existingHotMessages.map((message) => message.chatId),
+    )
+  })
+
   it('M3/L5/L6: the full message lifecycle stays scoped (append, patch, delete, truncate, replace, generation-result)', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)

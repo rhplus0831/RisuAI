@@ -121,7 +121,6 @@ import {
 } from '../commands/chats.js'
 import {
   createMessageRecord,
-  messageIdExists,
   readGenerationResult,
   readMessageId,
   readMessagePatch,
@@ -2756,12 +2755,16 @@ export function registerCommandRoutes(
       const chatMessages = readReplacementMessages(chat.message)
       chat.message = chatMessages
       const selectCreated = readChatOptionalBoolean(body.select, 'select') ?? true
-      const result = applyJsonCommandMutation<{ chatId: string; selectedChatId: string | null }>({
+      const result = applyTargetedCommandMutation<{
+        chatId: string
+        selectedChatId: string | null
+      }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
           const target = ensureModuleCommandDatabase(database)
           const characters = normalizeAllCharacterChats(target)
           const modules = ensureModuleRecords(target)
@@ -2772,7 +2775,7 @@ export function registerCommandRoutes(
             throw new ValidationError(`Duplicate chat id: ${chat.id}`)
           }
           for (const message of chatMessages) {
-            if (messageIdExists(characters, message.chatId)) {
+            if (activeMessageIdExists(innerDb, message.chatId as string)) {
               throw new ValidationError(`Duplicate message id: ${message.chatId}`)
             }
           }
@@ -2793,6 +2796,10 @@ export function registerCommandRoutes(
           } else {
             ensureCharacterChats(character)
           }
+          writeCharacterChatRows(innerDb, characterId, character.chats as Record<string, unknown>[])
+          insertCharacterChatRow(innerDb, characterId, 0, chat as Record<string, unknown>)
+          replaceActiveChatMessages(innerDb, chat.id, chatMessages)
+          writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatCreated, id: chat.id, parentId: characterId },
             extra: { chatId: chat.id, selectedChatId: selectedChatId(character) },

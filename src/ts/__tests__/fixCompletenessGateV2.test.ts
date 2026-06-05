@@ -83,13 +83,53 @@ function planned(id: string, phase: Phase, fix: string): ScheduledFix {
   return { id, phase, fix, status: 'PLANNED' }
 }
 
+function done(
+  id: string,
+  phase: Phase,
+  fix: string,
+  testPath: string,
+  testName: string,
+  extraTests: Array<{ testPath: string; testName: string }> = [],
+): ScheduledFix {
+  return {
+    id,
+    phase,
+    fix,
+    status: 'DONE',
+    testPath,
+    testName,
+    ...(extraTests.length > 0 ? { extraTests } : {}),
+  }
+}
+
 function noAction(id: string, reason: string): RegistryReason {
   return { id, reason }
 }
 
 const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('H1', 1, 'Signal + wall-clock budget + iteration/recursion caps in `runTrigger`.'),
-  planned('H2', 1, 'Chat-create via the targeted writer kit (fork-route shape).'),
+  done(
+    'H2',
+    1,
+    'Chat-create via the targeted writer kit (fork-route shape).',
+    'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
+    'H2: chat-create performs zero whole-corpus message/hypa reads while writing only the new transcript',
+    [
+      {
+        testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+        testName:
+          'H2: chat-create performs zero hydrated message loads and no full-database clone-sized stringify',
+      },
+      {
+        testPath: 'server/fastify/__tests__/commands.test.ts',
+        testName: 'creates a chat at the head while select:false preserves the selected chat',
+      },
+      {
+        testPath: 'server/fastify/__tests__/commands.test.ts',
+        testName: 'rejects command-created chat ids and message ids already used by another character',
+      },
+    ],
+  ),
   planned('H3', 1, 'Decouple `ReloadGUIPointer` from whole-screen remount + cache wipe.'),
   planned('M1', 3, 'Dirty-flag `captureMessageReplacement`; compare before clone.'),
   planned('M2', 3, 'Marker fixed-point guard in `formatHistoryMessage`.'),
@@ -857,7 +897,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(scheduledRows.map((row) => row.id)).toEqual(SCHEDULED_FIXES.map((entry) => entry.id))
     expect(scheduledRows.map((row) => row.status)).toEqual(
-      Array.from({ length: SCHEDULED_FIXES.length }, () => 'PENDING'),
+      SCHEDULED_FIXES.map((entry) => (entry.status === 'DONE' ? 'DONE' : 'PENDING')),
     )
     expect(rows.find((row) => row.id === 'L12')?.routing).toBe('gated')
     expect(noActionRows.map((row) => row.id)).toEqual(rangeIds('I', 18))
@@ -915,9 +955,14 @@ describe('v2 fix-completeness gate routing registry', () => {
     )
   })
 
-  it('keeps current Phase 0 scheduled entries PLANNED without proof fields', () => {
-    expect(SCHEDULED_FIXES.every((entry) => entry.status === 'PLANNED')).toBe(true)
-    expect(SCHEDULED_FIXES.filter(hasProofFields)).toEqual([])
+  it('keeps unfinished scheduled entries PLANNED without proof fields and DONE entries proven', () => {
+    const plannedEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'PLANNED')
+    expect(plannedEntries.every((entry) => entry.status === 'PLANNED')).toBe(true)
+    expect(plannedEntries.filter(hasProofFields)).toEqual([])
+
+    const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
+    expect(doneEntries.map((entry) => entry.id)).toEqual(['H2'])
+    expect(doneEntries.every(hasProofFields)).toBe(true)
   })
 
   it('rejects DONE entries without a registered test path and test name', () => {

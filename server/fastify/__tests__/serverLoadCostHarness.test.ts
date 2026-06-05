@@ -78,7 +78,7 @@ afterEach(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-async function importDatabase(database: unknown): Promise<void> {
+async function importDatabase(database: unknown): Promise<number> {
   const res = await harness.app.inject({
     method: 'POST',
     url: '/api/v1/import/risusave',
@@ -86,6 +86,7 @@ async function importDatabase(database: unknown): Promise<void> {
     payload: { database },
   })
   expect(res.statusCode).toBe(200)
+  return res.json().revision as number
 }
 
 function hydrationGet(chatId: string) {
@@ -94,6 +95,33 @@ function hydrationGet(chatId: string) {
     url: `/api/v1/projection/chatMessages?id=${chatId}`,
     headers: { 'risu-auth': assertion },
   })
+}
+
+async function withJsonStringifySizeInstrumentation<T>(
+  fn: () => Promise<T>,
+): Promise<{ result: T; stringifyCount: number; maxStringifiedSize: number }> {
+  const original = JSON.stringify
+  let stringifyCount = 0
+  let maxStringifiedSize = 0
+  JSON.stringify = function trackedStringify(
+    this: unknown,
+    value: unknown,
+    replacer?: unknown,
+    space?: unknown,
+  ) {
+    stringifyCount += 1
+    const out = (original as (...args: unknown[]) => string).call(this, value, replacer, space)
+    if (typeof out === 'string' && out.length > maxStringifiedSize) {
+      maxStringifiedSize = out.length
+    }
+    return out
+  } as typeof JSON.stringify
+
+  try {
+    return { result: await fn(), stringifyCount, maxStringifiedSize }
+  } finally {
+    JSON.stringify = original
+  }
 }
 
 async function listen(): Promise<string> {
@@ -346,6 +374,64 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.chats[0].message).toHaveLength(fixture.hot.messageCount)
     expect(body.chats[0].hypaV3Data).toBeDefined()
     expect(body.chats[1].hypaV3Data).toBeUndefined()
+  })
+
+  it('H2: chat-create performs zero hydrated message loads and no full-database clone-sized stringify', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+    const fullHydratedDatabaseSize = JSON.stringify(fixture.database).length
+
+    const { result: stringifyRun, loadCountByTable } = await withServerLoadInstrumentation(() =>
+      withJsonStringifySizeInstrumentation(() =>
+        harness.app.inject({
+          method: 'POST',
+          url: `/api/v1/commands/characters/${fixture.hot.characterId}/chats`,
+          headers: { 'risu-auth': assertion },
+          payload: {
+            baseRevision: revision,
+            chat: {
+              id: 'h2-load-created-chat',
+              name: 'H2 load created',
+              note: '',
+              localLore: [],
+              message: [
+                { role: 'user', data: 'created under H2 load guard', chatId: 'h2-load-msg-1' },
+              ],
+            },
+          },
+        }),
+      ),
+    )
+
+    const res = stringifyRun.result
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      revision: revision + 1,
+      chatId: 'h2-load-created-chat',
+      selectedChatId: 'h2-load-created-chat',
+      event: {
+        type: 'chat.created',
+        resource: 'chat',
+        id: 'h2-load-created-chat',
+        parentId: fixture.hot.characterId,
+      },
+    })
+
+    // `loadPersistedWithMessages` would execute whole-table message/hypa reads;
+    // the targeted writer kit only performs scoped/id lookups for the new chat.
+    expect(loadCountByTable.messages ?? 0).toBe(0)
+    expect(loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
+    // A regression to `applyJsonCommandMutation` would call cloneJsonValue on
+    // the hydrated database, producing a stringify around the full corpus size
+    // (messages included). Legitimate targeted writes may still stringify
+    // message-free rows/table payloads, so gate the old hydrated-clone signature.
+    expect(stringifyRun.maxStringifiedSize).toBeLessThan(fullHydratedDatabaseSize * 0.75)
+
+    const hydrated = await hydrationGet('h2-load-created-chat')
+    expect(hydrated.statusCode).toBe(200)
+    expect((hydrated.json().message as Array<{ chatId: string }>).map((m) => m.chatId)).toEqual([
+      'h2-load-msg-1',
+    ])
   })
 
   it('U1: bulk character-lorebook hydration performs zero whole-corpus payload reads', async () => {
