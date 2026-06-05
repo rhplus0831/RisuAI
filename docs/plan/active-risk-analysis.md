@@ -48,7 +48,7 @@ consumers.
 | M4  | [2](phases/phase-2-server-load-narrowing.md)         | Single-row `loadSingleCharacterRow`; in-place mask where owned. | DONE (`254b3112`) |
 | M5  | [2](phases/phase-2-server-load-narrowing.md)         | Defer `jsonPayloadBytes` until metrics are enabled.             | DONE (`b2765994`) |
 | M6  | [4](phases/phase-4-outbound-request-lifecycle.md)    | Abort proxy `/fetch` upstream on close; add timeout backstop.   | DONE (`bf1a6cb2`) |
-| M7  | [6](phases/phase-6-memory-and-lua.md)                | Cap embed batches; split contextual requests by token size.     | scheduled         |
+| M7  | [6](phases/phase-6-memory-and-lua.md)                | Cap embed batches; split contextual requests by token size.     | DONE (`ca798c01`) |
 | M8  | [4](phases/phase-4-outbound-request-lifecycle.md)    | Add non-durable provider deadline and body cap.                 | DONE (`bf1a6cb2`) |
 | M9  | [5](phases/phase-5-materialization-and-lifecycle.md) | Streaming bounded inflate per envelope/block.                   | DONE (`686220d6`) |
 | M10 | [5](phases/phase-5-materialization-and-lifecycle.md) | Token-only asset scan; defer import asset report.               | DONE (`686220d6`)        |
@@ -74,12 +74,12 @@ consumers.
 | L13 | [5](phases/phase-5-materialization-and-lifecycle.md) | Guard detached runners and cancel-persist on close.            | DONE (`686220d6`)                        |
 | L14 | [5](phases/phase-5-materialization-and-lifecycle.md) | Heartbeat the durable SSE viewer during long assembly.         | DONE (`686220d6`)                        |
 | L15 | [5](phases/phase-5-materialization-and-lifecycle.md) | Bound no-viewer proxy-job replay/buffer.                       | DONE (`686220d6`)                        |
-| L16 | [6](phases/phase-6-memory-and-lua.md)                | Skip empty orphan-cleanup write txn. [known-leftover]          | scheduled                         |
-| L17 | [6](phases/phase-6-memory-and-lua.md)                | Bound per-chat memory batches for fairness.                    | scheduled                         |
-| L18 | [6](phases/phase-6-memory-and-lua.md)                | Reuse the Phase 2 scoped/memoized loader in memory batches.    | scheduled (after Phase 2)         |
-| L19 | [6](phases/phase-6-memory-and-lua.md)                | Aggregate Lua exec budget across hook phases. [known-leftover] | scheduled                         |
+| L16 | [6](phases/phase-6-memory-and-lua.md)                | Skip empty orphan-cleanup write txn. [known-leftover]          | DONE (`ca798c01`)                 |
+| L17 | [6](phases/phase-6-memory-and-lua.md)                | Bound per-chat memory batches for fairness.                    | DONE (`ca798c01`)                 |
+| L18 | [6](phases/phase-6-memory-and-lua.md)                | Reuse the Phase 2 scoped/memoized loader in memory batches.    | DONE (`ca798c01`)                 |
+| L19 | [6](phases/phase-6-memory-and-lua.md)                | Aggregate Lua exec budget across hook phases. [known-leftover] | DONE (`ca798c01`)                 |
 | L20 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Thread request `AbortSignal` into the Lua runtime.             | DONE (`bf1a6cb2`)                 |
-| L21 | [6](phases/phase-6-memory-and-lua.md)                | Reuse engine safely or cache compiled prelude.                 | scheduled                         |
+| L21 | [6](phases/phase-6-memory-and-lua.md)                | Reuse engine safely or cache compiled prelude.                 | DONE (`ca798c01`)                 |
 | L22 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Cap the streaming-provider SSE accumulation buffer.            | DONE (`bf1a6cb2`)                 |
 | L23 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Block embedded-private IPv6 forms. [known-leftover]            | DONE (`bf1a6cb2`)                 |
 | L24 | [4](phases/phase-4-outbound-request-lifecycle.md)    | Reject prototype keys in `setObjectValue`.                     | DONE (`bf1a6cb2`)                 |
@@ -154,8 +154,9 @@ self-host wins. Only L4, L7, L26, and U2 are fully gated.
 Route the 57 confirmed findings plus U1/U4 across Phases 0-8. Of those, the
 scheduled fix set excludes L4/L7/L26/U2 (gated) and U3 (no action). Phase 1
 highs, Phase 2 server-root work, Phase 3 client clone narrowing, Phase 4
-outbound request lifecycle, and Phase 5 materialization/lifecycle are done.
-Every fix needs a regression test and Phase 8 gate entry.
+outbound request lifecycle, Phase 5 materialization/lifecycle, and Phase 6
+memory/Lua are done. Every fix needs a regression test and Phase 8 gate
+entry.
 
 ## Investigated And Dismissed
 

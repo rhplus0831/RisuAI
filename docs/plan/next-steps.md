@@ -2,16 +2,17 @@
 
 Date: 2026-06-05
 
-Phases 1-5 are COMPLETE. Phase 1: H1 `0dc7452e`, H3 `e41dc6c6`, H2
+Phases 1-6 are COMPLETE. Phase 1: H1 `0dc7452e`, H3 `e41dc6c6`, H2
 `067ab82a`. Phase 2: scoped assembly load (M1, L1, L2, `c193c008`),
 command-mutation read narrowing (M3, L5, L6, `e0e86ab1`), single-character
 projection (M4, `254b3112`), and the metric/bulk-read slice (M5, L10, U1,
 `b2765994`). Phase 3: client clone narrowing (M12-M14, L31-L36, U4) plus the
 L32 watcher/global-modal ID-assignment follow-up. Phase 4: outbound request
 lifecycle (M6, M8, L20, L22-L25, `bf1a6cb2`). Phase 5: materialization and
-lifecycle cleanup (M9-M11, L11-L15, L27-L30, `686220d6`). Next: pick Phase
-6-7 by current pain — Phase 6 memory/Lua is the next root in audit order.
-Every fix needs a regression test, a Phase 8 gate flip
+lifecycle cleanup (M9-M11, L11-L15, L27-L30, `686220d6`). Phase 6:
+memory/Lua bounds and reuse (M7, L16-L19, L21, `ca798c01`). Next: Phase 7
+memoization/hygiene (M2, L3, L8, L9, L37-L40) is the only scheduled work
+left. Every fix needs a regression test, a Phase 8 gate flip
 (`fixCompletenessGate.test.ts` registry `PLANNED` -> `DONE` with the test
 path), and the matching status flip in
 [`active-risk-analysis.md`](active-risk-analysis.md) — the gate fails unless
@@ -36,15 +37,37 @@ both move together.
 
 In leverage order. Each is independent unless noted.
 
-1. Phase 6 — memory fairness and Lua budget/engine reuse (M7, L16-L19,
-   L21): the next root in audit order. Bounded embed/summarize batches,
-   per-chat fairness, orphan-cleanup write-txn skip, the Phase 2 scoped
-   loader in memory batches, an aggregate Lua exec budget, and safe engine
-   reuse / prelude caching.
-2. Phase 7 — memoization and hygiene (M2, L3, L8, L9, L37-L40). Refresh
-   [`latest-verification.md`](latest-verification.md) after each phase.
+1. Phase 7 — memoization and hygiene (M2, L3, L8, L9, L37-L40): the last
+   scheduled batch. Refresh
+   [`latest-verification.md`](latest-verification.md) after it lands.
 
-Done so far (Phases 0-5 complete):
+Done so far (Phases 0-6 complete):
+
+- M7, L16-L19, L21 — memory & Lua, DONE (`ca798c01`, one batch): the
+  embed/summarize batch handlers drain at most `MEMORY_JOB_BATCH_MAX_JOBS`
+  (32) jobs per tick and the `voyageContext3` contextual request is sliced
+  into token-aware sub-batches (~12k tokens at ~4 chars/token; oversized
+  chunks travel alone; unresolvable jobs isolated), each executed and
+  committed independently with a per-sub-batch `groupId` (M7);
+  `cleanupOrphanedMemory` exits before the summary re-parse when the chat
+  has no summaries and opens no `BEGIN IMMEDIATE` when nothing is orphaned
+  (L16); the worker claims round-robin across pending chats via
+  `listPendingMemoryJobChatIds` + an in-memory recency map, never-served
+  chats FIFO (L17); the handlers' default loader is the memory-job-scoped
+  `loadPersistedDatabaseForMemoryJob` — settings row + `hypa_v3_presets`
+  table + id-only character/chat stubs, broad fallback for
+  uninitialized/pre-extraction states (L18); `runServerLua` charges each
+  run's wall clock against the per-assembly `LuaExecBudget` (30s default,
+  threaded through every hook seam; constrained runs get
+  `min(execTimeoutMs, remaining)`, exhaustion short-circuits before any
+  engine boots) (L19); a pre-warmed engine pool runs the static prelude and
+  declares the host-fn surface at warm-up (state bound per call), each call
+  still gets one engine and closes it, and the pool refills only while no
+  run is in flight — engine boots during a pending Lua continuation crash
+  wasmoon (L21). Regressions: `memoryEmbedJobHandler.test.ts` M7/L18
+  tests, `memorySummarizeJobHandler.test.ts` L18 tests,
+  `memoryRepository.test.ts` L16 tests, `memoryWorker.test.ts` L17 tests,
+  `luaRuntime.test.ts` L19/L21 blocks.
 
 - M9-M11, L11-L15, L27-L30 — materialization & lifecycle, DONE
   (`686220d6`, one batch): legacy-compressed/stream envelopes and

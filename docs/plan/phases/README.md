@@ -28,7 +28,7 @@ the finding -> phase map is in
 - Phase 5, complete (Root 5 — materialization & lifecycle; M9-M11, L11-L15,
   L27-L30): [`phase-5-materialization-and-lifecycle.md`](phase-5-materialization-and-lifecycle.md),
   [`slices/phase-5-materialization-and-lifecycle/`](slices/phase-5-materialization-and-lifecycle/).
-- Phase 6, not started (memory & Lua):
+- Phase 6, complete (memory & Lua; M7, L16-L19, L21):
   [`phase-6-memory-and-lua.md`](phase-6-memory-and-lua.md),
   [`slices/phase-6-memory-and-lua/`](slices/phase-6-memory-and-lua/).
 - Phase 7, not started (memoization & hygiene):

@@ -7,25 +7,26 @@ only the phase or slice needed for the task.
 
 The plan schedules 57 confirmed findings (3 high, 14 medium, 40 low) from
 [`audit-stability-and-performance.md`](audit-stability-and-performance.md) across
-Phases 0-8. Phases 0-5 are complete: all three highs are fixed — H1
+Phases 0-8. Phases 0-6 are complete: all three highs are fixed — H1
 (`0dc7452e`), H3 (`e41dc6c6`), H2 (`067ab82a`) — all of Phase 2's server
 load narrowing landed — scoped assembly load (M1, L1, L2, `c193c008`),
 command-mutation read narrowing (M3, L5, L6, `e0e86ab1`), single-character
 projection (M4, `254b3112`), metric/bulk-read slice (M5, L10, U1,
 `b2765994`) — Phase 3's client clone narrowing is complete after the L32
 watcher/global-modal follow-up, Phase 4's outbound request lifecycle landed
-in one batch (M6, M8, L20, L22-L25, `bf1a6cb2`), and Phase 5's
+in one batch (M6, M8, L20, L22-L25, `bf1a6cb2`), Phase 5's
 materialization/lifecycle batch landed (M9-M11, L11-L15, L27-L30,
-`686220d6`). Next: pick Phase 6-7 by current pain (Phase 6 memory/Lua is the
-next root in audit order).
+`686220d6`), and Phase 6's memory/Lua batch landed (M7, L16-L19, L21,
+`ca798c01`). Next: Phase 7 memoization/hygiene (M2, L3, L8, L9, L37-L40) is
+the only scheduled work left.
 
 ## Current Snapshot
 
-All findings are routed. Phases 0-5 are complete. Phases 6-7 group the
-remaining mediums/lows by root cause. Phase 8 is the standing gate (its
-scaffold is live and H1-H3, M1, M3-M6, M8-M14, L1/L2, L5/L6, L10-L15, L20,
-L22-L25, L27-L36, U1, and U4 are registered as `DONE`, including the L32
-mount-time watcher/global-modal regression).
+All findings are routed. Phases 0-6 are complete. Phase 7 groups the
+remaining mediums/lows (memoization and hygiene). Phase 8 is the standing
+gate (its scaffold is live and H1-H3, M1, M3-M14, L1/L2, L5/L6, L10-L25,
+L27-L36, U1, and U4 are registered as `DONE`, including the L32 mount-time
+watcher/global-modal regression).
 
 - [Phase 0](phases/phase-0-baseline-foundations.md) — COMPLETE. Shared
   large-corpus fixture + `assertScopedLoadOnHotPath` server load-count harness
@@ -64,8 +65,14 @@ mount-time watcher/global-modal regression).
   no-viewer overflow abort, corrupt-manifest-tolerant backups list,
   transactional legacy restore re-import, persisted writer-session origin on
   replayed events, and the deferred reattach re-arm.
-- [Phase 6](phases/phase-6-memory-and-lua.md) — not started. M7, L16-L19, L21:
-  memory fairness and Lua budget/engine reuse.
+- [Phase 6](phases/phase-6-memory-and-lua.md) — COMPLETE. M7, L16-L19, L21
+  DONE (`ca798c01`, one batch): bounded embed/summarize batch drain
+  (`MEMORY_JOB_BATCH_MAX_JOBS`) + token-aware contextual sub-batches with
+  independent commit, no-orphan cleanup skips the write txn (and the summary
+  re-parse when the chat has no summaries), round-robin per-chat claim
+  fairness, the memory-job-scoped `loadPersistedDatabaseForMemoryJob` loader,
+  the shared per-request `LuaExecBudget`, and the pre-warmed Lua engine pool
+  (prelude pre-run, host fns bound per call, one engine per call).
 - [Phase 7](phases/phase-7-memoization-and-hygiene.md) — not started. M2, L3,
   L8, L9, L37-L40: memoization and hygiene.
 - [Phase 8](phases/phase-8-verification-budgets.md) — standing; scaffold live
@@ -111,8 +118,13 @@ dismissed list. Highlights:
   stream/job/shutdown paths clean up on abort/close/done, import/restore is
   atomic and corrupt-tolerant, and reconnect replay/reattach keep their
   correctness metadata. Phase 5 is COMPLETE.
-- Remaining roots: Phase 6 memory/Lua (M7, L16-L19, L21), Phase 7
-  memoization/hygiene (M2, L3, L8, L9, L37-L40).
+- Phase 6 memory/Lua is DONE (M7, L16-L19, L21, `ca798c01`): memory batches
+  are bounded (drain cap + token-aware contextual sub-batches committed
+  independently) and fair (round-robin per-chat claims), the no-orphan
+  cleanup path opens no write txn, memory handlers load through the scoped
+  memory-job loader, and Lua runs share an aggregate exec budget on a
+  pre-warmed per-call engine. Phase 6 is COMPLETE.
+- Remaining root: Phase 7 memoization/hygiene (M2, L3, L8, L9, L37-L40).
 - Gated (not scheduled): L4, L7, L26, U2 stay on the
   `RISU_PROTOCOL_METRICS` evidence path or an owner decision; U3 needs no
   action; the five dismissed candidates (R1-R5 in the audit) are non-issues.

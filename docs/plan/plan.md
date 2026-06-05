@@ -132,8 +132,8 @@ Every slice must preserve these; a slice that cannot is out of scope:
 
 ## Execution Cursor
 
-Phases 0, 1, 2, and 3 are complete. Prefer Phases 4-7 in the order above unless
-current evidence points elsewhere. Phase 8 is the standing gate.
+Phases 0-6 are complete. Phase 7 is the only scheduled work left. Phase 8 is
+the standing gate.
 
 For each fix: re-check the cited symbol, add the focused regression test, narrow
 or bound the path, keep true full-corpus consumers broad, and register the gate.

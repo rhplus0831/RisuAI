@@ -127,7 +127,21 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     id: 'M7',
     phase: 6,
     fix: 'Cap embed batches; split contextual requests by token size',
-    status: 'PLANNED',
+    status: 'DONE',
+    testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+    testName:
+      'M7: slices a contextual batch into token-aware sub-batches with per-sub-batch group ids',
+    extraTests: [
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName:
+          'M7: a failing contextual sub-batch is committed independently and does not fail unrelated chunks',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'M7: caps the drained embed batch at MEMORY_JOB_BATCH_MAX_JOBS per tick',
+      },
+    ],
   },
   {
     id: 'M8',
@@ -294,15 +308,69 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     testPath: 'server/fastify/__tests__/streamJobs.test.ts',
     testName: 'stops consuming the upstream once the no-viewer buffer overflows (L15)',
   },
-  { id: 'L16', phase: 6, fix: 'Skip empty orphan-cleanup write txn', status: 'PLANNED' },
-  { id: 'L17', phase: 6, fix: 'Bound per-chat memory batches for fairness', status: 'PLANNED' },
+  {
+    id: 'L16',
+    phase: 6,
+    fix: 'Skip empty orphan-cleanup write txn',
+    status: 'DONE',
+    testPath: 'server/fastify/__tests__/memoryRepository.test.ts',
+    testName: 'opens no write transaction when summaries exist but none are orphaned (L16)',
+    extraTests: [
+      {
+        testPath: 'server/fastify/__tests__/memoryRepository.test.ts',
+        testName: 'opens no write transaction when the chat has no summaries at all (L16)',
+      },
+    ],
+  },
+  {
+    id: 'L17',
+    phase: 6,
+    fix: 'Bound per-chat memory batches for fairness',
+    status: 'DONE',
+    testPath: 'server/fastify/__tests__/memoryWorker.test.ts',
+    testName: "L17: round-robins claims across chats so one chat's backlog cannot starve another",
+    extraTests: [
+      {
+        testPath: 'server/fastify/__tests__/memoryWorker.test.ts',
+        testName:
+          "L17: one chat's batch is bounded to a single tick and the other chat is served next",
+      },
+    ],
+  },
   {
     id: 'L18',
     phase: 6,
     fix: 'Reuse the Phase 2 scoped/memoized loader in memory batches',
-    status: 'PLANNED',
+    status: 'DONE',
+    testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+    testName: 'L18: the default loader performs zero whole-corpus payload reads per batch',
+    extraTests: [
+      {
+        testPath: 'server/fastify/__tests__/memorySummarizeJobHandler.test.ts',
+        testName: 'L18: the default loader performs zero whole-corpus payload reads per batch',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memorySummarizeJobHandler.test.ts',
+        testName:
+          'L18: an unknown chat fails with the same chat-not-found error through the scoped loader',
+      },
+    ],
   },
-  { id: 'L19', phase: 6, fix: 'Aggregate Lua exec budget across hook phases', status: 'PLANNED' },
+  {
+    id: 'L19',
+    phase: 6,
+    fix: 'Aggregate Lua exec budget across hook phases',
+    status: 'DONE',
+    testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
+    testName:
+      'L19: runaway hooks across a trigger loop are bounded by the aggregate budget, not per-run limits',
+    extraTests: [
+      {
+        testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
+        testName: 'L19: an exhausted aggregate budget short-circuits before booting an engine',
+      },
+    ],
+  },
   {
     id: 'L20',
     phase: 4,
@@ -318,7 +386,22 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   },
-  { id: 'L21', phase: 6, fix: 'Reuse engine safely or cache compiled prelude', status: 'PLANNED' },
+  {
+    id: 'L21',
+    phase: 6,
+    fix: 'Reuse engine safely or cache compiled prelude',
+    status: 'DONE',
+    testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
+    testName:
+      'L21: a default-limit run serves from the warm pool without a hot-path boot, output identical',
+    extraTests: [
+      {
+        testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
+        testName:
+          'L21: pooled engines never leak Lua globals between runs (per-call isolation preserved)',
+      },
+    ],
+  },
   {
     id: 'L22',
     phase: 4,
