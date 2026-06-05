@@ -9,7 +9,8 @@ import {
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import {
-  renderContentCard,
+  renderContentCardWithStableCache,
+  type StableCardRenderCache,
   type UnformatedPromptSlots as PromptUnformatedSlots,
 } from './templates.js'
 
@@ -60,6 +61,7 @@ export interface PreflightInput {
   promptTemplate: PromptItem[] | null
   usingPromptTemplate: boolean
   report?: LorebookActivationReport
+  stableCardCache?: StableCardRenderCache
 }
 
 function positionParserFor(
@@ -70,7 +72,15 @@ function positionParserFor(
 }
 
 export function preflightTemplateTokens(input: PreflightInput): PreflightResult {
-  const { ctx, currentChar, unformated, promptTemplate, usingPromptTemplate, report } = input
+  const {
+    ctx,
+    currentChar,
+    unformated,
+    promptTemplate,
+    usingPromptTemplate,
+    report,
+    stableCardCache,
+  } = input
   const db = ctx.database
   const { encoding, options } = tokenizerOptionsFromDb(db)
   const positionParser = positionParserFor(report)
@@ -94,17 +104,23 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
     return { addedTokens, memoryCardUsed, hasCachePoint }
   }
 
-  for (const card of promptTemplate) {
+  for (let templateIndex = 0; templateIndex < promptTemplate.length; templateIndex++) {
+    const card = promptTemplate[templateIndex]
     // Content + chat cards share the 7-10b/c `renderContentCard`
     // builder; here we tokenize its rows. Only `memory` / `cache`
     // return `null` and are handled inline below.
-    const contentRows = renderContentCard(card, {
-      ctx,
-      currentChar,
-      unformated,
-      usingPromptTemplate,
-      positionParser,
-    })
+    const contentRows = renderContentCardWithStableCache(
+      card,
+      {
+        ctx,
+        currentChar,
+        unformated,
+        usingPromptTemplate,
+        positionParser,
+      },
+      stableCardCache,
+      templateIndex,
+    )
     if (contentRows) {
       tokenizeAll(contentRows)
       continue

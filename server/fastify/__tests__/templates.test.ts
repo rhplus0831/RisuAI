@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type {
   Database,
   character,
@@ -8,6 +8,7 @@ import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import {
   buildFormatOrder,
   coalesceRows,
+  createStableCardRenderCache,
   normalizeTemplate,
   renderByFormatOrder,
   renderByTemplate,
@@ -16,10 +17,16 @@ import {
   type UnformatedPromptSlots,
 } from '../src/prompt/templates.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
+import { preflightTemplateTokens } from '../src/prompt/preflight.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
+import * as promptVariables from '../src/prompt/variables.js'
 
 beforeAll(() => {
   bootPromptVariables()
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 function ctxFor(db: Database): ExpandContext {
@@ -798,6 +805,311 @@ describe('Phase 7-10e content trim', () => {
       'gpt4',
     )
     expect(out[0].content).toBe('x')
+  })
+})
+
+describe('Phase 3 M3 stable template card cache', () => {
+  const stableCards = (): PromptItem[] => [
+    { type: 'plain', type2: 'main', text: 'plain {{user}}', role: 'system' },
+    { type: 'jailbreak', type2: 'normal', text: 'jb {{user}}', role: 'system' },
+    { type: 'cot', type2: 'normal', text: 'cot {{user}}', role: 'system' },
+    {
+      type: 'chatML',
+      text: '<|im_start|>user<|im_sep|>ml {{user}}<|im_end|>',
+    },
+    { type: 'description', innerFormat: 'desc {{user}} {{slot}}' },
+    { type: 'persona', innerFormat: 'persona {{user}} {{slot}}' },
+    { type: 'authornote', innerFormat: 'author {{user}} {{slot}}' },
+  ]
+
+  const stableSlots = (): UnformatedPromptSlots =>
+    makeSlots({
+      description: [row({ role: 'system', content: 'DESC' })],
+      personaPrompt: [row({ role: 'user', content: 'PERSONA' })],
+      authorNote: [row({ role: 'assistant', content: 'NOTE' })],
+    })
+
+  const cacheDb = (overrides: Partial<Database> = {}): Database =>
+    makeDatabase({
+      username: 'Alex',
+      jailbreakToggle: true,
+      chainOfThought: true,
+      ...overrides,
+    } as Partial<Database>)
+
+  it('renders stable template cards once across preflight and final render', () => {
+    const db = cacheDb({
+      promptInfoInsideChat: true,
+      promptTextInfoInsideChat: true,
+    } as Partial<Database>)
+    const ctx = ctxFor(db)
+    const currentChar = makeCharacter()
+    const unformated = stableSlots()
+    const template = stableCards()
+    const stableCardCache = createStableCardRenderCache()
+    const spy = vi.spyOn(promptVariables, 'expandVariables')
+
+    preflightTemplateTokens({
+      ctx,
+      currentChar,
+      unformated,
+      promptTemplate: template,
+      usingPromptTemplate: true,
+      stableCardCache,
+    })
+    const rendered = renderByTemplate(
+      ctx,
+      currentChar,
+      unformated,
+      template,
+      true,
+      undefined,
+      undefined,
+      stableCardCache,
+    )
+
+    expect(rendered.formated.map((r) => r.content)).toEqual([
+      'plain Alex\n\njb Alex\n\ncot Alex',
+      'ml Alex',
+      'desc Alex DESC',
+      'persona Alex PERSONA',
+      'author Alex NOTE',
+    ])
+    expect(rendered.promptInfo).toEqual([
+      { role: 'system', content: 'plain Alex' },
+      { role: 'system', content: 'jb Alex' },
+      { role: 'system', content: 'cot Alex' },
+      { role: 'system', content: 'desc Alex {{slot}}' },
+      { role: 'user', content: 'persona Alex {{slot}}' },
+      { role: 'assistant', content: 'author Alex {{slot}}' },
+    ])
+
+    const runVarCalls = (input: string): number =>
+      spy.mock.calls.filter(
+        ([value, expandCtx]) =>
+          value === input && (expandCtx as ExpandContext | undefined)?.runVar === true,
+      ).length
+    const promptInfoCalls = (input: string): number =>
+      spy.mock.calls.filter(
+        ([value, expandCtx]) =>
+          value === input && (expandCtx as ExpandContext | undefined)?.runVar !== true,
+      ).length
+
+    expect(runVarCalls('plain {{user}}')).toBe(1)
+    expect(runVarCalls('jb {{user}}')).toBe(1)
+    expect(runVarCalls('cot {{user}}')).toBe(1)
+    expect(runVarCalls('ml {{user}}')).toBe(1)
+    expect(runVarCalls('desc {{user}} {{slot}}')).toBe(1)
+    expect(runVarCalls('persona {{user}} {{slot}}')).toBe(1)
+    expect(runVarCalls('author {{user}} {{slot}}')).toBe(1)
+
+    expect(promptInfoCalls('desc {{user}} {{slot}}')).toBe(1)
+    expect(promptInfoCalls('persona {{user}} {{slot}}')).toBe(1)
+    expect(promptInfoCalls('author {{user}} {{slot}}')).toBe(1)
+  })
+
+  it('keeps live chat, postEverything, memory, and cache cards outside the stable-card cache', () => {
+    const db = cacheDb({ automaticCachePoint: true } as Partial<Database>)
+    const ctx = ctxFor(db)
+    const currentChar = makeCharacter()
+    const unformated = makeSlots({
+      postEverything: [row({ role: 'system', content: 'post-before' })],
+    })
+    const template: PromptItem[] = [
+      { type: 'plain', type2: 'main', text: 'stable {{user}}', role: 'system' },
+      { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
+      { type: 'postEverything' },
+      { type: 'memory', innerFormat: 'mem {{slot}}' },
+      { type: 'cache', name: 'tail', depth: 1, role: 'assistant' },
+    ]
+    const stableCardCache = createStableCardRenderCache()
+
+    preflightTemplateTokens({
+      ctx,
+      currentChar,
+      unformated,
+      promptTemplate: template,
+      usingPromptTemplate: true,
+      stableCardCache,
+    })
+    unformated.chats.push(row({ role: 'user', content: 'live-user' }))
+    unformated.chats.push(row({ role: 'assistant', content: 'live-assistant' }))
+    unformated.postEverything.push(row({ role: 'system', content: 'post-after' }))
+
+    const { formated } = renderByTemplate(
+      ctx,
+      currentChar,
+      unformated,
+      template,
+      true,
+      undefined,
+      [row({ role: 'assistant', content: 'live-memory' })],
+      stableCardCache,
+    )
+
+    expect(formated.map((r) => r.content)).toEqual([
+      'stable Alex',
+      'live-user',
+      'live-assistant',
+      'post-before\n\npost-after',
+      'mem live-memory',
+    ])
+    expect(formated.find((r) => r.content === 'mem live-memory')?.cachePoint).toBe(true)
+  })
+
+  it('clones cached rows before cache-card mutation', () => {
+    const db = cacheDb()
+    const ctx = ctxFor(db)
+    const currentChar = makeCharacter()
+    const stableCardCache = createStableCardRenderCache()
+    const plain: PromptItem = {
+      type: 'plain',
+      type2: 'main',
+      text: 'stable {{user}}',
+      role: 'system',
+    }
+
+    const first = renderByTemplate(
+      ctx,
+      currentChar,
+      makeSlots(),
+      [plain, { type: 'cache', name: 'tail', depth: 1, role: 'system' }],
+      true,
+      undefined,
+      undefined,
+      stableCardCache,
+    ).formated
+    expect(first[0].cachePoint).toBe(true)
+
+    const second = renderByTemplate(
+      ctx,
+      currentChar,
+      makeSlots(),
+      [plain],
+      true,
+      undefined,
+      undefined,
+      stableCardCache,
+    ).formated
+    expect(second).toEqual([{ role: 'system', content: 'stable Alex' }])
+  })
+
+  it('keeps prompt bytes identical with stable-card cache across template variants', async () => {
+    const project = (result: Awaited<ReturnType<typeof renderFinalPrompt>>) => ({
+      formated: result.formated,
+      promptText: result.promptText,
+    })
+
+    const cases: Array<{
+      name: string
+      promptTemplate: PromptItem[] | null
+      db: Partial<Database>
+      formatOrder: FormatOrderKey[]
+      slots: () => UnformatedPromptSlots
+    }> = [
+      {
+        name: 'template automatic cache with jailbreak and cot',
+        promptTemplate: [
+          { type: 'plain', type2: 'main', text: 'main {{user}}', role: 'system' },
+          { type: 'jailbreak', type2: 'normal', text: 'jb {{user}}', role: 'system' },
+          { type: 'cot', type2: 'normal', text: 'cot {{user}}', role: 'system' },
+          { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
+        ],
+        db: { automaticCachePoint: true, jailbreakToggle: true, chainOfThought: true },
+        formatOrder: [],
+        slots: () =>
+          makeSlots({
+            chats: [
+              row({ role: 'user', content: 'u0' }),
+              row({ role: 'assistant', content: 'a1' }),
+              row({ role: 'user', content: 'u2' }),
+            ],
+          }),
+      },
+      {
+        name: 'template explicit cache with prompt info',
+        promptTemplate: [
+          { type: 'plain', type2: 'main', text: 'main {{user}}', role: 'system' },
+          { type: 'description', innerFormat: 'D {{user}} {{slot}}' },
+          { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
+          { type: 'cache', name: 'tail', depth: 1, role: 'user' },
+        ],
+        db: {
+          automaticCachePoint: true,
+          promptInfoInsideChat: true,
+          promptTextInfoInsideChat: true,
+        },
+        formatOrder: [],
+        slots: () =>
+          makeSlots({
+            description: [row({ role: 'system', content: 'DESC' })],
+            chats: [
+              row({ role: 'user', content: 'u0' }),
+              row({ role: 'assistant', content: 'a1' }),
+            ],
+          }),
+      },
+      {
+        name: 'template disabled jailbreak and cot',
+        promptTemplate: [
+          { type: 'jailbreak', type2: 'normal', text: 'jb {{user}}', role: 'system' },
+          { type: 'cot', type2: 'normal', text: 'cot {{user}}', role: 'system' },
+          { type: 'plain', type2: 'main', text: 'main {{user}}', role: 'system' },
+        ],
+        db: { jailbreakToggle: false, chainOfThought: false },
+        formatOrder: [],
+        slots: () => makeSlots(),
+      },
+      {
+        name: 'non-template ignores stable cache',
+        promptTemplate: null,
+        db: {
+          automaticCachePoint: true,
+          promptInfoInsideChat: true,
+          promptTextInfoInsideChat: true,
+        },
+        formatOrder: ['main', 'chats', 'postEverything'],
+        slots: () =>
+          makeSlots({
+            main: [row({ role: 'system', content: 'main slot' })],
+            chats: [row({ role: 'user', content: 'u0' })],
+            postEverything: [row({ role: 'system', content: 'post' })],
+          }),
+      },
+    ]
+
+    for (const testCase of cases) {
+      const render = async (withCache: boolean) => {
+        const db = cacheDb(testCase.db)
+        const ctx = ctxFor(db)
+        const currentChar = makeCharacter()
+        const unformated = testCase.slots()
+        const stableCardCache = withCache ? createStableCardRenderCache() : undefined
+
+        if (stableCardCache && testCase.promptTemplate) {
+          preflightTemplateTokens({
+            ctx,
+            currentChar,
+            unformated,
+            promptTemplate: testCase.promptTemplate,
+            usingPromptTemplate: true,
+            stableCardCache,
+          })
+        }
+
+        return renderFinalPrompt({
+          ctx,
+          currentChar,
+          unformated,
+          promptTemplate: testCase.promptTemplate,
+          usingPromptTemplate: !!testCase.promptTemplate,
+          formatOrder: testCase.formatOrder,
+          stableCardCache,
+        })
+      }
+
+      await expect(project(await render(true)), testCase.name).toEqual(project(await render(false)))
+    }
   })
 })
 

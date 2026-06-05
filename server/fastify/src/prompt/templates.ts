@@ -226,7 +226,11 @@ Example: <img src="{{ele::{{chardisplayasset}}::0}}">
  * row through the server `expandVariables` (matches the prior copy in
  * `preflight.ts`). Returns `null` when the text is not a ChatML block.
  */
-export function parseChatML(text: string, ctx: ExpandContext): OpenAIChat[] | null {
+export function parseChatML(
+  text: string,
+  ctx: ExpandContext,
+  onVarDirty?: () => void,
+): OpenAIChat[] | null {
   const starter = '<|im_start|>'
   const seperator = '<|im_sep|>'
   const ender = '<|im_end|>'
@@ -272,7 +276,7 @@ export function parseChatML(text: string, ctx: ExpandContext): OpenAIChat[] | nu
 
       return {
         role,
-        content: expandVariables(v, ctx).text,
+        content: expanded(v, ctx, onVarDirty),
         thoughts,
       } satisfies OpenAIChat
     })
@@ -343,6 +347,8 @@ export interface ContentCardDeps {
    * `preflight.ts` never supplies it.
    */
   promptInfo?: OpenAIChat[]
+  /** Called when an expansion writes chat variables through `runVar`. */
+  onVarDirty?: () => void
 }
 
 /** Render result for the template-walk path (7-10e). */
@@ -350,6 +356,112 @@ export interface RenderedTemplate {
   formated: OpenAIChat[]
   /** Parallel prompt-info rows; defined only when capture is on. */
   promptInfo?: OpenAIChat[]
+}
+
+export class StableCardRenderCache {
+  private readonly entries = new Map<string, OpenAIChat[]>()
+  private dirtyState = false
+
+  get dirty(): boolean {
+    return this.dirtyState
+  }
+
+  read(key: string): OpenAIChat[] | undefined {
+    const rows = this.entries.get(key)
+    return rows ? structuredClone(rows) : undefined
+  }
+
+  write(key: string, rows: OpenAIChat[], dirty: boolean): void {
+    this.entries.set(key, structuredClone(rows))
+    this.dirtyState ||= dirty
+  }
+}
+
+export function createStableCardRenderCache(): StableCardRenderCache {
+  return new StableCardRenderCache()
+}
+
+function expanded(input: string, ctx: ExpandContext, onVarDirty?: () => void): string {
+  const result = expandVariables(input, ctx)
+  if (result.dirty) onVarDirty?.()
+  return result.text
+}
+
+export function isStableTemplateCard(card: PromptItem): boolean {
+  return (
+    card.type === 'plain' ||
+    card.type === 'jailbreak' ||
+    card.type === 'cot' ||
+    card.type === 'chatML' ||
+    card.type === 'persona' ||
+    card.type === 'description' ||
+    card.type === 'authornote'
+  )
+}
+
+function stableCardCacheKey(card: PromptItem, templateIndex: number): string {
+  return `${templateIndex}:${card.type}:${card.id ?? ''}`
+}
+
+function captureStableCardPromptInfo(
+  card: PromptItem,
+  rows: OpenAIChat[],
+  deps: ContentCardDeps,
+): void {
+  if (!deps.promptInfo) return
+
+  switch (card.type) {
+    case 'persona':
+    case 'description':
+    case 'authornote':
+      if (!card.innerFormat || rows.length === 0) return
+      for (const row of rows) {
+        pushPromptInfoBody(deps.promptInfo, row.role, card.innerFormat, deps.ctx)
+      }
+      return
+    case 'plain':
+    case 'jailbreak':
+    case 'cot':
+      if (card.type2 === 'globalNote') return
+      for (const row of rows) {
+        pushPromptInfoBody(deps.promptInfo, row.role, row.content, deps.ctx)
+      }
+      return
+  }
+}
+
+export function renderContentCardWithStableCache(
+  card: PromptItem,
+  deps: ContentCardDeps,
+  stableCardCache: StableCardRenderCache | undefined,
+  templateIndex: number,
+): OpenAIChat[] | null {
+  if (!stableCardCache || !isStableTemplateCard(card)) {
+    return renderContentCard(card, deps)
+  }
+
+  const key = stableCardCacheKey(card, templateIndex)
+  const cached = stableCardCache.read(key)
+  if (cached) {
+    captureStableCardPromptInfo(card, cached, deps)
+    return cached
+  }
+
+  let dirty = false
+  const rows =
+    renderContentCard(card, {
+      ...deps,
+      ctx: { ...deps.ctx, runVar: true },
+      promptInfo: undefined,
+      onVarDirty: () => {
+        dirty = true
+      },
+    }) ?? []
+  stableCardCache.write(key, rows, dirty)
+
+  const rendered = stableCardCache.read(key) ?? []
+  captureStableCardPromptInfo(card, rendered, deps)
+  return rendered
 }
 
 /**
@@ -380,10 +492,14 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
     fallback?: (row: OpenAIChat) => string,
   ): OpenAIChat[] => {
     if (innerFormat && rows.length > 0) {
-      const wrap = expandVariables(positionParser(innerFormat, loc), {
-        ...ctx,
-        chara: currentChar,
-      }).text
+      const wrap = expanded(
+        positionParser(innerFormat, loc),
+        {
+          ...ctx,
+          chara: currentChar,
+        },
+        deps.onVarDirty,
+      )
       for (const row of rows) {
         row.content = wrap.replace('{{slot}}', fallback ? fallback(row) : row.content)
         // Prompt-info capture uses the RAW `innerFormat` (no positionParser,
@@ -441,11 +557,15 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
         }
       }
 
-      content = expandVariables(content, {
-        ...ctx,
-        chara: currentChar,
-        role: card.role,
-      }).text
+      content = expanded(
+        content,
+        {
+          ...ctx,
+          chara: currentChar,
+          role: card.role,
+        },
+        deps.onVarDirty,
+      )
 
       const promptRow: OpenAIChat = { role: CONVERT_ROLE[card.role], content }
       // Prompt-info capture re-expands the parsed content with the bare
@@ -456,7 +576,7 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
       return [promptRow]
     }
     case 'chatML':
-      return parseChatML(card.text, { ...ctx, chara: currentChar }) ?? []
+      return parseChatML(card.text, { ...ctx, chara: currentChar }, deps.onVarDirty) ?? []
     case 'chat': {
       const chats = unformated.chats
       let start = card.rangeStart
@@ -514,6 +634,7 @@ export function renderByTemplate(
   usingPromptTemplate: boolean,
   positionParser: (text: string, loc: string) => string = (text) => text,
   memories: OpenAIChat[] = [],
+  stableCardCache?: StableCardRenderCache,
 ): RenderedTemplate {
   const db = ctx.database
   const aiModel = db.aiModel ?? ''
@@ -539,7 +660,8 @@ export function renderByTemplate(
   const hasCachePoint = promptTemplate.some((card) => card.type === 'cache')
 
   const formated: OpenAIChat[] = []
-  for (const card of promptTemplate) {
+  for (let templateIndex = 0; templateIndex < promptTemplate.length; templateIndex++) {
+    const card = promptTemplate[templateIndex]
     // `memory` builds rows from the injected `memories` and `cache`
     // mutates the accumulated `formated` array, so both live here rather
     // than in the pure `renderContentCard` row-builder.
@@ -580,7 +702,7 @@ export function renderByTemplate(
       continue
     }
 
-    const rows = renderContentCard(card, deps)
+    const rows = renderContentCardWithStableCache(card, deps, stableCardCache, templateIndex)
     if (rows) {
       coalesceRows(formated, rows, aiModel)
     }
@@ -632,6 +754,8 @@ export interface RenderFinalPromptArgs {
    * Browser Lua execution stays deferred.
    */
   editRequest?: (rows: OpenAIChat[]) => OpenAIChat[] | Promise<OpenAIChat[]>
+  /** Per-assembly stable-card rows shared by template preflight and final render. */
+  stableCardCache?: StableCardRenderCache
 }
 
 export interface RenderFinalPromptResult {
@@ -680,6 +804,7 @@ export async function renderFinalPrompt(
     positionParser = (text) => text,
     isContinue = false,
     editRequest = (rows) => rows,
+    stableCardCache,
   } = args
   const aiModel = ctx.database.aiModel ?? ''
 
@@ -704,6 +829,7 @@ export async function renderFinalPrompt(
       usingPromptTemplate,
       positionParser,
       memories,
+      stableCardCache,
     ))
   } else {
     formated = renderByFormatOrder(unformated, formatOrder, aiModel)

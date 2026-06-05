@@ -2099,3 +2099,43 @@ describe('Phase 3 M2/L8/L9 history expansion cost', () => {
     expect(spy.mock.calls.filter(([input]) => input === 'tail says {{user}}')).toHaveLength(1)
   })
 })
+
+describe('Phase 3 M3 stable card cache', () => {
+  it('persists stable-card setvar once through assembly mutations', async () => {
+    const db = makeDatabase({
+      aiModel: 'gpt4',
+      maxContext: 100_000,
+      maxResponse: 50,
+      promptTemplate: [
+        {
+          type: 'plain',
+          type2: 'main',
+          text: 'stable {{setvar::score::9}}body',
+          role: 'system',
+        },
+      ],
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [makeChat({ id: 'chat-1', message: [] })],
+        }),
+      ],
+    } as Partial<Database>)
+    const spy = vi.spyOn(promptVariables, 'expandVariables')
+
+    const result = await assemblePrompt(baseInput({ userMessage: 'new user' }), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.formated?.map((r) => r.content)).toContain('stable body')
+    expect(result.mutations?.chatVarMutations).toEqual([
+      { key: '$score', before: null, after: '9' },
+    ])
+    expect(
+      spy.mock.calls.filter(
+        ([input, expandCtx]) =>
+          input === 'stable {{setvar::score::9}}body' &&
+          (expandCtx as { runVar?: boolean } | undefined)?.runVar === true,
+      ),
+    ).toHaveLength(1)
+  })
+})

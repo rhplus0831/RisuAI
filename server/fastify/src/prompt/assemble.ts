@@ -14,9 +14,11 @@ import {
 import { planHypaV3ChunkJobs } from '../memoryChunkPlanner.js'
 import {
   buildFormatOrder,
+  createStableCardRenderCache,
   normalizeTemplate,
   renderFinalPrompt,
   type FormatOrderKey,
+  type StableCardRenderCache,
   type UnformatedPromptSlots,
 } from './templates.js'
 import {
@@ -367,6 +369,8 @@ export interface AssemblyState {
   unformated: UnformatedPromptSlots
   promptTemplate: PromptItem[] | null
   usingPromptTemplate: boolean
+  /** Per-assembly cache for template cards stable across token preflight and final render. */
+  stableCardCache: StableCardRenderCache
   formatOrder: FormatOrderKey[]
   /** `input.mode === 'continue'`; drives the `[Continue the last response]` marker. */
   isContinue: boolean
@@ -534,6 +538,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
 
   const { promptTemplate, usingPromptTemplate } = normalizeTemplate(database, currentChar)
   const formatOrder = buildFormatOrder(database)
+  const stableCardCache = createStableCardRenderCache()
   const initialMessages = cloneMessages(currentChat.message ?? [], 'initialMessages')
 
   return {
@@ -547,6 +552,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     unformated,
     promptTemplate,
     usingPromptTemplate,
+    stableCardCache,
     formatOrder,
     signal: deps.signal,
     luaExecBudget: createLuaExecBudget(),
@@ -627,6 +633,12 @@ function syncWorkingScriptstate(state: AssemblyState): void {
   if (persisted) {
     state.currentChat.scriptstate = persisted.scriptstate
   }
+}
+
+function foldStableCardCacheVars(state: AssemblyState): void {
+  if (!state.stableCardCache.dirty) return
+  state.varChanged = true
+  syncWorkingScriptstate(state)
 }
 
 function captureMessageReplacement(
@@ -1057,8 +1069,10 @@ export function fillLorebookSlots(state: AssemblyState): void {
     promptTemplate,
     usingPromptTemplate,
     report,
+    stableCardCache: state.stableCardCache,
   })
   currentTokens += preflight.addedTokens
+  foldStableCardCacheVars(state)
 
   state.report = report
   state.positionParser = positionParser
@@ -1514,9 +1528,11 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
       positionParser: state.positionParser,
       isContinue: state.isContinue,
       editRequest: lua.editRequest,
+      stableCardCache: state.stableCardCache,
     }),
   )
   state.promptText = render.promptText
+  foldStableCardCacheVars(state)
   // A Lua `editRequest` hook may have written chat vars; fold its writes into
   // the assembly state so the route persists them (the var engine already wrote
   // through to the db chat scriptstate the delta reads).
