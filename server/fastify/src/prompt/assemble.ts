@@ -75,12 +75,13 @@ import { expandVariables, type ExpandContext } from './variables.js'
 import type { PromptEvent } from './sseEvents.js'
 import type { MemorySelectionInput } from '../memorySelectionService.js'
 import {
-  cleanupOrphanedMemory,
-  listMemorySummaries,
+  cleanupOrphanedMemoryWithSummarySnapshot,
+  loadMemorySummarySnapshot,
   type CleanupOrphanedMemoryResult,
   type EnqueueMemoryJobInput,
   type MemoryJob,
   type MemorySummary,
+  type MemorySummarySnapshot,
 } from '../memoryRepository.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
@@ -1310,13 +1311,14 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
   )
   const chatId = state.currentChat.id ?? state.input.chatId
   const embeddingModel = resolvePromptMemoryEmbeddingModel(state.database)
-  state.promptMemoryChunkPlanningDiagnostics = planPromptMemoryChunksForAssembly({
+  const planning = planPromptMemoryChunksForAssembly({
     state,
     memoryDb,
     chatId,
     enabled,
     settings,
   })
+  state.promptMemoryChunkPlanningDiagnostics = planning.diagnostics
   const selection = selectPromptMemory({
     db: memoryDb,
     enabled,
@@ -1329,6 +1331,7 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
       recentMemoryRatio: settings.recentMemoryRatio,
       similarMemoryRatio: settings.similarMemoryRatio,
     },
+    summarySnapshot: planning.summarySnapshot,
   })
   state.promptMemorySelectionDiagnostics = selection.diagnostics
 
@@ -1352,26 +1355,30 @@ function planPromptMemoryChunksForAssembly(input: {
   chatId: string
   enabled: boolean
   settings: ReturnType<typeof normalizeHypaV3Settings>['settings']
-}): PromptMemoryChunkPlanningDiagnostics {
+}): { diagnostics: PromptMemoryChunkPlanningDiagnostics; summarySnapshot?: MemorySummarySnapshot } {
   const diagnostics = emptyPromptMemoryChunkPlanningDiagnostics()
-  if (!input.enabled) return diagnostics
+  if (!input.enabled) return { diagnostics }
 
   diagnostics.attempted = true
+  let summarySnapshot: MemorySummarySnapshot | undefined
   try {
     const chats = input.state.historyMessages ?? []
     const currentChatMemos = chats.map((chat) => chat.memo).filter(isNonEmptyString)
+    summarySnapshot = loadMemorySummarySnapshot(input.memoryDb, { chatId: input.chatId })
     if (!input.settings.preserveOrphanedMemory && currentChatMemos.length > 0) {
-      diagnostics.cleanup = cleanupOrphanedMemory(input.memoryDb, {
+      const cleaned = cleanupOrphanedMemoryWithSummarySnapshot(input.memoryDb, {
         chatId: input.chatId,
         currentChatMemos,
         preserveOrphanedMemory: input.settings.preserveOrphanedMemory,
+        summarySnapshot,
       })
+      diagnostics.cleanup = cleaned.cleanup
+      summarySnapshot = cleaned.summarySnapshot
     }
 
-    const summaries = listMemorySummaries(input.memoryDb, {
-      chatId: input.chatId,
-      model: input.settings.summarizationModel,
-    })
+    const summaries = summarySnapshot.summaries.filter(
+      (summary) => summary.model === input.settings.summarizationModel,
+    )
     const { encoding, options } = tokenizerOptionsFromDb(input.state.database)
     const plan = planStandardHypaV3Memory({
       chats,
@@ -1398,7 +1405,7 @@ function planPromptMemoryChunksForAssembly(input: {
   } catch (error) {
     diagnostics.errors.push(errorMessage(error, 'failed to plan Hypa V3 memory chunks'))
   }
-  return diagnostics
+  return { diagnostics, summarySnapshot }
 }
 
 function emptyPromptMemoryChunkPlanningDiagnostics(): PromptMemoryChunkPlanningDiagnostics {

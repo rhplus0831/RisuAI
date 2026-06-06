@@ -7,6 +7,7 @@ import {
   cancelMemoryJob,
   claimNextMemoryJob,
   cleanupOrphanedMemory,
+  cleanupOrphanedMemoryWithSummarySnapshot,
   completeMemoryJob,
   createMemoryChunk,
   createMemoryEmbedding,
@@ -23,7 +24,9 @@ import {
   listMemoryEmbeddings,
   listMemoryJobs,
   listMemorySummaries,
+  loadMemorySummarySnapshot,
   mapMemoryJobRow,
+  pruneTerminalMemoryJobs,
   recoverRunningMemoryJobs,
   retryOrFailMemoryJob,
   updateMemoryChunkStatus,
@@ -582,6 +585,66 @@ describe('memory repository orphan cleanup', () => {
       db.close()
     }
   })
+
+  it('L20: cleans orphaned rows from a shared summary snapshot and returns retained summaries', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-keep',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'keep chunk',
+        status: 'summarized',
+      })
+      createMemoryChunk(db, {
+        id: 'chunk-delete',
+        chatId: 'chat-1',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'delete chunk',
+        status: 'summarized',
+      })
+      createMemorySummary(db, {
+        id: 'summary-keep',
+        chatId: 'chat-1',
+        chunkId: 'chunk-keep',
+        model: 'summary-model',
+        text: 'keep summary',
+        metadata: { chatMemos: ['memo-a'] },
+        tokens: 3,
+      })
+      createMemorySummary(db, {
+        id: 'summary-delete-other-model',
+        chatId: 'chat-1',
+        chunkId: 'chunk-delete',
+        model: 'other-summary-model',
+        text: 'delete summary',
+        metadata: { chatMemos: ['removed-memo'] },
+        tokens: 3,
+      })
+
+      const snapshot = loadMemorySummarySnapshot(db, { chatId: 'chat-1' })
+      const result = cleanupOrphanedMemoryWithSummarySnapshot(db, {
+        chatId: 'chat-1',
+        currentChatMemos: ['memo-a'],
+        summarySnapshot: snapshot,
+      })
+
+      expect(result.cleanup).toEqual({ summariesDeleted: 1, chunksDeleted: 1 })
+      expect(result.summarySnapshot.summaries.map((summary) => summary.id)).toEqual([
+        'summary-keep',
+      ])
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.id)).toEqual([
+        'summary-keep',
+      ])
+      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((chunk) => chunk.id)).toEqual([
+        'chunk-keep',
+      ])
+    } finally {
+      db.close()
+    }
+  })
 })
 
 describe('memory repository jobs', () => {
@@ -903,6 +966,70 @@ describe('memory repository jobs', () => {
       })
       expect(cancelMemoryJob(db, 'cancel-running')).toBeNull()
       expect(completeMemoryJob(db, 'missing')).toBeNull()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L17: prunes only terminal memory jobs older than retention', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      for (const [id, status] of [
+        ['old-cancelled', 'cancelled'],
+        ['old-completed', 'completed'],
+        ['old-failed', 'failed'],
+        ['recent-completed', 'completed'],
+        ['pending-old', 'pending'],
+        ['running-old', 'running'],
+      ] as const) {
+        createMemoryJob(db, {
+          id,
+          chatId: 'chat-1',
+          kind: 'chunk',
+          payload: {},
+          status,
+        })
+      }
+      db.prepare(
+        `
+          UPDATE memory_jobs
+          SET updated_at = '2026-06-01T00:00:00.000Z'
+          WHERE id IN ('old-cancelled', 'old-completed', 'old-failed', 'pending-old', 'running-old')
+        `,
+      ).run()
+      db.prepare(
+        `
+          UPDATE memory_jobs
+          SET updated_at = '2026-06-05T12:00:00.000Z'
+          WHERE id = 'recent-completed'
+        `,
+      ).run()
+
+      expect(
+        pruneTerminalMemoryJobs(db, {
+          now: '2026-06-06T00:00:00.000Z',
+          retentionMs: 24 * 60 * 60 * 1000,
+          maxPerSweep: 2,
+        }),
+      ).toBe(2)
+      expect(getMemoryJob(db, 'old-failed')).toMatchObject({ status: 'failed' })
+
+      expect(
+        pruneTerminalMemoryJobs(db, {
+          now: '2026-06-06T00:00:00.000Z',
+          retentionMs: 24 * 60 * 60 * 1000,
+        }),
+      ).toBe(1)
+
+      expect(
+        listMemoryJobs(db)
+          .map((job) => [job.id, job.status])
+          .sort((left, right) => String(left[0]).localeCompare(String(right[0]))),
+      ).toEqual([
+        ['pending-old', 'pending'],
+        ['recent-completed', 'completed'],
+        ['running-old', 'running'],
+      ])
     } finally {
       db.close()
     }

@@ -303,6 +303,64 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     })
   })
 
+  it('L25: reports an asset that disappears after bundle planning without aborting export', async () => {
+    persistBundleDatabase(harness.dataDir)
+    const includedPath = path.join(assetsDir(harness.dataDir), `${INCLUDED_ASSET}.png`)
+    const renamedPath = `${includedPath}.renamed`
+    const realOpen = fs.promises.open.bind(fs.promises)
+    let renamedBeforeStreamOpen = false
+    const openSpy = vi
+      .spyOn(fs.promises, 'open')
+      .mockImplementation(async (...args: Parameters<typeof fs.promises.open>) => {
+        if (!renamedBeforeStreamOpen && args[0] === includedPath) {
+          renamedBeforeStreamOpen = true
+          await fs.promises.rename(includedPath, renamedPath)
+        }
+        return realOpen(...args)
+      })
+
+    let exported: Awaited<ReturnType<typeof authedInject>>
+    try {
+      exported = await authedInject({
+        method: 'GET',
+        url: '/api/v1/export/bundle',
+      })
+    } finally {
+      openSpy.mockRestore()
+    }
+
+    expect(renamedBeforeStreamOpen).toBe(true)
+    expect(exported.statusCode).toBe(200)
+    const files = unzipBundle(exported.rawPayload)
+    expect(Object.keys(files).sort()).toEqual(['database.risu', 'manifest.json'])
+
+    const manifest = parseManifest(files)
+    expect(manifest.includedAssets).toEqual([])
+    expect(manifest.missingFiles).toEqual([
+      {
+        id: INCLUDED_ASSET,
+        ext: 'png',
+        size: 12,
+        contentType: 'image/png',
+        path: `assets/${INCLUDED_ASSET}.png`,
+      },
+      {
+        id: MISSING_FILE,
+        ext: 'webp',
+        size: 8,
+        contentType: 'image/webp',
+        path: `assets/${MISSING_FILE}.webp`,
+      },
+    ])
+    expect(harness.commandEvents.list()).toEqual([
+      {
+        type: 'state.exported',
+        revision: 0,
+        resource: 'state',
+      },
+    ])
+  })
+
   it('rejects unauthenticated bundle exports once a password is set', async () => {
     persistBundleDatabase(harness.dataDir)
 
@@ -425,13 +483,18 @@ describe('bundle export abort cleanup (M11)', () => {
       writeFileSync(path.join(assetsDir(dataDir), `${INCLUDED_ASSET}.png`), bigAsset)
 
       const openedReadStreams: Array<ReturnType<typeof fs.createReadStream>> = []
-      const realCreateReadStream = fs.createReadStream.bind(fs)
+      const realOpen = fs.promises.open.bind(fs.promises)
       const spy = vi
-        .spyOn(fs, 'createReadStream')
-        .mockImplementation((...args: Parameters<typeof fs.createReadStream>) => {
-          const stream = realCreateReadStream(...args)
-          openedReadStreams.push(stream)
-          return stream
+        .spyOn(fs.promises, 'open')
+        .mockImplementation(async (...args: Parameters<typeof fs.promises.open>) => {
+          const file = await realOpen(...args)
+          const realCreateReadStream = file.createReadStream.bind(file)
+          file.createReadStream = ((...streamArgs: Parameters<typeof file.createReadStream>) => {
+            const stream = realCreateReadStream(...streamArgs)
+            openedReadStreams.push(stream)
+            return stream
+          }) as typeof file.createReadStream
+          return file
         })
       try {
         const persisted = loadPersistedWithMessages(db, dataDir)

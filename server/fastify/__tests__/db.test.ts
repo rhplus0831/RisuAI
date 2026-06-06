@@ -97,6 +97,19 @@ describe('schema migrations', () => {
     }
   })
 
+  it('L15: opens Fastify databases with WAL synchronous NORMAL', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      const journalMode = db.prepare('PRAGMA journal_mode').get() as { journal_mode: string }
+      const synchronous = db.prepare('PRAGMA synchronous').get() as { synchronous: number }
+
+      expect(journalMode.journal_mode.toLowerCase()).toBe('wal')
+      expect(synchronous.synchronous).toBe(1)
+    } finally {
+      db.close()
+    }
+  })
+
   it('applies the migration runner version bump without changing revision', () => {
     const dataDir = makeDataDir()
     seedSchemaVersion(dataDir, 0, 7)

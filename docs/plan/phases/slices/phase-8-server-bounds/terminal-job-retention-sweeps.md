@@ -1,7 +1,7 @@
 # Slice: Terminal Job Retention Sweeps
 
 Phase: [8](../../phase-8-server-bounds.md). Findings: L2 and L17. Runtime
-change.
+change. Status: done 2026-06-06.
 
 ## Scope
 
@@ -66,6 +66,19 @@ logic, memory job execution behavior, or legacy import wipes.
 - Focused tests cover both retention helpers and the selected sweep wiring.
 - L2 and L17 v2 gate entries point at real focused tests and the risk-map rows
   are `DONE`.
+
+## Proof
+
+- `server/fastify/__tests__/durableGeneration.test.ts`: L2 helper coverage for
+  old terminal, recent terminal, and pending rows; app retry-sweep wiring.
+- `server/fastify/__tests__/memoryRepository.test.ts`: L17 helper coverage for
+  old terminal, recent terminal, pending, running, and max-per-sweep rows.
+- `server/fastify/__tests__/memoryWorker.test.ts`: worker startup maintenance
+  sweep.
+- `server/fastify/__tests__/memoryJobsRoutes.test.ts`: route shape for retained
+  active and recent terminal rows after startup pruning.
+- `src/ts/__tests__/fixCompletenessGateV2.test.ts`: L2/L17 registered `DONE`
+  with the focused proof paths above.
 
 ## Validation
 

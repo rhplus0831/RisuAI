@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { embedTextGroups, embedTexts } from '../src/memoryEmbeddingAdapter.js'
-import type { MemoryEmbeddingModelRequest } from '../src/memoryEmbeddingModel.js'
+import {
+  MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+  VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
+  VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
+  VOYAGE_CONTEXTUAL_MAX_CHUNKS,
+  VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
+  type MemoryEmbeddingModelRequest,
+} from '../src/memoryEmbeddingModel.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -17,6 +24,28 @@ function request(
     apiKey: 'sk-test',
     ...overrides,
   }
+}
+
+function voyageRequest(
+  overrides: Partial<MemoryEmbeddingModelRequest> = {},
+): MemoryEmbeddingModelRequest {
+  return request({
+    provider: 'voyage-contextual',
+    model: 'voyage-context-3',
+    wireModel: 'voyage-context-3',
+    endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
+    limits: {
+      source: 'provider',
+      maxInputTokens: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
+      maxInputBytes:
+        VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS *
+        MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+      maxRequestTokens: VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
+      maxRequestChunks: VOYAGE_CONTEXTUAL_MAX_CHUNKS,
+      contextualWindowTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
+    },
+    ...overrides,
+  })
 }
 
 function ok(body: unknown): Response {
@@ -119,6 +148,28 @@ describe('memory embedding provider adapter', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('L21: rejects oversized inputs before constructing an embedding request body', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+
+    await expect(
+      embedTexts({
+        request: request({
+          limits: {
+            source: 'fallback',
+            maxInputBytes: 4,
+          },
+        }),
+        input: ['abcde'],
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      error: 'embedding input 0 exceeds maxInputBytes: 5 bytes > 4 bytes',
+      code: 'configuration',
+    })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('validates response count and vector dimensions', async () => {
     vi.stubGlobal('fetch', async () =>
       ok({
@@ -187,12 +238,7 @@ describe('memory embedding provider adapter', () => {
     })
 
     const result = await embedTextGroups({
-      request: request({
-        provider: 'voyage-contextual',
-        model: 'voyage-context-3',
-        wireModel: 'voyage-context-3',
-        endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
-      }),
+      request: voyageRequest(),
       groups: [['first', 'second']],
       signal: new AbortController().signal,
     })
@@ -229,11 +275,7 @@ describe('memory embedding provider adapter', () => {
 
     await expect(
       embedTextGroups({
-        request: request({
-          provider: 'voyage-contextual',
-          model: 'voyage-context-3',
-          wireModel: 'voyage-context-3',
-        }),
+        request: voyageRequest(),
         groups: [['first', 'second']],
         signal: new AbortController().signal,
       }),
@@ -241,5 +283,28 @@ describe('memory embedding provider adapter', () => {
       error: 'embedding response count mismatch: expected 2, got 1',
       code: 'invalid-response',
     })
+  })
+
+  it('L22: rejects grouped contextual inputs when the request has no context limit', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+
+    await expect(
+      embedTextGroups({
+        request: request({
+          provider: 'voyage-contextual',
+          model: 'voyage-context-3',
+          wireModel: 'voyage-context-3',
+          limits: undefined,
+        }),
+        groups: [['first', 'second']],
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      error:
+        'contextual embedding model voyage-context-3 is missing contextualWindowTokens; refusing to send grouped contextual inputs',
+      code: 'configuration',
+    })
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

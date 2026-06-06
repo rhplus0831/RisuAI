@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import type { Database } from '../../../src/ts/storage/database.svelte'
-import { resolveMemoryEmbeddingModel } from '../src/memoryEmbeddingModel.js'
+import {
+  MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+  MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES,
+  OPENAI_EMBEDDING_MAX_INPUT_TOKENS,
+  OPENAI_EMBEDDING_MAX_REQUEST_TOKENS,
+  VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
+  VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
+  VOYAGE_CONTEXTUAL_MAX_CHUNKS,
+  VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
+  findMemoryEmbeddingLimitViolation,
+  formatMemoryEmbeddingLimitViolation,
+  resolveMemoryEmbeddingModel,
+} from '../src/memoryEmbeddingModel.js'
 
 function db(overrides: Partial<Database>): Database {
   return overrides as Database
@@ -20,6 +32,13 @@ describe('memory embedding model resolver', () => {
         wireModel: 'text-embedding-3-small',
         endpoint: 'https://api.openai.com/v1/embeddings',
         apiKey: 'sk-test',
+        limits: {
+          source: 'provider',
+          maxInputTokens: OPENAI_EMBEDDING_MAX_INPUT_TOKENS,
+          maxInputBytes:
+            OPENAI_EMBEDDING_MAX_INPUT_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+          maxRequestTokens: OPENAI_EMBEDDING_MAX_REQUEST_TOKENS,
+        },
       },
     })
   })
@@ -66,6 +85,10 @@ describe('memory embedding model resolver', () => {
         wireModel: 'custom-model',
         endpoint: 'https://embeddings.example.test/v1/embeddings',
         apiKey: 'custom-key',
+        limits: {
+          source: 'fallback',
+          maxInputBytes: MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES,
+        },
       },
     })
   })
@@ -88,6 +111,10 @@ describe('memory embedding model resolver', () => {
         provider: 'custom',
         model: 'custom',
         endpoint: 'https://embeddings.example.test/v1/embeddings',
+        limits: {
+          source: 'fallback',
+          maxInputBytes: MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES,
+        },
       },
     })
   })
@@ -113,8 +140,49 @@ describe('memory embedding model resolver', () => {
         wireModel: 'voyage-context-3',
         endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
         apiKey: 'voyage-key',
+        limits: {
+          source: 'provider',
+          maxInputTokens: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
+          maxInputBytes:
+            VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS *
+            MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+          maxRequestTokens: VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
+          maxRequestChunks: VOYAGE_CONTEXTUAL_MAX_CHUNKS,
+          contextualWindowTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
+        },
       },
     })
+  })
+
+  it('L21: formats per-input size violations with the offending bound', () => {
+    const result = resolveMemoryEmbeddingModel(
+      db({
+        hypaModel: 'custom',
+        hypaCustomSettings: {
+          url: 'https://embeddings.example.test/v1',
+          key: '',
+          model: '',
+        },
+      }),
+    )
+
+    expect(result.ok).toBe(true)
+    if (result.ok === false) return
+    const violation = findMemoryEmbeddingLimitViolation(
+      result.request,
+      ['x'.repeat(MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES + 1)],
+      () => 'memory embedding chunk chunk-1',
+    )
+    expect(violation).toMatchObject({
+      bound: 'maxInputBytes',
+      actual: MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES + 1,
+      limit: MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES,
+    })
+    expect(formatMemoryEmbeddingLimitViolation(violation!)).toBe(
+      `memory embedding chunk chunk-1 exceeds maxInputBytes: ${
+        MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES + 1
+      } bytes > ${MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES} bytes`,
+    )
   })
 
   it('rejects browser-local models and requires Voyage credentials', () => {

@@ -1,11 +1,17 @@
 import { Readable } from 'node:stream'
+import { finished } from 'node:stream/promises'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
-import { bufferToBodyInit, filterResponseHeaders, normalizeForwardHeaders } from '../proxy.js'
+import { filterResponseHeaders, normalizeForwardHeaders } from '../proxy.js'
+import {
+  PROXY_STREAM_DEFAULT_TIMEOUT_MS,
+  normalizeStreamTimeoutMs,
+} from '../streamJobs.js'
 
 const HUB_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'] as const
 const PUBLIC_HUB_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+const METHODS_WITHOUT_BODY = new Set(['GET', 'HEAD'])
 
 const STRIP_REQUEST_HEADERS = new Set(['x-risu-node-path'])
 
@@ -13,8 +19,15 @@ const HUB_TRANSPORT_RESPONSE_HEADERS = new Set(['content-length', 'transfer-enco
 
 const PREFIX = '/api/v1/hub'
 
+export const HUB_FORWARD_DEFAULT_TIMEOUT_MS = PROXY_STREAM_DEFAULT_TIMEOUT_MS
+
 function headerString(value: string | string[] | undefined): string {
   return Array.isArray(value) ? (value[0] ?? '') : (value ?? '')
+}
+
+export function normalizeHubForwardTimeoutMs(raw: unknown): number {
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return normalizeStreamTimeoutMs(value ?? HUB_FORWARD_DEFAULT_TIMEOUT_MS)
 }
 
 function hasUpstreamOverride(req: FastifyRequest): boolean {
@@ -52,23 +65,98 @@ function resolveUpstreamUrl(req: FastifyRequest, hubUrl: string): string {
   return hubUrl + (suffix.length > 0 ? suffix : '/')
 }
 
+interface HubAbort {
+  signal: AbortSignal
+  timedOut(): boolean
+  clientClosed(): boolean
+  cleanup(): void
+}
+
+function createHubAbort(req: FastifyRequest, reply: FastifyReply, timeoutMs: number): HubAbort {
+  const controller = new AbortController()
+  let timeoutFired = false
+  let closeFired = false
+
+  const abortForTimeout = (): void => {
+    timeoutFired = true
+    controller.abort()
+  }
+  const abortForClose = (): void => {
+    closeFired = true
+    controller.abort()
+  }
+
+  const timer = setTimeout(abortForTimeout, timeoutMs)
+  timer.unref?.()
+
+  const onRequestClose = (): void => {
+    if (!req.raw.complete) abortForClose()
+  }
+  const onResponseClose = (): void => {
+    if (!reply.raw.writableEnded) abortForClose()
+  }
+
+  req.raw.once('close', onRequestClose)
+  reply.raw.once('close', onResponseClose)
+
+  return {
+    signal: controller.signal,
+    timedOut: () => timeoutFired,
+    clientClosed: () => closeFired,
+    cleanup: () => {
+      clearTimeout(timer)
+      req.raw.off('close', onRequestClose)
+      reply.raw.off('close', onResponseClose)
+    },
+  }
+}
+
+function bufferToForwardBody(buffer: Buffer): BodyInit {
+  return new Uint8Array(buffer.buffer as ArrayBuffer, buffer.byteOffset, buffer.byteLength)
+}
+
+async function cancelUpstreamBody(upstream: Response): Promise<void> {
+  if (!upstream.body) return
+  try {
+    await upstream.body.cancel()
+  } catch {
+    // The redirect response is being discarded; cancellation failure should not
+    // hide the actual redirect decision.
+  }
+}
+
 async function forwardOnce(
   reply: FastifyReply,
   upstreamUrl: string,
   method: string,
   headers: Record<string, string>,
   body: Buffer | undefined,
+  signal: AbortSignal,
+  captureRedirect: boolean,
 ): Promise<{ status: number; location: string | null }> {
   const fetchInit: RequestInit & { duplex?: 'half' } = {
     method,
     headers,
     redirect: 'manual',
+    signal,
   }
   if (body !== undefined) {
-    fetchInit.body = bufferToBodyInit(body)
+    fetchInit.body = bufferToForwardBody(body)
     fetchInit.duplex = 'half'
   }
   const upstream = await fetch(upstreamUrl, fetchInit)
+
+  const location = upstream.headers.get('location')
+  if (
+    captureRedirect &&
+    upstream.status >= 300 &&
+    upstream.status < 400 &&
+    typeof location === 'string' &&
+    location.length > 0
+  ) {
+    await cancelUpstreamBody(upstream)
+    return { status: upstream.status, location }
+  }
 
   for (const [k, v] of Object.entries(filterResponseHeaders(upstream.headers))) {
     if (HUB_TRANSPORT_RESPONSE_HEADERS.has(k.toLowerCase())) continue
@@ -76,23 +164,18 @@ async function forwardOnce(
   }
   reply.code(upstream.status)
 
-  const location = upstream.headers.get('location')
-  if (
-    upstream.status >= 300 &&
-    upstream.status < 400 &&
-    typeof location === 'string' &&
-    location.length > 0
-  ) {
-    return { status: upstream.status, location }
-  }
-
   if (upstream.body) {
     const stream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0])
-    await reply.send(stream)
+    reply.send(stream)
+    await finished(stream, { cleanup: true })
   } else {
     await reply.send()
   }
   return { status: upstream.status, location: null }
+}
+
+function isAbortError(err: unknown, signal: AbortSignal): boolean {
+  return signal.aborted || (err as { name?: string } | null)?.name === 'AbortError'
 }
 
 export function registerHubRoutes(
@@ -124,22 +207,55 @@ export function registerHubRoutes(
 
         const body =
           Buffer.isBuffer(req.body) &&
-          req.method !== 'GET' &&
-          req.method !== 'HEAD' &&
+          !METHODS_WITHOUT_BODY.has(req.method) &&
           req.body.length > 0
             ? req.body
             : undefined
 
+        const timeoutMs = normalizeHubForwardTimeoutMs(req.headers['risu-timeout-ms'])
+        const abort = createHubAbort(req, reply, timeoutMs)
+
         try {
-          const first = await forwardOnce(reply, upstreamUrl, req.method, headers, body)
+          const first = await forwardOnce(
+            reply,
+            upstreamUrl,
+            req.method,
+            headers,
+            body,
+            abort.signal,
+            true,
+          )
           if (first.location) {
-            // Express resends the body on the redirect. Reset the reply headers
-            // already set by forwardOnce by sending again on a new fetch.
-            // Fastify lets reply.send be called only once, so we already pipe
-            // through here in the redirect case.
-            await forwardOnce(reply, first.location, req.method, headers, body)
+            if (body !== undefined) {
+              reply.code(502)
+              return {
+                error: 'Hub request redirects with bodies are not replayed',
+              }
+            }
+            await forwardOnce(
+              reply,
+              first.location,
+              req.method,
+              headers,
+              undefined,
+              abort.signal,
+              false,
+            )
           }
         } catch (err) {
+          if (isAbortError(err, abort.signal)) {
+            if (!reply.raw.headersSent) {
+              reply.code(504)
+              return {
+                error:
+                  abort.timedOut() && !abort.clientClosed()
+                    ? `Hub request timed out after ${timeoutMs}ms`
+                    : 'Hub request aborted',
+              }
+            }
+            reply.raw.end()
+            return
+          }
           req.log.warn({ err }, 'hub proxy upstream failed')
           if (!reply.raw.headersSent) {
             reply.code(502)
@@ -148,6 +264,8 @@ export function registerHubRoutes(
             }
           }
           reply.raw.end()
+        } finally {
+          abort.cleanup()
         }
       },
     })

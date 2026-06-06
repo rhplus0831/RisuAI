@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -12,6 +12,7 @@ import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCode
 import { insertAssetMetadataBatch, loadPersisted } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
+import { listMemoryChunks, listMemorySummaries } from '../src/memoryRepository.js'
 
 interface Harness {
   app: FastifyInstance
@@ -295,6 +296,98 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
   })
 
+  it('L28: imports JSON bodies through the normalized throwaway object without repository structuredClone', async () => {
+    const payload = {
+      database: {
+        characters: [
+          {
+            chaId: 'char-l28',
+            name: 'L28',
+            chats: [
+              {
+                id: 'chat-l28',
+                name: 'Chat L28',
+                note: '',
+                localLore: [],
+                message: [
+                  { role: 'user', data: 'hello', chatId: 'msg-l28-a' },
+                  { role: 'char', data: 'world', chatId: 'msg-l28-b' },
+                ],
+                hypaV3Data: {
+                  summaries: [
+                    {
+                      text: 'remembered both messages',
+                      chatMemos: ['msg-l28-a', 'msg-l28-b'],
+                      isImportant: true,
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }
+    const originalPayload = JSON.parse(JSON.stringify(payload)) as typeof payload
+    const structuredCloneSpy = vi.spyOn(globalThis, 'structuredClone')
+    let imported
+    try {
+      imported = await authedInject({
+        method: 'POST',
+        url: '/api/v1/import/risusave',
+        payload,
+      })
+      expect(structuredCloneSpy).not.toHaveBeenCalled()
+    } finally {
+      structuredCloneSpy.mockRestore()
+    }
+
+    expect(imported.statusCode).toBe(200)
+    expect(imported.json()).toEqual({
+      revision: 1,
+      event: {
+        type: 'state.imported',
+        revision: 1,
+        resource: 'state',
+      },
+      assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
+    })
+    expect(payload).toEqual(originalPayload)
+
+    const hydration = await authedInject({
+      method: 'GET',
+      url: '/api/v1/projection/chatMessages?id=chat-l28',
+    })
+    expect(hydration.json().message).toEqual([
+      { role: 'user', data: 'hello', chatId: 'msg-l28-a' },
+      { role: 'char', data: 'world', chatId: 'msg-l28-b' },
+    ])
+
+    const verifyDb = openDatabase(harness.dataDir)
+    try {
+      const chunks = listMemoryChunks(verifyDb, { chatId: 'chat-l28' })
+      const summaries = listMemorySummaries(verifyDb, { chatId: 'chat-l28' })
+      expect(chunks).toHaveLength(1)
+      expect(chunks[0]).toMatchObject({
+        chatId: 'chat-l28',
+        messageId: 'msg-l28-b',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'user: hello\nchar: world',
+        status: 'summarized',
+      })
+      expect(summaries).toHaveLength(1)
+      expect(summaries[0]).toMatchObject({
+        chatId: 'chat-l28',
+        chunkId: chunks[0].id,
+        model: 'legacy-hypav3',
+        text: 'remembered both messages',
+      })
+    } finally {
+      verifyDb.close()
+    }
+  })
+
   it('rejects malformed JSON database imports without mutating persistence', async () => {
     const imported = await authedInject({
       method: 'POST',
@@ -476,7 +569,6 @@ describe('Phase 9-8a multipart .risu import route', () => {
       },
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
-
   })
 
   it('rejects block uploads whose expanded payload exceeds the import limit', async () => {

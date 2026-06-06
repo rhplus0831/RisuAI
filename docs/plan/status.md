@@ -7,32 +7,25 @@ open only the phase or slice tied to the current task.
 
 ## Snapshot
 
-- Plan state: open. Phases 1-7 are implemented and proof-refreshed; Phase 8
-  remains open.
+- Plan state: open. Phases 1-8 are implemented and proof-refreshed; Phase 9
+  remains open for the final verification-budget closeout.
 - Findings covered: 102 confirmed v2 audit findings (3 high, 22 medium,
   59 low, 18 informational) plus the K1-K4 known-overlap residuals.
-- Scheduled IDs: H1-H3, Phase 2's M5, M6, L3, L13, L14, L16, K1, and K2,
-  Phase 3's M1-M4 and L4-L11, Phase 4's M7-M10, L32-L34, L37, and K4,
-  Phase 5's M13, M17, and L38-L44, and Phase 6's M11, M12, M14, L35, L36,
-  L45-L47, and Phase 7's M15, M16, M18-M22, L48-L59, and K3 are registered
-  `DONE` in the v2 gate and `active-risk-analysis.md`. Phase 8 scheduled
-  gate entries stay `PLANNED`; Phase 8 risk-map rows stay `PENDING`.
+- Scheduled IDs: H1-H3, M1-M22, L1-L11 except L12, L13-L59, and K1-K4
+  are registered `DONE` in the v2 gate and `active-risk-analysis.md`. No
+  scheduled gate entries remain `PLANNED`; no scheduled risk-map rows remain
+  `PENDING`.
 - Gated IDs: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates. I1-I18 need no action.
 - Standing v1 gate: `src/ts/__tests__/fixCompletenessGate.test.ts` stays live
   against the archived v1 docs. The v2 gate
   `src/ts/__tests__/fixCompletenessGateV2.test.ts` is now live.
-- Current proof: Phase 7 focused translate/UI/TTS/MCP/file-import suites,
-  parent phase validation snippets, both gates, `pnpm test` 1212/4,
-  `pnpm api:test` 1792/1, client-thinning audit, and both TypeScript checks
-  passed. Phase 4 focused client clone/rollback suites, supplemental
-  module/compatibility suites, v2 plus clone-cost gates, `pnpm test` 1202/4,
-  Phase 5 focused render/UI suites, render-count/script proof, parser
-  companion suites, both gates, `pnpm test` 1193/4, and Phase 6 focused
-  bridge/lifecycle/network suites, both gates, `pnpm test` 1185/4, and
-  `pnpm api:test` 1792/1 are also green. `pnpm check` still reports the
-  unrelated existing 14-error baseline in 5 files. See
-  [`latest-verification.md`](latest-verification.md).
+- Current proof: after merging Phase 8 into the Phase 4-7 mainline, the v2
+  gate passed (18 tests), merged Phase 8 focused suites passed (300 tests),
+  `pnpm test` passed (1312/4), `pnpm api:test` passed (1846/1),
+  `pnpm client-thinning:audit` passed, and both TypeScript checks passed.
+  `pnpm check` still reports the unrelated existing 14-error baseline in 5
+  files. See [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
 
@@ -53,7 +46,7 @@ open only the phase or slice tied to the current task.
   echo guards, lifecycle, network (M11, M12, M14, L35, L36, L45-L47).
 - [Phase 7](phases/phase-7-opt-in-subsystems.md): complete. Translate/TTS/
   MCP/file-import stability (M15, M16, M18-M22, L48-L59, K3).
-- [Phase 8](phases/phase-8-server-bounds.md): pending. Server jobs, memory,
+- [Phase 8](phases/phase-8-server-bounds.md): complete. Server jobs, memory,
   import/export, outbound bounds (L1, L2, L15, L17-L31).
 - [Phase 9](phases/phase-9-verification-budgets.md): pending. v2 gate
   completeness and the closing verification run.

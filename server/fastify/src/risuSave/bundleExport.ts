@@ -44,6 +44,12 @@ export interface RisuSaveBundleExport {
   manifest: RisuSaveBundleManifest
 }
 
+interface RisuSaveBundleAssetCandidate {
+  asset: PersistedAsset
+  bundlePath: string
+  diskPath: string
+}
+
 const RISU_PATH = 'database.risu'
 const MANIFEST_PATH = 'manifest.json'
 const ASSET_PREFIX = 'assets'
@@ -57,19 +63,14 @@ export function buildRepositoryRisuSaveBundleExport(
   const assetsById = new Map(input.persisted.assets.map((asset) => [asset.id, asset]))
   const includedAssets: RisuSaveBundleAssetEntry[] = []
   const missingFiles: RisuSaveBundleMissingFileEntry[] = []
-  const assetEntries: Array<{ bundlePath: string; diskPath: string }> = []
+  const assetCandidates: RisuSaveBundleAssetCandidate[] = []
 
   for (const reference of report.referenced) {
     const asset = assetsById.get(reference.id)
     if (!asset) continue
     const bundlePath = `${ASSET_PREFIX}/${asset.id}.${asset.ext}`
     const diskPath = assetPath(input.dataDir, asset)
-    if (!fs.existsSync(diskPath)) {
-      missingFiles.push({ ...asset, path: bundlePath })
-      continue
-    }
-    assetEntries.push({ bundlePath, diskPath })
-    includedAssets.push({ ...asset, path: bundlePath })
+    assetCandidates.push({ asset, bundlePath, diskPath })
   }
 
   const manifest: RisuSaveBundleManifest = {
@@ -87,7 +88,7 @@ export function buildRepositoryRisuSaveBundleExport(
   }
 
   const stream = new PassThrough()
-  void writeBundleZipStream(stream, input.risuBytes, manifest, assetEntries)
+  void writeBundleZipStream(stream, input.risuBytes, manifest, assetCandidates)
 
   return {
     stream,
@@ -99,7 +100,7 @@ async function writeBundleZipStream(
   stream: PassThrough,
   risuBytes: Uint8Array,
   manifest: RisuSaveBundleManifest,
-  assetEntries: Array<{ bundlePath: string; diskPath: string }>,
+  assetCandidates: RisuSaveBundleAssetCandidate[],
 ): Promise<void> {
   // Audit M11: an aborted download destroys the reply stream with a clean
   // 'close' (no 'error'), which a bare `once(stream, 'drain')` never observes —
@@ -148,8 +149,18 @@ async function writeBundleZipStream(
 
   try {
     await addBufferEntry(zip, readOutputReady, RISU_PATH, risuBytes)
-    for (const entry of assetEntries) {
-      await addFileEntry(zip, readOutputReady, entry.bundlePath, entry.diskPath)
+    for (const candidate of assetCandidates) {
+      const included = await addFileEntry(
+        zip,
+        readOutputReady,
+        candidate.bundlePath,
+        candidate.diskPath,
+      )
+      if (included) {
+        manifest.includedAssets.push({ ...candidate.asset, path: candidate.bundlePath })
+      } else {
+        manifest.missingFiles.push({ ...candidate.asset, path: candidate.bundlePath })
+      }
     }
     await addBufferEntry(
       zip,
@@ -184,14 +195,37 @@ async function addFileEntry(
   readOutputReady: () => Promise<void>,
   filename: string,
   diskPath: string,
-): Promise<void> {
+): Promise<boolean> {
+  let file: fs.promises.FileHandle
+  try {
+    file = await fs.promises.open(diskPath, 'r')
+  } catch (err) {
+    if (isMissingAssetOpenError(err)) return false
+    throw err
+  }
+
   const entry = new fflate.ZipPassThrough(filename)
   entry.mtime = ZIP_MTIME
-  zip.add(entry)
-  for await (const chunk of fs.createReadStream(diskPath)) {
-    entry.push(chunk, false)
+  let readStream: fs.ReadStream | null = null
+  try {
+    zip.add(entry)
+    readStream = file.createReadStream()
+    for await (const chunk of readStream) {
+      entry.push(chunk, false)
+      await readOutputReady()
+    }
+    entry.push(EMPTY_CHUNK, true)
     await readOutputReady()
+    return true
+  } catch (err) {
+    if (readStream) readStream.destroy()
+    else await file.close().catch(() => {})
+    throw err
   }
-  entry.push(EMPTY_CHUNK, true)
-  await readOutputReady()
+}
+
+function isMissingAssetOpenError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const code = (err as { code?: unknown }).code
+  return code === 'ENOENT' || code === 'ENOTDIR'
 }

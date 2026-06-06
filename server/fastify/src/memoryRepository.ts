@@ -12,6 +12,11 @@ export const MEMORY_JOB_STATUSES = [
 ] as const
 export const MEMORY_JOB_DEFAULT_MAX_ATTEMPTS = 3
 export const MEMORY_JOB_DEFAULT_RETRY_BACKOFF_MS = 1_000
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export const MEMORY_JOB_TERMINAL_RETENTION_MS = 7 * DAY_MS
+export const MEMORY_JOB_TERMINAL_RETENTION_SWEEP_LIMIT = 1000
+export const MEMORY_JOB_TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'] as const
 
 export type MemoryChunkStatus = (typeof MEMORY_CHUNK_STATUSES)[number]
 export type MemoryJobKind = (typeof MEMORY_JOB_KINDS)[number]
@@ -122,6 +127,12 @@ export interface MemoryJobRetryOptions {
   backoffBaseMs?: number
 }
 
+export interface PruneTerminalMemoryJobsOptions {
+  now?: string | Date
+  retentionMs?: number
+  maxPerSweep?: number
+}
+
 export interface CleanupOrphanedMemoryInput {
   chatId: string
   currentChatMemos: readonly string[]
@@ -131,6 +142,20 @@ export interface CleanupOrphanedMemoryInput {
 export interface CleanupOrphanedMemoryResult {
   summariesDeleted: number
   chunksDeleted: number
+}
+
+export interface MemorySummarySnapshot {
+  chatId: string
+  summaries: MemorySummary[]
+}
+
+export interface CleanupOrphanedMemoryWithSummarySnapshotInput extends CleanupOrphanedMemoryInput {
+  summarySnapshot: MemorySummarySnapshot
+}
+
+export interface CleanupOrphanedMemoryWithSummarySnapshotResult {
+  cleanup: CleanupOrphanedMemoryResult
+  summarySnapshot: MemorySummarySnapshot
 }
 
 type SqlValue = string | number | bigint | null | Buffer
@@ -247,6 +272,18 @@ function requireJobStatusList(statuses: readonly MemoryJobStatus[]): MemoryJobSt
     throw new ValidationError('memory job statuses filter must not be empty')
   }
   return statuses.map((status) => requireJobStatus(status))
+}
+
+function requireRetentionMs(value: number | undefined): number {
+  if (value === undefined) return MEMORY_JOB_TERMINAL_RETENTION_MS
+  requireNonNegativeInteger(value, 'retentionMs')
+  return value
+}
+
+function requireSweepLimit(value: number | undefined): number {
+  if (value === undefined) return MEMORY_JOB_TERMINAL_RETENTION_SWEEP_LIMIT
+  requirePositiveInteger(value, 'maxPerSweep')
+  return value
 }
 
 function runStatement(statement: StatementSync, ...values: SqlValue[]): void {
@@ -415,7 +452,10 @@ function readSummaryChatMemos(summary: MemorySummary): string[] | null {
   return chatMemos
 }
 
-function isMemoSubset(chatMemos: readonly string[], currentChatMemos: ReadonlySet<string>): boolean {
+function isMemoSubset(
+  chatMemos: readonly string[],
+  currentChatMemos: ReadonlySet<string>,
+): boolean {
   return chatMemos.every((memo) => currentChatMemos.has(memo))
 }
 
@@ -591,6 +631,17 @@ export function listMemorySummaries(
   return rows.map(mapMemorySummaryRow)
 }
 
+export function loadMemorySummarySnapshot(
+  db: DatabaseSync,
+  input: { chatId: string },
+): MemorySummarySnapshot {
+  requireString(input.chatId, 'chat id')
+  return {
+    chatId: input.chatId,
+    summaries: listMemorySummaries(db, { chatId: input.chatId }),
+  }
+}
+
 export function cleanupOrphanedMemory(
   db: DatabaseSync,
   input: CleanupOrphanedMemoryInput,
@@ -614,8 +665,30 @@ export function cleanupOrphanedMemory(
     return { summariesDeleted: 0, chunksDeleted: 0 }
   }
 
+  return cleanupOrphanedMemoryWithSummarySnapshot(db, {
+    ...input,
+    summarySnapshot: loadMemorySummarySnapshot(db, { chatId: input.chatId }),
+  }).cleanup
+}
+
+export function cleanupOrphanedMemoryWithSummarySnapshot(
+  db: DatabaseSync,
+  input: CleanupOrphanedMemoryWithSummarySnapshotInput,
+): CleanupOrphanedMemoryWithSummarySnapshotResult {
+  requireString(input.chatId, 'chat id')
+  for (const memo of input.currentChatMemos) {
+    requireString(memo, 'current chat memo')
+  }
+  validateMemorySummarySnapshot(input.summarySnapshot, input.chatId)
+  if (input.preserveOrphanedMemory === true || input.summarySnapshot.summaries.length === 0) {
+    return {
+      cleanup: { summariesDeleted: 0, chunksDeleted: 0 },
+      summarySnapshot: input.summarySnapshot,
+    }
+  }
+
   const currentChatMemos = new Set(input.currentChatMemos)
-  const orphanedSummaries = listMemorySummaries(db, { chatId: input.chatId }).filter((summary) => {
+  const orphanedSummaries = input.summarySnapshot.summaries.filter((summary) => {
     const chatMemos = readSummaryChatMemos(summary)
     return chatMemos !== null && !isMemoSubset(chatMemos, currentChatMemos)
   })
@@ -626,7 +699,10 @@ export function cleanupOrphanedMemory(
   // The deletes below would be no-ops; opening a write txn on every
   // generation just contends with the writer for nothing.
   if (summaryIds.length === 0 && chunkIds.length === 0) {
-    return { summariesDeleted: 0, chunksDeleted: 0 }
+    return {
+      cleanup: { summariesDeleted: 0, chunksDeleted: 0 },
+      summarySnapshot: input.summarySnapshot,
+    }
   }
 
   db.exec('BEGIN IMMEDIATE')
@@ -639,9 +715,33 @@ export function cleanupOrphanedMemory(
     throw error
   }
 
+  const deletedSummaryIds = new Set(summaryIds)
+  const deletedChunkIds = new Set(chunkIds)
+  const retainedSummaries = input.summarySnapshot.summaries.filter(
+    (summary) => !deletedSummaryIds.has(summary.id) && !deletedChunkIds.has(summary.chunkId),
+  )
+
   return {
-    summariesDeleted: summaryIds.length,
-    chunksDeleted: chunkIds.length,
+    cleanup: {
+      summariesDeleted: summaryIds.length,
+      chunksDeleted: chunkIds.length,
+    },
+    summarySnapshot: {
+      chatId: input.summarySnapshot.chatId,
+      summaries: retainedSummaries,
+    },
+  }
+}
+
+function validateMemorySummarySnapshot(snapshot: MemorySummarySnapshot, chatId: string): void {
+  requireString(snapshot.chatId, 'summary snapshot chat id')
+  if (snapshot.chatId !== chatId) {
+    throw new ValidationError('memory summary snapshot chatId must match the cleanup chatId')
+  }
+  for (const summary of snapshot.summaries) {
+    if (summary.chatId !== chatId) {
+      throw new ValidationError('memory summary snapshot contains summaries from another chat')
+    }
   }
 }
 
@@ -965,6 +1065,32 @@ export function retryOrFailMemoryJob(
 
 export function cancelMemoryJob(db: DatabaseSync, id: string): MemoryJob | null {
   return transitionMemoryJobStatus(db, id, ['pending', 'running'], 'cancelled', { error: null })
+}
+
+export function pruneTerminalMemoryJobs(
+  db: DatabaseSync,
+  options: PruneTerminalMemoryJobsOptions = {},
+): number {
+  const retentionMs = requireRetentionMs(options.retentionMs)
+  const maxPerSweep = requireSweepLimit(options.maxPerSweep)
+  const cutoff = new Date(Date.parse(normalizeTimestamp(options.now)) - retentionMs).toISOString()
+  const terminalStatuses = requireJobStatusList(MEMORY_JOB_TERMINAL_STATUSES)
+  const result = db
+    .prepare(
+      `
+        DELETE FROM memory_jobs
+        WHERE id IN (
+          SELECT id
+          FROM memory_jobs
+          WHERE status IN (${terminalStatuses.map(() => '?').join(', ')})
+            AND updated_at < ?
+          ORDER BY updated_at ASC, id ASC
+          LIMIT ?
+        )
+      `,
+    )
+    .run(...terminalStatuses, cutoff, maxPerSweep)
+  return Number(result.changes)
 }
 
 export function recoverRunningMemoryJobs(

@@ -565,8 +565,42 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'src/ts/process/files/multisend.test.ts',
     'M22: translates every entry in a .po file longer than 100 lines',
   ),
-  planned('L1', 8, 'Configurable/sliding durable deadline (pair with the non-durable twin).'),
-  planned('L2', 8, 'Delete/TTL terminal finalization-retry rows.'),
+  done(
+    'L1',
+    8,
+    'Sliding durable deadline paired with the non-durable generation abort window.',
+    'server/fastify/__tests__/streamJobs.test.ts',
+    'L1: sliding durable generation jobs survive past the original deadline while active',
+    [
+      {
+        testPath: 'server/fastify/__tests__/streamJobs.test.ts',
+        testName:
+          'L1: silent sliding durable generation jobs still die within the bounded deadline',
+      },
+      {
+        testPath: 'server/fastify/__tests__/requestAbort.test.ts',
+        testName:
+          'L1: refresh keeps an active non-durable generation alive past its original deadline',
+      },
+      {
+        testPath: 'server/fastify/__tests__/requestAbort.test.ts',
+        testName: 'L1: configured non-durable deadlines are capped at the shared max timeout',
+      },
+    ],
+  ),
+  done(
+    'L2',
+    8,
+    'Delete/TTL terminal finalization-retry rows.',
+    'server/fastify/__tests__/durableGeneration.test.ts',
+    'L2: prunes only terminal finalization retries older than retention',
+    [
+      {
+        testPath: 'server/fastify/__tests__/durableGeneration.test.ts',
+        testName: 'L2: app finalization retry sweep also removes retained terminal history',
+      },
+    ],
+  ),
   done(
     'L3',
     2,
@@ -717,7 +751,13 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L15', 8, '`PRAGMA synchronous = NORMAL`.'),
+  done(
+    'L15',
+    8,
+    '`PRAGMA synchronous = NORMAL`.',
+    'server/fastify/__tests__/db.test.ts',
+    'L15: opens Fastify databases with WAL synchronous NORMAL',
+  ),
   done(
     'L16',
     2,
@@ -725,21 +765,285 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'server/fastify/__tests__/auth.test.ts',
     'rejects unauthenticated requests and verifies authenticated requests exactly once',
   ),
-  planned('L17', 8, 'Retention sweep for terminal memory jobs.'),
-  planned('L18', 8, 'Fast-path reschedule after a productive worker tick.'),
-  planned('L19', 8, 'Scope the fail-cascade to contextual groups.'),
-  planned('L20', 8, 'Share one summaries fetch between cleanup and selection.'),
-  planned('L21', 8, 'Per-chunk size ceiling before embed requests.'),
-  planned('L22', 8, 'Size the contextual budget from provider limits; surface splits.'),
-  planned('L23', 8, 'Batch JSON-card asset persists (charx shape).'),
-  planned('L24', 8, 'Compensating asset cleanup when the append fails.'),
-  planned('L25', 8, 'Open-or-skip assets at stream time (`missingFiles` degrade).'),
-  planned('L26', 8, 'Temp-file + rename for legacy storage writes.'),
-  planned('L27', 8, 'Abort/timeout (+ streaming) for hub forwards.'),
-  planned('L28', 8, 'Drop the double clone in JSON import normalize.'),
-  planned('L29', 8, 'Cap the charx download near the expanded limit.'),
-  planned('L30', 8, 'In-flight promise dedupe for Vertex tokens.'),
-  planned('L31', 8, 'Default proxy deadline when `risu-timeout-ms` is absent.'),
+  done(
+    'L17',
+    8,
+    'Retention sweep for terminal memory jobs.',
+    'server/fastify/__tests__/memoryRepository.test.ts',
+    'L17: prunes only terminal memory jobs older than retention',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryWorker.test.ts',
+        testName: 'L17: sweeps old terminal memory jobs when worker maintenance starts',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryJobsRoutes.test.ts',
+        testName:
+          'L17: lists retained memory jobs after startup retention prunes old terminal rows',
+      },
+    ],
+  ),
+  done(
+    'L18',
+    8,
+    'Fast-path reschedule after a productive worker tick.',
+    'server/fastify/__tests__/memoryWorker.test.ts',
+    'L18: drains a multi-batch backlog through immediate productive ticks',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryWorker.test.ts',
+        testName: 'L18: keeps idle polling on the configured delay',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryWorker.test.ts',
+        testName: 'L18: stop prevents pending fast-path ticks after productive work settles',
+      },
+    ],
+  ),
+  done(
+    'L19',
+    8,
+    'Scope the fail-cascade to contextual groups.',
+    'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+    'L19: commits independent embed jobs after a sibling provider failure',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memorySummarizeJobHandler.test.ts',
+        testName: 'L19: commits independent summarize jobs after a sibling provider failure',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L19: retries an ordered Voyage contextual batch after provider failure',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L19: rolls back a Voyage contextual group when one staged vector cannot persist',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memorySummarizeJobHandler.test.ts',
+        testName: 'L19: commits batch summaries in planned order only until the first failed write',
+      },
+    ],
+  ),
+  done(
+    'L20',
+    8,
+    'Share one summaries fetch between cleanup and selection.',
+    'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+    'L20: prompt memory cleanup and selection share one summary payload read',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryRepository.test.ts',
+        testName:
+          'L20: cleans orphaned rows from a shared summary snapshot and returns retained summaries',
+      },
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName: 'L20: selects retained memory from the shared post-cleanup summary snapshot',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memorySelectionService.test.ts',
+        testName: 'L20: selects from a shared summary snapshot without rereading summaries',
+      },
+      {
+        testPath: 'server/fastify/__tests__/promptMemoryAdapter.test.ts',
+        testName: 'L20: passes a shared summary snapshot through to the selection facade',
+      },
+    ],
+  ),
+  done(
+    'L21',
+    8,
+    'Per-chunk size ceiling before embed requests.',
+    'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+    'L21: fails an oversized single chunk before provider request construction',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L21: fails an oversized non-contextual batch item before provider dispatch',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L21: fails an oversized contextual chunk before provider request construction',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbeddingAdapter.test.ts',
+        testName: 'L21: rejects oversized inputs before constructing an embedding request body',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbeddingModel.test.ts',
+        testName: 'L21: formats per-input size violations with the offending bound',
+      },
+    ],
+  ),
+  done(
+    'L22',
+    8,
+    'Size the contextual budget from provider limits; surface splits.',
+    'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+    'L22: emits a protocol metric when provider limits split a contextual batch',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L22: sends a valid contextual batch under the model window in one request',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbeddingAdapter.test.ts',
+        testName: 'L22: rejects grouped contextual inputs when the request has no context limit',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbeddingModel.test.ts',
+        testName: 'resolves Voyage contextual embeddings with explicit credentials',
+      },
+    ],
+  ),
+  done(
+    'L23',
+    8,
+    'Batch JSON-card asset persists (charx shape).',
+    'server/fastify/__tests__/realmImport.test.ts',
+    'L23: JSON Realm card asset import uses one batched asset revision and event',
+    [
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName: 'keeps valid JSON Realm import output unchanged with batched assets',
+      },
+    ],
+  ),
+  done(
+    'L24',
+    8,
+    'Compensating asset cleanup when the append fails.',
+    'server/fastify/__tests__/realmImport.test.ts',
+    'L24: JSON Realm import removes newly persisted assets when character append fails',
+  ),
+  done(
+    'L25',
+    8,
+    'Open-or-skip assets at stream time (`missingFiles` degrade).',
+    'server/fastify/__tests__/risuSaveBundleExportRoute.test.ts',
+    'L25: reports an asset that disappears after bundle planning without aborting export',
+    [
+      {
+        testPath: 'server/fastify/__tests__/risuSaveBundleExportRoute.test.ts',
+        testName: 'exports a zip with the .risu file, manifest, and only walked present assets',
+      },
+    ],
+  ),
+  done(
+    'L26',
+    8,
+    'Temp-file + rename for legacy storage writes.',
+    'server/fastify/__tests__/legacyStorage.test.ts',
+    'L26: preserves the old legacy storage file and removes temp bytes after a mid-write failure',
+    [
+      {
+        testPath: 'server/fastify/__tests__/legacyStorage.test.ts',
+        testName:
+          'L26: preserves the old legacy storage file and removes temp bytes after a rename failure',
+      },
+    ],
+  ),
+  done(
+    'L27',
+    8,
+    'Abort/timeout (+ streaming) for hub forwards.',
+    'server/fastify/__tests__/hub.test.ts',
+    'L27: returns 504 when the hub upstream deadline elapses before response',
+    [
+      {
+        testPath: 'server/fastify/__tests__/hub.test.ts',
+        testName: 'L27: aborts the upstream stream when the client disconnects',
+      },
+      {
+        testPath: 'server/fastify/__tests__/hub.test.ts',
+        testName: 'L27: rejects body-bearing redirects instead of replaying the buffered upload',
+      },
+      {
+        testPath: 'server/fastify/__tests__/hub.test.ts',
+        testName: 'L27: keeps the hub body limit as a hard cap for authenticated uploads',
+      },
+    ],
+  ),
+  done(
+    'L28',
+    8,
+    'Drop the double clone in JSON import normalize.',
+    'server/fastify/__tests__/risuSaveImportRoute.test.ts',
+    'L28: imports JSON bodies through the normalized throwaway object without repository structuredClone',
+  ),
+  done(
+    'L29',
+    8,
+    'Cap the charx download near the expanded limit.',
+    'server/fastify/__tests__/realmImport.test.ts',
+    'L29: rejects known-length Realm charx downloads above the staging cap before reading the body',
+    [
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName:
+          'L29: aborts unknown-length Realm charx downloads as soon as the staging cap is crossed',
+      },
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName: 'L29: accepts a valid Realm charx download within the staging cap',
+      },
+    ],
+  ),
+  done(
+    'L30',
+    8,
+    'In-flight promise dedupe for Vertex tokens.',
+    'server/fastify/__tests__/vertexAuth.test.ts',
+    'L30: shares one in-flight token exchange for concurrent cold callers',
+    [
+      {
+        testPath: 'server/fastify/__tests__/vertexAuth.test.ts',
+        testName: 'L30: returns a cached token instead of re-signing on the next call',
+      },
+      {
+        testPath: 'server/fastify/__tests__/vertexAuth.test.ts',
+        testName: 'L30: clears a failed in-flight exchange so the next caller can retry',
+      },
+      {
+        testPath: 'server/fastify/__tests__/vertexAuth.test.ts',
+        testName: 'L30: keeps distinct private keys from sharing an in-flight token exchange',
+      },
+      {
+        testPath: 'server/fastify/__tests__/vertexAuth.test.ts',
+        testName: 'L30: refreshes a token whose expiry is within the safety margin',
+      },
+    ],
+  ),
+  done(
+    'L31',
+    8,
+    'Default proxy deadline when `risu-timeout-ms` is absent.',
+    'server/fastify/__tests__/proxy.test.ts',
+    'L31: applies the default deadline when risu-timeout-ms is absent',
+    [
+      {
+        testPath: 'server/fastify/__tests__/proxy.test.ts',
+        testName: 'L31: caps excessive risu-timeout-ms values at the proxy fetch maximum',
+      },
+      {
+        testPath: 'server/fastify/__tests__/proxy.test.ts',
+        testName: 'L31: returns 504 when a valid explicit risu-timeout-ms elapses first',
+      },
+      {
+        testPath: 'server/fastify/__tests__/proxy.test.ts',
+        testName: 'L31: normalizes invalid risu-timeout-ms headers to the default deadline',
+      },
+      {
+        testPath: 'server/fastify/__tests__/proxy.test.ts',
+        testName: 'L31: strips risu-* and host-class headers from the upstream request',
+      },
+      {
+        testPath: 'server/fastify/__tests__/proxy.test.ts',
+        testName: 'L31: cleanup clears proxy fetch timeout timers before they abort',
+      },
+    ],
+  ),
   done(
     'L32',
     4,
@@ -2026,17 +2330,19 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'L1'
+      entry.id === 'H1'
         ? {
             ...entry,
-            testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-            testName: 'premature proof',
+            status: 'PLANNED' as const,
           }
         : entry,
     )
 
-    expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'L1: PLANNED entries must not claim proof fields',
+    expect(collectGateProblems({ scheduled: withPrematureProof })).toEqual(
+      expect.arrayContaining([
+        'H1: PLANNED entries must not claim proof fields',
+        'H1: status mismatch (registry PLANNED, docs DONE)',
+      ]),
     )
   })
 
@@ -2072,6 +2378,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M20',
       'M21',
       'M22',
+      'L1',
+      'L2',
       'L3',
       'L4',
       'L5',
@@ -2083,7 +2391,23 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L11',
       'L13',
       'L14',
+      'L15',
       'L16',
+      'L17',
+      'L18',
+      'L19',
+      'L20',
+      'L21',
+      'L22',
+      'L23',
+      'L24',
+      'L25',
+      'L26',
+      'L27',
+      'L28',
+      'L29',
+      'L30',
+      'L31',
       'L32',
       'L33',
       'L34',
@@ -2121,20 +2445,19 @@ describe('v2 fix-completeness gate routing registry', () => {
   })
 
   it('rejects DONE entries without a registered test path and test name', () => {
-    const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'L1'
-        ? {
-            ...entry,
-            status: 'DONE' as const,
-          }
-        : entry,
-    )
+    const syntheticDone = SCHEDULED_FIXES.map((entry) => {
+      if (entry.id !== 'H1') return entry
+      const { testPath, testName, extraTests, ...withoutProof } = entry
+      void testPath
+      void testName
+      void extraTests
+      return withoutProof
+    })
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'L1: status mismatch (registry DONE, docs PENDING)',
-        'L1: DONE without a registered testPath',
-        'L1: DONE without a registered testName',
+        'H1: DONE without a registered testPath',
+        'H1: DONE without a registered testName',
       ]),
     )
   })
@@ -2142,12 +2465,9 @@ describe('v2 fix-completeness gate routing registry', () => {
   it('validates primary and extra DONE test proofs against existing test files', () => {
     const missingExtraTestName = ['missing extra proof title', 'assembled at runtime'].join(' ')
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'L1'
+      entry.id === 'H1'
         ? {
             ...entry,
-            status: 'DONE' as const,
-            testPath: 'src/ts/__tests__/fixCompletenessGateV2.test.ts',
-            testName: 'validates primary and extra DONE test proofs',
             extraTests: [
               {
                 testPath: 'src/ts/__tests__/fixCompletenessGateV2.test.ts',
@@ -2160,8 +2480,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'L1: status mismatch (registry DONE, docs PENDING)',
-        `L1: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
+        `H1: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
       ]),
     )
   })
@@ -2191,16 +2510,13 @@ describe('v2 fix-completeness gate routing registry', () => {
     )
   })
 
-  it('self-proves doc DONE drift detection against an in-memory active-risk doc', () => {
-    const riskText = readDoc(RISK_DOC)
-    const withDoneDocRow = replaceRiskRow(
-      riskText,
-      'L1',
-      '| L1 | [8](phases/phase-8-server-bounds.md) | Configurable/sliding durable deadline (pair with the non-durable twin). | DONE |',
+  it('self-proves registry PLANNED drift detection against an in-memory scheduled registry', () => {
+    const withPlannedRegistry = SCHEDULED_FIXES.map((entry) =>
+      entry.id === 'H1' ? { ...entry, status: 'PLANNED' as const } : entry,
     )
 
-    expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'L1: status mismatch (registry PLANNED, docs DONE)',
+    expect(collectGateProblems({ scheduled: withPlannedRegistry })).toContain(
+      'H1: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 

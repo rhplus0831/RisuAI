@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { buildApp } from '../src/app.js'
+import { buildApp, type BuildAppOptions } from '../src/app.js'
+import { openDatabase } from '../src/db.js'
 import type { MemoryEvent, MemoryEventSink } from '../src/memoryEvents.js'
-import type { MemoryJob } from '../src/memoryRepository.js'
+import { createMemoryJob, type MemoryJob } from '../src/memoryRepository.js'
 
 const subtle = webcrypto.subtle
 
@@ -16,9 +17,16 @@ interface Harness {
   events: MemoryEvent[]
 }
 
-async function startHarness(opts: { memoryEvents?: MemoryEventSink } = {}): Promise<Harness> {
+async function startHarness(
+  opts: {
+    memoryEvents?: MemoryEventSink
+    memoryWorker?: BuildAppOptions['memoryWorker']
+    prepareDataDir?: (dataDir: string) => void
+  } = {},
+): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-memory-jobs-routes-'))
+  opts.prepareDataDir?.(dataDir)
   const events: MemoryEvent[] = []
   const { app } = await buildApp({
     config: {
@@ -30,7 +38,7 @@ async function startHarness(opts: { memoryEvents?: MemoryEventSink } = {}): Prom
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },
-    memoryWorker: false,
+    memoryWorker: opts.memoryWorker ?? false,
     memoryEvents: opts.memoryEvents ?? ((event) => events.push(event)),
   })
   return { app, dataDir, events }
@@ -276,6 +284,93 @@ describe('Phase 8-2e memory job routes', () => {
     ])
   })
 
+  it('L17: lists retained memory jobs after startup retention prunes old terminal rows', async () => {
+    await stopHarness(harness)
+    harness = await startHarness({
+      memoryWorker: {
+        pollIntervalMs: 10_000,
+        terminalRetention: {
+          now: '2026-06-06T00:00:00.000Z',
+          retentionMs: 24 * 60 * 60 * 1000,
+        },
+      },
+      prepareDataDir: (dataDir) => {
+        const db = openDatabase(dataDir)
+        try {
+          createMemoryJob(db, {
+            id: 'old-completed',
+            chatId: 'chat-1',
+            kind: 'chunk',
+            payload: {},
+            status: 'completed',
+          })
+          createMemoryJob(db, {
+            id: 'recent-completed',
+            chatId: 'chat-1',
+            kind: 'chunk',
+            payload: {},
+            status: 'completed',
+          })
+          createMemoryJob(db, {
+            id: 'pending-old',
+            chatId: 'chat-1',
+            kind: 'chunk',
+            payload: {},
+            nextRunAt: '2099-01-01T00:00:00.000Z',
+            status: 'pending',
+          })
+          db.prepare(
+            `
+              UPDATE memory_jobs
+              SET updated_at = '2026-06-01T00:00:00.000Z'
+              WHERE id IN ('old-completed', 'pending-old')
+            `,
+          ).run()
+          db.prepare(
+            `
+              UPDATE memory_jobs
+              SET updated_at = '2026-06-05T12:00:00.000Z'
+              WHERE id = 'recent-completed'
+            `,
+          ).run()
+        } finally {
+          db.close()
+        }
+      },
+    })
+    ;({ assertion } = await setupAuthedClient(harness.app))
+
+    const active = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/jobs',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(active.statusCode).toBe(200)
+    expect((active.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([
+      {
+        id: 'pending-old',
+        chatId: 'chat-1',
+        kind: 'chunk',
+        status: 'pending',
+      },
+    ])
+
+    const completed = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/jobs?status=completed',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(completed.statusCode).toBe(200)
+    expect((completed.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([
+      {
+        id: 'recent-completed',
+        chatId: 'chat-1',
+        kind: 'chunk',
+        status: 'completed',
+      },
+    ])
+  })
+
   it('cancels a pending job and emits the cancellation event', async () => {
     const job = await enqueue(harness.app, {
       chatId: 'chat-1',
@@ -354,7 +449,11 @@ describe('Phase 8-2e memory job routes', () => {
       '/api/v1/memory/jobs?status=unknown',
       '/api/v1/memory/jobs?chatId=',
     ]) {
-      const res = await harness.app.inject({ method: 'GET', url, headers: { 'risu-auth': assertion } })
+      const res = await harness.app.inject({
+        method: 'GET',
+        url,
+        headers: { 'risu-auth': assertion },
+      })
       expect(res.statusCode, url).toBe(400)
     }
 

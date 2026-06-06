@@ -1,3 +1,8 @@
+import {
+  SHARED_DEFAULT_REQUEST_TIMEOUT_MS,
+  SHARED_MAX_REQUEST_TIMEOUT_MS,
+} from './requestTimeouts.js'
+
 const STRIP_REQUEST_HEADERS = new Set([
   'host',
   'connection',
@@ -16,27 +21,36 @@ const STRIP_RESPONSE_HEADERS = new Set([
   'content-encoding',
 ])
 
-export function getRequestTimeoutMs(raw: unknown): number | null {
+export const PROXY_FETCH_DEFAULT_TIMEOUT_MS = SHARED_DEFAULT_REQUEST_TIMEOUT_MS
+export const PROXY_FETCH_MAX_TIMEOUT_MS = SHARED_MAX_REQUEST_TIMEOUT_MS
+
+export function getRequestTimeoutMs(raw: unknown): number {
   const value = Array.isArray(raw) ? raw[0] : raw
-  if (typeof value !== 'string') return null
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return PROXY_FETCH_DEFAULT_TIMEOUT_MS
+  }
   const ms = Number.parseInt(value, 10)
-  if (!Number.isFinite(ms) || ms <= 0) return null
-  return ms
+  if (!Number.isFinite(ms) || ms <= 0) return PROXY_FETCH_DEFAULT_TIMEOUT_MS
+  return Math.min(PROXY_FETCH_MAX_TIMEOUT_MS, Math.max(1, Math.floor(ms)))
 }
 
 export interface TimeoutController {
-  signal: AbortSignal | undefined
+  signal: AbortSignal
+  timedOut(): boolean
   cleanup(): void
 }
 
-export function createTimeoutController(timeoutMs: number | null): TimeoutController {
-  if (!timeoutMs) {
-    return { signal: undefined, cleanup: () => {} }
-  }
+export function createTimeoutController(timeoutMs: number): TimeoutController {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let timeoutFired = false
+  const timer = setTimeout(() => {
+    timeoutFired = true
+    controller.abort()
+  }, timeoutMs)
+  timer.unref?.()
   return {
     signal: controller.signal,
+    timedOut: () => timeoutFired,
     cleanup: () => clearTimeout(timer),
   }
 }

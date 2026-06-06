@@ -3,15 +3,18 @@ import {
   claimNextMemoryJob,
   completeMemoryJob,
   listPendingMemoryJobChatIds,
+  pruneTerminalMemoryJobs,
   recoverRunningMemoryJobs,
   retryOrFailMemoryJob,
   type MemoryJob,
   type MemoryJobKind,
+  type PruneTerminalMemoryJobsOptions,
   type MemoryJobRetryOptions,
 } from './memoryRepository.js'
 import { buildMemoryJobEvent, emitMemoryEventSafely, type MemoryEventSink } from './memoryEvents.js'
 
 export const MEMORY_WORKER_DEFAULT_POLL_INTERVAL_MS = 1_000
+export const MEMORY_WORKER_RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000
 
 /**
  * Cap on the jobs a single batch-handler invocation may drain (the first
@@ -49,6 +52,7 @@ export interface MemoryWorkerOptions {
   onEvent?: MemoryEventSink
   onError?: (error: unknown) => void
   retry?: MemoryJobRetryOptions
+  terminalRetention?: false | (PruneTerminalMemoryJobsOptions & { intervalMs?: number })
 }
 
 export class MemoryWorker {
@@ -59,9 +63,13 @@ export class MemoryWorker {
   private readonly onEvent: MemoryEventSink | null
   private readonly onError: (error: unknown) => void
   private readonly retry: MemoryJobRetryOptions
+  private readonly terminalRetention:
+    | (PruneTerminalMemoryJobsOptions & { intervalMs: number })
+    | null
   private timer: NodeJS.Timeout | null = null
   private inFlight: Promise<boolean> | null = null
   private active = false
+  private lastRetentionSweepAtMs = 0
   /** Per-chat serve recency for the round-robin claim (audit L17). */
   private readonly chatLastServedAt = new Map<string, number>()
   private serveSequence = 0
@@ -79,6 +87,15 @@ export class MemoryWorker {
     this.onEvent = opts.onEvent ?? null
     this.onError = opts.onError ?? defaultMemoryWorkerErrorHandler
     this.retry = opts.retry ?? {}
+    const terminalRetentionOptions =
+      opts.terminalRetention === false ? null : (opts.terminalRetention ?? {})
+    this.terminalRetention =
+      terminalRetentionOptions === null
+        ? null
+        : {
+            ...terminalRetentionOptions,
+            intervalMs: normalizeRetentionSweepIntervalMs(terminalRetentionOptions.intervalMs),
+          }
   }
 
   get isRunning(): boolean {
@@ -94,6 +111,7 @@ export class MemoryWorker {
     for (const job of recoverRunningMemoryJobs(this.db, this.retry)) {
       this.emitJob(job)
     }
+    this.runRetentionSweep()
     this.active = true
     this.schedule(0)
   }
@@ -112,6 +130,7 @@ export class MemoryWorker {
 
   async tick(): Promise<boolean> {
     if (this.inFlight) return false
+    this.maybeRunRetentionSweep()
     const task = this.processOne()
     this.inFlight = task
     try {
@@ -125,13 +144,16 @@ export class MemoryWorker {
     if (!this.active || this.timer) return
     this.timer = setTimeout(() => {
       this.timer = null
+      let didWork = false
       void this.tick()
+        .then((result) => {
+          didWork = result
+        })
         .catch((error) => {
           this.onError(error)
-          return false
         })
         .finally(() => {
-          this.schedule(this.pollIntervalMs)
+          this.schedule(didWork ? 0 : this.pollIntervalMs)
         })
     }, delayMs)
     this.timer.unref()
@@ -225,6 +247,23 @@ export class MemoryWorker {
     return true
   }
 
+  private maybeRunRetentionSweep(): void {
+    if (!this.terminalRetention) return
+    const nowMs = Date.now()
+    if (nowMs - this.lastRetentionSweepAtMs < this.terminalRetention.intervalMs) return
+    this.runRetentionSweep(nowMs)
+  }
+
+  private runRetentionSweep(nowMs = Date.now()): void {
+    if (!this.terminalRetention) return
+    try {
+      pruneTerminalMemoryJobs(this.db, this.terminalRetention)
+      this.lastRetentionSweepAtMs = nowMs
+    } catch (error) {
+      this.onError(error)
+    }
+  }
+
   private emitJob(job: MemoryJob): void {
     if (!this.onEvent) return
     emitMemoryEventSafely(this.onEvent, buildMemoryJobEvent(job, { includeHypaV3Progress: true }))
@@ -234,6 +273,12 @@ export class MemoryWorker {
 function normalizePollIntervalMs(value: number | undefined): number {
   if (value === undefined) return MEMORY_WORKER_DEFAULT_POLL_INTERVAL_MS
   if (!Number.isFinite(value) || value < 0) return MEMORY_WORKER_DEFAULT_POLL_INTERVAL_MS
+  return Math.floor(value)
+}
+
+function normalizeRetentionSweepIntervalMs(value: number | undefined): number {
+  if (value === undefined) return MEMORY_WORKER_RETENTION_SWEEP_INTERVAL_MS
+  if (!Number.isFinite(value) || value < 0) return MEMORY_WORKER_RETENTION_SWEEP_INTERVAL_MS
   return Math.floor(value)
 }
 

@@ -55,6 +55,21 @@ it should not change runtime behavior.
   v2 gate and risk map.
 - The parent Phase 8 exit criteria match the recorded proof results.
 
+## Proof Details
+
+- Focused Phase 8 server suites passed: 17 files / 297 tests covering
+  generation deadlines, terminal retention, WAL synchronous mode, memory
+  backlog/failure/summary/chunk bounds, Realm and bundle import/export bounds,
+  legacy storage atomic writes, JSON import clone removal, hub bounds, proxy
+  deadlines, Vertex token dedupe, and DB setup.
+- The v2 gate passed: 18 tests with L1, L2, L15, and L17-L31 registered as
+  `DONE` with focused proof paths.
+- `pnpm api:test` passed after the legacy memory import test sorted summaries
+  by `metadata.summaryIndex` instead of relying on tied `created_at` row order:
+  99 files; 1846 passed / 1 skipped.
+- TypeScript checks passed with the required client-lib build before the strict
+  Fastify check.
+
 ## Validation
 
 ```bash

@@ -4,6 +4,11 @@ import type { AssembleMutationPayload } from './prompt/assemble.js'
 
 export type GenerationFinalizationMode = 'send' | 'continue' | 'regenerate'
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export const GENERATION_FINALIZATION_TERMINAL_RETRY_RETENTION_MS = 7 * DAY_MS
+export const GENERATION_FINALIZATION_TERMINAL_RETRY_SWEEP_LIMIT = 1000
+
 export interface GenerationFinalizationAttempt {
   generationId: string
   chatId: string
@@ -24,6 +29,44 @@ interface GenerationFinalizationRetryRow {
   last_error: string | null
   terminal_error: string | null
   status: 'pending' | 'terminal'
+}
+
+export interface PruneTerminalGenerationFinalizationRetriesOptions {
+  now?: string | Date
+  retentionMs?: number
+  maxPerSweep?: number
+}
+
+function normalizeTimestamp(value: string | Date | undefined): string {
+  const iso = value instanceof Date ? value.toISOString() : (value ?? new Date().toISOString())
+  if (Number.isNaN(Date.parse(iso))) {
+    throw new Error('now must be a valid timestamp')
+  }
+  return iso
+}
+
+function normalizeNonNegativeInteger(
+  value: number | undefined,
+  defaultValue: number,
+  name: string,
+): number {
+  if (value === undefined) return defaultValue
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative integer`)
+  }
+  return value
+}
+
+function normalizePositiveInteger(
+  value: number | undefined,
+  defaultValue: number,
+  name: string,
+): number {
+  if (value === undefined) return defaultValue
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`)
+  }
+  return value
 }
 
 export function createGenerationFinalizationRetryTable(db: DatabaseSync): void {
@@ -92,6 +135,39 @@ export function deleteGenerationFinalizationRetry(db: DatabaseSync, generationId
   db.prepare('DELETE FROM generation_finalization_retries WHERE generation_id = ?').run(
     generationId,
   )
+}
+
+export function pruneTerminalGenerationFinalizationRetries(
+  db: DatabaseSync,
+  options: PruneTerminalGenerationFinalizationRetriesOptions = {},
+): number {
+  const retentionMs = normalizeNonNegativeInteger(
+    options.retentionMs,
+    GENERATION_FINALIZATION_TERMINAL_RETRY_RETENTION_MS,
+    'retentionMs',
+  )
+  const maxPerSweep = normalizePositiveInteger(
+    options.maxPerSweep,
+    GENERATION_FINALIZATION_TERMINAL_RETRY_SWEEP_LIMIT,
+    'maxPerSweep',
+  )
+  const cutoff = new Date(Date.parse(normalizeTimestamp(options.now)) - retentionMs).toISOString()
+  const result = db
+    .prepare(
+      `
+        DELETE FROM generation_finalization_retries
+        WHERE generation_id IN (
+          SELECT generation_id
+          FROM generation_finalization_retries
+          WHERE status = 'terminal'
+            AND updated_at < ?
+          ORDER BY updated_at ASC, generation_id ASC
+          LIMIT ?
+        )
+      `,
+    )
+    .run(cutoff, maxPerSweep)
+  return Number(result.changes)
 }
 
 export function markGenerationFinalizationRetryFailure(

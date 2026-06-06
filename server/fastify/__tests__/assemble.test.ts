@@ -17,6 +17,7 @@ import {
   createMemorySummary,
   listMemoryChunks,
   listMemoryJobs,
+  listMemorySummaries,
 } from '../src/memoryRepository.js'
 import { EntityNotFoundError } from '../src/repository.js'
 import {
@@ -651,6 +652,91 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         enqueuedJobs: false,
         assembledPromptRows: true,
       })
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('L20: selects retained memory from the shared post-cleanup summary snapshot', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(memoryDb, {
+        id: 'chunk-keep',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'selected summary',
+        status: 'summarized',
+      })
+      createMemoryChunk(memoryDb, {
+        id: 'chunk-orphan',
+        chatId: 'chat-1',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'orphan summary',
+        status: 'summarized',
+      })
+      createMemorySummary(memoryDb, {
+        id: 'summary-keep',
+        chatId: 'chat-1',
+        chunkId: 'chunk-keep',
+        model: 'summary-model',
+        text: 'selected summary',
+        metadata: { chatMemos: ['chat-1'] },
+        tokens: 5,
+      })
+      createMemorySummary(memoryDb, {
+        id: 'summary-orphan',
+        chatId: 'chat-1',
+        chunkId: 'chunk-orphan',
+        model: 'summary-model',
+        text: 'orphan summary',
+        metadata: { chatMemos: ['removed-memo'] },
+        tokens: 5,
+      })
+      createMemoryEmbedding(memoryDb, {
+        id: 'embedding-keep',
+        chatId: 'chat-1',
+        chunkId: 'chunk-keep',
+        model: 'embedding-model',
+        vector: [1, 0],
+      })
+      createMemoryEmbedding(memoryDb, {
+        id: 'embedding-orphan',
+        chatId: 'chat-1',
+        chunkId: 'chunk-orphan',
+        model: 'embedding-model',
+        vector: [1, 0],
+      })
+      const db = memoryEnabledDatabase({
+        promptTemplate: [{ type: 'memory', innerFormat: 'Mem: {{slot}}' }],
+      } as Partial<Database>)
+
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(state)
+      fillLorebookSlots(state)
+      await fillHistoryAndBias(state)
+      fillMemoryAndPostHistory(state)
+
+      expect(state.promptMemoryChunkPlanningDiagnostics?.cleanup).toEqual({
+        summariesDeleted: 1,
+        chunksDeleted: 1,
+      })
+      expect(state.promptMemoryRows).toEqual([
+        { role: 'system', content: 'selected summary', memo: 'hypaMemory' },
+      ])
+      expect(
+        listMemorySummaries(memoryDb, { chatId: 'chat-1' }).map((summary) => summary.id),
+      ).toEqual(['summary-keep'])
+      expect(listMemoryChunks(memoryDb, { chatId: 'chat-1' }).map((chunk) => chunk.id)).toEqual([
+        'chunk-keep',
+      ])
     } finally {
       memoryDb.close()
     }

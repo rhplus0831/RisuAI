@@ -58,6 +58,21 @@ semantics, provider retries, or persisted provider settings.
 - The L30 v2 gate entry points at a real focused test and the risk-map row is
   `DONE`.
 
+## Proof Details
+
+- Runtime proof: `server/fastify/src/generation/vertexAuth.ts` stores cached
+  tokens and in-flight token requests under the service-account email, fixed
+  cloud-platform scope, and private-key fingerprint; identical cold callers
+  share the in-flight exchange while distinct private keys remain isolated.
+- Failure proof: token-exchange failures resolve to the same result for all
+  waiters and the in-flight entry is cleared so a later caller can retry.
+- Regression proofs:
+  `server/fastify/__tests__/vertexAuth.test.ts` covers concurrent cold
+  dedupe, warm cache reuse, failed in-flight retry, distinct-key isolation, and
+  safety-margin expiry refresh under `L30:` test names.
+- Gate proof: `src/ts/__tests__/fixCompletenessGateV2.test.ts` registers L30 as
+  `DONE`; `docs/plan/active-risk-analysis.md` marks L30 `DONE`.
+
 ## Validation
 
 ```bash

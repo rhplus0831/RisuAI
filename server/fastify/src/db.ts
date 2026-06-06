@@ -3,7 +3,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
 import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
-import { createAssetMetadataTable, createCharacterTables, createCollectionTables, createSettingsTable } from './repository.js'
+import {
+  createAssetMetadataTable,
+  createCharacterTables,
+  createCollectionTables,
+  createSettingsTable,
+} from './repository.js'
 
 export const CURRENT_SCHEMA_VERSION = 15
 
@@ -153,6 +158,9 @@ export function openDatabase(dataDir: string): DatabaseSync {
   const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
   try {
     db.exec('PRAGMA journal_mode = WAL')
+    // WAL with NORMAL keeps database consistency crash-safe while accepting
+    // that the latest committed transactions may be lost on OS/power failure.
+    db.exec('PRAGMA synchronous = NORMAL')
     db.exec('PRAGMA foreign_keys = ON')
     db.exec(`
       CREATE TABLE IF NOT EXISTS schema_version (
@@ -354,6 +362,8 @@ function createMemoryTables(db: DatabaseSync): void {
       ON memory_jobs (kind, status);
     CREATE INDEX IF NOT EXISTS idx_memory_jobs_status_next_run
       ON memory_jobs (status, next_run_at, created_at, id);
+    CREATE INDEX IF NOT EXISTS idx_memory_jobs_status_updated
+      ON memory_jobs (status, updated_at, id);
   `)
   ensureColumn(
     db,

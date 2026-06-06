@@ -14,11 +14,8 @@ v1 finding IDs are referenced as `v1-*`.
 
 - Confirmed findings: 102 total: 3 high, 22 medium, 59 low, 18 informational.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
-  known-overlap residuals K1-K4. H1-H3, Phase 2 M5, M6, L3, L13, L14, L16,
-  K1, and K2, Phase 3 M1-M4 and L4-L11, Phase 4 M7-M10, L32-L34, L37, and
-  K4, Phase 5 M13, M17, and L38-L44, Phase 6 M11, M12, M14, L35, L36, and
-  L45-L47, and Phase 7 M15, M16, M18-M22, L48-L59, and K3 are `DONE`; Phase
-  8's scheduled server-bound rows remain `PENDING`.
+  known-overlap residuals K1-K4 are `DONE`. No scheduled `PENDING` rows
+  remain.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -82,8 +79,8 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 
 | ID  | Phase                                            | Target fix                                                       | Status  |
 | --- | ------------------------------------------------ | ----------------------------------------------------------------- | ------- |
-| L1  | [8](phases/phase-8-server-bounds.md)             | Configurable/sliding durable deadline (pair with the non-durable twin). | PENDING |
-| L2  | [8](phases/phase-8-server-bounds.md)             | Delete/TTL terminal finalization-retry rows.                      | PENDING |
+| L1  | [8](phases/phase-8-server-bounds.md)             | Sliding durable deadline paired with the non-durable generation abort window. | DONE    |
+| L2  | [8](phases/phase-8-server-bounds.md)             | Delete/TTL terminal finalization-retry rows.                      | DONE    |
 | L3  | [2](phases/phase-2-server-corpus-ring-2.md)      | Settings-only loader for server-intent completion.                | DONE    |
 | L4  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Persist lorebook sticky-activation chat-var writes.               | DONE    |
 | L5  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Hoist per-message normalization out of `searchMatch`.             | DONE    |
@@ -96,23 +93,23 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L12 | gated                                            | Lua pool/boot serialization is the documented wasmoon constraint. | -       |
 | L13 | [2](phases/phase-2-server-corpus-ring-2.md)      | Targeted writes for Realm character append.                       | DONE    |
 | L14 | [2](phases/phase-2-server-corpus-ring-2.md)      | Delta-aware transcript persist diff.                              | DONE    |
-| L15 | [8](phases/phase-8-server-bounds.md)             | `PRAGMA synchronous = NORMAL`.                                    | PENDING |
+| L15 | [8](phases/phase-8-server-bounds.md)             | `PRAGMA synchronous = NORMAL`.                                    | DONE    |
 | L16 | [2](phases/phase-2-server-corpus-ring-2.md)      | Single auth verification on the bulk routes.                      | DONE    |
-| L17 | [8](phases/phase-8-server-bounds.md)             | Retention sweep for terminal memory jobs.                         | PENDING |
-| L18 | [8](phases/phase-8-server-bounds.md)             | Fast-path reschedule after a productive worker tick.              | PENDING |
-| L19 | [8](phases/phase-8-server-bounds.md)             | Scope the fail-cascade to contextual groups.                      | PENDING |
-| L20 | [8](phases/phase-8-server-bounds.md)             | Share one summaries fetch between cleanup and selection.          | PENDING |
-| L21 | [8](phases/phase-8-server-bounds.md)             | Per-chunk size ceiling before embed requests.                     | PENDING |
-| L22 | [8](phases/phase-8-server-bounds.md)             | Size the contextual budget from provider limits; surface splits.  | PENDING |
-| L23 | [8](phases/phase-8-server-bounds.md)             | Batch JSON-card asset persists (charx shape).                     | PENDING |
-| L24 | [8](phases/phase-8-server-bounds.md)             | Compensating asset cleanup when the append fails.                 | PENDING |
-| L25 | [8](phases/phase-8-server-bounds.md)             | Open-or-skip assets at stream time (`missingFiles` degrade).      | PENDING |
-| L26 | [8](phases/phase-8-server-bounds.md)             | Temp-file + rename for legacy storage writes.                     | PENDING |
-| L27 | [8](phases/phase-8-server-bounds.md)             | Abort/timeout (+ streaming) for hub forwards.                     | PENDING |
-| L28 | [8](phases/phase-8-server-bounds.md)             | Drop the double clone in JSON import normalize.                   | PENDING |
-| L29 | [8](phases/phase-8-server-bounds.md)             | Cap the charx download near the expanded limit.                   | PENDING |
-| L30 | [8](phases/phase-8-server-bounds.md)             | In-flight promise dedupe for Vertex tokens.                       | PENDING |
-| L31 | [8](phases/phase-8-server-bounds.md)             | Default proxy deadline when `risu-timeout-ms` is absent.          | PENDING |
+| L17 | [8](phases/phase-8-server-bounds.md)             | Retention sweep for terminal memory jobs.                         | DONE    |
+| L18 | [8](phases/phase-8-server-bounds.md)             | Fast-path reschedule after a productive worker tick.              | DONE    |
+| L19 | [8](phases/phase-8-server-bounds.md)             | Scope the fail-cascade to contextual groups.                      | DONE    |
+| L20 | [8](phases/phase-8-server-bounds.md)             | Share one summaries fetch between cleanup and selection.          | DONE    |
+| L21 | [8](phases/phase-8-server-bounds.md)             | Per-chunk size ceiling before embed requests.                     | DONE    |
+| L22 | [8](phases/phase-8-server-bounds.md)             | Size the contextual budget from provider limits; surface splits.  | DONE    |
+| L23 | [8](phases/phase-8-server-bounds.md)             | Batch JSON-card asset persists (charx shape).                     | DONE    |
+| L24 | [8](phases/phase-8-server-bounds.md)             | Compensating asset cleanup when the append fails.                 | DONE    |
+| L25 | [8](phases/phase-8-server-bounds.md)             | Open-or-skip assets at stream time (`missingFiles` degrade).      | DONE    |
+| L26 | [8](phases/phase-8-server-bounds.md)             | Temp-file + rename for legacy storage writes.                     | DONE    |
+| L27 | [8](phases/phase-8-server-bounds.md)             | Abort/timeout (+ streaming) for hub forwards.                     | DONE    |
+| L28 | [8](phases/phase-8-server-bounds.md)             | Drop the double clone in JSON import normalize.                   | DONE    |
+| L29 | [8](phases/phase-8-server-bounds.md)             | Cap the charx download near the expanded limit.                   | DONE    |
+| L30 | [8](phases/phase-8-server-bounds.md)             | In-flight promise dedupe for Vertex tokens.                       | DONE    |
+| L31 | [8](phases/phase-8-server-bounds.md)             | Default proxy deadline when `risu-timeout-ms` is absent.          | DONE    |
 | L32 | [4](phases/phase-4-client-clone-ring-2.md)       | Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`. | DONE |
 | L33 | [4](phases/phase-4-client-clone-ring-2.md)       | Single-row snapshot for trash `removeChar`.                       | DONE |
 | L34 | [4](phases/phase-4-client-clone-ring-2.md)       | Minimal `supaMemory` patch on selection.                          | DONE |
@@ -212,6 +209,26 @@ paths and test names.
   `src/lib/ChatScreens/ChatBody.svelte.test.ts`: suggestion translation writes
   are epoch/source guarded and translation network errors do not retry through
   the full parse pipeline.
+
+### Phase 8 DONE Proofs
+
+- L1/L2/L15/L17-L22 - `server/fastify/__tests__/streamJobs.test.ts`,
+  `durableGeneration.test.ts`, `requestAbort.test.ts`, `db.test.ts`,
+  `memoryRepository.test.ts`, `memoryWorker.test.ts`,
+  `memoryEmbedJobHandler.test.ts`, `memorySummarizeJobHandler.test.ts`, and
+  companion memory tests cover sliding generation deadlines, terminal job
+  retention, WAL synchronous mode, backlog fast-path ticks, scoped memory
+  failure handling, shared summary snapshots, embedding chunk ceilings, and
+  contextual split metrics.
+- L23-L29 - `server/fastify/__tests__/realmImport.test.ts`,
+  `risuSaveBundleExportRoute.test.ts`, `legacyStorage.test.ts`,
+  `risuSaveImportRoute.test.ts`, and `hub.test.ts` cover batched JSON-card
+  asset persists, compensating cleanup, open-or-skip bundle assets, atomic
+  legacy writes, single-clone JSON import, Realm `.charx` caps, and bounded hub
+  forwards.
+- L30/L31 - `server/fastify/__tests__/vertexAuth.test.ts` and
+  `proxy.test.ts` cover Vertex in-flight token dedupe and proxy default/capped
+  deadlines, including timeout cleanup and stripped proxy-control headers.
 
 ### Known-Overlap Residuals (scheduled)
 

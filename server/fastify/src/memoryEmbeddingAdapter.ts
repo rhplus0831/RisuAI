@@ -1,4 +1,10 @@
-import type { MemoryEmbeddingModelRequest } from './memoryEmbeddingModel.js'
+import {
+  effectiveMemoryEmbeddingLimits,
+  findMemoryEmbeddingContextualGroupLimitViolation,
+  findMemoryEmbeddingLimitViolation,
+  formatMemoryEmbeddingLimitViolation,
+  type MemoryEmbeddingModelRequest,
+} from './memoryEmbeddingModel.js'
 
 export type EmbeddingProviderErrorCode =
   | 'configuration'
@@ -53,6 +59,17 @@ export async function embedTexts(
   }
   if (input.some((value) => typeof value !== 'string')) {
     return { error: 'embedding input must contain only strings', code: 'configuration' }
+  }
+  const sizeViolation = findMemoryEmbeddingLimitViolation(
+    opts.request,
+    input,
+    (index) => `embedding input ${index}`,
+  )
+  if (sizeViolation) {
+    return {
+      error: formatMemoryEmbeddingLimitViolation(sizeViolation),
+      code: 'configuration',
+    }
   }
   if (opts.signal.aborted) return { error: 'aborted', code: 'aborted' }
 
@@ -130,6 +147,38 @@ export async function embedTextGroups(
   if (opts.request.provider !== 'voyage-contextual') {
     return {
       error: 'contextual embedding groups require a contextual provider',
+      code: 'configuration',
+    }
+  }
+  if (
+    groups.some((group) => group.length > 1) &&
+    typeof effectiveMemoryEmbeddingLimits(opts.request).contextualWindowTokens !== 'number'
+  ) {
+    return {
+      error: `contextual embedding model ${opts.request.model} is missing contextualWindowTokens; refusing to send grouped contextual inputs`,
+      code: 'configuration',
+    }
+  }
+  const flattenedInputs = groups.flat()
+  const sizeViolation = findMemoryEmbeddingLimitViolation(
+    opts.request,
+    flattenedInputs,
+    (index) => `contextual embedding input ${index}`,
+  )
+  if (sizeViolation) {
+    return {
+      error: formatMemoryEmbeddingLimitViolation(sizeViolation),
+      code: 'configuration',
+    }
+  }
+  const groupSizeViolation = findMemoryEmbeddingContextualGroupLimitViolation(
+    opts.request,
+    groups,
+    (index) => `contextual embedding group ${index}`,
+  )
+  if (groupSizeViolation) {
+    return {
+      error: formatMemoryEmbeddingLimitViolation(groupSizeViolation),
       code: 'configuration',
     }
   }

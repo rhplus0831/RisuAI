@@ -2,8 +2,7 @@
 
 Date: 2026-06-06
 
-Phases 1-7 are implemented and proof-refreshed. Phase 8 is the remaining open
-fix batch.
+Phases 1-8 are implemented and proof-refreshed. Phase 9 is the remaining open closeout batch.
 
 ## Completed Batch: Phase 4 (Client Clone Narrowing Ring 2)
 
@@ -47,73 +46,41 @@ validation snippets, both gates, `pnpm test` (1212 passed / 4 skipped),
 `pnpm api:test` (1792 passed / 1 skipped), `pnpm client-thinning:audit`, and
 both TypeScript checks. See [`latest-verification.md`](latest-verification.md).
 
-## Next Batch: Phase 8 (Server Jobs, Memory & Import Bounds)
+## Completed Batch: Phase 8 (Server Jobs, Memory & Import Bounds)
 
-Server job, memory, import/export, and outbound bounds are defined in
-[`phases/phase-8-server-bounds.md`](phases/phase-8-server-bounds.md):
+Server-bound work is complete and proof-refreshed: L1, L2, L15, and L17-L31
+are `DONE` in the v2 gate and
+[`active-risk-analysis.md`](active-risk-analysis.md). The Phase 8 proof refresh
+passed focused server-bound suites (17 files / 297 tests), the v2 gate
+(18 tests), `pnpm api:test` (1846 passed / 1 skipped), and both TypeScript
+checks. See [`latest-verification.md`](latest-verification.md).
 
-1. L1 generation deadline bounds:
-   make durable and non-durable generation deadlines configurable or sliding
-   without killing active streams.
-2. L2/L17 terminal retention sweeps:
-   prune terminal finalization retry rows and memory jobs while preserving
-   live work.
-3. L15 SQLite WAL synchronous mode:
-   set `PRAGMA synchronous = NORMAL` after WAL and document the durability
-   trade-off.
-4. L18-L22 memory worker and embedding bounds:
-   drain productive ticks promptly, scope failure cascades, share summary
-   reads, enforce chunk ceilings, and make contextual split policy observable.
-5. L23-L29 import/export and asset bounds:
-   batch JSON-card asset persists, clean up failed appends, open bundle assets
-   at stream time, use atomic legacy storage writes, remove the extra JSON
-   import clone, and cap Realm `.charx` downloads.
-6. L27/L30/L31 outbound bounds:
-   add hub abort/deadline handling, dedupe cold Vertex token exchanges, and
-   apply a default proxy deadline.
-7. Phase 8 verification refresh:
-   refresh gates, focused server proofs, full validation, and latest
-   verification.
+## Next Batch: Phase 9 (Verification Budgets)
+
+Verification-budget closeout is defined in
+[`phases/phase-9-verification-budgets.md`](phases/phase-9-verification-budgets.md):
+
+1. Final registry sweep: prove every scheduled ID is `DONE` or explicitly
+   re-gated, with no remaining `PLANNED` / `PENDING` drift.
+2. Gate self-proof freeze: keep the v2 negative self-proofs alive and confirm
+   the v1 gate stays frozen against its archive.
+3. Closing proof: run the full closeout command set and record the final proof
+   log.
+4. Archive: move the closed v2 plan to the archive and repoint the live gates.
 
 ## Guardrails
 
-- Preserve success-path outputs: generation responses, DB durability, memory
-  jobs, import/export bytes, outbound responses, and realm import behavior stay
-  semantically identical unless a slice explicitly calls out a bug fix.
-- Bounds must be observable in tests: cache sizes, listener counts, retry
-  counts, deadlines, byte caps, queue depth, and log suppression should have
-  focused assertions.
-- L22 is the scheduled semantic correction for contextual embedding budget
-  sizing; it needs explicit tests and documentation.
-- Hub/proxy timeout fixes should surface bounded error results and release
-  resources; they should not convert hangs into silent success.
-- Do not schedule L12 or the v1 carry-over gates (v1-L4, v1-L7, v1-L26,
-  v1-U2) without evidence or owner approval.
+- Do not mark the plan closed until both gates, `pnpm test`, `pnpm api:test`,
+  `pnpm client-thinning:audit`, and both TypeScript checks are recorded.
+- Keep L12 and the v1 carry-over gates explicitly gated unless owner approval
+  changes their routing.
+- Keep all Phase 1-8 proof paths real; the v2 gate should fail if a registered
+  test file or test name drifts.
 
 ## Proof Commands
 
-Use the smallest focused command first. Broaden when a change touches shared
-client state, import/export bytes, MCP transport behavior, or client/server
-contracts.
-
-Phase 8 focused runs:
-
 ```bash
-pnpm exec vitest run --config server/fastify/vitest.config.ts \
-  server/fastify/__tests__/streamJobs.test.ts \
-  server/fastify/__tests__/durableGeneration.test.ts \
-  server/fastify/__tests__/memoryWorker.test.ts \
-  server/fastify/__tests__/memoryEmbedJobHandler.test.ts \
-  server/fastify/__tests__/memorySummarizeJobHandler.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts \
-  server/fastify/__tests__/backups.test.ts \
-  server/fastify/__tests__/risuSaveBundleExportRoute.test.ts \
-  server/fastify/__tests__/proxy.test.ts
-```
-
-Full proof set:
-
-```bash
+pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts
 pnpm test
 pnpm api:test
 pnpm client-thinning:audit
@@ -121,13 +88,9 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Optional metric review: deadline/retention/byte-cap/queue-depth assertions in
-focused tests, `RISU_PROTOCOL_METRICS=1` only when a change crosses the server
-send path, and `pnpm analyze:db <input>` for static corpus comparisons.
-
 ## Current Validation Caveats
 
-Phases 4-7 are green for focused suites, both gates, full root/API proof where
-recorded, client-thinning audit, and TypeScript checks. The remaining nonzero
-baseline in [`latest-verification.md`](latest-verification.md) is `pnpm check`
+Phases 4-8 are green for focused suites, gates, final merged root/API proof,
+client-thinning audit, and TypeScript checks. The remaining nonzero baseline
+in [`latest-verification.md`](latest-verification.md) is `pnpm check`
 retaining its 14-error svelte-check baseline.

@@ -2,6 +2,7 @@
 
 Phase: [8](../../phase-8-server-bounds.md). Findings: L21 and L22. Runtime
 change.
+Status: done on 2026-06-06 KST.
 
 ## Scope
 
@@ -70,6 +71,41 @@ summary fetch sharing, provider authentication, or selection ranking.
 - Tests observe split diagnostics and clear oversized-chunk errors.
 - L21 and L22 v2 gate entries point at real focused tests and the risk-map rows
   are `DONE`.
+
+## Proof
+
+- Runtime:
+  `server/fastify/src/memoryEmbeddingModel.ts` attaches provider/fallback input
+  limits to resolved embedding requests, `memoryEmbeddingAdapter.ts` rejects
+  oversized inputs before request-body construction, and
+  `memoryEmbedJobHandler.ts` validates chunks across single, non-contextual
+  batch, and contextual `voyageContext3` paths before provider dispatch.
+- Contextual policy:
+  `memoryEmbedJobHandler.ts` now sizes contextual sub-batches from the resolved
+  model's `contextualWindowTokens`, fails explicitly if that window metadata is
+  absent, isolates known-oversized chunks into failed single-job sub-batches,
+  and emits the opt-in `memory_contextual_embed_split` protocol metric when a
+  contextual batch is split. For `voyage-context-3`, runtime limits keep the
+  official 32,000 estimated-token ceiling for one contextual input chunk
+  separate from the 120,000 estimated-token contextual group/request budget and
+  the 16,000 chunk request cap.
+- Regression proof:
+  `server/fastify/__tests__/memoryEmbedJobHandler.test.ts` /
+  `L21: fails an oversized single chunk before provider request construction`,
+  `L21: fails an oversized non-contextual batch item before provider dispatch`,
+  `L21: fails an oversized contextual chunk before provider request construction`,
+  `L22: sends a valid contextual batch under the model window in one request`,
+  and `L22: emits a protocol metric when provider limits split a contextual batch`.
+  Adapter/model proof lives in
+  `server/fastify/__tests__/memoryEmbeddingAdapter.test.ts` /
+  `L21: rejects oversized inputs before constructing an embedding request body`
+  and `L22: rejects grouped contextual inputs when the request has no context limit`,
+  plus `server/fastify/__tests__/memoryEmbeddingModel.test.ts` /
+  `L21: formats per-input size violations with the offending bound`.
+- Gate proof:
+  `src/ts/__tests__/fixCompletenessGateV2.test.ts` registers L21 and L22
+  `DONE` with the focused proof paths; `docs/plan/active-risk-analysis.md`
+  marks both rows `DONE`.
 
 ## Validation
 

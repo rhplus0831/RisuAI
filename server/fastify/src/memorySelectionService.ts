@@ -8,6 +8,7 @@ import {
   type MemoryChunk,
   type MemoryEmbedding,
   type MemorySummary,
+  type MemorySummarySnapshot,
   listMemoryChunks,
   listMemoryEmbeddings,
   listMemorySummaries,
@@ -27,6 +28,7 @@ export interface MemorySelectionInput {
   availableTokens: number
   settings: MemoryBudgetAllocatorSettings
   randomSeed?: string
+  summarySnapshot?: MemorySummarySnapshot
   getSummaryTokenCost?: (summary: MemorySummary) => number
   isImportantSummary?: (summary: MemorySummary) => boolean
 }
@@ -58,10 +60,7 @@ export interface MemorySelectionResult {
 }
 
 export function selectMemorySummaries(input: MemorySelectionInput): MemorySelectionResult {
-  const summaries = listMemorySummaries(input.db, {
-    chatId: input.chatId,
-    model: input.summaryModel,
-  })
+  const summaries = resolveSelectionSummaries(input)
   const chunks = listMemoryChunks(input.db, { chatId: input.chatId })
   const embeddings = listMemoryEmbeddings(input.db, {
     chatId: input.chatId,
@@ -97,6 +96,24 @@ export function selectMemorySummaries(input: MemorySelectionInput): MemorySelect
       allocation: allocation.diagnostics,
     },
   }
+}
+
+function resolveSelectionSummaries(input: MemorySelectionInput): MemorySummary[] {
+  if (!input.summarySnapshot) {
+    return listMemorySummaries(input.db, {
+      chatId: input.chatId,
+      model: input.summaryModel,
+    })
+  }
+  if (input.summarySnapshot.chatId !== input.chatId) {
+    throw new Error('memory summary snapshot chatId must match selection chatId')
+  }
+  return input.summarySnapshot.summaries.filter((summary) => {
+    if (summary.chatId !== input.chatId) {
+      throw new Error('memory summary snapshot contains summaries from another chat')
+    }
+    return summary.model === input.summaryModel
+  })
 }
 
 function defaultMemorySelectionSeed(input: MemorySelectionInput): string {

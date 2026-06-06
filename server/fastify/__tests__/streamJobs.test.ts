@@ -1,6 +1,6 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   JobRegistry,
   PROXY_STREAM_DEFAULT_HEARTBEAT_SEC,
@@ -13,6 +13,7 @@ import {
   PROXY_STREAM_MAX_TIMEOUT_MS,
   type JobClient,
   type StreamJob,
+  isStreamDeadlineActivityFrame,
   normalizeHeartbeatSec,
   normalizeStreamTimeoutMs,
   runStreamJob,
@@ -101,6 +102,10 @@ function startEcho(): Promise<EchoServer> {
   })
 }
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('sanitizeLocalTargetUrl', () => {
   const allowed = [
     'http://127.0.0.1',
@@ -172,6 +177,9 @@ describe('normalizeStreamTimeoutMs / normalizeHeartbeatSec', () => {
     expect(normalizeStreamTimeoutMs(PROXY_STREAM_MAX_TIMEOUT_MS + 1)).toBe(
       PROXY_STREAM_MAX_TIMEOUT_MS,
     )
+    expect(normalizeStreamTimeoutMs(`${PROXY_STREAM_MAX_TIMEOUT_MS + 123_456}`)).toBe(
+      PROXY_STREAM_MAX_TIMEOUT_MS,
+    )
   })
 
   it('floors positive fractional timeouts to at least 1 ms', () => {
@@ -188,6 +196,15 @@ describe('normalizeStreamTimeoutMs / normalizeHeartbeatSec', () => {
 })
 
 describe('JobRegistry buffering and lifecycle', () => {
+  it('L1: identifies non-terminal chat SSE activity for sliding generation deadlines', () => {
+    expect(
+      isStreamDeadlineActivityFrame('event: token\ndata: {"content":"hello"}\n\n'),
+    ).toBe(true)
+    expect(isStreamDeadlineActivityFrame('event: token\ndata: {"content":""}\n\n')).toBe(false)
+    expect(isStreamDeadlineActivityFrame('event: done\ndata: {}\n\n')).toBe(false)
+    expect(isStreamDeadlineActivityFrame(': heartbeat\n\n')).toBe(false)
+  })
+
   it('buffers events when no client is attached, then flushes on attach', () => {
     const reg = new JobRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
@@ -298,6 +315,61 @@ describe('JobRegistry buffering and lifecycle', () => {
     reg.markDone(job, now0 + 1_500)
     reg.tickGc(now0 + 1_500 + PROXY_STREAM_DONE_GRACE_MS + 1)
     expect(reg.has(job.id)).toBe(false)
+  })
+
+  it('L1: sliding durable generation jobs survive past the original deadline while active', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    const reg = new JobRegistry()
+    const job = reg.create({
+      timeoutMs: 1_000,
+      heartbeatSec: 10,
+      slidingDeadline: true,
+    })
+    expect(job.deadlineAt).toBe(1_001_000)
+
+    vi.advanceTimersByTime(900)
+    reg.pushRaw(job, 'event: token\ndata: {"content":"a"}\n\n')
+    expect(job.deadlineAt).toBe(1_001_900)
+
+    vi.advanceTimersByTime(900)
+    reg.tickGc()
+    expect(job.abortController.signal.aborted).toBe(false)
+
+    vi.advanceTimersByTime(101)
+    reg.tickGc()
+    expect(job.abortController.signal.aborted).toBe(true)
+  })
+
+  it('L1: silent sliding durable generation jobs still die within the bounded deadline', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(2_000_000)
+    const reg = new JobRegistry()
+    const job = reg.create({
+      timeoutMs: 1_000,
+      heartbeatSec: 10,
+      slidingDeadline: true,
+    })
+
+    vi.advanceTimersByTime(1_001)
+    reg.tickGc()
+
+    expect(job.abortController.signal.aborted).toBe(true)
+  })
+
+  it('leaves fixed-deadline proxy jobs on their original wall-clock timeout', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(3_000_000)
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 1_000, heartbeatSec: 10 })
+
+    vi.advanceTimersByTime(900)
+    reg.pushEvent(job, { type: 'chunk', dataBase64: 'AAAA' })
+    expect(job.deadlineAt).toBe(3_001_000)
+
+    vi.advanceTimersByTime(101)
+    reg.tickGc()
+    expect(job.abortController.signal.aborted).toBe(true)
   })
 
   it('tickGc cleans up stale jobs that have not been updated within 2x timeout', () => {

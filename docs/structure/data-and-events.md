@@ -19,6 +19,9 @@ Primary boundaries:
 
 - `server/fastify/src/db.ts` owns schema setup, migrations, `schema_version`,
   and revision bumps.
+- Fastify opens SQLite in WAL mode with `synchronous = NORMAL`: committed
+  database state remains crash-consistent, but the latest transactions may be
+  lost on OS or power failure before WAL frames reach stable storage.
 - `server/fastify/src/repository.ts` loads/writes SQLite-backed domain state,
   handles legacy `db.json` import, asset metadata, projections, import/export,
   and backup/restore.

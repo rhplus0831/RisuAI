@@ -4,6 +4,11 @@ Phase: [8](../../phase-8-server-bounds.md). Finding: L1. Pair with the
 non-durable fixed-deadline residual called out under Known-Item Overlaps.
 Runtime change.
 
+Status: done. Implemented as a sliding idle deadline: durable generation jobs
+opt in to deadline refresh on non-terminal chat SSE activity, and non-durable
+chat generation refreshes the same normalized abort window when it writes active
+chat frames. Silent jobs still abort after the bounded timeout window.
+
 ## Scope
 
 Make durable chat generation and the non-durable request-abort wrapper survive

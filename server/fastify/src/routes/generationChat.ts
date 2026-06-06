@@ -52,7 +52,7 @@ import {
 import { ACTIVE_WRITER_SESSION_HEADER } from '../activeWriter.js'
 import { attachAbort } from '../requestAbort.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
-import type { JobClient, StreamJob } from '../streamJobs.js'
+import { isStreamDeadlineActivityFrame, type JobClient, type StreamJob } from '../streamJobs.js'
 import { getWritableBufferedBytes, writeBoundedRaw } from '../streamBackpressure.js'
 import {
   emitProtocolMetric,
@@ -113,7 +113,14 @@ export type ChatProviderDispatcher = (
 
 export interface GenerationChatRouteOptions {
   dispatchProvider?: ChatProviderDispatcher
-  finalizationRetry?: false | { intervalMs?: number; maxPerSweep?: number }
+  finalizationRetry?:
+    | false
+    | {
+        intervalMs?: number
+        maxPerSweep?: number
+        terminalRetentionMs?: number
+        terminalRetentionMaxPerSweep?: number
+      }
   /**
    * Cadence of the durable viewer's SSE comment heartbeat (audit L14).
    * Defaults to the job's `heartbeatSec`; injectable for tests.
@@ -878,7 +885,7 @@ async function streamAssembly(
   eventSink: CommandEventSink,
   options: GenerationChatRouteOptions = {},
 ): Promise<void> {
-  const { signal, abort, cleanup } = attachAbort(req)
+  const { signal, refresh, abort, cleanup } = attachAbort(req)
   let terminalDoneEmitted = false
   try {
     reply.raw.writeHead(200, {
@@ -887,7 +894,9 @@ async function streamAssembly(
       connection: 'keep-alive',
     })
     const emit = (event: PromptChatEvent): void => {
-      writeBoundedRaw(reply.raw, formatPromptChatFrame(event), { onOverflow: abort })
+      const frame = formatPromptChatFrame(event)
+      const written = writeBoundedRaw(reply.raw, frame, { onOverflow: abort })
+      if (written && isStreamDeadlineActivityFrame(frame)) refresh()
     }
 
     emit({ type: 'stage', stage: 'validate', status: 'start' })
@@ -1791,7 +1800,11 @@ function startDurableGeneration(args: {
     })
     return
   }
-  const job = generationJobs.registry.create({ timeoutMs: undefined, heartbeatSec: undefined })
+  const job = generationJobs.registry.create({
+    timeoutMs: undefined,
+    heartbeatSec: undefined,
+    slidingDeadline: true,
+  })
   generationJobs.registry.enableReplay(job)
   job.chatId = input.chatId
   job.writerSessionId = readWriterSessionHeader(req)

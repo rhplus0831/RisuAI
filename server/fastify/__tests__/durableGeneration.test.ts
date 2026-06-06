@@ -7,7 +7,13 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
+import { openDatabase } from '../src/db.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
+import {
+  enqueueGenerationFinalizationRetry,
+  markGenerationFinalizationRetryFailure,
+  pruneTerminalGenerationFinalizationRetries,
+} from '../src/generationFinalizationRetry.js'
 import type { ChatProviderDispatcher } from '../src/routes/generationChat.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
@@ -363,6 +369,31 @@ function generationFinalizationRetryRows(): Array<{
   }
 }
 
+function seedGenerationFinalizationRetryRow(
+  db: DatabaseSync,
+  generationId: string,
+  status: 'pending' | 'terminal',
+  updatedAt: string,
+): void {
+  enqueueGenerationFinalizationRetry(db, {
+    generationId,
+    chatId: 'chat-1',
+    mode: 'send',
+    message: {
+      role: 'char',
+      data: `message for ${generationId}`,
+      chatId: generationId,
+    } as never,
+    chatVarMutations: [],
+  })
+  if (status === 'terminal') {
+    markGenerationFinalizationRetryFailure(db, generationId, 'terminal fixture failure', true)
+  }
+  db.prepare(
+    'UPDATE generation_finalization_retries SET updated_at = ? WHERE generation_id = ?',
+  ).run(updatedAt, generationId)
+}
+
 describe('Durable generation (Milestone 1)', () => {
   // The generation survives the client drop and persists with no client present.
   it('keeps generating after the client drops mid-stream and persists the result (EC-D1)', async () => {
@@ -415,6 +446,74 @@ describe('Durable generation (Milestone 1)', () => {
     expect(assistantMessages).toHaveLength(1)
     expect(assistantMessages[0].data).toBe('retry me')
     controller.abort()
+  })
+
+  it('L2: prunes only terminal finalization retries older than retention', () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-generation-retention-'))
+    const db = openDatabase(dataDir)
+    try {
+      seedGenerationFinalizationRetryRow(db, 'terminal-old', 'terminal', '2026-06-01T00:00:00.000Z')
+      seedGenerationFinalizationRetryRow(
+        db,
+        'terminal-recent',
+        'terminal',
+        '2026-06-05T12:00:00.000Z',
+      )
+      seedGenerationFinalizationRetryRow(db, 'pending-old', 'pending', '2026-06-01T00:00:00.000Z')
+
+      expect(
+        pruneTerminalGenerationFinalizationRetries(db, {
+          now: '2026-06-06T00:00:00.000Z',
+          retentionMs: 24 * 60 * 60 * 1000,
+        }),
+      ).toBe(1)
+
+      expect(
+        (
+          db
+            .prepare(
+              `
+                SELECT generation_id
+                FROM generation_finalization_retries
+                ORDER BY generation_id ASC
+              `,
+            )
+            .all() as Array<{ generation_id: string }>
+        ).map((row) => row.generation_id),
+      ).toEqual(['pending-old', 'terminal-recent'])
+    } finally {
+      db.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('L2: app finalization retry sweep also removes retained terminal history', async () => {
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      seedGenerationFinalizationRetryRow(
+        db,
+        'terminal-app-old',
+        'terminal',
+        '2020-01-01T00:00:00.000Z',
+      )
+      seedGenerationFinalizationRetryRow(
+        db,
+        'terminal-app-recent',
+        'terminal',
+        new Date().toISOString(),
+      )
+    } finally {
+      db.close()
+    }
+
+    await waitFor(async () => {
+      const rows = generationFinalizationRetryRows()
+      return rows.some((row) => row.generation_id === 'terminal-app-old') ? undefined : rows
+    })
+
+    expect(generationFinalizationRetryRows().map((row) => row.generation_id)).toEqual([
+      'terminal-app-recent',
+    ])
   })
 
   // Drop the initial connection after it received prompt/info, reattach to the

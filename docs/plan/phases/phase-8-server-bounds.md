@@ -1,8 +1,8 @@
 # Phase 8: Server Jobs, Memory & Import Bounds
 
-Status: pending. Independent; order by pain. Bounded, mostly-local server
-fixes grouped by subsystem; L15 is a cheap standalone win that can land any
-time.
+Status: complete. Independent server-bound fixes landed and proof-refreshed.
+Bounded, mostly-local server fixes are grouped by subsystem; L15 landed as a
+cheap standalone win.
 
 Goal: server jobs, memory, import/export, and outbound paths get retention,
 fairness, durability, and deadline bounds; one scheduled semantic correction
@@ -99,8 +99,10 @@ L27, L28, L29, L30, L31. (I3's unused-index drop may ride along if free.)
   same decision to the non-durable 600 s twin.
 - L22 is a documented semantic decision, not a silent tweak: size the
   contextual budget from the provider's context limit or fall back to
-  non-contextual for unsplittable batches; at minimum emit a metric when a
-  contextual batch is split.
+  non-contextual for unsplittable batches; for `voyage-context-3`, enforce a
+  32,000 estimated-token per-context-chunk ceiling while keeping the 120,000
+  estimated-token contextual group/request budget and 16,000 chunk request cap;
+  at minimum emit a metric when a contextual batch is split.
 - L24: compensating delete (mirroring `addAssets`' own `createdFiles`
   rollback) rather than widening transactions across network fetches.
 - L26: temp-file + fsync + rename in the same directory.
@@ -111,27 +113,30 @@ L27, L28, L29, L30, L31. (I3's unused-index drop may ride along if free.)
 
 ## Exit Criteria
 
-- [ ] L1: a >deadline actively-streaming generation survives (sliding) or
+- [x] L1: a >deadline actively-streaming generation survives (sliding) or
       honors the raised configured cap; runaway no-token jobs still die.
-- [ ] L2/L17: terminal retry rows and terminal memory jobs are swept; live
+- [x] L2/L17: terminal retry rows and terminal memory jobs are swept; live
       rows untouched (retention tests).
-- [ ] L15: `synchronous = NORMAL` set after WAL; durability note recorded.
-- [ ] L18/L19/L20/L21/L22: worker drains a backlog without idle gaps;
-      transient failures retry only the failed jobs; one summaries fetch per
-      assembly; oversized chunks fail fast with a clear error; contextual
+- [x] L15: `synchronous = NORMAL` set after WAL; durability note recorded.
+- [x] L18: worker drains a backlog without idle gaps while idle ticks keep the
+      configured poll delay.
+- [x] L19/L20: transient failures retry only the failed jobs; one summaries
+      fetch per assembly.
+- [x] L21/L22: oversized chunks fail fast with a clear error; contextual
       splits are observable and the window policy is documented.
-- [ ] L23-L29: batched asset persists, compensating cleanup, open-or-skip
+- [x] L23-L29: batched asset persists, compensating cleanup, open-or-skip
       streaming, atomic legacy writes, single-clone import, bounded charx
       download — each with a behavior test; import/export bytes unchanged.
-- [ ] L27/L30/L31: hub abort/deadline, Vertex in-flight dedupe, proxy
+- [x] L27/L30/L31: hub abort/deadline, Vertex in-flight dedupe, proxy
       default deadline — each with a focused test.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/db.test.ts \
   server/fastify/__tests__/streamJobs.test.ts \
   server/fastify/__tests__/durableGeneration.test.ts \
   server/fastify/__tests__/memoryWorker.test.ts \
