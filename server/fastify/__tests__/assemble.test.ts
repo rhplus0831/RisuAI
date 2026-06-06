@@ -215,13 +215,22 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
 
 function seedPromptMemory(
   db: ReturnType<typeof openDatabase>,
-  input: { summaryId: string; chunkId: string; text: string; embeddingModel?: string },
+  input: {
+    summaryId: string
+    chunkId: string
+    text: string
+    embeddingModel?: string
+    rangeStartSeq?: number
+    tokens?: number
+    vector?: number[]
+  },
 ): void {
+  const rangeStartSeq = input.rangeStartSeq ?? 0
   createMemoryChunk(db, {
     id: input.chunkId,
     chatId: 'chat-1',
-    rangeStartSeq: 0,
-    rangeEndSeq: 1,
+    rangeStartSeq,
+    rangeEndSeq: rangeStartSeq + 1,
     text: input.text,
     status: 'summarized',
   })
@@ -231,14 +240,14 @@ function seedPromptMemory(
     chunkId: input.chunkId,
     model: 'summary-model',
     text: input.text,
-    tokens: 5,
+    tokens: input.tokens ?? 5,
   })
   createMemoryEmbedding(db, {
     id: `embedding-${input.chunkId}`,
     chatId: 'chat-1',
     chunkId: input.chunkId,
     model: input.embeddingModel ?? 'embedding-model',
-    vector: [1, 0],
+    vector: input.vector ?? [1, 0],
   })
 }
 
@@ -917,6 +926,157 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
       })
       expect(listMemoryChunks(memoryDb, { chatId: 'chat-1' })).toHaveLength(1)
       expect(listMemoryJobs(memoryDb, { chatId: 'chat-1', kind: 'summarize' })).toHaveLength(1)
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('M2: budgets tokens:0 prompt summaries with memory and category ratios', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      const texts = ['one', 'two', 'three', 'four'].map((label) => `${label} memory `.repeat(8))
+      for (const [index, text] of texts.entries()) {
+        seedPromptMemory(memoryDb, {
+          summaryId: `summary-${index + 1}`,
+          chunkId: `chunk-${index + 1}`,
+          text,
+          rangeStartSeq: index * 2,
+          tokens: 0,
+          vector: index === 0 ? [1, 0] : [0, 1],
+        })
+      }
+      const dbFor = (memoryTokensRatio: number): Database =>
+        memoryEnabledDatabase({
+          maxContext: 100,
+          maxResponse: 0,
+          promptTemplate: [{ type: 'memory', innerFormat: 'Mem: {{slot}}' }],
+          hypaV3Presets: [
+            {
+              name: 'Test',
+              settings: {
+                summarizationModel: 'summary-model',
+                memoryTokensRatio,
+                recentMemoryRatio: 0.5,
+                similarMemoryRatio: 0.5,
+                maxChatsPerSummary: 2,
+                queryChatCount: 1,
+              },
+            },
+          ] as never,
+        })
+      const selectMemory = async (db: Database) => {
+        const state = beginAssembly(
+          baseInput(),
+          depsFor(db, {
+            loadMemoryDatabase: () => memoryDb,
+            loadPromptMemoryQueryVectors: () => [[1, 0]],
+          }),
+        )
+        fillStaticSlots(state)
+        fillLorebookSlots(state)
+        await fillHistoryAndBias(state)
+        fillMemoryAndPostHistory(state)
+        return state
+      }
+
+      const bounded = await selectMemory(dbFor(0.5))
+
+      expect(bounded.promptMemoryRows?.map((row) => row.content)).toEqual([
+        texts[0].trim(),
+        texts[3].trim(),
+      ])
+      const boundedAllocation = bounded.promptMemorySelectionDiagnostics?.selection?.allocation
+      expect(boundedAllocation).toMatchObject({
+        availableTokens: 50,
+        consumedTokens: 34,
+        recentMemoryRatio: 0.5,
+        similarMemoryRatio: 0.5,
+      })
+      expect(boundedAllocation?.categories.recent).toMatchObject({
+        reservedTokens: 25,
+        consumedTokens: 17,
+        selectedCount: 1,
+        skippedForBudget: [{ summaryId: 'summary-3', tokens: 17 }],
+      })
+      expect(boundedAllocation?.categories.similar).toMatchObject({
+        reservedTokens: 33,
+        consumedTokens: 17,
+        selectedCount: 1,
+        skippedForBudget: [{ summaryId: 'summary-2', tokens: 17 }],
+      })
+
+      const tighter = await selectMemory(dbFor(0.15))
+
+      expect(tighter.promptMemoryRows).toEqual([])
+      expect(tighter.promptMemorySelectionDiagnostics?.selection?.allocation).toMatchObject({
+        availableTokens: 15,
+        consumedTokens: 0,
+        remainingTokens: 15,
+      })
+      expect(
+        tighter.promptMemorySelectionDiagnostics?.selection?.allocation.categories.similar
+          .skippedForBudget,
+      ).toEqual([{ summaryId: 'summary-1', tokens: 17 }])
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('M2: caps tokens:0 Hypa memory before final budgeting so old summaries do not overflow', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      const labels = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight']
+      for (const [index, label] of labels.entries()) {
+        seedPromptMemory(memoryDb, {
+          summaryId: `overflow-summary-${index + 1}`,
+          chunkId: `overflow-chunk-${index + 1}`,
+          text: `${label} memory `.repeat(8),
+          rangeStartSeq: index * 2,
+          tokens: 0,
+          vector: [1, 0],
+        })
+      }
+      const db = memoryEnabledDatabase({
+        maxContext: 90,
+        maxResponse: 0,
+        hypaV3Presets: [
+          {
+            name: 'Test',
+            settings: {
+              summarizationModel: 'summary-model',
+              memoryTokensRatio: 0.3,
+              recentMemoryRatio: 1,
+              similarMemoryRatio: 0,
+              maxChatsPerSummary: 2,
+              queryChatCount: 1,
+            },
+          },
+        ] as never,
+      })
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [],
+        }),
+      )
+      fillStaticSlots(state)
+      fillLorebookSlots(state)
+      await fillHistoryAndBias(state)
+      fillMemoryAndPostHistory(state)
+
+      expect(state.promptMemoryRows).toHaveLength(1)
+      expect(
+        state.promptMemorySelectionDiagnostics?.selection?.allocation.categories.recent
+          .skippedForBudget,
+      ).toEqual([{ summaryId: 'overflow-summary-7', tokens: 17 }])
+
+      await renderAndBudget(state)
+
+      expect(state.stopSending).toBe(false)
+      expect(state.abortReason).toBeUndefined()
+      expect(state.formated?.filter((row) => row.memo === 'hypaMemory')).toHaveLength(1)
+      expect(state.inputTokens).toBeLessThanOrEqual(db.maxContext)
     } finally {
       memoryDb.close()
     }
@@ -2273,8 +2433,9 @@ describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
     const first = await assemblePrompt(baseInput({ userMessage: 'cat' }), depsFor(db))
 
     expect(first.stopSending).toBe(false)
-    const firstLorebookActivation = first.prompt
-      ?.lorebookActivation as LorebookActivationReport | undefined
+    const firstLorebookActivation = first.prompt?.lorebookActivation as
+      | LorebookActivationReport
+      | undefined
     expect(firstLorebookActivation?.actives.map((a) => a.prompt)).toContain('One-shot lore.')
     expect(first.mutations?.varChanged).toBe(true)
     expect(first.mutations?.chatVarMutations).toEqual([
@@ -2288,8 +2449,9 @@ describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
     const second = await assemblePrompt(baseInput({ userMessage: 'cat' }), depsFor(db))
 
     expect(second.stopSending).toBe(false)
-    const secondLorebookActivation = second.prompt
-      ?.lorebookActivation as LorebookActivationReport | undefined
+    const secondLorebookActivation = second.prompt?.lorebookActivation as
+      | LorebookActivationReport
+      | undefined
     expect(secondLorebookActivation?.actives.map((a) => a.prompt)).not.toContain('One-shot lore.')
     expect(second.mutations?.chatVarMutations).toEqual([])
   })

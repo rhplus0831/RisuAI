@@ -143,14 +143,24 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/generation.chat.test.ts',
-        testName: 'reviews representative generation prompt metric families for next-slice selection',
+        testName:
+          'reviews representative generation prompt metric families for next-slice selection',
       },
     ],
   ),
-  planned(
+  done(
     'M2',
     3,
     'Supply tiktoken-fallback `getSummaryTokenCost` in the `selectPromptMemory` call (repairs existing `tokens:0` rows); optionally also measure at persist.',
+    'server/fastify/__tests__/assemble.test.ts',
+    'M2: budgets tokens:0 prompt summaries with memory and category ratios',
+    [
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName:
+          'M2: caps tokens:0 Hypa memory before final budgeting so old summaries do not overflow',
+      },
+    ],
   ),
   done(
     'M3',
@@ -271,7 +281,8 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
-        testName: 'L11: collection scoped reads fall back broad for unrelated embedded settings rows',
+        testName:
+          'L11: collection scoped reads fall back broad for unrelated embedded settings rows',
       },
     ],
   ),
@@ -1258,6 +1269,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     expect(doneEntries.map((entry) => entry.id)).toEqual([
       'H1',
       'M1',
+      'M2',
       'M3',
       'M4',
       'M5',
@@ -1274,11 +1286,11 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M3, M4, M5, L11, L12, L13, L14, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, L11, L12, L13, L14, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1', 'M1', 'M3', 'M4', 'M5', 'L11', 'L12', 'L13', 'L14', 'K2'])
+    ).toEqual(['H1', 'M1', 'M2', 'M3', 'M4', 'M5', 'L11', 'L12', 'L13', 'L14', 'K2'])
     expect(collectGateProblems()).toEqual([])
   })
 
@@ -1299,7 +1311,7 @@ describe('v3 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M2'
+      entry.id === 'M6'
         ? {
             ...entry,
             testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
@@ -1309,35 +1321,35 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'M2: PLANNED entries must not claim proof fields',
+      'M6: PLANNED entries must not claim proof fields',
     )
   })
 
   it('rejects doc DONE rows that do not have matching registry proof', () => {
-    const m2 = SCHEDULED_FIXES.find((entry) => entry.id === 'M2')
-    if (!m2) throw new Error('M2 registry entry not found')
+    const m6 = SCHEDULED_FIXES.find((entry) => entry.id === 'M6')
+    if (!m6) throw new Error('M6 registry entry not found')
 
     const withDoneDocRow = replaceRiskRow(
       readDoc(RISK_DOC),
-      'M2',
-      `| M2 | [3](phases/phase-3-memory-subsystem.md) | ${m2.fix} | DONE |`,
+      'M6',
+      `| M6 | [6](phases/phase-6-reactive-amplification-and-render.md) | ${m6.fix} | DONE |`,
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'M2: status mismatch (registry PLANNED, docs DONE)',
+      'M6: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 
   it('rejects DONE registry entries without a registered test path and test name', () => {
-    const m2 = SCHEDULED_FIXES.find((entry) => entry.id === 'M2')
-    if (!m2) throw new Error('M2 registry entry not found')
+    const m6 = SCHEDULED_FIXES.find((entry) => entry.id === 'M6')
+    if (!m6) throw new Error('M6 registry entry not found')
     const riskText = replaceRiskRow(
       readDoc(RISK_DOC),
-      'M2',
-      `| M2 | [3](phases/phase-3-memory-subsystem.md) | ${m2.fix} | DONE |`,
+      'M6',
+      `| M6 | [6](phases/phase-6-reactive-amplification-and-render.md) | ${m6.fix} | DONE |`,
     )
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M2'
+      entry.id === 'M6'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1347,8 +1359,8 @@ describe('v3 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone, riskText })).toEqual(
       expect.arrayContaining([
-        'M2: DONE without a registered testPath',
-        'M2: DONE without a registered testName',
+        'M6: DONE without a registered testPath',
+        'M6: DONE without a registered testName',
       ]),
     )
   })

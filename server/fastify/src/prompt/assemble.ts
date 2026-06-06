@@ -83,7 +83,7 @@ import {
   type MemorySummary,
   type MemorySummarySnapshot,
 } from '../memoryRepository.js'
-import { tokenizeChat } from './tokens.js'
+import { tokenize, tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 import {
@@ -1332,6 +1332,7 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
       similarMemoryRatio: settings.similarMemoryRatio,
     },
     summarySnapshot: planning.summarySnapshot,
+    getSummaryTokenCost: createPromptMemorySummaryTokenCost(state.database),
   })
   state.promptMemorySelectionDiagnostics = selection.diagnostics
 
@@ -1347,6 +1348,22 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
   })
   state.promptMemoryRows = assembled.rows
   return assembled.rows
+}
+
+function createPromptMemorySummaryTokenCost(db: Database): (summary: MemorySummary) => number {
+  const { encoding } = tokenizerOptionsFromDb(db)
+  const fallbackTokenCache = new Map<string, number>()
+
+  return (summary) => {
+    if (Number.isFinite(summary.tokens) && summary.tokens > 0) {
+      return summary.tokens
+    }
+    const cached = fallbackTokenCache.get(summary.id)
+    if (cached !== undefined) return cached
+    const tokens = tokenize(summary.text, encoding)
+    fallbackTokenCache.set(summary.id, tokens)
+    return tokens
+  }
 }
 
 function planPromptMemoryChunksForAssembly(input: {
