@@ -8,15 +8,16 @@ after each change to a narrowed or bounded path.
 ## Current State
 
 - Plan state: open. Phase 1 H1-H3, Phase 2's M5, M6, L3, L13, L14, L16, K1,
-  and K2, and Phase 3's M1-M4 and L4-L11 are implemented and
-  proof-refreshed. Phase 4 is the next fix batch.
+  and K2, Phase 3's M1-M4 and L4-L11, and Phase 4's M7-M10, L32-L34, L37,
+  and K4 are implemented and proof-refreshed. Phase 5 is the next fix batch.
 - Gate state: the v1 gate
   (`src/ts/__tests__/fixCompletenessGate.test.ts`) stays live against the
   archived v1 docs. The v2 gate
   (`src/ts/__tests__/fixCompletenessGateV2.test.ts`) is live against the v2
   docs and active-risk routing.
 - Scheduled IDs: H1-H3 plus Phase 2's M5, M6, L3, L13, L14, L16, K1, and K2,
-  plus Phase 3's M1-M4 and L4-L11 are registered `DONE` in the v2 gate and
+  plus Phase 3's M1-M4 and L4-L11, plus Phase 4's M7-M10, L32-L34, L37, and
+  K4 are registered `DONE` in the v2 gate and
   [`active-risk-analysis.md`](active-risk-analysis.md). Remaining scheduled
   gate entries stay `PLANNED`; risk-map rows stay `PENDING`; gated/no-action
   rows are unchanged.
@@ -201,6 +202,59 @@ Phase 3 focused proof summaries:
   lookup normalizes registered names/aliases once while preserving raw tag
   text and normal output below the cap.
 
+## Phase 4 Verification Refresh
+
+Recorded on 2026-06-06 KST after M7-M10, L32-L34, L37, and K4 landed. Those
+Phase 4 IDs are confirmed `DONE` in both
+`src/ts/__tests__/fixCompletenessGateV2.test.ts` and
+[`active-risk-analysis.md`](active-risk-analysis.md). The focused runtime
+proofs, supplemental module/compatibility proofs, v2 and clone-cost gates,
+root test suite, API suite, client-thinning audit, and TypeScript checks
+passed.
+
+- `pnpm exec vitest run src/ts/process/request/tests/serverMessagePatch.test.ts src/ts/plugins/plugins.test.ts src/ts/chatCommands.test.ts src/ts/characterCommands.test.ts src/ts/moduleCommands.test.ts src/ts/server/lorebookBridge.test.ts src/ts/server/lorebookBridge.svelte.test.ts src/ts/process/__tests__/command.projectionGuard.test.ts src/lang/index.test.ts`:
+  passed, 9 files / 131 tests.
+- `pnpm exec vitest run src/ts/process/modules.test.ts src/ts/process/mcp/risuaccess/tests/modules.test.ts src/ts/compatibilityAdapters.test.ts`:
+  passed, 3 files / 29 tests.
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV2.test.ts src/ts/__tests__/cloneCostGateCompleteness.test.ts`:
+  passed, 2 files / 27 tests. The live v2 gate expects H1-H3, Phase 2's M5,
+  M6, L3, L13, L14, L16, K1, and K2, Phase 3's M1-M4 and L4-L11, plus Phase
+  4's M7-M10, L32-L34, L37, and K4 as `DONE`.
+- `pnpm test`: passed, 126 files; 1202 passed / 4 skipped (1206). The run
+  printed the pre-existing repeated `ECONNREFUSED 127.0.0.1:3000`
+  local-service probe noise but exited 0.
+- `pnpm api:test`: passed, 99 files; 1792 passed / 1 skipped (1793). The run
+  printed normal Fastify request logs and exited 0.
+- `pnpm client-thinning:audit`: passed (`Client-thinning audit passed.`).
+- `pnpm exec tsc -p tsconfig.client-lib.json`: passed with zero diagnostics.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: passed with zero
+  diagnostics after the client-lib build.
+
+Phase 4 focused proof summaries:
+
+- M7: `replace_all` applies a byte-identical transcript with zero
+  `structuredClone` calls; append detachment behavior stays intact.
+- M8: `pluginStorage.getItem` clones only the selected key, preserves missing
+  scalar and falsey results, and detaches arrays from live plugin storage.
+- M9: allowed chat-metadata diffs match previous clone-sanitize patch bytes;
+  message-only changes produce an empty patch without serializing message
+  arrays, and object metadata is detached.
+- M10: global module snapshots clone only `modules` and `enabledModules`;
+  character-module snapshots clone only the target module field and
+  forced-failure rollbacks preserve concurrent edits and stable ids.
+- L32: `/send`, `/sendas`, `/comment`, `/cut`, `/del`, and `/multisend`
+  paths avoid `setDatabase`, preserve legacy transcript bytes, and restore
+  only the active chat on forced message-command failure.
+- L33/L34: trash removal uses scalar `trashTime` snapshots, and selection
+  auto-enable uses one-field `supaMemory` patches with no full-row or
+  collection clone; rollback restores only the touched field.
+- L37: same-code `changeLanguage` calls reuse the applied language object;
+  real language switches and unknown-code English fallback still rebuild or
+  reuse the correct cached object.
+- K4: lorebook entry typing clones only the edited entry before debounce
+  settle; flush/failure/module paths preserve final server writes and scoped
+  rollback.
+
 ## Phase 0 Baseline Refresh
 
 Recorded on 2026-06-05 after the v2 gate and render-count baseline landed:
@@ -288,3 +342,9 @@ Recorded during the 2026-06-05 v2 audit (evidence in
   (1160/4, 125 files); `pnpm api:test` passed (1792/1, 99 files);
   client-thinning audit and both TypeScript checks passed. I16 remained
   no-action.
+- 2026-06-06, Phase 4 verification refresh: focused client clone/rollback
+  suites passed (131 tests); supplemental module/compatibility suites passed
+  (29 tests); v2 and clone-cost gates passed (27 tests) with M7-M10,
+  L32-L34, L37, and K4 as `DONE`; `pnpm test` passed (1202/4, 126 files);
+  `pnpm api:test` passed (1792/1, 99 files); client-thinning audit and both
+  TypeScript checks passed.

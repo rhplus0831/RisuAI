@@ -1,6 +1,6 @@
 # Phase 4: Client Clone Narrowing Ring 2 (Root 3)
 
-Status: pending. Independent of Phases 5-8; order by pain.
+Status: complete; proof refreshed on 2026-06-06. Independent of Phases 5-8.
 
 Goal: the second ring of client whole-corpus clones. Two of the four mediums
 are one-line fixes (M7, M8); the rest mirror landed v1 shapes.
@@ -69,7 +69,7 @@ Findings: M7, M8, M9, M10, L32, L33, L34, L37, K4.
   `LoreBookData.svelte` (per-keystroke collection clone; v1-L32 scoped only
   the watcher).
 
-## Planned Shape
+## Landed Shape
 
 - M7: assign `mutation.messages` directly (it is a private deserialized
   array); add a clone-count assertion on the patch-apply path. The
@@ -87,20 +87,37 @@ Findings: M7, M8, M9, M10, L32, L33, L34, L37, K4.
 
 ## Exit Criteria
 
-- [ ] M7: zero `structuredClone` calls per `replace_all` apply (counting
+- [x] M7: zero `structuredClone` calls per `replace_all` apply (counting
       assertion); applied transcript identical.
-- [ ] M8: `getItem` performs zero whole-DB snapshots; returned values still
+- [x] M8: `getItem` performs zero whole-DB snapshots; returned values still
       detached from live state.
-- [ ] M9/M10/L33/L34: clone-cost assertions show single-row/module-only
+- [x] M9/M10/L33/L34: clone-cost assertions show single-row/module-only
       capture; forced-failure rollbacks restore exactly the mutated fields.
-- [ ] L32: the deferred command paths drop `setDatabase` with per-command
+- [x] L32: the deferred command paths drop `setDatabase` with per-command
       behavior tests (or are explicitly re-gated with a documented reason).
-- [ ] L37: `changeLanguage` early-returns on an unchanged language; language
+- [x] L37: `changeLanguage` early-returns on an unchanged language; language
       switching still works.
-- [ ] K4: lorebook entry typing no longer clones the collection per
+- [x] K4: lorebook entry typing no longer clones the collection per
       keystroke (debounced/scoped), server writes unchanged after settle.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
+
+## Proof Refresh
+
+Recorded in [`../latest-verification.md`](../latest-verification.md) on
+2026-06-06:
+
+- Phase 4 focused clone/rollback suites passed: 9 files / 131 tests.
+- Supplemental module/compatibility suites passed: 3 files / 29 tests.
+- v2 and clone-cost gates passed: 2 files / 27 tests.
+- `pnpm test` passed: 126 files; 1202 passed / 4 skipped. The run printed the
+  pre-existing local-service `ECONNREFUSED 127.0.0.1:3000` probe noise but
+  exited 0.
+- `pnpm api:test` passed: 99 files; 1792 passed / 1 skipped.
+- `pnpm client-thinning:audit` passed.
+- `pnpm exec tsc -p tsconfig.client-lib.json` and
+  `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit` passed with zero
+  diagnostics.
 
 ## Validation
 
@@ -108,5 +125,9 @@ Findings: M7, M8, M9, M10, L32, L33, L34, L37, K4.
 pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/characterCommands.test.ts src/ts/moduleCommands.test.ts
 pnpm exec vitest run src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/commands.test.ts
 pnpm exec vitest run src/ts/process/__tests__/command.projectionGuard.test.ts
-pnpm test && pnpm client-thinning:audit
+pnpm test
+pnpm api:test
+pnpm client-thinning:audit
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```

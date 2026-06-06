@@ -2,74 +2,71 @@
 
 Date: 2026-06-06
 
-Phases 1-3 are implemented and proof-refreshed. The next fix batch is Phase 4.
+Phases 1-4 are implemented and proof-refreshed. The next fix batch is Phase 5.
 
-## Next Batch: Phase 4 (Client Clone Narrowing Ring 2)
+## Completed Batch: Phase 4 (Client Clone Narrowing Ring 2)
 
-Client clone narrowing ring 2 is defined in
-[`phases/phase-4-client-clone-ring-2.md`](phases/phase-4-client-clone-ring-2.md):
+Client clone narrowing ring 2 is complete and proof-refreshed:
+M7-M10, L32-L34, L37, and K4 are `DONE` in the v2 gate and
+[`active-risk-analysis.md`](active-risk-analysis.md). The Phase 4 proof
+refresh passed focused clone/rollback suites, v2 and clone-cost gates,
+`pnpm test` (1202 passed / 4 skipped), `pnpm api:test` (1792 passed / 1
+skipped), `pnpm client-thinning:audit`, and both TypeScript checks. See
+[`latest-verification.md`](latest-verification.md).
 
-1. M7 replace-all message patch no clone
-   ([slice](phases/slices/phase-4-client-clone-ring-2/replace-all-message-patch-no-clone.md)):
-   assign private `replace_all` message arrays without recloning the
-   transcript.
-2. M8 plugin storage key read snapshot
-   ([slice](phases/slices/phase-4-client-clone-ring-2/plugin-storage-key-read-snapshot.md)):
-   read and detach one plugin storage key instead of snapshotting the whole
-   database.
-3. M9 chat metadata allowed-key diff
-   ([slice](phases/slices/phase-4-client-clone-ring-2/chat-metadata-allowed-key-diff.md)):
-   diff only allowed chat metadata keys and clone only changed values.
-4. M10 module command snapshot narrowing
-   ([slice](phases/slices/phase-4-client-clone-ring-2/module-command-snapshot-narrowing.md)):
-   split global module and character-module rollback snapshots.
-5. L32 send-family targeted chat mutations
-   ([slice](phases/slices/phase-4-client-clone-ring-2/send-family-targeted-chat-mutations.md)):
-   remove remaining `setDatabase` normalizer calls from send-family slash
-   command message edits.
-6. L33 remove-char trash single row
-   ([slice](phases/slices/phase-4-client-clone-ring-2/remove-char-trash-single-row.md)):
-   make trash removal capture only the targeted character row.
-7. L34 select supaMemory flag patch
-   ([slice](phases/slices/phase-4-client-clone-ring-2/select-supa-memory-flag-patch.md)):
-   patch only `supaMemory` when selection auto-enables Hypa V3 memory.
-8. L37 language-change same-code cache
-   ([slice](phases/slices/phase-4-client-clone-ring-2/language-change-same-code-cache.md)):
-   early-return when `changeLanguage` receives the already-applied language
-   code.
-9. K4 lorebook editor keystroke scope
-   ([slice](phases/slices/phase-4-client-clone-ring-2/lorebook-editor-keystroke-scope.md)):
-   debounce or scope lorebook entry typing so it no longer clones the whole
-   collection per keystroke.
-10. Phase 4 verification refresh
-    ([slice](phases/slices/phase-4-client-clone-ring-2/phase-4-verification-refresh.md)):
-    refresh gates, focused proofs, full validation, and latest verification.
+## Next Batch: Phase 5 (Client Render & UI)
+
+Client render and UI costs are defined in
+[`phases/phase-5-client-render-and-ui.md`](phases/phase-5-client-render-and-ui.md):
+
+1. M13 prompt-template tokenize debounce
+   ([slice](phases/slices/phase-5-client-render-and-ui/prompt-template-tokenize-debounce.md)):
+   debounce prompt-template token counts and memoize per-item tokenization.
+2. M17/L40 chatbody content-keyed parse memo
+   ([slice](phases/slices/phase-5-client-render-and-ui/chatbody-content-keyed-parse-memo.md)):
+   add a bounded module-level parse/translate-detection memo for `ChatBody`.
+3. L38/L39 parser render fast paths
+   ([slice](phases/slices/phase-5-client-render-and-ui/parser-render-fast-paths.md)):
+   remove parser logs and fast-path thought/tool parsing.
+4. L41 partial-edit shared hover handler
+   ([slice](phases/slices/phase-5-client-render-and-ui/partial-edit-shared-hover-handler.md)):
+   share partial-edit hover tracking across visible messages.
+5. L42 grid catalog derived lists
+   ([slice](phases/slices/phase-5-client-render-and-ui/grid-catalog-derived-lists.md)):
+   derive and key `GridCatalog` character lists.
+6. L43 module settings derived search
+   ([slice](phases/slices/phase-5-client-render-and-ui/module-settings-derived-search.md)):
+   derive and key `ModuleSettings` search results.
+7. L44 sidebar character list signature
+   ([slice](phases/slices/phase-5-client-render-and-ui/sidebar-character-list-signature.md)):
+   replace sidebar list deep-compare with a cheap signature or derived memo.
+8. Phase 5 verification refresh
+   ([slice](phases/slices/phase-5-client-render-and-ui/phase-5-verification-refresh.md)):
+   refresh gates, focused proofs, full validation, and latest verification.
 
 ## Guardrails
 
-- Preserve broad loaders/snapshots for true full-corpus consumers. Narrow only
-  the hot path under test.
-- Rollback correctness is the invariant: every narrowed snapshot needs a
-  forced-failure test proving the rollback restores exactly the mutated
-  fields.
-- M7's `replace_all` payload is already a private deserialized array; do not
-  expand this into the longer-term incremental-mutation protocol change.
-- L32 may re-gate a send-family command only with a documented reason and
-  owner approval.
+- Keep H3's variable-only GUI refresh contract intact while adding render
+  memos; unchanged mounted chat messages should not reparse on var-only
+  refreshes.
+- Preserve rendered output bytes while removing parser/render work.
+- Keep render/translate-detection memos bounded and invalidate them on relevant
+  message content, character identity, or translate-flag changes.
 - Do not schedule L12 or the v1 carry-over gates (v1-L4, v1-L7, v1-L26,
   v1-U2) without evidence or owner approval.
 
 ## Proof Commands
 
-Use the smallest focused command first. Broaden when a change touches shared
-client state, rollback, projection guards, or server-backed command behavior.
+Use the smallest focused command first. Broaden when a change touches parser
+output, shared Svelte component state, render-count baselines, or
+client/server contracts.
 
 Client focused runs:
 
 ```bash
-pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/characterCommands.test.ts src/ts/moduleCommands.test.ts
-pnpm exec vitest run src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/commands.test.ts
-pnpm exec vitest run src/ts/process/__tests__/command.projectionGuard.test.ts
+pnpm exec vitest run src/ts/process/scripts.editdisplay.test.ts src/ts/process/scripts.regexCache.test.ts
+pnpm exec vitest run src/ts/__tests__/renderCountBaseline.test.ts src/ts/__tests__/renderCostHarness.test.ts
+pnpm check   # svelte-check; respect the pre-existing baseline count
 ```
 
 Full proof set:
@@ -82,6 +79,6 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Optional metric review: clone-cost harness assertions in the focused tests,
-`RISU_PROTOCOL_METRICS=1` only when a change crosses the server send path,
-and `pnpm analyze:db <input>` for static corpus comparisons.
+Optional metric review: render-count and parse-count assertions from the Phase
+0/H3 harnesses, and `pnpm analyze:db <input>` only if a change crosses stored
+corpus shape.
