@@ -634,7 +634,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L44', 5, 'Cheap signature compare for the sidebar list effect.'),
+  done(
+    'L44',
+    5,
+    'Cheap signature compare for the sidebar list effect.',
+    'src/lib/SideBars/Sidebar.charList.test.ts',
+    'L44: unrelated character metadata and chat changes reuse the sidebar list',
+    [
+      {
+        testPath: 'src/lib/SideBars/Sidebar.charList.test.ts',
+        testName: 'L44: character name image index and order changes rebuild the sidebar list',
+      },
+      {
+        testPath: 'src/lib/SideBars/Sidebar.charList.test.ts',
+        testName: 'L44: folder name color image and data changes rebuild the sidebar list',
+      },
+    ],
+  ),
   planned('L45', 6, 'Capped exponential backoff + jitter for SSE reconnect.'),
   planned('L46', 6, 'Bound `sseIdDone` (windowed dedup).'),
   planned('L47', 6, 'Remove the `fetchNative` body log.'),
@@ -1459,6 +1475,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L41',
       'L42',
       'L43',
+      'L44',
       'K1',
       'K2',
     ])
