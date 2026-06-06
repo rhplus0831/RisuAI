@@ -2152,6 +2152,63 @@ describe('Phase 3 M3 stable card cache', () => {
   })
 })
 
+describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
+  const stickyLore = (content: string): loreBook =>
+    ({
+      id: 'lore-dont',
+      key: 'cat',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'One-shot',
+      content,
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }) as loreBook
+
+  const stickyDb = (): Database =>
+    makeDatabase({
+      aiModel: 'gpt4',
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          globalLore: [stickyLore('@@dont_activate_after_match\nOne-shot lore.')],
+          chats: [makeChat({ id: 'chat-1', message: [] })],
+        }),
+      ],
+    } as Partial<Database>)
+
+  it('persists @@dont_activate_after_match through assembly mutations and suppresses the next send', async () => {
+    const db = stickyDb()
+
+    const first = await assemblePrompt(baseInput({ userMessage: 'cat' }), depsFor(db))
+
+    expect(first.stopSending).toBe(false)
+    const firstLorebookActivation = first.prompt
+      ?.lorebookActivation as LorebookActivationReport | undefined
+    expect(firstLorebookActivation?.actives.map((a) => a.prompt)).toContain('One-shot lore.')
+    expect(first.mutations?.varChanged).toBe(true)
+    expect(first.mutations?.chatVarMutations).toEqual([
+      { key: '$__internal_da_lore-dont', before: null, after: 'true' },
+    ])
+    expect(db.characters[0].chats[0].scriptstate).toEqual({
+      '$__internal_da_lore-dont': 'true',
+    })
+    expect(first.state?.currentChat.scriptstate).toBe(db.characters[0].chats[0].scriptstate)
+
+    const second = await assemblePrompt(baseInput({ userMessage: 'cat' }), depsFor(db))
+
+    expect(second.stopSending).toBe(false)
+    const secondLorebookActivation = second.prompt
+      ?.lorebookActivation as LorebookActivationReport | undefined
+    expect(secondLorebookActivation?.actives.map((a) => a.prompt)).not.toContain('One-shot lore.')
+    expect(second.mutations?.chatVarMutations).toEqual([])
+  })
+})
+
 describe('Phase 3 M4 CBS callback memo', () => {
   const msg = (role: Message['role'], data: string, chatId: string): Message =>
     ({ role, data, chatId }) as Message

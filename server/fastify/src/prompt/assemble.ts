@@ -1070,13 +1070,27 @@ export function fillStaticSlots(state: AssemblyState): void {
 export function fillLorebookSlots(state: AssemblyState): void {
   const { ctx, currentChar, currentChat, unformated, promptTemplate, usingPromptTemplate } = state
   const db = state.database
+  let stickyChatVarDirty = false
 
   const report = activateLorebook({
     database: db,
     currentChar,
     currentChat,
     model: db.aiModel,
+    writeChatVar: (key, value) => {
+      const persisted = currentPersistedChat(state)
+      if (!persisted) return
+      persisted.scriptstate ??= {}
+      const stateKey = '$' + key
+      if (persisted.scriptstate[stateKey] === value) return
+      persisted.scriptstate[stateKey] = value
+      stickyChatVarDirty = true
+    },
   })
+  if (stickyChatVarDirty) {
+    state.varChanged = true
+    syncWorkingScriptstate(state)
+  }
 
   const { positionParser, depthPrompts } = buildLorebookContext(
     ctx,

@@ -334,8 +334,31 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L4', 3, 'Persist lorebook sticky-activation chat-var writes.'),
-  planned('L5', 3, 'Hoist per-message normalization out of `searchMatch`.'),
+  done(
+    'L4',
+    3,
+    'Persist lorebook sticky-activation chat-var writes.',
+    'server/fastify/__tests__/generation.chat.test.ts',
+    'persists lorebook @@keep_activate_after_match and uses it on the next send (L4)',
+    [
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName:
+          'persists @@dont_activate_after_match through assembly mutations and suppresses the next send',
+      },
+      {
+        testPath: 'server/fastify/__tests__/generation.chat.test.ts',
+        testName: 'keeps preview-mode lorebook sticky writes read-only (L4)',
+      },
+    ],
+  ),
+  done(
+    'L5',
+    3,
+    'Hoist per-message normalization out of `searchMatch`.',
+    'server/fastify/__tests__/lorebook.test.ts',
+    'L5: normalizes base searchable messages once across recursive search passes',
+  ),
   planned('L6', 3, 'Memoize trigger/effect regexes; hoist transcript joins.'),
   planned('L7', 3, 'Trigger-presence check before the `runTrigger` clones.'),
   done(
@@ -1230,6 +1253,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M5',
       'M6',
       'L3',
+      'L4',
+      'L5',
       'L8',
       'L9',
       'L13',

@@ -634,6 +634,84 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
   })
 
+  it('persists lorebook @@keep_activate_after_match and uses it on the next send (L4)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<
+        (typeof fixtureDatabase.characters)[number] & {
+          globalLore?: unknown[]
+        }
+      >
+    }
+    db.formatingOrder = ['main', 'description', 'lorebook', 'chats']
+    db.characters[0].globalLore = [
+      {
+        id: 'lore-keep',
+        key: 'cat',
+        secondkey: '',
+        insertorder: 100,
+        comment: 'Sticky route lore',
+        content: '@@keep_activate_after_match\nSticky route lore.',
+        mode: 'normal',
+        alwaysActive: false,
+        selective: false,
+      },
+    ]
+    await seedDatabase(harness.app, assertion, db)
+
+    const send = async (userMessage: string): Promise<ParsedEvent[]> => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: { ...basePayload, userMessage },
+      })
+      expect(res.statusCode).toBe(200)
+      return parseEvents(res.body)
+    }
+
+    const firstEvents = await send('cat')
+    const firstPrompt = firstEvents.find((e) => e.type === 'prompt')!
+    expect(
+      (firstPrompt.data.messages as Array<{ content: string }>).some(
+        (message) => message.content === 'Sticky route lore.',
+      ),
+    ).toBe(true)
+    const firstPatch = firstEvents.find((e) => e.type === 'message_patch')?.data.patch as
+      | {
+          chatVarMutations?: Array<{ key: string; before: unknown; after: unknown }>
+          varChanged?: boolean
+        }
+      | undefined
+    expect(firstPatch?.varChanged).toBe(true)
+    expect(firstPatch?.chatVarMutations).toEqual([
+      { key: '$__internal_ka_lore-keep', before: null, after: 'true' },
+    ])
+    expect(firstEvents.find((e) => e.type === 'info')?.data.revision).toBe(2)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({
+      '$__internal_ka_lore-keep': 'true',
+    })
+
+    const secondEvents = await send('unrelated')
+    const secondPrompt = secondEvents.find((e) => e.type === 'prompt')!
+    expect(
+      (secondPrompt.data.messages as Array<{ content: string }>).some(
+        (message) => message.content === 'Sticky route lore.',
+      ),
+    ).toBe(true)
+    const secondPatch = secondEvents.find((e) => e.type === 'message_patch')?.data.patch as
+      | { chatVarMutations?: unknown[] }
+      | undefined
+    expect(secondPatch?.chatVarMutations).toEqual([])
+  })
+
   it('records prompt assembly and assembly-persistence protocol metrics separately', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
@@ -1671,6 +1749,59 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(parseEvents(res.body).find((e) => e.type === 'prompt')).toBeDefined()
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+  })
+
+  it('keeps preview-mode lorebook sticky writes read-only (L4)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<
+        (typeof fixtureDatabase.characters)[number] & {
+          globalLore?: unknown[]
+        }
+      >
+    }
+    db.characters[0].globalLore = [
+      {
+        id: 'preview-lore-keep',
+        key: 'cat',
+        secondkey: '',
+        insertorder: 100,
+        comment: 'Preview sticky lore',
+        content: '@@keep_activate_after_match\nPreview sticky lore.',
+        mode: 'normal',
+        alwaysActive: false,
+        selective: false,
+      },
+    ]
+    ;(db.characters[0].chats[0] as any).message = [
+      { role: 'user', data: 'cat in preview transcript', chatId: 'preview-msg-1' },
+    ]
+    await seedDatabase(harness.app, assertion, db)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'preview' },
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    expect(events.find((e) => e.type === 'prompt')).toBeDefined()
+    const patch = events.find((e) => e.type === 'message_patch')?.data.patch as
+      | { chatVarMutations?: Array<{ key: string; before: unknown; after: unknown }> }
+      | undefined
+    expect(patch?.chatVarMutations).toEqual([
+      { key: '$__internal_ka_preview-lore-keep', before: null, after: 'true' },
+    ])
 
     const bootstrap = await harness.app.inject({
       method: 'GET',

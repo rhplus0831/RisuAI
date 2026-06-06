@@ -125,6 +125,12 @@ export interface ActivateLorebookInput {
    * SPA's `tikJS` default (`tokenizer.ts:244`).
    */
   model?: string
+  /**
+   * Optional assembly-owned writer for chat vars that must survive beyond the
+   * cloned working chat. The local working chat is still updated first so the
+   * current activation pass observes its own sticky-state writes.
+   */
+  writeChatVar?: (key: string, value: string) => void
 }
 
 const POSITION_NAMED = new Set(['after_desc', 'before_desc', 'personality', 'scenario'])
@@ -155,6 +161,11 @@ function writeChatVar(chat: Chat, key: string, value: string): void {
   chat.scriptstate['$' + key] = value
 }
 
+function writeStickyChatVar(input: ActivateLorebookInput, key: string, value: string): void {
+  writeChatVar(input.currentChat, key, value)
+  input.writeChatVar?.(key, value)
+}
+
 function loreId(entry: loreBook): string {
   return entry.id ?? String(pickHashRand(5555, entry.content))
 }
@@ -172,6 +183,143 @@ interface RecursivePromptEntry {
   prompt: string
   data: string
   source: string
+}
+
+interface SearchableMessageBase {
+  prompt: string
+  data: string
+  strippedPrompt: string
+  strippedData: string
+  compactData: string
+  wordData: string[]
+  speakerType: 'user' | 'char'
+}
+
+interface SearchableMessageEntry extends SearchableMessageBase {
+  source: string
+}
+
+interface SearchableMessageCorpus {
+  baseEntries: SearchableMessageBase[]
+  depthSlices: Map<number, SearchableMessageEntry[]>
+  recursiveEntries: SearchableMessageEntry[]
+}
+
+export interface LorebookSearchNormalizationInstrumentation {
+  baseMessageNormalizations: number
+  recursivePromptNormalizations: number
+}
+
+const lorebookSearchNormalizationInstrumentation: LorebookSearchNormalizationInstrumentation = {
+  baseMessageNormalizations: 0,
+  recursivePromptNormalizations: 0,
+}
+
+export function resetLorebookSearchNormalizationInstrumentation(): void {
+  lorebookSearchNormalizationInstrumentation.baseMessageNormalizations = 0
+  lorebookSearchNormalizationInstrumentation.recursivePromptNormalizations = 0
+}
+
+export function getLorebookSearchNormalizationInstrumentation(): LorebookSearchNormalizationInstrumentation {
+  return { ...lorebookSearchNormalizationInstrumentation }
+}
+
+const SEARCH_COMMENT_RE = /\{\{\/\/(.+?)\}\}/g
+const SEARCH_COMMENT_BLOCK_RE = /\{\{comment:(.+?)\}\}/g
+
+function stripSearchText(text: string): string {
+  return text
+    .toLocaleLowerCase()
+    .replace(SEARCH_COMMENT_RE, '')
+    .replace(SEARCH_COMMENT_BLOCK_RE, '')
+}
+
+function normalizeSearchableBase(input: {
+  prompt: string
+  data: string
+  speakerType: 'user' | 'char'
+  source?: string
+  kind: 'base' | 'recursive'
+}): SearchableMessageBase | SearchableMessageEntry {
+  if (input.kind === 'base') {
+    lorebookSearchNormalizationInstrumentation.baseMessageNormalizations++
+  } else {
+    lorebookSearchNormalizationInstrumentation.recursivePromptNormalizations++
+  }
+  const strippedPrompt = stripSearchText(input.prompt)
+  const strippedData = stripSearchText(input.data)
+  const normalized = {
+    prompt: input.prompt,
+    data: input.data,
+    strippedPrompt,
+    strippedData,
+    compactData: strippedData.replace(/ /g, ''),
+    wordData: strippedData.split(' '),
+    speakerType: input.speakerType,
+  }
+  return input.source ? { ...normalized, source: input.source } : normalized
+}
+
+function buildSearchableCorpus(
+  messages: Message[],
+  database: Database,
+  currentChar: character,
+): SearchableMessageCorpus {
+  const username = database.username ?? 'user'
+  const baseEntries = messages.map((msg) => {
+    if (msg.role === 'user') {
+      return normalizeSearchableBase({
+        prompt: `\x01{{${username}}}:` + msg.data + '\x01',
+        data: msg.data,
+        speakerType: 'user',
+        kind: 'base',
+      }) as SearchableMessageBase
+    }
+    const speakerName =
+      msg.name ?? findCharByChaId(database, msg.saying)?.name ?? currentChar.name
+    return normalizeSearchableBase({
+      prompt: `\x01{{${speakerName}}}:` + msg.data + '\x01',
+      data: msg.data,
+      speakerType: 'char',
+      kind: 'base',
+    }) as SearchableMessageBase
+  })
+  return {
+    baseEntries,
+    depthSlices: new Map(),
+    recursiveEntries: [],
+  }
+}
+
+function baseSearchEntriesForDepth(
+  corpus: SearchableMessageCorpus,
+  searchDepth: number,
+): SearchableMessageEntry[] {
+  const cached = corpus.depthSlices.get(searchDepth)
+  if (cached) return cached
+
+  const start = Math.max(corpus.baseEntries.length - searchDepth, 0)
+  const sliced = corpus.baseEntries.slice(start, corpus.baseEntries.length).map((entry, i) => ({
+    ...entry,
+    source: `message ${i} by ${entry.speakerType}`,
+  }))
+  corpus.depthSlices.set(searchDepth, sliced)
+  return sliced
+}
+
+function appendRecursiveSearchEntry(
+  corpus: SearchableMessageCorpus,
+  entry: RecursivePromptEntry,
+): void {
+  corpus.recursiveEntries.push(
+    normalizeSearchableBase({
+      prompt: entry.prompt,
+      data: entry.data,
+      source: 'lorebook ' + entry.source,
+      speakerType: 'char',
+      kind: 'recursive',
+    }) as SearchableMessageEntry,
+  )
 }
 
 /**
@@ -225,14 +373,10 @@ function getCompiledLoreKeyRegex(regexString: string): RegExp | null {
  * so the caller can surface them on the `prompt` SSE event later.
  */
 function searchMatch(
-  messages: Message[],
+  corpus: SearchableMessageCorpus,
   arg: SearchArg,
-  database: Database,
-  currentChar: character,
   matchLog: LoreMatchLogEntry[],
-  recursivePrompt: RecursivePromptEntry[],
 ): boolean {
-  const sliced = messages.slice(messages.length - arg.searchDepth, messages.length)
   const trimmedKeys: string[] = []
   for (const k of arg.keys) {
     const t = k.trim()
@@ -240,34 +384,9 @@ function searchMatch(
   }
   if (trimmedKeys.length === 0) return false
 
-  const username = database.username ?? 'user'
-
-  const mList = sliced
-    .map((msg, i) => {
-      if (msg.role === 'user') {
-        return {
-          source: `message ${i} by user`,
-          prompt: `\x01{{${username}}}:` + msg.data + '\x01',
-          data: msg.data,
-        }
-      }
-      const speakerName =
-        msg.name ?? findCharByChaId(database, msg.saying)?.name ?? currentChar.name
-      return {
-        source: `message ${i} by char`,
-        prompt: `\x01{{${speakerName}}}:` + msg.data + '\x01',
-        data: msg.data,
-      }
-    })
-    .concat(
-      arg.dontSearchWhenRecursive
-        ? []
-        : recursivePrompt.map((m) => ({
-            source: 'lorebook ' + m.source,
-            prompt: m.prompt,
-            data: m.data,
-          })),
-    )
+  const mList = arg.dontSearchWhenRecursive
+    ? baseSearchEntriesForDepth(corpus, arg.searchDepth)
+    : baseSearchEntriesForDepth(corpus, arg.searchDepth).concat(corpus.recursiveEntries)
 
   if (arg.regex) {
     for (const m of mList) {
@@ -285,38 +404,25 @@ function searchMatch(
     return false
   }
 
-  const stripped = mList.map((m) => ({
-    source: m.source,
-    prompt: m.prompt
-      .toLocaleLowerCase()
-      .replace(/\{\{\/\/(.+?)\}\}/g, '')
-      .replace(/\{\{comment:(.+?)\}\}/g, ''),
-    data: m.data
-      .toLocaleLowerCase()
-      .replace(/\{\{\/\/(.+?)\}\}/g, '')
-      .replace(/\{\{comment:(.+?)\}\}/g, ''),
-  }))
-
   const allMode = arg.all ?? false
   let allModeMatched = true
+  const lowerKeys = trimmedKeys.map((key) => key.toLocaleLowerCase())
+  const compactKeys = lowerKeys.map((key) => key.replace(/ /g, ''))
 
-  for (const m of stripped) {
+  for (const m of mList) {
     if (arg.fullWordMatching) {
-      const splited = m.data.split(' ')
-      for (const key of trimmedKeys) {
-        if (splited.includes(key.toLocaleLowerCase())) {
-          matchLog.push({ prompt: m.prompt, source: m.source, activated: key })
+      for (let i = 0; i < trimmedKeys.length; i++) {
+        if (m.wordData.includes(lowerKeys[i])) {
+          matchLog.push({ prompt: m.strippedPrompt, source: m.source, activated: trimmedKeys[i] })
           if (!allMode) return true
         } else if (allMode) {
           allModeMatched = false
         }
       }
     } else {
-      const text = m.data.replace(/ /g, '')
-      for (const key of trimmedKeys) {
-        const realKey = key.toLocaleLowerCase().replace(/ /g, '')
-        if (text.includes(realKey)) {
-          matchLog.push({ prompt: m.prompt, source: m.source, activated: key })
+      for (let i = 0; i < trimmedKeys.length; i++) {
+        if (m.compactData.includes(compactKeys[i])) {
+          matchLog.push({ prompt: m.strippedPrompt, source: m.source, activated: trimmedKeys[i] })
           if (!allMode) return true
         } else if (allMode) {
           allModeMatched = false
@@ -335,7 +441,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
   const disabledUIPrompts: string[] = []
   const matchLog: LoreMatchLogEntry[] = []
   const activatedIndexes = new Set<number>()
-  const recursivePrompt: RecursivePromptEntry[] = []
+  const searchCorpus = buildSearchableCorpus(currentChat.message ?? [], database, currentChar)
 
   // Includes the (implicit) first message, matching SPA `:84`.
   const chatLength = (currentChat.message?.length ?? 0) + 1
@@ -578,7 +684,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
         }
         for (const q of searchQueries) {
           const hit = searchMatch(
-            currentChat.message ?? [],
+            searchCorpus,
             {
               keys: q.keys,
               searchDepth: scanDepth,
@@ -587,10 +693,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
               all: q.all,
               dontSearchWhenRecursive,
             },
-            database,
-            currentChar,
             matchLog,
-            recursivePrompt,
           )
           if (q.negative) {
             if (hit) {
@@ -626,10 +729,10 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
       activatedIndexes.add(i)
 
       if (keepAfterMatch) {
-        writeChatVar(currentChat, '__internal_ka_' + loreId(entry), 'true')
+        writeStickyChatVar(input, '__internal_ka_' + loreId(entry), 'true')
       }
       if (dontAfterMatch) {
-        writeChatVar(currentChat, '__internal_da_' + loreId(entry), 'true')
+        writeStickyChatVar(input, '__internal_da_' + loreId(entry), 'true')
       }
 
       // SPA `:606-618`: seed the recursive layer with the
@@ -638,7 +741,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
       const recurse = itemRecursive === 'global' ? recursiveScanning : itemRecursive
       if (recurse) {
         matching = true
-        recursivePrompt.push({
+        appendRecursiveSearchEntry(searchCorpus, {
           prompt: stripped,
           data: stripped,
           source: entry.comment || `lorebook ${i}`,
