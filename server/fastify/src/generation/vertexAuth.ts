@@ -1,4 +1,4 @@
-import { createSign } from 'node:crypto'
+import { createHash, createSign } from 'node:crypto'
 import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 
 /**
@@ -8,22 +8,37 @@ import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
  * caches the result in `db.vertexAccessToken` /
  * `db.vertexAccessTokenExpires`. The server mirrors the flow with Node
  * `crypto.createSign('RSA-SHA256')` and an in-process Map keyed by
- * service-account email.
+ * service-account credentials + scope.
  */
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const TOKEN_TTL_SAFETY_MS = 60 * 1000
+const VERTEX_TOKEN_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 
 interface CachedToken {
   token: string
   expiresAt: number
 }
 
-// Module-private cache. Tests reach in via `_resetVertexTokenCacheForTesting`.
+interface InflightTokenRequest {
+  cacheKey: string
+  controller: AbortController
+  promise: Promise<VertexBearerResult>
+  settled: boolean
+  waiterCount: number
+}
+
+// Module-private caches. Tests reach in via `_resetVertexTokenCacheForTesting`.
 const tokenCache = new Map<string, CachedToken>()
+const inflightTokenRequests = new Map<string, InflightTokenRequest>()
 
 function base64url(buf: Buffer | Uint8Array): string {
   return Buffer.from(buf).toString('base64url')
+}
+
+function vertexTokenCacheKey(email: string, privateKeyPem: string): string {
+  const privateKeyDigest = createHash('sha256').update(privateKeyPem).digest('base64url')
+  return `${email}\0${VERTEX_TOKEN_SCOPE}\0${privateKeyDigest}`
 }
 
 interface JWTClaimSet {
@@ -49,8 +64,8 @@ export function signServiceAccountJWT(
     iss: email,
     iat: nowSec,
     exp: nowSec + 3600,
-    scope: 'https://www.googleapis.com/auth/cloud-platform',
-    aud: 'https://oauth2.googleapis.com/token',
+    scope: VERTEX_TOKEN_SCOPE,
+    aud: TOKEN_URL,
   }
   const encHeader = base64url(Buffer.from(JSON.stringify(header)))
   const encClaim = base64url(Buffer.from(JSON.stringify(claimSet)))
@@ -62,15 +77,15 @@ export function signServiceAccountJWT(
   return `${signingInput}.${base64url(signature)}`
 }
 
-function getCachedToken(email: string): string | null {
-  const entry = tokenCache.get(email)
+function getCachedToken(cacheKey: string): string | null {
+  const entry = tokenCache.get(cacheKey)
   if (!entry) return null
   if (entry.expiresAt - TOKEN_TTL_SAFETY_MS <= Date.now()) return null
   return entry.token
 }
 
-function setCachedToken(email: string, token: string, expiresInSec: number): void {
-  tokenCache.set(email, {
+function setCachedToken(cacheKey: string, token: string, expiresInSec: number): void {
+  tokenCache.set(cacheKey, {
     token,
     expiresAt: Date.now() + expiresInSec * 1000,
   })
@@ -81,6 +96,10 @@ function setCachedToken(email: string, token: string, expiresInSec: number): voi
  */
 export function _resetVertexTokenCacheForTesting(): void {
   tokenCache.clear()
+  for (const entry of inflightTokenRequests.values()) {
+    entry.controller.abort()
+  }
+  inflightTokenRequests.clear()
 }
 
 interface TokenResponse {
@@ -90,31 +109,14 @@ interface TokenResponse {
 
 export type VertexBearerResult = { ok: true; token: string } | { ok: false; error: string }
 
-/**
- * Return a Bearer token for the given service account, fetching a fresh
- * one (and caching it) if no live cached token exists. Validates the
- * credentials shape before signing so misconfigured callers get a useful
- * error message instead of a crypto exception.
- */
-export async function resolveVertexBearer(
+const VERTEX_ABORTED_RESULT: VertexBearerResult = { ok: false, error: 'aborted' }
+
+async function fetchAndCacheVertexBearer(
+  cacheKey: string,
   email: string,
   privateKey: string,
   signal: AbortSignal,
 ): Promise<VertexBearerResult> {
-  if (typeof email !== 'string' || email.length === 0 || !email.includes('gserviceaccount.com')) {
-    return { ok: false, error: 'Vertex clientEmail must be a gserviceaccount.com address' }
-  }
-  if (
-    typeof privateKey !== 'string' ||
-    !privateKey.includes('-----BEGIN PRIVATE KEY-----') ||
-    !privateKey.includes('-----END PRIVATE KEY-----')
-  ) {
-    return { ok: false, error: 'Vertex privateKey must include PEM begin/end markers' }
-  }
-
-  const cached = getCachedToken(email)
-  if (cached !== null) return { ok: true, token: cached }
-
   let jwt: string
   try {
     jwt = signServiceAccountJWT(email, privateKey)
@@ -134,10 +136,12 @@ export async function resolveVertexBearer(
       signal,
     })
   } catch (err) {
-    if (signal.aborted) return { ok: false, error: 'aborted' }
+    if (signal.aborted) return VERTEX_ABORTED_RESULT
     const msg = err instanceof Error ? err.message : String(err)
     return { ok: false, error: `failed to fetch Vertex Bearer: ${msg}` }
   }
+
+  if (signal.aborted) return VERTEX_ABORTED_RESULT
 
   if (!response.ok) {
     let body = ''
@@ -171,6 +175,93 @@ export async function resolveVertexBearer(
       ? data.expires_in
       : 3500
 
-  setCachedToken(email, data.access_token, expiresInSec)
+  setCachedToken(cacheKey, data.access_token, expiresInSec)
   return { ok: true, token: data.access_token }
+}
+
+function startInflightTokenRequest(
+  cacheKey: string,
+  email: string,
+  privateKey: string,
+): InflightTokenRequest {
+  const controller = new AbortController()
+  let entry!: InflightTokenRequest
+  const promise = Promise.resolve()
+    .then(() => fetchAndCacheVertexBearer(cacheKey, email, privateKey, controller.signal))
+    .catch((err): VertexBearerResult => {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { ok: false, error: `failed to fetch Vertex Bearer: ${msg}` }
+    })
+    .finally(() => {
+      entry.settled = true
+      if (inflightTokenRequests.get(cacheKey) === entry) {
+        inflightTokenRequests.delete(cacheKey)
+      }
+    })
+
+  entry = { cacheKey, controller, promise, settled: false, waiterCount: 0 }
+  inflightTokenRequests.set(cacheKey, entry)
+  return entry
+}
+
+async function waitForInflightToken(
+  entry: InflightTokenRequest,
+  signal: AbortSignal,
+): Promise<VertexBearerResult> {
+  if (signal.aborted) return VERTEX_ABORTED_RESULT
+
+  entry.waiterCount += 1
+  let abortListener: (() => void) | undefined
+  try {
+    return await Promise.race([
+      entry.promise,
+      new Promise<VertexBearerResult>((resolve) => {
+        abortListener = () => resolve(VERTEX_ABORTED_RESULT)
+        signal.addEventListener('abort', abortListener, { once: true })
+      }),
+    ])
+  } finally {
+    if (abortListener !== undefined) {
+      signal.removeEventListener('abort', abortListener)
+    }
+    entry.waiterCount -= 1
+    if (signal.aborted && entry.waiterCount === 0 && !entry.settled) {
+      entry.controller.abort()
+      if (inflightTokenRequests.get(entry.cacheKey) === entry) {
+        inflightTokenRequests.delete(entry.cacheKey)
+      }
+    }
+  }
+}
+
+/**
+ * Return a Bearer token for the given service account, fetching a fresh
+ * one (and caching it) if no live cached token exists. Validates the
+ * credentials shape before signing so misconfigured callers get a useful
+ * error message instead of a crypto exception.
+ */
+export async function resolveVertexBearer(
+  email: string,
+  privateKey: string,
+  signal: AbortSignal,
+): Promise<VertexBearerResult> {
+  if (typeof email !== 'string' || email.length === 0 || !email.includes('gserviceaccount.com')) {
+    return { ok: false, error: 'Vertex clientEmail must be a gserviceaccount.com address' }
+  }
+  if (
+    typeof privateKey !== 'string' ||
+    !privateKey.includes('-----BEGIN PRIVATE KEY-----') ||
+    !privateKey.includes('-----END PRIVATE KEY-----')
+  ) {
+    return { ok: false, error: 'Vertex privateKey must include PEM begin/end markers' }
+  }
+
+  const cacheKey = vertexTokenCacheKey(email, privateKey)
+  const cached = getCachedToken(cacheKey)
+  if (cached !== null) return { ok: true, token: cached }
+  if (signal.aborted) return VERTEX_ABORTED_RESULT
+
+  const inflight =
+    inflightTokenRequests.get(cacheKey) ?? startInflightTokenRequest(cacheKey, email, privateKey)
+  return waitForInflightToken(inflight, signal)
 }

@@ -24,6 +24,19 @@ function decodeBase64UrlJson<T>(segment: string): T {
   return JSON.parse(Buffer.from(segment, 'base64url').toString('utf-8')) as T
 }
 
+function deferredResponse(): { promise: Promise<Response>; resolve: (response: Response) => void } {
+  let resolve!: (response: Response) => void
+  const promise = new Promise<Response>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 beforeEach(() => {
   _resetVertexTokenCacheForTesting()
 })
@@ -126,7 +139,7 @@ describe('resolveVertexBearer', () => {
     expect(body).toContain('&assertion=')
   })
 
-  it('returns a cached token instead of re-signing on the next call', async () => {
+  it('L30: returns a cached token instead of re-signing on the next call', async () => {
     const { privateKeyPem } = makeKeyPair()
     let fetchCount = 0
     vi.stubGlobal('fetch', async () => {
@@ -149,7 +162,109 @@ describe('resolveVertexBearer', () => {
     expect(fetchCount).toBe(1)
   })
 
-  it('refreshes a token whose expiry is within the safety margin', async () => {
+  it('L30: shares one in-flight token exchange for concurrent cold callers', async () => {
+    const { privateKeyPem } = makeKeyPair()
+    const exchange = deferredResponse()
+    let fetchCount = 0
+    vi.stubGlobal('fetch', async () => {
+      fetchCount++
+      return exchange.promise
+    })
+
+    const first = resolveVertexBearer(
+      'svc@example.iam.gserviceaccount.com',
+      privateKeyPem,
+      new AbortController().signal,
+    )
+    const second = resolveVertexBearer(
+      'svc@example.iam.gserviceaccount.com',
+      privateKeyPem,
+      new AbortController().signal,
+    )
+
+    await flushMicrotasks()
+    expect(fetchCount).toBe(1)
+
+    exchange.resolve(okTokenResponse('ya29.shared-token'))
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { ok: true, token: 'ya29.shared-token' },
+      { ok: true, token: 'ya29.shared-token' },
+    ])
+
+    const warm = await resolveVertexBearer(
+      'svc@example.iam.gserviceaccount.com',
+      privateKeyPem,
+      new AbortController().signal,
+    )
+    expect(warm).toEqual({ ok: true, token: 'ya29.shared-token' })
+    expect(fetchCount).toBe(1)
+  })
+
+  it('L30: clears a failed in-flight exchange so the next caller can retry', async () => {
+    const { privateKeyPem } = makeKeyPair()
+    let fetchCount = 0
+    vi.stubGlobal('fetch', async () => {
+      fetchCount++
+      if (fetchCount === 1) {
+        return new Response('{"error":"temporarily_unavailable"}', { status: 503 })
+      }
+      return okTokenResponse('ya29.retry-token')
+    })
+
+    const first = resolveVertexBearer(
+      'svc@example.iam.gserviceaccount.com',
+      privateKeyPem,
+      new AbortController().signal,
+    )
+    const second = resolveVertexBearer(
+      'svc@example.iam.gserviceaccount.com',
+      privateKeyPem,
+      new AbortController().signal,
+    )
+    const [firstResult, secondResult] = await Promise.all([first, second])
+
+    expect(fetchCount).toBe(1)
+    expect(firstResult.ok).toBe(false)
+    expect(secondResult).toEqual(firstResult)
+    expect((firstResult as { error: string }).error).toContain('503')
+
+    const retry = await resolveVertexBearer(
+      'svc@example.iam.gserviceaccount.com',
+      privateKeyPem,
+      new AbortController().signal,
+    )
+    expect(retry).toEqual({ ok: true, token: 'ya29.retry-token' })
+    expect(fetchCount).toBe(2)
+  })
+
+  it('L30: keeps distinct private keys from sharing an in-flight token exchange', async () => {
+    const firstKey = makeKeyPair()
+    const secondKey = makeKeyPair()
+    let fetchCount = 0
+    vi.stubGlobal('fetch', async () => {
+      fetchCount++
+      return okTokenResponse(`ya29.distinct-${fetchCount}`)
+    })
+
+    const [first, second] = await Promise.all([
+      resolveVertexBearer(
+        'svc@example.iam.gserviceaccount.com',
+        firstKey.privateKeyPem,
+        new AbortController().signal,
+      ),
+      resolveVertexBearer(
+        'svc@example.iam.gserviceaccount.com',
+        secondKey.privateKeyPem,
+        new AbortController().signal,
+      ),
+    ])
+
+    expect(first).toEqual({ ok: true, token: 'ya29.distinct-1' })
+    expect(second).toEqual({ ok: true, token: 'ya29.distinct-2' })
+    expect(fetchCount).toBe(2)
+  })
+
+  it('L30: refreshes a token whose expiry is within the safety margin', async () => {
     const { privateKeyPem } = makeKeyPair()
     let fetchCount = 0
     vi.stubGlobal('fetch', async () => {

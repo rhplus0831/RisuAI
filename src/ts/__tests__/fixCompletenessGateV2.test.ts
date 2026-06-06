@@ -739,7 +739,31 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L30', 8, 'In-flight promise dedupe for Vertex tokens.'),
+  done(
+    'L30',
+    8,
+    'In-flight promise dedupe for Vertex tokens.',
+    'server/fastify/__tests__/vertexAuth.test.ts',
+    'L30: shares one in-flight token exchange for concurrent cold callers',
+    [
+      {
+        testPath: 'server/fastify/__tests__/vertexAuth.test.ts',
+        testName: 'L30: returns a cached token instead of re-signing on the next call',
+      },
+      {
+        testPath: 'server/fastify/__tests__/vertexAuth.test.ts',
+        testName: 'L30: clears a failed in-flight exchange so the next caller can retry',
+      },
+      {
+        testPath: 'server/fastify/__tests__/vertexAuth.test.ts',
+        testName: 'L30: keeps distinct private keys from sharing an in-flight token exchange',
+      },
+      {
+        testPath: 'server/fastify/__tests__/vertexAuth.test.ts',
+        testName: 'L30: refreshes a token whose expiry is within the safety margin',
+      },
+    ],
+  ),
   planned('L31', 8, 'Default proxy deadline when `risu-timeout-ms` is absent.'),
   planned('L32', 4, 'Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`.'),
   planned('L33', 4, 'Single-row snapshot for trash `removeChar`.'),
@@ -1586,6 +1610,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L27',
       'L28',
       'L29',
+      'L30',
       'K1',
       'K2',
     ])

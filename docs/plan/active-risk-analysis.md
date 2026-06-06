@@ -109,7 +109,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L27 | [8](phases/phase-8-server-bounds.md)             | Abort/timeout (+ streaming) for hub forwards.                     | DONE    |
 | L28 | [8](phases/phase-8-server-bounds.md)             | Drop the double clone in JSON import normalize.                   | DONE    |
 | L29 | [8](phases/phase-8-server-bounds.md)             | Cap the charx download near the expanded limit.                   | DONE    |
-| L30 | [8](phases/phase-8-server-bounds.md)             | In-flight promise dedupe for Vertex tokens.                       | PENDING |
+| L30 | [8](phases/phase-8-server-bounds.md)             | In-flight promise dedupe for Vertex tokens.                       | DONE    |
 | L31 | [8](phases/phase-8-server-bounds.md)             | Default proxy deadline when `risu-timeout-ms` is absent.          | PENDING |
 | L32 | [4](phases/phase-4-client-clone-ring-2.md)       | Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`. | PENDING |
 | L33 | [4](phases/phase-4-client-clone-ring-2.md)       | Single-row snapshot for trash `removeChar`.                       | PENDING |
