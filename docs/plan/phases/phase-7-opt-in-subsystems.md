@@ -1,7 +1,7 @@
 # Phase 7: Opt-In Subsystems (Root 5)
 
-Status: pending; M15/M16, M18/L48, M19, M20/L54/L57, M21, L55/L56, and
-L58/L59 slices done on 2026-06-06.
+Status: pending; M15/M16, M18/L48, M19, M20/L54/L57, M21, M22/L52/L53,
+L55/L56, and L58/L59 slices done on 2026-06-06.
 Independent; order by pain. Largest finding count, but most fixes are small
 and local (several are one-liners).
 
@@ -42,7 +42,7 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
 - M21 (done):
   [`slices/phase-7-opt-in-subsystems/charx-import-stream-cap.md`](slices/phase-7-opt-in-subsystems/charx-import-stream-cap.md)
   - fix the CharX size guard and enforce the asset byte cap while streaming.
-- M22/L52/L53:
+- M22/L52/L53 (done):
   [`slices/phase-7-opt-in-subsystems/file-send-po-pdf-and-logs.md`](slices/phase-7-opt-in-subsystems/file-send-po-pdf-and-logs.md)
   - remove the `.po` test cap, stop file-send console logs, and pass raw PDF
     bytes to pdfjs.
@@ -102,7 +102,7 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
 
 - [x] M21: an oversized charx asset entry is abandoned mid-stream under the
       cap (memory assertion); valid imports byte-identical.
-- [ ] M22: a >100-line .po file translates fully (fixture test).
+- [x] M22: a >100-line .po file translates fully (fixture test).
 - [x] M19: a rejected bergamot translate recovers on the next call.
 - [x] M18: repeated TTS playbacks hold at most one live AudioContext
       (counting assertion via a stubbed constructor).
@@ -112,8 +112,10 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
       translateHTML runs and zero html logs.
 - [x] M20/L54: a hung MCP server fails the operation within the deadline,
       removes its listeners, and surfaces an error result.
-- [ ] L49-L53, K3: each has a focused behavior/counting test per
+- [ ] L49-L51, K3: each has a focused behavior/counting test per
       its target fix in the risk map.
+- [x] L52/L53: file-send paths log nothing on `.po`/PDF/XML/text cases, and
+      the PDF path passes raw bytes to pdfjs.
 - [x] L55: internal MCP static tool schemas are mutation-safe and `callMCPTool`
       reuses the indexed name-to-client dispatch cache while preserving
       duplicate-name winner order.

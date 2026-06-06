@@ -3,6 +3,8 @@
 Phase: [7](../../phase-7-opt-in-subsystems.md). Findings: M22, L52, L53.
 Runtime change.
 
+Status: done on 2026-06-06.
+
 ## Scope
 
 Remove silent `.po` truncation, remove file-send payload/progress
@@ -56,11 +58,20 @@ card import decoding.
 
 ## Done Criteria
 
-- A `.po` file with more than 100 lines translates fully.
-- PDF file-send passes raw binary data to pdfjs.
-- File-send focused tests prove the targeted logs are gone.
-- M22, L52, and L53 v2 gate entries point at real focused tests and the
+- [x] A `.po` file with more than 100 lines translates fully.
+- [x] PDF file-send passes raw binary data to pdfjs.
+- [x] File-send focused tests prove the targeted logs are gone.
+- [x] M22, L52, and L53 v2 gate entries point at real focused tests and the
   risk-map rows are `DONE`.
+
+## Proof
+
+- `src/ts/process/files/multisend.test.ts`:
+  `M22: translates every entry in a .po file longer than 100 lines`.
+- `src/ts/process/files/multisend.test.ts`:
+  `L52: postChatFile logs nothing for .po, PDF, XML, and text files`.
+- `src/ts/process/files/multisend.test.ts`:
+  `L53: passes raw PDF bytes to pdfjs and preserves the text result shape`.
 
 ## Validation
 
