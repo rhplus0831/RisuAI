@@ -13,35 +13,42 @@ free.
 
 ## Planned Slices
 
-Author under `slices/phase-7-assembly-and-trigger-hot-paths/` when starting.
+Authored under `slices/phase-7-assembly-and-trigger-hot-paths/`.
 
-- async-asset-reads (L1) — read assembly asset bytes off the event loop:
-  pre-resolve referenced assets with `fs.promises.readFile` before the
-  synchronous assembler (feeding the existing request-scoped cache) or make
-  the `ResolveStoredAsset` contract async.
-- dispatch-clone-narrowing (L3, K3) — compute the reformat flags first and
-  return `rows` unchanged when no branch applies (or clone lazily per
-  branch); return the provably-immutable `initialMessages` restoration
-  payload by reference (set once in `beginAssembly`, never mutated).
-- per-assembly-invariants (L6, L7) — build the char+module asset table once
-  per assembly and share it with `buildAssetLookup`; iterate the lorebook
-  depth slice and recursive entries without the per-call concat.
-- trigger-clone-narrowing (L8) — per-phase narrowing of `runTrigger`'s full
-  chat clone: skip or row-limit the clone for trigger sets containing no
-  message-mutating effect kinds. Do NOT share one clone across the three
-  phases — they legitimately see different transcripts (the audit's
-  correction marks that variant unsafe).
-- user-regex-bounds (L9) — bound user-supplied regex execution in the
-  trigger interpreter (haystack/pattern length caps and/or a complexity
-  screen for nested unbounded quantifiers); at minimum document the
-  non-interruptibility. Note `v2RegexTest`/`v2ExtractRegex` are in the
-  display/request safeSubset with no `lowLevelAccess` gate.
-- history-memo-chat-var-bumps (L10) — bump the history-callback memo
-  generation from every chat-var-dirty fold: the sticky-lorebook
-  `writeChatVar` callback, the run-var `chatVarDirty` branch, and the
-  renderAndBudget Lua var fold (all three are currently un-bumped).
-- phase-7-verification-refresh — gates, output-identity + count proofs,
-  full validation, latest-verification update.
+- [async-asset-reads](slices/phase-7-assembly-and-trigger-hot-paths/async-asset-reads.md)
+  (L1) — read assembly asset bytes off the event loop: pre-resolve
+  referenced assets with `fs.promises.readFile` before the synchronous
+  assembler (feeding the existing request-scoped cache) or make the
+  `ResolveStoredAsset` contract async.
+- [dispatch-clone-narrowing](slices/phase-7-assembly-and-trigger-hot-paths/dispatch-clone-narrowing.md)
+  (L3, K3) — compute the reformat flags first and return `rows` unchanged
+  when no branch applies (or clone lazily per branch); return the
+  provably-immutable `initialMessages` restoration payload by reference (set
+  once in `beginAssembly`, never mutated).
+- [per-assembly-invariants](slices/phase-7-assembly-and-trigger-hot-paths/per-assembly-invariants.md)
+  (L6, L7) — build the char+module asset table once per assembly and share
+  it with `buildAssetLookup`; iterate the lorebook depth slice and recursive
+  entries without the per-call concat.
+- [trigger-clone-narrowing](slices/phase-7-assembly-and-trigger-hot-paths/trigger-clone-narrowing.md)
+  (L8) — per-phase narrowing of `runTrigger`'s full chat clone: skip or
+  row-limit the clone for trigger sets containing no message-mutating effect
+  kinds. Do NOT share one clone across the three phases — they legitimately
+  see different transcripts (the audit's correction marks that variant
+  unsafe).
+- [user-regex-bounds](slices/phase-7-assembly-and-trigger-hot-paths/user-regex-bounds.md)
+  (L9) — bound user-supplied regex execution in the trigger interpreter
+  (haystack/pattern length caps and/or a complexity screen for nested
+  unbounded quantifiers); at minimum document the non-interruptibility. Note
+  `v2RegexTest`/`v2ExtractRegex` are in the display/request safeSubset with no
+  `lowLevelAccess` gate.
+- [history-memo-chat-var-bumps](slices/phase-7-assembly-and-trigger-hot-paths/history-memo-chat-var-bumps.md)
+  (L10) — bump the history-callback memo generation from every
+  chat-var-dirty fold: the sticky-lorebook `writeChatVar` callback, the
+  run-var `chatVarDirty` branch, and the renderAndBudget Lua var fold (all
+  three are currently un-bumped).
+- [phase-7-verification-refresh](slices/phase-7-assembly-and-trigger-hot-paths/phase-7-verification-refresh.md)
+  — gates, output-identity + count proofs, full validation,
+  latest-verification update.
 
 ## Source Anchors
 

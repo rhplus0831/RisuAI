@@ -14,39 +14,45 @@ inside L34).
 
 ## Planned Slices
 
-Author under `slices/phase-5-client-write-path-correctness/` when starting.
+Authored under `slices/phase-5-client-write-path-correctness/`.
 
-- unload-flush (M8) — a `flushAllPendingBridgePatches()` aggregator over all
-  six bridges, invoked from one `pagehide`/`visibilitychange(hidden)`
-  handler AND from watcher teardown, dispatching via
-  `fetch(..., { keepalive: true })`. Must respect the suppression flags so a
-  flush never double-dispatches (interplay with L23-L27).
-- rollback-suppression (L23, L24, L26) — wire `suppressRollbackDispatch`
-  (the `rollbackServerBackedLorebooks` shape) into:
+- [unload-flush](slices/phase-5-client-write-path-correctness/unload-flush.md)
+  (M8) — a `flushAllPendingBridgePatches()` aggregator over all six bridges,
+  invoked from one `pagehide`/`visibilitychange(hidden)` handler AND from
+  watcher teardown, dispatching via `fetch(..., { keepalive: true })`. Must
+  respect the suppression flags so a flush never double-dispatches (interplay
+  with L23-L27).
+- [rollback-suppression](slices/phase-5-client-write-path-correctness/rollback-suppression.md)
+  (L23, L24, L26) — wire `suppressRollbackDispatch` (the
+  `rollbackServerBackedLorebooks` shape) into:
   `applyServerBackedSettingsPatch` (both the optimistic write and the
   rollback), the global-lorebook direct dispatchers' rollbacks, and the
   chat-row metadata rollback (`restoreChatRowMetadata` through a suppressing
   wrapper).
-- first-baselines (L25, L27) — keep the FIRST baseline across coalesced
-  same-item prompt-template edits (`existing?.previous ?? previous` shape);
-  promote the pending lorebook entry snapshot to a collection snapshot when
-  a second entry edit lands in the same debounce window.
-- preset-rollback (L21) — add a rollback parameter to `runPresetCommand`
-  (signature change + all 8 callers); snapshot `botPresets`/`botPresetsId`
-  plus, for `setPreset` callers, the affected scalar settings.
-- guard-repairs (L34, L35, L36 + riding I20/I11) — wrap each broken direct
-  write in `withTrustedServerProjectionWrite` AND persist via a scoped
-  command (wrapping alone is session-transient): the IGP append (fixing the
+- [first-baselines](slices/phase-5-client-write-path-correctness/first-baselines.md)
+  (L25, L27) — keep the FIRST baseline across coalesced same-item
+  prompt-template edits (`existing?.previous ?? previous` shape); promote the
+  pending lorebook entry snapshot to a collection snapshot when a second entry
+  edit lands in the same debounce window.
+- [preset-rollback](slices/phase-5-client-write-path-correctness/preset-rollback.md)
+  (L21) — add a rollback parameter to `runPresetCommand` (signature change +
+  all 8 callers); snapshot `botPresets`/`botPresetsId` plus, for `setPreset`
+  callers, the affected scalar settings.
+- [guard-repairs](slices/phase-5-client-write-path-correctness/guard-repairs.md)
+  (L34, L35, L36 + riding I20/I11) — wrap each broken direct write in
+  `withTrustedServerProjectionWrite` AND persist via a scoped command
+  (wrapping alone is session-transient): the IGP append (fixing the
   `[object Object]` coercion in the same change), the `inlayErrorResponse`
   error bubble, `sendPofile`'s transcript turns, and the `@@inject` display
   write (or operate it on a working clone, since display scripts must not
   persist). Add guard-ENABLED tests — the existing tests run with the guard
   off, which is how these regressed unnoticed.
-- error-handler-hardening (L37 + riding I21) — null-safe global `error`
-  handler (check `event.target`, not `event.error.target`; skip alerting
-  when no usable error exists) and `String(msg)` coercion in `alertError`.
-- phase-5-verification-refresh — gates, focused proofs, full validation,
-  latest-verification update.
+- [error-handler-hardening](slices/phase-5-client-write-path-correctness/error-handler-hardening.md)
+  (L37 + riding I21) — null-safe global `error` handler (check
+  `event.target`, not `event.error.target`; skip alerting when no usable error
+  exists) and `String(msg)` coercion in `alertError`.
+- [phase-5-verification-refresh](slices/phase-5-client-write-path-correctness/phase-5-verification-refresh.md)
+  — gates, focused proofs, full validation, latest-verification update.
 
 ## Source Anchors
 

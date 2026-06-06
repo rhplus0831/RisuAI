@@ -12,32 +12,37 @@ Findings: M9, L2, L4, L5, L17, L18, L19, L20, L56.
 
 Author under `slices/phase-4-server-lifecycle-and-transport/` when starting.
 
-- signal-handlers-app-close (M9) — `process.once('SIGTERM'|'SIGINT')` in
-  `index.ts` calling `await app.close()` (which runs the existing onClose
-  teardown: settle runners, persist cancelled partials, close SQLite) with
-  a force-exit timeout backstop.
-- sliding-deadlines (L2, L5) — thread `RequestAbort.refresh` into
-  `pipeStream` on activity frames (mirror `streamAssembly`), and create
-  proxy stream jobs with `slidingDeadline: true` (the v2-L1 machinery and
+- [signal-handlers-app-close](slices/phase-4-server-lifecycle-and-transport/signal-handlers-app-close.md)
+  (M9) — `process.once('SIGTERM'|'SIGINT')` in `index.ts`
+  calling `await app.close()` (which runs the existing onClose teardown:
+  settle runners, persist cancelled partials, close SQLite) with a force-exit
+  timeout backstop.
+- [sliding-deadlines](slices/phase-4-server-lifecycle-and-transport/sliding-deadlines.md)
+  (L2, L5) — thread `RequestAbort.refresh` into `pipeStream` on activity
+  frames (mirror `streamAssembly`), and create proxy stream jobs with
+  `slidingDeadline: true` (the v2-L1 machinery and
   `isStreamDeadlineActivityFrame` already exist).
-- proxy-stream-cancel (L56) — keep the client abort listener attached for
-  the whole stream; clear it in `closeAndEnd()`/onclose and issue the job
-  DELETE when the stream ends without a server-side terminal frame.
-- realm-egress-bounds (L17, L18) — one per-import AbortSignal
-  (client-close + wall-clock, the `attachAbort`/`createHubAbort` shape)
-  threaded into all realm fetches in BOTH route branches; per-asset +
-  cumulative byte caps for JSON-card staging (disk staging like the charx
-  branch); bound the dynamic `res.json()` body.
-- horde-delete-timeout (L4) — `AbortSignal.timeout` on the fire-and-forget
-  Horde DELETE.
-- response-compression (L19) — register `@fastify/compress` (new
-  dependency) or an onSend gzip hook with a ~1 KiB threshold, default ON;
-  measured ~3.1x on the reference DB's bootstrap JSON.
-- immutable-chunk-caching (L20) — `maxAge: '1y', immutable: true` (or a
-  setHeaders callback for `/assets/`) on the fastifyStatic registration;
-  index.html stays uncached via its existing separate handlers.
-- phase-4-verification-refresh — gates, focused proofs, full validation,
-  latest-verification update.
+- [proxy-stream-cancel](slices/phase-4-server-lifecycle-and-transport/proxy-stream-cancel.md)
+  (L56) — keep the client abort listener attached for the whole stream; clear
+  it in `closeAndEnd()`/onclose and issue the job DELETE when the stream ends
+  without a server-side terminal frame.
+- [realm-egress-bounds](slices/phase-4-server-lifecycle-and-transport/realm-egress-bounds.md)
+  (L17, L18) — one per-import AbortSignal (client-close + wall-clock, the
+  `attachAbort`/`createHubAbort` shape) threaded into all realm fetches in
+  BOTH route branches; per-asset + cumulative byte caps for JSON-card staging
+  (disk staging like the charx branch); bound the dynamic `res.json()` body.
+- [horde-delete-timeout](slices/phase-4-server-lifecycle-and-transport/horde-delete-timeout.md)
+  (L4) — `AbortSignal.timeout` on the fire-and-forget Horde DELETE.
+- [response-compression](slices/phase-4-server-lifecycle-and-transport/response-compression.md)
+  (L19) — register `@fastify/compress` (new dependency) or an onSend gzip
+  hook with a ~1 KiB threshold, default ON; measured ~3.1x on the reference
+  DB's bootstrap JSON.
+- [immutable-chunk-caching](slices/phase-4-server-lifecycle-and-transport/immutable-chunk-caching.md)
+  (L20) — `maxAge: '1y', immutable: true` (or a setHeaders callback for
+  `/assets/`) on the fastifyStatic registration; index.html stays uncached via
+  its existing separate handlers.
+- [phase-4-verification-refresh](slices/phase-4-server-lifecycle-and-transport/phase-4-verification-refresh.md)
+  — gates, focused proofs, full validation, latest-verification update.
 
 ## Source Anchors
 

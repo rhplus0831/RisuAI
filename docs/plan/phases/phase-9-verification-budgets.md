@@ -10,21 +10,23 @@ Findings: none (closure for all scheduled IDs).
 
 ## Planned Slices
 
-Author under `slices/phase-9-verification-budgets/` when starting.
+Authored under `slices/phase-9-verification-budgets/`.
 
-- registry-sweep — prove every scheduled ID (`H1`, `M1-M9`, `L1-L56`,
-  `K1-K4`) is `DONE` or explicitly re-gated with owner sign-off; no
-  `PLANNED`/`PENDING` drift between the gate registry,
-  [`../active-risk-analysis.md`](../active-risk-analysis.md), and the audit
-  doc.
-- gate-self-proof-freeze — keep the v3 negative self-proofs alive and
-  confirm the v1/v2 gates stay frozen against their archives.
-- closing-proof — run the full closeout command set and record the final
-  proof log in [`../latest-verification.md`](../latest-verification.md).
-- archive-and-repoint — move the closed v3 plan to
-  `docs/archive/audit-stability-and-performance-v3/`, repoint the v3 gate at
-  the archive (the v2 Phase 9 precedent), and update `STRUCTURE.md` +
-  `docs/archive/README.md`.
+- [registry-sweep](slices/phase-9-verification-budgets/registry-sweep.md) -
+  prove every scheduled ID (`H1`, `M1-M9`, `L1-L56`, `K1-K4`) is `DONE` or
+  explicitly re-gated with owner sign-off; no `PLANNED`/`PENDING` drift
+  between the gate registry, [`../active-risk-analysis.md`](../active-risk-analysis.md),
+  and the audit doc.
+- [gate-self-proof-freeze](slices/phase-9-verification-budgets/gate-self-proof-freeze.md) -
+  keep the v3 negative self-proofs alive and confirm the v1/v2 gates stay
+  frozen against their archives.
+- [closing-proof](slices/phase-9-verification-budgets/closing-proof.md) - run
+  the full closeout command set and record the final proof log in
+  [`../latest-verification.md`](../latest-verification.md).
+- [archive-and-repoint](slices/phase-9-verification-budgets/archive-and-repoint.md) -
+  move the closed v3 plan to `docs/archive/audit-stability-and-performance-v3/`,
+  repoint the v3 gate at the archive (the v2 Phase 9 precedent), and update
+  `STRUCTURE.md` + `docs/archive/README.md`.
 
 ## Exit Criteria
 

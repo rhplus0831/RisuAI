@@ -12,36 +12,41 @@ as L50) — land if free.
 
 ## Planned Slices
 
-Author under `slices/phase-8-client-interpreters-plugins-media/` when
-starting. Suggested grouping (mirrors the v2 phase-7 slice shape):
+Authored under `slices/phase-8-client-interpreters-plugins-media/`.
 
-- client-interpreter-budgets (L38, L39, L40, L41) — port
-  `TriggerExecutionBudget` caps + abort to the client `runTrigger` (the live
-  unbounded entry is `manual` mode: `/trigger` command and in-message
-  trigger buttons); install the wasmoon instruction-count hook + wall-clock
-  deadline on client Lua engines; key the engine cache on
-  `(mode, codeHash)`; delete the editDisplay access key in a `finally`.
-- tokenizer-and-cache-caps (L42) — LRU-bound `googleCloudTokenizedCache`
-  (or fold into `encodeCache`).
-- plugin-lifecycle (M7, L43, L44) — store `run()`'s cleanup closure on the
-  SandboxHost instance and invoke it from `terminate()`; reset/dedupe the
-  custom-provider stores on plugin reload; gate or remove the RPC console
-  logs (never log transferables).
-- mcp-lifecycle-and-caps (L45, L46, L47, L48) — compute tools lazily only
-  in the browser-local adapters; in-flight construction promise per MCP
-  key; size-cap the persistent `connectSSE` buffer; page/byte caps +
-  AbortSignal + honored `limit` in the filesystem PDF read.
-- file-attach-await (L49) — `await hypa.addText(...)` at the three builders
-  (one-token fixes; update the test that mocks `addText` synchronously).
-- media-leaks-and-logs (L50, L51, L52, L53, L54, L55, K4 + riding I16/I17)
-  — remove the image-gen payload logs; revoke object URLs in `finally` at
-  the image-processing sites (incl. the `scriptings.ts` siblings); shared/
-  closed AudioContext for `runVITS` + decode error callback; dispose the
-  VITS synthesizer on model switch; `pdf.destroy()` in `finally`; close the
-  whisper-mode contexts and revoke the probe URL; `onerror` + timeout for
-  the stableDiff reference-image load.
-- phase-8-verification-refresh — gates, focused proofs, full validation,
-  latest-verification update.
+- [client-interpreter-budgets](slices/phase-8-client-interpreters-plugins-media/client-interpreter-budgets.md)
+  (L38, L39, L40, L41) - port `TriggerExecutionBudget` caps + abort to the
+  client `runTrigger` (the live unbounded entry is `manual` mode: `/trigger`
+  command and in-message trigger buttons); install the wasmoon
+  instruction-count hook + wall-clock deadline on client Lua engines; key the
+  engine cache on `(mode, codeHash)`; delete the editDisplay access key in a
+  `finally`.
+- [tokenizer-and-cache-caps](slices/phase-8-client-interpreters-plugins-media/tokenizer-and-cache-caps.md)
+  (L42) - LRU-bound `googleCloudTokenizedCache` (or fold into
+  `encodeCache`).
+- [plugin-lifecycle](slices/phase-8-client-interpreters-plugins-media/plugin-lifecycle.md)
+  (M7, L43, L44) - store `run()`'s cleanup closure on the SandboxHost
+  instance and invoke it from `terminate()`; reset/dedupe the custom-provider
+  stores on plugin reload; gate or remove the RPC console logs (never log
+  transferables).
+- [mcp-lifecycle-and-caps](slices/phase-8-client-interpreters-plugins-media/mcp-lifecycle-and-caps.md)
+  (L45, L46, L47, L48) - compute tools lazily only in the browser-local
+  adapters; in-flight construction promise per MCP key; size-cap the
+  persistent `connectSSE` buffer; page/byte caps + AbortSignal + honored
+  `limit` in the filesystem PDF read.
+- [file-attach-await](slices/phase-8-client-interpreters-plugins-media/file-attach-await.md)
+  (L49) - `await hypa.addText(...)` at the three builders (one-token fixes;
+  update the test that mocks `addText` synchronously).
+- [media-leaks-and-logs](slices/phase-8-client-interpreters-plugins-media/media-leaks-and-logs.md)
+  (L50, L51, L52, L53, L54, L55, K4 + riding I16/I17) - remove the image-gen
+  payload logs; revoke object URLs in `finally` at the image-processing sites
+  (incl. the `scriptings.ts` siblings); shared/closed AudioContext for
+  `runVITS` + decode error callback; dispose the VITS synthesizer on model
+  switch; `pdf.destroy()` in `finally`; close the whisper-mode contexts and
+  revoke the probe URL; `onerror` + timeout for the stableDiff reference-image
+  load.
+- [phase-8-verification-refresh](slices/phase-8-client-interpreters-plugins-media/phase-8-verification-refresh.md)
+  - gates, focused proofs, full validation, latest-verification update.
 
 ## Source Anchors
 

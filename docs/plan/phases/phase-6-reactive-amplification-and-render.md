@@ -14,35 +14,39 @@ pattern, land them if free.
 
 ## Planned Slices
 
-Author under `slices/phase-6-reactive-amplification-and-render/` when
-starting.
+Authored under `slices/phase-6-reactive-amplification-and-render/`.
 
-- catalog-derived-lists (M6 + riding I12) — `$derived` + keyed each for the
-  MobileCharacters sorted list (pure helper, unit-testable, mirroring
+- [catalog-derived-lists](slices/phase-6-reactive-amplification-and-render/catalog-derived-lists.md)
+  (M6 + riding I12) — `$derived` + keyed each for the MobileCharacters sorted
+  list (pure helper, unit-testable, mirroring
   `formatGridCatalogCharacterLists`/`sortModuleSettingsRows` and their gate
   tests); same one-liner for ModuleChatMenu if free.
-- watcher-short-circuits (L28, L29) — reference-keyed lazy `localLore`
-  snapshots in the character-scope lorebook watcher (a chat's localLore
-  re-stringifies only when its array reference changed; full rollback
-  coverage preserved — do NOT drop non-open chats), and a cheap sentinel
-  short-circuit before the chat-metadata watcher's per-chat scalar Map
-  rebuild (it currently fires per streaming render frame).
-- draft-mirror-gating (L22) — gate the character-editor draft mirror's
+- [watcher-short-circuits](slices/phase-6-reactive-amplification-and-render/watcher-short-circuits.md)
+  (L28, L29) — reference-keyed lazy `localLore` snapshots in the
+  character-scope lorebook watcher (a chat's localLore re-stringifies only
+  when its array reference changed; full rollback coverage preserved — do
+  NOT drop non-open chats), and a cheap sentinel short-circuit before the
+  chat-metadata watcher's per-chat scalar Map rebuild (it currently fires per
+  streaming render frame).
+- [draft-mirror-gating](slices/phase-6-reactive-amplification-and-render/draft-mirror-gating.md)
+  (L22) — gate the character-editor draft mirror's
   pick+clone+double-stringify on character switch / projection-apply epoch;
   split the read/seed effect so local keystrokes stop re-firing it.
-- parse-memo-key-caching (L30) — cache the corpus-derived portions of the
-  ChatBody parse-memo key (module/settings/character signatures) keyed by
-  their cheap invalidation tokens (reload epoch, module id-join, chaId);
-  build the detection key once per message and reuse it for the nested
-  parse key.
-- customhtml-template-memo (L31) — memoize the parsed `guiHTML` template per
-  template version, shared across messages (its real invalidators are the
-  `db.guiHTML`/cbs-condition reads).
-- render-cache-hygiene (L32, L33) — cap `bestMatchCache` and reset it in
-  `resetScriptCache()`; stop/null `bgmElement` on chat/character switch and
-  clear stale observed bgm nodes.
-- phase-6-verification-refresh — gates, render-count proofs, full
-  validation, latest-verification update.
+- [parse-memo-key-caching](slices/phase-6-reactive-amplification-and-render/parse-memo-key-caching.md)
+  (L30) — cache the corpus-derived portions of the ChatBody parse-memo key
+  (module/settings/character signatures) keyed by their cheap invalidation
+  tokens (reload epoch, module id-join, chaId); build the detection key once
+  per message and reuse it for the nested parse key.
+- [customhtml-template-memo](slices/phase-6-reactive-amplification-and-render/customhtml-template-memo.md)
+  (L31) — memoize the parsed `guiHTML` template per template version, shared
+  across messages (its real invalidators are the `db.guiHTML`/cbs-condition
+  reads).
+- [render-cache-hygiene](slices/phase-6-reactive-amplification-and-render/render-cache-hygiene.md)
+  (L32, L33) — cap `bestMatchCache` and reset it in `resetScriptCache()`;
+  stop/null `bgmElement` on chat/character switch and clear stale observed
+  bgm nodes.
+- [phase-6-verification-refresh](slices/phase-6-reactive-amplification-and-render/phase-6-verification-refresh.md)
+  — gates, render-count proofs, full validation, latest-verification update.
 
 ## Source Anchors
 
@@ -52,7 +56,7 @@ starting.
 - M6: `src/lib/Mobile/MobileCharacters.svelte` (`sortChar`, `makeAgoText`),
   `src/lib/Others/GridCatalog.svelte` (default tab delegation);
   precedents `formatGridCatalogCharacterLists`, `sortModuleSettingsRows`
-  + `GridCatalog.svelte.test.ts`/`ModuleSettings.svelte.test.ts`.
+  and `GridCatalog.svelte.test.ts`/`ModuleSettings.svelte.test.ts`.
 - L28: `src/ts/server/lorebookBridge.svelte.ts`
   (`collectCharacterLorebookSnapshots`, watcher effect).
 - L29: `src/ts/server/chatBridge.svelte.ts` (`watchServerBackedChatMetadata`,

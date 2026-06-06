@@ -10,26 +10,30 @@ Findings: H1, M4, M5.
 
 ## Planned Slices
 
-Author under `slices/phase-1-high-and-send-path/` when starting.
+Author under `slices/phase-1-high-and-send-path/`; the v2 Phase 1 slices are
+the structural template
+([`../../archive/audit-stability-and-performance-v2/phases/slices/phase-1-high-severity-hot-paths/`](../../archive/audit-stability-and-performance-v2/phases/slices/phase-1-high-severity-hot-paths/)).
 
-- transport-abort-contract (H1) — guard `emitProviderChunks`' post-loop
-  fallthrough on `signal?.aborted` and re-check the signal before the in-loop
-  terminal emit; durable-cancel test asserting an aborted terminal (no
-  success `done`, no output-trigger/scriptstate persistence) for both the
-  explicit DELETE cancel and the sliding-deadline abort, plus the
-  non-streaming `resultFrames` arm.
-- send-append-fast-path (M4) — route plain sends through the single-message
-  append command (`appendCurrentChatUserMessageForSend` shape) with an
-  id-keyed remove-on-failure rollback; keep the replace path only for
-  transcripts an input trigger actually rewrote; drop the now-redundant
-  message-array clone.
-- send-rollback-field-scope (M5) — replace the per-send
-  `currentCharacterRowSnapshot` with a field-scoped snapshot
-  (`lastInteraction`; pre-mutation `message[]` only on the first-send
-  backfill branch), `restoreCharacterSelection` shape, with a matching
-  narrowed restore.
-- phase-1-verification-refresh — gates, clone-count before/after proof,
-  full validation, latest-verification update.
+- [transport-abort-contract](slices/phase-1-high-and-send-path/transport-abort-contract.md)
+  (H1) — guard `emitProviderChunks`' post-loop fallthrough on
+  `signal?.aborted` and re-check the signal before the in-loop terminal emit;
+  durable-cancel tests assert an abort-shaped terminal path (no success
+  `done`, no output-trigger/scriptstate persistence) for explicit DELETE
+  cancel, sliding-deadline abort, the in-loop race, and the non-streaming
+  `resultFrames` arm.
+- [send-append-fast-path](slices/phase-1-high-and-send-path/send-append-fast-path.md)
+  (M4) — route plain sends through the single-message append command
+  (`appendCurrentChatUserMessageForSend` shape) with an id-keyed
+  remove-on-failure rollback; keep the replace path only for transcripts an
+  input trigger actually rewrote; drop the now-redundant message-array clone.
+- [send-rollback-field-scope](slices/phase-1-high-and-send-path/send-rollback-field-scope.md)
+  (M5) — replace the per-send `currentCharacterRowSnapshot` with a
+  field-scoped snapshot (`lastInteraction`; pre-mutation `message[]` only on
+  the first-send backfill branch), `restoreCharacterSelection` shape, with a
+  matching narrowed restore.
+- [phase-1-verification-refresh](slices/phase-1-high-and-send-path/phase-1-verification-refresh.md)
+  — gates, clone-count before/after proof, full validation,
+  latest-verification update.
 
 ## Source Anchors
 

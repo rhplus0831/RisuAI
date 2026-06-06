@@ -13,25 +13,30 @@ Findings: M2, L15, L16, K1.
 
 Author under `slices/phase-3-memory-subsystem/` when starting.
 
-- summary-token-budget (M2) — supply `getSummaryTokenCost` in the
+- [summary-token-budget](slices/phase-3-memory-subsystem/summary-token-budget.md)
+  (M2) — supply `getSummaryTokenCost` in the
   `assemble.ts` `selectPromptMemory` call that tiktoken-counts
   `summary.text` when `summary.tokens === 0` (repairs new AND
   already-persisted rows; the plumbing exists end-to-end). Optionally also
   measure tokens at persist time (summarize handler + legacy import) so new
   rows carry real counts.
-- prefix-token-memo (L15) — per-row token memo (WeakMap or content-hash,
+- [prefix-token-memo](slices/phase-3-memory-subsystem/prefix-token-memo.md)
+  (L15) — per-row token memo (WeakMap or content-hash,
   the `PreparedScript` memo shape) so the immutable summarized prefix
   tokenizes once instead of every send.
-- memory-fetch-deadline (L16) — arm a default deadline (constant; no model
+- [memory-fetch-deadline](slices/phase-3-memory-subsystem/memory-fetch-deadline.md)
+  (L16) — arm a default deadline (constant; no model
   field exists) on the already-threaded AbortControllers in the embed and
   summarize handlers, cleared in `finally`; adapters already convert an
   aborted signal into a retryable failure. Covers the summarize path's real
   fetch site (`runOpenAI`).
-- skip-dead-embedding-decode (K1) — skip or lazify the
+- [skip-dead-embedding-decode](slices/phase-3-memory-subsystem/skip-dead-embedding-decode.md)
+  (K1) — skip or lazify the
   `decodeEmbeddingVector` per-row decode when no valid query vectors exist
   (the live wiring passes `() => []`), preserving the chunkId-only
   consumers. This is the v2-R5 re-open with corrected reasoning.
-- phase-3-verification-refresh — gates, focused proofs, full validation,
+- [phase-3-verification-refresh](slices/phase-3-memory-subsystem/phase-3-verification-refresh.md)
+  — gates, focused proofs, full validation,
   latest-verification update.
 
 ## Source Anchors

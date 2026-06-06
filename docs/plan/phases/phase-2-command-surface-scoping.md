@@ -14,34 +14,38 @@ Findings: M1, M3, L11, L12, L13, L14, K2.
 
 Author under `slices/phase-2-command-surface-scoping/` when starting.
 
-- send-persist-chat-scoped-read (M1) — mirror the v2-K1 wiring in
-  `persistAssemblyMutations` (`chatScopedRead: hasVarWrite ? undefined :
-  { chatId }`); assert the `messages.replaced` event parentId equals the
-  character id through the scoped loader (this path uses `character.chaId`,
-  unlike K1's sibling).
-- settings-scoped-read (M3) — a settings-only read for the
-  settings/prompt-settings command routes (the v2-L3
-  `loadServerIntentCompletionSettings` shape generalized into the mutation
-  pipeline), broad fallback on the pre-extraction edge; the memory group's
-  `hypaV3Presets` co-write reads the patched value, so settings-only
+- [send-persist-chat-scoped-read](slices/phase-2-command-surface-scoping/send-persist-chat-scoped-read.md)
+  (M1) — mirror the v2-K1 wiring in `persistAssemblyMutations`
+  (`chatScopedRead: hasVarWrite ? undefined : { chatId }`); assert the
+  `messages.replaced` event parentId equals the character id through the
+  scoped loader (this path uses `character.chaId`, unlike K1's sibling).
+- [settings-scoped-read](slices/phase-2-command-surface-scoping/settings-scoped-read.md)
+  (M3) — a settings-only read for the settings/prompt-settings command routes
+  (the v2-L3 `loadServerIntentCompletionSettings` shape generalized into the
+  mutation pipeline), broad fallback on the pre-extraction edge; the memory
+  group's `hypaV3Presets` co-write reads the patched value, so settings-only
   suffices.
-- collection-scoped-reads (L11) — a collection-scoped read for the
+- [collection-scoped-reads](slices/phase-2-command-surface-scoping/collection-scoped-reads.md)
+  (L11) — a collection-scoped read for the
   preset/persona/loadout/plugin/global-lorebook/translator-preset routes,
   reusing the projection-side `COLLECTION_TABLE_MAP` field-loader machinery
   (extended to carry assets for the mutation contract).
-- drop-validate-only-normalization (L12) — global-lorebook and
-  script/trigger routes validate only the target row; remove the discarded
+- [drop-validate-only-normalization](slices/phase-2-command-surface-scoping/drop-validate-only-normalization.md)
+  (L12) — global-lorebook and script/trigger routes validate only the target
+  row; remove the discarded
   `ensureAllChildLorebooks`/`ensureAllScriptDefinitionCollections` corpus
   passes from these routes.
-- plugin-storage-skip-load (L13) — `skipDatabaseLoad: true` on the two
-  single-key plugin-storage routes (one line each; the realmImport precedent
-  proves the contract).
-- single-lorebook-hydration-scope (L14) — single-row read via
-  `getCharacterRowsByIds` (or express as the bulk sibling with one id).
-- proxy-hub-single-auth (K2) — drop the redundant in-handler `requireAuth`
-  on the proxy/hub routes (v2-L16 propagation); 401 behavior unchanged.
-- phase-2-verification-refresh — gates, load-count proofs, full validation,
-  latest-verification update.
+- [plugin-storage-skip-load](slices/phase-2-command-surface-scoping/plugin-storage-skip-load.md)
+  (L13) — `skipDatabaseLoad: true` on the two single-key plugin-storage routes
+  (one line each; the realmImport precedent proves the contract).
+- [single-lorebook-hydration-scope](slices/phase-2-command-surface-scoping/single-lorebook-hydration-scope.md)
+  (L14) — single-row read via `getCharacterRowsByIds` (or express as the bulk
+  sibling with one id).
+- [proxy-hub-single-auth](slices/phase-2-command-surface-scoping/proxy-hub-single-auth.md)
+  (K2) — drop the redundant in-handler `requireAuth` on the proxy/hub routes
+  (v2-L16 propagation); 401 behavior unchanged.
+- [phase-2-verification-refresh](slices/phase-2-command-surface-scoping/phase-2-verification-refresh.md)
+  — gates, load-count proofs, full validation, latest-verification update.
 
 ## Source Anchors
 
