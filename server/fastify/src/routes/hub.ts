@@ -200,8 +200,6 @@ export function registerHubRoutes(
         }
       },
       handler: async (req, reply) => {
-        if (requiresLocalAuth(req) && !(await requireAuth(authState, req, reply))) return
-
         const upstreamUrl = resolveUpstreamUrl(req, hubUrl)
         const headers = buildForwardHeaders(req.headers as Record<string, unknown>, hubOrigin)
 

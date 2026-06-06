@@ -146,3 +146,179 @@ describe('projection bulk route auth (L16)', () => {
     }
   })
 })
+
+describe('proxy and hub route auth (K2)', () => {
+  it('K2: proxy and hub route auth verifies exactly once when protected', async () => {
+    vi.resetModules()
+    let verifyCount = 0
+    vi.doMock('../src/auth.js', async () => {
+      const actual = await vi.importActual<typeof import('../src/auth.js')>('../src/auth.js')
+      return {
+        ...actual,
+        verifyAssertion: async (...args: Parameters<typeof actual.verifyAssertion>) => {
+          verifyCount += 1
+          return actual.verifyAssertion(...args)
+        },
+      }
+    })
+
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response('upstream ok', { status: 200 }))
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-proxy-hub-'))
+    try {
+      const { buildApp } = await import('../src/app.js')
+      const { setupAuthedClient } = await import('./helpers/auth.js')
+      const { app } = await buildApp({
+        config: {
+          host: '127.0.0.1',
+          port: 0,
+          dataDir,
+          bodyLimit: 1024 * 1024,
+          importMaxBytes: Infinity,
+          trustProxy: false,
+          hubUrl: 'https://hub.example.test',
+        },
+        assetGc: false,
+        memoryWorker: false,
+      })
+
+      try {
+        const { assertion } = await setupAuthedClient(app)
+
+        verifyCount = 0
+        fetchSpy.mockClear()
+        const proxy = await app.inject({
+          method: 'POST',
+          url: '/api/v1/proxy/fetch',
+          headers: {
+            'risu-auth': assertion,
+            'risu-url': encodeURIComponent('https://upstream.example.test/proxy'),
+          },
+        })
+        expect(proxy.statusCode).toBe(200)
+        expect(verifyCount).toBe(1)
+        expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+        verifyCount = 0
+        fetchSpy.mockClear()
+        const hubPost = await app.inject({
+          method: 'POST',
+          url: '/api/v1/hub/upload',
+          headers: { 'risu-auth': assertion },
+          payload: Buffer.from('hub body'),
+        })
+        expect(hubPost.statusCode).toBe(200)
+        expect(verifyCount).toBe(1)
+        expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+        verifyCount = 0
+        fetchSpy.mockClear()
+        const hubOverride = await app.inject({
+          method: 'GET',
+          url: '/api/v1/hub/public-path',
+          headers: {
+            'risu-auth': assertion,
+            'x-risu-node-path': encodeURIComponent('https://override.example.test/path'),
+          },
+        })
+        expect(hubOverride.statusCode).toBe(200)
+        expect(verifyCount).toBe(1)
+        expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+        verifyCount = 0
+        fetchSpy.mockClear()
+        const publicHub = await app.inject({
+          method: 'GET',
+          url: '/api/v1/hub/public-path',
+        })
+        expect(publicHub.statusCode).toBe(200)
+        expect(verifyCount).toBe(0)
+        expect(fetchSpy).toHaveBeenCalledTimes(1)
+      } finally {
+        await app.close()
+      }
+    } finally {
+      fetchSpy.mockRestore()
+      vi.doUnmock('../src/auth.js')
+      vi.resetModules()
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('K2: unauthenticated proxy and hub requests stop before body parsing or forwarding', async () => {
+    vi.resetModules()
+    let verifyCount = 0
+    vi.doMock('../src/auth.js', async () => {
+      const actual = await vi.importActual<typeof import('../src/auth.js')>('../src/auth.js')
+      return {
+        ...actual,
+        verifyAssertion: async (...args: Parameters<typeof actual.verifyAssertion>) => {
+          verifyCount += 1
+          return actual.verifyAssertion(...args)
+        },
+      }
+    })
+
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response('unexpected', { status: 200 }))
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-proxy-hub-raw-'))
+    try {
+      const { buildApp } = await import('../src/app.js')
+      const { setupAuthedClient } = await import('./helpers/auth.js')
+      const { app } = await buildApp({
+        config: {
+          host: '127.0.0.1',
+          port: 0,
+          dataDir,
+          bodyLimit: 1024 * 1024,
+          importMaxBytes: Infinity,
+          trustProxy: false,
+          hubUrl: 'https://hub.example.test',
+        },
+        assetGc: false,
+        memoryWorker: false,
+      })
+
+      try {
+        await setupAuthedClient(app)
+        const oversizedBody = Buffer.alloc(1024 * 1024 + 1)
+
+        verifyCount = 0
+        const proxy = await app.inject({
+          method: 'POST',
+          url: '/api/v1/proxy/fetch',
+          headers: {
+            'content-type': 'application/octet-stream',
+            'risu-url': encodeURIComponent('https://upstream.example.test/proxy'),
+          },
+          payload: oversizedBody,
+        })
+        expect(proxy.statusCode).toBe(401)
+        expect(proxy.json()).toEqual({ error: 'Auth required' })
+        expect(verifyCount).toBe(0)
+        expect(fetchSpy).toHaveBeenCalledTimes(0)
+
+        verifyCount = 0
+        const hub = await app.inject({
+          method: 'POST',
+          url: '/api/v1/hub/upload',
+          headers: { 'content-type': 'application/octet-stream' },
+          payload: oversizedBody,
+        })
+        expect(hub.statusCode).toBe(401)
+        expect(hub.json()).toEqual({ error: 'Auth required' })
+        expect(verifyCount).toBe(0)
+        expect(fetchSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        await app.close()
+      }
+    } finally {
+      fetchSpy.mockRestore()
+      vi.doUnmock('../src/auth.js')
+      vi.resetModules()
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+})

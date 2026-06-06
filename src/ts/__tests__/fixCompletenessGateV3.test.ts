@@ -447,10 +447,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     3,
     'Skip/lazy the embedding `vector_blob` decode when no valid query vectors exist (v2-R5 re-open: the dismissal covered the math, not the decode).',
   ),
-  planned(
+  done(
     'K2',
     2,
     'Drop the redundant in-handler auth verify on the proxy/hub routes (v2-L16 propagation).',
+    'server/fastify/__tests__/auth.test.ts',
+    'K2: proxy and hub route auth verifies exactly once when protected',
+    [
+      {
+        testPath: 'server/fastify/__tests__/auth.test.ts',
+        testName:
+          'K2: unauthenticated proxy and hub requests stop before body parsing or forwarding',
+      },
+    ],
   ),
   planned(
     'K3',
@@ -1162,7 +1171,7 @@ Mentions v2-L12 and v1-L4 in prose only.
 
     expect(rows).toHaveLength(4)
     expect(rows.map((row) => row.id)).toEqual(rangeIds('K', 4))
-    expect(rows.map((row) => row.status)).toEqual(['PENDING', 'PENDING', 'PENDING', 'PENDING'])
+    expect(rows.map((row) => row.status)).toEqual(['PENDING', 'DONE', 'PENDING', 'PENDING'])
     expect(rows[0].targetFix).toContain('v2-R5 re-open')
     expect(allAuditIds(overlapEvidenceUniverse)).toEqual([])
   })
@@ -1209,7 +1218,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     const plannedEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'PLANNED')
     const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
 
-    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'M4', 'M5', 'L13', 'L14'])
+    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'M4', 'M5', 'L13', 'L14', 'K2'])
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
     expect(doneEntries.every(hasProofFields)).toBe(true)
     for (const entry of plannedEntries) {
@@ -1217,11 +1226,11 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M4, M5, L13, and L14 marked DONE', () => {
+  it('keeps the live registry green with H1, M4, M5, L13, L14, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1', 'M4', 'M5', 'L13', 'L14'])
+    ).toEqual(['H1', 'M4', 'M5', 'L13', 'L14', 'K2'])
     expect(collectGateProblems()).toEqual([])
   })
 

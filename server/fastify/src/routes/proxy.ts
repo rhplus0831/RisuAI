@@ -31,8 +31,6 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
         },
       },
       async (req, reply) => {
-        if (!(await requireAuth(authState, req, reply))) return
-
         const url = decodeRisuUrl(req.headers['risu-url'])
         if (!url) {
           reply.code(400)
