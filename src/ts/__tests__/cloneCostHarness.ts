@@ -128,6 +128,22 @@ export interface CloneInstrumentationResult<T> extends CloneInstrumentation {
   result: T
 }
 
+export interface CloneInstrumentationCall {
+  value: unknown
+  stack: string
+}
+
+export interface CloneInstrumentationOptions {
+  /**
+   * Optional predicate for broader flows that include non-clone
+   * `JSON.stringify` calls (fetch bodies, SSE frames, diagnostics). Omit it to
+   * preserve the original "count every stringify" behavior used by focused
+   * snapshot tests.
+   */
+  countJsonStringify?: (call: CloneInstrumentationCall) => boolean
+  countStructuredClone?: (call: CloneInstrumentationCall) => boolean
+}
+
 /**
  * Run `fn` while spying on the two clone primitives, returning the call counts
  * and the largest cloned payload size. Restores the primitives in a `finally`.
@@ -137,7 +153,10 @@ export interface CloneInstrumentationResult<T> extends CloneInstrumentation {
  * clone shows up as a `maxClonedSize` at least the size of the characters array;
  * a scalar snapshot performs no large clone at all.
  */
-export function withCloneInstrumentation<T>(fn: () => T): CloneInstrumentationResult<T> {
+export function withCloneInstrumentation<T>(
+  fn: () => T,
+  options: CloneInstrumentationOptions = {},
+): CloneInstrumentationResult<T> {
   const originalStringify = JSON.stringify
   const originalStructuredClone = globalThis.structuredClone
   let jsonCloneCount = 0
@@ -160,21 +179,29 @@ export function withCloneInstrumentation<T>(fn: () => T): CloneInstrumentationRe
     replacer?: unknown,
     space?: unknown,
   ) {
-    jsonCloneCount += 1
+    const stack = options.countJsonStringify ? (new Error().stack ?? '') : ''
+    const shouldCount = options.countJsonStringify?.({ value, stack }) ?? true
+    if (shouldCount) jsonCloneCount += 1
     const out = (originalStringify as (...args: unknown[]) => string).call(
       this,
       value,
       replacer,
       space,
     )
-    if (typeof out === 'string' && out.length > maxClonedSize) maxClonedSize = out.length
+    if (shouldCount && typeof out === 'string' && out.length > maxClonedSize) {
+      maxClonedSize = out.length
+    }
     return out
   } as unknown as typeof JSON.stringify
 
   const trackedStructuredClone = function trackedStructuredClone<V>(value: V): V {
-    structuredCloneCount += 1
-    const size = measure(value)
-    if (size > maxClonedSize) maxClonedSize = size
+    const stack = options.countStructuredClone ? (new Error().stack ?? '') : ''
+    const shouldCount = options.countStructuredClone?.({ value, stack }) ?? true
+    if (shouldCount) {
+      structuredCloneCount += 1
+      const size = measure(value)
+      if (size > maxClonedSize) maxClonedSize = size
+    }
     return (originalStructuredClone as (input: V) => V)(value)
   } as typeof structuredClone
 
@@ -197,6 +224,7 @@ export function withCloneInstrumentation<T>(fn: () => T): CloneInstrumentationRe
 
 export async function withAsyncCloneInstrumentation<T>(
   fn: () => Promise<T>,
+  options: CloneInstrumentationOptions = {},
 ): Promise<CloneInstrumentationResult<T>> {
   const originalStringify = JSON.stringify
   const originalStructuredClone = globalThis.structuredClone
@@ -218,21 +246,29 @@ export async function withAsyncCloneInstrumentation<T>(
     replacer?: unknown,
     space?: unknown,
   ) {
-    jsonCloneCount += 1
+    const stack = options.countJsonStringify ? (new Error().stack ?? '') : ''
+    const shouldCount = options.countJsonStringify?.({ value, stack }) ?? true
+    if (shouldCount) jsonCloneCount += 1
     const out = (originalStringify as (...args: unknown[]) => string).call(
       this,
       value,
       replacer,
       space,
     )
-    if (typeof out === 'string' && out.length > maxClonedSize) maxClonedSize = out.length
+    if (shouldCount && typeof out === 'string' && out.length > maxClonedSize) {
+      maxClonedSize = out.length
+    }
     return out
   } as unknown as typeof JSON.stringify
 
   const trackedStructuredClone = function trackedStructuredClone<V>(value: V): V {
-    structuredCloneCount += 1
-    const size = measure(value)
-    if (size > maxClonedSize) maxClonedSize = size
+    const stack = options.countStructuredClone ? (new Error().stack ?? '') : ''
+    const shouldCount = options.countStructuredClone?.({ value, stack }) ?? true
+    if (shouldCount) {
+      structuredCloneCount += 1
+      const size = measure(value)
+      if (size > maxClonedSize) maxClonedSize = size
+    }
     return (originalStructuredClone as (input: V) => V)(value)
   } as typeof structuredClone
 
