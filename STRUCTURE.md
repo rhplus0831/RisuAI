@@ -38,7 +38,8 @@ explain decisions but are not the source of present-tense behavior.
 | `README.md`, `plugins.md`, `version.json`, `LICENSE`                                              | Project-facing docs, plugin notes, package version metadata, license.                                                      |
 | `AGENTS.md`, `CLAUDE.md`, `HANDOVER.md`                                                           | Agent/local handoff context.                                                                                               |
 | `docs/structure/`                                                                                 | Current focused structure notes.                                                                                           |
-| `docs/archive/`                                                                                   | Closed workstream records and dated reports, including the archived v2 stability/performance plan. There is no current open `docs/plan/` workstream. Prefer `STRUCTURE.md` and `docs/structure/` for current state. |
+| `docs/plan/`                                                                                      | OPEN v3 stability/performance remediation workstream (audit + phased plan; start at `docs/plan/status.md`).                |
+| `docs/archive/`                                                                                   | Closed workstream records and dated reports, including the archived v1/v2 stability/performance plans. Prefer `STRUCTURE.md` and `docs/structure/` for current state. |
 | `dist/`, `data/`, `node_modules/`, `test-results/`, `scripts/` when present, `.idea/`, `.claude/` | Generated, local runtime/test output, ignored scratch, or local editor/agent state; do not hand-edit as source.            |
 
 ## Runtime Entrypoints

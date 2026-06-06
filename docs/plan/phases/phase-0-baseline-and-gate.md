@@ -1,0 +1,69 @@
+# Phase 0: Baseline & V3 Gate
+
+Status: pending — NEXT.
+
+Goal: land the shared prerequisites before any runtime fix. No runtime change
+in this phase; everything is test/doc scaffolding and measurement.
+
+Findings: none (foundations for all scheduled IDs).
+
+## Planned Slices
+
+Author under `slices/phase-0-baseline-and-gate/` when starting; the v2
+Phase 0 slices are the template
+([`../../archive/audit-stability-and-performance-v2/phases/slices/phase-0-baseline-and-gate/`](../../archive/audit-stability-and-performance-v2/phases/slices/phase-0-baseline-and-gate/)).
+
+- v3-gate-doc-universe — define the doc set the gate parses (this plan's
+  `active-risk-analysis.md` tables + the audit's findings index), the ID
+  classes (`H/M/L/I/K`), and the `PENDING`/`DONE` markers.
+- v3-gate-routing-registry — the registry seeding every scheduled v3 ID
+  (`H1`, `M1-M9`, `L1-L56`, `K1-K4`) as `PLANNED`, with `extraTests`
+  multi-proof support (the v2 gate's shape).
+- v3-gate-invariants-self-proof — negative self-proofs: mutated-doc and
+  drifted-registry fixtures must fail the gate.
+- send-clone-count-probe — count `cloneJsonValue`/`structuredClone`
+  invocations across one simulated plain send (client), for the M4/M5
+  before/after proof.
+- terminal-frame-assertion-helper — collect SSE/job frames and assert
+  kind/order, for the H1 durable-cancel proof.
+- verification-refresh — run the full proof set and record the Phase 0
+  baseline in [`../latest-verification.md`](../latest-verification.md).
+
+## Source Anchors
+
+- v1 gate: `src/ts/__tests__/fixCompletenessGate.test.ts` (archive-pointed).
+- v2 gate: `src/ts/__tests__/fixCompletenessGateV2.test.ts` (archive-pointed;
+  the structural template for the v3 gate).
+- Existing harnesses to re-baseline: the server load-count harness and the
+  client render-count probe from the v1/v2 waves.
+
+## Planned Shape
+
+- The v3 gate is a sibling, not a replacement: all three gates run in
+  `pnpm test`. The v1/v2 gates keep pointing at `docs/archive/`; the v3 gate
+  points at `docs/plan/` and follows the plan when it is eventually archived
+  (Phase 9 repoints it, as v2's Phase 9 did).
+- Gate failure conditions: unknown or missing scheduled ID, `DONE` risk-map
+  row without a registered (and existing) regression test, registry vs
+  risk-map drift, risk-map vs audit findings-index drift.
+- Probes are test-only instrumentation; no production code change.
+
+## Exit Criteria
+
+- [ ] v3 gate green with every scheduled ID `PLANNED`; negative self-proofs
+      in place.
+- [ ] Send-path clone-count probe and terminal-frame helper landed test-only.
+- [ ] Existing v1/v2 gates and full proof set still green.
+- [ ] Phase 0 baseline recorded in
+      [`../latest-verification.md`](../latest-verification.md).
+
+## Validation
+
+```bash
+pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts src/ts/__tests__/fixCompletenessGateV3.test.ts
+pnpm test
+pnpm api:test
+pnpm client-thinning:audit
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+```
