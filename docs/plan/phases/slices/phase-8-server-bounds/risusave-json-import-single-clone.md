@@ -58,6 +58,11 @@ streaming, or Realm import paths.
 - The L28 v2 gate entry points at a real focused test and the risk-map row is
   `DONE`.
 
+## Proof
+
+- `server/fastify/__tests__/risuSaveImportRoute.test.ts`:
+  `L28: imports JSON bodies through the normalized throwaway object without repository structuredClone`.
+
 ## Validation
 
 ```bash

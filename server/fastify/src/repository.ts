@@ -1672,30 +1672,44 @@ export function applyImport(
   db: DatabaseSync,
   dataDir: string,
   database: unknown,
-  options: { beforeRevision?: (db: DatabaseSync) => void } = {},
+  options: {
+    beforeRevision?: (db: DatabaseSync) => void
+    cloneBeforeMessageSplit?: boolean
+  } = {},
 ): { revision: number; event: CommandEvent } {
   if (database === null || database === undefined) {
     throw new ValidationError('database payload missing')
   }
   // The imported payload carries embedded `message[]`; split them into the
-  // messages table and write a message-free db.json. We persist a *clone* so the
-  // caller's `database` object is left fully hydrated — downstream consumers
-  // (e.g. the legacy hypaV3 memory backfill in routes/save.ts) read chat.message
-  // after this returns, and splitting mutates its argument in place. db.json is
-  // written only after COMMIT so it never lands ahead of the message rows.
+  // messages table and write a message-free db.json. By default we persist a
+  // *clone* so the caller's `database` object is left fully hydrated —
+  // downstream consumers (e.g. the legacy hypaV3 memory backfill in
+  // routes/save.ts) read chat.message after this returns, and splitting mutates
+  // its argument in place. db.json is written only after COMMIT so it never
+  // lands ahead of the message rows.
+  const cloneBeforeMessageSplit = options.cloneBeforeMessageSplit ?? true
   const current = loadPersisted(db, dataDir)
   let transactionOpen = false
   db.exec('BEGIN IMMEDIATE')
   transactionOpen = true
   try {
+    // A caller may pass an already-normalized throwaway object and opt out of
+    // the repository clone. In that path, run the pre-revision hook before the
+    // destructive message split so legacy memory backfill can still read
+    // `message[]` and `hypaV3Data` from the import object.
+    if (!cloneBeforeMessageSplit) {
+      options.beforeRevision?.(db)
+    }
     const messageFree = splitChatMessagesIntoTable(db, {
       ...current,
-      database: structuredClone(database),
+      database: cloneBeforeMessageSplit ? structuredClone(database) : database,
     })
     replaceAllCharactersInTable(db, messageFree.database)
     replaceAllCollectionsInTable(db, messageFree.database)
     replaceAllSettingsInTable(db, messageFree.database)
-    options.beforeRevision?.(db)
+    if (cloneBeforeMessageSplit) {
+      options.beforeRevision?.(db)
+    }
     const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
     db.exec('COMMIT')
     transactionOpen = false

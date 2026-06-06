@@ -112,7 +112,12 @@ export function registerSaveRoutes(
 
         const body = (req.body ?? {}) as ImportBody
         const database = normalizeRisuSaveImportDatabase(body.database)
-        const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, database)
+        // `normalizeRisuSaveImportDatabase` returns a request-body-isolated
+        // throwaway object for JSON bodies, so the repository can split
+        // message rows in place without a second full-corpus clone.
+        const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, database, {
+          cloneBeforeMessageSplit: false,
+        })
         eventSink.emit(event)
         return { revision, event, assetReport }
       } catch (err) {
@@ -405,12 +410,14 @@ function applyImportedDatabase(
   db: DatabaseSync,
   dataDir: string,
   database: unknown,
+  options: { cloneBeforeMessageSplit?: boolean } = {},
 ): {
   revision: number
   event: ReturnType<typeof applyImport>['event']
   assetReport: ReturnType<typeof summarizeRisuSaveAssetReport>
 } {
   const result = applyImport(db, dataDir, database, {
+    cloneBeforeMessageSplit: options.cloneBeforeMessageSplit,
     beforeRevision: () => replaceLegacyHypaV3MemoryRowsInTransaction(db, database),
   })
   return {

@@ -694,7 +694,13 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     ],
   ),
   planned('L27', 8, 'Abort/timeout (+ streaming) for hub forwards.'),
-  planned('L28', 8, 'Drop the double clone in JSON import normalize.'),
+  done(
+    'L28',
+    8,
+    'Drop the double clone in JSON import normalize.',
+    'server/fastify/__tests__/risuSaveImportRoute.test.ts',
+    'L28: imports JSON bodies through the normalized throwaway object without repository structuredClone',
+  ),
   planned('L29', 8, 'Cap the charx download near the expanded limit.'),
   planned('L30', 8, 'In-flight promise dedupe for Vertex tokens.'),
   planned('L31', 8, 'Default proxy deadline when `risu-timeout-ms` is absent.'),
@@ -1540,6 +1546,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L24',
       'L25',
       'L26',
+      'L28',
       'K1',
       'K2',
     ])
