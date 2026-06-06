@@ -275,10 +275,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L12',
     2,
     'Drop the discarded corpus-wide validate-only normalization; validate the target row only.',
+    'server/fastify/__tests__/commands.test.ts',
+    'L12: global lorebook commands skip unrelated child-lore validation and keep target payload checks strict',
+    [
+      {
+        testPath: 'server/fastify/__tests__/commands.test.ts',
+        testName:
+          'L12: script and trigger routes skip unrelated definition validation and keep target payload checks strict',
+      },
+    ],
   ),
   done(
     'L13',
@@ -1253,6 +1262,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M4',
       'M5',
       'L11',
+      'L12',
       'L13',
       'L14',
       'K2',
@@ -1264,11 +1274,11 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M3, M4, M5, L11, L13, L14, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M3, M4, M5, L11, L12, L13, L14, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1', 'M1', 'M3', 'M4', 'M5', 'L11', 'L13', 'L14', 'K2'])
+    ).toEqual(['H1', 'M1', 'M3', 'M4', 'M5', 'L11', 'L12', 'L13', 'L14', 'K2'])
     expect(collectGateProblems()).toEqual([])
   })
 

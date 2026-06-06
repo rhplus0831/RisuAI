@@ -148,7 +148,6 @@ import {
   validateLorebookEntries,
 } from '../commands/lorebooks.js'
 import {
-  normalizeScriptDefinitionDatabase,
   readCharacterScriptParent,
   readModuleScriptParent,
   readScriptDefinitions,
@@ -254,6 +253,23 @@ function asArray(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+function readGlobalLorebookCommandTarget(database: unknown): {
+  target: Record<string, unknown>
+  lorebooks: ReturnType<typeof ensureGlobalLorebookCollection>
+} {
+  const target = readJsonObject(database, 'database')
+  // Global lorebook commands persist only the global collection/settings; child
+  // lorebook repair would be validate-only here, so leave it to broad import paths.
+  const lorebooks = ensureGlobalLorebookCollection(target)
+  return { target, lorebooks }
+}
+
+function readScriptDefinitionCommandTarget(database: unknown): Record<string, unknown> {
+  // Incoming script/trigger payloads are strictly validated before mutation.
+  // The corpus-wide script-definition repair is validate-only for these routes.
+  return readJsonObject(database, 'database')
+}
+
 function characterOrderIncludes(order: readonly unknown[], characterId: string): boolean {
   return order.some((entry) => {
     if (entry === characterId) return true
@@ -329,9 +345,8 @@ function writeLoadoutMutation(
 }
 
 /** Full `lore_books` rewrite (create/delete/reorder change the array) plus a
- *  `settings` write only when the `loreBookPage` pointer moved. The child
- *  lorebook repairs `ensureAllChildLorebooks` makes across characters/chats/
- *  modules are intentionally NOT persisted (validate-only, Prerequisite 2). */
+ *  `settings` write only when the `loreBookPage` pointer moved. Child lorebook
+ *  repair is intentionally left to broad import/restore normalization. */
 function writeLorebookTableMutation(
   db: DatabaseSync,
   target: Record<string, unknown>,
@@ -3747,16 +3762,14 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const lorebooks = ensureGlobalLorebookCollection(target)
+          const { target, lorebooks } = readGlobalLorebookCommandTarget(database)
           const beforeLoreBookPage = target.loreBookPage
           if (lorebooks.some((candidate) => candidate.id === lorebook.id)) {
             throw new ValidationError(`Duplicate lorebook id: ${lorebook.id}`)
           }
           lorebooks.push(lorebook)
-          // The global lorebook collection rewrite is faithful; the in-memory
-          // `ensureAllChildLorebooks` repairs across characters/chats/modules are
-          // dropped to validate-only (Prerequisite 2) — they are not persisted.
+          // The global lorebook collection rewrite is faithful; child lorebook
+          // repair remains a broad import/restore concern.
           writeLorebookTableMutation(innerDb, target, lorebooks, beforeLoreBookPage)
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookCreated, id: lorebook.id },
@@ -3791,8 +3804,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const lorebooks = ensureGlobalLorebookCollection(target)
+          const { lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
           Object.assign(lorebooks[index], patch)
           // The clean case: one lorebook's metadata, no pointer move, no child
@@ -3830,8 +3842,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const lorebooks = ensureGlobalLorebookCollection(target)
+          const { target, lorebooks } = readGlobalLorebookCommandTarget(database)
           const beforeLoreBookPage = target.loreBookPage
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
           if (lorebooks.length === 1) {
@@ -3872,8 +3883,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const lorebooks = ensureGlobalLorebookCollection(target)
+          const { target, lorebooks } = readGlobalLorebookCommandTarget(database)
           const beforeLoreBookPage = target.loreBookPage
           validateFullLorebookOrder(lorebooks, lorebookIds)
           const byId = new Map(lorebooks.map((lorebook) => [lorebook.id, lorebook]))
@@ -3920,12 +3930,10 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.settings,
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const lorebooks = ensureGlobalLorebookCollection(target)
+          const { target, lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
-          // `loreBookPage` is a settings scalar. This explicitly drops the global
-          // `ensureAllChildLorebooks` repairs the broad path persisted across
-          // characters/chats/modules to validate-only (Prerequisite 2).
+          // `loreBookPage` is a settings scalar; child lorebook repair remains
+          // a broad import/restore concern.
           target.loreBookPage = index
           writeSettingsOnly(innerDb, extractSettings(target))
           return {
@@ -3961,8 +3969,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const lorebooks = ensureGlobalLorebookCollection(target)
+          const { lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
           lorebooks[index].data = entries
           // Replacing one lorebook's entries: no pointer move, no child repair
@@ -4712,12 +4719,7 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          // Phase 8a: write only the target character row. The normalization
-          // still runs (it validates + locates the target), but its sibling
-          // repairs mutate the in-memory clone only and are discarded since we
-          // persist just this row. The incoming payload is already strictly
-          // validated by `readScriptDefinitions`, so the target needs no repair.
-          const target = normalizeScriptDefinitionDatabase(database)
+          const target = readScriptDefinitionCommandTarget(database)
           const character = readCharacterScriptParent(target, characterId)
           character.customscript = scripts
           writeSingleCharacterRow(innerDb, characterId, character)
@@ -4753,8 +4755,7 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          // Phase 8a: write only the target character row (see scripts route).
-          const target = normalizeScriptDefinitionDatabase(database)
+          const target = readScriptDefinitionCommandTarget(database)
           const character = readCharacterScriptParent(target, characterId)
           character.triggerscript = triggers
           writeSingleCharacterRow(innerDb, characterId, character)
@@ -4790,16 +4791,15 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
-          const target = normalizeScriptDefinitionDatabase(database)
+          const target = readScriptDefinitionCommandTarget(database)
           const module = readModuleScriptParent(target, moduleId)
           module.regex = scripts
-          // The script-definition repair spans every module, so rewrite the whole
-          // modules table; the parallel character customscript/triggerscript
-          // repairs are dropped to validate-only (Prerequisite 2) — not persisted.
+          // Preserve the existing module-table rewrite shape, but skip the
+          // discarded corpus-wide script-definition repair.
           writeSingleCollectionTable(innerDb, 'modules', asArray(target.modules))
           return {
-            // Only the `modules` table is rewritten (character repairs are
-            // validate-only), so emit a module-scoped resource shipping `modules`.
+            // Only the `modules` table is rewritten, so emit a module-scoped
+            // resource shipping `modules`.
             event: {
               ...COMMAND_EVENT_CATALOG.scriptDefinitionsReplaced,
               id: moduleId,
@@ -4835,16 +4835,15 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
-          const target = normalizeScriptDefinitionDatabase(database)
+          const target = readScriptDefinitionCommandTarget(database)
           const module = readModuleScriptParent(target, moduleId)
           module.trigger = triggers
-          // The trigger-definition repair spans every module, so rewrite the whole
-          // modules table; the parallel character customscript/triggerscript
-          // repairs are dropped to validate-only (Prerequisite 2) — not persisted.
+          // Preserve the existing module-table rewrite shape, but skip the
+          // discarded corpus-wide trigger-definition repair.
           writeSingleCollectionTable(innerDb, 'modules', asArray(target.modules))
           return {
-            // Only the `modules` table is rewritten (character repairs are
-            // validate-only), so emit a module-scoped resource shipping `modules`.
+            // Only the `modules` table is rewritten, so emit a module-scoped
+            // resource shipping `modules`.
             event: {
               ...COMMAND_EVENT_CATALOG.triggerDefinitionsReplaced,
               id: moduleId,

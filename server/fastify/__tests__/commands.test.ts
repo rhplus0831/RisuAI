@@ -137,6 +137,67 @@ async function importDatabase(
   return imported.json().revision as number
 }
 
+type JsonRowTable = 'characters' | 'chats' | 'modules'
+
+function readJsonRow(table: JsonRowTable, id: string): Record<string, unknown> {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    if (table === 'modules') {
+      const rows = db.prepare('SELECT data_json FROM modules ORDER BY position').all() as Array<{
+        data_json: string
+      }>
+      const row = rows
+        .map((candidate) => JSON.parse(candidate.data_json) as Record<string, unknown>)
+        .find((candidate) => candidate.id === id)
+      expect(row, `modules row ${id} should exist`).toBeTruthy()
+      return row!
+    }
+    const row = db.prepare(`SELECT data_json FROM ${table} WHERE id = ?`).get(id) as
+      | { data_json: string }
+      | undefined
+    expect(row, `${table} row ${id} should exist`).toBeTruthy()
+    return JSON.parse(row!.data_json) as Record<string, unknown>
+  } finally {
+    db.close()
+  }
+}
+
+function writeJsonRow(table: JsonRowTable, id: string, value: Record<string, unknown>): void {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    if (table === 'modules') {
+      const rows = db.prepare('SELECT position, data_json FROM modules ORDER BY position').all() as
+        Array<{ position: number; data_json: string }>
+      const row = rows.find(
+        (candidate) => (JSON.parse(candidate.data_json) as Record<string, unknown>).id === id,
+      )
+      expect(row, `modules row ${id} should exist`).toBeTruthy()
+      db.prepare('UPDATE modules SET data_json = ? WHERE position = ?').run(
+        JSON.stringify(value),
+        row!.position,
+      )
+      return
+    }
+    db.prepare(`UPDATE ${table} SET data_json = ? WHERE id = ?`).run(JSON.stringify(value), id)
+  } finally {
+    db.close()
+  }
+}
+
+function updateSettingsRow(mutator: (settings: Record<string, unknown>) => void): void {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+      data_json: string
+    }
+    const settings = JSON.parse(row.data_json) as Record<string, unknown>
+    mutator(settings)
+    db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+  } finally {
+    db.close()
+  }
+}
+
 // The bootstrap ships chat stubs; read persisted messages via per-chat hydration.
 async function persistedChatMessages(
   app: FastifyInstance,
@@ -6281,6 +6342,80 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(database.modules[0].lorebook).toEqual([])
   })
 
+  it('L12: global lorebook commands skip unrelated child-lore validation and keep target payload checks strict', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loreBook: [
+        { id: 'book-a', name: 'A', data: [] },
+        { id: 'book-b', name: 'B', data: [] },
+      ],
+      loreBookPage: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          globalLore: [],
+          chats: [{ id: 'chat-a', name: 'Chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+      modules: [{ id: 'mod-a', name: 'Mod', lorebook: [] }],
+    })
+
+    const invalidEntry = {
+      id: 'bad-lore-entry',
+      key: 1,
+      secondkey: '',
+      insertorder: 100,
+      comment: '',
+      content: '',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    writeJsonRow('characters', 'char-a', {
+      ...readJsonRow('characters', 'char-a'),
+      globalLore: [invalidEntry],
+    })
+    writeJsonRow('chats', 'chat-a', {
+      ...readJsonRow('chats', 'chat-a'),
+      localLore: [invalidEntry],
+    })
+    writeJsonRow('modules', 'mod-a', {
+      ...readJsonRow('modules', 'mod-a'),
+      lorebook: [invalidEntry],
+    })
+    // Force the collection-scoped loader onto its documented broad fallback so
+    // this proves the route, not only the loader, avoids child-lore repair.
+    updateSettingsRow((settings) => {
+      settings.characters = []
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/lorebooks/book-b/select',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+    expect(selected.statusCode, JSON.stringify(selected.json())).toBe(200)
+    expect(selected.json()).toMatchObject({ revision: 2, selectedLorebookId: 'book-b' })
+
+    const malformedTarget = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/lorebooks/book-a/entries',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 2, entries: [invalidEntry] },
+    })
+    expect(malformedTarget.statusCode).toBe(400)
+    expect(malformedTarget.json().error).toBe('entries[0].key must be a string')
+
+    expect(readJsonRow('characters', 'char-a').globalLore).toEqual([invalidEntry])
+    expect(readJsonRow('chats', 'chat-a').localLore).toEqual([invalidEntry])
+    expect(readJsonRow('modules', 'mod-a').lorebook).toEqual([invalidEntry])
+  })
+
   it('returns 404 and 409 for missing lorebook parents and stale revisions', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -6507,6 +6642,126 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     expect(bootstrap.json().revision).toBe(1)
     expect(bootstrap.json().database.characters[0].customscript).toEqual([])
     expect(bootstrap.json().database.characters[0].triggerscript).toEqual([])
+  })
+
+  it('L12: script and trigger routes skip unrelated definition validation and keep target payload checks strict', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          customscript: [],
+          triggerscript: [],
+          chats: [],
+          chatFolders: [],
+          chatPage: 0,
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          customscript: [],
+          triggerscript: [],
+          chats: [],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+      modules: [
+        { id: 'mod-a', name: 'Mod A', regex: [], trigger: [] },
+        { id: 'mod-b', name: 'Mod B', regex: [], trigger: [] },
+      ],
+    })
+
+    const invalidScript = { id: 'bad-script', comment: 'Bad', in: 1, out: '', type: 'editinput' }
+    const invalidTrigger = {
+      id: 'bad-trigger',
+      comment: 'Bad',
+      type: 'start',
+      conditions: {},
+      effect: [],
+    }
+    writeJsonRow('characters', 'char-b', {
+      ...readJsonRow('characters', 'char-b'),
+      customscript: [invalidScript],
+      triggerscript: [invalidTrigger],
+    })
+    writeJsonRow('modules', 'mod-b', {
+      ...readJsonRow('modules', 'mod-b'),
+      regex: [invalidScript],
+      trigger: [invalidTrigger],
+    })
+
+    const script = {
+      id: 'script-a',
+      comment: 'Regex',
+      in: 'a',
+      out: 'b',
+      type: 'editinput',
+    }
+    const trigger = {
+      id: 'trigger-a',
+      comment: 'Start',
+      type: 'start',
+      conditions: [],
+      effect: [],
+    }
+
+    const characterScripts = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, scripts: [script] },
+    })
+    expect(characterScripts.statusCode, JSON.stringify(characterScripts.json())).toBe(200)
+
+    const characterTriggers = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 2, triggers: [trigger] },
+    })
+    expect(characterTriggers.statusCode, JSON.stringify(characterTriggers.json())).toBe(200)
+
+    const moduleScripts = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 3, scripts: [{ ...script, id: 'module-script' }] },
+    })
+    expect(moduleScripts.statusCode, JSON.stringify(moduleScripts.json())).toBe(200)
+
+    const moduleTriggers = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 4, triggers: [{ ...trigger, id: 'module-trigger' }] },
+    })
+    expect(moduleTriggers.statusCode, JSON.stringify(moduleTriggers.json())).toBe(200)
+
+    const malformedScripts = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 5, scripts: { id: 'not-an-array' } },
+    })
+    expect(malformedScripts.statusCode).toBe(400)
+    expect(malformedScripts.json().error).toBe('scripts must be an array')
+
+    const malformedTriggers = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 5, triggers: { id: 'not-an-array' } },
+    })
+    expect(malformedTriggers.statusCode).toBe(400)
+    expect(malformedTriggers.json().error).toBe('triggers must be an array')
+
+    expect(readJsonRow('characters', 'char-b').customscript).toEqual([invalidScript])
+    expect(readJsonRow('characters', 'char-b').triggerscript).toEqual([invalidTrigger])
+    expect(readJsonRow('modules', 'mod-b').regex).toEqual([invalidScript])
+    expect(readJsonRow('modules', 'mod-b').trigger).toEqual([invalidTrigger])
   })
 
   it('returns 404 and 409 for missing parents and stale script revisions', async () => {
