@@ -7,18 +7,50 @@ after each change to a narrowed or bounded path.
 
 ## Current State
 
-- Plan state: open; Phase 0 and Phase 1 are complete; Phase 2 is the next
-  batch. `H1`, `M4`, and `M5` are `DONE` in
-  [`active-risk-analysis.md`](active-risk-analysis.md); every other scheduled
-  row (`M1-M3`, `M6-M9`, `L1-L56`, `K1-K4`) remains `PENDING`.
+- Plan state: open; Phase 0, Phase 1, and Phase 2 are complete; Phase 3 is
+  the next batch. `H1`, `M1`, `M3`, `M4`, `M5`, `L11-L14`, and `K2` are
+  `DONE` in [`active-risk-analysis.md`](active-risk-analysis.md); every other
+  scheduled row remains `PENDING`.
 - Gate state: the v1 gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
   and the v2 gate (`fixCompletenessGateV2.test.ts`) remain live against their
   archives. The v3 gate (`fixCompletenessGateV3.test.ts`) is live against
-  `docs/plan/`, with `H1`, `M4`, and `M5` registered as `DONE` and all other
-  scheduled v3 IDs registered as `PLANNED`. The combined v1/v2/v3 gate command
-  is green.
-- Tree: Phase 1 implementation is committed through `71b36a150`; this
-  verification refresh keeps Phase 1 closed and does not implement Phase 2.
+  `docs/plan/`, with `H1`, `M1`, `M3`, `M4`, `M5`, `L11-L14`, and `K2`
+  registered as `DONE` and all other scheduled v3 IDs registered as
+  `PLANNED`. The combined v1/v2/v3 gate command is green.
+- Tree: Phase 2 implementation is committed through `6e1c63303`; this
+  verification refresh closes Phase 2 and does not implement Phase 3.
+
+## Phase 2 Verification Refresh (2026-06-07)
+
+Run after the Phase 2 implementation commits landed:
+`e9c6bd7e9` (L13), `7f3ebe2ca` (L14), `b9f473bd0` (K2),
+`d877343f1` (M1), `44059700f` (M3), `1465bcef0` (L11), and
+`6e1c63303` (L12).
+
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts src/ts/__tests__/fixCompletenessGateV3.test.ts`:
+  passed, 3 files / 50 tests. The archived v1/v2 gates and the active v3 gate
+  are green; the v3 registry and active-risk map agree that `H1`, `M1`, `M3`,
+  `M4`, `M5`, `L11-L14`, and `K2` are `DONE`.
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/serverLoadCostHarness.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts server/fastify/__tests__/commandSettingsAndPluginStorageRange.test.ts server/fastify/__tests__/commandCollectionRange.test.ts server/fastify/__tests__/commandMutationBudget.test.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/projection.test.ts server/fastify/__tests__/proxy.test.ts server/fastify/__tests__/hub.test.ts server/fastify/__tests__/routeProtection.test.ts`:
+  passed, 10 files / 301 tests.
+- Phase 2 scoped-load proofs: M1 no-var editinput transcript persistence adds
+  no whole-corpus load beyond the plain send and asserts the
+  `messages.replaced` parent id is the character id; M3 settings and
+  prompt-settings commands read only the settings row, with the
+  `hypaV3Presets` co-write using the patched request value; L11 collection
+  commands read settings plus only requested collection tables and retain the
+  broad embedded-settings fallback; L13 plugin-storage single-key PUT/DELETE
+  skip database-shape loads while bulk merge keeps its required read; L14
+  single character-lorebook hydration uses the one-row path and matches bulk
+  hydration for the same character.
+- Phase 2 correctness proofs: L12 global lorebook and script/trigger command
+  routes preserve target-payload validation while leaving unrelated
+  child-lore/script rows unrepaired; K2 proxy/hub protected requests verify
+  auth exactly once and unauthenticated protected requests still stop before
+  forwarding/body parsing.
+- `pnpm api:test`: passed, 100 files / 1872 passed / 1 skipped.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: zero errors.
 
 ## Phase 1 Verification Refresh (2026-06-07)
 

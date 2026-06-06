@@ -1,6 +1,6 @@
 # Phase 3: Memory Subsystem (Theme 7)
 
-Status: pending.
+Status: pending — NEXT.
 
 Goal: make the Hypa V3 memory budget actually work, and remove the per-send
 memory waste around it. M2 is one of the plan's two scheduled behavior

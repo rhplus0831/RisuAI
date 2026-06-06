@@ -13,11 +13,11 @@ the finding -> phase map is in
 
 - Phase 0, complete (foundations; no runtime change):
   [`phase-0-baseline-and-gate.md`](phase-0-baseline-and-gate.md).
-- Phase 1, pending — NEXT (H1 abort contract; M4/M5 send path):
+- Phase 1, complete (H1 abort contract; M4/M5 send path):
   [`phase-1-high-and-send-path.md`](phase-1-high-and-send-path.md).
-- Phase 2, pending (Theme 2: command-surface scoping; M1, M3, L11-L14, K2):
+- Phase 2, complete (Theme 2: command-surface scoping; M1, M3, L11-L14, K2):
   [`phase-2-command-surface-scoping.md`](phase-2-command-surface-scoping.md).
-- Phase 3, pending (Theme 7: memory subsystem; M2, L15, L16, K1):
+- Phase 3, pending — NEXT (Theme 7: memory subsystem; M2, L15, L16, K1):
   [`phase-3-memory-subsystem.md`](phase-3-memory-subsystem.md).
 - Phase 4, pending (Themes 3+9: server lifecycle, deadlines, transport; M9,
   L2, L4, L5, L17-L20, L56):

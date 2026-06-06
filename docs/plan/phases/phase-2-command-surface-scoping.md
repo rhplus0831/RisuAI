@@ -1,6 +1,6 @@
 # Phase 2: Command-Surface Scoping (Theme 2)
 
-Status: pending.
+Status: complete.
 
 Goal: finish the scoped-read pattern's third ring. The mutation engine
 (`applyTargetedCommandMutation`) silently defaults to the broad
@@ -87,20 +87,20 @@ Author under `slices/phase-2-command-surface-scoping/` when starting.
 
 ## Exit Criteria
 
-- [ ] M1: a trigger/editinput persisting send performs zero whole-corpus
+- [x] M1: a trigger/editinput persisting send performs zero whole-corpus
       loads (load-count harness); event parentId asserted; plain sends still
       early-return with no load.
-- [ ] M3/L11: settings flushes and each collection mutation parse only the
+- [x] M3/L11: settings flushes and each collection mutation parse only the
       settings row (+ the one collection table); responses/events
       byte-identical.
-- [ ] L12: lorebook/script routes no longer walk the corpus for validation;
+- [x] L12: lorebook/script routes no longer walk the corpus for validation;
       target-row validation preserved.
-- [ ] L13: plugin-storage single-key routes perform zero database-shape
+- [x] L13: plugin-storage single-key routes perform zero database-shape
       loads.
-- [ ] L14: single lorebook hydration reads one character row; bulk sibling
+- [x] L14: single lorebook hydration reads one character row; bulk sibling
       unchanged.
-- [ ] K2: proxy/hub verify auth exactly once; 401 behavior unchanged.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] K2: proxy/hub verify auth exactly once; 401 behavior unchanged.
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation

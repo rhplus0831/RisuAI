@@ -174,10 +174,11 @@ Every slice must preserve these; a slice that cannot is out of scope:
 
 ## Execution Cursor
 
-- Next: Phase 0 (see [`next-steps.md`](next-steps.md)).
-- Phases 1-4 follow the audit's remediation order and should land in order.
-  Phases 5-8 are independent of each other (and of 2-4 except where a slice
-  notes otherwise) and can land via separate branches by pain.
+- Complete: Phase 0, Phase 1, and Phase 2.
+- Next: Phase 3 (see [`next-steps.md`](next-steps.md)).
+- Phase 4 follows in order after Phase 3. Phases 5-8 are independent of each
+  other (and of 2-4 except where a slice notes otherwise) and can land via
+  separate branches by pain.
 - For any fix: re-check the cited symbol (line numbers drift; the audit's
   verifier corrections are part of the spec), add the focused regression
   test, narrow or bound the path, keep true full-corpus consumers broad, and

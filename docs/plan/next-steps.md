@@ -2,51 +2,49 @@
 
 Date: 2026-06-07
 
-The v3 remediation workstream is open. Phase 0 and Phase 1 are complete and
-recorded in [`latest-verification.md`](latest-verification.md); the next batch
-is Phase 2.
+The v3 remediation workstream is open. Phase 0, Phase 1, and Phase 2 are
+complete and recorded in [`latest-verification.md`](latest-verification.md);
+the next batch is Phase 3.
 
-## Next Batch: Phase 2 (Command-Surface Scoping)
+## Next Batch: Phase 3 (Memory Subsystem)
 
 Defined in
-[`phases/phase-2-command-surface-scoping.md`](phases/phase-2-command-surface-scoping.md).
+[`phases/phase-3-memory-subsystem.md`](phases/phase-3-memory-subsystem.md).
 Use the already-authored slices under
-`phases/slices/phase-2-command-surface-scoping/`.
+`phases/slices/phase-3-memory-subsystem/`.
 
-1. M1 `send-persist-chat-scoped-read`: wire `chatScopedRead` into
-   `persistAssemblyMutations` for non-var-write sends and prove the event
-   parent id.
-2. M3 `settings-scoped-read`: add the settings-only mutation read for
-   settings and prompt-settings command routes, with broad fallback on the
-   pre-extraction edge.
-3. L11 `collection-scoped-reads`: add collection-scoped reads for preset,
-   persona, loadout, plugin, global-lorebook, and translator-preset routes.
-4. L12 `drop-validate-only-normalization`: preserve target-row validation and
-   remove discarded corpus-wide normalization passes.
-5. L13 `plugin-storage-skip-load`: use `skipDatabaseLoad` on the single-key
-   plugin-storage PUT/DELETE routes.
-6. L14 `single-lorebook-hydration-scope`: read one character row for single
-   lorebook hydration.
-7. K2 `proxy-hub-single-auth`: remove the redundant in-handler auth check
-   while keeping 401 behavior unchanged.
-8. Phase 2 verification refresh: gates, load-count proofs, full validation,
-   and [`latest-verification.md`](latest-verification.md).
+1. M2 `summary-token-budget`: supply the tiktoken fallback cost in
+   `selectPromptMemory`, proving existing `tokens: 0` rows are budgeted and
+   documenting the intentional prompt-selection behavior change.
+2. L15 `prefix-token-memo`: memoize immutable summarized-prefix token costs so
+   unchanged rows are not re-encoded on repeated sends.
+3. L16 `memory-fetch-deadline`: add default deadlines to the embed and
+   summarize job AbortControllers and prove hung providers fail/retry.
+4. K1 `skip-dead-embedding-decode`: skip or lazily defer embedding vector
+   decode when query vectors are empty, preserving real-vector similarity.
+5. Phase 3 verification refresh: gates, focused memory proofs, full
+   validation, and [`latest-verification.md`](latest-verification.md).
 
-Exit: M1, M3, L11-L14, and K2 registered with regression tests; active-risk
-rows flipped to `DONE` only with matching v3 gate proofs; focused suites and
+Exit: M2, L15, L16, and K1 registered with regression tests; active-risk rows
+flipped to `DONE` only with matching v3 gate proofs; focused suites and
 TypeScript checks green; verification refreshed.
 
-## After Phase 2
+## After Phase 3
 
-Phases 3-4 continue in order (see [`plan.md`](plan.md) Execution Cursor).
+Phase 4 continues in order (see [`plan.md`](plan.md) Execution Cursor).
 Phases 5-8 may then land independently by pain; Phase 9 closes.
 
 ## Proof Commands
 
 ```bash
-pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/serverLoadCostHarness.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/memoryRepository.test.ts \
+  server/fastify/__tests__/memoryWorker.test.ts \
+  server/fastify/__tests__/memoryEmbedJobHandler.test.ts \
+  server/fastify/__tests__/memorySummarizeJobHandler.test.ts
 pnpm api:test
+pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
+pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
