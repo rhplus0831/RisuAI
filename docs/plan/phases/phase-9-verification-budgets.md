@@ -58,7 +58,7 @@ and K1-K4).
 - [x] Every scheduled ID is `DONE` in both the registry and the risk map (or
       explicitly re-gated with an owner-approved reason).
 - [x] No `PLANNED` entries remain; the negative self-proof still passes.
-- [ ] Closing full run recorded in
+- [x] Closing full run recorded in
       [`../latest-verification.md`](../latest-verification.md): `pnpm test`,
       `pnpm api:test`, `pnpm client-thinning:audit`, both TypeScript checks.
 - [ ] The plan directory is archived per the established convention once

@@ -24,10 +24,30 @@ after each change to a narrowed or bounded path.
   entries remain `PLANNED`; no scheduled risk-map rows remain `PENDING`;
   gated/no-action rows are unchanged.
 - Current full-proof caveats: after merging Phase 8 into the Phase 4-7
-  mainline, `pnpm test` passed (1312 passed / 4 skipped), `pnpm api:test`
-  passed (1846 passed / 1 skipped), `pnpm client-thinning:audit` passed, and
-  both TypeScript checks passed. `pnpm check` retains the documented
-  svelte-check baseline.
+  mainline and again for the Phase 9 closeout, `pnpm test` passed (1312
+  passed / 4 skipped), `pnpm api:test` passed (1846 passed / 1 skipped),
+  `pnpm client-thinning:audit` passed, and both TypeScript checks passed.
+  `pnpm check` retains the documented svelte-check baseline.
+
+## Phase 9 Closing Full Verification Run
+
+Recorded on 2026-06-06 KST after the final registry sweep and gate self-proof
+freeze. The gate pair was run first, then the full closeout command set. All
+required commands passed; Phase 9 remains open only for the archive/repoint
+slice.
+
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts`:
+  passed, 2 files / 26 tests.
+- `pnpm test`: passed, 150 files; 1312 passed / 4 skipped (1316). The run
+  printed the pre-existing repeated `ECONNREFUSED 127.0.0.1:3000`
+  local-service probe noise and a non-fatal Svelte compiler warning at
+  `src/lib/SideBars/LoreBook/LoreBookData.svelte:86:47`, but exited 0.
+- `pnpm api:test`: passed, 99 files; 1846 passed / 1 skipped (1847). The run
+  printed normal Fastify request logs and exited 0.
+- `pnpm client-thinning:audit`: passed (`Client-thinning audit passed.`).
+- `pnpm exec tsc -p tsconfig.client-lib.json`: passed with zero diagnostics.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: passed with zero
+  diagnostics after the client-lib build.
 
 ## Baseline (carried from the v1 close)
 
