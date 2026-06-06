@@ -1,6 +1,7 @@
 # Testing And Operations
 
-Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`.
+Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
+is root-only; there is no `server/fastify/package.json`.
 
 ## Scripts
 
@@ -17,7 +18,7 @@ Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`.
 | `pnpm test`                        | Run root/browser Vitest tests.                                                                                                                                                                           |
 | `pnpm api:test`                    | Run Fastify/server Vitest tests.                                                                                                                                                                         |
 | `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                                                                                                                   |
-| `pnpm client-thinning:audit`       | Run the ts-morph architecture audit in `util/client-thinning-audit.ts`.                                                                                                                                  |
+| `pnpm client-thinning:audit`       | Run `util/client-thinning-audit.ts`.                                                                                                                                                                     |
 | `pnpm analyze:db <path>`           | Analyze `.risu`, `db.json`, raw database JSON, or a legacy data dir containing `db.json`; current SQLite-only `data/` dirs need a follow-up before this works. Add `--json` for machine-readable output. |
 | `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                                                                                                                    |
 
@@ -48,10 +49,6 @@ Vite proxies `/api` to `RISU_API_PROXY_TARGET` or `http://localhost:6002`.
 Fastify defaults to `0.0.0.0:6002`. Vite dev changes only how the SPA bundle is
 served; `src/ts/platform.ts` still makes the browser Fastify-backed.
 
-Fastify also sets explicit runtime safety bounds: a 600s request-receive
-timeout, shared SSE/raw backpressure caps, and abort helpers for generation and
-proxy request lifetimes.
-
 To serve a built SPA through Fastify:
 
 ```sh
@@ -59,7 +56,8 @@ pnpm buildsite
 pnpm api:start
 ```
 
-The package is root-only; there is no `server/fastify/package.json`.
+`RISU_API_STATIC_ROOT` defaults to `<repo>/dist`; empty string, `none`, or `off`
+disables Fastify static serving.
 
 ## Tests And Checks
 
@@ -74,7 +72,8 @@ Pick the smallest command that covers the changed area. On a fresh machine, run
 `pnpm exec playwright install chromium` before browser smoke.
 
 Prompt/generation fixtures live in `src/ts/process/__fixtures__/`; set
-`UPDATE_FIXTURES=1` to rewrite expected fixtures. The architecture audit can be
+`UPDATE_FIXTURES=1` to rewrite expected fixtures. Server `.risu` fixture helpers
+live in `server/fastify/__fixtures__/risuSave/`. The architecture audit can be
 scoped with `CLIENT_THINNING_AUDIT_CHECK_IDS`.
 
 ## TypeScript And Formatting
@@ -132,21 +131,15 @@ Test/audit summary variables include `CLIENT_THINNING_AUDIT_CHECK_IDS`,
 
 ## CI And Docker
 
-`.github/workflows/` currently contains CodeQL scanning, Docker image
-build/publish, and issue/comment moderation. It does not run the local check/test
-matrix (`pnpm check`, `pnpm test`, `pnpm api:test`,
-`pnpm client-thinning:audit`, `pnpm format:check`, or smoke).
+`.github/workflows/` contains CodeQL scanning, Docker image build/publish, and
+issue/comment moderation. It does not run the local check/test matrix.
 
 `Dockerfile` uses Node 24 slim, installs pnpm through Corepack, builds the web
-client with `pnpm build`, copies `server/` and `dist/`, sets:
+client with `pnpm build`, copies `server/` and `dist/`, sets production data and
+static-root env vars, exposes `6002`, and persists `/app/data`.
 
-- `NODE_ENV=production`
-- `RISU_API_DATA_DIR=/app/data`
-- `RISU_API_STATIC_ROOT=/app/dist`
-
-The container exposes `6002` and persists `/app/data`. `docker-compose.yml` uses
-`ghcr.io/kwaroran/risuai:latest`, maps `6002:6002`, and creates a
-`risuai-data` volume.
+`docker-compose.yml` uses `ghcr.io/kwaroran/risuai:latest`, maps `6002:6002`,
+and creates a `risuai-data` volume.
 
 `.dockerignore` currently ignores only `node_modules`, while the Dockerfile
 copies the repository into the builder. Keep local ignored artifacts such as

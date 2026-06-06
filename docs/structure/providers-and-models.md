@@ -6,18 +6,18 @@ request shape can run on the server.
 
 ## Browser Model Registry
 
-| Path                                                                                            | Role                                                                |
-| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `src/ts/model/types.ts`                                                                         | `LLMProvider`, `LLMFormat`, `LLMTokenizer`, `LLMFlags`, `LLMModel`. |
-| `src/ts/model/modellist.ts`                                                                     | Static/dynamic/custom model registry and `getModelInfo()`.          |
-| `src/ts/model/providers/`                                                                       | Provider-specific static model lists.                               |
-| `src/ts/model/openrouter.ts`, `nanogpt.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers.                                   |
-| `src/lib/UI/ModelList.svelte`, `ModelGrid.svelte`, `NanoGPT*`, `OpenrouterProviderList.svelte`  | Model-picker UI.                                                    |
+| Path                                                                                                                                   | Role                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `src/ts/model/types.ts`                                                                                                                | `LLMProvider`, `LLMFormat`, `LLMTokenizer`, `LLMFlags`, `LLMModel`. |
+| `src/ts/model/modellist.ts`                                                                                                            | Static/dynamic/custom model registry and `getModelInfo()`.          |
+| `src/ts/model/providers/`                                                                                                              | Provider-specific static model lists.                               |
+| `src/ts/model/openrouter.ts`, `src/ts/model/nanogpt.ts`, `src/ts/model/ollama.ts`, `src/ts/model/ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers.                                   |
+| `src/lib/UI/ModelList.svelte`, `src/lib/UI/ModelGrid.svelte`, `src/lib/UI/NanoGPT*`, `src/lib/UI/OpenrouterProviderList.svelte`        | Model-picker UI.                                                    |
 
 `Database.aiModel` and related fields select model strings for main, auxiliary,
 fallback, translator, memory, and tool flows. Custom/dynamic models are browser
-registry concepts. The server imports only the narrow metadata it needs for
-dispatch decisions, not the whole browser UI registry.
+registry concepts. The server imports only narrow metadata needed for dispatch
+decisions, not the full browser UI registry.
 
 ## Server Provider Dispatch
 
@@ -80,9 +80,7 @@ a provider needs inline media.
 
 ## Adding Provider Settings
 
-When adding provider behavior:
-
-- Add browser settings metadata and server settings-group mapping.
-- Decide whether fields are provider secrets and update `providerSecrets.ts`.
-- Update `providerCapability.ts` if server routability changes.
-- Add server completion/chat generation tests for server-routable providers.
+When adding provider behavior, update browser settings metadata, server
+settings-group mapping, `providerSecrets.ts` for secret fields,
+`providerCapability.ts` for routability changes, and server completion/chat
+generation tests for server-routable providers.

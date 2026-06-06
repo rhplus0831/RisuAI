@@ -1,7 +1,7 @@
 # Generated Files And Legacy Caveats
 
 These notes help avoid spending time in files that look important but are
-generated, local-only, historical, or intentionally no-port.
+generated, local-only, historical, vendored, or intentionally no-port.
 
 ## Do Not Hand-Edit As Source
 
@@ -21,22 +21,25 @@ generated, local-only, historical, or intentionally no-port.
 | `src/ts/process/__fixtures__/upstream/`         | Upstream fixture corpus for request/provider tests.                                                                                            |
 | `*.snap` under test fixtures                    | Vitest snapshots; update through the relevant test workflow.                                                                                   |
 
-`docs/archive/fastify/other/coverage/*.md` and other archive files are source
-documentation, but they are historical. Prefer `STRUCTURE.md` and
-`docs/structure/` for current behavior.
+`docs/archive/` files are source documentation, but they are historical. They
+may contain present-tense statements that were true at closeout and are now
+stale. Prefer `STRUCTURE.md`, `docs/structure/`, and code for current behavior.
 
-## Public Assets
+## Static Assets
 
 `public/` is source for static assets copied by Vite. `dist/` is the generated
 copy. Edit `public/` when changing a static source asset, then rebuild.
+
+`resources/` contains app icon/splash source images such as `icon-*.png` and
+`splash*.png`. It is not copied by Vite unless a packaging step consumes it.
 
 No tracked files live under `public/functions/`; in some workspaces the empty
 directory may exist. Do not reintroduce old public worker/OAuth surfaces without
 a new roadmap.
 
 `tsconfig.json` still includes `public/sw.js`, but the service worker file is
-absent and guarded by `src/ts/browserLocalSurface.test.ts`. Treat that include
-as stale compatibility config, not active service-worker behavior.
+absent and guarded by `src/ts/browserLocalSurface.test.ts`. Treat that include as
+stale compatibility config, not active service-worker behavior.
 
 ## Fastify-Only Runtime
 
@@ -48,11 +51,11 @@ reopens them.
 Closed records under `docs/archive/` explain how the current runtime landed:
 Fastify migration, client thinning, durable generation, lazy projection,
 db-json-to-SQLite (`docs/archive/db-json-to-sqlite.md`), and protocol
-stability/performance. They are design history, not always current guidance.
+stability/performance. They are design history, not current guidance.
 
 Current core systems that came from those workstreams:
 
-- Server prompt assembly: `resolveServerPromptAssembly` plus
+- Server prompt assembly: `resolveServerPromptAssembly()` plus
   `server/fastify/src/prompt/`.
 - Durable generation: `server/fastify/src/generationJobs.ts`.
 - SQLite-backed domain repository: `server/fastify/src/repository.ts` and
@@ -68,7 +71,7 @@ Do not remove these just because the name sounds old:
 - `server/fastify/src/routes/hub.ts` backs retained hub passthrough behavior.
 - Browser plugin runtime remains in `src/ts/plugins/`; server command routes
   store plugin records and plugin storage but do not execute plugin code.
-- Server Lua scripting does execute during prompt assembly in
+- Server Lua scripting executes during prompt assembly in
   `server/fastify/src/prompt/luaRuntime.ts`. Plugin V2 code execution remains
   unsupported on the server.
 
@@ -79,7 +82,7 @@ state is not written back to live `db.json`.
 ## Stale Or No-Port Surfaces
 
 - `src/LiteMain.svelte` is unwired. Live lite mode is `VITE_RISU_LITE` driving
-  the mobile branch in `src/App.svelte`.
+  branches in `src/App.svelte` and `src/ts/lite.ts`.
 - `src/lib/UI/3DLoader.svelte` and `src/ts/3d/threeload.ts` are legacy and not
   imported by the current app shell.
 - Old worktrees may contain `src/lib/UI/NewGUI/` or `src/ts/sync/`; both are
@@ -88,15 +91,8 @@ state is not written back to live `db.json`.
 - `src/lib/Others/WelcomeRisu.svelte` exists, but the current shell no longer
   imports it.
 
-Removed or intentionally no-port concepts:
-
-- Group chat.
-- Peer sync and Google Drive sync.
-- Risu Account Sync.
-- Browser-local durable persistence as the primary runtime.
-- Native/mobile wrapper runtime modes and service-worker behavior.
-- SupaMemory, Hypa V2, and Hanurai as standalone maintained engines. Some legacy
-  names remain in fields/classes used by the maintained Hypa V3 path.
-
-Residual strings in bundled docs/localization can mention removed concepts. Treat
-them as known cleanup follow-ups, not evidence of live support.
+Removed or intentionally no-port concepts: group chat, peer sync, Google Drive
+sync, Risu Account Sync, browser-local durable persistence as the primary
+runtime, native/mobile wrapper runtime modes, service-worker behavior,
+SupaMemory, Hypa V2, and Hanurai as standalone maintained engines. Some legacy
+names remain in fields/classes used by the maintained Hypa V3 path.
