@@ -315,6 +315,54 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     expect(scoped.statusCode).toBe(200)
   })
 
+  it('L13: single-key plugin-storage PUT/DELETE skip database loads while bulk merge still reads current storage', async () => {
+    const fixture = buildLargeCorpusFixture()
+    let revision = await importDatabase(fixture.database)
+
+    const putRun = await withServerLoadInstrumentation(() =>
+      command('PUT', '/api/v1/commands/plugin-storage/l13-delete-me', {
+        baseRevision: revision,
+        value: { mode: 'single-key' },
+      }),
+    )
+    expect(putRun.result.statusCode).toBe(200)
+    expect(putRun.corpusLoadCount).toBe(0)
+    expect(putRun.loadCountByTable.plugin_custom_storage ?? 0).toBe(0)
+    revision = putRun.result.json().revision
+
+    const deleteRun = await withServerLoadInstrumentation(() =>
+      command('DELETE', '/api/v1/commands/plugin-storage/l13-delete-me', {
+        baseRevision: revision,
+      }),
+    )
+    expect(deleteRun.result.statusCode).toBe(200)
+    expect(deleteRun.corpusLoadCount).toBe(0)
+    expect(deleteRun.loadCountByTable.plugin_custom_storage ?? 0).toBe(0)
+    revision = deleteRun.result.json().revision
+
+    const bulkRun = await withServerLoadInstrumentation(() =>
+      command('POST', '/api/v1/commands/plugin-storage/bulk', {
+        baseRevision: revision,
+        values: { 'l13-bulk-added': { merged: true } },
+      }),
+    )
+    expect(bulkRun.result.statusCode).toBe(200)
+    expect(bulkRun.loadCountByTable.plugin_custom_storage ?? 0).toBeGreaterThanOrEqual(1)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const rows = db
+        .prepare('SELECT key, value_json FROM plugin_custom_storage ORDER BY key')
+        .all() as Array<{ key: string; value_json: string }>
+      expect(Object.fromEntries(rows.map((row) => [row.key, JSON.parse(row.value_json)]))).toEqual({
+        'corpus-plugin': { counter: 1 },
+        'l13-bulk-added': { merged: true },
+      })
+    } finally {
+      db.close()
+    }
+  })
+
   it('M3/L5/L6: the full message lifecycle stays scoped (append, patch, delete, truncate, replace, generation-result)', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)

@@ -252,7 +252,13 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     2,
     'Drop the discarded corpus-wide validate-only normalization; validate the target row only.',
   ),
-  planned('L13', 2, '`skipDatabaseLoad: true` on the single-key plugin-storage PUT/DELETE.'),
+  done(
+    'L13',
+    2,
+    '`skipDatabaseLoad: true` on the single-key plugin-storage PUT/DELETE.',
+    'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
+    'L13: single-key plugin-storage PUT/DELETE skip database loads while bulk merge still reads current storage',
+  ),
   planned(
     'L14',
     2,
@@ -1195,7 +1201,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     const plannedEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'PLANNED')
     const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
 
-    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'M4', 'M5'])
+    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'M4', 'M5', 'L13'])
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
     expect(doneEntries.every(hasProofFields)).toBe(true)
     for (const entry of plannedEntries) {
@@ -1203,11 +1209,11 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M4, and M5 marked DONE', () => {
+  it('keeps the live registry green with H1, M4, M5, and L13 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1', 'M4', 'M5'])
+    ).toEqual(['H1', 'M4', 'M5', 'L13'])
     expect(collectGateProblems()).toEqual([])
   })
 

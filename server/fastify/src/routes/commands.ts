@@ -4514,6 +4514,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.pluginStorage,
+        skipDatabaseLoad: true,
         mutate(_database, innerDb) {
           writePluginStorageKey(innerDb, key, value)
           return {
@@ -4546,6 +4547,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.pluginStorage,
+        skipDatabaseLoad: true,
         mutate(_database, innerDb) {
           deletePluginStorageKey(innerDb, key)
           return {
