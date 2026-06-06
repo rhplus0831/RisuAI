@@ -119,7 +119,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L38 | [5](phases/phase-5-client-render-and-ui.md)      | Remove `{{#function}}`/`{{call::}}` logs.                         | DONE    |
 | L39 | [5](phases/phase-5-client-render-and-ui.md)      | `includes()` fast path + indexOf scan in `parseThoughtsAndTools`. | DONE    |
 | L40 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed `ParseMarkdown` memo (with H3).        | DONE    |
-| L41 | [5](phases/phase-5-client-render-and-ui.md)      | One shared partial-edit mousemove handler.                        | PENDING |
+| L41 | [5](phases/phase-5-client-render-and-ui.md)      | One shared partial-edit mousemove handler.                        | DONE    |
 | L42 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for GridCatalog.                          | PENDING |
 | L43 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for ModuleSettings.                       | PENDING |
 | L44 | [5](phases/phase-5-client-render-and-ui.md)      | Cheap signature compare for the sidebar list effect.              | PENDING |

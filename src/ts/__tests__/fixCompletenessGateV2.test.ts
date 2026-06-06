@@ -578,7 +578,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L41', 5, 'One shared partial-edit mousemove handler.'),
+  done(
+    'L41',
+    5,
+    'One shared partial-edit mousemove handler.',
+    'src/lib/ChatScreens/PartialEditController.sharedHover.test.ts',
+    'L41: visible partial edit controllers share one document mousemove listener and remove it after unmount',
+    [
+      {
+        testPath: 'src/lib/ChatScreens/PartialEditController.sharedHover.test.ts',
+        testName: 'L41: shared hover keeps button zone reachability and hides on leave or scroll',
+      },
+      {
+        testPath: 'src/lib/ChatScreens/PartialEditController.sharedHover.test.ts',
+        testName: 'L41: shared hover suppresses the block button during text selection',
+      },
+    ],
+  ),
   planned('L42', 5, '`$derived` + keyed each for GridCatalog.'),
   planned('L43', 5, '`$derived` + keyed each for ModuleSettings.'),
   planned('L44', 5, 'Cheap signature compare for the sidebar list effect.'),
@@ -1403,6 +1419,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L38',
       'L39',
       'L40',
+      'L41',
       'K1',
       'K2',
     ])
