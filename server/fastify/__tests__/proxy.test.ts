@@ -1,12 +1,19 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { REQUEST_RECEIVE_TIMEOUT_MS, buildApp } from '../src/app.js'
+import { NON_DURABLE_REQUEST_DEADLINE_MS } from '../src/requestAbort.js'
+import {
+  PROXY_FETCH_DEFAULT_TIMEOUT_MS,
+  PROXY_FETCH_MAX_TIMEOUT_MS,
+  createTimeoutController,
+  getRequestTimeoutMs,
+} from '../src/proxy.js'
 
 const subtle = webcrypto.subtle
 
@@ -155,11 +162,52 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.useRealTimers()
   await echo.close()
   await stopHarness(harness)
 })
 
+async function withShortenedProxyDeadline(
+  timeoutMs: number,
+  run: () => Promise<void>,
+): Promise<void> {
+  const realSetTimeout = globalThis.setTimeout
+  const spy = vi.spyOn(globalThis, 'setTimeout')
+  spy.mockImplementation(((
+    callback: Parameters<typeof setTimeout>[0],
+    delay?: Parameters<typeof setTimeout>[1],
+    ...args: unknown[]
+  ) => {
+    return realSetTimeout(callback, delay === timeoutMs ? 0 : delay, ...(args as []))
+  }) as typeof setTimeout)
+  try {
+    await run()
+  } finally {
+    spy.mockRestore()
+  }
+}
+
 describe('Phase 3 POST /api/v1/proxy/fetch', () => {
+  it('L31: normalizes proxy fetch timeout headers to the default, explicit value, or cap', () => {
+    expect(PROXY_FETCH_DEFAULT_TIMEOUT_MS).toBe(NON_DURABLE_REQUEST_DEADLINE_MS)
+    expect(getRequestTimeoutMs(undefined)).toBe(PROXY_FETCH_DEFAULT_TIMEOUT_MS)
+    expect(getRequestTimeoutMs('')).toBe(PROXY_FETCH_DEFAULT_TIMEOUT_MS)
+    expect(getRequestTimeoutMs('not-a-timeout')).toBe(PROXY_FETCH_DEFAULT_TIMEOUT_MS)
+    expect(getRequestTimeoutMs('250')).toBe(250)
+    expect(getRequestTimeoutMs(`${PROXY_FETCH_MAX_TIMEOUT_MS + 1}`)).toBe(
+      PROXY_FETCH_MAX_TIMEOUT_MS,
+    )
+  })
+
+  it('L31: cleanup clears proxy fetch timeout timers before they abort', () => {
+    vi.useFakeTimers()
+    const timeout = createTimeoutController(25)
+    timeout.cleanup()
+    vi.advanceTimersByTime(25)
+    expect(timeout.signal.aborted).toBe(false)
+    expect(timeout.timedOut()).toBe(false)
+  })
+
   it('returns 401 without auth once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -240,7 +288,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(echo.requests[0].headers['content-type']).toBe('application/json')
   })
 
-  it('strips risu-* and host-class headers from the upstream request', async () => {
+  it('L31: strips risu-* and host-class headers from the upstream request', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await harness.app.inject({
       method: 'POST',
@@ -249,6 +297,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
         'risu-auth': assertion,
         'risu-url': encodeURIComponent(echo.url),
         'risu-timeout-ms': '5000',
+        'risu-header': 'not-json',
         connection: 'keep-alive',
         'x-keep-me': 'yes',
       },
@@ -259,6 +308,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(fwd['risu-auth']).toBeUndefined()
     expect(fwd['risu-url']).toBeUndefined()
     expect(fwd['risu-timeout-ms']).toBeUndefined()
+    expect(fwd['risu-header']).toBeUndefined()
     expect(fwd['x-keep-me']).toBe('yes')
     // host is rewritten by undici to the upstream's host, not the inbound's
     expect(fwd['host']).toMatch(/^127\.0\.0\.1:/)
@@ -288,7 +338,50 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(fwd['x-inbound-only']).toBeUndefined()
   })
 
-  it('returns 504 when risu-timeout-ms elapses before upstream responds', async () => {
+  it('L31: applies the default deadline when risu-timeout-ms is absent', async () => {
+    echo.setResponder(() => {
+      // Keep the upstream open until the proxy deadline aborts it.
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await withShortenedProxyDeadline(PROXY_FETCH_DEFAULT_TIMEOUT_MS, async () => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/proxy/fetch',
+        headers: {
+          'risu-auth': assertion,
+          'risu-url': encodeURIComponent(echo.url),
+        },
+      })
+      expect(res.statusCode).toBe(504)
+      expect(res.json()).toEqual({
+        error: `Proxy request timed out after ${PROXY_FETCH_DEFAULT_TIMEOUT_MS}ms`,
+      })
+    })
+  })
+
+  it('L31: caps excessive risu-timeout-ms values at the proxy fetch maximum', async () => {
+    echo.setResponder(() => {
+      // Keep the upstream open until the capped proxy deadline aborts it.
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await withShortenedProxyDeadline(PROXY_FETCH_MAX_TIMEOUT_MS, async () => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/proxy/fetch',
+        headers: {
+          'risu-auth': assertion,
+          'risu-url': encodeURIComponent(echo.url),
+          'risu-timeout-ms': `${PROXY_FETCH_MAX_TIMEOUT_MS + 60_000}`,
+        },
+      })
+      expect(res.statusCode).toBe(504)
+      expect(res.json()).toEqual({
+        error: `Proxy request timed out after ${PROXY_FETCH_MAX_TIMEOUT_MS}ms`,
+      })
+    })
+  })
+
+  it('L31: returns 504 when a valid explicit risu-timeout-ms elapses first', async () => {
     echo.setResponder((_req, res) => {
       setTimeout(() => {
         res.writeHead(200)
@@ -308,6 +401,29 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(res.statusCode).toBe(504)
     expect(res.json()).toEqual({
       error: 'Proxy request timed out after 50ms',
+    })
+    expect(echo.requests).toHaveLength(1)
+  })
+
+  it('L31: normalizes invalid risu-timeout-ms headers to the default deadline', async () => {
+    echo.setResponder(() => {
+      // Keep the upstream open until the default proxy deadline aborts it.
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await withShortenedProxyDeadline(PROXY_FETCH_DEFAULT_TIMEOUT_MS, async () => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/proxy/fetch',
+        headers: {
+          'risu-auth': assertion,
+          'risu-url': encodeURIComponent(echo.url),
+          'risu-timeout-ms': 'definitely-not-a-number',
+        },
+      })
+      expect(res.statusCode).toBe(504)
+      expect(res.json()).toEqual({
+        error: `Proxy request timed out after ${PROXY_FETCH_DEFAULT_TIMEOUT_MS}ms`,
+      })
     })
   })
 

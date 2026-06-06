@@ -3,9 +3,13 @@ import net from 'node:net'
 import { Readable } from 'node:stream'
 import { bufferToBodyInit, filterResponseHeaders, normalizeForwardHeaders } from './proxy.js'
 import { STREAM_CLIENT_MAX_BUFFERED_BYTES } from './streamBackpressure.js'
+import {
+  SHARED_DEFAULT_REQUEST_TIMEOUT_MS,
+  SHARED_MAX_REQUEST_TIMEOUT_MS,
+} from './requestTimeouts.js'
 
-export const PROXY_STREAM_DEFAULT_TIMEOUT_MS = 600_000
-export const PROXY_STREAM_MAX_TIMEOUT_MS = 3_600_000
+export const PROXY_STREAM_DEFAULT_TIMEOUT_MS = SHARED_DEFAULT_REQUEST_TIMEOUT_MS
+export const PROXY_STREAM_MAX_TIMEOUT_MS = SHARED_MAX_REQUEST_TIMEOUT_MS
 export const PROXY_STREAM_DEFAULT_HEARTBEAT_SEC = 15
 export const PROXY_STREAM_HEARTBEAT_MIN_SEC = 5
 export const PROXY_STREAM_HEARTBEAT_MAX_SEC = 60

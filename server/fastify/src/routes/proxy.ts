@@ -54,9 +54,7 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
         const closeController = new AbortController()
         const onClose = (): void => closeController.abort()
         req.raw.once('close', onClose)
-        const signal = timeout.signal
-          ? AbortSignal.any([timeout.signal, closeController.signal])
-          : closeController.signal
+        const signal = AbortSignal.any([timeout.signal, closeController.signal])
 
         const method = req.method
         const body =
@@ -86,12 +84,12 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
           )
         } catch (err) {
           const name = (err as { name?: string } | null)?.name
-          if (name === 'AbortError') {
+          if (signal.aborted || name === 'AbortError') {
             if (!reply.raw.headersSent) {
               reply.code(504)
               return {
                 error:
-                  timeoutMs && !closeController.signal.aborted
+                  timeout.timedOut() && !closeController.signal.aborted
                     ? `Proxy request timed out after ${timeoutMs}ms`
                     : 'Proxy request aborted',
               }

@@ -59,6 +59,24 @@ generation deadlines, or proxy response buffering.
 - The L31 v2 gate entry points at a real focused test and the risk-map row is
   `DONE`.
 
+## Proof Details
+
+- Runtime proof: `server/fastify/src/proxy.ts` normalizes missing, empty, and
+  invalid `risu-timeout-ms` values to the shared 600s default request timeout;
+  valid explicit values are preserved; excessive explicit values are capped at
+  the shared maximum.
+- Abort proof: `server/fastify/src/routes/proxy.ts` always combines the proxy
+  timeout signal with the request-close signal, reports timeout failures
+  explicitly, keeps close aborts distinct, and clears the timer/listener in
+  `finally`.
+- Regression proofs: `server/fastify/__tests__/proxy.test.ts` covers the
+  absent-header default deadline, excessive-header cap, valid explicit timeout,
+  invalid-header defaulting, timer cleanup, success passthrough, and proxy
+  control-header filtering under `L31:` test names.
+- Gate proof: `src/ts/__tests__/fixCompletenessGateV2.test.ts` registers L31 as
+  `DONE` with the focused proxy proof paths; `docs/plan/active-risk-analysis.md`
+  marks L31 `DONE`.
+
 ## Validation
 
 ```bash

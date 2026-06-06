@@ -764,7 +764,35 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L31', 8, 'Default proxy deadline when `risu-timeout-ms` is absent.'),
+  done(
+    'L31',
+    8,
+    'Default proxy deadline when `risu-timeout-ms` is absent.',
+    'server/fastify/__tests__/proxy.test.ts',
+    'L31: applies the default deadline when risu-timeout-ms is absent',
+    [
+      {
+        testPath: 'server/fastify/__tests__/proxy.test.ts',
+        testName: 'L31: caps excessive risu-timeout-ms values at the proxy fetch maximum',
+      },
+      {
+        testPath: 'server/fastify/__tests__/proxy.test.ts',
+        testName: 'L31: returns 504 when a valid explicit risu-timeout-ms elapses first',
+      },
+      {
+        testPath: 'server/fastify/__tests__/proxy.test.ts',
+        testName: 'L31: normalizes invalid risu-timeout-ms headers to the default deadline',
+      },
+      {
+        testPath: 'server/fastify/__tests__/proxy.test.ts',
+        testName: 'L31: strips risu-* and host-class headers from the upstream request',
+      },
+      {
+        testPath: 'server/fastify/__tests__/proxy.test.ts',
+        testName: 'L31: cleanup clears proxy fetch timeout timers before they abort',
+      },
+    ],
+  ),
   planned('L32', 4, 'Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`.'),
   planned('L33', 4, 'Single-row snapshot for trash `removeChar`.'),
   planned('L34', 4, 'Minimal `supaMemory` patch on selection.'),
@@ -1611,6 +1639,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L28',
       'L29',
       'L30',
+      'L31',
       'K1',
       'K2',
     ])
