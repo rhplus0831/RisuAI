@@ -59,6 +59,22 @@ export function rankMemorySummariesBySimilarity(
   input: MemorySimilarityRankingInput,
 ): MemorySimilarityRankingResult {
   const validQueries = toValidVectors(input.queryVectors)
+  if (validQueries.length === 0) {
+    return {
+      ranked: [],
+      diagnostics: {
+        queryVectors: input.queryVectors.length,
+        validQueryVectors: 0,
+        skippedQueryVectors: input.queryVectors.length,
+        embeddings: input.embeddings.length,
+        scoredEmbeddings: 0,
+        skippedEmbeddings: [],
+        missingChunks: [],
+        missingSummaries: [],
+      },
+    }
+  }
+
   const chunksById = new Map(input.chunks.map((chunk) => [chunk.id, chunk]))
   const summariesByChunkId = new Map(input.summaries.map((summary) => [summary.chunkId, summary]))
   const missingChunks = new Set<string>()

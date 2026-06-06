@@ -48,6 +48,27 @@ function embedding(
   }
 }
 
+function trackedEmbedding(
+  input: Omit<Partial<MemoryEmbedding>, 'vector'> & {
+    id: string
+    chunkId: string
+    vector: readonly number[]
+  },
+): { embedding: MemoryEmbedding; reads: () => number } {
+  const row = embedding(input)
+  const vector = row.vector
+  let reads = 0
+  Object.defineProperty(row, 'vector', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      reads += 1
+      return vector
+    },
+  })
+  return { embedding: row, reads: () => reads }
+}
+
 describe('memory similarity ranking', () => {
   it('computes defensive cosine similarity', () => {
     expect(cosineSimilarity([1, 0], [0, 1])).toBe(0)
@@ -86,6 +107,91 @@ describe('memory similarity ranking', () => {
       'summary-b',
     ])
     expect(result.ranked[0].bestSimilarity).toBeCloseTo(1)
+    expect(result.diagnostics).toMatchObject({
+      queryVectors: 1,
+      validQueryVectors: 1,
+      skippedQueryVectors: 0,
+      embeddings: 3,
+      scoredEmbeddings: 3,
+      skippedEmbeddings: [],
+      missingChunks: [],
+      missingSummaries: [],
+    })
+  })
+
+  it('K1: skips embedding vector reads when query vectors are empty or invalid', () => {
+    const chunks = [chunk({ id: 'chunk-a', rangeStartSeq: 0 })]
+    const summaries = [summary({ id: 'summary-a', chunkId: 'chunk-a' })]
+    const tracked = trackedEmbedding({
+      id: 'embedding-a',
+      chunkId: 'chunk-a',
+      vector: [1, 0],
+    })
+
+    const result = rankMemorySummariesBySimilarity({
+      queryVectors: [[0, 0]],
+      summaries,
+      chunks,
+      embeddings: [tracked.embedding],
+    })
+
+    expect(tracked.reads()).toBe(0)
+    expect(result).toEqual({
+      ranked: [],
+      diagnostics: {
+        queryVectors: 1,
+        validQueryVectors: 0,
+        skippedQueryVectors: 1,
+        embeddings: 1,
+        scoredEmbeddings: 0,
+        skippedEmbeddings: [],
+        missingChunks: [],
+        missingSummaries: [],
+      },
+    })
+  })
+
+  it('K1: reads embedding vectors and preserves ranking diagnostics for valid query vectors', () => {
+    const chunks = [
+      chunk({ id: 'chunk-a', rangeStartSeq: 0 }),
+      chunk({ id: 'chunk-b', rangeStartSeq: 2 }),
+      chunk({ id: 'chunk-c', rangeStartSeq: 4 }),
+    ]
+    const summaries = [
+      summary({ id: 'summary-a', chunkId: 'chunk-a' }),
+      summary({ id: 'summary-b', chunkId: 'chunk-b' }),
+      summary({ id: 'summary-c', chunkId: 'chunk-c' }),
+    ]
+    const embeddingA = trackedEmbedding({
+      id: 'embedding-a',
+      chunkId: 'chunk-a',
+      vector: [1, 0],
+    })
+    const embeddingB = trackedEmbedding({
+      id: 'embedding-b',
+      chunkId: 'chunk-b',
+      vector: [0, 1],
+    })
+    const embeddingC = trackedEmbedding({
+      id: 'embedding-c',
+      chunkId: 'chunk-c',
+      vector: [0.8, 0.2],
+    })
+
+    const result = rankMemorySummariesBySimilarity({
+      queryVectors: [[1, 0]],
+      summaries,
+      chunks,
+      embeddings: [embeddingA.embedding, embeddingB.embedding, embeddingC.embedding],
+    })
+
+    const vectorReads = [embeddingA.reads(), embeddingB.reads(), embeddingC.reads()]
+    expect(vectorReads.every((reads) => reads > 0)).toBe(true)
+    expect(result.ranked.map((row) => row.summary.id)).toEqual([
+      'summary-a',
+      'summary-c',
+      'summary-b',
+    ])
     expect(result.diagnostics).toMatchObject({
       queryVectors: 1,
       validQueryVectors: 1,

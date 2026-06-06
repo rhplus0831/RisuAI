@@ -527,10 +527,31 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     4,
     'Keep the proxy-stream abort listener attached for the whole stream; issue the job DELETE from `closeAndEnd` when no terminal frame arrived.',
   ),
-  planned(
+  done(
     'K1',
     3,
     'Skip/lazy the embedding `vector_blob` decode when no valid query vectors exist (v2-R5 re-open: the dismissal covered the math, not the decode).',
+    'server/fastify/__tests__/memorySelectionService.test.ts',
+    'K1: empty-query selection keeps embedding diagnostics without reading malformed vectors',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryRepository.test.ts',
+        testName: 'K1: lazily validates embedding vector blobs only when vector is read',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memorySelectionService.test.ts',
+        testName: 'K1: valid-query selection still fails when a malformed vector must be decoded',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memorySimilarityRanking.test.ts',
+        testName: 'K1: skips embedding vector reads when query vectors are empty or invalid',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memorySimilarityRanking.test.ts',
+        testName:
+          'K1: reads embedding vectors and preserves ranking diagnostics for valid query vectors',
+      },
+    ],
   ),
   done(
     'K2',
@@ -1256,7 +1277,7 @@ Mentions v2-L12 and v1-L4 in prose only.
 
     expect(rows).toHaveLength(4)
     expect(rows.map((row) => row.id)).toEqual(rangeIds('K', 4))
-    expect(rows.map((row) => row.status)).toEqual(['PENDING', 'DONE', 'PENDING', 'PENDING'])
+    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'PENDING', 'PENDING'])
     expect(rows[0].targetFix).toContain('v2-R5 re-open')
     expect(allAuditIds(overlapEvidenceUniverse)).toEqual([])
   })
@@ -1316,6 +1337,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L14',
       'L15',
       'L16',
+      'K1',
       'K2',
     ])
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
@@ -1325,7 +1347,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, L11, L12, L13, L14, L15, L16, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, L11, L12, L13, L14, L15, L16, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1342,6 +1364,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L14',
       'L15',
       'L16',
+      'K1',
       'K2',
     ])
     expect(collectGateProblems()).toEqual([])

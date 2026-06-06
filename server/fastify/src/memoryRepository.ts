@@ -392,12 +392,16 @@ export function mapMemorySummaryRow(row: MemorySummaryRow): MemorySummary {
 }
 
 export function mapMemoryEmbeddingRow(row: MemoryEmbeddingRow): MemoryEmbedding {
+  let decodedVector: Float32Array | undefined
   return {
     id: row.id,
     chatId: row.chat_id,
     chunkId: row.chunk_id,
     model: row.model,
-    vector: decodeEmbeddingVector(row.vector_blob, row.dim),
+    get vector(): Float32Array {
+      decodedVector ??= decodeEmbeddingVector(row.vector_blob, row.dim)
+      return decodedVector
+    },
     dim: row.dim,
     groupId: row.group_id,
     groupIndex: row.group_index,

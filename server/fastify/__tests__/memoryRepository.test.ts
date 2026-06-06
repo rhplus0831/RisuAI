@@ -321,6 +321,43 @@ describe('memory repository embeddings', () => {
       db.close()
     }
   })
+
+  it('K1: lazily validates embedding vector blobs only when vector is read', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-1',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'chunk text',
+      })
+      createMemoryEmbedding(db, {
+        id: 'embedding-1',
+        chatId: 'chat-1',
+        chunkId: 'chunk-1',
+        model: 'embed-a',
+        vector: [1, 2],
+      })
+      db.prepare('UPDATE memory_embeddings SET vector_blob = ?, dim = ? WHERE id = ?').run(
+        Buffer.from([1, 2, 3]),
+        2,
+        'embedding-1',
+      )
+
+      const embeddings = listMemoryEmbeddings(db, { chatId: 'chat-1', model: 'embed-a' })
+
+      expect(embeddings).toHaveLength(1)
+      expect(embeddings[0].id).toBe('embedding-1')
+      expect(embeddings[0].chatId).toBe('chat-1')
+      expect(embeddings[0].chunkId).toBe('chunk-1')
+      expect(embeddings[0].model).toBe('embed-a')
+      expect(embeddings[0].dim).toBe(2)
+      expect(() => Array.from(embeddings[0].vector)).toThrow(ValidationError)
+    } finally {
+      db.close()
+    }
+  })
 })
 
 describe('memory repository orphan cleanup', () => {

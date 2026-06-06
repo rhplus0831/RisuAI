@@ -10,6 +10,7 @@ import {
   loadMemorySummarySnapshot,
 } from '../src/memoryRepository.js'
 import { selectMemorySummaries } from '../src/memorySelectionService.js'
+import { ValidationError } from '../src/repository.js'
 
 const dataDirs: string[] = []
 
@@ -136,6 +137,98 @@ describe('memory selection service', () => {
         scoredEmbeddings: 0,
       })
       expect(result.diagnostics.allocation.inputSummaries).toBe(0)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('K1: empty-query selection keeps embedding diagnostics without reading malformed vectors', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedMemory(db, {
+        chatId: 'chat-1',
+        chunkId: 'chunk-a',
+        summaryId: 'summary-a',
+        summaryModel: 'summary-model',
+        embeddingId: 'embedding-a',
+        embeddingModel: 'embedding-model',
+        rangeStartSeq: 0,
+        vector: [1, 0],
+        tokens: 5,
+      })
+      db.prepare('UPDATE memory_embeddings SET vector_blob = ?, dim = ? WHERE id = ?').run(
+        Buffer.from([1, 2, 3]),
+        2,
+        'embedding-a',
+      )
+
+      const result = selectMemorySummaries({
+        db,
+        chatId: 'chat-1',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [],
+        availableTokens: 100,
+        settings: { recentMemoryRatio: 1, similarMemoryRatio: 0 },
+      })
+
+      expect(result.selectedSummaries.map((summary) => summary.id)).toEqual(['summary-a'])
+      expect(result.rankedSimilarSummaries).toEqual([])
+      expect(result.diagnostics.repository).toMatchObject({
+        summaries: 1,
+        chunks: 1,
+        embeddings: 1,
+        summaryIdsMissingChunks: [],
+        summaryIdsMissingEmbeddings: [],
+        chunkIdsMissingEmbeddings: [],
+        chunkIdsMissingSummaries: [],
+      })
+      expect(result.diagnostics.ranking).toMatchObject({
+        queryVectors: 0,
+        validQueryVectors: 0,
+        skippedQueryVectors: 0,
+        embeddings: 1,
+        scoredEmbeddings: 0,
+        skippedEmbeddings: [],
+        missingChunks: [],
+        missingSummaries: [],
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('K1: valid-query selection still fails when a malformed vector must be decoded', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedMemory(db, {
+        chatId: 'chat-1',
+        chunkId: 'chunk-a',
+        summaryId: 'summary-a',
+        summaryModel: 'summary-model',
+        embeddingId: 'embedding-a',
+        embeddingModel: 'embedding-model',
+        rangeStartSeq: 0,
+        vector: [1, 0],
+        tokens: 5,
+      })
+      db.prepare('UPDATE memory_embeddings SET vector_blob = ?, dim = ? WHERE id = ?').run(
+        Buffer.from([1, 2, 3]),
+        2,
+        'embedding-a',
+      )
+
+      expect(() =>
+        selectMemorySummaries({
+          db,
+          chatId: 'chat-1',
+          summaryModel: 'summary-model',
+          embeddingModel: 'embedding-model',
+          queryVectors: [[1, 0]],
+          availableTokens: 100,
+          settings: { recentMemoryRatio: 0, similarMemoryRatio: 1 },
+        }),
+      ).toThrow(ValidationError)
     } finally {
       db.close()
     }

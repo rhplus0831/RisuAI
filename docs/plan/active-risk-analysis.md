@@ -140,7 +140,7 @@ prior IDs stay closed in their archives, these rows own the remaining gap.
 
 | ID  | Phase                                                      | Target fix                                                                 | Status  |
 | --- | ----------------------------------------------------------- | ---------------------------------------------------------------------------- | ------- |
-| K1  | [3](phases/phase-3-memory-subsystem.md)                     | Skip/lazy the embedding `vector_blob` decode when no valid query vectors exist (v2-R5 re-open: the dismissal covered the math, not the decode). | PENDING |
+| K1  | [3](phases/phase-3-memory-subsystem.md)                     | Skip/lazy the embedding `vector_blob` decode when no valid query vectors exist (v2-R5 re-open: the dismissal covered the math, not the decode). | DONE |
 | K2  | [2](phases/phase-2-command-surface-scoping.md)              | Drop the redundant in-handler auth verify on the proxy/hub routes (v2-L16 propagation). | DONE |
 | K3  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Return the provably-immutable `initialMessages` restoration payload by reference (v2-M1 ring). | PENDING |
 | K4  | [8](phases/phase-8-client-interpreters-plugins-media.md)    | `onerror` + timeout for the stableDiff reference-image load (v2-L49 propagation). | PENDING |
