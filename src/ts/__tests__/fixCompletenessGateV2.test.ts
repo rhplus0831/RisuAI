@@ -613,7 +613,27 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L43', 5, '`$derived` + keyed each for ModuleSettings.'),
+  done(
+    'L43',
+    5,
+    '`$derived` + keyed each for ModuleSettings.',
+    'src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts',
+    'L43: ModuleSettings search recomputes sorted rows once per search edit and reuses them across view switches',
+    [
+      {
+        testPath: 'src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts',
+        testName: 'L43: ModuleSettings empty search shows every module in lowercase sorted order',
+      },
+      {
+        testPath: 'src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts',
+        testName: 'L43: ModuleSettings filtered rows keep action targets by module id',
+      },
+      {
+        testPath: 'src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts',
+        testName: 'L43: ModuleSettings edit after filtering saves the original module id',
+      },
+    ],
+  ),
   planned('L44', 5, 'Cheap signature compare for the sidebar list effect.'),
   planned('L45', 6, 'Capped exponential backoff + jitter for SSE reconnect.'),
   planned('L46', 6, 'Bound `sseIdDone` (windowed dedup).'),
@@ -1438,6 +1458,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L40',
       'L41',
       'L42',
+      'L43',
       'K1',
       'K2',
     ])

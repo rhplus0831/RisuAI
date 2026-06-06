@@ -1,3 +1,45 @@
+<script lang="ts" module>
+  import type { RisuModule as ModuleSettingsRisuModule } from 'src/ts/process/modules'
+
+  export interface ModuleSettingsModuleRow {
+    rmodule: ModuleSettingsRisuModule
+    index: number
+    normalizedName: string
+  }
+
+  export function normalizeModuleSearch(search: string) {
+    return search.toLowerCase()
+  }
+
+  export function sortModuleSettingsRows(
+    modules: readonly ModuleSettingsRisuModule[],
+    normalizedSearch: string,
+  ): ModuleSettingsModuleRow[] {
+    const rows: ModuleSettingsModuleRow[] = []
+
+    for (let index = 0; index < modules.length; index++) {
+      const rmodule = modules[index]
+      const normalizedName = normalizeModuleSearch(rmodule.name)
+      if (normalizedSearch !== '' && !normalizedName.includes(normalizedSearch)) {
+        continue
+      }
+
+      rows.push({ rmodule, index, normalizedName })
+    }
+
+    return rows.sort((a, b) => a.normalizedName.localeCompare(b.normalizedName))
+  }
+
+  export function parseModuleIntegrationNamespaces(moduleIntergration?: string | null) {
+    const namespaces = new Set<string>()
+    for (const namespace of moduleIntergration?.split(',') ?? []) {
+      const normalizedNamespace = namespace.trim()
+      if (normalizedNamespace) namespaces.add(normalizedNamespace)
+    }
+    return namespaces
+  }
+</script>
+
 <script lang="ts">
   import { language } from 'src/lang'
 
@@ -44,18 +86,13 @@
   let mode = $state(0)
   let editModuleIndex = $state(-1)
   let moduleSearch = $state('')
-
-  function sortModules(modules: RisuModule[], search: string) {
-    return modules
-      .filter((v) => {
-        if (search === '') return true
-        return v.name.toLowerCase().includes(search.toLowerCase())
-      })
-      .sort((a, b) => {
-        let score = a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-        return score
-      })
-  }
+  let normalizedModuleSearch = $derived(normalizeModuleSearch(moduleSearch))
+  let sortedModuleRows = $derived(
+    sortModuleSettingsRows(DBState.db.modules ?? [], normalizedModuleSearch),
+  )
+  let moduleIntegrationNamespaces = $derived(
+    parseModuleIntegrationNamespaces(DBState.db.moduleIntergration),
+  )
 
   onDestroy(() => {
     refreshModules()
@@ -73,7 +110,8 @@
     {#if DBState.db.modules.length === 0}
       <div class="text-textcolor2 p-3">{language.noModules}</div>
     {:else}
-      {#each sortModules(DBState.db.modules, moduleSearch) as rmodule, i}
+      {#each sortedModuleRows as moduleRow, i (moduleRow.rmodule.id)}
+        {@const rmodule = moduleRow.rmodule}
         {#if i !== 0}
           <div class="border-t-1 border-selected"></div>
         {/if}
@@ -88,10 +126,7 @@
               class={DBState.db.enabledModules.includes(rmodule.id)
                 ? 'mr-2 cursor-pointer text-blue-500'
                 : rmodule.namespace &&
-                    DBState.db.moduleIntergration
-                      ?.split(',')
-                      .map((s) => s.trim())
-                      .includes(rmodule.namespace)
+                    moduleIntegrationNamespaces.has(rmodule.namespace)
                   ? 'text-amber-500 hover:text-green-500 mr-2 cursor-pointer'
                   : 'text-textcolor2 hover:text-green-500 mr-2 cursor-pointer'}
               use:tooltip={language.enableGlobal}
@@ -119,9 +154,8 @@
                 use:tooltip={language.edit}
                 onclick={async (e) => {
                   e.stopPropagation()
-                  const index = DBState.db.modules.findIndex((v) => v.id === rmodule.id)
                   tempModule = cloneJsonValue(rmodule)
-                  editModuleIndex = index
+                  editModuleIndex = moduleRow.index
                   mode = 2
                 }}
               >
