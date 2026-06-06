@@ -16,8 +16,8 @@ v1 finding IDs are referenced as `v1-*`.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 2 M5, M6, L3, L13, L14, L16,
   K1, and K2, Phase 3 M1-M4 and L4-L11, Phase 4 M7-M10, L32-L34, L37, and
-  K4, and Phase 6 M11, M12, M14, L35, L36, and L45-L47 are `DONE`; the rest
-  are `PENDING`.
+  K4, Phase 5 M13, M17, and L38-L44, and Phase 6 M11, M12, M14, L35, L36,
+  and L45-L47 are `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -66,11 +66,11 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M10 | [4](phases/phase-4-client-clone-ring-2.md)       | Module-only / single-row module snapshots.                       | DONE    |
 | M11 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the lorebook watcher (+ epoch-bumping apply). | DONE    |
 | M12 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the character-profile watcher.              | DONE    |
-| M13 | [5](phases/phase-5-client-render-and-ui.md)      | Debounce + per-item memo for prompt-template tokenize.           | PENDING |
+| M13 | [5](phases/phase-5-client-render-and-ui.md)      | Debounce + per-item memo for prompt-template tokenize.           | DONE    |
 | M14 | [6](phases/phase-6-bridges-lifecycle-network.md) | Idempotent `nodeObserve` (or wire the dead MutationObserver).    | DONE    |
 | M15 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded Map (LRU) translate cache.                               | PENDING |
 | M16 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove html log; `DoingChat` gate for non-exp translators.       | PENDING |
-| M17 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed translate-detection memo.             | PENDING |
+| M17 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed translate-detection memo.             | DONE    |
 | M18 | [7](phases/phase-7-opt-in-subsystems.md)         | Reuse/close `AudioContext` per playback.                         | PENDING |
 | M19 | [7](phases/phase-7-opt-in-subsystems.md)         | Reset bergamot chain on rejection; reinit on wasm error.         | PENDING |
 | M20 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded deadlines for MCP request/handshake/SSE waits.           | PENDING |
@@ -118,13 +118,13 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L35 | [6](phases/phase-6-bridges-lifecycle-network.md) | Carry `hypaV3Data` independently of message length.               | DONE |
 | L36 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound the prereroll maps; clear on chat switch.                   | DONE |
 | L37 | [4](phases/phase-4-client-clone-ring-2.md)       | Same-language early-return in `changeLanguage`.                   | DONE |
-| L38 | [5](phases/phase-5-client-render-and-ui.md)      | Remove `{{#function}}`/`{{call::}}` logs.                         | PENDING |
-| L39 | [5](phases/phase-5-client-render-and-ui.md)      | `includes()` fast path + indexOf scan in `parseThoughtsAndTools`. | PENDING |
-| L40 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed `ParseMarkdown` memo (with H3).        | PENDING |
-| L41 | [5](phases/phase-5-client-render-and-ui.md)      | One shared partial-edit mousemove handler.                        | PENDING |
-| L42 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for GridCatalog.                          | PENDING |
-| L43 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for ModuleSettings.                       | PENDING |
-| L44 | [5](phases/phase-5-client-render-and-ui.md)      | Cheap signature compare for the sidebar list effect.              | PENDING |
+| L38 | [5](phases/phase-5-client-render-and-ui.md)      | Remove `{{#function}}`/`{{call::}}` logs.                         | DONE    |
+| L39 | [5](phases/phase-5-client-render-and-ui.md)      | `includes()` fast path + indexOf scan in `parseThoughtsAndTools`. | DONE    |
+| L40 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed `ParseMarkdown` memo (with H3).        | DONE    |
+| L41 | [5](phases/phase-5-client-render-and-ui.md)      | One shared partial-edit mousemove handler.                        | DONE    |
+| L42 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for GridCatalog.                          | DONE    |
+| L43 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for ModuleSettings.                       | DONE    |
+| L44 | [5](phases/phase-5-client-render-and-ui.md)      | Cheap signature compare for the sidebar list effect.              | DONE    |
 | L45 | [6](phases/phase-6-bridges-lifecycle-network.md) | Capped exponential backoff + jitter for SSE reconnect.            | DONE    |
 | L46 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound `sseIdDone` (windowed dedup).                               | DONE    |
 | L47 | [6](phases/phase-6-bridges-lifecycle-network.md) | Remove the `fetchNative` body log.                                | DONE    |
@@ -140,6 +140,50 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L57 | [7](phases/phase-7-opt-in-subsystems.md)         | Wire the debug flag; gate MCP logs.                               | PENDING |
 | L58 | [7](phases/phase-7-opt-in-subsystems.md)         | Epoch-guard `translateSuggest` writes.                            | PENDING |
 | L59 | [7](phases/phase-7-opt-in-subsystems.md)         | Skip retrying translation network errors in `markParsing`.        | PENDING |
+
+### Phase 5 DONE Proofs
+
+The machine-readable tables above intentionally keep their four-column shape.
+These bullets attach the Phase 5 `DONE` rows to concrete regression proof
+paths and test names.
+
+- M13 - `src/ts/process/promptTokenizeMemo.test.ts`:
+  `M13: memoized prompt token totals match tokenizePreset for supported prompt item types`;
+  `M13: unchanged prompt items hit cached token totals for both consti variants`;
+  `M13: rapid prompt edits debounce to the newest token total`;
+  `M13: stale in-flight prompt tokenization results cannot overwrite newer edits`;
+  `M13: reorder delete and add preserve memoized token totals`.
+- M17 - `src/lib/ChatScreens/ChatBody.parseMemo.test.ts`:
+  `M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo`;
+  `M17: explicit retranslate still calls translateHTML with regenerate enabled`.
+- L38 - `src/ts/parser/tests/renderFastPaths.test.ts`:
+  `L38: function definition and call parsing writes nothing to console.log`.
+- L39 - `src/ts/parser/tests/renderFastPaths.test.ts`:
+  `L39: marker-free thoughts/tools parsing returns unchanged without slicing`;
+  `preserves nested thoughts while matching the outer block`;
+  `preserves malformed unclosed thoughts and still converts later nested thoughts`;
+  `replaces tool calls inside and outside thoughts after thoughts conversion`.
+- L40 - `src/lib/ChatScreens/ChatBody.parseMemo.test.ts`:
+  `L40: unchanged ChatBody remount performs zero additional ParseMarkdown calls`;
+  `L40: changed ChatBody content misses the parse memo and renders the new body`;
+  `M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo`.
+- L41 - `src/lib/ChatScreens/PartialEditController.sharedHover.test.ts`:
+  `L41: visible partial edit controllers share one document mousemove listener and remove it after unmount`;
+  `L41: shared hover keeps button zone reachability and hides on leave or scroll`;
+  `L41: shared hover suppresses the block button during text selection`.
+- L42 - `src/lib/Others/GridCatalog.svelte.test.ts`:
+  `L42: GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs`;
+  `L42: GridCatalog filters active and trash lists with shared count and stable order`;
+  `L42: GridCatalog trash actions keep restore and permanent-delete targets`.
+- L43 - `src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts`:
+  `L43: ModuleSettings search recomputes sorted rows once per search edit and reuses them across view switches`;
+  `L43: ModuleSettings empty search shows every module in lowercase sorted order`;
+  `L43: ModuleSettings filtered rows keep action targets by module id`;
+  `L43: ModuleSettings edit after filtering saves the original module id`.
+- L44 - `src/lib/SideBars/Sidebar.charList.test.ts`:
+  `L44: unrelated character metadata and chat changes reuse the sidebar list`;
+  `L44: character name image index and order changes rebuild the sidebar list`;
+  `L44: folder name color image and data changes rebuild the sidebar list`.
 
 ### Known-Overlap Residuals (scheduled)
 

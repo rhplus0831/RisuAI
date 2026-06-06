@@ -393,7 +393,31 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'src/ts/server/characterBridge.svelte.test.ts',
     'M12: foreign character-row projection apply refreshes baseline without echoing, then local profile edits dispatch',
   ),
-  planned('M13', 5, 'Debounce + per-item memo for prompt-template tokenize.'),
+  done(
+    'M13',
+    5,
+    'Debounce + per-item memo for prompt-template tokenize.',
+    'src/ts/process/promptTokenizeMemo.test.ts',
+    'M13: memoized prompt token totals match tokenizePreset for supported prompt item types',
+    [
+      {
+        testPath: 'src/ts/process/promptTokenizeMemo.test.ts',
+        testName: 'M13: unchanged prompt items hit cached token totals for both consti variants',
+      },
+      {
+        testPath: 'src/ts/process/promptTokenizeMemo.test.ts',
+        testName: 'M13: rapid prompt edits debounce to the newest token total',
+      },
+      {
+        testPath: 'src/ts/process/promptTokenizeMemo.test.ts',
+        testName: 'M13: stale in-flight prompt tokenization results cannot overwrite newer edits',
+      },
+      {
+        testPath: 'src/ts/process/promptTokenizeMemo.test.ts',
+        testName: 'M13: reorder delete and add preserve memoized token totals',
+      },
+    ],
+  ),
   done(
     'M14',
     6,
@@ -413,7 +437,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   ),
   planned('M15', 7, 'Bounded Map (LRU) translate cache.'),
   planned('M16', 7, 'Remove html log; `DoingChat` gate for non-exp translators.'),
-  planned('M17', 5, 'Module-level content-keyed translate-detection memo.'),
+  done(
+    'M17',
+    5,
+    'Module-level content-keyed translate-detection memo.',
+    'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
+    'M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo',
+    [
+      {
+        testPath: 'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
+        testName: 'M17: explicit retranslate still calls translateHTML with regenerate enabled',
+      },
+    ],
+  ),
   planned('M18', 7, 'Reuse/close `AudioContext` per playback.'),
   planned('M19', 7, 'Reset bergamot chain on rejection; reinit on wasm error.'),
   planned('M20', 7, 'Bounded deadlines for MCP request/handshake/SSE waits.'),
@@ -743,13 +779,125 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L38', 5, 'Remove `{{#function}}`/`{{call::}}` logs.'),
-  planned('L39', 5, '`includes()` fast path + indexOf scan in `parseThoughtsAndTools`.'),
-  planned('L40', 5, 'Module-level content-keyed `ParseMarkdown` memo (with H3).'),
-  planned('L41', 5, 'One shared partial-edit mousemove handler.'),
-  planned('L42', 5, '`$derived` + keyed each for GridCatalog.'),
-  planned('L43', 5, '`$derived` + keyed each for ModuleSettings.'),
-  planned('L44', 5, 'Cheap signature compare for the sidebar list effect.'),
+  done(
+    'L38',
+    5,
+    'Remove `{{#function}}`/`{{call::}}` logs.',
+    'src/ts/parser/tests/renderFastPaths.test.ts',
+    'L38: function definition and call parsing writes nothing to console.log',
+  ),
+  done(
+    'L39',
+    5,
+    '`includes()` fast path + indexOf scan in `parseThoughtsAndTools`.',
+    'src/ts/parser/tests/renderFastPaths.test.ts',
+    'L39: marker-free thoughts/tools parsing returns unchanged without slicing',
+    [
+      {
+        testPath: 'src/ts/parser/tests/renderFastPaths.test.ts',
+        testName: 'preserves nested thoughts while matching the outer block',
+      },
+      {
+        testPath: 'src/ts/parser/tests/renderFastPaths.test.ts',
+        testName: 'preserves malformed unclosed thoughts and still converts later nested thoughts',
+      },
+      {
+        testPath: 'src/ts/parser/tests/renderFastPaths.test.ts',
+        testName: 'replaces tool calls inside and outside thoughts after thoughts conversion',
+      },
+    ],
+  ),
+  done(
+    'L40',
+    5,
+    'Module-level content-keyed `ParseMarkdown` memo (with H3).',
+    'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
+    'L40: unchanged ChatBody remount performs zero additional ParseMarkdown calls',
+    [
+      {
+        testPath: 'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
+        testName: 'L40: changed ChatBody content misses the parse memo and renders the new body',
+      },
+      {
+        testPath: 'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
+        testName:
+          'M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo',
+      },
+    ],
+  ),
+  done(
+    'L41',
+    5,
+    'One shared partial-edit mousemove handler.',
+    'src/lib/ChatScreens/PartialEditController.sharedHover.test.ts',
+    'L41: visible partial edit controllers share one document mousemove listener and remove it after unmount',
+    [
+      {
+        testPath: 'src/lib/ChatScreens/PartialEditController.sharedHover.test.ts',
+        testName: 'L41: shared hover keeps button zone reachability and hides on leave or scroll',
+      },
+      {
+        testPath: 'src/lib/ChatScreens/PartialEditController.sharedHover.test.ts',
+        testName: 'L41: shared hover suppresses the block button during text selection',
+      },
+    ],
+  ),
+  done(
+    'L42',
+    5,
+    '`$derived` + keyed each for GridCatalog.',
+    'src/lib/Others/GridCatalog.svelte.test.ts',
+    'L42: GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs',
+    [
+      {
+        testPath: 'src/lib/Others/GridCatalog.svelte.test.ts',
+        testName:
+          'L42: GridCatalog filters active and trash lists with shared count and stable order',
+      },
+      {
+        testPath: 'src/lib/Others/GridCatalog.svelte.test.ts',
+        testName: 'L42: GridCatalog trash actions keep restore and permanent-delete targets',
+      },
+    ],
+  ),
+  done(
+    'L43',
+    5,
+    '`$derived` + keyed each for ModuleSettings.',
+    'src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts',
+    'L43: ModuleSettings search recomputes sorted rows once per search edit and reuses them across view switches',
+    [
+      {
+        testPath: 'src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts',
+        testName: 'L43: ModuleSettings empty search shows every module in lowercase sorted order',
+      },
+      {
+        testPath: 'src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts',
+        testName: 'L43: ModuleSettings filtered rows keep action targets by module id',
+      },
+      {
+        testPath: 'src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts',
+        testName: 'L43: ModuleSettings edit after filtering saves the original module id',
+      },
+    ],
+  ),
+  done(
+    'L44',
+    5,
+    'Cheap signature compare for the sidebar list effect.',
+    'src/lib/SideBars/Sidebar.charList.test.ts',
+    'L44: unrelated character metadata and chat changes reuse the sidebar list',
+    [
+      {
+        testPath: 'src/lib/SideBars/Sidebar.charList.test.ts',
+        testName: 'L44: character name image index and order changes rebuild the sidebar list',
+      },
+      {
+        testPath: 'src/lib/SideBars/Sidebar.charList.test.ts',
+        testName: 'L44: folder name color image and data changes rebuild the sidebar list',
+      },
+    ],
+  ),
   done(
     'L45',
     6,
@@ -1607,7 +1755,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M13'
+      entry.id === 'M15'
         ? {
             ...entry,
             testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
@@ -1617,7 +1765,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'M13: PLANNED entries must not claim proof fields',
+      'M15: PLANNED entries must not claim proof fields',
     )
   })
 
@@ -1643,7 +1791,9 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M10',
       'M11',
       'M12',
+      'M13',
       'M14',
+      'M17',
       'L3',
       'L4',
       'L5',
@@ -1662,6 +1812,13 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L35',
       'L36',
       'L37',
+      'L38',
+      'L39',
+      'L40',
+      'L41',
+      'L42',
+      'L43',
+      'L44',
       'L45',
       'L46',
       'L47',
@@ -1674,7 +1831,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects DONE entries without a registered test path and test name', () => {
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M13'
+      entry.id === 'M15'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1684,9 +1841,9 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M13: status mismatch (registry DONE, docs PENDING)',
-        'M13: DONE without a registered testPath',
-        'M13: DONE without a registered testName',
+        'M15: status mismatch (registry DONE, docs PENDING)',
+        'M15: DONE without a registered testPath',
+        'M15: DONE without a registered testName',
       ]),
     )
   })
@@ -1694,7 +1851,7 @@ describe('v2 fix-completeness gate routing registry', () => {
   it('validates primary and extra DONE test proofs against existing test files', () => {
     const missingExtraTestName = ['missing extra proof title', 'assembled at runtime'].join(' ')
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M13'
+      entry.id === 'M15'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1712,8 +1869,8 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M13: status mismatch (registry DONE, docs PENDING)',
-        `M13: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
+        'M15: status mismatch (registry DONE, docs PENDING)',
+        `M15: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
       ]),
     )
   })
@@ -1747,12 +1904,12 @@ describe('v2 fix-completeness gate routing registry', () => {
     const riskText = readDoc(RISK_DOC)
     const withDoneDocRow = replaceRiskRow(
       riskText,
-      'M13',
-      '| M13 | [5](phases/phase-5-client-render-and-ui.md) | Debounce + per-item memo for prompt-template tokenize. | DONE |',
+      'M15',
+      '| M15 | [7](phases/phase-7-opt-in-subsystems.md) | Bounded Map (LRU) translate cache. | DONE |',
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'M13: status mismatch (registry PLANNED, docs DONE)',
+      'M15: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 

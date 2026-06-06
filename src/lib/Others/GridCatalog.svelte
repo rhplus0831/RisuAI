@@ -1,6 +1,62 @@
+<script lang="ts" module>
+  import { type Database } from '../../ts/storage/database.svelte'
+
+  export interface GridCatalogCharacter {
+    chaId?: string
+    image?: string
+    index: number
+    name: string
+    desc: string
+  }
+
+  export interface GridCatalogCharacterLists {
+    active: GridCatalogCharacter[]
+    trash: GridCatalogCharacter[]
+  }
+
+  export function normalizeGridCatalogSearch(search: string) {
+    return search.replace(/ /g, '').toLocaleLowerCase()
+  }
+
+  export function formatGridCatalogCharacterLists(
+    db: Database,
+    normalizedSearch: string,
+  ): GridCatalogCharacterLists {
+    const active: GridCatalogCharacter[] = []
+    const trash: GridCatalogCharacter[] = []
+
+    for (let i = 0; i < db.characters.length; i++) {
+      const c = db.characters[i]
+      const name = c.name
+      if (!normalizeGridCatalogSearch(name).includes(normalizedSearch)) {
+        continue
+      }
+
+      const char = {
+        chaId: c.chaId,
+        image: c.image,
+        index: i,
+        name,
+        desc: c.creatorNotes ?? 'No description',
+      }
+
+      if (c.trashTime) {
+        trash.push(char)
+      } else {
+        active.push(char)
+      }
+    }
+
+    return { active, trash }
+  }
+
+  function gridCatalogCharacterKey(char: GridCatalogCharacter) {
+    return char.chaId || `legacy-${char.index}`
+  }
+</script>
+
 <script lang="ts">
   import { changeChar, getCharImage, removeChar } from '../../ts/characters'
-  import { type Database } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { ArrowLeft, User, SquareMousePointer, TrashIcon, Undo2Icon } from '@lucide/svelte'
@@ -20,39 +76,8 @@
   let { endGrid = () => {} }: Props = $props()
   let search = $state('')
   let selected = $state(3)
-
-  function formatChars(search: string, db: Database, trash = false) {
-    let charas: {
-      image: string
-      index: number
-      name: string
-      desc: string
-    }[] = []
-
-    for (let i = 0; i < db.characters.length; i++) {
-      const c = db.characters[i]
-      if (c.trashTime && !trash) {
-        continue
-      }
-      if (!c.trashTime && trash) {
-        continue
-      }
-      if (
-        c.name
-          .replace(/ /g, '')
-          .toLocaleLowerCase()
-          .includes(search.toLocaleLowerCase().replace(/ /g, ''))
-      ) {
-        charas.push({
-          image: c.image,
-          index: i,
-          name: c.name,
-          desc: c.creatorNotes ?? 'No description',
-        })
-      }
-    }
-    return charas
-  }
+  let normalizedSearch = $derived(normalizeGridCatalogSearch(search))
+  let catalogCharacters = $derived(formatGridCatalogCharacterLists(DBState.db, normalizedSearch))
 </script>
 
 <div class="h-full w-full flex justify-center">
@@ -115,7 +140,7 @@
         </Button>
         <div class="grow"></div>
         <span class="text-textcolor2 text-sm">
-          {formatChars(search, DBState.db).length}
+          {catalogCharacters.active.length}
           {language.character}
         </span>
       </div>
@@ -123,7 +148,7 @@
     {#if selected === 0}
       <div class="w-full flex justify-center">
         <div class="flex flex-wrap gap-2 w-full justify-center">
-          {#each formatChars(search, DBState.db) as char}
+          {#each catalogCharacters.active as char (gridCatalogCharacterKey(char))}
             <div class="flex items-center text-textcolor">
               {#if char.image}
                 <BarIcon
@@ -149,7 +174,7 @@
         </div>
       </div>
     {:else if selected === 1}
-      {#each formatChars(search, DBState.db) as char}
+      {#each catalogCharacters.active as char (gridCatalogCharacterKey(char))}
         <div class="flex p-2 border border-darkborderc rounded-md mb-2">
           <BarIcon
             onClick={() => {
@@ -187,7 +212,7 @@
       {/each}
     {:else if selected === 2}
       <span class="text-textcolor2 text-sm mb-2">{language.trashDesc}</span>
-      {#each formatChars(search, DBState.db, true) as char}
+      {#each catalogCharacters.trash as char (gridCatalogCharacterKey(char))}
         <div class="flex p-2 border border-darkborderc rounded-md mb-2">
           <BarIcon
             onClick={() => {

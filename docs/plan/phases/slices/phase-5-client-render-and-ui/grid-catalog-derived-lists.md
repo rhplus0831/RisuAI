@@ -3,6 +3,9 @@
 Phase: [5](../../phase-5-client-render-and-ui.md). Finding: L42. Runtime
 change.
 
+Status: complete; proof refreshed in
+[`phase-5-verification-refresh.md`](phase-5-verification-refresh.md).
+
 ## Scope
 
 Memoize `GridCatalog` character filtering with Svelte `$derived` state and key

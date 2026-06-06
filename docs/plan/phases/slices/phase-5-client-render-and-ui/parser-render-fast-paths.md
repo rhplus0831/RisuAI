@@ -3,6 +3,9 @@
 Phase: [5](../../phase-5-client-render-and-ui.md). Findings: L38, L39.
 Runtime change.
 
+Status: complete; proof refreshed in
+[`phase-5-verification-refresh.md`](phase-5-verification-refresh.md).
+
 ## Scope
 
 Remove render-path `console.log` calls from `risuChatParser` and add the

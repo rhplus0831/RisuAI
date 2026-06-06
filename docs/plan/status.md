@@ -7,15 +7,16 @@ open only the phase or slice tied to the current task.
 
 ## Snapshot
 
-- Plan state: open. Phases 1-4 and Phase 6 are implemented and
-  proof-refreshed; Phases 5, 7, and 8 remain open.
+- Plan state: open. Phases 1-6 are implemented and proof-refreshed; Phases 7
+  and 8 remain open.
 - Findings covered: 102 confirmed v2 audit findings (3 high, 22 medium,
   59 low, 18 informational) plus the K1-K4 known-overlap residuals.
 - Scheduled IDs: H1-H3, Phase 2's M5, M6, L3, L13, L14, L16, K1, and K2,
-  Phase 3's M1-M4 and L4-L11, Phase 4's M7-M10, L32-L34, L37, and K4, and
-  Phase 6's M11, M12, M14, L35, L36, L45-L47 are registered `DONE` in the v2
-  gate and `active-risk-analysis.md`. Remaining scheduled gate entries stay
-  `PLANNED`; risk-map rows stay `PENDING`.
+  Phase 3's M1-M4 and L4-L11, Phase 4's M7-M10, L32-L34, L37, and K4,
+  Phase 5's M13, M17, and L38-L44, and Phase 6's M11, M12, M14, L35, L36,
+  L45-L47 are registered `DONE` in the v2 gate and
+  `active-risk-analysis.md`. Remaining scheduled gate entries stay `PLANNED`;
+  risk-map rows stay `PENDING`.
 - Gated IDs: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates. I1-I18 need no action.
 - Standing v1 gate: `src/ts/__tests__/fixCompletenessGate.test.ts` stays live
@@ -24,10 +25,13 @@ open only the phase or slice tied to the current task.
 - Current proof: Phase 4 focused client clone/rollback suites, supplemental
   module/compatibility suites, v2 plus clone-cost gates, `pnpm test` 1202/4,
   `pnpm api:test` 1792/1, client-thinning audit, and both TypeScript checks
-  passed. Phase 6 focused bridge/lifecycle/network suites, both gates,
-  `pnpm test` 1185/4, `pnpm api:test` 1792/1, client-thinning audit, and both
-  TypeScript checks passed; `pnpm check` still reports the unrelated existing
-  14-error baseline in 5 files. See [`latest-verification.md`](latest-verification.md).
+  passed. Phase 5 focused render/UI suites, render-count/script proof, parser
+  companion suites, both gates, `pnpm test` 1193/4, client-thinning audit, and
+  both TypeScript checks passed. Phase 6 focused bridge/lifecycle/network
+  suites, both gates, `pnpm test` 1185/4, `pnpm api:test` 1792/1,
+  client-thinning audit, and both TypeScript checks passed; `pnpm check` still
+  reports the unrelated existing 14-error baseline in 5 files. See
+  [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
 
@@ -42,7 +46,7 @@ open only the phase or slice tied to the current task.
   CBS/trigger costs (M1-M4, L4-L11).
 - [Phase 4](phases/phase-4-client-clone-ring-2.md): complete. Client clone
   narrowing ring 2 (M7-M10, L32-L34, L37, K4).
-- [Phase 5](phases/phase-5-client-render-and-ui.md): next. Client render,
+- [Phase 5](phases/phase-5-client-render-and-ui.md): complete. Client render,
   editor, and UI costs (M13, M17, L38-L44).
 - [Phase 6](phases/phase-6-bridges-lifecycle-network.md): complete. Bridge
   echo guards, lifecycle, network (M11, M12, M14, L35, L36, L45-L47).

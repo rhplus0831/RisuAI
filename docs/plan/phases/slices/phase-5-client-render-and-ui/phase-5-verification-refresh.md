@@ -3,6 +3,11 @@
 Phase: [5](../../phase-5-client-render-and-ui.md). Depends on all Phase 5
 runtime slices. No runtime change.
 
+Status: complete on 2026-06-06. Focused suites, render-count proof, both
+gates, `pnpm test`, client-thinning audit, and both TypeScript checks passed.
+The remaining `pnpm check` caveat is recorded in
+[`../../../latest-verification.md`](../../../latest-verification.md).
+
 ## Scope
 
 Run the focused and full proof set after M13, M17, and L38-L44 land, then
@@ -61,7 +66,6 @@ slice; it should not change runtime behavior.
 
 ```bash
 pnpm exec vitest run src/ts/process/promptTokenizeMemo.test.ts \
-  src/lib/Setting/Pages/PromptSettings.svelte.test.ts \
   src/lib/ChatScreens/ChatBody.parseMemo.test.ts \
   src/ts/parser/tests/renderFastPaths.test.ts \
   src/lib/ChatScreens/PartialEditController.sharedHover.test.ts \

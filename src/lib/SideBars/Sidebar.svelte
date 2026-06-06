@@ -30,10 +30,9 @@
   import { addCharacter, changeChar, getCharImage } from '../../ts/characters'
   import CharConfig from './CharConfig.svelte'
   import { language } from '../../lang'
-  import isEqual from 'lodash/isEqual'
   import SidebarAvatar from './SidebarAvatar.svelte'
   import BaseRoundedButton from '../UI/BaseRoundedButton.svelte'
-  import { getCharacterIndexObject, selectSingleFile } from 'src/ts/util'
+  import { selectSingleFile } from 'src/ts/util'
   import { v4 } from 'uuid'
   import { checkCharOrder, getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
   import { alertInput, alertSelect } from 'src/ts/alert'
@@ -47,6 +46,7 @@
     dispatchReorderCharacters,
   } from 'src/ts/characterCommands'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { createSidebarCharacterListMemo, type SidebarCharacterListItem } from './sidebarCharList'
   let sideBarMode = $state(0)
   let editMode = $state(false)
   let menuMode = $state(0)
@@ -60,19 +60,11 @@
     CharEmotion.set({})
   }
 
-  type sortTypeNormal = { type: 'normal'; img: string; index: number; name: string }
-  type sortType =
-    | sortTypeNormal
-    | {
-        type: 'folder'
-        folder: sortTypeNormal[]
-        id: string
-        name: string
-        color: string
-        img?: string
-      }
-  let charImages: sortType[] = $state([])
-  let IconRounded = $state(false)
+  const getSidebarCharacterList = createSidebarCharacterListMemo()
+  let charImages: SidebarCharacterListItem[] = $derived.by(
+    () => getSidebarCharacterList(DBState.db.characterOrder, DBState.db.characters).items,
+  )
+  let IconRounded = $derived(DBState.db.roundIcons)
   let openFolders: string[] = $state([])
   let currentDrag: DragData = $state(null)
   interface Props {
@@ -83,54 +75,6 @@
   let { openGrid = () => {}, hidden = false }: Props = $props()
 
   sideBarClosing.set(false)
-
-  $effect(() => {
-    let newCharImages: sortType[] = []
-    const idObject = getCharacterIndexObject()
-    for (const id of DBState.db.characterOrder) {
-      if (typeof id === 'string') {
-        const index = idObject[id] ?? -1
-        if (index !== -1) {
-          const cha = DBState.db.characters[index]
-          newCharImages.push({
-            img: cha.image ?? '',
-            index: index,
-            type: 'normal',
-            name: cha.name,
-          })
-        }
-      } else {
-        const folder = id
-        let folderCharImages: sortTypeNormal[] = []
-        for (const id of folder.data) {
-          const index = idObject[id] ?? -1
-          if (index !== -1) {
-            const cha = DBState.db.characters[index]
-            folderCharImages.push({
-              img: cha.image ?? '',
-              index: index,
-              type: 'normal',
-              name: cha.name,
-            })
-          }
-        }
-        newCharImages.push({
-          folder: folderCharImages,
-          type: 'folder',
-          id: folder.id,
-          name: folder.name,
-          color: folder.color,
-          img: folder.imgFile,
-        })
-      }
-    }
-    if (!isEqual(charImages, newCharImages)) {
-      charImages = newCharImages
-    }
-    if (IconRounded !== DBState.db.roundIcons) {
-      IconRounded = DBState.db.roundIcons
-    }
-  })
 
   const inserter = (mainIndex: DragData, targetIndex: DragData) => {
     if (mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder) {

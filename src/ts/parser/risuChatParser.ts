@@ -748,7 +748,6 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
               break
             }
             if (blockType.type === 'function') {
-              console.log(matchResult)
               functions.set(blockType.funcArg[0], {
                 data: matchResult,
                 arg: blockType.funcArg.slice(1),
@@ -779,7 +778,6 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
           const argData = dat.split('::').slice(1)
           const funcName = argData[0]
           const func = functions.get(funcName)
-          console.log(func)
           if (func) {
             let data = func.data
             for (let i = 0; i < argData.length; i++) {

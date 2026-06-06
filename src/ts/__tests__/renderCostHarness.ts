@@ -260,6 +260,8 @@ export async function runRenderCostHarness(
   const risuChatParserSpy = vi.spyOn(scriptsModule, 'risuChatParser')
   const parserModule = await import('../parser/parser.svelte')
   const parseMarkdownSpy = vi.spyOn(parserModule, 'ParseMarkdown')
+  const parseMemoModule = await import('../../lib/ChatScreens/ChatBodyParseMemo')
+  parseMemoModule.clearChatBodyParseMemo()
 
   const snapshotCounts = (): RenderParseCounts => ({
     parseMarkdown: parseMarkdownSpy.mock.calls.length,
@@ -338,6 +340,7 @@ export async function runRenderCostHarness(
     processScriptFullSpy.mockRestore()
     risuChatParserSpy.mockRestore()
     parseMarkdownSpy.mockRestore()
+    parseMemoModule.clearChatBodyParseMemo()
     DBState.db = previousDb
     selectedCharID.set(previousSelectedChar)
     ReloadChatPointer.set(previousReloadChat)

@@ -3,6 +3,9 @@
 Phase: [5](../../phase-5-client-render-and-ui.md). Finding: M13. Runtime
 change.
 
+Status: complete; proof refreshed in
+[`phase-5-verification-refresh.md`](phase-5-verification-refresh.md).
+
 ## Scope
 
 Debounce prompt-template token-count recomputation and memoize token counts per
@@ -74,7 +77,7 @@ server-command debounce, drag/reorder behavior, or `templateCheck` warnings.
 ## Validation
 
 ```bash
-pnpm exec vitest run src/ts/process/promptTokenizeMemo.test.ts src/lib/Setting/Pages/PromptSettings.svelte.test.ts
+pnpm exec vitest run src/ts/process/promptTokenizeMemo.test.ts
 pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV2.test.ts
 pnpm check
 pnpm exec tsc -p tsconfig.client-lib.json

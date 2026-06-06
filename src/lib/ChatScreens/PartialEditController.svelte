@@ -1,3 +1,197 @@
+<script lang="ts" module>
+  import { EDITABLE_BLOCK_SELECTORS } from 'src/ts/parser/partialEdit'
+
+  const SELECTOR = EDITABLE_BLOCK_SELECTORS.join(', ')
+
+  interface SharedBlockHoverController {
+    bodyRoot: HTMLElement
+    isEditing: () => boolean
+    getCurrentHoveredBlock: () => HTMLElement | null
+    hasTextContent: (el: HTMLElement) => boolean
+    isMouseOnBlockButton: (mouseX: number, mouseY: number) => boolean
+    isMouseInButtonZone: (mouseX: number, mouseY: number, block: HTMLElement) => boolean
+    showBlockButton: (block: HTMLElement) => void
+    hideBlockButton: () => void
+  }
+
+  interface SharedBlockHoverRoute {
+    controller: SharedBlockHoverController
+    block?: HTMLElement
+  }
+
+  const sharedBlockHoverControllers = new Set<SharedBlockHoverController>()
+  let sharedBlockHoverRafId: number | null = null
+  let sharedBlockHoverMouseX = 0
+  let sharedBlockHoverMouseY = 0
+  let sharedBlockHoverListenersInstalled = false
+
+  function isControllerEligible(controller: SharedBlockHoverController): boolean {
+    return !controller.isEditing() && controller.bodyRoot.isConnected
+  }
+
+  function cancelSharedBlockHoverFrame() {
+    if (sharedBlockHoverRafId === null) return
+    cancelAnimationFrame(sharedBlockHoverRafId)
+    sharedBlockHoverRafId = null
+  }
+
+  function hideSharedBlockButtonsExcept(controllerToKeep: SharedBlockHoverController | null) {
+    for (const controller of sharedBlockHoverControllers) {
+      if (controller !== controllerToKeep && !controller.isEditing()) {
+        controller.hideBlockButton()
+      }
+    }
+  }
+
+  function hasActiveTextSelection(): boolean {
+    const selection = window.getSelection()
+    return !!selection && !selection.isCollapsed
+  }
+
+  function findButtonRoute(mouseX: number, mouseY: number): SharedBlockHoverRoute | null {
+    for (const controller of sharedBlockHoverControllers) {
+      if (isControllerEligible(controller) && controller.isMouseOnBlockButton(mouseX, mouseY)) {
+        return { controller }
+      }
+    }
+    return null
+  }
+
+  function findCurrentButtonZoneRoute(
+    mouseX: number,
+    mouseY: number,
+  ): SharedBlockHoverRoute | null {
+    for (const controller of sharedBlockHoverControllers) {
+      if (!isControllerEligible(controller)) continue
+
+      const block = controller.getCurrentHoveredBlock()
+      if (block && controller.isMouseInButtonZone(mouseX, mouseY, block)) {
+        return { controller }
+      }
+    }
+    return null
+  }
+
+  function findHoveredBlockRoute(mouseX: number, mouseY: number): SharedBlockHoverRoute | null {
+    const elementAtPoint = document.elementFromPoint(mouseX, mouseY)
+    if (!elementAtPoint) return null
+
+    const block = elementAtPoint.closest(SELECTOR) as HTMLElement | null
+    if (!block) return null
+
+    for (const controller of sharedBlockHoverControllers) {
+      if (
+        isControllerEligible(controller) &&
+        controller.bodyRoot.contains(block) &&
+        controller.hasTextContent(block)
+      ) {
+        return { controller, block }
+      }
+    }
+    return null
+  }
+
+  function findFallbackButtonZoneRoute(
+    mouseX: number,
+    mouseY: number,
+  ): SharedBlockHoverRoute | null {
+    for (const controller of sharedBlockHoverControllers) {
+      if (!isControllerEligible(controller)) continue
+
+      const blocks = controller.bodyRoot.querySelectorAll(SELECTOR)
+      for (const blockCandidate of blocks) {
+        const block = blockCandidate as HTMLElement
+        if (!controller.isMouseInButtonZone(mouseX, mouseY, block)) continue
+        if (!controller.hasTextContent(block)) continue
+
+        const rect = block.getBoundingClientRect()
+        const checkX = rect.left + rect.width / 2
+        const checkY = rect.top + 5
+        const elementAtBlock = document.elementFromPoint(checkX, checkY)
+        if (elementAtBlock && (block.contains(elementAtBlock) || elementAtBlock === block)) {
+          return { controller, block }
+        }
+      }
+    }
+    return null
+  }
+
+  function runSharedBlockHover(mouseX: number, mouseY: number) {
+    if (hasActiveTextSelection()) {
+      hideSharedBlockButtonsExcept(null)
+      return
+    }
+
+    const route =
+      findButtonRoute(mouseX, mouseY) ??
+      findCurrentButtonZoneRoute(mouseX, mouseY) ??
+      findHoveredBlockRoute(mouseX, mouseY) ??
+      findFallbackButtonZoneRoute(mouseX, mouseY)
+
+    if (!route) {
+      hideSharedBlockButtonsExcept(null)
+      return
+    }
+
+    hideSharedBlockButtonsExcept(route.controller)
+    if (route.block) {
+      route.controller.showBlockButton(route.block)
+    }
+  }
+
+  function handleSharedBlockHoverMouseMove(e: MouseEvent) {
+    if (sharedBlockHoverControllers.size === 0) return
+
+    if (hasActiveTextSelection()) {
+      cancelSharedBlockHoverFrame()
+      hideSharedBlockButtonsExcept(null)
+      return
+    }
+
+    sharedBlockHoverMouseX = e.clientX
+    sharedBlockHoverMouseY = e.clientY
+
+    if (sharedBlockHoverRafId !== null) return
+    sharedBlockHoverRafId = requestAnimationFrame(() => {
+      sharedBlockHoverRafId = null
+      runSharedBlockHover(sharedBlockHoverMouseX, sharedBlockHoverMouseY)
+    })
+  }
+
+  function handleSharedBlockHoverScroll() {
+    cancelSharedBlockHoverFrame()
+    hideSharedBlockButtonsExcept(null)
+  }
+
+  function installSharedBlockHoverListeners() {
+    if (sharedBlockHoverListenersInstalled) return
+    document.addEventListener('mousemove', handleSharedBlockHoverMouseMove)
+    document.addEventListener('scroll', handleSharedBlockHoverScroll, true)
+    sharedBlockHoverListenersInstalled = true
+  }
+
+  function removeSharedBlockHoverListeners() {
+    if (!sharedBlockHoverListenersInstalled) return
+    document.removeEventListener('mousemove', handleSharedBlockHoverMouseMove)
+    document.removeEventListener('scroll', handleSharedBlockHoverScroll, true)
+    sharedBlockHoverListenersInstalled = false
+    cancelSharedBlockHoverFrame()
+  }
+
+  function registerSharedBlockHoverController(controller: SharedBlockHoverController): () => void {
+    sharedBlockHoverControllers.add(controller)
+    installSharedBlockHoverListeners()
+
+    return () => {
+      sharedBlockHoverControllers.delete(controller)
+      controller.hideBlockButton()
+      if (sharedBlockHoverControllers.size === 0) {
+        removeSharedBlockHoverListeners()
+      }
+    }
+  }
+</script>
+
 <script lang="ts">
   import { CheckIcon, XIcon } from '@lucide/svelte'
   import { createEventDispatcher, onDestroy } from 'svelte'
@@ -7,7 +201,6 @@
     findAllOriginalRangesFromHtml,
     findAllOriginalRangesFromText,
     replaceRange,
-    EDITABLE_BLOCK_SELECTORS,
     type RangeResult,
     type RangeResultWithContext,
   } from 'src/ts/parser/partialEdit'
@@ -57,8 +250,6 @@
   })
 
   let showMatchFailedModal = $state(false)
-
-  const SELECTOR = EDITABLE_BLOCK_SELECTORS.join(', ')
 
   let blockButtonWrapper: HTMLDivElement | null = null
   let currentHoveredBlock: HTMLElement | null = null
@@ -432,66 +623,19 @@
 
   // Track hover using document-level coordinates so the floating button stays reachable.
   $effect(() => {
-    if (!bodyRoot || !isBlockActive) return
+    const root = bodyRoot
+    if (!root || !isBlockActive) return
 
-    let lastMouseX = 0
-    let lastMouseY = 0
-    let rafId: number | null = null
-
-    const handleMove = (e: MouseEvent) => {
-      if (isEditing) return
-
-      const sel = window.getSelection()
-      if (sel && !sel.isCollapsed) {
-        hideBlockButton()
-        return
-      }
-
-      lastMouseX = e.clientX
-      lastMouseY = e.clientY
-
-      if (rafId !== null) return
-      rafId = requestAnimationFrame(() => {
-        rafId = null
-
-        if (isMouseOnBlockButton(lastMouseX, lastMouseY)) {
-          return
-        }
-
-        if (currentHoveredBlock) {
-          if (isMouseInButtonZone(lastMouseX, lastMouseY, currentHoveredBlock)) {
-            return
-          }
-        }
-
-        const elementAtPoint = document.elementFromPoint(lastMouseX, lastMouseY)
-        if (elementAtPoint) {
-          const block = elementAtPoint.closest(SELECTOR) as HTMLElement | null
-          if (block && bodyRoot.contains(block) && hasTextContent(block)) {
-            showBlockButton(block)
-            return
-          }
-        }
-
-        const blocks = bodyRoot.querySelectorAll(SELECTOR)
-        for (const block of blocks) {
-          if (isMouseInButtonZone(lastMouseX, lastMouseY, block as HTMLElement)) {
-            if (hasTextContent(block as HTMLElement)) {
-              const rect = (block as HTMLElement).getBoundingClientRect()
-              const checkX = rect.left + rect.width / 2
-              const checkY = rect.top + 5
-              const elementAtBlock = document.elementFromPoint(checkX, checkY)
-              if (elementAtBlock && (block.contains(elementAtBlock) || elementAtBlock === block)) {
-                showBlockButton(block as HTMLElement)
-                return
-              }
-            }
-          }
-        }
-
-        hideBlockButton()
-      })
-    }
+    const unregisterHoverController = registerSharedBlockHoverController({
+      bodyRoot: root,
+      isEditing: () => isEditing,
+      getCurrentHoveredBlock: () => currentHoveredBlock,
+      hasTextContent,
+      isMouseOnBlockButton,
+      isMouseInButtonZone,
+      showBlockButton,
+      hideBlockButton,
+    })
 
     const handleLeave = (e: MouseEvent) => {
       if (isEditing) return
@@ -505,22 +649,11 @@
       hideBlockButton()
     }
 
-    const handleScroll = () => {
-      if (isEditing) return
-      hideBlockButton()
-    }
-
-    document.addEventListener('mousemove', handleMove)
-    bodyRoot.addEventListener('mouseleave', handleLeave)
-    document.addEventListener('scroll', handleScroll, true)
+    root.addEventListener('mouseleave', handleLeave)
 
     return () => {
-      document.removeEventListener('mousemove', handleMove)
-      bodyRoot.removeEventListener('mouseleave', handleLeave)
-      document.removeEventListener('scroll', handleScroll, true)
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId)
-      }
+      unregisterHoverController()
+      root.removeEventListener('mouseleave', handleLeave)
     }
   })
 

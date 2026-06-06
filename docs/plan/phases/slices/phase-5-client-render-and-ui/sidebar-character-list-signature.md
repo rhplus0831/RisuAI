@@ -3,6 +3,9 @@
 Phase: [5](../../phase-5-client-render-and-ui.md). Finding: L44. Runtime
 change.
 
+Status: complete; proof refreshed in
+[`phase-5-verification-refresh.md`](phase-5-verification-refresh.md).
+
 ## Scope
 
 Replace the sidebar character-list rebuild plus lodash deep compare with a
