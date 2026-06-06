@@ -23,6 +23,11 @@ const MAX_BULK_ASSET_SAVE_BYTES = 32 * 1024 * 1024
 const HTTP_STATUS_OK_MIN = 200
 const HTTP_STATUS_OK_MAX = 300
 
+interface ActiveZipAsset {
+  file: fflate.UnzipFile
+  bytesRead: number
+}
+
 export async function processZip(dataArray: Uint8Array): Promise<string> {
   const unzipped = await new Promise<fflate.Unzipped>((resolve, reject) => {
     fflate.unzip(dataArray, (err, data) => {
@@ -191,6 +196,8 @@ export class CharXImporter {
 
   // Temporary buffers for accumulating file chunks during streaming
   assetBuffers: { [key: string]: AppendableBuffer } = {}
+  private activeAssets: { [key: string]: ActiveZipAsset } = {}
+  private excludedFileNames: Set<string> = new Set()
 
   // Files excluded due to size limits (> MAX_ASSET_SIZE_BYTES)
   excludedFiles: string[] = []
@@ -344,12 +351,23 @@ export class CharXImporter {
    */
   #handleFile(file: fflate.UnzipFile) {
     const assetIndex = file.name
+    const originalSize = file.originalSize ?? 0
+    if (originalSize > MAX_ASSET_SIZE_BYTES) {
+      this.#markFileExcluded(assetIndex)
+      return
+    }
+
     this.assetBuffers[assetIndex] = new AppendableBuffer()
+    this.activeAssets[assetIndex] = {
+      file,
+      bytesRead: 0,
+    }
 
     file.ondata = (_err, dat, final) => this.#handleFileData(assetIndex, dat, final)
 
-    // Only process files smaller than MAX_ASSET_SIZE_BYTES (50MB)
-    if (file.originalSize ?? 0 < MAX_ASSET_SIZE_BYTES) {
+    // Only process files within MAX_ASSET_SIZE_BYTES (50MB); unknown sizes
+    // are guarded cumulatively while streaming.
+    if ((file.originalSize ?? 0) <= MAX_ASSET_SIZE_BYTES) {
       file.start()
     }
   }
@@ -359,6 +377,17 @@ export class CharXImporter {
    * Accumulates chunks into buffer until file is complete.
    */
   #handleFileData(fileName: string, data: Uint8Array, final: boolean) {
+    const activeAsset = this.activeAssets[fileName]
+    if (!activeAsset) {
+      return
+    }
+
+    activeAsset.bytesRead += data.byteLength
+    if (activeAsset.bytesRead > MAX_ASSET_SIZE_BYTES) {
+      this.#terminateOversizedFile(fileName, activeAsset)
+      return
+    }
+
     this.assetBuffers[fileName].append(data)
     if (final) {
       this.#handleFileComplete(fileName)
@@ -370,10 +399,15 @@ export class CharXImporter {
    * Routes files to appropriate handlers based on filename/extension.
    */
   #handleFileComplete(fileName: string) {
+    const activeAsset = this.activeAssets[fileName]
+    if (!activeAsset) {
+      return
+    }
+
     const assetData = this.assetBuffers[fileName].buffer
 
     if (assetData.byteLength > MAX_ASSET_SIZE_BYTES) {
-      this.excludedFiles.push(fileName)
+      this.#markFileExcluded(fileName)
     } else if (fileName === 'card.json') {
       this.cardData = new TextDecoder().decode(assetData)
     } else if (fileName === 'module.risum') {
@@ -389,6 +423,22 @@ export class CharXImporter {
     }
 
     delete this.assetBuffers[fileName]
+    delete this.activeAssets[fileName]
+  }
+
+  #terminateOversizedFile(fileName: string, activeAsset: ActiveZipAsset) {
+    delete this.activeAssets[fileName]
+    delete this.assetBuffers[fileName]
+    this.#markFileExcluded(fileName)
+    activeAsset.file.terminate()
+  }
+
+  #markFileExcluded(fileName: string) {
+    if (this.excludedFileNames.has(fileName)) {
+      return
+    }
+    this.excludedFileNames.add(fileName)
+    this.excludedFiles.push(fileName)
   }
 
   /**

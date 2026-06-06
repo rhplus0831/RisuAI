@@ -397,7 +397,27 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('M21', 7, 'Parenthesized guard + mid-stream byte cap in CharX import.'),
+  done(
+    'M21',
+    7,
+    'Parenthesized guard + mid-stream byte cap in CharX import.',
+    'src/ts/process/processzip.test.ts',
+    'M21: abandons an unknown-size CharX asset mid-stream and discards partial bytes',
+    [
+      {
+        testPath: 'src/ts/process/processzip.test.ts',
+        testName: 'M21: skips a known oversized CharX asset before allocating a buffer',
+      },
+      {
+        testPath: 'src/ts/process/processzip.test.ts',
+        testName: 'M21: ignores completion callbacks after terminating an oversized CharX asset',
+      },
+      {
+        testPath: 'src/ts/process/processzip.test.ts',
+        testName: 'M21: preserves representative valid CharX import output',
+      },
+    ],
+  ),
   planned('M22', 7, 'Remove the `.po` 100-line test cap.'),
   planned('L1', 8, 'Configurable/sliding durable deadline (pair with the non-durable twin).'),
   planned('L2', 8, 'Delete/TTL terminal finalization-retry rows.'),
@@ -1496,6 +1516,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M18',
       'M19',
       'M20',
+      'M21',
       'L3',
       'L4',
       'L5',

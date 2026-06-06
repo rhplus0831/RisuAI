@@ -1,7 +1,7 @@
 # Phase 7: Opt-In Subsystems (Root 5)
 
-Status: pending; M15/M16, M18/L48, M19, M20/L54/L57, L55/L56, and L58/L59
-slices done on 2026-06-06.
+Status: pending; M15/M16, M18/L48, M19, M20/L54/L57, M21, L55/L56, and
+L58/L59 slices done on 2026-06-06.
 Independent; order by pain. Largest finding count, but most fixes are small
 and local (several are one-liners).
 
@@ -39,7 +39,7 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
   [`slices/phase-7-opt-in-subsystems/mcp-internal-tool-index-and-filesystem-handle.md`](slices/phase-7-opt-in-subsystems/mcp-internal-tool-index-and-filesystem-handle.md)
   - cache internal MCP tool schemas, index tool dispatch, and preserve the
     FileSystem directory handle across client recreation.
-- M21:
+- M21 (done):
   [`slices/phase-7-opt-in-subsystems/charx-import-stream-cap.md`](slices/phase-7-opt-in-subsystems/charx-import-stream-cap.md)
   - fix the CharX size guard and enforce the asset byte cap while streaming.
 - M22/L52/L53:
@@ -100,7 +100,7 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
 
 ## Exit Criteria
 
-- [ ] M21: an oversized charx asset entry is abandoned mid-stream under the
+- [x] M21: an oversized charx asset entry is abandoned mid-stream under the
       cap (memory assertion); valid imports byte-identical.
 - [ ] M22: a >100-line .po file translates fully (fixture test).
 - [x] M19: a rejected bergamot translate recovers on the next call.
