@@ -15,8 +15,8 @@ v1 finding IDs are referenced as `v1-*`.
 - Confirmed findings: 102 total: 3 high, 22 medium, 59 low, 18 informational.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 3 M1-M4 and L4-L11, plus Phase
-  2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 7 M15 and M16 are
-  `DONE`; the rest are `PENDING`.
+  2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 7 M15, M16, M18, M19,
+  L48, L58, and L59 are `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -70,7 +70,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M15 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded Map (LRU) translate cache.                               | DONE    |
 | M16 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove html log; `DoingChat` gate for non-exp translators.       | DONE    |
 | M17 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed translate-detection memo.             | PENDING |
-| M18 | [7](phases/phase-7-opt-in-subsystems.md)         | Reuse/close `AudioContext` per playback.                         | PENDING |
+| M18 | [7](phases/phase-7-opt-in-subsystems.md)         | Reuse/close `AudioContext` per playback.                         | DONE    |
 | M19 | [7](phases/phase-7-opt-in-subsystems.md)         | Reset bergamot chain on rejection; reinit on wasm error.         | DONE    |
 | M20 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded deadlines for MCP request/handshake/SSE waits.           | PENDING |
 | M21 | [7](phases/phase-7-opt-in-subsystems.md)         | Parenthesized guard + mid-stream byte cap in CharX import.       | PENDING |
@@ -127,7 +127,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L45 | [6](phases/phase-6-bridges-lifecycle-network.md) | Capped exponential backoff + jitter for SSE reconnect.            | PENDING |
 | L46 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound `sseIdDone` (windowed dedup).                               | PENDING |
 | L47 | [6](phases/phase-6-bridges-lifecycle-network.md) | Remove the `fetchNative` body log.                                | PENDING |
-| L48 | [7](phases/phase-7-opt-in-subsystems.md)         | Translate once; cap HF TTS retries.                               | PENDING |
+| L48 | [7](phases/phase-7-opt-in-subsystems.md)         | Translate once; cap HF TTS retries.                               | DONE    |
 | L49 | [7](phases/phase-7-opt-in-subsystems.md)         | `decode()`/`complete` guard + onerror for inlay images.           | PENDING |
 | L50 | [7](phases/phase-7-opt-in-subsystems.md)         | LRU + revoke for `blobUrlCache`.                                  | PENDING |
 | L51 | [7](phases/phase-7-opt-in-subsystems.md)         | Single-pass PNG import (or value-free count pass).                | PENDING |

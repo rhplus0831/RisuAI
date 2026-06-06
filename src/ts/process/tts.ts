@@ -15,7 +15,75 @@ import {
   type AfterTTSResult,
 } from './ttsHooks'
 
-let sourceNode: AudioBufferSourceNode = null
+const HF_TTS_MAX_ATTEMPTS = 5
+const HF_TTS_MAX_TOTAL_RETRY_WAIT_MS = 120_000
+
+let audioContext: AudioContext | null = null
+let sourceNode: AudioBufferSourceNode | null = null
+let sourceNodeCleanup: (() => void) | null = null
+
+type DisconnectableAudioNode = Pick<AudioNode, 'disconnect'>
+
+async function getNetworkAudioContext(): Promise<AudioContext> {
+  if (!audioContext || audioContext.state === 'closed') {
+    audioContext = new AudioContext()
+  }
+
+  if (audioContext.state === 'suspended') {
+    await audioContext.resume()
+  }
+
+  return audioContext
+}
+
+function bindSourceLifecycle(
+  source: AudioBufferSourceNode,
+  nodes: DisconnectableAudioNode[],
+): () => void {
+  let released = false
+  const cleanup = () => {
+    if (released) return
+    released = true
+    source.onended = null
+    for (const node of nodes) {
+      try {
+        node.disconnect()
+      } catch {
+        // Some browsers throw when disconnecting an already-disconnected node.
+      }
+    }
+    if (sourceNode === source) {
+      sourceNode = null
+      sourceNodeCleanup = null
+    }
+  }
+
+  source.onended = cleanup
+  sourceNode = source
+  sourceNodeCleanup = cleanup
+  return cleanup
+}
+
+function startSource(source: AudioBufferSourceNode, nodes: DisconnectableAudioNode[]): void {
+  const cleanup = bindSourceLifecycle(source, nodes)
+  try {
+    source.start()
+  } catch (error) {
+    cleanup()
+    throw error
+  }
+}
+
+function huggingFaceRetryDelayMs(json: unknown): number | null {
+  if (!json || typeof json !== 'object') return null
+  const estimatedTime = Number((json as { estimated_time?: unknown }).estimated_time)
+  if (!Number.isFinite(estimatedTime) || estimatedTime <= 0) return null
+  return Math.ceil(estimatedTime * 1000)
+}
+
+function isJsonResponse(response: Response): boolean {
+  return response.headers.get('content-type')?.toLowerCase().includes('application/json') ?? false
+}
 
 /**
  * Run every registered TTS postprocessor hook against the audio bytes, honoring
@@ -73,12 +141,12 @@ async function playAudio(
   const processed = await runPostprocessorPipeline(audio, mimeType, ctx)
   if (processed.skip) return
 
-  const audioContext = new AudioContext()
+  const audioContext = await getNetworkAudioContext()
   const decoded = await audioContext.decodeAudioData(processed.audio)
-  sourceNode = audioContext.createBufferSource()
-  sourceNode.buffer = decoded
-  sourceNode.connect(audioContext.destination)
-  sourceNode.start()
+  const source = audioContext.createBufferSource()
+  source.buffer = decoded
+  source.connect(audioContext.destination)
+  startSource(source, [source])
 }
 
 export async function sayTTS(character: character, text: string) {
@@ -270,10 +338,13 @@ export async function sayTTS(character: character, text: string) {
         break
       }
       case 'huggingface': {
-        while (true) {
-          if (character.hfTTS.language !== 'en') {
-            text = await runTranslator(text, false, 'en', character.hfTTS.language)
-          }
+        const inputText =
+          character.hfTTS.language === 'en'
+            ? text
+            : await runTranslator(text, false, 'en', character.hfTTS.language)
+
+        let totalRetryWaitMs = 0
+        for (let attempt = 1; attempt <= HF_TTS_MAX_ATTEMPTS; attempt++) {
           const response = await fetch(
             `https://api-inference.huggingface.co/models/${character.hfTTS.model}`,
             {
@@ -283,20 +354,28 @@ export async function sayTTS(character: character, text: string) {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                inputs: text,
+                inputs: inputText,
               }),
             },
           )
 
-          if (
-            response.status === 503 &&
-            response.headers.get('content-type') === 'application/json'
-          ) {
+          if (response.status === 503 && isJsonResponse(response)) {
             const json = await response.json()
-            if (json.estimated_time) {
-              await sleep(json.estimated_time * 1000)
+            const retryDelayMs = huggingFaceRetryDelayMs(json)
+            const canRetry =
+              retryDelayMs !== null &&
+              attempt < HF_TTS_MAX_ATTEMPTS &&
+              totalRetryWaitMs + retryDelayMs <= HF_TTS_MAX_TOTAL_RETRY_WAIT_MS
+            if (canRetry) {
+              totalRetryWaitMs += retryDelayMs
+              await sleep(retryDelayMs)
               continue
             }
+            alertError(
+              language.errors.httpError +
+                `HuggingFace TTS model did not become ready after ${attempt} attempts`,
+            )
+            return
           } else if (response.status >= 400) {
             alertError(language.errors.httpError + `${await response.text()}`)
             return
@@ -312,6 +391,11 @@ export async function sayTTS(character: character, text: string) {
           }
           return
         }
+        alertError(
+          language.errors.httpError +
+            `HuggingFace TTS model did not become ready after ${HF_TTS_MAX_ATTEMPTS} attempts`,
+        )
+        return
       }
       case 'vits': {
         await runVITS(text, character.vits)
@@ -398,15 +482,15 @@ export async function sayTTS(character: character, text: string) {
               hookCtx,
             )
             if (!processed.skip) {
-              const audioContext = new AudioContext()
+              const audioContext = await getNetworkAudioContext()
               const decoded = await audioContext.decodeAudioData(processed.audio)
-              sourceNode = audioContext.createBufferSource()
-              sourceNode.buffer = decoded
+              const source = audioContext.createBufferSource()
+              source.buffer = decoded
               const gainNode = audioContext.createGain()
               gainNode.gain.value = volume
-              sourceNode.connect(gainNode)
+              source.connect(gainNode)
               gainNode.connect(audioContext.destination)
-              sourceNode.start()
+              startSource(source, [source, gainNode])
             }
           } else {
             await playAudio(response.data.buffer, mimeType, hookCtx)
@@ -466,8 +550,18 @@ export async function sayTTS(character: character, text: string) {
 export const oaiVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
 
 export function stopTTS() {
-  if (sourceNode) {
-    sourceNode.stop()
+  const activeSource = sourceNode
+  const cleanup = sourceNodeCleanup
+  if (activeSource) {
+    try {
+      activeSource.stop()
+    } finally {
+      cleanup?.()
+      if (sourceNode === activeSource) {
+        sourceNode = null
+        sourceNodeCleanup = null
+      }
+    }
   }
   if (speechSynthesis && SpeechSynthesisUtterance) {
     speechSynthesis.cancel()

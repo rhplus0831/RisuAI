@@ -1,6 +1,6 @@
 # Phase 7: Opt-In Subsystems (Root 5)
 
-Status: pending; M15/M16, M19, and L58/L59 slices done on 2026-06-06.
+Status: pending; M15/M16, M18/L48, M19, and L58/L59 slices done on 2026-06-06.
 Independent; order by pain. Largest finding count, but most fixes are small
 and local (several are one-liners).
 
@@ -26,10 +26,10 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
   - keep bergamot serialization without permanently poisoning the promise
     chain after a rejected translation; reset cached translator state after
     hard wasm/translator failures.
-- M18/L48:
+- M18/L48 (done):
   [`slices/phase-7-opt-in-subsystems/tts-context-and-hf-retry-bounds.md`](slices/phase-7-opt-in-subsystems/tts-context-and-hf-retry-bounds.md)
-  - reuse or close TTS `AudioContext`s and cap HuggingFace retry/translation
-    work.
+  - reuse TTS `AudioContext`s, release playback nodes, and cap HuggingFace
+    retry/translation work.
 - M20/L54/L57:
   [`slices/phase-7-opt-in-subsystems/mcp-deadlines-listeners-and-debug-logs.md`](slices/phase-7-opt-in-subsystems/mcp-deadlines-listeners-and-debug-logs.md)
   - add MCP request/handshake/SSE deadlines, remove unresolved listeners, and
@@ -103,14 +103,15 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
       cap (memory assertion); valid imports byte-identical.
 - [ ] M22: a >100-line .po file translates fully (fixture test).
 - [x] M19: a rejected bergamot translate recovers on the next call.
-- [ ] M18: repeated TTS playbacks hold at most one live AudioContext
+- [x] M18: repeated TTS playbacks hold at most one live AudioContext
       (counting assertion via a stubbed constructor).
+- [x] L48: HuggingFace TTS translates once and caps 503 retry attempts.
 - [x] M15: translate lookups are O(1) and the cache is bounded; M16:
       streaming with google auto-translate performs zero mid-stream
       translateHTML runs and zero html logs.
 - [ ] M20/L54: a hung MCP server fails the operation within the deadline,
       removes its listeners, and surfaces an error result.
-- [ ] L48-L53, L55-L59, K3: each has a focused behavior/counting test per
+- [ ] L49-L53, L55-L59, K3: each has a focused behavior/counting test per
       its target fix in the risk map.
 - [ ] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.

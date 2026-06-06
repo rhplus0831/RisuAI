@@ -2,6 +2,7 @@
 
 Phase: [7](../../phase-7-opt-in-subsystems.md). Findings: M18, L48. Runtime
 change.
+Status: done on 2026-06-06.
 
 ## Scope
 
@@ -56,13 +57,26 @@ behavior that does not construct an `AudioContext`.
 
 ## Done Criteria
 
-- Repeated TTS playbacks cannot grow live `AudioContext` instances without
+- [x] Repeated TTS playbacks cannot grow live `AudioContext` instances without
   bound.
-- `stopTTS()` stops playback and leaves no stale active source reference.
-- HuggingFace 503 retry handling translates once, caps attempts/wait, and
+- [x] `stopTTS()` stops playback and leaves no stale active source reference.
+- [x] HuggingFace 503 retry handling translates once, caps attempts/wait, and
   reports failure instead of hanging forever.
-- M18 and L48 v2 gate entries point at real focused tests and the risk-map rows
+- [x] M18 and L48 v2 gate entries point at real focused tests and the risk-map rows
   are `DONE`.
+
+## Focused Proof
+
+- `src/ts/process/tts.test.ts`:
+  `M18: repeated network TTS playbacks reuse one AudioContext and release ended sources`
+- `src/ts/process/tts.test.ts`:
+  `M18: gptsovits gain path reuses one AudioContext and releases its gain graph`
+- `src/ts/process/tts.test.ts`:
+  `M18: stopTTS stops the active source and clears stale playback refs`
+- `src/ts/process/tts.test.ts`:
+  `L48: caps HuggingFace 503 retries and reports failure`
+- `src/ts/process/tts.test.ts`:
+  `L48: translates non-English HuggingFace TTS text once across retries`
 
 ## Validation
 

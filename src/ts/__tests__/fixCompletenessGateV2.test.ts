@@ -346,7 +346,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     ],
   ),
   planned('M17', 5, 'Module-level content-keyed translate-detection memo.'),
-  planned('M18', 7, 'Reuse/close `AudioContext` per playback.'),
+  done(
+    'M18',
+    7,
+    'Reuse/close `AudioContext` per playback.',
+    'src/ts/process/tts.test.ts',
+    'M18: repeated network TTS playbacks reuse one AudioContext and release ended sources',
+    [
+      {
+        testPath: 'src/ts/process/tts.test.ts',
+        testName: 'M18: gptsovits gain path reuses one AudioContext and releases its gain graph',
+      },
+      {
+        testPath: 'src/ts/process/tts.test.ts',
+        testName: 'M18: stopTTS stops the active source and clears stale playback refs',
+      },
+    ],
+  ),
   done(
     'M19',
     7,
@@ -561,7 +577,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L45', 6, 'Capped exponential backoff + jitter for SSE reconnect.'),
   planned('L46', 6, 'Bound `sseIdDone` (windowed dedup).'),
   planned('L47', 6, 'Remove the `fetchNative` body log.'),
-  planned('L48', 7, 'Translate once; cap HF TTS retries.'),
+  done(
+    'L48',
+    7,
+    'Translate once; cap HF TTS retries.',
+    'src/ts/process/tts.test.ts',
+    'L48: caps HuggingFace 503 retries and reports failure',
+    [
+      {
+        testPath: 'src/ts/process/tts.test.ts',
+        testName: 'L48: translates non-English HuggingFace TTS text once across retries',
+      },
+    ],
+  ),
   planned('L49', 7, '`decode()`/`complete` guard + onerror for inlay images.'),
   planned('L50', 7, 'LRU + revoke for `blobUrlCache`.'),
   planned('L51', 7, 'Single-pass PNG import (or value-free count pass).'),
@@ -1392,6 +1420,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M6',
       'M15',
       'M16',
+      'M18',
       'M19',
       'L3',
       'L4',
@@ -1405,6 +1434,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L13',
       'L14',
       'L16',
+      'L48',
       'L58',
       'L59',
       'K1',
