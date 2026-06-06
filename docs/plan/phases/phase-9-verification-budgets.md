@@ -55,9 +55,9 @@ and K1-K4).
 
 ## Exit Criteria
 
-- [ ] Every scheduled ID is `DONE` in both the registry and the risk map (or
+- [x] Every scheduled ID is `DONE` in both the registry and the risk map (or
       explicitly re-gated with an owner-approved reason).
-- [ ] No `PLANNED` entries remain; the negative self-proof still passes.
+- [x] No `PLANNED` entries remain; the negative self-proof still passes.
 - [ ] Closing full run recorded in
       [`../latest-verification.md`](../latest-verification.md): `pnpm test`,
       `pnpm api:test`, `pnpm client-thinning:audit`, both TypeScript checks.
