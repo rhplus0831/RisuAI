@@ -359,8 +359,35 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'server/fastify/__tests__/lorebook.test.ts',
     'L5: normalizes base searchable messages once across recursive search passes',
   ),
-  planned('L6', 3, 'Memoize trigger/effect regexes; hoist transcript joins.'),
-  planned('L7', 3, 'Trigger-presence check before the `runTrigger` clones.'),
+  done(
+    'L6',
+    3,
+    'Memoize trigger/effect regexes; hoist transcript joins.',
+    'server/fastify/__tests__/triggers.test.ts',
+    'L6: reuses transcript windows across exists conditions and quick-search effects',
+    [
+      {
+        testPath: 'server/fastify/__tests__/triggers.test.ts',
+        testName: 'L6: invalidates transcript cache after trigger message mutations',
+      },
+      {
+        testPath: 'server/fastify/__tests__/triggers.test.ts',
+        testName:
+          'L6: reuses compiled regexes across trigger conditions and V2 effects',
+      },
+      {
+        testPath: 'server/fastify/__tests__/triggers.test.ts',
+        testName: 'L6: keeps malformed V2 regex fallback behavior with the cache enabled',
+      },
+    ],
+  ),
+  done(
+    'L7',
+    3,
+    'Trigger-presence check before the `runTrigger` clones.',
+    'server/fastify/__tests__/triggers.test.ts',
+    'L7: no-trigger run returns null before structured cloning inputs',
+  ),
   done(
     'L8',
     3,
@@ -1255,6 +1282,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L3',
       'L4',
       'L5',
+      'L6',
+      'L7',
       'L8',
       'L9',
       'L13',

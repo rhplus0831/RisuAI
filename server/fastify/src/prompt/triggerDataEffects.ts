@@ -7,6 +7,14 @@ import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { calcString } from '../../../../src/ts/process/infunctions'
 import { encodingForModel, tokenize } from './tokens.js'
 import type { TriggerVarEngine } from './triggerVars.js'
+import {
+  getCachedRegexDelimiter,
+  getCachedTriggerRegex,
+  getRecentTranscriptLower,
+  getRecentTranscriptRaw,
+  getRecentTranscriptStrictWords,
+  type TriggerRunCache,
+} from './triggerRunCache.js'
 
 /**
  * V2 trigger "safe data helper" leaf arms, extracted from the `runTrigger`
@@ -68,6 +76,8 @@ export interface V2DataEffectDeps {
   displayMode?: boolean
   /** Mutable per-run display/request state slot (7-9e). */
   displayState?: { data: string | undefined }
+  /** Per-run trigger hot-path cache (Phase 3 L6). */
+  triggerCache?: TriggerRunCache
 }
 
 export function applyV2DataEffect(
@@ -164,13 +174,18 @@ export function applyV2DataEffect(
       let result: string[]
       if (effect.delimiterType === 'regex') {
         try {
-          const regexMatch = delimiter.match(/^\/(.+)\/([gimuy]*)$/)
-          if (regexMatch) {
-            const [, pattern, flags] = regexMatch
-            result = source.split(new RegExp(pattern, flags))
-          } else {
-            result = source.split(new RegExp(delimiter))
-          }
+          const regex = deps.triggerCache
+            ? getCachedRegexDelimiter(deps.triggerCache, delimiter)
+            : (() => {
+                const regexMatch = delimiter.match(/^\/(.+)\/([gimuy]*)$/)
+                if (regexMatch) {
+                  const [, pattern, flags] = regexMatch
+                  return new RegExp(pattern, flags)
+                }
+                return new RegExp(delimiter)
+              })()
+          regex.lastIndex = 0
+          result = source.split(regex)
         } catch {
           result = [source]
         }
@@ -196,7 +211,10 @@ export function applyV2DataEffect(
           effect.replacementType === 'value',
         )
         const flags = resolve(effect.flags, effect.flagsType === 'value')
-        const regex = new RegExp(regexPattern, flags)
+        const regex = deps.triggerCache
+          ? getCachedTriggerRegex(deps.triggerCache, regexPattern, flags)
+          : new RegExp(regexPattern, flags)
+        regex.lastIndex = 0
         const result = source.replace(regex, (...args) => {
           const match = args[0] as string
           const groups = args.slice(1, -2) as string[]
@@ -517,7 +535,11 @@ export function applyV2DataEffect(
         const value = resolve(effect.value, effect.valueType === 'value')
         const regexPattern = resolve(effect.regex, effect.regexType === 'value')
         const flags = resolve(effect.flags, effect.flagsType === 'value')
-        engine.setVar(outVar, new RegExp(regexPattern, flags).test(value) ? '1' : '0')
+        const regex = deps.triggerCache
+          ? getCachedTriggerRegex(deps.triggerCache, regexPattern, flags)
+          : new RegExp(regexPattern, flags)
+        regex.lastIndex = 0
+        engine.setVar(outVar, regex.test(value) ? '1' : '0')
       } catch {
         engine.setVar(outVar, '0')
       }
@@ -531,17 +553,39 @@ export function applyV2DataEffect(
         engine.setVar(outVar, '0')
         return true
       }
-      const da = chat.message
-        .slice(0 - depth)
-        .map((v) => v.data)
-        .join(' ')
       let pass = false
       if (effect.condition === 'strict') {
-        pass = da.split(' ').includes(value)
+        pass = deps.triggerCache
+          ? getRecentTranscriptStrictWords(deps.triggerCache, chat, depth).has(value)
+          : chat.message
+              .slice(0 - depth)
+              .map((v) => v.data)
+              .join(' ')
+              .split(' ')
+              .includes(value)
       } else if (effect.condition === 'loose') {
-        pass = da.toLowerCase().includes(value.toLowerCase())
+        pass = deps.triggerCache
+          ? getRecentTranscriptLower(deps.triggerCache, chat, depth).includes(
+              value.toLowerCase(),
+            )
+          : chat.message
+              .slice(0 - depth)
+              .map((v) => v.data)
+              .join(' ')
+              .toLowerCase()
+              .includes(value.toLowerCase())
       } else if (effect.condition === 'regex') {
-        pass = new RegExp(value).test(da)
+        const da = deps.triggerCache
+          ? getRecentTranscriptRaw(deps.triggerCache, chat, depth)
+          : chat.message
+              .slice(0 - depth)
+              .map((v) => v.data)
+              .join(' ')
+        const regex = deps.triggerCache
+          ? getCachedTriggerRegex(deps.triggerCache, value, '')
+          : new RegExp(value)
+        regex.lastIndex = 0
+        pass = regex.test(da)
       }
       engine.setVar(outVar, pass ? '1' : '0')
       return true

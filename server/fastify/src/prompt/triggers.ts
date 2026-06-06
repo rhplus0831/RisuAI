@@ -15,6 +15,15 @@ import { encodingForModel, tokenize } from './tokens.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
 import { applyV2DataEffect } from './triggerDataEffects.js'
 import { expandVariables, type ExpandContext } from './variables.js'
+import {
+  createTriggerRunCache,
+  getCachedTriggerRegex,
+  getRecentTranscriptLower,
+  getRecentTranscriptRaw,
+  getRecentTranscriptStrictWords,
+  invalidateTriggerTranscriptCache,
+  type TriggerRunCache,
+} from './triggerRunCache.js'
 
 /**
  * Trigger model + runner shell, ported from the Svelte-bound `runTrigger` in
@@ -181,6 +190,7 @@ export interface TriggerRunArg {
   displayData?: string
   tempVars?: Record<string, string>
   triggerBudget?: TriggerExecutionBudget
+  triggerCache?: TriggerRunCache
 }
 
 /**
@@ -464,6 +474,7 @@ export function evaluateConditions(
   engine: TriggerVarEngine,
   chat: Chat,
   expand: (text: string) => string,
+  triggerCache?: TriggerRunCache,
 ): boolean {
   for (const condition of conditions) {
     let pass = true
@@ -514,16 +525,38 @@ export function evaluateConditions(
     } else if (condition.type === 'exists') {
       const conditionValue = expand(condition.value)
       const val = expand(conditionValue)
-      const da = chat.message
-        .slice(0 - condition.depth)
-        .map((v) => v.data)
-        .join(' ')
       if (condition.type2 === 'strict') {
-        pass = da.split(' ').includes(val)
+        pass = triggerCache
+          ? getRecentTranscriptStrictWords(triggerCache, chat, condition.depth).has(val)
+          : chat.message
+              .slice(0 - condition.depth)
+              .map((v) => v.data)
+              .join(' ')
+              .split(' ')
+              .includes(val)
       } else if (condition.type2 === 'loose') {
-        pass = da.toLowerCase().includes(val.toLowerCase())
+        pass = triggerCache
+          ? getRecentTranscriptLower(triggerCache, chat, condition.depth).includes(
+              val.toLowerCase(),
+            )
+          : chat.message
+              .slice(0 - condition.depth)
+              .map((v) => v.data)
+              .join(' ')
+              .toLowerCase()
+              .includes(val.toLowerCase())
       } else if (condition.type2 === 'regex') {
-        pass = new RegExp(val).test(da)
+        const da = triggerCache
+          ? getRecentTranscriptRaw(triggerCache, chat, condition.depth)
+          : chat.message
+              .slice(0 - condition.depth)
+              .map((v) => v.data)
+              .join(' ')
+        const regex = triggerCache
+          ? getCachedTriggerRegex(triggerCache, val, '')
+          : new RegExp(val)
+        regex.lastIndex = 0
+        pass = regex.test(da)
       }
     }
     if (!pass) {
@@ -560,6 +593,11 @@ export async function runTrigger(
   const budget =
     arg.triggerBudget ?? ctx.triggerBudget ?? createTriggerExecutionBudget()
   let recursiveCount = arg.recursiveCount ?? 0
+  const triggers = collectTriggers(char, ctx.modules)
+  if (triggers.length === 0) {
+    return null
+  }
+  const triggerCache = arg.triggerCache ?? createTriggerRunCache()
   const workingChar = arg.displayMode ? char : structuredClone(char)
   let stopSending = arg.stopSending ?? false
   const sendAIprompt = false
@@ -567,11 +605,6 @@ export async function runTrigger(
   let chat = arg.displayMode
     ? arg.chat
     : structuredClone(arg.chat ?? workingChar.chats[workingChar.chatPage])
-
-  const triggers = collectTriggers(workingChar, ctx.modules)
-  if (triggers.length === 0) {
-    return null
-  }
 
   const defaultVariables = parseKeyValue(workingChar.defaultVariables ?? '').concat(
     parseKeyValue(ctx.database.templateDefaultVariables ?? ''),
@@ -631,7 +664,15 @@ export async function runTrigger(
     if (shouldStopTriggerExecution(ctx, budget, 'before trigger conditions')) {
       return buildResult()
     }
-    if (!evaluateConditions(trigger.conditions ?? [], engine, chat, expand)) {
+    if (
+      !evaluateConditions(
+        trigger.conditions ?? [],
+        engine,
+        chat,
+        expand,
+        triggerCache,
+      )
+    ) {
       continue
     }
 
@@ -711,8 +752,10 @@ export async function runTrigger(
           const effectValue = expand(effect.value)
           if (effect.role === 'user') {
             chat.message.push({ role: 'user', data: effectValue })
+            invalidateTriggerTranscriptCache(triggerCache)
           } else if (effect.role === 'char') {
             chat.message.push({ role: 'char', data: effectValue })
+            invalidateTriggerTranscriptCache(triggerCache)
           }
           break
         }
@@ -725,6 +768,7 @@ export async function runTrigger(
           const start = Number(expand(effect.start))
           const end = Number(expand(effect.end))
           chat.message = chat.message.slice(start, end)
+          invalidateTriggerTranscriptCache(triggerCache)
           break
         }
         case 'modifychat': {
@@ -732,6 +776,7 @@ export async function runTrigger(
           const value = expand(effect.value)
           if (chat.message[index]) {
             chat.message[index].data = value
+            invalidateTriggerTranscriptCache(triggerCache)
           }
           break
         }
@@ -745,6 +790,7 @@ export async function runTrigger(
               stopSending,
               manualName: effect.value,
               triggerBudget: budget,
+              triggerCache,
             })
             if (r) {
               additonalSysPrompt = r.additonalSysPrompt
@@ -985,6 +1031,7 @@ export async function runTrigger(
               stopSending,
               manualName: effect.target,
               triggerBudget: budget,
+              triggerCache,
             })
             if (r) {
               additonalSysPrompt = r.additonalSysPrompt
@@ -1009,6 +1056,7 @@ export async function runTrigger(
             end = chat.message.length
           }
           chat.message = chat.message.slice(start, end)
+          invalidateTriggerTranscriptCache(triggerCache)
           break
         }
         case 'v2ModifyChat': {
@@ -1016,6 +1064,7 @@ export async function runTrigger(
           const value = resolve(effect.value, effect.valueType === 'value')
           if (chat.message[targetIndex]) {
             chat.message[targetIndex].data = value
+            invalidateTriggerTranscriptCache(triggerCache)
           }
           break
         }
@@ -1028,8 +1077,10 @@ export async function runTrigger(
           const value = resolve(effect.value, effect.valueType === 'value')
           if (effect.role === 'user') {
             chat.message.push({ role: 'user', data: value })
+            invalidateTriggerTranscriptCache(triggerCache)
           } else if (effect.role === 'char') {
             chat.message.push({ role: 'char', data: value })
+            invalidateTriggerTranscriptCache(triggerCache)
           }
           break
         }
@@ -1052,6 +1103,7 @@ export async function runTrigger(
             })
             chat = r.chat
             engine.setChat(chat)
+            invalidateTriggerTranscriptCache(triggerCache)
             if (r.stopSending) {
               stopSending = true
             }
@@ -1078,6 +1130,7 @@ export async function runTrigger(
             model: ctx.model,
             displayMode: arg.displayMode,
             displayState,
+            triggerCache,
           })
           break
         }

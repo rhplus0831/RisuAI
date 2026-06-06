@@ -16,6 +16,8 @@ import {
   type TriggerRunContext,
 } from '../src/prompt/triggers.js'
 import { createTriggerVarEngine } from '../src/prompt/triggerVars.js'
+import { applyV2DataEffect } from '../src/prompt/triggerDataEffects.js'
+import { createTriggerRunCache } from '../src/prompt/triggerRunCache.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 
 beforeAll(() => {
@@ -189,6 +191,19 @@ describe('Phase 7-9a runTrigger shell', () => {
     const char = makeChar({ triggerscript: [] })
     const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
     expect(result).toBeNull()
+  })
+
+  it('L7: no-trigger run returns null before structured cloning inputs', async () => {
+    const cloneSpy = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      const char = makeChar({ triggerscript: [] })
+      const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+
+      expect(result).toBeNull()
+      expect(cloneSpy).not.toHaveBeenCalled()
+    } finally {
+      cloneSpy.mockRestore()
+    }
   })
 
   it('returns a result (not null) even when no trigger matches the mode', async () => {
@@ -493,6 +508,29 @@ function triggerWithEffects(
   overrides: Partial<triggerscript> = {},
 ): triggerscript {
   return makeTrigger({ type: 'output', effect, ...overrides })
+}
+
+async function countRegexCompiles<T>(
+  fn: () => Promise<T>,
+): Promise<{ result: T; compiles: Map<string, number> }> {
+  const RealRegExp = globalThis.RegExp
+  const compiles = new Map<string, number>()
+  class CountingRegExp extends RealRegExp {
+    constructor(pattern: string | RegExp, flags?: string) {
+      super(pattern as string, flags)
+      const source = typeof pattern === 'string' ? pattern : pattern.source
+      const regexFlags = flags ?? (typeof pattern === 'string' ? '' : pattern.flags)
+      const key = `${source}/${regexFlags}`
+      compiles.set(key, (compiles.get(key) ?? 0) + 1)
+    }
+  }
+  ;(globalThis as { RegExp: RegExpConstructor }).RegExp =
+    CountingRegExp as unknown as RegExpConstructor
+  try {
+    return { result: await fn(), compiles }
+  } finally {
+    ;(globalThis as { RegExp: RegExpConstructor }).RegExp = RealRegExp
+  }
 }
 
 describe('Phase 7-9c deterministic V1 effects', () => {
@@ -858,6 +896,254 @@ describe('H1 trigger budget and abort', () => {
     } finally {
       debug.mockRestore()
     }
+  })
+})
+
+describe('Phase 3 L6 trigger transcript and regex cache', () => {
+  it('L6: reuses transcript windows across exists conditions and quick-search effects', () => {
+    const cache = createTriggerRunCache()
+    const engine = makeEngine()
+    const char = makeChar()
+    const chat = makeChat({
+      message: [
+        { role: 'user', data: 'alpha beta' },
+        { role: 'char', data: 'quick Needle42' },
+      ] as never,
+    })
+    const sliceSpy = vi.spyOn(chat.message, 'slice')
+
+    expect(
+      evaluateConditions(
+        [
+          cond({ type: 'exists', value: 'quick', type2: 'strict', depth: 2 }),
+          cond({ type: 'exists', value: 'needle', type2: 'loose', depth: 2 }),
+        ],
+        engine,
+        chat,
+        identityExpand,
+        cache,
+      ),
+    ).toBe(true)
+
+    applyV2DataEffect(
+      eff({
+        type: 'v2QuickSearchChat',
+        valueType: 'value',
+        value: 'beta',
+        depthType: 'value',
+        depth: '2',
+        condition: 'strict',
+        outputVar: 'qs1',
+      }),
+      { engine, expand: identityExpand, chat, char, triggerCache: cache },
+    )
+    applyV2DataEffect(
+      eff({
+        type: 'v2QuickSearchChat',
+        valueType: 'value',
+        value: 'needle',
+        depthType: 'value',
+        depth: '2',
+        condition: 'loose',
+        outputVar: 'qs2',
+      }),
+      { engine, expand: identityExpand, chat, char, triggerCache: cache },
+    )
+
+    expect(sliceSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('L6: invalidates transcript cache after trigger message mutations', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({
+            type: 'v2QuickSearchChat',
+            valueType: 'value',
+            value: 'old',
+            depthType: 'value',
+            depth: '1',
+            condition: 'strict',
+            outputVar: 'before',
+          }),
+          eff({
+            type: 'v2ModifyChat',
+            indexType: 'value',
+            index: '0',
+            valueType: 'value',
+            value: 'new token',
+          }),
+          eff({
+            type: 'v2QuickSearchChat',
+            valueType: 'value',
+            value: 'old',
+            depthType: 'value',
+            depth: '1',
+            condition: 'strict',
+            outputVar: 'afterOld',
+          }),
+          eff({
+            type: 'v2QuickSearchChat',
+            valueType: 'value',
+            value: 'new',
+            depthType: 'value',
+            depth: '1',
+            condition: 'strict',
+            outputVar: 'afterNew',
+          }),
+        ]),
+      ],
+    })
+    const chat = makeChat({ message: [{ role: 'char', data: 'old token' }] as never })
+
+    const result = await runTrigger(ctx, char, 'output', { chat })
+
+    expect(result?.chat.scriptstate?.['$before']).toBe('1')
+    expect(result?.chat.scriptstate?.['$afterOld']).toBe('0')
+    expect(result?.chat.scriptstate?.['$afterNew']).toBe('1')
+  })
+
+  it('L6: reuses compiled regexes across trigger conditions and V2 effects', async () => {
+    const char = makeChar({
+      triggerscript: [
+        makeTrigger({
+          type: 'output',
+          conditions: [
+            cond({ type: 'exists', value: 'needle\\d', type2: 'regex', depth: 1 }),
+            cond({ type: 'exists', value: 'needle\\d', type2: 'regex', depth: 1 }),
+          ],
+          effect: [
+            eff({
+              type: 'v2RegexTest',
+              valueType: 'value',
+              value: 'hello l6-world',
+              regexType: 'value',
+              regex: 'l6-w[a-z]+',
+              flagsType: 'value',
+              flags: 'g',
+              outputVar: 'hit1',
+            }),
+            eff({
+              type: 'v2RegexTest',
+              valueType: 'value',
+              value: 'hello l6-world',
+              regexType: 'value',
+              regex: 'l6-w[a-z]+',
+              flagsType: 'value',
+              flags: 'g',
+              outputVar: 'hit2',
+            }),
+            eff({
+              type: 'v2ReplaceString',
+              sourceType: 'value',
+              source: 'l6-a1 l6-a2',
+              regexType: 'value',
+              regex: 'l6-a(\\d)',
+              resultType: 'value',
+              result: '[$1]',
+              replacementType: 'value',
+              replacement: '',
+              flagsType: 'value',
+              flags: 'g',
+              outputVar: 'rep1',
+            }),
+            eff({
+              type: 'v2ReplaceString',
+              sourceType: 'value',
+              source: 'l6-a1 l6-a2',
+              regexType: 'value',
+              regex: 'l6-a(\\d)',
+              resultType: 'value',
+              result: '[$1]',
+              replacementType: 'value',
+              replacement: '',
+              flagsType: 'value',
+              flags: 'g',
+              outputVar: 'rep2',
+            }),
+            eff({
+              type: 'v2SplitString',
+              sourceType: 'value',
+              source: 'a,b;c',
+              delimiterType: 'regex',
+              delimiter: '/[,;]/g',
+              outputVar: 'split1',
+            }),
+            eff({
+              type: 'v2SplitString',
+              sourceType: 'value',
+              source: 'a,b;c',
+              delimiterType: 'regex',
+              delimiter: '/[,;]/g',
+              outputVar: 'split2',
+            }),
+          ],
+        }),
+      ],
+    })
+    const chat = makeChat({ message: [{ role: 'char', data: 'needle7' }] as never })
+
+    const { result, compiles } = await countRegexCompiles(() =>
+      runTrigger(ctx, char, 'output', { chat }),
+    )
+
+    expect(result?.chat.scriptstate?.['$hit1']).toBe('1')
+    expect(result?.chat.scriptstate?.['$hit2']).toBe('1')
+    expect(result?.chat.scriptstate?.['$rep1']).toBe('[1] [2]')
+    expect(result?.chat.scriptstate?.['$rep2']).toBe('[1] [2]')
+    expect(result?.chat.scriptstate?.['$split1']).toBe('["a","b","c"]')
+    expect(result?.chat.scriptstate?.['$split2']).toBe('["a","b","c"]')
+    expect(compiles.get('needle\\d/')).toBe(1)
+    expect(compiles.get('l6-w[a-z]+/g')).toBe(1)
+    expect(compiles.get('l6-a(\\d)/g')).toBe(1)
+    expect(compiles.get('[,;]/g')).toBe(1)
+  })
+
+  it('L6: keeps malformed V2 regex fallback behavior with the cache enabled', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({
+            type: 'v2RegexTest',
+            valueType: 'value',
+            value: 'abc',
+            regexType: 'value',
+            regex: '[',
+            flagsType: 'value',
+            flags: '',
+            outputVar: 'test',
+          }),
+          eff({
+            type: 'v2ReplaceString',
+            sourceType: 'value',
+            source: 'abc',
+            regexType: 'value',
+            regex: '[',
+            resultType: 'value',
+            result: '$0',
+            replacementType: 'value',
+            replacement: 'x',
+            flagsType: 'value',
+            flags: '',
+            outputVar: 'replace',
+          }),
+          eff({
+            type: 'v2SplitString',
+            sourceType: 'value',
+            source: 'a[b',
+            delimiterType: 'regex',
+            delimiter: '[',
+            outputVar: 'split',
+          }),
+        ]),
+      ],
+    })
+
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+
+    expect(result?.chat.scriptstate?.['$test']).toBe('0')
+    expect(result?.chat.scriptstate?.['$replace']).toBe('abc')
+    expect(result?.chat.scriptstate?.['$split']).toBe('["a[b"]')
   })
 })
 
