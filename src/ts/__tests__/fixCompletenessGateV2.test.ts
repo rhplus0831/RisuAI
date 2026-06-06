@@ -628,8 +628,37 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L55', 7, 'Cache internal MCP tool lists; name->client index.'),
-  planned('L56', 7, 'Persist the FS directory handle across recreate.'),
+  done(
+    'L55',
+    7,
+    'Cache internal MCP tool lists; name->client index.',
+    'src/ts/process/mcp/mcp.test.ts',
+    'L55: dispatch builds the tool-name index once and reuses it for later calls',
+    [
+      {
+        testPath: 'src/ts/process/mcp/mcp.test.ts',
+        testName: 'L55: rebuilds the dispatch index when MCP initialization inputs change',
+      },
+      {
+        testPath: 'src/ts/process/mcp/internalClients.test.ts',
+        testName:
+          'L55: FileSystem and Google Search return mutation-safe copies of static tool schemas',
+      },
+    ],
+  ),
+  done(
+    'L56',
+    7,
+    'Persist the FS directory handle across recreate.',
+    'src/ts/process/mcp/internalClients.test.ts',
+    'L56: reuses a valid directory handle across FileSystem client recreation',
+    [
+      {
+        testPath: 'src/ts/process/mcp/internalClients.test.ts',
+        testName: 'L56: prompts again only after the stored directory handle becomes invalid',
+      },
+    ],
+  ),
   done(
     'L57',
     7,
@@ -1481,6 +1510,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L16',
       'L48',
       'L54',
+      'L55',
+      'L56',
       'L57',
       'L58',
       'L59',

@@ -2,6 +2,23 @@
 
 import type { MCPTool, RPCToolCallContent } from './mcplib'
 
+export function cloneMCPTools(tools: readonly MCPTool[]): MCPTool[] {
+  return tools.map((tool) => ({
+    ...tool,
+    inputSchema: cloneJsonValue(tool.inputSchema),
+    ...(tool.annotations === undefined
+      ? {}
+      : {
+          annotations: cloneJsonValue(tool.annotations),
+        }),
+  }))
+}
+
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 //template for MCPClient-like classes that can be used in the MCP system
 //Original MCPClient is located in src/ts/process/mcp/mcplib.ts
 

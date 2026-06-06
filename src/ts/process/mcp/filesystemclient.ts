@@ -1,8 +1,282 @@
-import { MCPClientLike } from './internalmcp'
+import { cloneMCPTools, MCPClientLike } from './internalmcp'
 import type { MCPTool, RPCToolCallContent } from './mcplib'
 
+const FILE_SYSTEM_TOOLS: MCPTool[] = [
+  {
+    name: 'fs_read_file',
+    description: 'Read contents of a file (supports text files, pdf, images)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Path to the file relative to selected directory',
+        },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'fs_write_file',
+    description: 'Write contents to a file',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Path to the file relative to selected directory',
+        },
+        content: {
+          type: 'string',
+          description: 'Content to write to the file',
+        },
+      },
+      required: ['path', 'content'],
+    },
+  },
+  {
+    name: 'fs_list_directory',
+    description: 'List contents of a directory',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Path to the directory relative to selected directory (empty for root)',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'fs_create_directory',
+    description: 'Create a new directory',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Path to the directory to create relative to selected directory',
+        },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'fs_delete_file',
+    description: 'Delete a file',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Path to the file to delete relative to selected directory',
+        },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'fs_search_files',
+    description: 'Search for files by name pattern or content',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'Search pattern (supports glob patterns like *.js, test*)',
+        },
+        content: {
+          type: 'string',
+          description: 'Search for files containing this text',
+        },
+        path: {
+          type: 'string',
+          description: 'Directory to search in (default: root)',
+        },
+        maxDepth: {
+          type: 'number',
+          description: 'Maximum depth to search (default: 10)',
+        },
+        caseSensitive: {
+          type: 'boolean',
+          description: 'Case sensitive search (default: false)',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'fs_copy_file',
+    description: 'Copy a file to another location',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: {
+          type: 'string',
+          description: 'Source file path',
+        },
+        destination: {
+          type: 'string',
+          description: 'Destination file path',
+        },
+      },
+      required: ['source', 'destination'],
+    },
+  },
+  {
+    name: 'fs_move_file',
+    description: 'Move/rename a file',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: {
+          type: 'string',
+          description: 'Source file path',
+        },
+        destination: {
+          type: 'string',
+          description: 'Destination file path',
+        },
+      },
+      required: ['source', 'destination'],
+    },
+  },
+  {
+    name: 'fs_get_file_info',
+    description: 'Get detailed information about a file',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Path to the file',
+        },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'fs_watch_directory',
+    description: 'Watch a directory for changes',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Directory to watch (default: root)',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'fs_find_duplicates',
+    description: 'Find duplicate files by content or name',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Directory to search in (default: root)',
+        },
+        byContent: {
+          type: 'boolean',
+          description: 'Compare by content hash (default: false, compares by name)',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'fs_tree_view',
+    description: 'Get a tree view of the directory structure',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Root path for tree view (default: root)',
+        },
+        maxDepth: {
+          type: 'number',
+          description: 'Maximum depth to display (default: 5)',
+        },
+        showHidden: {
+          type: 'boolean',
+          description: 'Show hidden files (default: false)',
+        },
+      },
+      required: [],
+    },
+  },
+]
+
+const DIRECTORY_PERMISSION_DENIED = 'Directory access permission was denied.'
+let persistedDirectoryHandle: FileSystemDirectoryHandle | null = null
+
+export function clearFileSystemDirectoryHandleForTests() {
+  persistedDirectoryHandle = null
+}
+
+async function getReusablePersistedDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
+  if (!persistedDirectoryHandle) return null
+
+  try {
+    await ensureDirectoryPermission(persistedDirectoryHandle)
+    return persistedDirectoryHandle
+  } catch (error) {
+    if (isInvalidFileSystemHandleError(error)) {
+      persistedDirectoryHandle = null
+      return null
+    }
+    throw error
+  }
+}
+
+async function ensureDirectoryPermission(handle: FileSystemDirectoryHandle): Promise<void> {
+  const permissionHandle = handle as FileSystemDirectoryHandle & {
+    queryPermission?: (descriptor: { mode: 'readwrite' }) => Promise<PermissionState>
+    requestPermission?: (descriptor: { mode: 'readwrite' }) => Promise<PermissionState>
+  }
+
+  if (!permissionHandle.queryPermission) return
+
+  let permission = await permissionHandle.queryPermission({ mode: 'readwrite' })
+  if (permission === 'granted') return
+
+  if (permissionHandle.requestPermission) {
+    permission = await permissionHandle.requestPermission({ mode: 'readwrite' })
+  }
+
+  if (permission !== 'granted') {
+    throw new Error(DIRECTORY_PERMISSION_DENIED)
+  }
+}
+
+function isInvalidFileSystemHandleError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return error.name === 'NotFoundError' || error.name === 'InvalidStateError'
+}
+
+function formatDirectorySelectionError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'Directory selection cancelled or failed. Please try again.'
+  }
+  if (error.message === DIRECTORY_PERMISSION_DENIED) {
+    return DIRECTORY_PERMISSION_DENIED
+  }
+  if (error.name === 'AbortError') {
+    return 'Directory selection cancelled. Please try again.'
+  }
+  if (error.message) {
+    return `Directory selection failed: ${error.message}`
+  }
+  return 'Directory selection cancelled or failed. Please try again.'
+}
+
 export class FileSystemClient extends MCPClientLike {
-  private directoryHandle: FileSystemDirectoryHandle | null = null
+  private directoryHandle: FileSystemDirectoryHandle | null = persistedDirectoryHandle
   private initialized: boolean = false
 
   constructor() {
@@ -27,228 +301,28 @@ export class FileSystemClient extends MCPClientLike {
       )
     }
 
+    const reusableHandle = await getReusablePersistedDirectoryHandle()
+    if (reusableHandle) {
+      this.directoryHandle = reusableHandle
+      return
+    }
+
     try {
-      this.directoryHandle = await (window as any).showDirectoryPicker()
-      if (!this.directoryHandle) {
+      const directoryHandle = await (window as any).showDirectoryPicker()
+      if (!directoryHandle) {
         throw new Error('Directory selection was cancelled or failed.')
       }
-      console.log(`FileSystemClient: Selected directory: ${this.directoryHandle.name}`)
+      await ensureDirectoryPermission(directoryHandle)
+      persistedDirectoryHandle = directoryHandle
+      this.directoryHandle = directoryHandle
+      console.log(`FileSystemClient: Selected directory: ${directoryHandle.name}`)
     } catch (error) {
-      throw new Error('Directory selection cancelled or failed. Please try again.')
+      throw new Error(formatDirectorySelectionError(error))
     }
   }
 
   async getToolList(): Promise<MCPTool[]> {
-    return [
-      {
-        name: 'fs_read_file',
-        description: 'Read contents of a file (supports text files, pdf, images)',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path to the file relative to selected directory',
-            },
-          },
-          required: ['path'],
-        },
-      },
-      {
-        name: 'fs_write_file',
-        description: 'Write contents to a file',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path to the file relative to selected directory',
-            },
-            content: {
-              type: 'string',
-              description: 'Content to write to the file',
-            },
-          },
-          required: ['path', 'content'],
-        },
-      },
-      {
-        name: 'fs_list_directory',
-        description: 'List contents of a directory',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path to the directory relative to selected directory (empty for root)',
-            },
-          },
-          required: [],
-        },
-      },
-      {
-        name: 'fs_create_directory',
-        description: 'Create a new directory',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path to the directory to create relative to selected directory',
-            },
-          },
-          required: ['path'],
-        },
-      },
-      {
-        name: 'fs_delete_file',
-        description: 'Delete a file',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path to the file to delete relative to selected directory',
-            },
-          },
-          required: ['path'],
-        },
-      },
-      {
-        name: 'fs_search_files',
-        description: 'Search for files by name pattern or content',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            pattern: {
-              type: 'string',
-              description: 'Search pattern (supports glob patterns like *.js, test*)',
-            },
-            content: {
-              type: 'string',
-              description: 'Search for files containing this text',
-            },
-            path: {
-              type: 'string',
-              description: 'Directory to search in (default: root)',
-            },
-            maxDepth: {
-              type: 'number',
-              description: 'Maximum depth to search (default: 10)',
-            },
-            caseSensitive: {
-              type: 'boolean',
-              description: 'Case sensitive search (default: false)',
-            },
-          },
-          required: [],
-        },
-      },
-      {
-        name: 'fs_copy_file',
-        description: 'Copy a file to another location',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            source: {
-              type: 'string',
-              description: 'Source file path',
-            },
-            destination: {
-              type: 'string',
-              description: 'Destination file path',
-            },
-          },
-          required: ['source', 'destination'],
-        },
-      },
-      {
-        name: 'fs_move_file',
-        description: 'Move/rename a file',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            source: {
-              type: 'string',
-              description: 'Source file path',
-            },
-            destination: {
-              type: 'string',
-              description: 'Destination file path',
-            },
-          },
-          required: ['source', 'destination'],
-        },
-      },
-      {
-        name: 'fs_get_file_info',
-        description: 'Get detailed information about a file',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path to the file',
-            },
-          },
-          required: ['path'],
-        },
-      },
-      {
-        name: 'fs_watch_directory',
-        description: 'Watch a directory for changes',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Directory to watch (default: root)',
-            },
-          },
-          required: [],
-        },
-      },
-      {
-        name: 'fs_find_duplicates',
-        description: 'Find duplicate files by content or name',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Directory to search in (default: root)',
-            },
-            byContent: {
-              type: 'boolean',
-              description: 'Compare by content hash (default: false, compares by name)',
-            },
-          },
-          required: [],
-        },
-      },
-      {
-        name: 'fs_tree_view',
-        description: 'Get a tree view of the directory structure',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Root path for tree view (default: root)',
-            },
-            maxDepth: {
-              type: 'number',
-              description: 'Maximum depth to display (default: 5)',
-            },
-            showHidden: {
-              type: 'boolean',
-              description: 'Show hidden files (default: false)',
-            },
-          },
-          required: [],
-        },
-      },
-    ]
+    return cloneMCPTools(FILE_SYSTEM_TOOLS)
   }
 
   async callTool(toolName: string, args: any): Promise<RPCToolCallContent[]> {

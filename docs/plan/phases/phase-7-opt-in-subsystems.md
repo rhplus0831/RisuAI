@@ -1,7 +1,7 @@
 # Phase 7: Opt-In Subsystems (Root 5)
 
-Status: pending; M15/M16, M18/L48, M19, M20/L54/L57, and L58/L59 slices done
-on 2026-06-06.
+Status: pending; M15/M16, M18/L48, M19, M20/L54/L57, L55/L56, and L58/L59
+slices done on 2026-06-06.
 Independent; order by pain. Largest finding count, but most fixes are small
 and local (several are one-liners).
 
@@ -35,7 +35,7 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
   [`slices/phase-7-opt-in-subsystems/mcp-deadlines-listeners-and-debug-logs.md`](slices/phase-7-opt-in-subsystems/mcp-deadlines-listeners-and-debug-logs.md)
   - add MCP request/handshake/SSE deadlines, remove unresolved listeners, and
     gate MCP debug logs.
-- L55/L56:
+- L55/L56 (done):
   [`slices/phase-7-opt-in-subsystems/mcp-internal-tool-index-and-filesystem-handle.md`](slices/phase-7-opt-in-subsystems/mcp-internal-tool-index-and-filesystem-handle.md)
   - cache internal MCP tool schemas, index tool dispatch, and preserve the
     FileSystem directory handle across client recreation.
@@ -112,8 +112,13 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
       translateHTML runs and zero html logs.
 - [x] M20/L54: a hung MCP server fails the operation within the deadline,
       removes its listeners, and surfaces an error result.
-- [ ] L49-L53, L55, L56, K3: each has a focused behavior/counting test per
+- [ ] L49-L53, K3: each has a focused behavior/counting test per
       its target fix in the risk map.
+- [x] L55: internal MCP static tool schemas are mutation-safe and `callMCPTool`
+      reuses the indexed name-to-client dispatch cache while preserving
+      duplicate-name winner order.
+- [x] L56: FileSystem MCP client recreation reuses a valid stored directory
+      handle and prompts again only after the stored handle is invalid.
 - [ ] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 

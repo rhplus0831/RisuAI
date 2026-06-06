@@ -6,6 +6,9 @@ const alertMocks = vi.hoisted(() => ({
   alertInput: vi.fn(),
   alertNormal: vi.fn(),
 }))
+const moduleMocks = vi.hoisted(() => ({
+  mcps: [] as string[],
+}))
 
 vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/platform')>()
@@ -21,7 +24,7 @@ vi.mock('../../storage/fastifyStorage', () => ({
 
 vi.mock('../modules', async (importActual) => {
   const actual = await importActual<typeof import('../modules')>()
-  return { ...actual, getModuleMcps: () => [] }
+  return { ...actual, getModuleMcps: () => [...moduleMocks.mcps] }
 })
 
 vi.mock('src/ts/alert', async (importActual) => {
@@ -38,7 +41,8 @@ vi.mock('src/ts/alert', async (importActual) => {
 import { clearCachedServerCommandRevision, type CommandEvent } from '../../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
 import { DBState } from '../../stores.svelte'
-import { callOnlyMCPs, importMCPModule, MCPs, persistMCPRefreshToken } from './mcp'
+import { callMCPTool, callOnlyMCPs, importMCPModule, MCPs, persistMCPRefreshToken } from './mcp'
+import type { MCPTool } from './mcplib'
 import { registeredCustomPluginMCPs, registerMCPModule } from './pluginmcp'
 
 interface CapturedFetch {
@@ -96,9 +100,32 @@ function clearMCPRuntimeState() {
   registeredCustomPluginMCPs.clear()
 }
 
+function toolFixture(name: string): MCPTool {
+  return {
+    name,
+    description: `Tool fixture for ${name}`,
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  }
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 beforeEach(() => {
   clearCachedServerCommandRevision()
   vi.unstubAllGlobals()
+  moduleMocks.mcps = []
   alertMocks.alertConfirm.mockReset()
   alertMocks.alertError.mockReset()
   alertMocks.alertInput.mockReset()
@@ -249,5 +276,188 @@ describe('MCP module import logging', () => {
       }),
     )
     expect(logSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('MCP indexed tool dispatch', () => {
+  it('L55: dispatch builds the tool-name index once and reuses it for later calls', async () => {
+    const firstIdentifier = 'plugin:l55-index-first'
+    const secondIdentifier = 'plugin:l55-index-second'
+    const firstGetToolList = vi.fn(async () => [
+      toolFixture('shared_tool'),
+      toolFixture('first_only'),
+    ])
+    const secondGetToolList = vi.fn(async () => [
+      toolFixture('shared_tool'),
+      toolFixture('second_only'),
+    ])
+    const firstCallTool = vi.fn(async (toolName: string) => [
+      { type: 'text' as const, text: `first:${toolName}` },
+    ])
+    const secondCallTool = vi.fn(async (toolName: string) => [
+      { type: 'text' as const, text: `second:${toolName}` },
+    ])
+
+    await registerMCPModule(
+      {
+        identifier: firstIdentifier,
+        name: 'L55 First MCP',
+        version: '1.0.0',
+        description: 'First duplicate-name MCP fixture.',
+      },
+      firstGetToolList,
+      firstCallTool,
+    )
+    await registerMCPModule(
+      {
+        identifier: secondIdentifier,
+        name: 'L55 Second MCP',
+        version: '1.0.0',
+        description: 'Second duplicate-name MCP fixture.',
+      },
+      secondGetToolList,
+      secondCallTool,
+    )
+    moduleMocks.mcps = [firstIdentifier, secondIdentifier]
+
+    await expect(callMCPTool('shared_tool', {})).resolves.toEqual([
+      { type: 'text', text: 'first:shared_tool' },
+    ])
+    await expect(callMCPTool('second_only', {})).resolves.toEqual([
+      { type: 'text', text: 'second:second_only' },
+    ])
+
+    expect(firstGetToolList).toHaveBeenCalledTimes(1)
+    expect(secondGetToolList).toHaveBeenCalledTimes(1)
+    expect(firstCallTool).toHaveBeenCalledTimes(1)
+    expect(secondCallTool).toHaveBeenCalledTimes(1)
+  })
+
+  it('L55: rebuilds the dispatch index when MCP initialization inputs change', async () => {
+    const firstIdentifier = 'plugin:l55-rebuild-first'
+    const secondIdentifier = 'plugin:l55-rebuild-second'
+    const firstGetToolList = vi.fn(async () => [toolFixture('first_tool')])
+    const secondGetToolList = vi.fn(async () => [toolFixture('second_tool')])
+    const firstCallTool = vi.fn(async (toolName: string) => [
+      { type: 'text' as const, text: `first:${toolName}` },
+    ])
+    const secondCallTool = vi.fn(async (toolName: string) => [
+      { type: 'text' as const, text: `second:${toolName}` },
+    ])
+
+    await registerMCPModule(
+      {
+        identifier: firstIdentifier,
+        name: 'L55 Rebuild First MCP',
+        version: '1.0.0',
+        description: 'Initial MCP fixture.',
+      },
+      firstGetToolList,
+      firstCallTool,
+    )
+    await registerMCPModule(
+      {
+        identifier: secondIdentifier,
+        name: 'L55 Rebuild Second MCP',
+        version: '1.0.0',
+        description: 'Added MCP fixture.',
+      },
+      secondGetToolList,
+      secondCallTool,
+    )
+
+    moduleMocks.mcps = [firstIdentifier]
+    await expect(callMCPTool('first_tool', {})).resolves.toEqual([
+      { type: 'text', text: 'first:first_tool' },
+    ])
+    expect(firstGetToolList).toHaveBeenCalledTimes(1)
+
+    moduleMocks.mcps = [firstIdentifier, secondIdentifier]
+    await expect(callMCPTool('second_tool', {})).resolves.toEqual([
+      { type: 'text', text: 'second:second_tool' },
+    ])
+    await expect(callMCPTool('second_tool', {})).resolves.toEqual([
+      { type: 'text', text: 'second:second_tool' },
+    ])
+
+    expect(firstGetToolList).toHaveBeenCalledTimes(2)
+    expect(secondGetToolList).toHaveBeenCalledTimes(1)
+    expect(secondCallTool).toHaveBeenCalledTimes(2)
+  })
+
+  it('L55: ignores a stale in-flight dispatch index build before initialization cleanup', async () => {
+    const oldIdentifier = 'plugin:l55-stale-old'
+    const newIdentifier = 'plugin:l55-stale-new'
+    const oldToolList = createDeferred<MCPTool[]>()
+    const oldGetToolList = vi.fn(() => oldToolList.promise)
+    const newGetToolList = vi.fn(async () => [toolFixture('new_tool')])
+    const oldCallTool = vi.fn(async (toolName: string) => [
+      { type: 'text' as const, text: `old:${toolName}` },
+    ])
+    const newCallTool = vi.fn(async (toolName: string) => [
+      { type: 'text' as const, text: `new:${toolName}` },
+    ])
+
+    await registerMCPModule(
+      {
+        identifier: oldIdentifier,
+        name: 'L55 Stale Old MCP',
+        version: '1.0.0',
+        description: 'Slow MCP fixture removed while its tool index is building.',
+      },
+      oldGetToolList,
+      oldCallTool,
+    )
+    await registerMCPModule(
+      {
+        identifier: newIdentifier,
+        name: 'L55 Stale New MCP',
+        version: '1.0.0',
+        description: 'Replacement MCP fixture.',
+      },
+      newGetToolList,
+      newCallTool,
+    )
+    const newClient = registeredCustomPluginMCPs.get(newIdentifier)
+    if (!newClient) throw new Error('Expected replacement MCP test client to be registered')
+    const newHandshake = createDeferred<Awaited<ReturnType<typeof newClient.checkHandshake>>>()
+    vi.spyOn(newClient, 'checkHandshake').mockReturnValue(newHandshake.promise)
+
+    moduleMocks.mcps = [oldIdentifier]
+    const staleDispatch = callMCPTool('old_tool', {})
+    await vi.waitFor(() => {
+      expect(oldGetToolList).toHaveBeenCalledTimes(1)
+    })
+
+    moduleMocks.mcps = [newIdentifier]
+    const newDispatch = callMCPTool('new_tool', {})
+    await vi.waitFor(() => {
+      expect(newClient.checkHandshake).toHaveBeenCalledTimes(1)
+    })
+
+    oldToolList.resolve([toolFixture('old_tool')])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(oldGetToolList).toHaveBeenCalledTimes(1)
+    expect(oldCallTool).not.toHaveBeenCalled()
+
+    newHandshake.resolve(newClient.serverInfo)
+
+    await expect(newDispatch).resolves.toEqual([
+      { type: 'text', text: 'new:new_tool' },
+    ])
+    await expect(staleDispatch).resolves.toEqual([
+      { type: 'text', text: 'Tool old_tool not found on any MCP' },
+    ])
+    await expect(callMCPTool('old_tool', {})).resolves.toEqual([
+      { type: 'text', text: 'Tool old_tool not found on any MCP' },
+    ])
+    await expect(callMCPTool('new_tool', {})).resolves.toEqual([
+      { type: 'text', text: 'new:new_tool' },
+    ])
+
+    expect(oldCallTool).not.toHaveBeenCalled()
+    expect(newGetToolList).toHaveBeenCalledTimes(1)
+    expect(newCallTool).toHaveBeenCalledTimes(2)
   })
 })

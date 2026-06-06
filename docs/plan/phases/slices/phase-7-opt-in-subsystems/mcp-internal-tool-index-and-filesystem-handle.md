@@ -1,7 +1,7 @@
 # Slice: MCP Internal Tool Index And Filesystem Handle
 
 Phase: [7](../../phase-7-opt-in-subsystems.md). Findings: L55, L56. Runtime
-change.
+change. Status: done on 2026-06-06.
 
 ## Scope
 
@@ -63,14 +63,26 @@ debug logging.
 
 ## Done Criteria
 
-- Internal MCP tool schemas are not rebuilt on every tool-list or dispatch
+- [x] Internal MCP tool schemas are not rebuilt on every tool-list or dispatch
   call.
-- `callMCPTool` dispatches through a cached name-to-client index and avoids
+- [x] `callMCPTool` dispatches through a cached name-to-client index and avoids
   re-listing every MCP per call.
-- Recreating internal MCP clients after a module toggle does not re-open the
+- [x] Recreating internal MCP clients after a module toggle does not re-open the
   FileSystem directory picker when a valid handle already exists.
-- L55 and L56 v2 gate entries point at real focused tests and the risk-map rows
+- [x] L55 and L56 v2 gate entries point at real focused tests and the risk-map rows
   are `DONE`.
+
+## Completed Proof
+
+- `src/ts/process/mcp/internalClients.test.ts`: `L55: FileSystem and Google
+  Search return mutation-safe copies of static tool schemas`; `L56: reuses a
+  valid directory handle across FileSystem client recreation`; `L56: prompts
+  again only after the stored directory handle becomes invalid`.
+- `src/ts/process/mcp/mcp.test.ts`: `L55: dispatch builds the tool-name index
+  once and reuses it for later calls`; `L55: rebuilds the dispatch index when
+  MCP initialization inputs change`.
+- `src/ts/__tests__/fixCompletenessGateV2.test.ts` registers L55/L56 as `DONE`;
+  `docs/plan/active-risk-analysis.md` marks both rows `DONE`.
 
 ## Validation
 

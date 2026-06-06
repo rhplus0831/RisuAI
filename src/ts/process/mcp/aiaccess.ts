@@ -1,6 +1,44 @@
 import { requestChatData } from '../request/request'
-import { MCPClientLike } from './internalmcp'
+import { cloneMCPTools, MCPClientLike } from './internalmcp'
 import type { MCPTool, RPCToolCallContent } from './mcplib'
+
+const AI_ACCESS_TOOLS: MCPTool[] = [
+  {
+    name: 'runLLM',
+    description: 'Run a large language model (LLM) with specified parameters.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        model: {
+          type: 'string',
+          description:
+            'The type of the LLM to use. "normal" for full model, "lite" for a smaller, faster model.',
+          enum: ['normal', 'lite'],
+        },
+        messages: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              role: {
+                type: 'string',
+                enum: ['user', 'assistant', 'system'],
+                description: 'The role of the message sender.',
+              },
+              content: {
+                type: 'string',
+                description: 'The content of the message.',
+              },
+            },
+            required: ['role', 'content'],
+          },
+          description: 'Messages to send to the LLM.',
+        },
+      },
+      required: ['model', 'messages'],
+    },
+  },
+]
 
 export class AIAccessClient extends MCPClientLike {
   private directoryHandle: FileSystemDirectoryHandle | null = null
@@ -12,43 +50,7 @@ export class AIAccessClient extends MCPClientLike {
     this.serverInfo.instructions = 'Client for accessing AI services and tools.'
   }
   async getToolList(): Promise<MCPTool[]> {
-    return [
-      {
-        name: 'runLLM',
-        description: 'Run a large language model (LLM) with specified parameters.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            model: {
-              type: 'string',
-              description:
-                'The type of the LLM to use. "normal" for full model, "lite" for a smaller, faster model.',
-              enum: ['normal', 'lite'],
-            },
-            messages: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  role: {
-                    type: 'string',
-                    enum: ['user', 'assistant', 'system'],
-                    description: 'The role of the message sender.',
-                  },
-                  content: {
-                    type: 'string',
-                    description: 'The content of the message.',
-                  },
-                },
-                required: ['role', 'content'],
-              },
-              description: 'Messages to send to the LLM.',
-            },
-          },
-          required: ['model', 'messages'],
-        },
-      },
-    ]
+    return cloneMCPTools(AI_ACCESS_TOOLS)
   }
 
   async callTool(methodName: string, args: any): Promise<RPCToolCallContent[]> {

@@ -134,8 +134,8 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L52 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove the file-send logs.                                        | PENDING |
 | L53 | [7](phases/phase-7-opt-in-subsystems.md)         | Pass raw bytes to pdfjs.                                          | PENDING |
 | L54 | [7](phases/phase-7-opt-in-subsystems.md)         | Timeout + tracked listeners for MCP SSE waits.                    | DONE    |
-| L55 | [7](phases/phase-7-opt-in-subsystems.md)         | Cache internal MCP tool lists; name->client index.                | PENDING |
-| L56 | [7](phases/phase-7-opt-in-subsystems.md)         | Persist the FS directory handle across recreate.                  | PENDING |
+| L55 | [7](phases/phase-7-opt-in-subsystems.md)         | Cache internal MCP tool lists; name->client index.                | DONE    |
+| L56 | [7](phases/phase-7-opt-in-subsystems.md)         | Persist the FS directory handle across recreate.                  | DONE    |
 | L57 | [7](phases/phase-7-opt-in-subsystems.md)         | Wire the debug flag; gate MCP logs.                               | DONE    |
 | L58 | [7](phases/phase-7-opt-in-subsystems.md)         | Epoch-guard `translateSuggest` writes.                            | DONE    |
 | L59 | [7](phases/phase-7-opt-in-subsystems.md)         | Skip retrying translation network errors in `markParsing`.        | DONE    |
