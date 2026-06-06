@@ -12,16 +12,10 @@ import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteG
 import {
   setDatabase,
   type Database,
-  type Message,
   type character,
 } from '../storage/database.svelte'
 import { DBState, selectedCharID } from '../stores.svelte'
-import {
-  cloneJsonValue,
-  currentChatScopedSnapshot,
-  dispatchReplaceMessagesScoped,
-} from '../chatCommands'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { appendCurrentChatUserMessageForSend } from '../chatCommands'
 import {
   seedCloneCostDb,
   withAsyncCloneInstrumentation,
@@ -158,9 +152,16 @@ function pathFromUrl(input: RequestInfo | URL): string {
   return url.startsWith('http') ? new URL(url).pathname : url
 }
 
-function commandResponse(revision: number): Response {
+function commandResponse(revision: number, body?: Record<string, unknown> | null): Response {
+  const message = body?.message as { chatId?: string } | undefined
+  const messageId = message?.chatId ?? 'probe-command-message'
   return new Response(
-    `{"revision":${revision},"event":{"type":"fixture.command","revision":${revision},"resource":"fixture"},"chatId":"chat-0","messageId":"probe-command-message"}`,
+    JSON.stringify({
+      revision,
+      event: { type: 'fixture.command', revision, resource: 'fixture' },
+      chatId: 'chat-0',
+      messageId,
+    }),
     { status: 200, headers: { 'content-type': 'application/json' } },
   )
 }
@@ -183,7 +184,7 @@ function createProbeFetch(commandCalls: ProbeCommandCall[]): typeof fetch {
         body,
       })
       revision += 1
-      return commandResponse(revision)
+      return commandResponse(revision, body)
     }
     return serverChatFetch(input, init)
   }) as typeof fetch
@@ -219,28 +220,15 @@ function configureServerChatFixture(): void {
   )
 }
 
-function submitPlainUserMessage(userMessage: string): void {
-  const selectedChar = 0
-  const previous = currentChatScopedSnapshot()
-  const currentCharacter = DBState.db.characters[selectedChar]
-  const currentChatRecord = currentCharacter.chats[currentCharacter.chatPage ?? 0]
-  const messages = cloneJsonValue(currentChatRecord.message ?? []) as Message[]
-  messages.push({
+async function submitPlainUserMessage(userMessage: string): Promise<void> {
+  const result = await appendCurrentChatUserMessageForSend({
     role: 'user',
     data: userMessage,
     time: Date.now(),
     name: null,
-  } as Message)
-
-  withTrustedServerProjectionWrite(() => {
-    const liveCharacter = DBState.db.characters[selectedChar]
-    const liveChat = liveCharacter?.chats[liveCharacter.chatPage ?? 0]
-    if (liveChat && (!currentChatRecord.id || liveChat.id === currentChatRecord.id)) {
-      liveChat.message = messages
-    }
   })
-  if (currentChatRecord.id) {
-    dispatchReplaceMessagesScoped(currentChatRecord.id, messages, previous)
+  if (result.status !== 'ok') {
+    throw new Error(`plain-send append failed: ${result.error}`)
   }
 }
 
@@ -254,10 +242,14 @@ function summarizeCommands(
   const messageAppendCalls = calls.filter(
     (call) => call.method === 'POST' && /\/chats\/[^/]+\/messages$/.test(call.url),
   )
-  const persistedMessageCount = messageReplaceCalls.reduce((max, call) => {
+  const replacedMessageCount = messageReplaceCalls.reduce((max, call) => {
     const messages = call.body?.messages
     return Array.isArray(messages) ? Math.max(max, messages.length) : max
   }, 0)
+  const appendedMessageCount = messageAppendCalls.reduce((max, call) => {
+    return call.body && 'message' in call.body ? Math.max(max, 1) : max
+  }, 0)
+  const persistedMessageCount = Math.max(replacedMessageCount, appendedMessageCount)
 
   return {
     totalCommandCount: calls.length,
@@ -269,7 +261,7 @@ function summarizeCommands(
     generationResultCommandCount: calls.filter((call) => /\/generation-result$/.test(call.url))
       .length,
     persistedMessageCount,
-    persistedWholeTranscript: persistedMessageCount === submittedMessageCount,
+    persistedWholeTranscript: replacedMessageCount === submittedMessageCount,
   }
 }
 
@@ -312,11 +304,11 @@ export async function runSendCloneCountProbe(
   try {
     const instrumented = await withAsyncCloneInstrumentation(
       async () => {
-        submitPlainUserMessage(resolved.userMessage)
+        await submitPlainUserMessage(resolved.userMessage)
         await waitForCommand(
           commandCalls,
-          (call) => call.method === 'PUT' && /\/chats\/[^/]+\/messages$/.test(call.url),
-          'message replace',
+          (call) => call.method === 'POST' && /\/chats\/[^/]+\/messages$/.test(call.url),
+          'message append',
         )
         const ok = await sendChat(-1)
         await waitForCommand(

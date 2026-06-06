@@ -81,6 +81,7 @@
   import Button from '../UI/GUI/Button.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import {
+    appendCurrentChatUserMessageForSend,
     cloneJsonValue,
     currentChatScopedSnapshot,
     currentChatStateSnapshot,
@@ -213,11 +214,9 @@
     }
     resetRerollOnCharChange()
 
-    const previous = currentChatScopedSnapshot()
     const currentChatRecord =
       DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
-    let cha: Message[] = cloneJsonValue(currentChatRecord.message ?? [])
-    let transcriptChanged = false
+    let userMessage: Message | null = null
 
     if (messageInput.startsWith('/')) {
       const commandProcessed = await processMultiCommand(messageInput)
@@ -234,52 +233,37 @@
       fileInput = []
     }
 
-    if (messageInput === '') {
-      if (cha.length === 0 || cha[cha.length - 1].role !== 'user') {
-        if (DBState.db.useSayNothing) {
-          cha.push({
-            role: 'user',
-            data: '*says nothing*',
-            name: null,
-          })
-          transcriptChanged = true
+    if (!continueResponse) {
+      if (messageInput === '') {
+        const messages = currentChatRecord.message ?? []
+        if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
+          if (DBState.db.useSayNothing) {
+            userMessage = {
+              role: 'user',
+              data: '*says nothing*',
+              name: null,
+            }
+          }
         }
-      }
-    } else {
-      const char = DBState.db.characters[selectedChar]
-      if (char.type === 'character') {
-        // Server prompt assembly owns submit-time input triggers/editinput.
-        cha.push({
-          role: 'user',
-          data: messageInput,
-          time: Date.now(),
-          name: null,
-        })
-        transcriptChanged = true
       } else {
-        cha.push({
+        // Server prompt assembly owns submit-time input triggers/editinput.
+        userMessage = {
           role: 'user',
           data: messageInput,
           time: Date.now(),
           name: null,
-        })
-        transcriptChanged = true
+        }
       }
     }
     messageInput = ''
     messageInputTranslate = ''
-    if (transcriptChanged) {
-      withTrustedServerProjectionWrite(() => {
-        const liveCharacter = DBState.db.characters[selectedChar]
-        const liveChat = liveCharacter?.chats[liveCharacter.chatPage]
-        if (liveChat && (!currentChatRecord.id || liveChat.id === currentChatRecord.id)) {
-          // `cha` is already a fresh clone built above; assign it directly
-          // instead of cloning the whole transcript a second time.
-          liveChat.message = cha
-        }
-      })
-      if (currentChatRecord.id) {
-        dispatchReplaceMessagesScoped(currentChatRecord.id, cha, previous)
+    if (userMessage) {
+      const appended = await appendCurrentChatUserMessageForSend(userMessage)
+      if (appended.status !== 'ok') {
+        alertError(appended.error)
+        await sleep(10)
+        updateInputSizeAll()
+        return
       }
     }
     await sleep(10)

@@ -708,17 +708,20 @@ export function dispatchAppendMessage(
 }
 
 export async function appendCurrentChatUserMessageForSend(
-  data: string,
+  input: string | Message,
 ): Promise<AppendCurrentChatUserMessageResult> {
   const selectedChar = get(selectedCharID)
-  const previous = currentChatScopedSnapshot()
-  const message: Message = {
-    role: 'user',
-    data,
-    time: Date.now(),
-  }
+  const message: Message =
+    typeof input === 'string'
+      ? {
+          role: 'user',
+          data: input,
+          time: Date.now(),
+        }
+      : input
   const messageId = ensureMessageId(message)
   let chatId: string | undefined
+  let characterId: string | undefined
   let applied = false
 
   withTrustedServerProjectionWrite(() => {
@@ -726,7 +729,8 @@ export async function appendCurrentChatUserMessageForSend(
     const chat = character?.chats?.[character.chatPage]
     if (!chat) return
     chat.message ??= []
-    chat.message.push(cloneJsonValue(message))
+    chat.message.push(message)
+    characterId = character.chaId
     chatId = chat.id
     applied = true
   })
@@ -740,9 +744,22 @@ export async function appendCurrentChatUserMessageForSend(
   }
 
   if (!chatId) {
-    restoreChatScopedState(previous)
+    removeOptimisticCurrentChatMessage({
+      selectedCharID: selectedChar,
+      characterId,
+      chatId,
+      messageId,
+    })
     return { status: 'error', error: 'The current chat has no server id.' }
   }
+
+  const rollbackAppend = () =>
+    removeOptimisticCurrentChatMessage({
+      selectedCharID: selectedChar,
+      characterId,
+      chatId,
+      messageId,
+    })
 
   const result = await runServerCommand({
     command: (baseRevision) =>
@@ -751,7 +768,7 @@ export async function appendCurrentChatUserMessageForSend(
         chatId,
         message: toMessageSnapshot(message),
       }),
-    rollback: () => restoreChatScopedState(previous),
+    rollback: rollbackAppend,
   })
 
   if (result.status === 'ok') {
@@ -764,6 +781,29 @@ export async function appendCurrentChatUserMessageForSend(
     return { status: 'error', error: 'Server commands are unavailable.' }
   }
   return { status: 'error', error: result.error }
+}
+
+function removeOptimisticCurrentChatMessage(input: {
+  selectedCharID: number
+  characterId: string | undefined
+  chatId: string | undefined
+  messageId: string
+}): void {
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(input.characterId, input.selectedCharID)
+    if (!character?.chats) return
+    const chatIndex = locateChatIndex(character, input.chatId)
+    if (chatIndex < 0 && input.chatId !== undefined) return
+    const chat =
+      chatIndex >= 0
+        ? character.chats[chatIndex]
+        : character.chats[character.chatPage ?? 0]
+    if (!chat?.message) return
+    const messageIndex = chat.message.findIndex((message) => message.chatId === input.messageId)
+    if (messageIndex >= 0) {
+      chat.message.splice(messageIndex, 1)
+    }
+  })
 }
 
 // Each message-dispatch helper has a `*With(... rollback)` core plus a broad

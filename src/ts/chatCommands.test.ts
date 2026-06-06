@@ -26,7 +26,7 @@ import { DBState, selectedCharID } from './stores.svelte'
 // Import the heavy database module AFTER stores.svelte: importing it first
 // triggers a circular-import TDZ when the reactive moduleUpdate $effect runs
 // mid-init (see the clone-narrowing Phase 8 gotcha).
-import { setCurrentChat, type Chat } from './storage/database.svelte'
+import { setCurrentChat, type Chat, type Message } from './storage/database.svelte'
 import { get } from 'svelte/store'
 import {
   appendCurrentChatUserMessageForSend,
@@ -416,6 +416,46 @@ describe('chat command projection helpers', () => {
     ])
   })
 
+  it('appends prepared plain-send user messages through one-message POST bodies', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const prepared: Message = {
+      role: 'user',
+      data: 'prepared plain send',
+      time: 123456,
+      name: null,
+    }
+
+    const result = await appendCurrentChatUserMessageForSend(prepared)
+
+    expect(result.status).toBe('ok')
+    await waitForCallCount(calls, 2)
+    const message = DBState.db.characters[0].chats[0].message[0]
+    expect(message).toMatchObject({
+      role: 'user',
+      data: 'prepared plain send',
+      chatId: expect.any(String),
+      time: 123456,
+      name: null,
+    })
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/chats/chat-a/messages',
+      method: 'POST',
+      authHeader: 'chat-command-token',
+      body: {
+        baseRevision: 10,
+        message: {
+          role: 'user',
+          data: 'prepared plain send',
+          chatId: message.chatId,
+          time: 123456,
+          name: null,
+        },
+      },
+    })
+    expect(calls[1].body).not.toHaveProperty('messages')
+  })
+
   it('rolls back optimistic scriptstate edits when the command fails', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -449,7 +489,7 @@ describe('chat command projection helpers', () => {
     expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
   })
 
-  it('rolls back optimistic Autopilot appends when the message command fails', async () => {
+  it('rolls back failed send appends by appended message id only', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -465,18 +505,103 @@ describe('chat command projection helpers', () => {
 
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/chats/chat-a/messages') {
+          withTrustedServerProjectionWrite(() => {
+            DBState.db.characters[0].chats[0].message.push({
+              role: 'char',
+              data: 'later projection message',
+              chatId: 'm-later',
+            })
+          })
           return jsonResponse({ error: 'nope' }, 500)
         }
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
     setServerProjectionWriteGuardEnabled(true)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].message.push({
+        role: 'char',
+        data: 'pre-existing',
+        chatId: 'm-existing',
+      })
+    })
 
-    const result = await appendCurrentChatUserMessageForSend('failed autopilot row')
+    const result = await appendCurrentChatUserMessageForSend({
+      role: 'user',
+      data: 'failed plain send row',
+      time: 222,
+      name: null,
+    })
 
     expect(result).toEqual({ status: 'error', error: 'nope' })
     await waitForCallCount(calls, 2)
-    expect(DBState.db.characters[0].chats[0].message).toEqual([])
+    expect(DBState.db.characters[0].chats[0].message).toEqual([
+      { role: 'char', data: 'pre-existing', chatId: 'm-existing' },
+      { role: 'char', data: 'later projection message', chatId: 'm-later' },
+    ])
+  })
+
+  it('does not roll back into the active chat when the original chat id disappears', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a/messages') {
+          withTrustedServerProjectionWrite(() => {
+            const character = DBState.db.characters[0]
+            const siblingChat = character.chats.find((chat: Chat) => chat.id === 'chat-b')
+            if (!siblingChat) throw new Error('missing sibling chat')
+            character.chats = [siblingChat]
+            character.chatPage = 0
+          })
+          return jsonResponse({ error: 'nope' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setServerProjectionWriteGuardEnabled(true)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[1].message.push({
+        role: 'char',
+        data: 'same id on active sibling',
+        chatId: 'm-shared',
+      })
+    })
+
+    const result = await appendCurrentChatUserMessageForSend({
+      role: 'user',
+      data: 'failed vanished-chat send',
+      chatId: 'm-shared',
+      time: 333,
+      name: null,
+    })
+
+    expect(result).toEqual({ status: 'error', error: 'nope' })
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/messages',
+      method: 'POST',
+      body: {
+        message: {
+          chatId: 'm-shared',
+        },
+      },
+    })
+    expect(DBState.db.characters[0].chats).toHaveLength(1)
+    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+      id: 'chat-b',
+      message: [{ role: 'char', data: 'same id on active sibling', chatId: 'm-shared' }],
+    })
   })
 })
 

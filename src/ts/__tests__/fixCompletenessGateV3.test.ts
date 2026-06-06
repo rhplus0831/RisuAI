@@ -145,10 +145,22 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     2,
     'Settings-scoped read for the settings/prompt-settings command routes (v2-L3 shape; broad fallback on the pre-extraction edge).',
   ),
-  planned(
+  done(
     'M4',
     1,
     'Plain-append fast-path via the single-message append command + id-keyed rollback; keep replace for trigger-rewritten transcripts.',
+    'src/ts/chatCommands.test.ts',
+    'appends prepared plain-send user messages through one-message POST bodies',
+    [
+      {
+        testPath: 'src/ts/chatCommands.test.ts',
+        testName: 'rolls back failed send appends by appended message id only',
+      },
+      {
+        testPath: 'src/ts/__tests__/sendCloneCountProbe.test.ts',
+        testName: 'records the M4 plain-send append fast-path clone-count shape',
+      },
+    ],
   ),
   planned(
     'M5',
@@ -1170,7 +1182,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     const plannedEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'PLANNED')
     const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
 
-    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1'])
+    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'M4'])
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
     expect(doneEntries.every(hasProofFields)).toBe(true)
     for (const entry of plannedEntries) {
@@ -1178,11 +1190,11 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with only H1 marked DONE', () => {
+  it('keeps the live registry green with H1 and M4 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1'])
+    ).toEqual(['H1', 'M4'])
     expect(collectGateProblems()).toEqual([])
   })
 

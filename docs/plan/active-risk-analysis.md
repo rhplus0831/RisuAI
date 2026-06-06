@@ -65,7 +65,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | M1  | [2](phases/phase-2-command-surface-scoping.md)              | Wire `chatScopedRead: hasVarWrite ? undefined : { chatId }` into `persistAssemblyMutations` (K1 shape; assert event parentId = character id). | PENDING |
 | M2  | [3](phases/phase-3-memory-subsystem.md)                     | Supply tiktoken-fallback `getSummaryTokenCost` in the `selectPromptMemory` call (repairs existing `tokens:0` rows); optionally also measure at persist. | PENDING |
 | M3  | [2](phases/phase-2-command-surface-scoping.md)              | Settings-scoped read for the settings/prompt-settings command routes (v2-L3 shape; broad fallback on the pre-extraction edge). | PENDING |
-| M4  | [1](phases/phase-1-high-and-send-path.md)                   | Plain-append fast-path via the single-message append command + id-keyed rollback; keep replace for trigger-rewritten transcripts. | PENDING |
+| M4  | [1](phases/phase-1-high-and-send-path.md)                   | Plain-append fast-path via the single-message append command + id-keyed rollback; keep replace for trigger-rewritten transcripts. | DONE |
 | M5  | [1](phases/phase-1-high-and-send-path.md)                   | Field-scoped send rollback (`lastInteraction`; messages only on the first-send backfill branch), `restoreCharacterSelection` shape. | PENDING |
 | M6  | [6](phases/phase-6-reactive-amplification-and-render.md)    | `$derived` + keyed each for the MobileCharacters sorted list (v2-L42/L43 helper shape, unit-testable pure function). | PENDING |
 | M7  | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Store `run()`'s cleanup closure on the SandboxHost instance; invoke from `terminate()`. | PENDING |

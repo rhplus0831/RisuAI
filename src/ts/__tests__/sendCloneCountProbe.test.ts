@@ -80,14 +80,14 @@ afterEach(() => {
 })
 
 describe('send clone-count probe', () => {
-  it('records the current plain-send clone-count shape', async () => {
+  it('records the M4 plain-send append fast-path clone-count shape', async () => {
     const result = await runSendCloneCountProbe()
 
     expect(result).toEqual({
       ok: true,
-      jsonCloneCount: 44,
+      jsonCloneCount: 2,
       structuredCloneCount: 2,
-      totalCloneCount: 46,
+      totalCloneCount: 4,
       maxClonedSize: 10463,
       fixture: {
         characterCount: 3,
@@ -102,12 +102,12 @@ describe('send clone-count probe', () => {
       },
       commands: {
         totalCommandCount: 2,
-        messageReplaceCommandCount: 1,
-        messageAppendCommandCount: 0,
+        messageReplaceCommandCount: 0,
+        messageAppendCommandCount: 1,
         characterPatchCommandCount: 1,
         generationResultCommandCount: 0,
-        persistedMessageCount: 41,
-        persistedWholeTranscript: true,
+        persistedMessageCount: 1,
+        persistedWholeTranscript: false,
       },
       serverChat: {
         callCount: 1,
@@ -116,6 +116,10 @@ describe('send clone-count probe', () => {
         durable: true,
       },
     })
+    expect(result.commands.messageAppendCommandCount).toBe(1)
+    expect(result.commands.messageReplaceCommandCount).toBe(0)
+    expect(result.commands.persistedWholeTranscript).toBe(false)
+    expect(result.jsonCloneCount).toBeLessThan(result.fixture.messageCountBeforeSend)
     expect(result.maxClonedSize).toBeGreaterThan(result.fixture.transcriptJsonSizeBeforeSend)
   })
 })
