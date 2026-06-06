@@ -532,7 +532,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L18', 8, 'Fast-path reschedule after a productive worker tick.'),
+  done(
+    'L18',
+    8,
+    'Fast-path reschedule after a productive worker tick.',
+    'server/fastify/__tests__/memoryWorker.test.ts',
+    'L18: drains a multi-batch backlog through immediate productive ticks',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryWorker.test.ts',
+        testName: 'L18: keeps idle polling on the configured delay',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryWorker.test.ts',
+        testName: 'L18: stop prevents pending fast-path ticks after productive work settles',
+      },
+    ],
+  ),
   planned('L19', 8, 'Scope the fail-cascade to contextual groups.'),
   planned('L20', 8, 'Share one summaries fetch between cleanup and selection.'),
   planned('L21', 8, 'Per-chunk size ceiling before embed requests.'),
@@ -1379,6 +1395,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L15',
       'L16',
       'L17',
+      'L18',
       'K1',
       'K2',
     ])

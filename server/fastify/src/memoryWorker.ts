@@ -144,13 +144,16 @@ export class MemoryWorker {
     if (!this.active || this.timer) return
     this.timer = setTimeout(() => {
       this.timer = null
+      let didWork = false
       void this.tick()
+        .then((result) => {
+          didWork = result
+        })
         .catch((error) => {
           this.onError(error)
-          return false
         })
         .finally(() => {
-          this.schedule(this.pollIntervalMs)
+          this.schedule(didWork ? 0 : this.pollIntervalMs)
         })
     }, delayMs)
     this.timer.unref()

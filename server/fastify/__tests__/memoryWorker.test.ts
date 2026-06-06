@@ -40,6 +40,12 @@ function deferred(): {
   return { promise, resolve, reject }
 }
 
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 8; index += 1) {
+    await Promise.resolve()
+  }
+}
+
 afterEach(() => {
   vi.useRealTimers()
   for (const dataDir of dataDirs.splice(0)) {
@@ -276,6 +282,155 @@ describe('memory worker lifecycle and dispatch', () => {
 
       expect(batches).toEqual([['job-a-1', 'job-a-2', 'job-a-3'], ['job-b-1']])
       expect(listMemoryJobs(db, { status: 'pending' })).toHaveLength(0)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L18: drains a multi-batch backlog through immediate productive ticks', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      const totalJobs = MEMORY_JOB_BATCH_MAX_JOBS + 1
+      for (let index = 1; index <= totalJobs; index += 1) {
+        enqueueMemoryJob(db, {
+          id: `job-${index}`,
+          chatId: 'chat-1',
+          kind: 'chunk',
+          payload: {},
+        })
+      }
+
+      const batches: string[][] = []
+      const batchGates = [deferred(), deferred()]
+      let nextBatchGate = 0
+      const worker = new MemoryWorker({
+        db,
+        pollIntervalMs: 1_000,
+        batchHandlers: {
+          chunk: async (firstJob, context) => {
+            const jobs = [firstJob]
+            while (jobs.length < MEMORY_JOB_BATCH_MAX_JOBS) {
+              const next = context.claimNext({ chatId: firstJob.chatId, kind: 'chunk' })
+              if (!next) break
+              jobs.push(next)
+            }
+            batches.push(jobs.map((job) => job.id))
+            await batchGates[nextBatchGate].promise
+            nextBatchGate += 1
+            for (const job of jobs) context.complete(job.id)
+          },
+        },
+      })
+
+      worker.start()
+      worker.start()
+      expect(vi.getTimerCount()).toBe(1)
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(batches).toHaveLength(1)
+      expect(batches[0]).toHaveLength(MEMORY_JOB_BATCH_MAX_JOBS)
+      expect(vi.getTimerCount()).toBe(0)
+
+      batchGates[0].resolve()
+      await flushMicrotasks()
+      expect(vi.getTimerCount()).toBe(1)
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(batches).toHaveLength(2)
+      expect(batches[1]).toEqual([`job-${totalJobs}`])
+      expect(vi.getTimerCount()).toBe(0)
+
+      batchGates[1].resolve()
+      await flushMicrotasks()
+      expect(vi.getTimerCount()).toBe(1)
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(listMemoryJobs(db, { status: 'pending' })).toHaveLength(0)
+      expect(vi.getTimerCount()).toBe(1)
+
+      await worker.stop()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L18: keeps idle polling on the configured delay', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      const handled: string[] = []
+      const worker = new MemoryWorker({
+        db,
+        pollIntervalMs: 1_000,
+        handlers: {
+          chunk: (job) => {
+            handled.push(job.id)
+          },
+        },
+      })
+
+      worker.start()
+      await vi.advanceTimersByTimeAsync(0)
+      await flushMicrotasks()
+      expect(handled).toEqual([])
+      expect(vi.getTimerCount()).toBe(1)
+
+      enqueueMemoryJob(db, { id: 'job-after-idle', chatId: 'chat-1', kind: 'chunk', payload: {} })
+      await vi.advanceTimersByTimeAsync(999)
+      expect(handled).toEqual([])
+      expect(vi.getTimerCount()).toBe(1)
+
+      await vi.advanceTimersByTimeAsync(1)
+      await flushMicrotasks()
+      expect(handled).toEqual(['job-after-idle'])
+      expect(getMemoryJob(db, 'job-after-idle')).toMatchObject({ status: 'completed' })
+
+      await worker.stop()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L18: stop prevents pending fast-path ticks after productive work settles', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      enqueueMemoryJob(db, { id: 'job-stop-fast-1', chatId: 'chat-1', kind: 'chunk', payload: {} })
+      enqueueMemoryJob(db, { id: 'job-stop-fast-2', chatId: 'chat-1', kind: 'chunk', payload: {} })
+      const gate = deferred()
+      const handled: string[] = []
+      const worker = new MemoryWorker({
+        db,
+        pollIntervalMs: 1_000,
+        handlers: {
+          chunk: async (job) => {
+            handled.push(job.id)
+            await gate.promise
+          },
+        },
+      })
+
+      worker.start()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(handled).toEqual(['job-stop-fast-1'])
+      expect(vi.getTimerCount()).toBe(0)
+
+      const stop = worker.stop()
+      await flushMicrotasks()
+      expect(worker.isRunning).toBe(false)
+
+      gate.resolve()
+      await stop
+      expect(vi.getTimerCount()).toBe(0)
+      expect(handled).toEqual(['job-stop-fast-1'])
+      expect(getMemoryJob(db, 'job-stop-fast-1')).toMatchObject({ status: 'completed' })
+      expect(getMemoryJob(db, 'job-stop-fast-2')).toMatchObject({ status: 'pending' })
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(handled).toEqual(['job-stop-fast-1'])
     } finally {
       db.close()
     }

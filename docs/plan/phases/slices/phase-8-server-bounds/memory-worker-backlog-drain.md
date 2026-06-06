@@ -1,6 +1,7 @@
 # Slice: Memory Worker Backlog Drain
 
 Phase: [8](../../phase-8-server-bounds.md). Finding: L18. Runtime change.
+Status: done on 2026-06-06 KST.
 
 ## Scope
 
@@ -53,6 +54,22 @@ job failure semantics, contextual embedding grouping, or memory job retention.
 - Timer-count tests prove no duplicate worker loops are scheduled.
 - The L18 v2 gate entry points at a real focused test and the risk-map row is
   `DONE`.
+
+## Proof
+
+- Runtime:
+  `server/fastify/src/memoryWorker.ts` schedules the next tick with zero delay
+  when `tick()` reports productive work and keeps `pollIntervalMs` for idle
+  ticks.
+- Regression proof:
+  `server/fastify/__tests__/memoryWorker.test.ts` /
+  `L18: drains a multi-batch backlog through immediate productive ticks`,
+  `L18: keeps idle polling on the configured delay`, and
+  `L18: stop prevents pending fast-path ticks after productive work settles`.
+- Gate proof:
+  `src/ts/__tests__/fixCompletenessGateV2.test.ts` registers L18 `DONE` with
+  the focused memory-worker proof paths; `docs/plan/active-risk-analysis.md`
+  marks L18 `DONE`.
 
 ## Validation
 

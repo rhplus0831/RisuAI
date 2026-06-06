@@ -97,7 +97,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L15 | [8](phases/phase-8-server-bounds.md)             | `PRAGMA synchronous = NORMAL`.                                    | DONE    |
 | L16 | [2](phases/phase-2-server-corpus-ring-2.md)      | Single auth verification on the bulk routes.                      | DONE    |
 | L17 | [8](phases/phase-8-server-bounds.md)             | Retention sweep for terminal memory jobs.                         | DONE    |
-| L18 | [8](phases/phase-8-server-bounds.md)             | Fast-path reschedule after a productive worker tick.              | PENDING |
+| L18 | [8](phases/phase-8-server-bounds.md)             | Fast-path reschedule after a productive worker tick.              | DONE    |
 | L19 | [8](phases/phase-8-server-bounds.md)             | Scope the fail-cascade to contextual groups.                      | PENDING |
 | L20 | [8](phases/phase-8-server-bounds.md)             | Share one summaries fetch between cleanup and selection.          | PENDING |
 | L21 | [8](phases/phase-8-server-bounds.md)             | Per-chunk size ceiling before embed requests.                     | PENDING |
