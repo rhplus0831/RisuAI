@@ -17,6 +17,7 @@ import {
   assertCommandMetricGate,
   type CommandMutationMetric,
 } from './helpers/commandMetricGates.js'
+import { parseEvents, type PromptChatFrame } from './helpers/terminalFrameAssertions.js'
 import {
   getChatMessageDiffInstrumentation,
   resetChatMessageDiffInstrumentation,
@@ -161,11 +162,6 @@ async function seedDatabase(
   expect(res.statusCode).toBe(200)
 }
 
-interface ParsedEvent {
-  type: string
-  data: Record<string, unknown>
-}
-
 interface ProtocolMetric {
   metric: string
   type?: string
@@ -205,20 +201,6 @@ function expectPromptAssemblyStageTimings(metric: ProtocolMetric | undefined): v
   for (const stage of EXPECTED_PROMPT_ASSEMBLY_STAGES) {
     expect(metric?.stageTimingsMs?.[stage]).toBeGreaterThanOrEqual(0)
   }
-}
-
-/** Parse an `event:`/`data:` SSE body into ordered events. */
-function parseEvents(body: string): ParsedEvent[] {
-  return body
-    .split('\n\n')
-    .filter((block) => block.length > 0)
-    .map((block) => {
-      const [evLine, dataLine] = block.split('\n')
-      return {
-        type: evLine.replace('event: ', ''),
-        data: JSON.parse(dataLine.replace('data: ', '')) as Record<string, unknown>,
-      }
-    })
 }
 
 async function withProtocolMetrics<T>(run: (metrics: ProtocolMetric[]) => Promise<T>): Promise<T> {
@@ -659,7 +641,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     ]
     await seedDatabase(harness.app, assertion, db)
 
-    const send = async (userMessage: string): Promise<ParsedEvent[]> => {
+    const send = async (userMessage: string): Promise<PromptChatFrame[]> => {
       const res = await harness.app.inject({
         method: 'POST',
         url: '/api/v1/generate/chat',
@@ -1243,7 +1225,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return db
   }
 
-  async function sendBase(assertion: string): Promise<ParsedEvent[]> {
+  async function sendBase(assertion: string): Promise<PromptChatFrame[]> {
     const res = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/generate/chat',
@@ -2026,7 +2008,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     }
   }
 
-  function doneFrame(events: ParsedEvent[]): {
+  function doneFrame(events: PromptChatFrame[]): {
     result?: string
     postGeneration?: {
       finalText?: string
