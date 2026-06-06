@@ -1,13 +1,18 @@
-import { sleep } from './util'
 import { globalFetch } from './globalApi.svelte'
 
 let bgmElement: HTMLAudioElement | null = null
+let observedCodeBlocks = new WeakSet<HTMLElement>()
+let observedControlNodes = new WeakSet<HTMLElement>()
+let domObserver: MutationObserver | null = null
+let observedBody: HTMLElement | null = null
+let bodyRetryTimer: ReturnType<typeof setTimeout> | null = null
 
 function nodeObserve(node: HTMLElement) {
   const hlLang = node.getAttribute('x-hl-lang')
   const ctrlName = node.getAttribute('risu-ctrl')
 
-  if (hlLang) {
+  if (hlLang && !observedCodeBlocks.has(node)) {
+    observedCodeBlocks.add(node)
     node.addEventListener('contextmenu', (e) => {
       e.preventDefault()
 
@@ -30,7 +35,7 @@ function nodeObserve(node: HTMLElement) {
         'px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 cursor-pointer',
       )
       copyOption.addEventListener('click', () => {
-        navigator.clipboard.writeText(node.textContent)
+        navigator.clipboard.writeText(node.textContent ?? '')
         menu.remove()
       })
 
@@ -42,8 +47,8 @@ function nodeObserve(node: HTMLElement) {
       )
       downloadOption.addEventListener('click', () => {
         const a = document.createElement('a')
-        a.href = URL.createObjectURL(new Blob([node.textContent], { type: 'text/plain' }))
-        a.download = 'code.' + hlLang
+        a.href = URL.createObjectURL(new Blob([node.textContent ?? ''], { type: 'text/plain' }))
+        a.download = 'code.' + (node.getAttribute('x-hl-lang') ?? hlLang)
         a.click()
         menu.remove()
       })
@@ -71,6 +76,10 @@ function nodeObserve(node: HTMLElement) {
 
     switch (split[0]) {
       case 'bgm': {
+        if (observedControlNodes.has(node)) {
+          break
+        }
+        observedControlNodes.add(node)
         const volume = split[1] === 'auto' ? 0.5 : parseFloat(split[1])
         if (!bgmElement) {
           bgmElement = new Audio(split[2])
@@ -87,21 +96,78 @@ function nodeObserve(node: HTMLElement) {
   }
 }
 
-export async function startObserveDom() {
-  //For codeblock we are using MutationObserver since it doesn't appear well
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach((node) => {
-        if (node instanceof HTMLElement) {
-          nodeObserve(node)
-        }
-      })
-    })
-  })
+const OBSERVED_NODE_SELECTOR = '[x-hl-lang], [risu-ctrl]'
 
-  while (true) {
-    document.querySelectorAll('[x-hl-lang], [risu-ctrl]').forEach(nodeObserve)
-    await sleep(100)
+function observeNodeAndDescendants(node: HTMLElement) {
+  nodeObserve(node)
+  node.querySelectorAll<HTMLElement>(OBSERVED_NODE_SELECTOR).forEach(nodeObserve)
+}
+
+function handleDomMutations(mutations: MutationRecord[]) {
+  for (const mutation of mutations) {
+    if (mutation.type === 'attributes' && mutation.target instanceof HTMLElement) {
+      nodeObserve(mutation.target)
+      continue
+    }
+
+    mutation.addedNodes.forEach((node) => {
+      if (node instanceof HTMLElement) {
+        observeNodeAndDescendants(node)
+      }
+    })
+  }
+}
+
+function scheduleBodyRetry() {
+  if (bodyRetryTimer !== null) {
+    return
+  }
+
+  bodyRetryTimer = setTimeout(() => {
+    bodyRetryTimer = null
+    startObserveDom()
+  }, 50)
+}
+
+export function startObserveDom() {
+  if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
+    return
+  }
+
+  const body = document.body
+  if (!body) {
+    scheduleBodyRetry()
+    return
+  }
+
+  observeNodeAndDescendants(body)
+
+  if (domObserver && observedBody === body) {
+    return
+  }
+
+  domObserver?.disconnect()
+  observedBody = body
+  domObserver = new MutationObserver(handleDomMutations)
+  domObserver.observe(body, {
+    attributes: true,
+    attributeFilter: ['x-hl-lang', 'risu-ctrl'],
+    childList: true,
+    subtree: true,
+  })
+}
+
+export function _resetDomObserverForTesting() {
+  domObserver?.disconnect()
+  domObserver = null
+  observedBody = null
+  observedCodeBlocks = new WeakSet()
+  observedControlNodes = new WeakSet()
+  bgmElement = null
+
+  if (bodyRetryTimer !== null) {
+    clearTimeout(bodyRetryTimer)
+    bodyRetryTimer = null
   }
 }
 

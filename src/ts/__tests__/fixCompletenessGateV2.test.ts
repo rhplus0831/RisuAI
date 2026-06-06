@@ -318,7 +318,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'M12: foreign character-row projection apply refreshes baseline without echoing, then local profile edits dispatch',
   ),
   planned('M13', 5, 'Debounce + per-item memo for prompt-template tokenize.'),
-  planned('M14', 6, 'Idempotent `nodeObserve` (or wire the dead MutationObserver).'),
+  done(
+    'M14',
+    6,
+    'Idempotent `nodeObserve` (or wire the dead MutationObserver).',
+    'src/ts/observer.svelte.test.ts',
+    'M14: repeated observer starts bind one contextmenu listener per code block',
+    [
+      {
+        testPath: 'src/ts/observer.svelte.test.ts',
+        testName: 'M14: processes nested code blocks inserted through mutations without a polling tick',
+      },
+      {
+        testPath: 'src/ts/observer.svelte.test.ts',
+        testName: 'M14: processes each BGM control node once even after repeated scans',
+      },
+    ],
+  ),
   planned('M15', 7, 'Bounded Map (LRU) translate cache.'),
   planned('M16', 7, 'Remove html log; `DoingChat` gate for non-exp translators.'),
   planned('M17', 5, 'Module-level content-keyed translate-detection memo.'),
@@ -1321,6 +1337,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M6',
       'M11',
       'M12',
+      'M14',
       'L3',
       'L4',
       'L5',
