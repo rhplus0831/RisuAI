@@ -43,15 +43,22 @@ vi.mock('./projectionWriteGuard.svelte', () => ({
 
 import { DBState, selectedCharID } from '../stores.svelte'
 import {
+  applyLorebookEntryDraftEdit,
   collectLorebookCollectionSnapshots,
+  currentLorebookCollectionScopedSnapshot,
+  currentLorebookEntryScopedSnapshot,
+  dispatchReplaceCharacterLorebooks,
+  flushPendingLorebookEntryDraftEdit,
   markCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
+  restoreLorebookEntryState,
+  restoreLorebookState,
   watchServerBackedLorebooks,
 } from './lorebookBridge.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
-type Entry = { key?: string; content?: string; id?: string }
+type Entry = { key?: string; content?: string; id?: string; folder?: string }
 
 const DELAY = 50
 
@@ -198,6 +205,326 @@ function chatReplaceChatIds(): string[] {
     .filter((c) => c.kind === 'replaceChat')
     .map((c) => (c.a as { chatId?: string }).chatId ?? '')
 }
+
+function moduleReplaceCommands(): Array<Record<string, unknown>> {
+  return recorded.commands.filter((c) => c.kind === 'replaceModule')
+}
+
+function setupK4EditorDb(): void {
+  const entries = Array.from({ length: 24 }, (_unused, index) => ({
+    id: `entry-${index}`,
+    key: `key-${index}`,
+    secondkey: '',
+    insertorder: index,
+    comment: `Entry ${index}`,
+    content: `${'x'.repeat(240)}-${index}`,
+    mode: 'normal',
+    alwaysActive: false,
+    selective: false,
+  }))
+
+  ;(DBState as { db: unknown }).db = {
+    loreBook: [{ id: 'global-k4', name: 'Global K4', data: entries.slice(0, 6) }],
+    loreBookPage: 0,
+    characters: [
+      {
+        chaId: 'c-k4',
+        globalLore: entries,
+        chats: [
+          {
+            id: 'chat-k4',
+            localLore: [
+              {
+                id: 'chat-entry-0',
+                key: 'chat-key',
+                secondkey: '',
+                insertorder: 0,
+                comment: 'Chat entry',
+                content: 'chat content',
+                mode: 'normal',
+                alwaysActive: false,
+                selective: false,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        chaId: 'c-k4-sibling',
+        globalLore: [
+          {
+            id: 'sibling-entry',
+            key: 'sibling',
+            secondkey: '',
+            insertorder: 0,
+            comment: 'Sibling',
+            content: 'sibling content',
+            mode: 'normal',
+            alwaysActive: false,
+            selective: false,
+          },
+        ],
+        chats: [],
+      },
+    ],
+    modules: [],
+  }
+  selectedCharID.set(0)
+  markCharacterLorebookHydrated('c-k4')
+  markCharacterLorebookHydrated('c-k4-sibling')
+}
+
+function setupK4ModuleDb(): void {
+  const entries = Array.from({ length: 18 }, (_unused, index) => ({
+    id: `module-entry-${index}`,
+    key: `module-key-${index}`,
+    secondkey: '',
+    insertorder: index,
+    comment: `Module Entry ${index}`,
+    content: `${'m'.repeat(220)}-${index}`,
+    mode: 'normal',
+    alwaysActive: false,
+    selective: false,
+  }))
+
+  ;(DBState as { db: unknown }).db = {
+    loreBook: [],
+    loreBookPage: 0,
+    characters: [],
+    modules: [
+      {
+        id: 'module-k4',
+        name: 'Module K4',
+        description: '',
+        lorebook: entries,
+      },
+    ],
+  }
+  selectedCharID.set(-1)
+}
+
+describe('K4 lorebook editor entry draft scope', () => {
+  it('K4: typing drafts clone only the edited entry before debounce settle', () => {
+    setupK4EditorDb()
+    const collectionSize = JSON.stringify(DBState.db.characters[0].globalLore).length
+
+    const firstDraft = {
+      ...(DBState.db.characters[0].globalLore as Entry[])[7],
+      content: 'draft one',
+    } as Entry
+    const secondDraft = { ...firstDraft, content: 'draft two' } as Entry
+
+    const first = withCloneInstrumentation(() =>
+      applyLorebookEntryDraftEdit(
+        { kind: 'character', characterId: 'c-k4' },
+        7,
+        firstDraft as any,
+        DELAY,
+      ),
+    )
+    const second = withCloneInstrumentation(() =>
+      applyLorebookEntryDraftEdit(
+        { kind: 'character', characterId: 'c-k4' },
+        7,
+        secondDraft as any,
+        DELAY,
+      ),
+    )
+
+    expect(first.result).toBe(true)
+    expect(second.result).toBe(true)
+    expect(first.maxClonedSize).toBeLessThan(collectionSize)
+    expect(second.maxClonedSize).toBeLessThan(collectionSize)
+    expect(recorded.commands).toHaveLength(0)
+  })
+
+  it('K4: the debounced final server write contains the final edited entry', async () => {
+    setupK4EditorDb()
+
+    applyLorebookEntryDraftEdit(
+      { kind: 'character', characterId: 'c-k4' },
+      5,
+      { ...(DBState.db.characters[0].globalLore as Entry[])[5], content: 'intermediate' } as any,
+      DELAY,
+    )
+    applyLorebookEntryDraftEdit(
+      { kind: 'character', characterId: 'c-k4' },
+      5,
+      { ...(DBState.db.characters[0].globalLore as Entry[])[5], content: 'final draft' } as any,
+      DELAY,
+    )
+
+    expect(characterReplaceCommands()).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = characterReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect(cmds[0].characterId).toBe('c-k4')
+    const entries = cmds[0].entries as Entry[]
+    expect(entries).toHaveLength(24)
+    expect(entries[5]).toMatchObject({ id: 'entry-5', content: 'final draft' })
+    expect(entries[4]).toMatchObject({ id: 'entry-4', content: expect.stringContaining('-4') })
+  })
+
+  it('K4: flushing a draft sends the final replacement before the debounce delay', async () => {
+    setupK4EditorDb()
+
+    applyLorebookEntryDraftEdit(
+      { kind: 'character', characterId: 'c-k4' },
+      3,
+      { ...(DBState.db.characters[0].globalLore as Entry[])[3], content: 'blur final' } as any,
+      DELAY * 10,
+    )
+    flushPendingLorebookEntryDraftEdit({ kind: 'character', characterId: 'c-k4' })
+    await vi.advanceTimersByTimeAsync(0)
+
+    const cmds = characterReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect((cmds[0].entries as Entry[])[3].content).toBe('blur final')
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(characterReplaceCommands()).toHaveLength(1)
+  })
+
+  it('K4: immediate flush with an active watcher sends one replacement only', async () => {
+    setupK4EditorDb()
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    recorded.commands.length = 0
+    try {
+      applyLorebookEntryDraftEdit(
+        { kind: 'character', characterId: 'c-k4' },
+        3,
+        { ...(DBState.db.characters[0].globalLore as Entry[])[3], content: 'blur final' } as any,
+        DELAY * 10,
+      )
+      flushPendingLorebookEntryDraftEdit({ kind: 'character', characterId: 'c-k4' })
+      flushSync()
+      await vi.advanceTimersByTimeAsync(0)
+
+      const cmds = characterReplaceCommands()
+      expect(cmds).toHaveLength(1)
+      expect((cmds[0].entries as Entry[])[3].content).toBe('blur final')
+
+      await vi.advanceTimersByTimeAsync(DELAY)
+      expect(characterReplaceCommands()).toHaveLength(1)
+    } finally {
+      stop()
+    }
+  })
+
+  it('K4: module external entry drafts avoid collection clones and flush final module replacement', async () => {
+    setupK4ModuleDb()
+    const module = (DBState.db.modules as any[])[0] as { lorebook: Entry[] }
+    const collectionSize = JSON.stringify(module.lorebook).length
+    const originalEntries = module.lorebook
+    const untouchedSibling = module.lorebook[2]
+    const editedEntry = module.lorebook[9]
+
+    const instrumented = withCloneInstrumentation(() =>
+      applyLorebookEntryDraftEdit(
+        { kind: 'module', moduleId: 'module-k4' },
+        9,
+        { ...module.lorebook[9], content: 'module draft final' } as any,
+        DELAY * 10,
+      ),
+    )
+
+    expect(instrumented.result).toBe(true)
+    expect(instrumented.maxClonedSize).toBeLessThan(collectionSize)
+    expect(module.lorebook).toBe(originalEntries)
+    expect(module.lorebook[2]).toBe(untouchedSibling)
+    expect(module.lorebook[9]).toBe(editedEntry)
+    expect(module.lorebook[9].content).toBe('module draft final')
+    expect(moduleReplaceCommands()).toHaveLength(0)
+
+    flushPendingLorebookEntryDraftEdit({ kind: 'module', moduleId: 'module-k4' })
+    await vi.advanceTimersByTimeAsync(0)
+
+    const cmds = moduleReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect(cmds[0].moduleId).toBe('module-k4')
+    expect((cmds[0].entries as Entry[])[9]).toMatchObject({
+      id: 'module-entry-9',
+      content: 'module draft final',
+    })
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(moduleReplaceCommands()).toHaveLength(1)
+  })
+
+  it('K4: ModuleMenu wires external LoreBookList typing through module draft handlers', () => {
+    const source = readFileSync(
+      path.join(process.cwd(), 'src/lib/Setting/Pages/Module/ModuleMenu.svelte'),
+      'utf8',
+    )
+    const lorebookList = source.slice(
+      source.indexOf('<LoreBookList'),
+      source.indexOf('<div class="text-textcolor2 mt-2 flex">'),
+    )
+
+    expect(source).toContain("applyLorebookEntryDraftEdit({ kind: 'module', moduleId }, index, value)")
+    expect(source).toContain("flushPendingLorebookEntryDraftEdit({ kind: 'module', moduleId })")
+    expect(lorebookList).toContain('onEntryChange={updateModuleLorebookValue}')
+    expect(lorebookList).toContain('onEntrySettled={flushModuleLorebookValue}')
+    expect(lorebookList).toContain('onCollectionChange={updateModuleLorebookCollection}')
+  })
+
+  it('K4: failed entry-draft rollback restores only the edited entry', () => {
+    setupK4EditorDb()
+    const previous = currentLorebookEntryScopedSnapshot(
+      { kind: 'character', characterId: 'c-k4' },
+      2,
+    )
+
+    ;(DBState.db.characters[0].globalLore as Entry[])[2].content = 'failed optimistic edit'
+    ;(DBState.db.characters[0].globalLore as Entry[])[4].content = 'same collection sibling edit'
+    ;(DBState.db.characters[1].globalLore as Entry[])[0].content = 'other character edit'
+
+    restoreLorebookEntryState(previous)
+
+    expect((DBState.db.characters[0].globalLore as Entry[])[2].content).toContain('-2')
+    expect((DBState.db.characters[0].globalLore as Entry[])[4].content).toBe(
+      'same collection sibling edit',
+    )
+    expect((DBState.db.characters[1].globalLore as Entry[])[0].content).toBe(
+      'other character edit',
+    )
+  })
+
+  it('K4: collection operations still use collection-level replacement rollback', async () => {
+    setupK4EditorDb()
+    const previous = currentLorebookCollectionScopedSnapshot({
+      kind: 'character',
+      characterId: 'c-k4',
+    })
+    const originalIds = (DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)
+    const reordered = [...(DBState.db.characters[0].globalLore as Entry[])]
+    const moved = reordered.shift()
+    if (moved) {
+      moved.folder = 'folder-k4'
+      reordered.push(moved)
+    }
+
+    DBState.db.characters[0].globalLore = reordered as any
+    dispatchReplaceCharacterLorebooks('c-k4', reordered as any, previous, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = characterReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect((cmds[0].entries as Entry[]).map((entry) => entry.id)).toEqual([
+      ...originalIds.slice(1),
+      originalIds[0],
+    ])
+
+    ;(DBState.db.characters[0].globalLore as Entry[])[1].content = 'collection failed edit'
+    restoreLorebookState(previous)
+    expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(
+      originalIds,
+    )
+  })
+})
 
 describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () => {
   it('global scope collects only the global lorebook list', () => {

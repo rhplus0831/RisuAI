@@ -9,10 +9,12 @@
   import { v4 } from 'uuid'
   import { alertError } from 'src/ts/alert'
   import {
+    applyLorebookEntryDraftEdit,
     currentLorebookCollectionScopedSnapshot,
     dispatchReplaceCharacterLorebooks,
     dispatchReplaceChatLorebooks,
     dispatchReplaceGlobalLorebookEntries,
+    flushPendingLorebookEntryDraftEdit,
   } from 'src/ts/server/lorebookBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
@@ -25,6 +27,8 @@
     externalLoreBooks?: loreBook[]
     showFolder?: string
     onCollectionChange?: (entries: loreBook[]) => void
+    onEntryChange?: (index: number, entry: loreBook) => void
+    onEntrySettled?: (index: number) => void
   }
 
   let {
@@ -36,6 +40,12 @@
     onCollectionChange = (entries: loreBook[]) => {
       externalLoreBooks = entries
     },
+    onEntryChange = (index: number, entry: loreBook) => {
+      const entries = [...(externalLoreBooks ?? [])]
+      entries[index] = entry
+      updateExternalCollection(entries)
+    },
+    onEntrySettled = () => {},
   }: Props = $props()
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
@@ -53,15 +63,19 @@
   }
 
   function updateExternalLoreValue(index: number, value: loreBook): void {
-    const entries = [...(externalLoreBooks ?? [])]
-    entries[index] = value
-    updateExternalCollection(entries)
+    onEntryChange(index, value)
   }
 
   function updateCharacterGlobalLoreValue(index: number, value: loreBook): void {
-    const entries = [...(DBState.db.characters[$selectedCharID]?.globalLore ?? [])]
-    entries[index] = value
-    updateCharacterGlobalLoreCollection(entries)
+    const characterId = DBState.db.characters[$selectedCharID]?.chaId
+    if (!characterId) return
+    applyLorebookEntryDraftEdit({ kind: 'character', characterId }, index, value)
+  }
+
+  function flushCharacterGlobalLoreValue(): void {
+    const characterId = DBState.db.characters[$selectedCharID]?.chaId
+    if (!characterId) return
+    flushPendingLorebookEntryDraftEdit({ kind: 'character', characterId })
   }
 
   function updateCharacterGlobalLoreCollection(entries: loreBook[]): void {
@@ -82,9 +96,16 @@
     const chat = DBState.db.characters[$selectedCharID]?.chats?.[
       DBState.db.characters[$selectedCharID]?.chatPage ?? 0
     ]
-    const entries = [...(chat?.localLore ?? [])]
-    entries[index] = value
-    updateChatLoreCollection(entries)
+    if (!chat?.id) return
+    applyLorebookEntryDraftEdit({ kind: 'chat', chatId: chat.id }, index, value)
+  }
+
+  function flushChatLoreValue(): void {
+    const chat = DBState.db.characters[$selectedCharID]?.chats?.[
+      DBState.db.characters[$selectedCharID]?.chatPage ?? 0
+    ]
+    if (!chat?.id) return
+    flushPendingLorebookEntryDraftEdit({ kind: 'chat', chatId: chat.id })
   }
 
   function updateChatLoreCollection(entries: loreBook[]): void {
@@ -397,7 +418,9 @@
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
-              bind:value={() => externalLoreBooks[i], (value) => updateExternalLoreValue(i, value)}
+              value={externalLoreBooks[i]}
+              onDraftChange={(value) => updateExternalLoreValue(i, value)}
+              onDraftSettled={() => onEntrySettled(i)}
               idx={i}
               isOpen={openedRefs.has(book)}
               openFolders={openFolders()}
@@ -433,6 +456,8 @@
               onClose={(isDetail = true) => onClose(isDetail, book)}
               {externalLoreBooks}
               {onCollectionChange}
+              {onEntryChange}
+              {onEntrySettled}
             />
           {:else}
             <!-- Hidden marker for filtered items (for SortableJS) -->
@@ -452,9 +477,9 @@
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
-              bind:value={() =>
-                DBState.db.characters[$selectedCharID].globalLore[i], (value) =>
-                updateCharacterGlobalLoreValue(i, value)}
+              value={DBState.db.characters[$selectedCharID].globalLore[i]}
+              onDraftChange={(value) => updateCharacterGlobalLoreValue(i, value)}
+              onDraftSettled={flushCharacterGlobalLoreValue}
               idx={i}
               isOpen={openedRefs.has(book)}
               openFolders={openFolders()}
@@ -491,6 +516,8 @@
               {lorePlus}
               externalLoreBooks={DBState.db.characters[$selectedCharID].globalLore}
               onCollectionChange={updateCharacterGlobalLoreCollection}
+              onEntryChange={updateCharacterGlobalLoreValue}
+              onEntrySettled={flushCharacterGlobalLoreValue}
             />
           {:else}
             <!-- Hidden marker for filtered items (for SortableJS) -->
@@ -510,10 +537,11 @@
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
-              bind:value={() =>
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ].localLore[i], (value) => updateChatLoreValue(i, value)}
+              value={DBState.db.characters[$selectedCharID].chats[
+                DBState.db.characters[$selectedCharID].chatPage
+              ].localLore[i]}
+              onDraftChange={(value) => updateChatLoreValue(i, value)}
+              onDraftSettled={flushChatLoreValue}
               idx={i}
               isOpen={openedRefs.has(book)}
               openFolders={openFolders()}
@@ -558,6 +586,8 @@
                 ].localLore
               }
               onCollectionChange={updateChatLoreCollection}
+              onEntryChange={updateChatLoreValue}
+              onEntrySettled={flushChatLoreValue}
             />
           {:else}
             <!-- Hidden marker for filtered items (for SortableJS) -->

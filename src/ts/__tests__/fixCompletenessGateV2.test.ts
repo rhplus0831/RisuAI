@@ -740,10 +740,43 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     7,
     'Check `blobUrlCache` before fetching asset bytes (ordering only; bulk-byte route stays gated).',
   ),
-  planned(
+  done(
     'K4',
     4,
     'Debounce/scope the lorebook editor per-keystroke collection clone (v1-L32 residual).',
+    'src/ts/server/lorebookBridge.svelte.test.ts',
+    'K4: typing drafts clone only the edited entry before debounce settle',
+    [
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: the debounced final server write contains the final edited entry',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: flushing a draft sends the final replacement before the debounce delay',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: immediate flush with an active watcher sends one replacement only',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName:
+          'K4: module external entry drafts avoid collection clones and flush final module replacement',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: ModuleMenu wires external LoreBookList typing through module draft handlers',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: failed entry-draft rollback restores only the edited entry',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: collection operations still use collection-level replacement rollback',
+      },
+    ],
   ),
 ]
 
@@ -1371,7 +1404,7 @@ describe('v2 fix-completeness gate doc universe', () => {
 
     expect(rows).toHaveLength(4)
     expect(ids).toEqual(rangeIds('K', 4))
-    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'PENDING', 'PENDING'])
+    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'PENDING', 'DONE'])
 
     expect(rows[0].targetFix).toContain('v1-L6 residual')
     expect(rows[1].targetFix).toContain('v1-M10 residual')
@@ -1515,6 +1548,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L37',
       'K1',
       'K2',
+      'K4',
     ])
     expect(doneEntries.every(hasProofFields)).toBe(true)
   })

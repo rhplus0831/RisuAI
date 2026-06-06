@@ -24,7 +24,14 @@
 
   import { DBState } from 'src/ts/stores.svelte'
   import { v4 } from 'uuid'
-  import { watchServerBackedLorebooks } from 'src/ts/server/lorebookBridge.svelte'
+  import {
+    applyLorebookEntryDraftEdit,
+    currentLorebookCollectionScopedSnapshot,
+    dispatchReplaceModuleLorebooks,
+    flushPendingLorebookEntryDraftEdit,
+    watchServerBackedLorebooks,
+  } from 'src/ts/server/lorebookBridge.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { watchServerBackedScriptDefinitions } from 'src/ts/server/scriptDefinitionBridge.svelte'
 
   let submenu = $state(0)
@@ -80,6 +87,41 @@
     }
     assetFileExtensions = nextExtensions
   })
+
+  function cloneLoreBooks(entries: loreBook[]): loreBook[] {
+    return JSON.parse(JSON.stringify(entries ?? []))
+  }
+
+  function findLiveModule(): RisuModule | null {
+    const moduleId = currentModule?.id
+    if (!moduleId) return null
+    return DBState.db.modules?.find((candidate) => candidate.id === moduleId) ?? currentModule
+  }
+
+  function updateModuleLorebookValue(index: number, value: loreBook): void {
+    const moduleId = currentModule?.id
+    if (!moduleId) return
+    applyLorebookEntryDraftEdit({ kind: 'module', moduleId }, index, value)
+  }
+
+  function flushModuleLorebookValue(): void {
+    const moduleId = currentModule?.id
+    if (!moduleId) return
+    flushPendingLorebookEntryDraftEdit({ kind: 'module', moduleId })
+  }
+
+  function updateModuleLorebookCollection(entries: loreBook[]): void {
+    const moduleId = currentModule?.id
+    if (!moduleId) return
+    const previous = currentLorebookCollectionScopedSnapshot({ kind: 'module', moduleId })
+    const cloned = cloneLoreBooks(entries)
+    withTrustedServerProjectionWrite(() => {
+      const liveModule = findLiveModule()
+      if (liveModule) liveModule.lorebook = cloned
+      currentModule.lorebook = cloned
+    })
+    dispatchReplaceModuleLorebooks(moduleId, cloned, previous)
+  }
 
   function addLorebook() {
     if (Array.isArray(currentModule.lorebook)) {
@@ -276,7 +318,12 @@
   <TextAreaInput bind:value={currentModule.customModuleToggle} />
 {/if}
 {#if submenu === 1 && Array.isArray(currentModule.lorebook)}
-  <LoreBookList externalLoreBooks={currentModule.lorebook} />
+  <LoreBookList
+    externalLoreBooks={currentModule.lorebook}
+    onCollectionChange={updateModuleLorebookCollection}
+    onEntryChange={updateModuleLorebookValue}
+    onEntrySettled={flushModuleLorebookValue}
+  />
   <div class="text-textcolor2 mt-2 flex">
     <button
       onclick={() => {

@@ -15,8 +15,8 @@ v1 finding IDs are referenced as `v1-*`.
 - Confirmed findings: 102 total: 3 high, 22 medium, 59 low, 18 informational.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 3 M1-M4 and L4-L11, Phase
-  2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 4 M7-M10 are `DONE`;
-  the rest are `PENDING`.
+  2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 4 M7-M10 and K4 are
+  `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -150,7 +150,7 @@ archive, these rows own the remaining gap.
 | K1  | [2](phases/phase-2-server-corpus-ring-2.md)      | Wire `chatScopedRead` into generation finalization persist (v1-L6 residual). | DONE    |
 | K2  | [2](phases/phase-2-server-corpus-ring-2.md)      | Message-free/scoped load for the asset-GC sweep (v1-M10 residual). | DONE    |
 | K3  | [7](phases/phase-7-opt-in-subsystems.md)         | Check `blobUrlCache` before fetching asset bytes (ordering only; bulk-byte route stays gated). | PENDING |
-| K4  | [4](phases/phase-4-client-clone-ring-2.md)       | Debounce/scope the lorebook editor per-keystroke collection clone (v1-L32 residual). | PENDING |
+| K4  | [4](phases/phase-4-client-clone-ring-2.md)       | Debounce/scope the lorebook editor per-keystroke collection clone (v1-L32 residual). | DONE    |
 
 ### Informational
 

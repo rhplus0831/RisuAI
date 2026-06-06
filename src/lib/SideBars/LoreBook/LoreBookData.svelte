@@ -29,6 +29,7 @@
     dispatchReplaceChatLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { onDestroy } from 'svelte'
 
   const tokenCountCache = new Map<string, number>()
   const MAX_TOKEN_COUNT_CACHE = 500
@@ -46,6 +47,10 @@
     openFolders?: number
     isLastInContainer?: boolean
     onCollectionChange?: (entries: loreBook[]) => void
+    onEntryChange?: (index: number, entry: loreBook) => void
+    onEntrySettled?: (index: number) => void
+    onDraftChange?: ((entry: loreBook) => void) | null
+    onDraftSettled?: () => void
   }
 
   let {
@@ -63,6 +68,14 @@
     onCollectionChange = (entries: loreBook[]) => {
       externalLoreBooks = entries
     },
+    onEntryChange = (index: number, entry: loreBook) => {
+      const entries = [...(externalLoreBooks ?? [])]
+      entries[index] = entry
+      updateCollection(entries)
+    },
+    onEntrySettled = () => {},
+    onDraftChange = null,
+    onDraftSettled = () => {},
   }: Props = $props()
 
   let open = $derived(isOpen)
@@ -70,6 +83,7 @@
   let suppressDraftDispatch = false
   let draftInitialized = false
   let previousValueSnapshot = snapshotJson(value)
+  let lastDraftDispatchSnapshot = snapshotJson(draft)
   let tokenPromise = $state<Promise<number> | null>(null)
 
   $effect(() => {
@@ -79,6 +93,7 @@
       if (valueSnapshot !== draftSnapshot) {
         suppressDraftDispatch = true
         draft = cloneJsonValue(value)
+        lastDraftDispatchSnapshot = valueSnapshot
         queueMicrotask(() => {
           suppressDraftDispatch = false
         })
@@ -88,14 +103,12 @@
   })
 
   $effect(() => {
-    const draftSnapshot = snapshotJson(draft)
     if (!draftInitialized) {
       draftInitialized = true
       return
     }
     if (suppressDraftDispatch) return
-    value = cloneJsonValue(draft)
-    previousValueSnapshot = draftSnapshot
+    propagateDraft(false)
   })
 
   $effect(() => {
@@ -109,6 +122,37 @@
   function updateCollection(entries: loreBook[]): void {
     onCollectionChange(cloneJsonValue(entries ?? []))
   }
+
+  function propagateDraft(settled: boolean): void {
+    const draftSnapshot = snapshotJson(draft)
+    if (draftSnapshot !== lastDraftDispatchSnapshot) {
+      const next = cloneJsonValue(draft)
+      if (onDraftChange) {
+        onDraftChange(next)
+      } else {
+        value = next
+      }
+      previousValueSnapshot = draftSnapshot
+      lastDraftDispatchSnapshot = draftSnapshot
+    }
+    if (settled) onDraftSettled()
+  }
+
+  function settleDraftSoon(): void {
+    queueMicrotask(() => propagateDraft(true))
+  }
+
+  function settleWhenFocusLeaves(event: FocusEvent): void {
+    const currentTarget = event.currentTarget
+    if (!(currentTarget instanceof HTMLElement)) return
+    const nextTarget = event.relatedTarget
+    if (nextTarget instanceof Node && currentTarget.contains(nextTarget)) return
+    settleDraftSoon()
+  }
+
+  onDestroy(() => {
+    propagateDraft(true)
+  })
 
   function snapshotJson(value: unknown): string {
     const snapshot = JSON.stringify(value)
@@ -225,6 +269,7 @@
             open = true
             onOpen(draft.mode !== 'folder') // If not a folder, pass true
           } else {
+            settleDraftSoon()
             open = false
             onClose(draft.mode !== 'folder') // If not a folder, pass true
           }
@@ -328,12 +373,21 @@
   </div>
   {#if open}
     {#if draft.mode === 'folder'}
-      <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2">
+      <div
+        class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2"
+        onfocusout={settleWhenFocusLeaves}
+      >
         <span class="text-textcolor mt-6 mb-2">{language.folderName}</span>
         <TextInput size="sm" bind:value={draft.comment} />
 
         <div class="mt-4">
-          <LoreBookList {externalLoreBooks} showFolder={draft.key} {onCollectionChange} />
+          <LoreBookList
+            {externalLoreBooks}
+            showFolder={draft.key}
+            {onCollectionChange}
+            {onEntryChange}
+            {onEntrySettled}
+          />
         </div>
 
         <div class="mt-2 flex gap-1">
@@ -361,7 +415,10 @@
         </div>
       </div>
     {:else}
-      <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2">
+      <div
+        class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2"
+        onfocusout={settleWhenFocusLeaves}
+      >
         <span class="text-textcolor mt-6">{language.name} <Help key="loreName" /></span>
         <TextInput size="sm" bind:value={draft.comment} />
         {#if !lorePlus}
