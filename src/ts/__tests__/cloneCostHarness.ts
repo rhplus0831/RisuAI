@@ -195,6 +195,64 @@ export function withCloneInstrumentation<T>(fn: () => T): CloneInstrumentationRe
   }
 }
 
+export async function withAsyncCloneInstrumentation<T>(
+  fn: () => Promise<T>,
+): Promise<CloneInstrumentationResult<T>> {
+  const originalStringify = JSON.stringify
+  const originalStructuredClone = globalThis.structuredClone
+  let jsonCloneCount = 0
+  let structuredCloneCount = 0
+  let maxClonedSize = 0
+
+  const measure = (value: unknown): number => {
+    try {
+      return (originalStringify as (input: unknown) => string)(value)?.length ?? 0
+    } catch {
+      return 0
+    }
+  }
+
+  const trackedStringify = function trackedStringify(
+    this: unknown,
+    value: unknown,
+    replacer?: unknown,
+    space?: unknown,
+  ) {
+    jsonCloneCount += 1
+    const out = (originalStringify as (...args: unknown[]) => string).call(
+      this,
+      value,
+      replacer,
+      space,
+    )
+    if (typeof out === 'string' && out.length > maxClonedSize) maxClonedSize = out.length
+    return out
+  } as unknown as typeof JSON.stringify
+
+  const trackedStructuredClone = function trackedStructuredClone<V>(value: V): V {
+    structuredCloneCount += 1
+    const size = measure(value)
+    if (size > maxClonedSize) maxClonedSize = size
+    return (originalStructuredClone as (input: V) => V)(value)
+  } as typeof structuredClone
+
+  JSON.stringify = trackedStringify
+  globalThis.structuredClone = trackedStructuredClone
+  try {
+    const result = await fn()
+    return {
+      result,
+      jsonCloneCount,
+      structuredCloneCount,
+      totalCloneCount: jsonCloneCount + structuredCloneCount,
+      maxClonedSize,
+    }
+  } finally {
+    JSON.stringify = originalStringify
+    globalThis.structuredClone = originalStructuredClone
+  }
+}
+
 export interface SeedCloneCostDbOptions {
   /** Number of characters to seed (default 3). */
   characterCount?: number

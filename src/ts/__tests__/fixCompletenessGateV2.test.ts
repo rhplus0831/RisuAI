@@ -611,7 +611,27 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L33', 4, 'Single-row snapshot for trash `removeChar`.'),
+  done(
+    'L33',
+    4,
+    'Single-row snapshot for trash `removeChar`.',
+    'src/ts/characterCommands.test.ts',
+    'L33: removeChar normal trash captures no whole-characters clone and reuses one timestamp',
+    [
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L33: trashTime snapshots are scalar and restore only the target field',
+      },
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L33: failed removeChar trash update restores only trashTime',
+      },
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L33: trash rollback restores by stable id after index shifts',
+      },
+    ],
+  ),
   planned('L34', 4, 'Minimal `supaMemory` patch on selection.'),
   planned('L35', 6, 'Carry `hypaV3Data` independently of message length.'),
   planned('L36', 6, 'Bound the prereroll maps; clear on chat switch.'),
@@ -1444,6 +1464,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L14',
       'L16',
       'L32',
+      'L33',
       'K1',
       'K2',
     ])

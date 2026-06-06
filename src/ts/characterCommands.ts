@@ -108,12 +108,37 @@ export interface CharacterRowSnapshot {
   selectedCharID: number
 }
 
+export interface CharacterTrashTimeSnapshot {
+  characterId: string | undefined
+  index: number
+  hadTrashTime: boolean
+  trashTime: number | null | undefined
+  currentChar?: number
+  selectedCharID: number
+}
+
 export function currentCharacterRowSnapshot(index: number = get(selectedCharID)): CharacterRowSnapshot {
   const character = DBState.db.characters?.[index]
   return {
     characterId: character?.chaId,
     index,
     character: character ? cloneJsonValue(character) : undefined,
+    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    selectedCharID: get(selectedCharID),
+  }
+}
+
+export function currentCharacterTrashTimeSnapshot(
+  index: number = get(selectedCharID),
+): CharacterTrashTimeSnapshot {
+  const character = DBState.db.characters?.[index] as
+    | (character & { trashTime?: number | null })
+    | undefined
+  return {
+    characterId: character?.chaId,
+    index,
+    hadTrashTime: !!character && Object.prototype.hasOwnProperty.call(character, 'trashTime'),
+    trashTime: character?.trashTime,
     currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
     selectedCharID: get(selectedCharID),
   }
@@ -126,6 +151,25 @@ export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
       const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
       if (index >= 0) {
         characters[index] = cloneJsonValue(snapshot.character) as character
+      }
+    }
+    ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
+    selectedCharID.set(snapshot.selectedCharID)
+  })
+}
+
+export function restoreCharacterTrashTime(snapshot: CharacterTrashTimeSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const characters = DBState.db.characters
+    if (characters) {
+      const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
+      if (index >= 0) {
+        const character = characters[index] as character & { trashTime?: number | null }
+        if (snapshot.hadTrashTime) {
+          character.trashTime = snapshot.trashTime
+        } else {
+          delete character.trashTime
+        }
       }
     }
     ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
@@ -225,6 +269,14 @@ export function dispatchUpdateCharacterScoped(
   previous: CharacterRowSnapshot,
 ): void {
   dispatchUpdateCharacterWith(characterId, patch, () => restoreCharacterRow(previous))
+}
+
+export function dispatchUpdateCharacterTrashTime(
+  characterId: string,
+  trashTime: number,
+  previous: CharacterTrashTimeSnapshot,
+): void {
+  dispatchUpdateCharacterWith(characterId, { trashTime }, () => restoreCharacterTrashTime(previous))
 }
 
 function dispatchCompatibleCharacterUpdateWith(
