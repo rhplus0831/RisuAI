@@ -593,8 +593,30 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L46', 6, 'Bound `sseIdDone` (windowed dedup).'),
-  planned('L47', 6, 'Remove the `fetchNative` body log.'),
+  done(
+    'L46',
+    6,
+    'Bound `sseIdDone` (windowed dedup).',
+    'src/ts/process/mcp/mcplib.test.ts',
+    'L46: caps duplicate-id memory and evicts the oldest retained id',
+    [
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'L46: suppresses duplicate JSON-RPC response ids inside the retained window',
+      },
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'L46: suppresses duplicate ping ids while preserving ping responses',
+      },
+    ],
+  ),
+  done(
+    'L47',
+    6,
+    'Remove the `fetchNative` body log.',
+    'src/ts/globalApi.fetchNative.test.ts',
+    'L47: does not console.log the request body and keeps structured fetch logs',
+  ),
   planned('L48', 7, 'Translate once; cap HF TTS retries.'),
   planned('L49', 7, '`decode()`/`complete` guard + onerror for inlay images.'),
   planned('L50', 7, 'LRU + revoke for `blobUrlCache`.'),
@@ -1414,6 +1436,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L35',
       'L36',
       'L45',
+      'L46',
+      'L47',
       'K1',
       'K2',
     ])

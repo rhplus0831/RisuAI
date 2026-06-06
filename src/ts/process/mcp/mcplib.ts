@@ -51,6 +51,44 @@ export type SseEventDetail = {
   data: JsonRPC
 }
 
+export const MCP_SSE_DEDUP_ID_LIMIT = 1024
+
+export class WindowedSseIdDedup {
+  private readonly ids = new Set<string | number>()
+  private readonly insertionOrder: (string | number)[] = []
+
+  constructor(private readonly limit: number = MCP_SSE_DEDUP_ID_LIMIT) {}
+
+  get size() {
+    return this.ids.size
+  }
+
+  has(id: string | number) {
+    return this.ids.has(id)
+  }
+
+  add(id: string | number) {
+    if (this.ids.has(id)) {
+      return false
+    }
+    this.ids.add(id)
+    this.insertionOrder.push(id)
+
+    while (this.insertionOrder.length > this.limit) {
+      const oldest = this.insertionOrder.shift()
+      if (oldest !== undefined) {
+        this.ids.delete(oldest)
+      }
+    }
+    return true
+  }
+
+  clear() {
+    this.ids.clear()
+    this.insertionOrder.length = 0
+  }
+}
+
 export type RPCToolCallTextContent = {
   type: 'text'
   text: string
@@ -89,7 +127,7 @@ export class MCPClient {
   sseEndpoint: string
   accessToken: string | null = null
   sseResponses: Record<string, JsonRPC> = {}
-  sseIdDone: Set<string | number> = new Set()
+  sseIdDone = new WindowedSseIdDedup()
   protocolVersion: '2025-03-26' | '2024-11-05' = '2025-03-26'
   sses: {
     stream: ReadableStream
