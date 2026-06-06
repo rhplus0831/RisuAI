@@ -666,7 +666,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'server/fastify/__tests__/realmImport.test.ts',
     'L24: JSON Realm import removes newly persisted assets when character append fails',
   ),
-  planned('L25', 8, 'Open-or-skip assets at stream time (`missingFiles` degrade).'),
+  done(
+    'L25',
+    8,
+    'Open-or-skip assets at stream time (`missingFiles` degrade).',
+    'server/fastify/__tests__/risuSaveBundleExportRoute.test.ts',
+    'L25: reports an asset that disappears after bundle planning without aborting export',
+    [
+      {
+        testPath: 'server/fastify/__tests__/risuSaveBundleExportRoute.test.ts',
+        testName: 'exports a zip with the .risu file, manifest, and only walked present assets',
+      },
+    ],
+  ),
   planned('L26', 8, 'Temp-file + rename for legacy storage writes.'),
   planned('L27', 8, 'Abort/timeout (+ streaming) for hub forwards.'),
   planned('L28', 8, 'Drop the double clone in JSON import normalize.'),
@@ -1513,6 +1525,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L22',
       'L23',
       'L24',
+      'L25',
       'K1',
       'K2',
     ])

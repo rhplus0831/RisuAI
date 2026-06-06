@@ -56,6 +56,19 @@ GC, or streaming `.risu` export gates from the earlier workstream.
 - The L25 v2 gate entry points at a real focused test and the risk-map row is
   `DONE`.
 
+## Proof
+
+- Regression proof:
+  `server/fastify/__tests__/risuSaveBundleExportRoute.test.ts` /
+  `L25: reports an asset that disappears after bundle planning without aborting export`.
+- Valid-asset proof remains in
+  `server/fastify/__tests__/risuSaveBundleExportRoute.test.ts` /
+  `exports a zip with the .risu file, manifest, and only walked present assets`.
+- Gate proof:
+  `src/ts/__tests__/fixCompletenessGateV2.test.ts` registers L25 `DONE` with
+  the focused proof paths; `docs/plan/active-risk-analysis.md` marks L25
+  `DONE`.
+
 ## Validation
 
 ```bash

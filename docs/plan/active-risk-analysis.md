@@ -104,7 +104,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L22 | [8](phases/phase-8-server-bounds.md)             | Size the contextual budget from provider limits; surface splits.  | DONE    |
 | L23 | [8](phases/phase-8-server-bounds.md)             | Batch JSON-card asset persists (charx shape).                     | DONE    |
 | L24 | [8](phases/phase-8-server-bounds.md)             | Compensating asset cleanup when the append fails.                 | DONE    |
-| L25 | [8](phases/phase-8-server-bounds.md)             | Open-or-skip assets at stream time (`missingFiles` degrade).      | PENDING |
+| L25 | [8](phases/phase-8-server-bounds.md)             | Open-or-skip assets at stream time (`missingFiles` degrade).      | DONE    |
 | L26 | [8](phases/phase-8-server-bounds.md)             | Temp-file + rename for legacy storage writes.                     | PENDING |
 | L27 | [8](phases/phase-8-server-bounds.md)             | Abort/timeout (+ streaming) for hub forwards.                     | PENDING |
 | L28 | [8](phases/phase-8-server-bounds.md)             | Drop the double clone in JSON import normalize.                   | PENDING |
