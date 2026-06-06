@@ -1,7 +1,8 @@
 # Phase 7: Opt-In Subsystems (Root 5)
 
-Status: pending. Independent; order by pain. Largest finding count, but most
-fixes are small and local (several are one-liners).
+Status: pending; M15/M16 slice done on 2026-06-06. Independent; order by pain.
+Largest finding count, but most fixes are small and local (several are
+one-liners).
 
 Goal: make the translate/TTS/MCP/file-import subsystems stop leaking,
 hanging, truncating, and over-working once enabled. These paths were outside
@@ -12,7 +13,7 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
 
 ## Slices
 
-- M15/M16:
+- M15/M16 (done):
   [`slices/phase-7-opt-in-subsystems/translation-cache-and-streaming-guards.md`](slices/phase-7-opt-in-subsystems/translation-cache-and-streaming-guards.md)
   - bound the auto-translate cache and suppress streaming-frame Google/default
     translation work and HTML logs.
@@ -103,7 +104,7 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
 - [ ] M19: a rejected bergamot translate recovers on the next call.
 - [ ] M18: repeated TTS playbacks hold at most one live AudioContext
       (counting assertion via a stubbed constructor).
-- [ ] M15: translate lookups are O(1) and the cache is bounded; M16:
+- [x] M15: translate lookups are O(1) and the cache is bounded; M16:
       streaming with google auto-translate performs zero mid-stream
       translateHTML runs and zero html logs.
 - [ ] M20/L54: a hung MCP server fails the operation within the deadline,

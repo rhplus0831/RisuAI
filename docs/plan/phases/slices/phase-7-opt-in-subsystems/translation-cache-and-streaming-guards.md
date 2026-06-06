@@ -3,6 +3,8 @@
 Phase: [7](../../phase-7-opt-in-subsystems.md). Findings: M15, M16. Runtime
 change.
 
+Status: done on 2026-06-06.
+
 ## Scope
 
 Replace the auto-translate render cache's parallel arrays with bounded O(1)
@@ -63,12 +65,21 @@ races, or `markParsing` retry policy. Those are separate Phase 7 slices.
 
 ## Done Criteria
 
-- Auto-translate lookup cost is O(1), bounded by the configured cap, and does
+- [x] Auto-translate lookup cost is O(1), bounded by the configured cap, and does
   not grow across chat switches.
-- A default-Google streaming message does not invoke `DOMParser`, `fetch`, or
+- [x] A default-Google streaming message does not invoke `DOMParser`, `fetch`, or
   `console.log` from `translateHTML`.
-- M15 and M16 v2 gate entries point at real focused tests and the risk-map rows
+- [x] M15 and M16 v2 gate entries point at real focused tests and the risk-map rows
   are `DONE`.
+
+## Completed Proof
+
+- `src/ts/translator/translator.cache.test.ts`: M15 cache dedupe, cap/LRU
+  eviction with hit refresh, forward/reverse key separation, and active-chat
+  reset.
+- `src/ts/translator/translator.html.test.ts`: M16 streaming Google guard with
+  zero `DOMParser`/`fetch`/`console.log` work, default DOM-walk log removal,
+  and cached LLM streaming exception.
 
 ## Validation
 

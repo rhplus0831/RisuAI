@@ -307,8 +307,44 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('M12', 6, 'Apply-epoch gate for the character-profile watcher.'),
   planned('M13', 5, 'Debounce + per-item memo for prompt-template tokenize.'),
   planned('M14', 6, 'Idempotent `nodeObserve` (or wire the dead MutationObserver).'),
-  planned('M15', 7, 'Bounded Map (LRU) translate cache.'),
-  planned('M16', 7, 'Remove html log; `DoingChat` gate for non-exp translators.'),
+  done(
+    'M15',
+    7,
+    'Bounded Map (LRU) translate cache.',
+    'src/ts/translator/translator.cache.test.ts',
+    'M15: reuses cached translations, refreshes hits, and deterministically evicts the oldest cold entry',
+    [
+      {
+        testPath: 'src/ts/translator/translator.cache.test.ts',
+        testName: 'M15: dedupes repeated and concurrent translation lookups',
+      },
+      {
+        testPath: 'src/ts/translator/translator.cache.test.ts',
+        testName: 'M15: keeps forward and reverse translation cache keys separate',
+      },
+      {
+        testPath: 'src/ts/translator/translator.cache.test.ts',
+        testName: 'M15: clears the auto-translate cache when the active chat changes',
+      },
+    ],
+  ),
+  done(
+    'M16',
+    7,
+    'Remove html log; `DoingChat` gate for non-exp translators.',
+    'src/ts/translator/translator.html.test.ts',
+    'M16: skips Google auto-translate work while a message is streaming',
+    [
+      {
+        testPath: 'src/ts/translator/translator.html.test.ts',
+        testName: 'M16: default HTML translation no longer logs source HTML or chunks',
+      },
+      {
+        testPath: 'src/ts/translator/translator.html.test.ts',
+        testName: 'M16: preserves cached LLM translations during streaming',
+      },
+    ],
+  ),
   planned('M17', 5, 'Module-level content-keyed translate-detection memo.'),
   planned('M18', 7, 'Reuse/close `AudioContext` per playback.'),
   planned('M19', 7, 'Reset bergamot chain on rejection; reinit on wasm error.'),
@@ -372,8 +408,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/triggers.test.ts',
-        testName:
-          'L6: reuses compiled regexes across trigger conditions and V2 effects',
+        testName: 'L6: reuses compiled regexes across trigger conditions and V2 effects',
       },
       {
         testPath: 'server/fastify/__tests__/triggers.test.ts',
@@ -1307,6 +1342,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M4',
       'M5',
       'M6',
+      'M15',
+      'M16',
       'L3',
       'L4',
       'L5',

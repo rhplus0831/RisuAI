@@ -18,9 +18,78 @@ import { processScriptFull } from '../process/scripts'
 import localforage from 'localforage'
 import sendSound from '../../etc/send.mp3'
 
-let cache = {
-  origin: [''],
-  trans: [''],
+export const TRANSLATE_CACHE_MAX_ENTRIES = 256
+
+const translateCache = new Map<string, string>()
+const pendingTranslateCache = new Map<string, Promise<string>>()
+let activeTranslateCacheScope: string | null = null
+
+function getTranslateCacheKey(reverse: boolean, text: string) {
+  return `${reverse ? '1' : '0'}:${text}`
+}
+
+function getCurrentTranslateCacheScope(db = getDatabase()) {
+  const charId = get(selectedCharID)
+  const character = db.characters?.[charId]
+  const chatPage = character?.chatPage
+  const chatId = typeof chatPage === 'number' ? character?.chats?.[chatPage]?.id : undefined
+  return `${charId}:${chatId ?? chatPage ?? 'none'}`
+}
+
+function clearTranslateCacheEntries() {
+  translateCache.clear()
+  pendingTranslateCache.clear()
+}
+
+function syncTranslateCacheScope(db = getDatabase()) {
+  const scope = getCurrentTranslateCacheScope(db)
+  if (activeTranslateCacheScope !== null && activeTranslateCacheScope !== scope) {
+    clearTranslateCacheEntries()
+  }
+  activeTranslateCacheScope = scope
+  return scope
+}
+
+function readTranslateCache(reverse: boolean, text: string): string | undefined {
+  const key = getTranslateCacheKey(reverse, text)
+  if (!translateCache.has(key)) {
+    return undefined
+  }
+
+  const translated = translateCache.get(key)!
+  translateCache.delete(key)
+  translateCache.set(key, translated)
+  return translated
+}
+
+function writeTranslateCache(reverse: boolean, text: string, translated: string, scope: string) {
+  if (syncTranslateCacheScope() !== scope) {
+    return
+  }
+
+  const key = getTranslateCacheKey(reverse, text)
+  if (translateCache.has(key)) {
+    translateCache.delete(key)
+  }
+  translateCache.set(key, translated)
+
+  while (translateCache.size > TRANSLATE_CACHE_MAX_ENTRIES) {
+    const oldestKey = translateCache.keys().next().value
+    if (oldestKey === undefined) {
+      break
+    }
+    translateCache.delete(oldestKey)
+  }
+}
+
+export const __translatorTestHooks = {
+  clearTranslateCache() {
+    clearTranslateCacheEntries()
+    activeTranslateCacheScope = null
+  },
+  getTranslateCacheEntries() {
+    return Array.from(translateCache.entries())
+  },
 }
 
 let bergamotTranslate: (
@@ -42,24 +111,33 @@ export function getCurrentTranslatorPreset(): TranslatorPreset {
 
 export async function translate(text: string, reverse: boolean) {
   let db = getDatabase()
-  if (!reverse) {
-    const ind = cache.origin.indexOf(text)
-    if (ind !== -1) {
-      return cache.trans[ind]
-    }
-  } else {
-    const ind = cache.trans.indexOf(text)
-    if (ind !== -1) {
-      return cache.origin[ind]
-    }
+  syncTranslateCacheScope(db)
+  const cached = readTranslateCache(reverse, text)
+  if (cached !== undefined) {
+    return cached
   }
 
-  return runTranslator(
+  const key = getTranslateCacheKey(reverse, text)
+  const pending = pendingTranslateCache.get(key)
+  if (pending) {
+    return pending
+  }
+
+  const promise = runTranslator(
     text,
     reverse,
     db.translator,
     db.aiModel.startsWith('novellist') ? 'ja' : 'en',
   )
+  pendingTranslateCache.set(key, promise)
+
+  try {
+    return await promise
+  } finally {
+    if (pendingTranslateCache.get(key) === promise) {
+      pendingTranslateCache.delete(key)
+    }
+  }
 }
 
 export async function runTranslator(
@@ -69,6 +147,7 @@ export async function runTranslator(
   target: string,
   exarg?: { translatorNote?: string },
 ) {
+  const cacheScope = syncTranslateCacheScope()
   const arg = {
     from: reverse ? from : target,
 
@@ -120,9 +199,7 @@ export async function runTranslator(
 
   const result = fullResult.join('\n').trim()
 
-  cache.origin.push(reverse ? result : text)
-
-  cache.trans.push(reverse ? text : result)
+  writeTranslateCache(reverse, text, result, cacheScope)
 
   return result
 }
@@ -308,10 +385,8 @@ export async function translateHTML(
   let db = getDatabase()
   let DoingChat = get(doingChat)
   if (DoingChat) {
-    if (isExpTranslator()) {
-      if (!(db.translatorType === 'llm' && (await getLLMCache(html)) !== null)) {
-        return html
-      }
+    if (!(db.translatorType === 'llm' && (await getLLMCache(html)) !== null)) {
+      return html
     }
   }
   if (db.translatorType === 'llm') {
@@ -341,7 +416,6 @@ export async function translateHTML(
     )
   }
   const dom = new DOMParser().parseFromString(html, 'text/html')
-  console.log(html)
 
   let promises: Promise<void>[] = []
   let translationChunks: {
@@ -379,8 +453,6 @@ export async function translateHTML(
 
     const split = translated.split('■')
 
-    console.log(split.length, currentChunk.chunks.length)
-
     if (split.length !== currentChunk.chunks.length) {
       //try translating one by one
       for (let i = 0; i < currentChunk.chunks.length; i++) {
@@ -389,7 +461,6 @@ export async function translateHTML(
     }
 
     for (let i = 0; i < split.length; i++) {
-      console.log(split[i])
       currentChunk.resolvers[i](split[i])
     }
   }
@@ -525,8 +596,6 @@ export async function translateHTML(
 
   translatedHTML = applyEdittransRegex(translatedHTML, charArg, alwaysExistChar)
 
-  // console.log(html)
-  // console.log(translatedHTML)
   // Return the translated HTML, excluding the outer <body> tags if needed
   return translatedHTML
 }
