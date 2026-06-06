@@ -68,7 +68,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M14 | [6](phases/phase-6-bridges-lifecycle-network.md) | Idempotent `nodeObserve` (or wire the dead MutationObserver).    | PENDING |
 | M15 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded Map (LRU) translate cache.                               | PENDING |
 | M16 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove html log; `DoingChat` gate for non-exp translators.       | PENDING |
-| M17 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed translate-detection memo.             | PENDING |
+| M17 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed translate-detection memo.             | DONE    |
 | M18 | [7](phases/phase-7-opt-in-subsystems.md)         | Reuse/close `AudioContext` per playback.                         | PENDING |
 | M19 | [7](phases/phase-7-opt-in-subsystems.md)         | Reset bergamot chain on rejection; reinit on wasm error.         | PENDING |
 | M20 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded deadlines for MCP request/handshake/SSE waits.           | PENDING |
@@ -118,7 +118,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L37 | [4](phases/phase-4-client-clone-ring-2.md)       | Same-language early-return in `changeLanguage`.                   | PENDING |
 | L38 | [5](phases/phase-5-client-render-and-ui.md)      | Remove `{{#function}}`/`{{call::}}` logs.                         | PENDING |
 | L39 | [5](phases/phase-5-client-render-and-ui.md)      | `includes()` fast path + indexOf scan in `parseThoughtsAndTools`. | PENDING |
-| L40 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed `ParseMarkdown` memo (with H3).        | PENDING |
+| L40 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed `ParseMarkdown` memo (with H3).        | DONE    |
 | L41 | [5](phases/phase-5-client-render-and-ui.md)      | One shared partial-edit mousemove handler.                        | PENDING |
 | L42 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for GridCatalog.                          | PENDING |
 | L43 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for ModuleSettings.                       | PENDING |

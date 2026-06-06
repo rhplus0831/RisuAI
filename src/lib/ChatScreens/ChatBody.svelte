@@ -1,21 +1,24 @@
 <script lang="ts">
-  import isEqual from 'lodash/isEqual'
   import { DBState } from 'src/ts/stores.svelte'
   import { sleep } from 'src/ts/util'
   import { alertError } from '../../ts/alert'
   import {
     addMetadataToElement,
     getDistance,
-    ParseMarkdown,
     postTranslationParse,
     trimMarkdown,
     type CbsConditions,
     type simpleCharacterArgument,
   } from '../../ts/parser/parser.svelte'
-  import { getLLMCache, translateHTML } from '../../ts/translator/translator'
+  import { translateHTML } from '../../ts/translator/translator'
   import { getModuleAssets } from 'src/ts/process/modules'
   import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
   import { getFileSrc } from 'src/ts/globalApi.svelte'
+  import {
+    getChatBodyCachedOnlyLlmDecision,
+    getChatBodyCachedOnlyLlmDetectionKey,
+    memoizedChatBodyParse,
+  } from './ChatBodyParseMemo'
 
   interface Props {
     character?: simpleCharacterArgument | string | null
@@ -46,8 +49,8 @@
 
   // svelte-ignore non_reactive_update
   let lastParsed = ''
-  let lastCharArg: string | simpleCharacterArgument = null
-  let lastChatId = -10
+  let lastTranslationDetectionKey = ''
+  let markParsingRun = 0
 
   function getCbsCondition() {
     try {
@@ -70,31 +73,40 @@
     chatID: number,
     tries?: number,
   ) => {
+    const runId = ++markParsingRun
+    const setTranslatingForRun = (value: boolean) => {
+      if (runId === markParsingRun) {
+        translating = value
+      }
+    }
     // track 'translated' and 'retranslate' state
     translated
     retranslate
     let lastParsedQueue = ''
     let mode = 'notrim' as const
+    const cbsConditions = getCbsCondition()
     try {
-      if (!isEqual(lastCharArg, charArg) || chatID !== lastChatId) {
+      const detectionKey = getChatBodyCachedOnlyLlmDetectionKey({
+        data,
+        charArg,
+        chatID,
+        cbsConditions,
+        fallbackMode: mode,
+      })
+      if (!retranslate && detectionKey !== lastTranslationDetectionKey) {
         lastParsedQueue = ''
-        lastCharArg = charArg
-        lastChatId = chatID
+        lastTranslationDetectionKey = detectionKey
         let translateText = false
         try {
           if (DBState.db.autoTranslate) {
             if (DBState.db.autoTranslateCachedOnly && DBState.db.translatorType === 'llm') {
-              const cache = DBState.db.translateBeforeHTMLFormatting
-                ? await getLLMCache(data)
-                : !DBState.db.legacyTranslation
-                  ? await getLLMCache(
-                      await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition()),
-                    )
-                  : await getLLMCache(
-                      await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition()),
-                    )
-
-              translateText = cache !== null
+              translateText = await getChatBodyCachedOnlyLlmDecision({
+                data,
+                charArg,
+                chatID,
+                cbsConditions,
+                fallbackMode: mode,
+              })
             } else {
               translateText = true
             }
@@ -103,7 +115,9 @@
           const lastTranslated = translated
 
           setTimeout(() => {
-            translated = translateText
+            if (runId === markParsingRun) {
+              translated = translateText
+            }
           }, 10)
 
           // State change of `translated` triggers markParsing again,
@@ -124,48 +138,64 @@
 
         if (DBState.db.translatorType === 'llm' && DBState.db.translateBeforeHTMLFormatting) {
           await sleep(100)
-          translating = true
+          setTranslatingForRun(true)
           data = await translateHTML(data, false, charArg, chatID, retranslate)
-          translating = false
-          const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
-          lastParsedQueue = marked
-          lastCharArg = charArg
-          transResult = marked
-        } else if (!DBState.db.legacyTranslation) {
-          const marked = await ParseMarkdown(
+          setTranslatingForRun(false)
+          const marked = await memoizedChatBodyParse({
             data,
             charArg,
-            'pretranslate',
+            mode,
             chatID,
-            getCbsCondition(),
-          )
-          translating = true
+            cbsConditions,
+          })
+          lastParsedQueue = marked
+          transResult = marked
+        } else if (!DBState.db.legacyTranslation) {
+          const marked = await memoizedChatBodyParse({
+            data,
+            charArg,
+            mode: 'pretranslate',
+            chatID,
+            cbsConditions,
+          })
+          setTranslatingForRun(true)
           const translated = await postTranslationParse(
             await translateHTML(marked, false, charArg, chatID, retranslate),
           )
-          translating = false
+          setTranslatingForRun(false)
           lastParsedQueue = translated
-          lastCharArg = charArg
           transResult = translated
         } else {
-          const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
-          translating = true
+          const marked = await memoizedChatBodyParse({
+            data,
+            charArg,
+            mode,
+            chatID,
+            cbsConditions,
+          })
+          setTranslatingForRun(true)
           const translated = await translateHTML(marked, false, charArg, chatID, retranslate)
-          translating = false
+          setTranslatingForRun(false)
           lastParsedQueue = translated
-          lastCharArg = charArg
           transResult = translated
         }
 
         setTimeout(() => {
-          retranslate = false
+          if (runId === markParsingRun) {
+            retranslate = false
+          }
         }, 10)
 
         return transResult
       } else {
-        const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
+        const marked = await memoizedChatBodyParse({
+          data,
+          charArg,
+          mode,
+          chatID,
+          cbsConditions,
+        })
         lastParsedQueue = marked
-        lastCharArg = charArg
         return marked
       }
     } catch (error) {
@@ -179,7 +209,9 @@
       return await markParsing(data, charArg, chatID, (tries ?? 0) + 1)
     } finally {
       //since trimMarkdown is fast, we don't need to cache it
-      lastParsed = lastParsedQueue
+      if (runId === markParsingRun) {
+        lastParsed = lastParsedQueue
+      }
     }
   }
 

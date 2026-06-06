@@ -333,7 +333,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('M14', 6, 'Idempotent `nodeObserve` (or wire the dead MutationObserver).'),
   planned('M15', 7, 'Bounded Map (LRU) translate cache.'),
   planned('M16', 7, 'Remove html log; `DoingChat` gate for non-exp translators.'),
-  planned('M17', 5, 'Module-level content-keyed translate-detection memo.'),
+  done(
+    'M17',
+    5,
+    'Module-level content-keyed translate-detection memo.',
+    'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
+    'M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo',
+    [
+      {
+        testPath: 'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
+        testName: 'M17: explicit retranslate still calls translateHTML with regenerate enabled',
+      },
+    ],
+  ),
   planned('M18', 7, 'Reuse/close `AudioContext` per playback.'),
   planned('M19', 7, 'Reset bergamot chain on rejection; reinit on wasm error.'),
   planned('M20', 7, 'Bounded deadlines for MCP request/handshake/SSE waits.'),
@@ -522,7 +534,24 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L37', 4, 'Same-language early-return in `changeLanguage`.'),
   planned('L38', 5, 'Remove `{{#function}}`/`{{call::}}` logs.'),
   planned('L39', 5, '`includes()` fast path + indexOf scan in `parseThoughtsAndTools`.'),
-  planned('L40', 5, 'Module-level content-keyed `ParseMarkdown` memo (with H3).'),
+  done(
+    'L40',
+    5,
+    'Module-level content-keyed `ParseMarkdown` memo (with H3).',
+    'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
+    'L40: unchanged ChatBody remount performs zero additional ParseMarkdown calls',
+    [
+      {
+        testPath: 'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
+        testName: 'L40: changed ChatBody content misses the parse memo and renders the new body',
+      },
+      {
+        testPath: 'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
+        testName:
+          'M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo',
+      },
+    ],
+  ),
   planned('L41', 5, 'One shared partial-edit mousemove handler.'),
   planned('L42', 5, '`$derived` + keyed each for GridCatalog.'),
   planned('L43', 5, '`$derived` + keyed each for ModuleSettings.'),
@@ -1332,6 +1361,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M5',
       'M6',
       'M13',
+      'M17',
       'L3',
       'L4',
       'L5',
@@ -1344,6 +1374,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L13',
       'L14',
       'L16',
+      'L40',
       'K1',
       'K2',
     ])

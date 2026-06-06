@@ -34,6 +34,16 @@ export const LLMCacheStorage = localforage.createInstance({
   name: 'LLMTranslateCache',
 })
 
+let llmCacheMutationEpoch = 0
+
+export function getLLMCacheMutationEpoch() {
+  return llmCacheMutationEpoch
+}
+
+function bumpLLMCacheMutationEpoch() {
+  llmCacheMutationEpoch += 1
+}
+
 let waitTrans = 0
 
 export function getCurrentTranslatorPreset(): TranslatorPreset {
@@ -620,6 +630,7 @@ async function translateLLM(
     })
     .replace(/<\/style-data>/g, '')
   await LLMCacheStorage.setItem(text, result)
+  bumpLLMCacheMutationEpoch()
   return result
 }
 
@@ -641,6 +652,7 @@ export async function searchLLMCache(
 
 export async function setLLMCache(key: string, value: string): Promise<void> {
   await LLMCacheStorage.setItem(key, value)
+  bumpLLMCacheMutationEpoch()
 }
 
 export async function exportLLMCacheAsJSON(): Promise<Record<string, string>> {
@@ -664,11 +676,15 @@ export async function importLLMCacheFromJSON(
       failed++
     }
   }
+  if (count > 0) {
+    bumpLLMCacheMutationEpoch()
+  }
   return { count, failed }
 }
 
 export async function clearLLMCache(): Promise<void> {
   await LLMCacheStorage.clear()
+  bumpLLMCacheMutationEpoch()
 }
 
 function applyEdittransRegex(
