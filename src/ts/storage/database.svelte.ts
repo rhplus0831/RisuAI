@@ -840,9 +840,9 @@ export function mergeServerProjectionCharacterRow(
         const priorMessage = (prior as { message?: unknown }).message
         if (Array.isArray(priorMessage) && priorMessage.length > 0) {
           ;(chat as { message?: unknown }).message = priorMessage
-          const priorHypa = (prior as { hypaV3Data?: unknown }).hypaV3Data
-          if (priorHypa !== undefined) (chat as { hypaV3Data?: unknown }).hypaV3Data = priorHypa
         }
+        const priorHypa = (prior as { hypaV3Data?: unknown }).hypaV3Data
+        if (priorHypa !== undefined) (chat as { hypaV3Data?: unknown }).hypaV3Data = priorHypa
       }
     }
     // Preserve resident globalLore if the shipped row stubbed it (stubs on).

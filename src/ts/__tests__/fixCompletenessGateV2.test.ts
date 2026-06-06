@@ -521,7 +521,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L32', 4, 'Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`.'),
   planned('L33', 4, 'Single-row snapshot for trash `removeChar`.'),
   planned('L34', 4, 'Minimal `supaMemory` patch on selection.'),
-  planned('L35', 6, 'Carry `hypaV3Data` independently of message length.'),
+  done(
+    'L35',
+    6,
+    'Carry `hypaV3Data` independently of message length.',
+    'src/ts/storage/database.svelte.test.ts',
+    'L35: preserves hydrated hypaV3Data on message-empty chat stubs',
+    [
+      {
+        testPath: 'src/ts/storage/database.svelte.test.ts',
+        testName: 'keeps non-empty hydrated messages on incoming chat stubs',
+      },
+      {
+        testPath: 'src/ts/storage/database.svelte.test.ts',
+        testName: 'returns false for unknown characters without mutating the corpus',
+      },
+    ],
+  ),
   planned('L36', 6, 'Bound the prereroll maps; clear on chat switch.'),
   planned('L37', 4, 'Same-language early-return in `changeLanguage`.'),
   planned('L38', 5, 'Remove `{{#function}}`/`{{call::}}` logs.'),
@@ -1350,6 +1366,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L13',
       'L14',
       'L16',
+      'L35',
       'K1',
       'K2',
     ])
