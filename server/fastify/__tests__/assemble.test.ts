@@ -2,7 +2,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
+import type {
+  Chat,
+  Database,
+  Message,
+  character,
+  loreBook,
+} from '../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { openDatabase } from '../src/db.js'
 import {
@@ -32,6 +38,11 @@ import { applyDepthPrompts, buildHistoryWindow } from '../src/prompt/history.js'
 import type { LoreEntryActive, LorebookActivationReport } from '../src/prompt/lorebook.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import * as promptVariables from '../src/prompt/variables.js'
+import {
+  bumpAssemblyCbsHistoryGeneration,
+  getAssemblyCbsCallbackMemoInstrumentation,
+  resetAssemblyCbsCallbackMemoInstrumentation,
+} from '../src/prompt/cbsCallbackMemo.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -277,7 +288,8 @@ describe('Phase 7-11a beginAssembly context + template normalization', () => {
   it('builds the ExpandContext and empty slots', () => {
     const db = makeDatabase()
     const state = beginAssembly(baseInput(), depsFor(db))
-    expect(state.ctx).toEqual({ database: db, selectedCharID: 0, chatPage: 0 })
+    expect(state.ctx).toMatchObject({ database: db, selectedCharID: 0, chatPage: 0 })
+    expect(state.ctx.cbsCallbackMemo).toBe(state.cbsCallbackMemo)
     expect(state.unformated.chats).toEqual([])
     expect(state.unformated.description).toEqual([])
   })
@@ -2137,5 +2149,165 @@ describe('Phase 3 M3 stable card cache', () => {
           (expandCtx as { runVar?: boolean } | undefined)?.runVar === true,
       ),
     ).toHaveLength(1)
+  })
+})
+
+describe('Phase 3 M4 CBS callback memo', () => {
+  const msg = (role: Message['role'], data: string, chatId: string): Message =>
+    ({ role, data, chatId }) as Message
+
+  const lore = (overrides: Partial<loreBook> = {}): loreBook =>
+    ({
+      key: '',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Lore',
+      content: 'Lore body',
+      mode: 'normal',
+      alwaysActive: true,
+      selective: false,
+      ...overrides,
+    }) as loreBook
+
+  const payload = (content: string, label: string): string => {
+    const line = content.split('\n').find((candidate) => candidate.startsWith(label))
+    expect(line, `missing ${label}`).toBeDefined()
+    return line!.slice(label.length)
+  }
+
+  it('evaluates repeated charhistory, userhistory, and lorebook callbacks once per assembly signature', async () => {
+    resetAssemblyCbsCallbackMemoInstrumentation()
+    const db = makeDatabase({
+      username: 'Alex',
+      aiModel: 'gpt4',
+      maxContext: 100_000,
+      maxResponse: 50,
+      promptTemplate: [
+        {
+          type: 'plain',
+          type2: 'main',
+          role: 'system',
+          text: [
+            'U1 {{userhistory}}',
+            'U2 {{usermessages}}',
+            'C1 {{charhistory}}',
+            'C2 {{charmessages}}',
+            'L1 {{lorebook}}',
+            'L2 {{worldinfo}}',
+          ].join('\n'),
+        },
+      ],
+      characters: [
+        makeCharacter({
+          name: 'Tess',
+          chaId: 'char-tess',
+          firstMessage: '',
+          globalLore: [lore({ id: 'global-lore', content: 'Global lore' })],
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              localLore: [lore({ id: 'local-lore', content: 'Local lore' })],
+              message: [
+                msg('user', 'user sees {{user}}', 'msg-user'),
+                msg('char', 'char sees {{char}}', 'msg-char'),
+              ],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(
+      baseInput({ mode: 'preview', userMessage: undefined }),
+      depsFor(db),
+    )
+
+    expect(result.stopSending).toBe(false)
+    const content = result.formated?.find((row) => row.content.includes('U1 '))?.content ?? ''
+    expect(payload(content, 'U1 ')).toBe(payload(content, 'U2 '))
+    expect(payload(content, 'C1 ')).toBe(payload(content, 'C2 '))
+    expect(payload(content, 'L1 ')).toBe(payload(content, 'L2 '))
+    expect(payload(content, 'U1 ')).toContain('user sees Alex')
+    expect(payload(content, 'C1 ')).toContain('char sees Tess')
+    expect(payload(content, 'L1 ')).toContain('Global lore')
+    expect(payload(content, 'L1 ')).toContain('Local lore')
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses).toEqual({
+      userhistory: 1,
+      charhistory: 1,
+      lorebook: 1,
+    })
+  })
+
+  it('does not return stale history output after the assembly history generation changes', () => {
+    resetAssemblyCbsCallbackMemoInstrumentation()
+    const db = makeDatabase({
+      username: 'Alex',
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [msg('user', 'first {{user}}', 'msg-1')],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const state = beginAssembly(baseInput({ mode: 'preview', userMessage: undefined }), depsFor(db))
+    const read = () =>
+      promptVariables.expandVariables('{{userhistory}}\n{{userhistory}}', {
+        ...state.ctx,
+        chara: state.currentChar,
+      }).text
+
+    const first = read()
+    expect(first).toContain('first Alex')
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(1)
+
+    db.characters[0].chats[0].message.push(msg('user', 'second {{user}}', 'msg-2'))
+    bumpAssemblyCbsHistoryGeneration(state.cbsCallbackMemo)
+
+    const second = read()
+    expect(second).toContain('first Alex')
+    expect(second).toContain('second Alex')
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(2)
+  })
+
+  it('does not return stale lorebook output after lore identities change', () => {
+    resetAssemblyCbsCallbackMemoInstrumentation()
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          globalLore: [lore({ id: 'global-one', content: 'Global one' })],
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              localLore: [lore({ id: 'local-one', content: 'Local one' })],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const state = beginAssembly(baseInput({ mode: 'preview', userMessage: undefined }), depsFor(db))
+    const read = () =>
+      promptVariables.expandVariables('{{lorebook}}\n{{worldinfo}}', {
+        ...state.ctx,
+        chara: state.currentChar,
+      }).text
+
+    const first = read()
+    expect(first).toContain('Global one')
+    expect(first).toContain('Local one')
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.lorebook).toBe(1)
+
+    db.characters[0].globalLore.push(lore({ id: 'global-two', content: 'Global two' }))
+    db.characters[0].chats[0].localLore.push(lore({ id: 'local-two', content: 'Local two' }))
+
+    const second = read()
+    expect(second).toContain('Global one')
+    expect(second).toContain('Global two')
+    expect(second).toContain('Local one')
+    expect(second).toContain('Local two')
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.lorebook).toBe(2)
   })
 })

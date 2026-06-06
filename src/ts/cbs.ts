@@ -78,8 +78,18 @@ export type matcherArg = {
   triggerId?: string
   getNested?: () => string[]
   setNestedRoot?: (val: string) => void
+  callbackMemo?: CbsCallbackMemo
 }
 'a'.toLowerCase().split('::')
+
+export type CbsCallbackMemoName = 'charhistory' | 'userhistory' | 'lorebook'
+
+export interface CbsCallbackMemo {
+  entries: Map<string, string>
+  historyGeneration: number
+  loreGeneration?: number
+  recordMiss?: (name: CbsCallbackMemoName, key: string) => void
+}
 
 export type RegisterCallback = (
   str: string,
@@ -138,6 +148,141 @@ export type CBSRegisterArg = {
   getCurrentTriggerId: () => string
 }
 
+function stableMemoStringify(value: unknown): string {
+  if (value === undefined) return 'undefined'
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map((item) => stableMemoStringify(item)).join(',')}]`
+
+  const obj = value as Record<string, unknown>
+  return `{${Object.keys(obj)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableMemoStringify(obj[key])}`)
+    .join(',')}}`
+}
+
+function characterMemoIdentity(value: character | string | null | undefined): unknown {
+  if (!value) return null
+  if (typeof value === 'string') return { type: 'string', value }
+  return {
+    type: 'character',
+    chaId: value.chaId ?? null,
+    name: value.name ?? null,
+    nickname: value.nickname ?? null,
+    chatPage: value.chatPage ?? null,
+  }
+}
+
+function loreEntryMemoIdentity(entry: loreBook, index: number): unknown {
+  return {
+    index,
+    id: entry.id ?? null,
+    bookVersion: entry.bookVersion ?? null,
+    comment: entry.comment ?? null,
+    content: entry.content ?? null,
+    key: entry.key ?? null,
+    secondkey: entry.secondkey ?? null,
+    mode: entry.mode ?? null,
+    alwaysActive: entry.alwaysActive ?? null,
+    selective: entry.selective ?? null,
+    insertorder: entry.insertorder ?? null,
+  }
+}
+
+function loreCollectionMemoIdentity(entries: readonly loreBook[]): string {
+  return stableMemoStringify(entries.map((entry, index) => loreEntryMemoIdentity(entry, index)))
+}
+
+function parserArgMemoIdentity(arg: matcherArg): string {
+  return stableMemoStringify({
+    chatID: arg.chatID,
+    chara: characterMemoIdentity(arg.chara),
+    rmVar: arg.rmVar,
+    var: arg.var ?? null,
+    tokenizeAccurate: arg.tokenizeAccurate ?? false,
+    consistantChar: arg.consistantChar ?? false,
+    displaying: arg.displaying ?? false,
+    role: arg.role ?? null,
+    runVar: arg.runVar ?? false,
+    funcName: arg.funcName ?? null,
+    text: arg.text ?? null,
+    recursiveCount: arg.recursiveCount ?? null,
+    lowLevelAccess: arg.lowLevelAccess ?? false,
+    cbsConditions: arg.cbsConditions ?? {},
+    triggerId: arg.triggerId ?? null,
+  })
+}
+
+function chatMemoIdentity(
+  chat: { id?: string; name?: string } | undefined,
+  chatPage: number,
+): string {
+  return stableMemoStringify({
+    chatPage,
+    id: chat?.id ?? null,
+    name: chat?.name ?? null,
+  })
+}
+
+function historyCallbackMemoKey(input: {
+  name: 'charhistory' | 'userhistory'
+  db: Database
+  selectedCharID: number
+  matcherArg: matcherArg
+}): string {
+  const selchar = input.db.characters[input.selectedCharID]
+  const chatPage = selchar?.chatPage ?? 0
+  const chat = selchar?.chats?.[chatPage]
+  return `history:${input.name}:${stableMemoStringify({
+    selectedCharID: input.selectedCharID,
+    character: characterMemoIdentity(selchar),
+    chat: chatMemoIdentity(chat, chatPage),
+    historyGeneration: input.matcherArg.callbackMemo?.historyGeneration ?? 0,
+    role: input.matcherArg.role ?? null,
+    parserArg: parserArgMemoIdentity(input.matcherArg),
+  })}`
+}
+
+function lorebookCallbackMemoKey(input: {
+  db: Database
+  selectedCharID: number
+  selectedChar: character
+  targetChar: character
+  chat: { id?: string; name?: string; localLore?: loreBook[] } | undefined
+  matcherArg: matcherArg
+  characterLore: readonly loreBook[]
+  chatLore: readonly loreBook[]
+  moduleLore: readonly loreBook[]
+}): string {
+  const moduleIdentity =
+    input.moduleLore.length > 0 ? loreCollectionMemoIdentity(input.moduleLore) : null
+  return `lorebook:${stableMemoStringify({
+    selectedCharID: input.selectedCharID,
+    selectedCharacter: characterMemoIdentity(input.selectedChar),
+    targetCharacter: characterMemoIdentity(input.targetChar),
+    chat: chatMemoIdentity(input.chat, input.selectedChar.chatPage ?? 0),
+    globalLore: loreCollectionMemoIdentity(input.characterLore),
+    localLore: loreCollectionMemoIdentity(input.chatLore),
+    moduleLore: moduleIdentity,
+    loreGeneration: input.matcherArg.callbackMemo?.loreGeneration ?? 0,
+  })}`
+}
+
+function readCachedCallback(memo: CbsCallbackMemo | undefined, key: string): string | undefined {
+  return memo?.entries.get(key)
+}
+
+function writeCachedCallback(
+  memo: CbsCallbackMemo | undefined,
+  name: CbsCallbackMemoName,
+  key: string,
+  value: string,
+): string {
+  if (!memo) return value
+  memo.recordMiss?.(name, key)
+  memo.entries.set(key, value)
+  return value
+}
+
 export function registerCBS(arg: CBSRegisterArg) {
   const {
     registerFunction,
@@ -184,7 +329,11 @@ export function registerCBS(arg: CBSRegisterArg) {
           return matcherArg.chara.name
         }
       }
-      return (currentChar as character | undefined)?.nickname || (currentChar as character | undefined)?.name || ''
+      return (
+        (currentChar as character | undefined)?.nickname ||
+        (currentChar as character | undefined)?.name ||
+        ''
+      )
     },
     alias: ['bot'],
     description:
@@ -227,7 +376,9 @@ export function registerCBS(arg: CBSRegisterArg) {
         }
         pointer--
       }
-      return chat.fmIndex == null || chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
+      return chat.fmIndex == null || chat.fmIndex === -1
+        ? selchar.firstMessage
+        : selchar.alternateGreetings[chat.fmIndex]
     },
     alias: ['previouscharchat', 'lastcharmessage'],
     description:
@@ -249,7 +400,9 @@ export function registerCBS(arg: CBSRegisterArg) {
           }
           pointer--
         }
-        return chat.fmIndex == null || chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
+        return chat.fmIndex == null || chat.fmIndex === -1
+          ? selchar.firstMessage
+          : selchar.alternateGreetings[chat.fmIndex]
       }
       return ''
     },
@@ -348,11 +501,34 @@ export function registerCBS(arg: CBSRegisterArg) {
       const chat = selchar.chats[selchar.chatPage]
       const characterLore = achara.globalLore ?? []
       const chatLore = chat.localLore ?? []
-      const fullLore = characterLore.concat(chatLore.concat(getModuleLorebooks()))
-      return makeArray(
-        fullLore.map((v) => {
-          return JSON.stringify(v)
-        }),
+      const moduleLore = getModuleLorebooks()
+      const memoKey = matcherArg.callbackMemo
+        ? lorebookCallbackMemoKey({
+            db,
+            selectedCharID: getSelectedCharID(),
+            selectedChar: selchar,
+            targetChar: achara,
+            chat,
+            matcherArg,
+            characterLore,
+            chatLore,
+            moduleLore,
+          })
+        : undefined
+      if (memoKey) {
+        const cached = readCachedCallback(matcherArg.callbackMemo, memoKey)
+        if (cached !== undefined) return cached
+      }
+      const fullLore = characterLore.concat(chatLore.concat(moduleLore))
+      return writeCachedCallback(
+        matcherArg.callbackMemo,
+        'lorebook',
+        memoKey ?? '',
+        makeArray(
+          fullLore.map((v) => {
+            return JSON.stringify(v)
+          }),
+        ),
       )
     },
     alias: ['worldinfo'],
@@ -366,16 +542,33 @@ export function registerCBS(arg: CBSRegisterArg) {
       const db = getDatabase()
       const selchar = db.characters[getSelectedCharID()]
       const chat = selchar.chats[selchar.chatPage]
-      return makeArray(
-        chat.message
-          .filter((v) => {
-            return v.role === 'user'
+      const memoKey = matcherArg.callbackMemo
+        ? historyCallbackMemoKey({
+            name: 'userhistory',
+            db,
+            selectedCharID: getSelectedCharID(),
+            matcherArg,
           })
-          .map((v) => {
-            // Shallow-spread instead of a deep clone: only `.data` is reassigned,
-            // and the spread keeps the live `DBState` Message unmutated.
-            return JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })
-          }),
+        : undefined
+      if (memoKey) {
+        const cached = readCachedCallback(matcherArg.callbackMemo, memoKey)
+        if (cached !== undefined) return cached
+      }
+      return writeCachedCallback(
+        matcherArg.callbackMemo,
+        'userhistory',
+        memoKey ?? '',
+        makeArray(
+          chat.message
+            .filter((v) => {
+              return v.role === 'user'
+            })
+            .map((v) => {
+              // Shallow-spread instead of a deep clone: only `.data` is reassigned,
+              // and the spread keeps the live `DBState` Message unmutated.
+              return JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })
+            }),
+        ),
       )
     },
     alias: ['usermessages', 'user_history'],
@@ -389,16 +582,33 @@ export function registerCBS(arg: CBSRegisterArg) {
       const db = getDatabase()
       const selchar = db.characters[getSelectedCharID()]
       const chat = selchar.chats[selchar.chatPage]
-      return makeArray(
-        chat.message
-          .filter((v) => {
-            return v.role === 'char'
+      const memoKey = matcherArg.callbackMemo
+        ? historyCallbackMemoKey({
+            name: 'charhistory',
+            db,
+            selectedCharID: getSelectedCharID(),
+            matcherArg,
           })
-          .map((v) => {
-            // Shallow-spread instead of a deep clone: only `.data` is reassigned,
-            // and the spread keeps the live `DBState` Message unmutated.
-            return JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })
-          }),
+        : undefined
+      if (memoKey) {
+        const cached = readCachedCallback(matcherArg.callbackMemo, memoKey)
+        if (cached !== undefined) return cached
+      }
+      return writeCachedCallback(
+        matcherArg.callbackMemo,
+        'charhistory',
+        memoKey ?? '',
+        makeArray(
+          chat.message
+            .filter((v) => {
+              return v.role === 'char'
+            })
+            .map((v) => {
+              // Shallow-spread instead of a deep clone: only `.data` is reassigned,
+              // and the spread keeps the live `DBState` Message unmutated.
+              return JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })
+            }),
+        ),
       )
     },
     alias: ['charmessages', 'char_history'],

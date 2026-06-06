@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { performance } from 'node:perf_hooks'
 import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
+import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { EntityNotFoundError } from '../repository.js'
@@ -84,6 +85,10 @@ import {
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
+import {
+  bumpAssemblyCbsHistoryGeneration,
+  createAssemblyCbsCallbackMemo,
+} from './cbsCallbackMemo.js'
 
 /**
  * Root prompt assembly entry point.
@@ -366,6 +371,8 @@ export interface AssemblyState {
   chatPage: number
   /** Reused by every downstream slot builder (`buildDescription`, …). */
   ctx: ExpandContext
+  /** Per-assembly opt-in CBS callback memo for expensive history/lore callbacks. */
+  cbsCallbackMemo: CbsCallbackMemo
   unformated: UnformatedPromptSlots
   promptTemplate: PromptItem[] | null
   usingPromptTemplate: boolean
@@ -533,7 +540,14 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
 export function beginAssembly(input: AssembleInput, deps: AssembleDeps): AssemblyState {
   const { database, currentChar, currentChat, selectedCharID, chatPage } = resolveScope(input, deps)
 
-  const ctx: ExpandContext = { database, selectedCharID, chatPage, signal: deps.signal }
+  const cbsCallbackMemo = createAssemblyCbsCallbackMemo()
+  const ctx: ExpandContext = {
+    database,
+    selectedCharID,
+    chatPage,
+    signal: deps.signal,
+    cbsCallbackMemo,
+  }
   const unformated = createEmptyUnformatedSlots()
 
   const { promptTemplate, usingPromptTemplate } = normalizeTemplate(database, currentChar)
@@ -549,6 +563,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     selectedCharID,
     chatPage,
     ctx,
+    cbsCallbackMemo,
     unformated,
     promptTemplate,
     usingPromptTemplate,
@@ -641,6 +656,10 @@ function foldStableCardCacheVars(state: AssemblyState): void {
   syncWorkingScriptstate(state)
 }
 
+function bumpHistoryCallbackMemo(state: Pick<AssemblyState, 'cbsCallbackMemo'>): void {
+  bumpAssemblyCbsHistoryGeneration(state.cbsCallbackMemo)
+}
+
 function captureMessageReplacement(
   state: AssemblyState,
   source: Exclude<AssembleMutationSource, 'user_message'>,
@@ -667,6 +686,7 @@ function captureMessageReplacement(
   )
   recordMessageReplacementCapture(source)
   state.messageMutationCheckpoint = after
+  bumpHistoryCallbackMemo(state)
 }
 
 function setMessageMutationCheckpointRow(
@@ -707,6 +727,7 @@ function appendUserMessageRow(state: AssemblyState): void {
       message: checkpointMessage,
     })
     setMessageMutationCheckpointRow(state, lastIndex, checkpointMessage)
+    bumpHistoryCallbackMemo(state)
     return
   }
 
@@ -727,6 +748,7 @@ function appendUserMessageRow(state: AssemblyState): void {
     message: checkpointMessage,
   })
   setMessageMutationCheckpointRow(state, index, checkpointMessage)
+  bumpHistoryCallbackMemo(state)
 }
 
 /**
@@ -941,8 +963,12 @@ function applyCurrentChatRunVars(
     state.varChanged = true
     syncWorkingScriptstate(state)
   }
-  if (messageDirty && options.captureMessageMutation !== false) {
-    captureMessageReplacement(state, 'run_var')
+  if (messageDirty) {
+    if (options.captureMessageMutation === false) {
+      bumpHistoryCallbackMemo(state)
+    } else {
+      captureMessageReplacement(state, 'run_var')
+    }
   }
 }
 
@@ -1210,13 +1236,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   // depth/reverse_depth index math (excluding `depth === 0`, which the
   // template/postEverything path owns).
   if (state.report) {
-    applyDepthPrompts(
-      unformated.chats,
-      ctx,
-      currentChar,
-      state.report,
-      state.preparedDepthPrompts,
-    )
+    applyDepthPrompts(unformated.chats, ctx, currentChar, state.report, state.preparedDepthPrompts)
   }
 
   // Start-trigger `additonalSysPrompt` placement (SPA `:285-304`).
@@ -1775,6 +1795,7 @@ function appendAssistantRow(
   const messages = (state.currentChat.message ??= [])
   if (isContinue && messages[continueIndex]?.role === 'char') {
     messages[continueIndex] = { ...messages[continueIndex], data: editedText }
+    bumpHistoryCallbackMemo(state)
     return
   }
   messages.push({
@@ -1786,6 +1807,7 @@ function appendAssistantRow(
     ...(input.generationInfo ? { generationInfo: input.generationInfo } : {}),
     ...(input.promptInfo ? { promptInfo: input.promptInfo } : {}),
   } as Message)
+  bumpHistoryCallbackMemo(state)
 }
 
 /**

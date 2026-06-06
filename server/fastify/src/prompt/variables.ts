@@ -1,4 +1,5 @@
 import type { Database, character } from '../../../../src/ts/storage/database.svelte'
+import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import {
@@ -55,6 +56,8 @@ export interface ExpandContext {
   callStack?: number
   /** Originating request/durable-job abort signal for downstream trigger handoffs. */
   signal?: AbortSignal
+  /** Optional per-assembly CBS callback memo. Browser/local calls omit this. */
+  cbsCallbackMemo?: CbsCallbackMemo
 }
 
 export interface ExpandResult {
@@ -97,6 +100,7 @@ export function expandVariables(input: string, ctx: ExpandContext): ExpandResult
       role: ctx.role,
       cbsConditions: ctx.cbsConditions,
       callStack: ctx.callStack,
+      callbackMemo: ctx.cbsCallbackMemo,
     })
     return { text, dirty: isActivePromptScopeDirty() }
   } finally {

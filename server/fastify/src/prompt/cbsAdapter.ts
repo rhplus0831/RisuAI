@@ -104,6 +104,7 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
         role: arg.role,
         runVar: arg.runVar,
         cbsConditions: arg.cbsConditions,
+        callbackMemo: arg.callbackMemo,
       }),
     makeArray,
     safeStructuredClone: <T>(obj: T) => structuredClone(obj),

@@ -1,5 +1,11 @@
 import type { Database, character } from '../storage/database.svelte'
-import { registerCBS, type CBSRegisterArg, type RegisterCallback, type matcherArg } from '../cbs'
+import {
+  registerCBS,
+  type CBSRegisterArg,
+  type CbsCallbackMemo,
+  type RegisterCallback,
+  type matcherArg,
+} from '../cbs'
 import { calcString } from '../process/infunctions'
 import { getChatVar, getGlobalChatVar } from './chatVarBackend'
 import { getDefaultDatabase, getDefaultSelectedCharID } from './parserStateBackend'
@@ -26,6 +32,7 @@ export type RisuChatParserArg = {
   functions?: Map<string, { data: string; arg: string[] }>
   callStack?: number
   cbsConditions?: CbsConditions
+  callbackMemo?: CbsCallbackMemo
 }
 
 export const matcherMap = new Map<string, RegisterCallback>()
@@ -524,6 +531,7 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
     consistantChar: arg.consistantChar ?? false,
     cbsConditions: arg.cbsConditions ?? {},
     callStack: arg.callStack,
+    callbackMemo: arg.callbackMemo,
     getNested: () => {
       return nested
     },
