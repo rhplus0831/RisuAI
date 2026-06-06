@@ -106,7 +106,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L24 | [8](phases/phase-8-server-bounds.md)             | Compensating asset cleanup when the append fails.                 | DONE    |
 | L25 | [8](phases/phase-8-server-bounds.md)             | Open-or-skip assets at stream time (`missingFiles` degrade).      | DONE    |
 | L26 | [8](phases/phase-8-server-bounds.md)             | Temp-file + rename for legacy storage writes.                     | DONE    |
-| L27 | [8](phases/phase-8-server-bounds.md)             | Abort/timeout (+ streaming) for hub forwards.                     | PENDING |
+| L27 | [8](phases/phase-8-server-bounds.md)             | Abort/timeout (+ streaming) for hub forwards.                     | DONE    |
 | L28 | [8](phases/phase-8-server-bounds.md)             | Drop the double clone in JSON import normalize.                   | DONE    |
 | L29 | [8](phases/phase-8-server-bounds.md)             | Cap the charx download near the expanded limit.                   | DONE    |
 | L30 | [8](phases/phase-8-server-bounds.md)             | In-flight promise dedupe for Vertex tokens.                       | PENDING |

@@ -693,7 +693,27 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L27', 8, 'Abort/timeout (+ streaming) for hub forwards.'),
+  done(
+    'L27',
+    8,
+    'Abort/timeout (+ streaming) for hub forwards.',
+    'server/fastify/__tests__/hub.test.ts',
+    'L27: returns 504 when the hub upstream deadline elapses before response',
+    [
+      {
+        testPath: 'server/fastify/__tests__/hub.test.ts',
+        testName: 'L27: aborts the upstream stream when the client disconnects',
+      },
+      {
+        testPath: 'server/fastify/__tests__/hub.test.ts',
+        testName: 'L27: rejects body-bearing redirects instead of replaying the buffered upload',
+      },
+      {
+        testPath: 'server/fastify/__tests__/hub.test.ts',
+        testName: 'L27: keeps the hub body limit as a hard cap for authenticated uploads',
+      },
+    ],
+  ),
   done(
     'L28',
     8,
@@ -1563,6 +1583,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L24',
       'L25',
       'L26',
+      'L27',
       'L28',
       'L29',
       'K1',

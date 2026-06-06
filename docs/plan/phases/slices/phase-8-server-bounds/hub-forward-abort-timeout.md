@@ -1,6 +1,7 @@
 # Slice: Hub Forward Abort Timeout
 
 Phase: [8](../../phase-8-server-bounds.md). Finding: L27. Runtime change.
+Status: done on 2026-06-06 KST.
 
 ## Scope
 
@@ -60,6 +61,24 @@ import download caps, or hub URL configuration.
   unsafe redirects explicitly.
 - The L27 v2 gate entry points at real focused tests and the risk-map row is
   `DONE`.
+
+## Proof
+
+- Runtime:
+  `server/fastify/src/routes/hub.ts` now applies the shared upstream timeout
+  bound to every hub fetch, aborts upstream fetches when the request or response
+  closes, keeps the parsed upload as one bounded body view, and rejects
+  body-bearing redirects instead of replaying the upload.
+- Regression tests:
+  `server/fastify/__tests__/hub.test.ts` covers
+  `L27: returns 504 when the hub upstream deadline elapses before response`,
+  `L27: aborts the upstream stream when the client disconnects`,
+  `L27: rejects body-bearing redirects instead of replaying the buffered upload`,
+  and `L27: keeps the hub body limit as a hard cap for authenticated uploads`.
+- Gate/risk proof:
+  `src/ts/__tests__/fixCompletenessGateV2.test.ts` registers L27 as `DONE`
+  with the focused hub tests, and `docs/plan/active-risk-analysis.md` marks
+  the L27 row `DONE`.
 
 ## Validation
 

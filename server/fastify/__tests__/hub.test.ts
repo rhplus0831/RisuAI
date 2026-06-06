@@ -7,6 +7,10 @@ import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import {
+  HUB_FORWARD_DEFAULT_TIMEOUT_MS,
+  normalizeHubForwardTimeoutMs,
+} from '../src/routes/hub.js'
 
 const subtle = webcrypto.subtle
 
@@ -97,6 +101,25 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
+function appBaseUrl(app: FastifyInstance): string {
+  const addr = app.server.address() as AddressInfo
+  return `http://127.0.0.1:${addr.port}`
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 async function signAssertion(
   privateKey: CryptoKey,
   publicJwk: JsonWebKey,
@@ -150,6 +173,12 @@ afterEach(async () => {
 })
 
 describe('Phase 3C hub passthrough', () => {
+  it('L27: defaults hub forwards to the shared upstream deadline', () => {
+    expect(normalizeHubForwardTimeoutMs(undefined)).toBe(HUB_FORWARD_DEFAULT_TIMEOUT_MS)
+    expect(normalizeHubForwardTimeoutMs('75')).toBe(75)
+    expect(normalizeHubForwardTimeoutMs('not-a-number')).toBe(HUB_FORWARD_DEFAULT_TIMEOUT_MS)
+  })
+
   it('allows public GET reads without local auth once a password is set', async () => {
     echo.setResponder((req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain' })
@@ -294,6 +323,41 @@ describe('Phase 3C hub passthrough', () => {
     expect(fwd['x-keep-me']).toBe('yes')
   })
 
+  it('L27: returns 504 when the hub upstream deadline elapses before response', async () => {
+    echo.setResponder((_req, res) => {
+      const timer = setTimeout(() => {
+        res.writeHead(200, { 'content-type': 'text/plain' })
+        res.end('late')
+      }, 500)
+      res.on('close', () => clearTimeout(timer))
+    })
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/hub/slow',
+      headers: { 'risu-timeout-ms': '50' },
+    })
+    expect(res.statusCode).toBe(504)
+    expect(res.json()).toEqual({
+      error: 'Hub request timed out after 50ms',
+    })
+    expect(echo.requests).toHaveLength(1)
+  })
+
+  it('L27: keeps the hub body limit as a hard cap for authenticated uploads', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/hub/upload',
+      headers: {
+        'risu-auth': assertion,
+        'content-type': 'application/octet-stream',
+      },
+      payload: Buffer.alloc(1024 * 1024 + 1),
+    })
+    expect(res.statusCode).toBe(413)
+    expect(echo.requests).toHaveLength(0)
+  })
+
   it('honors x-risu-node-path as a complete URL override', async () => {
     let altCalls = 0
     const altServer = http.createServer((req, res) => {
@@ -347,6 +411,74 @@ describe('Phase 3C hub passthrough', () => {
     expect(res.body).toBe('final body')
     expect(altPaths).toEqual(['/final'])
     expect(redirectedTo).toBeDefined()
+  })
+
+  it('L27: rejects body-bearing redirects instead of replaying the buffered upload', async () => {
+    const payload = Buffer.from(JSON.stringify({ name: 'redirected-body' }))
+    echo.setResponder((req, res) => {
+      if (req.url === '/first') {
+        res.writeHead(302, { location: `${echo.url}/final` })
+        res.end()
+        return
+      }
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end('unexpected')
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/hub/first',
+      headers: {
+        'risu-auth': assertion,
+        'content-type': 'application/json',
+      },
+      payload,
+    })
+    expect(res.statusCode).toBe(502)
+    expect(res.json()).toEqual({
+      error: 'Hub request redirects with bodies are not replayed',
+    })
+    expect(echo.requests).toHaveLength(1)
+    expect(echo.requests[0].url).toBe('/first')
+    expect(Buffer.compare(echo.requests[0].body, payload)).toBe(0)
+  })
+
+  it('L27: aborts the upstream stream when the client disconnects', async () => {
+    let closeUpstream!: () => void
+    const upstreamClosed = new Promise<void>((resolve) => {
+      closeUpstream = resolve
+    })
+    echo.setResponder((_req, res) => {
+      res.on('close', closeUpstream)
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.write('first chunk\n')
+    })
+
+    await harness.app.listen({ host: '127.0.0.1', port: 0 })
+    await withTimeout(
+      new Promise<void>((resolve, reject) => {
+        let destroyed = false
+        const req = http.get(`${appBaseUrl(harness.app)}/api/v1/hub/stream`, (res) => {
+          expect(res.statusCode).toBe(200)
+          res.once('data', (chunk: Buffer) => {
+            expect(chunk.toString()).toContain('first chunk')
+            destroyed = true
+            req.destroy()
+            resolve()
+          })
+        })
+        req.on('error', (err) => {
+          if (!destroyed) reject(err)
+        })
+      }),
+      1_000,
+      'client did not receive the streamed hub chunk',
+    )
+    await withTimeout(
+      upstreamClosed,
+      1_000,
+      'hub did not abort the upstream stream after client disconnect',
+    )
   })
 
   it('returns 502 when the upstream connection fails', async () => {
