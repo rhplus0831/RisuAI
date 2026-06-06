@@ -58,7 +58,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M4  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Memoize charhistory/userhistory/lorebook callbacks per assembly. | DONE    |
 | M5  | [2](phases/phase-2-server-corpus-ring-2.md)      | Single-row scoped read + repair for character/chat PATCH.        | DONE    |
 | M6  | [2](phases/phase-2-server-corpus-ring-2.md)      | Field-scoped projection loaders that skip the characters parse.  | DONE    |
-| M7  | [4](phases/phase-4-client-clone-ring-2.md)       | Assign `replace_all` messages without `structuredClone`.         | PENDING |
+| M7  | [4](phases/phase-4-client-clone-ring-2.md)       | Assign `replace_all` messages without `structuredClone`.         | DONE    |
 | M8  | [4](phases/phase-4-client-clone-ring-2.md)       | `getItem` reads one key, not a whole-DB snapshot.                | PENDING |
 | M9  | [4](phases/phase-4-client-clone-ring-2.md)       | Allowed-keys diff for `changedChatMetadata` (v1-M13 shape).      | PENDING |
 | M10 | [4](phases/phase-4-client-clone-ring-2.md)       | Module-only / single-row module snapshots.                       | PENDING |
