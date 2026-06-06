@@ -10,7 +10,10 @@ import {
 } from '../characterCommands'
 import { canUseServerCommands, type CharacterSnapshot } from './commands'
 import { DBState, selectedCharID } from '../stores.svelte'
-import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import {
+  getServerProjectionApplyEpoch,
+  withTrustedServerProjectionWrite,
+} from './projectionWriteGuard.svelte'
 
 interface PendingCharacterPatch {
   characterId: string
@@ -106,9 +109,11 @@ export function watchServerBackedCharacterProfile(
   let initialized = false
   let previousSelected = -1
   let previousProfileSnapshot = ''
+  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
   const stop = $effect.root(() => {
     $effect(() => {
+      const projectionApplyEpoch = getServerProjectionApplyEpoch()
       const index = get(selectedCharID)
       const character = DBState.db.characters?.[index]
       const currentProfile = character
@@ -116,9 +121,15 @@ export function watchServerBackedCharacterProfile(
         : {}
       const currentProfileSnapshot = snapshotJson(currentProfile)
 
-      if (!initialized || index !== previousSelected || !character?.chaId) {
+      if (
+        !initialized ||
+        index !== previousSelected ||
+        !character?.chaId ||
+        projectionApplyEpoch !== previousProjectionApplyEpoch
+      ) {
         initialized = true
         previousSelected = index
+        previousProjectionApplyEpoch = projectionApplyEpoch
         previousProfileSnapshot = currentProfileSnapshot
         return
       }

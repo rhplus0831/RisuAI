@@ -2,11 +2,11 @@ import { checkNullish } from './util'
 import { v4 as uuidv4 } from 'uuid'
 import { get } from 'svelte/store'
 import {
+  applyServerCharacterLorebookProjection,
   applyServerCharacterSelectionProjection,
   applyServerProjectionDatabase,
   mergeServerProjectionFields,
   mergeServerProjectionCharacterRow,
-  hydrateServerCharacterLorebook,
   setDatabase,
   defaultSdDataFunc,
   getDatabase,
@@ -340,7 +340,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       // A foreign character-globalLore edit: surgically replace just that
       // character's globalLore instead of re-shipping every character. Works
       // whether or not lorebook stubs are on (the field is set resident).
-      hydrateServerCharacterLorebook(result.characterId, result.globalLore)
+      applyServerCharacterLorebookProjection(result.characterId, result.globalLore)
       setCachedServerCommandRevision(event.revision)
       return
     }

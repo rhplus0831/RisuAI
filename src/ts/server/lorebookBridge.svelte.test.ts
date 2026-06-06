@@ -12,6 +12,7 @@ import path from 'node:path'
 // with flushSync() and the debounce with fake timers.
 
 const recorded = vi.hoisted(() => ({ commands: [] as Array<Record<string, unknown>> }))
+const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
   runServerCommand: vi.fn(async ({ command }: { command: (rev: number) => Promise<unknown> }) => {
@@ -38,10 +39,17 @@ vi.mock('./commands', () => ({
   updateGlobalLorebookCommand: async (a: unknown) => ({ kind: 'updateGlobal', a }),
 }))
 vi.mock('./projectionWriteGuard.svelte', () => ({
+  getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
+  withServerProjectionApply: (fn: () => unknown) => {
+    const result = fn()
+    projectionGuardState.epoch += 1
+    return result
+  },
   withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
 }))
 
 import { DBState, selectedCharID } from '../stores.svelte'
+import { applyServerCharacterLorebookProjection } from '../storage/database.svelte'
 import {
   collectLorebookCollectionSnapshots,
   markCharacterLorebookHydrated,
@@ -71,6 +79,7 @@ function characterReplaceCommands(): Array<Record<string, unknown>> {
 
 beforeEach(() => {
   vi.useFakeTimers()
+  projectionGuardState.epoch = 0
   resetLorebookHydration()
   recorded.commands.length = 0
 })
@@ -149,6 +158,40 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     await vi.advanceTimersByTimeAsync(DELAY)
     // 'resident' is tracked → its edit persists.
     expect(characterReplaceCommands().map((c) => c.characterId)).toEqual(['resident'])
+    stop()
+  })
+
+  it('M11: foreign character-lorebook projection apply refreshes baseline without echoing, then local edits dispatch', async () => {
+    setupCharacter([{ key: 'a', content: 'A' }] as Entry[])
+    markCharacterLorebookHydrated('c1')
+    const stop = watchServerBackedLorebooks({ delayMs: DELAY })
+    flushSync()
+
+    recorded.commands.length = 0
+    const applied = applyServerCharacterLorebookProjection('c1', [
+      { key: 'server', content: 'Server' },
+    ])
+    expect(applied).toBe(true)
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(characterReplaceCommands()).toHaveLength(0)
+
+    recorded.commands.length = 0
+    ;(DBState.db.characters[0].globalLore as Entry[]).push({
+      key: 'local',
+      content: 'Local',
+    })
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = characterReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect(cmds[0].characterId).toBe('c1')
+    expect((cmds[0].entries as Entry[]).map((entry) => entry.content)).toEqual([
+      'Server',
+      'Local',
+    ])
     stop()
   })
 })
