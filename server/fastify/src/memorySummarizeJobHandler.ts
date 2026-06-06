@@ -12,10 +12,7 @@ import {
   type MemoryJob,
 } from './memoryRepository.js'
 import { summarizeOnce, type SummaryAdapterResult } from './memorySummaryAdapter.js'
-import {
-  resolveMemorySummaryModel,
-  type MemorySummaryModelRequest,
-} from './memorySummaryModel.js'
+import { resolveMemorySummaryModel, type MemorySummaryModelRequest } from './memorySummaryModel.js'
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
 import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler } from './memoryWorker.js'
 
@@ -120,22 +117,21 @@ export function createSummarizeMemoryJobBatchHandler(
       }
     })
 
-    let blockedByFailure: string | null = null
+    let blockedByCommitFailure: string | null = null
     for (const item of results) {
-      if (blockedByFailure !== null) {
-        context.retryOrFail(item.job.id, blockedByFailure)
+      if (blockedByCommitFailure !== null) {
+        context.retryOrFail(item.job.id, blockedByCommitFailure)
         continue
       }
 
       if ('error' in item) {
-        blockedByFailure = item.error || 'summarize job failed'
-        context.retryOrFail(item.job.id, blockedByFailure)
+        context.retryOrFail(item.job.id, item.error || 'summarize job failed')
         continue
       }
 
       try {
         if (getMemoryJob(opts.db, item.job.id)?.status !== 'running') {
-          blockedByFailure = `summarize job ${item.job.id} is no longer running`
+          blockedByCommitFailure = `summarize job ${item.job.id} is no longer running`
           continue
         }
         if (item.result.kind === 'summary') {
@@ -143,8 +139,9 @@ export function createSummarizeMemoryJobBatchHandler(
         }
         context.complete(item.job.id)
       } catch (error) {
-        blockedByFailure = error instanceof Error && error.message ? error.message : String(error)
-        context.retryOrFail(item.job.id, blockedByFailure)
+        blockedByCommitFailure =
+          error instanceof Error && error.message ? error.message : String(error)
+        context.retryOrFail(item.job.id, blockedByCommitFailure)
       }
     }
   }
@@ -309,11 +306,7 @@ function parseSummarizePayload(payload: unknown): HypaV3SummarizeJobPayload {
     throw new Error('summarize payload model must be a non-empty string')
   }
   const rangeStartSeq = payload.rangeStartSeq
-  if (
-    typeof rangeStartSeq !== 'number' ||
-    !Number.isInteger(rangeStartSeq) ||
-    rangeStartSeq < 0
-  ) {
+  if (typeof rangeStartSeq !== 'number' || !Number.isInteger(rangeStartSeq) || rangeStartSeq < 0) {
     throw new Error('summarize payload rangeStartSeq must be a non-negative integer')
   }
   const rangeEndSeq = payload.rangeEndSeq

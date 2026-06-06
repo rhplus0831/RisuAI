@@ -1,6 +1,7 @@
 # Slice: Memory Job Failure Cascade Scope
 
 Phase: [8](../../phase-8-server-bounds.md). Finding: L19. Runtime change.
+Status: done on 2026-06-06 KST.
 
 ## Scope
 
@@ -61,6 +62,28 @@ ceilings, or contextual window policy.
 - Contextual group failure still marks the dependent group together.
 - Focused tests cover embed and summarize handlers.
 - The L19 v2 gate entry points at real focused tests and the risk-map row is
+  `DONE`.
+
+## Proof
+
+- Runtime:
+  `server/fastify/src/memoryEmbedJobHandler.ts` isolates provider/result
+  failures on the non-contextual path, keeps ordered commit failures as the
+  stopping boundary, and persists new Voyage contextual group vectors in one
+  transaction before completing the group. `server/fastify/src/memorySummarizeJobHandler.ts`
+  applies the same independent-result versus ordered-commit split for summary
+  batches.
+- Regression proof:
+  `server/fastify/__tests__/memoryEmbedJobHandler.test.ts` /
+  `L19: commits independent embed jobs after a sibling provider failure`,
+  `L19: retries an ordered Voyage contextual batch after provider failure`, and
+  `L19: rolls back a Voyage contextual group when one staged vector cannot persist`;
+  `server/fastify/__tests__/memorySummarizeJobHandler.test.ts` /
+  `L19: commits independent summarize jobs after a sibling provider failure`
+  and `L19: commits batch summaries in planned order only until the first failed write`.
+- Gate proof:
+  `src/ts/__tests__/fixCompletenessGateV2.test.ts` registers L19 `DONE` with
+  the focused proof paths above; `docs/plan/active-risk-analysis.md` marks L19
   `DONE`.
 
 ## Validation

@@ -316,7 +316,9 @@ describe('embed memory job handler', () => {
 
       expect(maxActive).toBeLessThanOrEqual(2)
       expect(
-        listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((embedding) => embedding.chunkId),
+        listMemoryEmbeddings(db, { chatId: 'chat-1' })
+          .map((embedding) => embedding.chunkId)
+          .sort(),
       ).toEqual(['chunk-1', 'chunk-2', 'chunk-3'])
       expect(getMemoryJob(db, 'job-3')).toMatchObject({ status: 'completed', attemptCount: 1 })
     } finally {
@@ -390,6 +392,46 @@ describe('embed memory job handler', () => {
     }
   })
 
+  it('L19: commits independent embed jobs after a sibling provider failure', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, { id: 'job-1', chunkId: 'chunk-1', text: 'chunk one' })
+      seedBatchJob(db, { id: 'job-2', chunkId: 'chunk-2', text: 'chunk two' })
+      seedBatchJob(db, { id: 'job-3', chunkId: 'chunk-3', text: 'chunk three' })
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: () => database({ embeddingMaxConcurrent: 3 }),
+            sleep: async () => {},
+            embed: async (opts) => {
+              const text = String(opts.input[0] ?? '')
+              if (text.includes('chunk two')) return { error: 'provider transient' }
+              return { model: 'custom', vectors: [new Float32Array([text.length])], dim: 1 }
+            },
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(
+        listMemoryEmbeddings(db, { chatId: 'chat-1' })
+          .map((embedding) => embedding.chunkId)
+          .sort(),
+      ).toEqual(['chunk-1', 'chunk-3'])
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed', error: null })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({
+        status: 'pending',
+        error: 'provider transient',
+      })
+      expect(getMemoryJob(db, 'job-3')).toMatchObject({ status: 'completed', error: null })
+    } finally {
+      db.close()
+    }
+  })
+
   it('groups Voyage contextual embed jobs and persists ordered group metadata', async () => {
     const db = openDatabase(makeDataDir())
     try {
@@ -451,7 +493,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('retries an ordered Voyage contextual batch after provider failure', async () => {
+  it('L19: retries an ordered Voyage contextual batch after provider failure', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -487,6 +529,52 @@ describe('embed memory job handler', () => {
       expect(getMemoryJob(db, 'job-2')).toMatchObject({
         status: 'pending',
         error: 'voyage exploded',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L19: rolls back a Voyage contextual group when one staged vector cannot persist', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        text: 'first contextual chunk',
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        text: 'second contextual chunk',
+        model: 'voyageContext3',
+      })
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            embedGroups: async () => ({
+              model: 'voyage-context-3',
+              groups: [[new Float32Array([1]), new Float32Array([2, 3])]],
+              dim: 1,
+            }),
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(0)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({
+        status: 'pending',
+        error: 'embedding dimension mismatch: expected 1, got 2',
+      })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({
+        status: 'pending',
+        error: 'embedding dimension mismatch: expected 1, got 2',
       })
     } finally {
       db.close()

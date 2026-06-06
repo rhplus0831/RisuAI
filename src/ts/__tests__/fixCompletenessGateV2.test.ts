@@ -324,7 +324,8 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/streamJobs.test.ts',
-        testName: 'L1: silent sliding durable generation jobs still die within the bounded deadline',
+        testName:
+          'L1: silent sliding durable generation jobs still die within the bounded deadline',
       },
       {
         testPath: 'server/fastify/__tests__/requestAbort.test.ts',
@@ -405,8 +406,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/triggers.test.ts',
-        testName:
-          'L6: reuses compiled regexes across trigger conditions and V2 effects',
+        testName: 'L6: reuses compiled regexes across trigger conditions and V2 effects',
       },
       {
         testPath: 'server/fastify/__tests__/triggers.test.ts',
@@ -549,7 +549,31 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L19', 8, 'Scope the fail-cascade to contextual groups.'),
+  done(
+    'L19',
+    8,
+    'Scope the fail-cascade to contextual groups.',
+    'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+    'L19: commits independent embed jobs after a sibling provider failure',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memorySummarizeJobHandler.test.ts',
+        testName: 'L19: commits independent summarize jobs after a sibling provider failure',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L19: retries an ordered Voyage contextual batch after provider failure',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L19: rolls back a Voyage contextual group when one staged vector cannot persist',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memorySummarizeJobHandler.test.ts',
+        testName: 'L19: commits batch summaries in planned order only until the first failed write',
+      },
+    ],
+  ),
   planned('L20', 8, 'Share one summaries fetch between cleanup and selection.'),
   planned('L21', 8, 'Per-chunk size ceiling before embed requests.'),
   planned('L22', 8, 'Size the contextual budget from provider limits; surface splits.'),
@@ -1396,6 +1420,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L16',
       'L17',
       'L18',
+      'L19',
       'K1',
       'K2',
     ])

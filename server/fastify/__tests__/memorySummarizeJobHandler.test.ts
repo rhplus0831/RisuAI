@@ -302,7 +302,7 @@ describe('summarize memory job handler', () => {
     }
   })
 
-  it('commits batch summaries in planned order only until the first failed write', async () => {
+  it('L19: commits batch summaries in planned order only until the first failed write', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -350,9 +350,9 @@ describe('summarize memory job handler', () => {
 
       expect(await worker.tick()).toBe(true)
 
-      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.chunkId)).toEqual([
-        'chunk-1',
-      ])
+      expect(
+        listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.chunkId),
+      ).toEqual(['chunk-1'])
       expect(getMemoryChunk(db, 'chunk-1')).toMatchObject({ status: 'summarized' })
       expect(getMemoryChunk(db, 'chunk-2')).toMatchObject({ status: 'failed' })
       expect(getMemoryChunk(db, 'chunk-3')).toMatchObject({ status: 'pending' })
@@ -367,6 +367,67 @@ describe('summarize memory job handler', () => {
         error: 'summary text must be a non-empty string',
         nextRunAt: '2026-05-25T00:00:01.000Z',
       })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L19: commits independent summarize jobs after a sibling provider failure', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'chunk one',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'chunk two',
+      })
+      seedBatchJob(db, {
+        id: 'job-3',
+        chunkId: 'chunk-3',
+        rangeStartSeq: 4,
+        rangeEndSeq: 5,
+        text: 'chunk three',
+      })
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          summarize: createSummarizeMemoryJobBatchHandler({
+            db,
+            loadDatabase: () => database({ summarizationMaxConcurrent: 3 }),
+            sleep: async () => {},
+            summarize: async (messages) => {
+              const text = String(messages[0]?.content ?? '')
+              if (text.includes('chunk two')) return { error: 'provider transient' }
+              return { text: `summary for ${text}`, tokens: 1 }
+            },
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(
+        listMemorySummaries(db, { chatId: 'chat-1' })
+          .map((summary) => summary.chunkId)
+          .sort(),
+      ).toEqual(['chunk-1', 'chunk-3'])
+      expect(getMemoryChunk(db, 'chunk-1')).toMatchObject({ status: 'summarized' })
+      expect(getMemoryChunk(db, 'chunk-2')).toMatchObject({ status: 'failed' })
+      expect(getMemoryChunk(db, 'chunk-3')).toMatchObject({ status: 'summarized' })
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed', error: null })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({
+        status: 'pending',
+        error: 'provider transient',
+      })
+      expect(getMemoryJob(db, 'job-3')).toMatchObject({ status: 'completed', error: null })
     } finally {
       db.close()
     }
@@ -418,11 +479,11 @@ describe('summarize memory job handler', () => {
       expect(await worker.tick()).toBe(true)
 
       expect(maxActive).toBeLessThanOrEqual(2)
-      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.chunkId)).toEqual([
-        'chunk-1',
-        'chunk-2',
-        'chunk-3',
-      ])
+      expect(
+        listMemorySummaries(db, { chatId: 'chat-1' })
+          .map((summary) => summary.chunkId)
+          .sort(),
+      ).toEqual(['chunk-1', 'chunk-2', 'chunk-3'])
       expect(getMemoryJob(db, 'job-3')).toMatchObject({ status: 'completed', attemptCount: 1 })
     } finally {
       db.close()
