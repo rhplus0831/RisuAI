@@ -84,6 +84,7 @@ import {
   type MemorySummarySnapshot,
 } from '../memoryRepository.js'
 import { tokenize, tokenizeChat } from './tokens.js'
+import { tokenizeHypaV3PrefixChat } from './prefixTokenMemo.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 import {
@@ -1405,6 +1406,7 @@ function planPromptMemoryChunksForAssembly(input: {
       settings: input.settings,
       summaries: summaries.map(summaryToHypaV3Ref),
       tokenizeChat: (chat) => tokenizeChat(chat, encoding, options),
+      tokenizeSummarizedPrefixChat: (chat) => tokenizeHypaV3PrefixChat(chat, encoding, options),
     })
     diagnostics.plannerWarnings.push(...plan.warnings.map((warning) => warning.message))
     diagnostics.plannerErrors.push(...plan.errors.map((error) => error.message))

@@ -90,7 +90,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L12 | [2](phases/phase-2-command-surface-scoping.md)              | Drop the discarded corpus-wide validate-only normalization; validate the target row only. | DONE |
 | L13 | [2](phases/phase-2-command-surface-scoping.md)              | `skipDatabaseLoad: true` on the single-key plugin-storage PUT/DELETE.       | DONE |
 | L14 | [2](phases/phase-2-command-surface-scoping.md)              | Single-row read via `getCharacterRowsByIds` for the single lorebook hydration (mirror the bulk sibling). | DONE |
-| L15 | [3](phases/phase-3-memory-subsystem.md)                     | Per-row token memo (WeakMap/content-hash) so the immutable summarized prefix tokenizes once. | PENDING |
+| L15 | [3](phases/phase-3-memory-subsystem.md)                     | Per-row token memo (WeakMap/content-hash) so the immutable summarized prefix tokenizes once. | DONE |
 | L16 | [3](phases/phase-3-memory-subsystem.md)                     | Arm a default deadline on the already-threaded memory-fetch AbortController (clear in finally). | PENDING |
 | L17 | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Per-import AbortSignal (client-close + wall-clock) threaded into all realm egress fetches, both route branches. | PENDING |
 | L18 | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Per-asset + cumulative byte caps for JSON-card staging (charx shape); bound the dynamic `res.json()` body. | PENDING |

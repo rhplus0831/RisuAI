@@ -93,6 +93,7 @@ export interface PlanHypaV3MemoryInput {
   settings?: Partial<HypaV3Settings> | null
   summaries?: readonly HypaV3SummaryRef[]
   tokenizeChat: (chat: OpenAIChat) => number
+  tokenizeSummarizedPrefixChat?: (chat: OpenAIChat) => number
 }
 
 export interface HypaV3MemoryPlan {
@@ -232,7 +233,10 @@ export function planStandardHypaV3Memory(input: PlanHypaV3MemoryInput): HypaV3Me
   })
 
   if (startIndex > 0) {
-    const summarizedTokens = sumChatTokens(input.chats.slice(0, startIndex), input.tokenizeChat)
+    const summarizedTokens = sumChatTokens(
+      input.chats.slice(0, startIndex),
+      input.tokenizeSummarizedPrefixChat ?? input.tokenizeChat,
+    )
     currentTokens -= summarizedTokens
     tokenDeltas.push({
       kind: 'summarized_history',

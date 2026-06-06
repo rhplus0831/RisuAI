@@ -44,6 +44,10 @@ import {
   getAssemblyCbsCallbackMemoInstrumentation,
   resetAssemblyCbsCallbackMemoInstrumentation,
 } from '../src/prompt/cbsCallbackMemo.js'
+import {
+  getHypaV3PrefixTokenMemoStatsForTests,
+  resetHypaV3PrefixTokenMemoForTests,
+} from '../src/prompt/prefixTokenMemo.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -59,6 +63,7 @@ function makeDataDir(): string {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  resetHypaV3PrefixTokenMemoForTests()
   for (const dataDir of dataDirs.splice(0)) {
     rmSync(dataDir, { recursive: true, force: true })
   }
@@ -926,6 +931,81 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
       })
       expect(listMemoryChunks(memoryDb, { chatId: 'chat-1' })).toHaveLength(1)
       expect(listMemoryJobs(memoryDb, { chatId: 'chat-1', kind: 'summarize' })).toHaveLength(1)
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('L15: memoizes unchanged summarized-prefix token counts across assembly planning passes', () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(memoryDb, {
+        id: 'prefix-chunk',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'already summarized prefix',
+        status: 'summarized',
+      })
+      createMemorySummary(memoryDb, {
+        id: 'prefix-summary',
+        chatId: 'chat-1',
+        chunkId: 'prefix-chunk',
+        model: 'summary-model',
+        text: 'already summarized prefix',
+        metadata: { chatMemos: ['memo-a', 'memo-b'] },
+        tokens: 5,
+      })
+      const db = memoryEnabledDatabase({
+        maxContext: 1000,
+        maxResponse: 0,
+        hypaV3Presets: [
+          {
+            name: 'Test',
+            settings: {
+              summarizationModel: 'summary-model',
+              memoryTokensRatio: 0.2,
+              recentMemoryRatio: 0,
+              similarMemoryRatio: 1,
+              maxChatsPerSummary: 2,
+              queryChatCount: 1,
+            },
+          },
+        ] as never,
+      })
+      const history = chunkPlanningHistory()
+      const runAssemblyPlanning = () => {
+        const state = beginAssembly(
+          baseInput(),
+          depsFor(db, {
+            loadMemoryDatabase: () => memoryDb,
+            loadPromptMemoryQueryVectors: () => [],
+          }),
+        )
+        state.historyMessages = structuredClone(history)
+        state.currentTokens = 300
+        fillMemoryAndPostHistory(state)
+        return state
+      }
+
+      resetHypaV3PrefixTokenMemoForTests()
+      const first = runAssemblyPlanning()
+      const firstStats = getHypaV3PrefixTokenMemoStatsForTests()
+      const second = runAssemblyPlanning()
+      const secondStats = getHypaV3PrefixTokenMemoStatsForTests()
+
+      expect(first.promptMemoryChunkPlanningDiagnostics).toMatchObject({
+        attempted: true,
+        plannedWindows: 0,
+        plannerErrors: [],
+        errors: [],
+      })
+      expect(second.promptMemoryChunkPlanningDiagnostics).toEqual(
+        first.promptMemoryChunkPlanningDiagnostics,
+      )
+      expect(firstStats).toMatchObject({ entries: 2, hits: 0, misses: 2 })
+      expect(secondStats.misses).toBe(firstStats.misses)
+      expect(secondStats.hits - firstStats.hits).toBe(2)
     } finally {
       memoryDb.close()
     }

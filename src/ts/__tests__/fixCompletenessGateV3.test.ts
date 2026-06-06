@@ -320,10 +320,27 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L15',
     3,
     'Per-row token memo (WeakMap/content-hash) so the immutable summarized prefix tokenizes once.',
+    'server/fastify/__tests__/memoryPlanner.test.ts',
+    'L15: memoizes already-summarized prefix token counts across repeated planner passes',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryPlanner.test.ts',
+        testName: 'L15: re-encodes edited summarized-prefix content and updates token deltas',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryPlanner.test.ts',
+        testName: 'L15: re-encodes when summarized-prefix tokenizer options change',
+      },
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName:
+          'L15: memoizes unchanged summarized-prefix token counts across assembly planning passes',
+      },
+    ],
   ),
   planned(
     'L16',
@@ -1277,6 +1294,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L12',
       'L13',
       'L14',
+      'L15',
       'K2',
     ])
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
@@ -1286,11 +1304,11 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, L11, L12, L13, L14, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, L11, L12, L13, L14, L15, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1', 'M1', 'M2', 'M3', 'M4', 'M5', 'L11', 'L12', 'L13', 'L14', 'K2'])
+    ).toEqual(['H1', 'M1', 'M2', 'M3', 'M4', 'M5', 'L11', 'L12', 'L13', 'L14', 'L15', 'K2'])
     expect(collectGateProblems()).toEqual([])
   })
 
