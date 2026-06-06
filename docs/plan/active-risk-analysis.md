@@ -56,7 +56,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 
 | ID  | Phase                                       | Target fix                                                                  | Status  |
 | --- | ------------------------------------------- | ---------------------------------------------------------------------------- | ------- |
-| H1  | [1](phases/phase-1-high-and-send-path.md)   | Guard the transport's post-loop fallthrough on `signal?.aborted` (+ in-loop re-check); durable-cancel regression test. | PENDING |
+| H1  | [1](phases/phase-1-high-and-send-path.md)   | Guard the transport's post-loop fallthrough on `signal?.aborted` (+ in-loop re-check); durable-cancel regression test. | DONE |
 
 ### Medium
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { webcrypto } from 'node:crypto'
@@ -17,11 +18,17 @@ import {
   assertCommandMetricGate,
   type CommandMutationMetric,
 } from './helpers/commandMetricGates.js'
-import { parseEvents, type PromptChatFrame } from './helpers/terminalFrameAssertions.js'
+import {
+  expectNoSuccessDoneAfterAbort,
+  parseEvents,
+  type PromptChatFrame,
+} from './helpers/terminalFrameAssertions.js'
 import {
   getChatMessageDiffInstrumentation,
   resetChatMessageDiffInstrumentation,
 } from '../src/messageStore.js'
+import { emitProviderChunks } from '../src/prompt/providerTransport.js'
+import type { PromptChatEvent } from '../src/prompt/sseEvents.js'
 
 const subtle = webcrypto.subtle
 
@@ -251,6 +258,153 @@ function metricSummary(metric: ProtocolMetric | undefined): Record<string, unkno
     ...(typeof metric.totalMs === 'number' ? { totalMs: metric.totalMs } : {}),
   }
 }
+
+async function listenHarness(): Promise<string> {
+  await harness.app.listen({ port: 0, host: '127.0.0.1' })
+  const address = harness.app.server.address()
+  if (!address || typeof address === 'string') {
+    throw new Error('test harness did not bind to a TCP address')
+  }
+  return `http://127.0.0.1:${(address as AddressInfo).port}`
+}
+
+function authHeaders(
+  assertion: string,
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  return { 'risu-auth': assertion, ...extra }
+}
+
+async function readStreamingEvents(
+  res: Response,
+  until: (frame: PromptChatFrame) => boolean,
+): Promise<PromptChatFrame[]> {
+  expect(res.body).toBeTruthy()
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  const events: PromptChatFrame[] = []
+  let buffer = ''
+
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let frameEnd: number
+      while ((frameEnd = buffer.indexOf('\n\n')) !== -1) {
+        const block = buffer.slice(0, frameEnd)
+        buffer = buffer.slice(frameEnd + 2)
+        if (
+          !block
+            .replace(/\r/g, '')
+            .split('\n')
+            .some((line) => line.startsWith('event: '))
+        ) {
+          continue
+        }
+        const [frame] = parseEvents(`${block}\n\n`)
+        events.push(frame)
+        if (until(frame)) return events
+      }
+    }
+  } catch {
+    // The test may intentionally abort the client after the terminal proof.
+  }
+
+  return events
+}
+
+describe('H1 provider transport abort contract', () => {
+  it('H1: treats sliding-deadline silent transport return as aborted', async () => {
+    const controller = new AbortController()
+    const events: PromptChatEvent[] = []
+    const sideEffects = vi.fn((): PromptChatEvent[] => [
+      { type: 'side_effect', kind: 'tts', payload: { text: 'partial', characterId: 'char-1' } },
+    ])
+    const postGeneration = vi.fn(async () => ({ revision: 3 }))
+
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      yield { kind: 'token', content: 'partial' }
+      controller.abort()
+    }
+
+    const result = await emitProviderChunks(
+      frames(),
+      (event) => events.push(event),
+      controller.signal,
+      {
+        doneMetadata: () => ({ generationId: 'generation-h1' }),
+        sideEffects,
+        postGeneration,
+      },
+    )
+
+    expect(result).toEqual({ status: 'aborted', result: 'partial' })
+    expect(events).toEqual([{ type: 'token', content: 'partial' }])
+    expectNoSuccessDoneAfterAbort(events)
+    expect(sideEffects).not.toHaveBeenCalled()
+    expect(postGeneration).not.toHaveBeenCalled()
+  })
+
+  it('H1: re-checks abort before an in-loop provider done frame', async () => {
+    const controller = new AbortController()
+    const events: PromptChatEvent[] = []
+    const sideEffects = vi.fn((): PromptChatEvent[] => [])
+    const postGeneration = vi.fn(async () => ({ revision: 4 }))
+
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      yield { kind: 'token', content: 'partial' }
+      controller.abort()
+      yield { kind: 'done', finishReason: 'stop' }
+    }
+
+    const result = await emitProviderChunks(
+      frames(),
+      (event) => events.push(event),
+      controller.signal,
+      {
+        doneMetadata: () => ({ generationId: 'generation-h1-race' }),
+        sideEffects,
+        postGeneration,
+      },
+    )
+
+    expect(result).toEqual({ status: 'aborted', result: 'partial' })
+    expect(events).toEqual([{ type: 'token', content: 'partial' }])
+    expectNoSuccessDoneAfterAbort(events)
+    expect(sideEffects).not.toHaveBeenCalled()
+    expect(postGeneration).not.toHaveBeenCalled()
+  })
+
+  it('H1: treats non-streaming resultFrames-style silent return as aborted', async () => {
+    const controller = new AbortController()
+    const events: PromptChatEvent[] = []
+    const sideEffects = vi.fn((): PromptChatEvent[] => [])
+    const postGeneration = vi.fn(async () => ({ revision: 5 }))
+
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      await Promise.resolve()
+      controller.abort()
+    }
+
+    const result = await emitProviderChunks(
+      frames(),
+      (event) => events.push(event),
+      controller.signal,
+      {
+        doneMetadata: () => ({ generationId: 'generation-h1-resultframes' }),
+        sideEffects,
+        postGeneration,
+      },
+    )
+
+    expect(result).toEqual({ status: 'aborted', result: '' })
+    expect(events).toEqual([])
+    expectNoSuccessDoneAfterAbort(events)
+    expect(sideEffects).not.toHaveBeenCalled()
+    expect(postGeneration).not.toHaveBeenCalled()
+  })
+})
 
 describe('per-generation stored asset cache', () => {
   it('caches stored asset reads by normalized asset id and purpose', () => {
@@ -2075,6 +2229,104 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().revision).toBe(2)
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
   })
+
+  it('H1: durable DELETE cancel uses abort terminal path without post-generation', async () => {
+    let providerSawAbort = false
+    await restartHarness({
+      dispatchProvider: ({ signal }) => {
+        async function* source(): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'partial reply' }
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) {
+              providerSawAbort = true
+              resolve()
+              return
+            }
+            signal.addEventListener(
+              'abort',
+              () => {
+                providerSawAbort = true
+                resolve()
+              },
+              { once: true },
+            )
+          })
+          if (signal.aborted) return
+          yield { kind: 'done', finishReason: 'stop' }
+        }
+        return source()
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...(dbWithServerDispatch({
+        triggerscript: [
+          {
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [{ type: 'setvar', operator: '=', var: 'mood', value: 'cancelled' }],
+          },
+        ],
+      }) as Record<string, unknown>),
+      ttsAutoSpeech: true,
+    })
+    const baseUrl = await listenHarness()
+    const submitController = new AbortController()
+    let observerController: AbortController | undefined
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/generate/chat`, {
+        method: 'POST',
+        headers: authHeaders(assertion, { 'content-type': 'application/json' }),
+        body: JSON.stringify({ ...basePayload, durable: true }),
+        signal: submitController.signal,
+      })
+      expect(res.status).toBe(200)
+
+      let jobId = ''
+      const initialEvents = await readStreamingEvents(res, (event) => {
+        if (event.type === 'job_accepted') jobId = String(event.data.jobId)
+        return event.type === 'token'
+      })
+      expect(jobId).not.toBe('')
+      expect(initialEvents.some((event) => event.type === 'token')).toBe(true)
+
+      observerController = new AbortController()
+      const observer = await fetch(
+        `${baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
+        { headers: authHeaders(assertion), signal: observerController.signal },
+      )
+      expect(observer.status).toBe(200)
+      const observerEventsPromise = readStreamingEvents(observer, (event) => event.type === 'done')
+
+      const del = await fetch(`${baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
+        method: 'DELETE',
+        headers: authHeaders(assertion),
+      })
+      expect(del.status).toBe(200)
+      expect(await del.json()).toEqual({ success: true })
+
+      const observerEvents = await observerEventsPromise
+      const doneFrames = observerEvents.filter((event) => event.type === 'done')
+      expect(doneFrames).toHaveLength(1)
+      expect(doneFrames[0]?.data.result).toBe('partial reply')
+      expect(Object.hasOwn(doneFrames[0]!.data, 'postGeneration')).toBe(false)
+      expect(observerEvents.some((event) => event.type === 'side_effect')).toBe(false)
+      expect(providerSawAbort).toBe(true)
+
+      const bootstrap = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': assertion },
+      })
+      expect(bootstrap.statusCode).toBe(200)
+      expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+    } finally {
+      submitController.abort()
+      observerController?.abort()
+    }
+  }, 8000)
 
   it('K1: chat-variable generation finalization keeps broad writes and reports truthful metrics', async () => {
     const { assertion } = await setupAuthedClient(harness.app)

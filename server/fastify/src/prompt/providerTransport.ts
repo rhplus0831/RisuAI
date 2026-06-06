@@ -1,10 +1,5 @@
 import type { CompletionStreamFrame } from '../generation/frames.js'
-import type {
-  DoneEvent,
-  ErrorEvent,
-  PostGenerationFrame,
-  PromptChatEvent,
-} from './sseEvents.js'
+import type { DoneEvent, ErrorEvent, PostGenerationFrame, PromptChatEvent } from './sseEvents.js'
 
 export type PromptChatEmit = (event: PromptChatEvent) => void
 
@@ -97,6 +92,10 @@ export async function emitProviderChunks(
         return { status: 'error', result }
       }
 
+      if (signal?.aborted) {
+        return { status: 'aborted', result }
+      }
+
       await emitSuccessDone()
       return {
         status: 'done',
@@ -115,6 +114,10 @@ export async function emitProviderChunks(
     })
     emit({ type: 'done', ...(normalizedOptions.doneMetadata?.(result) ?? {}) })
     return { status: 'error', result }
+  }
+
+  if (signal?.aborted) {
+    return { status: 'aborted', result }
   }
 
   await emitSuccessDone()

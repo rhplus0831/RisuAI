@@ -85,15 +85,50 @@ function planned(id: string, phase: Phase, fix: string): ScheduledFix {
   return { id, phase, fix, status: 'PLANNED' }
 }
 
+function done(
+  id: string,
+  phase: Phase,
+  fix: string,
+  testPath: string,
+  testName: string,
+  extraTests?: Array<{ testPath: string; testName: string }>,
+): ScheduledFix {
+  return {
+    id,
+    phase,
+    fix,
+    status: 'DONE',
+    testPath,
+    testName,
+    ...(extraTests ? { extraTests } : {}),
+  }
+}
+
 function noAction(id: string, reason: string): RegistryReason {
   return { id, reason }
 }
 
 const SCHEDULED_FIXES: ScheduledFix[] = [
-  planned(
+  done(
     'H1',
     1,
     "Guard the transport's post-loop fallthrough on `signal?.aborted` (+ in-loop re-check); durable-cancel regression test.",
+    'server/fastify/__tests__/generation.chat.test.ts',
+    'H1: durable DELETE cancel uses abort terminal path without post-generation',
+    [
+      {
+        testPath: 'server/fastify/__tests__/generation.chat.test.ts',
+        testName: 'H1: treats sliding-deadline silent transport return as aborted',
+      },
+      {
+        testPath: 'server/fastify/__tests__/generation.chat.test.ts',
+        testName: 'H1: re-checks abort before an in-loop provider done frame',
+      },
+      {
+        testPath: 'server/fastify/__tests__/generation.chat.test.ts',
+        testName: 'H1: treats non-streaming resultFrames-style silent return as aborted',
+      },
+    ],
   ),
   planned(
     'M1',
@@ -1040,7 +1075,7 @@ describe('v3 fix-completeness gate doc universe', () => {
       ...rangeIds('K', 4),
     ])
     expect(scheduledRows.map((row) => row.status)).toEqual(
-      Array.from({ length: 70 }, () => 'PENDING'),
+      SCHEDULED_FIXES.map((entry) => (entry.status === 'DONE' ? 'DONE' : 'PENDING')),
     )
     expect(noActionRows.map((row) => row.id)).toEqual(rangeIds('I', 23))
     expect(collectActiveRiskUniverseDriftProblems(rows)).toEqual([])
@@ -1130,20 +1165,24 @@ describe('v3 fix-completeness gate routing registry', () => {
     expect(noActionIds.filter((id) => id.startsWith('R'))).toEqual(rangeIds('R', 5))
   })
 
-  it('keeps all scheduled entries PLANNED without proof fields', () => {
+  it('keeps PLANNED entries proof-free and DONE entries registered', () => {
     const plannedEntryKeys = ['fix', 'id', 'phase', 'status']
+    const plannedEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'PLANNED')
+    const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
 
-    expect(SCHEDULED_FIXES.every((entry) => entry.status === 'PLANNED')).toBe(true)
-    expect(SCHEDULED_FIXES.filter(hasProofFields)).toEqual([])
-    for (const entry of SCHEDULED_FIXES) {
+    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1'])
+    expect(plannedEntries.filter(hasProofFields)).toEqual([])
+    expect(doneEntries.every(hasProofFields)).toBe(true)
+    for (const entry of plannedEntries) {
       expect(Object.keys(entry).sort()).toEqual(plannedEntryKeys)
     }
   })
 
-  it('keeps the live Phase 0 registry green with all scheduled entries still PLANNED', () => {
+  it('keeps the live registry green with only H1 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
-    expect(SCHEDULED_FIXES.every((entry) => entry.status === 'PLANNED')).toBe(true)
-    expect(SCHEDULED_FIXES.filter(hasProofFields)).toEqual([])
+    expect(
+      SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
+    ).toEqual(['H1'])
     expect(collectGateProblems()).toEqual([])
   })
 
@@ -1164,7 +1203,7 @@ describe('v3 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'H1'
+      entry.id === 'M1'
         ? {
             ...entry,
             testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
@@ -1174,35 +1213,35 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'H1: PLANNED entries must not claim proof fields',
+      'M1: PLANNED entries must not claim proof fields',
     )
   })
 
   it('rejects doc DONE rows that do not have matching registry proof', () => {
-    const h1 = SCHEDULED_FIXES.find((entry) => entry.id === 'H1')
-    if (!h1) throw new Error('H1 registry entry not found')
+    const m1 = SCHEDULED_FIXES.find((entry) => entry.id === 'M1')
+    if (!m1) throw new Error('M1 registry entry not found')
 
     const withDoneDocRow = replaceRiskRow(
       readDoc(RISK_DOC),
-      'H1',
-      `| H1 | [1](phases/phase-1-high-and-send-path.md) | ${h1.fix} | DONE |`,
+      'M1',
+      `| M1 | [2](phases/phase-2-command-surface-scoping.md) | ${m1.fix} | DONE |`,
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'H1: status mismatch (registry PLANNED, docs DONE)',
+      'M1: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 
   it('rejects DONE registry entries without a registered test path and test name', () => {
-    const h1 = SCHEDULED_FIXES.find((entry) => entry.id === 'H1')
-    if (!h1) throw new Error('H1 registry entry not found')
+    const m1 = SCHEDULED_FIXES.find((entry) => entry.id === 'M1')
+    if (!m1) throw new Error('M1 registry entry not found')
     const riskText = replaceRiskRow(
       readDoc(RISK_DOC),
-      'H1',
-      `| H1 | [1](phases/phase-1-high-and-send-path.md) | ${h1.fix} | DONE |`,
+      'M1',
+      `| M1 | [2](phases/phase-2-command-surface-scoping.md) | ${m1.fix} | DONE |`,
     )
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'H1'
+      entry.id === 'M1'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1212,23 +1251,23 @@ describe('v3 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone, riskText })).toEqual(
       expect.arrayContaining([
-        'H1: DONE without a registered testPath',
-        'H1: DONE without a registered testName',
+        'M1: DONE without a registered testPath',
+        'M1: DONE without a registered testName',
       ]),
     )
   })
 
   it('validates primary and extra DONE test proofs against existing repo files', () => {
-    const h1 = SCHEDULED_FIXES.find((entry) => entry.id === 'H1')
-    if (!h1) throw new Error('H1 registry entry not found')
+    const m1 = SCHEDULED_FIXES.find((entry) => entry.id === 'M1')
+    if (!m1) throw new Error('M1 registry entry not found')
     const riskText = replaceRiskRow(
       readDoc(RISK_DOC),
-      'H1',
-      `| H1 | [1](phases/phase-1-high-and-send-path.md) | ${h1.fix} | DONE |`,
+      'M1',
+      `| M1 | [2](phases/phase-2-command-surface-scoping.md) | ${m1.fix} | DONE |`,
     )
     const missingPrimaryTestPath = 'src/ts/__tests__/__missing_v3_done_proof__.test.ts'
     const missingPrimaryPathRegistry = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'H1'
+      entry.id === 'M1'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1239,7 +1278,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
     const missingExtraTestName = ['missing v3 extra proof title', 'assembled at runtime'].join(' ')
     const missingExtraNameRegistry = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'H1'
+      entry.id === 'M1'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1256,26 +1295,26 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: missingPrimaryPathRegistry, riskText })).toEqual(
-      expect.arrayContaining([`H1: registered test "${missingPrimaryTestPath}" is missing`]),
+      expect.arrayContaining([`M1: registered test "${missingPrimaryTestPath}" is missing`]),
     )
     expect(collectGateProblems({ scheduled: missingExtraNameRegistry, riskText })).toEqual(
       expect.arrayContaining([
-        `H1: test "src/ts/__tests__/fixCompletenessGateV3.test.ts" does not contain "${missingExtraTestName}"`,
+        `M1: test "src/ts/__tests__/fixCompletenessGateV3.test.ts" does not contain "${missingExtraTestName}"`,
       ]),
     )
   })
 
   it('rejects DONE registry entries when the primary test name is absent', () => {
-    const h1 = SCHEDULED_FIXES.find((entry) => entry.id === 'H1')
-    if (!h1) throw new Error('H1 registry entry not found')
+    const m1 = SCHEDULED_FIXES.find((entry) => entry.id === 'M1')
+    if (!m1) throw new Error('M1 registry entry not found')
     const riskText = replaceRiskRow(
       readDoc(RISK_DOC),
-      'H1',
-      `| H1 | [1](phases/phase-1-high-and-send-path.md) | ${h1.fix} | DONE |`,
+      'M1',
+      `| M1 | [2](phases/phase-2-command-surface-scoping.md) | ${m1.fix} | DONE |`,
     )
     const missingTestName = ['missing v3 primary proof title', 'assembled at runtime'].join(' ')
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'H1'
+      entry.id === 'M1'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1286,7 +1325,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: syntheticDone, riskText })).toContain(
-      `H1: test "src/ts/__tests__/fixCompletenessGateV3.test.ts" does not contain "${missingTestName}"`,
+      `M1: test "src/ts/__tests__/fixCompletenessGateV3.test.ts" does not contain "${missingTestName}"`,
     )
   })
 
