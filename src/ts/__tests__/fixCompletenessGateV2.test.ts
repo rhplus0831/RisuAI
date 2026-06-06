@@ -660,7 +660,28 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   ),
   planned('L35', 6, 'Carry `hypaV3Data` independently of message length.'),
   planned('L36', 6, 'Bound the prereroll maps; clear on chat switch.'),
-  planned('L37', 4, 'Same-language early-return in `changeLanguage`.'),
+  done(
+    'L37',
+    4,
+    'Same-language early-return in `changeLanguage`.',
+    'src/lang/index.test.ts',
+    'L37: repeated same-code changeLanguage calls reuse the applied language object without clone work',
+    [
+      {
+        testPath: 'src/lang/index.test.ts',
+        testName: 'L37: switching between languages rebuilds language objects and merged strings',
+      },
+      {
+        testPath: 'src/lang/index.test.ts',
+        testName:
+          'L37: switching back to English changes identity once and then reuses the English object',
+      },
+      {
+        testPath: 'src/lang/index.test.ts',
+        testName: 'L37: unknown language codes resolve to English and share the English cache key',
+      },
+    ],
+  ),
   planned('L38', 5, 'Remove `{{#function}}`/`{{call::}}` logs.'),
   planned('L39', 5, '`includes()` fast path + indexOf scan in `parseThoughtsAndTools`.'),
   planned('L40', 5, 'Module-level content-keyed `ParseMarkdown` memo (with H3).'),
@@ -1491,6 +1512,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L32',
       'L33',
       'L34',
+      'L37',
       'K1',
       'K2',
     ])

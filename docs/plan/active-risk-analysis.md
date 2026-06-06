@@ -116,7 +116,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L34 | [4](phases/phase-4-client-clone-ring-2.md)       | Minimal `supaMemory` patch on selection.                          | DONE |
 | L35 | [6](phases/phase-6-bridges-lifecycle-network.md) | Carry `hypaV3Data` independently of message length.               | PENDING |
 | L36 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound the prereroll maps; clear on chat switch.                   | PENDING |
-| L37 | [4](phases/phase-4-client-clone-ring-2.md)       | Same-language early-return in `changeLanguage`.                   | PENDING |
+| L37 | [4](phases/phase-4-client-clone-ring-2.md)       | Same-language early-return in `changeLanguage`.                   | DONE |
 | L38 | [5](phases/phase-5-client-render-and-ui.md)      | Remove `{{#function}}`/`{{call::}}` logs.                         | PENDING |
 | L39 | [5](phases/phase-5-client-render-and-ui.md)      | `includes()` fast path + indexOf scan in `parseThoughtsAndTools`. | PENDING |
 | L40 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed `ParseMarkdown` memo (with H3).        | PENDING |
