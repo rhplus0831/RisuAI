@@ -1,7 +1,7 @@
 # Phase 7: Opt-In Subsystems (Root 5)
 
 Status: pending; M15/M16, M18/L48, M19, M20/L54/L57, M21, M22/L52/L53,
-L49/L50/K3, L55/L56, and L58/L59 slices done on 2026-06-06.
+L49/L50/K3, L51, L55/L56, and L58/L59 slices done on 2026-06-06.
 Independent; order by pain. Largest finding count, but most fixes are small
 and local (several are one-liners).
 
@@ -50,7 +50,7 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
   [`slices/phase-7-opt-in-subsystems/inlay-image-and-blob-cache-bounds.md`](slices/phase-7-opt-in-subsystems/inlay-image-and-blob-cache-bounds.md)
   - make inlay image writes fail instead of hang, bound/revoke blob URLs, and
     check the blob cache before fetching asset bytes.
-- L51:
+- L51 (done):
   [`slices/phase-7-opt-in-subsystems/png-card-import-single-pass.md`](slices/phase-7-opt-in-subsystems/png-card-import-single-pass.md)
   - avoid decoding PNG character-card asset chunks twice for progress.
 - Proof:
@@ -114,7 +114,7 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
       removes its listeners, and surfaces an error result.
 - [x] L49/L50/K3: each has a focused behavior/counting test per
       its target fix in the risk map.
-- [ ] L51: has a focused behavior/counting test per its target fix in the
+- [x] L51: has a focused behavior/counting test per its target fix in the
       risk map.
 - [x] L52/L53: file-send paths log nothing on `.po`/PDF/XML/text cases, and
       the PDF path passes raw bytes to pdfjs.

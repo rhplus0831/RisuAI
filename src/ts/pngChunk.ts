@@ -120,10 +120,11 @@ export const PngChunk = {
         const chunkData = data.slice(pos + 8, pos + 8 + len)
         let key = ''
         let value = ''
+        const textDecoder = new TextDecoder()
         for (let i = 0; i < 70; i++) {
           if (chunkData[i] === 0) {
-            key = new TextDecoder().decode(chunkData.slice(0, i))
-            value = new TextDecoder().decode(chunkData.slice(i + 1))
+            key = textDecoder.decode(chunkData.subarray(0, i))
+            value = textDecoder.decode(chunkData.subarray(i + 1))
             break
           }
         }
@@ -207,10 +208,11 @@ export const PngChunk = {
         const chunkData = await slice(pos + 8, pos + 8 + len)
         let key = ''
         let value = ''
+        const textDecoder = new TextDecoder()
         for (let i = 0; i < 70; i++) {
           if (chunkData[i] === 0) {
-            key = new TextDecoder().decode(chunkData.slice(0, i))
-            value = new TextDecoder().decode(chunkData.slice(i + 1))
+            key = textDecoder.decode(chunkData.subarray(0, i))
+            value = textDecoder.decode(chunkData.subarray(i + 1))
             break
           }
         }

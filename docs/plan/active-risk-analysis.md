@@ -130,7 +130,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L48 | [7](phases/phase-7-opt-in-subsystems.md)         | Translate once; cap HF TTS retries.                               | DONE    |
 | L49 | [7](phases/phase-7-opt-in-subsystems.md)         | `decode()`/`complete` guard + onerror for inlay images.           | DONE    |
 | L50 | [7](phases/phase-7-opt-in-subsystems.md)         | LRU + revoke for `blobUrlCache`.                                  | DONE    |
-| L51 | [7](phases/phase-7-opt-in-subsystems.md)         | Single-pass PNG import (or value-free count pass).                | PENDING |
+| L51 | [7](phases/phase-7-opt-in-subsystems.md)         | Single-pass PNG import (or value-free count pass).                | DONE    |
 | L52 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove the file-send logs.                                        | DONE    |
 | L53 | [7](phases/phase-7-opt-in-subsystems.md)         | Pass raw bytes to pdfjs.                                          | DONE    |
 | L54 | [7](phases/phase-7-opt-in-subsystems.md)         | Timeout + tracked listeners for MCP SSE waits.                    | DONE    |

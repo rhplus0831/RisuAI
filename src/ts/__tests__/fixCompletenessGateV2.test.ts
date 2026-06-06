@@ -658,7 +658,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L51', 7, 'Single-pass PNG import (or value-free count pass).'),
+  done(
+    'L51',
+    7,
+    'Single-pass PNG import (or value-free count pass).',
+    'src/ts/characterCards.pngImport.test.ts',
+    'L51: decodes and slices each PNG embedded asset value once during import',
+    [
+      {
+        testPath: 'src/ts/characterCards.pngImport.test.ts',
+        testName: 'L51: preserves multi-asset PNG import output and progress order',
+      },
+    ],
+  ),
   done(
     'L52',
     7,
@@ -1587,6 +1599,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L48',
       'L49',
       'L50',
+      'L51',
       'L52',
       'L53',
       'L54',
