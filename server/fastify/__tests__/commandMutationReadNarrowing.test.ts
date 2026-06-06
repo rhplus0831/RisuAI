@@ -134,6 +134,36 @@ function expectSettingsCommandReadOnlySettings(
   expect(readCountByTable).toEqual({ schema_version: 1, settings: 1 })
 }
 
+function expectCollectionCommandReadOnlyTables(
+  readCountByTable: Record<string, number>,
+  collectionTables: readonly string[],
+): void {
+  expect(readCountByTable).toEqual({
+    schema_version: 1,
+    settings: 1,
+    ...Object.fromEntries(collectionTables.map((table) => [table, 1])),
+  })
+}
+
+function expectCollectionLoadOnlyTables(
+  loadCountByTable: Record<string, number>,
+  collectionTables: readonly string[],
+): void {
+  expect(loadCountByTable).toEqual(Object.fromEntries(collectionTables.map((table) => [table, 1])))
+}
+
+function readSettingsRecord(): Record<string, unknown> {
+  const db = openDatabase(harness.dataDir)
+  try {
+    const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+      data_json: string
+    }
+    return JSON.parse(row.data_json) as Record<string, unknown>
+  } finally {
+    db.close()
+  }
+}
+
 describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture', () => {
   it('M3/L5/L6: a scriptstate PATCH performs zero whole-corpus payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
@@ -499,6 +529,126 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
 
     expect(res.statusCode).toBe(200)
     expect(corpusLoadCount).toBeGreaterThan(0)
+    expect(loadCountByTable.characters ?? 0).toBeGreaterThanOrEqual(1)
+  })
+
+  it('L11: collection commands read only settings plus requested collection tables', async () => {
+    const fixture = buildLargeCorpusFixture()
+    let revision = await importDatabase(fixture.database)
+
+    async function runScopedCollectionCommand(
+      method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+      url: string,
+      payload: Record<string, unknown>,
+      expectedTables: readonly string[],
+    ): Promise<Record<string, unknown>> {
+      const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
+        withServerLoadInstrumentation(() => command(method, url, payload)),
+      )
+      expect(loadRun.result.statusCode).toBe(200)
+      expectCollectionCommandReadOnlyTables(readCountByTable, expectedTables)
+      expectCollectionLoadOnlyTables(loadRun.loadCountByTable, expectedTables)
+      const body = loadRun.result.json() as Record<string, unknown>
+      revision = body.revision as number
+      return body
+    }
+
+    await runScopedCollectionCommand(
+      'POST',
+      '/api/v1/commands/presets',
+      { baseRevision: revision, preset: { id: 'l11-preset', name: 'L11 Preset' } },
+      ['bot_presets'],
+    )
+
+    await runScopedCollectionCommand(
+      'POST',
+      '/api/v1/commands/presets/select',
+      { baseRevision: revision, presetId: 'corpus-preset-1' },
+      ['bot_presets', 'prompt_templates'],
+    )
+
+    await runScopedCollectionCommand(
+      'POST',
+      '/api/v1/commands/personas',
+      { baseRevision: revision, persona: { id: 'l11-persona', name: 'L11 Persona' } },
+      ['personas'],
+    )
+
+    await runScopedCollectionCommand(
+      'POST',
+      '/api/v1/commands/translator-presets',
+      {
+        baseRevision: revision,
+        select: true,
+        preset: {
+          id: 'l11-translator',
+          name: 'L11 Translator',
+          prompt: 'Translate narrowly',
+          maxResponse: 777,
+        },
+      },
+      ['translator_presets'],
+    )
+
+    await runScopedCollectionCommand(
+      'POST',
+      '/api/v1/commands/loadouts/corpus-loadout-1/touch',
+      { baseRevision: revision, lastUsed: 4242 },
+      ['loadouts'],
+    )
+    expect(readSettingsRecord().lastLoadedLoadoutName).toBe('Loadout 1')
+
+    await runScopedCollectionCommand(
+      'PATCH',
+      '/api/v1/commands/lorebooks/corpus-lore-1',
+      { baseRevision: revision, patch: { name: 'L11 Lore' } },
+      ['lore_books'],
+    )
+
+    await runScopedCollectionCommand(
+      'POST',
+      '/api/v1/commands/plugins',
+      {
+        baseRevision: revision,
+        plugin: {
+          name: 'l11-plugin',
+          script: '',
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+        },
+      },
+      ['plugins'],
+    )
+  })
+
+  it('L11: collection scoped reads fall back broad for unrelated embedded settings rows', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      settings.characters = [{ chaId: 'embedded-char', name: 'Embedded' }]
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    } finally {
+      db.close()
+    }
+
+    const { result: res, corpusLoadCount, loadCountByTable } = await withServerLoadInstrumentation(
+      () =>
+        command('POST', '/api/v1/commands/presets', {
+          baseRevision: revision,
+          preset: { id: 'l11-fallback-preset', name: 'L11 Fallback' },
+        }),
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(corpusLoadCount).toBeGreaterThan(1)
     expect(loadCountByTable.characters ?? 0).toBeGreaterThanOrEqual(1)
   })
 

@@ -344,6 +344,16 @@ function writeLorebookTableMutation(
   }
 }
 
+const COLLECTION_SCOPED_READS = {
+  presets: ['botPresets'],
+  presetsWithPromptTemplate: ['botPresets', 'promptTemplate'],
+  personas: ['personas'],
+  translatorPresets: ['translatorPresets'],
+  loadouts: ['loadouts'],
+  lorebooks: ['loreBook'],
+  plugins: ['plugins'],
+} as const
+
 interface RuntimeSettingsCommandBody {
   baseRevision?: unknown
   patch?: unknown
@@ -1245,6 +1255,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1289,6 +1300,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1336,6 +1348,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.presetsWithPromptTemplate,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1414,6 +1427,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.presetsWithPromptTemplate,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1465,6 +1479,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.presetsWithPromptTemplate,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1522,6 +1537,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1563,6 +1579,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1849,6 +1866,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.personas,
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
@@ -1903,6 +1921,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.personas,
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
@@ -1962,6 +1981,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.personas,
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
@@ -2039,6 +2059,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.personas,
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
@@ -2094,6 +2115,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.personas,
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
@@ -2145,6 +2167,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.translatorPresets,
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
@@ -2194,6 +2217,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.translatorPresets,
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
@@ -2247,6 +2271,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.translatorPresets,
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
@@ -2305,6 +2330,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.translatorPresets,
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
@@ -2342,6 +2368,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.loadouts,
         mutate(database, innerDb) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
@@ -2385,6 +2412,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.loadouts,
         mutate(database, innerDb) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
@@ -2426,6 +2454,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.loadouts,
         mutate(database, innerDb) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
@@ -2464,6 +2493,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.loadouts,
         mutate(database, innerDb) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
@@ -2503,6 +2533,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.loadouts,
         mutate(database, innerDb) {
           const target = ensureLoadoutDatabaseObject(database)
           const loadouts = ensureLoadoutCollection(target)
@@ -3714,6 +3745,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -3757,6 +3789,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -3795,6 +3828,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -3836,6 +3870,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -3883,6 +3918,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.settings,
+        collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -3923,6 +3959,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
           const target = ensureLorebookDatabase(database)
           const lorebooks = ensureGlobalLorebookCollection(target)
@@ -4289,6 +4326,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
@@ -4328,6 +4366,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
@@ -4364,6 +4403,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
@@ -4408,6 +4448,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
@@ -4444,6 +4485,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.settings,
+        settingsScopedRead: true,
         mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           target.currentPluginProvider = provider
@@ -4478,6 +4520,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)

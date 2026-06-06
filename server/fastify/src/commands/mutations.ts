@@ -3,6 +3,7 @@ import { bumpRevision, getSchemaState } from '../db.js'
 import {
   RevisionMismatchError,
   ValidationError,
+  loadPersistedForCollectionMutation,
   loadPersistedForCharacterMutation,
   loadPersistedForSettingsMutation,
   loadCharacterSelectionRows,
@@ -15,6 +16,7 @@ import {
   stripChatMessages,
   syncChatMessages,
   writeCharacterSelectionRows,
+  type CollectionFieldKey,
   type CharacterMutationTarget,
   type ChatMutationTarget,
 } from '../repository.js'
@@ -94,6 +96,14 @@ export interface TargetedCommandMutationArgs<TExtra extends Record<string, unkno
    */
   settingsScopedRead?: boolean
   /**
+   * Opt-in narrowed read for collection command callbacks: load the settings
+   * row plus only the requested collection field tables. Missing settings or
+   * embedded non-requested corpus fields fall back to the broad loader, so
+   * pre-extraction behavior remains representable. Incompatible with
+   * whole-database write-back, skip-load, and other scoped reads.
+   */
+  collectionScopedRead?: readonly CollectionFieldKey[]
+  /**
    * Opt-in narrowed read for callbacks that only locate one chat row and
    * mutate it / do kit-writer message writes (audit M3/L5/L6): load the target
    * chat row + its parent character via {@link loadPersistedForChatMutation},
@@ -157,15 +167,24 @@ export type TargetedMutationPath =
 export function applyTargetedCommandMutation<TExtra extends Record<string, unknown> = {}>(
   args: TargetedCommandMutationArgs<TExtra>,
 ): JsonCommandMutationResult<TExtra> {
-  if (args.chatScopedRead && args.characterScopedRead) {
-    throw new Error('chatScopedRead cannot be combined with characterScopedRead')
+  const scopedReadCount = [
+    args.settingsScopedRead,
+    args.collectionScopedRead,
+    args.chatScopedRead,
+    args.characterScopedRead,
+  ].filter(Boolean).length
+  if (scopedReadCount > 1) {
+    throw new Error('scoped reads cannot be combined')
   }
-  if (args.settingsScopedRead && (args.chatScopedRead || args.characterScopedRead)) {
-    throw new Error('settingsScopedRead cannot be combined with other scoped reads')
+  if (args.collectionScopedRead && args.collectionScopedRead.length === 0) {
+    throw new Error('collectionScopedRead requires at least one field')
   }
   if (
     args.skipDatabaseLoad &&
-    (args.settingsScopedRead || args.chatScopedRead || args.characterScopedRead)
+    (args.settingsScopedRead ||
+      args.collectionScopedRead ||
+      args.chatScopedRead ||
+      args.characterScopedRead)
   ) {
     throw new Error('skipDatabaseLoad cannot be combined with scoped reads')
   }
@@ -177,6 +196,9 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
   }
   if (args.settingsScopedRead && args.writeDatabase) {
     throw new Error('settingsScopedRead cannot be combined with writeDatabase')
+  }
+  if (args.collectionScopedRead && args.writeDatabase) {
+    throw new Error('collectionScopedRead cannot be combined with writeDatabase')
   }
   if (args.characterScopedRead && args.writeDatabase) {
     // A scoped read holds only part of the character/chat corpus; writing it
@@ -205,11 +227,13 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
       ? undefined
       : args.settingsScopedRead
         ? loadPersistedForSettingsMutation(args.db, args.dataDir)
-        : args.chatScopedRead
-          ? loadPersistedForChatMutation(args.db, args.dataDir, args.chatScopedRead)
-          : args.characterScopedRead
-            ? loadPersistedForCharacterMutation(args.db, args.dataDir, args.characterScopedRead)
-            : loadPersisted(args.db, args.dataDir)
+        : args.collectionScopedRead
+          ? loadPersistedForCollectionMutation(args.db, args.dataDir, args.collectionScopedRead)
+          : args.chatScopedRead
+            ? loadPersistedForChatMutation(args.db, args.dataDir, args.chatScopedRead)
+            : args.characterScopedRead
+              ? loadPersistedForCharacterMutation(args.db, args.dataDir, args.characterScopedRead)
+              : loadPersisted(args.db, args.dataDir)
     loadMs = protocolDurationMs(loadStartedAt)
 
     // The callback owns its targeted SQLite writes (kit writers); capture which

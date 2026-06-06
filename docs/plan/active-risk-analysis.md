@@ -86,7 +86,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L8  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Per-phase narrowing of the `runTrigger` chat clone (skip/limit for non-message-mutating trigger sets; do NOT share one clone across phases). | PENDING |
 | L9  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Bound user-regex execution (haystack/pattern caps or complexity screen); document non-interruptibility at minimum. | PENDING |
 | L10 | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Bump the history-callback memo generation from every chat-var-dirty fold (all three un-bumped sites). | PENDING |
-| L11 | [2](phases/phase-2-command-surface-scoping.md)              | Collection-scoped mutation reads for the preset/persona/loadout/plugin/global-lorebook/translator-preset routes (reuse `COLLECTION_TABLE_MAP` machinery). | PENDING |
+| L11 | [2](phases/phase-2-command-surface-scoping.md)              | Collection-scoped mutation reads for the preset/persona/loadout/plugin/global-lorebook/translator-preset routes (reuse `COLLECTION_TABLE_MAP` machinery). | DONE |
 | L12 | [2](phases/phase-2-command-surface-scoping.md)              | Drop the discarded corpus-wide validate-only normalization; validate the target row only. | PENDING |
 | L13 | [2](phases/phase-2-command-surface-scoping.md)              | `skipDatabaseLoad: true` on the single-key plugin-storage PUT/DELETE.       | DONE |
 | L14 | [2](phases/phase-2-command-surface-scoping.md)              | Single-row read via `getCharacterRowsByIds` for the single lorebook hydration (mirror the bulk sibling). | DONE |

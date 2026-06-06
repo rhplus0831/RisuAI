@@ -262,10 +262,18 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     7,
     'Bump the history-callback memo generation from every chat-var-dirty fold (all three un-bumped sites).',
   ),
-  planned(
+  done(
     'L11',
     2,
     'Collection-scoped mutation reads for the preset/persona/loadout/plugin/global-lorebook/translator-preset routes (reuse `COLLECTION_TABLE_MAP` machinery).',
+    'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
+    'L11: collection commands read only settings plus requested collection tables',
+    [
+      {
+        testPath: 'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
+        testName: 'L11: collection scoped reads fall back broad for unrelated embedded settings rows',
+      },
+    ],
   ),
   planned(
     'L12',
@@ -1244,6 +1252,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M3',
       'M4',
       'M5',
+      'L11',
       'L13',
       'L14',
       'K2',
@@ -1255,11 +1264,11 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M3, M4, M5, L13, L14, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M3, M4, M5, L11, L13, L14, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1', 'M1', 'M3', 'M4', 'M5', 'L13', 'L14', 'K2'])
+    ).toEqual(['H1', 'M1', 'M3', 'M4', 'M5', 'L11', 'L13', 'L14', 'K2'])
     expect(collectGateProblems()).toEqual([])
   })
 

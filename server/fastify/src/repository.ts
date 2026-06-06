@@ -91,6 +91,8 @@ const COLLECTION_FIELDS = [
   'hypaV3Presets',
 ] as const
 
+export type CollectionFieldKey = (typeof COLLECTION_FIELDS)[number]
+
 const NON_SETTINGS_FIELDS = new Set<string>([
   'characters',
   ...COLLECTION_FIELDS,
@@ -847,6 +849,36 @@ export function loadPersistedForSettingsMutation(db: DatabaseSync, dataDir: stri
     database: settings,
     assets: [],
   }
+}
+
+export function loadPersistedForCollectionMutation(
+  db: DatabaseSync,
+  dataDir: string,
+  fieldKeys: readonly CollectionFieldKey[],
+): Persisted {
+  const { fields, settings } = loadDatabaseFieldsFromSqlite(db, fieldKeys)
+  if (settings === null) return loadPersisted(db, dataDir)
+  if (!settingsCanRepresentCollectionMutation(settings, fieldKeys)) {
+    return loadPersisted(db, dataDir)
+  }
+  return {
+    _version: PERSISTED_VERSION,
+    database: { ...settings, ...fields },
+    assets: [],
+  }
+}
+
+function settingsCanRepresentCollectionMutation(
+  settings: Record<string, unknown>,
+  fieldKeys: readonly CollectionFieldKey[],
+): boolean {
+  const requested = new Set<string>(fieldKeys)
+  for (const field of NON_SETTINGS_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(settings, field)) continue
+    if (requested.has(field)) continue
+    return false
+  }
+  return true
 }
 
 export function loadPersistedForCharacterMutation(
