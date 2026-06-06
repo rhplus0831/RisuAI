@@ -595,7 +595,24 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L42', 5, '`$derived` + keyed each for GridCatalog.'),
+  done(
+    'L42',
+    5,
+    '`$derived` + keyed each for GridCatalog.',
+    'src/lib/Others/GridCatalog.svelte.test.ts',
+    'L42: GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs',
+    [
+      {
+        testPath: 'src/lib/Others/GridCatalog.svelte.test.ts',
+        testName:
+          'L42: GridCatalog filters active and trash lists with shared count and stable order',
+      },
+      {
+        testPath: 'src/lib/Others/GridCatalog.svelte.test.ts',
+        testName: 'L42: GridCatalog trash actions keep restore and permanent-delete targets',
+      },
+    ],
+  ),
   planned('L43', 5, '`$derived` + keyed each for ModuleSettings.'),
   planned('L44', 5, 'Cheap signature compare for the sidebar list effect.'),
   planned('L45', 6, 'Capped exponential backoff + jitter for SSE reconnect.'),
@@ -1420,6 +1437,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L39',
       'L40',
       'L41',
+      'L42',
       'K1',
       'K2',
     ])

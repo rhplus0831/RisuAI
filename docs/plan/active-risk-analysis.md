@@ -120,7 +120,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L39 | [5](phases/phase-5-client-render-and-ui.md)      | `includes()` fast path + indexOf scan in `parseThoughtsAndTools`. | DONE    |
 | L40 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed `ParseMarkdown` memo (with H3).        | DONE    |
 | L41 | [5](phases/phase-5-client-render-and-ui.md)      | One shared partial-edit mousemove handler.                        | DONE    |
-| L42 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for GridCatalog.                          | PENDING |
+| L42 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for GridCatalog.                          | DONE    |
 | L43 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for ModuleSettings.                       | PENDING |
 | L44 | [5](phases/phase-5-client-render-and-ui.md)      | Cheap signature compare for the sidebar list effect.              | PENDING |
 | L45 | [6](phases/phase-6-bridges-lifecycle-network.md) | Capped exponential backoff + jitter for SSE reconnect.            | PENDING |
