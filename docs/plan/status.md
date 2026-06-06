@@ -7,22 +7,23 @@ open only the phase or slice tied to the current task.
 
 ## Snapshot
 
-- Plan state: open. Phase 1 H1-H3 are implemented and proof-refreshed;
-  Phase 2 is the next fix batch.
+- Plan state: open. Phases 1-3 are implemented and proof-refreshed; Phase 4
+  is the next fix batch.
 - Findings covered: 102 confirmed v2 audit findings (3 high, 22 medium,
   59 low, 18 informational) plus the K1-K4 known-overlap residuals.
-- Scheduled IDs: H1-H3 are registered `DONE` in the v2 gate and
-  `active-risk-analysis.md`. M1-M22, L1-L11 (except L12), L13-L59, and K1-K4
-  remain registered `PLANNED`.
+- Scheduled IDs: H1-H3, Phase 2's M5, M6, L3, L13, L14, L16, K1, and K2, and
+  Phase 3's M1-M4 and L4-L11 are registered `DONE` in the v2 gate and
+  `active-risk-analysis.md`. Remaining scheduled gate entries stay
+  `PLANNED`; risk-map rows stay `PENDING`.
 - Gated IDs: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates. I1-I18 need no action.
 - Standing v1 gate: `src/ts/__tests__/fixCompletenessGate.test.ts` stays live
   against the archived v1 docs. The v2 gate
   `src/ts/__tests__/fixCompletenessGateV2.test.ts` is now live.
-- Current Phase 1 proof: focused H1-H3 suites, both gates, `pnpm test`
-  1155/4, client-thinning audit, and both TypeScript checks passed.
-  `pnpm api:test` passed 1744/1 after refreshing the H2 chat-create ceiling
-  expectation. See [`latest-verification.md`](latest-verification.md).
+- Current Phase 3 proof: focused assembly/CBS/trigger suites, protocol-metrics
+  generation chat, parser CBS suites, both gates, `pnpm test` 1160/4,
+  `pnpm api:test` 1792/1, client-thinning audit, and both TypeScript checks
+  passed. See [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
 
@@ -31,11 +32,11 @@ open only the phase or slice tied to the current task.
 - [Phase 1](phases/phase-1-high-severity-hot-paths.md): proof refreshed.
   H1 trigger budget/abort, H2 chat-create narrowing, and H3 remount decoupling
   are `DONE`; full API-suite proof is green.
-- [Phase 2](phases/phase-2-server-corpus-ring-2.md): next. Server
+- [Phase 2](phases/phase-2-server-corpus-ring-2.md): complete. Server
   corpus-path ring 2 (M5, M6, L3, L13, L14, L16, K1, K2).
-- [Phase 3](phases/phase-3-assembly-cbs-and-triggers.md): pending. Assembly
+- [Phase 3](phases/phase-3-assembly-cbs-and-triggers.md): complete. Assembly
   CBS/trigger costs (M1-M4, L4-L11).
-- [Phase 4](phases/phase-4-client-clone-ring-2.md): pending. Client clone
+- [Phase 4](phases/phase-4-client-clone-ring-2.md): next. Client clone
   narrowing ring 2 (M7-M10, L32-L34, L37, K4).
 - [Phase 5](phases/phase-5-client-render-and-ui.md): pending. Client render,
   editor, and UI costs (M13, M17, L38-L44).

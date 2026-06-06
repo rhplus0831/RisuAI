@@ -7,18 +7,19 @@ after each change to a narrowed or bounded path.
 
 ## Current State
 
-- Plan state: open. Phase 1 H1-H3 and Phase 2's M5, M6, L3, L13, L14, L16,
-  K1, and K2 are implemented and proof-refreshed; Phase 2 is closed after the
-  2026-06-06 client-thinning audit blocker was fixed and re-run clean.
+- Plan state: open. Phase 1 H1-H3, Phase 2's M5, M6, L3, L13, L14, L16, K1,
+  and K2, and Phase 3's M1-M4 and L4-L11 are implemented and
+  proof-refreshed. Phase 4 is the next fix batch.
 - Gate state: the v1 gate
   (`src/ts/__tests__/fixCompletenessGate.test.ts`) stays live against the
   archived v1 docs. The v2 gate
   (`src/ts/__tests__/fixCompletenessGateV2.test.ts`) is live against the v2
   docs and active-risk routing.
-- Scheduled IDs: H1-H3 plus Phase 2's M5, M6, L3, L13, L14, L16, K1, and K2
-  are registered `DONE` in the v2 gate and
+- Scheduled IDs: H1-H3 plus Phase 2's M5, M6, L3, L13, L14, L16, K1, and K2,
+  plus Phase 3's M1-M4 and L4-L11 are registered `DONE` in the v2 gate and
   [`active-risk-analysis.md`](active-risk-analysis.md). Remaining scheduled
-  rows stay `PLANNED`; gated/no-action rows are unchanged.
+  gate entries stay `PLANNED`; risk-map rows stay `PENDING`; gated/no-action
+  rows are unchanged.
 
 ## Baseline (carried from the v1 close)
 
@@ -150,6 +151,56 @@ Phase 2 focused proof summaries:
   `stableEqualStringifies === 0`, and `appendFastPathRows === 1`; edit and
   truncate replacements still exercised the generic diff path.
 
+## Phase 3 Verification Refresh
+
+Recorded on 2026-06-06 KST after M1-M4 and L4-L11 landed. Those Phase 3 IDs
+are confirmed `DONE` in both `src/ts/__tests__/fixCompletenessGateV2.test.ts`
+and [`active-risk-analysis.md`](active-risk-analysis.md). I16 intentionally
+remained no-action. The focused runtime proofs, protocol-metrics prompt suite,
+parser CBS suites, gates, root test suite, API suite, client-thinning audit,
+and TypeScript checks passed.
+
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/lorebook.test.ts server/fastify/__tests__/scripts.test.ts server/fastify/__tests__/triggers.test.ts server/fastify/__tests__/templates.test.ts server/fastify/__tests__/promptVariables.test.ts`:
+  passed, 7 files / 391 tests.
+- `RISU_PROTOCOL_METRICS=1 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts`:
+  passed, 1 file / 61 tests.
+- `pnpm exec vitest run src/ts/parser/tests/cbs/eachReinjection.test.ts src/ts/parser/tests`:
+  passed, 8 files; 84 passed / 4 skipped (88 total).
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts`:
+  passed, 2 files / 26 tests. The live v2 gate expects H1-H3, Phase 2's M5,
+  M6, L3, L13, L14, L16, K1, and K2, plus Phase 3's M1-M4 and L4-L11 as
+  `DONE`.
+- `pnpm test`: passed, 125 files; 1160 passed / 4 skipped (1164). The run
+  printed the pre-existing repeated `ECONNREFUSED 127.0.0.1:3000`
+  local-service probe noise but exited 0.
+- `pnpm api:test`: passed, 99 files; 1792 passed / 1 skipped (1793). The run
+  printed normal Fastify request logs and exited 0.
+- `pnpm client-thinning:audit`: passed (`Client-thinning audit passed.`).
+- `pnpm exec tsc -p tsconfig.client-lib.json`: passed with zero diagnostics.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: passed with zero
+  diagnostics after the client-lib build.
+
+Phase 3 focused proof summaries:
+
+- M1: assemble tests assert no full-transcript clone/stringify capture for
+  unchanged stages; trigger/editinput mutation stages still capture, and
+  prompt bytes stay identical.
+- M2/L8/L9: history/depth prompt paths reuse parser expansions and
+  fixed-point rows; marker-free rows skip CBS parse and preflight/final reuse
+  depth prompt bodies.
+- M3: stable template card cache evaluates stable cards once per assembly,
+  preflight tokenization reuses cached rows, and `{{setvar}}`-bearing stable
+  cards evaluate once.
+- M4: CBS callback memo reuses `{{charhistory}}`, `{{userhistory}}`, and
+  `{{lorebook}}` callbacks within an assembly.
+- L4/L5: sticky lorebook activation vars persist across sends; normalized
+  search corpus data is reused.
+- L6/L7: the no-trigger path avoids cloned trigger payloads; trigger
+  regex/transcript work is memoized.
+- L10/L11: `{{#each}}` expansion has deterministic budget caps, and matcher
+  lookup normalizes registered names/aliases once while preserving raw tag
+  text and normal output below the cap.
+
 ## Phase 0 Baseline Refresh
 
 Recorded on 2026-06-05 after the v2 gate and render-count baseline landed:
@@ -230,3 +281,10 @@ Recorded during the 2026-06-05 v2 audit (evidence in
   `pnpm client-thinning:audit` passed, the focused command/load-cost
   remediation suite passed (148 tests), the v2 gate passed (18 tests), and
   Phase 2 closed.
+- 2026-06-06, Phase 3 verification refresh: focused assembly/CBS/trigger
+  suites passed (391 tests); protocol-metrics generation chat passed (61
+  tests); parser CBS suites passed (84 passed / 4 skipped); v1+v2 gates
+  passed (26 tests) with M1-M4 and L4-L11 as `DONE`; `pnpm test` passed
+  (1160/4, 125 files); `pnpm api:test` passed (1792/1, 99 files);
+  client-thinning audit and both TypeScript checks passed. I16 remained
+  no-action.

@@ -1,6 +1,6 @@
 # Phase 3: Assembly CBS & Trigger Costs (Root 2)
 
-Status: pending.
+Status: complete.
 
 Goal: stop prompt assembly from re-cloning, re-stringifying, and
 re-CBS-parsing unchanged data. The CBS/`risuChatParser` interpreter layer is
@@ -8,8 +8,8 @@ the largest unmitigated per-send server cost; this phase is one coherent
 slice family over `assemble.ts`/`history.ts`/`templates.ts`/`lorebook.ts`/
 `triggers.ts`.
 
-Findings: M1, M2, M3, M4, L4, L5, L6, L7, L8, L9, L10, L11. (I16's parser
-nesting-stack cap may ride along if free.)
+Findings: M1, M2, M3, M4, L4, L5, L6, L7, L8, L9, L10, L11. I16's parser
+nesting-stack cap was intentionally left no-action.
 
 ## Slices
 
@@ -39,7 +39,7 @@ nesting-stack cap may ride along if free.)
 - L10 + L11:
   [`slices/phase-3-assembly-cbs-and-triggers/parser-each-cap-and-tag-normalization.md`](slices/phase-3-assembly-cbs-and-triggers/parser-each-cap-and-tag-normalization.md)
   - cap pathological `{{#each}}` expansion and cheapen CBS tag-name
-    normalization; optionally fold in I16.
+    normalization.
 - Proof:
   [`slices/phase-3-assembly-cbs-and-triggers/phase-3-verification-refresh.md`](slices/phase-3-assembly-cbs-and-triggers/phase-3-verification-refresh.md)
   - refresh gates, focused proofs, full validation, and latest verification.
@@ -93,23 +93,23 @@ nesting-stack cap may ride along if free.)
 
 ## Exit Criteria
 
-- [ ] M1: a plain send performs zero full-transcript clones/stringifies in
+- [x] M1: a plain send performs zero full-transcript clones/stringifies in
       the unchanged stages (counting assertion); trigger/editinput sends
       still capture; prompt bytes identical.
-- [ ] M2: marker-free history rows skip the CBS parse (counting assertion);
+- [x] M2: marker-free history rows skip the CBS parse (counting assertion);
       marker rows still expand; prompt bytes identical.
-- [ ] M3: one `renderContentCard` evaluation per stable card per send;
+- [x] M3: one `renderContentCard` evaluation per stable card per send;
       `{{setvar}}`-bearing cards evaluate exactly once; prompt bytes
       identical for the full template matrix (template/non-template,
       promptInfoInsideChat on/off).
-- [ ] M4: repeated `{{charhistory}}`/`{{lorebook}}` references within one
+- [x] M4: repeated `{{charhistory}}`/`{{lorebook}}` references within one
       assembly evaluate once; output identical.
-- [ ] L4: `@@keep_activate_after_match` survives across two sends on the
+- [x] L4: `@@keep_activate_after_match` survives across two sends on the
       fixture (regression test proving persistence).
-- [ ] L5-L11: each cited redundant pass is hoisted/memoized/capped with a
+- [x] L5-L11: each cited redundant pass is hoisted/memoized/capped with a
       focused counting or behavior test; output identical (L10's cap is a
       documented new failure mode for pathological inputs only).
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation
@@ -120,8 +120,19 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts \
   server/fastify/__tests__/generation.chat.test.ts \
   server/fastify/__tests__/lorebook.test.ts \
   server/fastify/__tests__/scripts.test.ts \
-  server/fastify/__tests__/triggers.test.ts
+  server/fastify/__tests__/triggers.test.ts \
+  server/fastify/__tests__/templates.test.ts \
+  server/fastify/__tests__/promptVariables.test.ts
 RISU_PROTOCOL_METRICS=1 pnpm exec vitest run --config server/fastify/vitest.config.ts \
   server/fastify/__tests__/generation.chat.test.ts
-pnpm api:test && pnpm test
+pnpm exec vitest run \
+  src/ts/parser/tests/cbs/eachReinjection.test.ts \
+  src/ts/parser/tests
+pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts \
+  src/ts/__tests__/fixCompletenessGateV2.test.ts
+pnpm test
+pnpm api:test
+pnpm client-thinning:audit
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
