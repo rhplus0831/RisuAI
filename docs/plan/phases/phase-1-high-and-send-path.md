@@ -1,6 +1,6 @@
 # Phase 1: High Severity & Send Path (Themes 1+3)
 
-Status: pending.
+Status: complete.
 
 Goal: land the audit's top-priority fixes — restore the abort contract for
 every streaming provider (the one high), and remove the O(transcript) clones
@@ -8,10 +8,10 @@ and full-transcript upload from the hottest user action.
 
 Findings: H1, M4, M5.
 
-## Planned Slices
+## Completed Slices
 
-Author under `slices/phase-1-high-and-send-path/`; the v2 Phase 1 slices are
-the structural template
+Slices live under `slices/phase-1-high-and-send-path/`; the v2 Phase 1 slices
+were the structural template
 ([`../../archive/audit-stability-and-performance-v2/phases/slices/phase-1-high-severity-hot-paths/`](../../archive/audit-stability-and-performance-v2/phases/slices/phase-1-high-severity-hot-paths/)).
 
 - [transport-abort-contract](slices/phase-1-high-and-send-path/transport-abort-contract.md)
@@ -33,7 +33,8 @@ the structural template
   matching narrowed restore.
 - [phase-1-verification-refresh](slices/phase-1-high-and-send-path/phase-1-verification-refresh.md)
   — gates, clone-count before/after proof, full validation,
-  latest-verification update.
+  latest-verification update. The v1/v2 archive gates and Phase 1 v3 gate are
+  green, with only H1, M4, and M5 marked `DONE`.
 
 ## Source Anchors
 
@@ -54,7 +55,7 @@ the structural template
   `restoreCharacterRow`, `CharacterSelectionSnapshot`/
   `restoreCharacterSelection`).
 
-## Planned Shape
+## Implemented Shape
 
 - H1 is a contract restoration, not a behavior redesign: the documented
   "emits nothing on abort" contract already has a consumer branch
@@ -73,19 +74,19 @@ the structural template
 
 ## Exit Criteria
 
-- [ ] H1: cancelling a streaming durable generation (explicit DELETE and
+- [x] H1: cancelling a streaming durable generation (explicit DELETE and
       deadline) yields an aborted terminal, no success `done`, no output
       trigger run, no scriptstate persistence from the cancelled turn; the
       narrow in-loop race is covered; non-streaming abort path equally
       guarded.
-- [ ] M4: a plain send performs zero full-transcript clones and uploads one
+- [x] M4: a plain send performs zero full-transcript clones and uploads one
       message (clone-count probe before/after); trigger-rewritten
       transcripts still replace correctly; rollback on append failure
       removes exactly the appended row.
-- [ ] M5: the per-send snapshot clones no `message[]` in steady state;
+- [x] M5: the per-send snapshot clones no `message[]` in steady state;
       first-send backfill and its rollback still work; `lastInteraction`
       rollback restores only that field.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation

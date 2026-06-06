@@ -443,7 +443,7 @@ describe('setupSendChatContext - selectedChar / selectedChat', () => {
 })
 
 describe('setupSendChatContext - M5 field-scoped send rollback', () => {
-  it('M5: steady-state send rollback captures no character row or message payload', async () => {
+  it('M14: the send-context rollback captures one character row, never the whole corpus / M5: steady-state send rollback captures no character row or message payload', async () => {
     const seeded = seedCloneCostDb() // char-0 large (40 messages), siblings small
     seedDb({ characters: seeded.characters as unknown as Database['characters'] })
     selectedCharID.set(1)

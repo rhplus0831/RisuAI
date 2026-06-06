@@ -2,55 +2,58 @@
 
 Date: 2026-06-07
 
-The v3 remediation workstream is open. Phase 0 is complete and recorded in
-[`latest-verification.md`](latest-verification.md); the next batch is Phase 1.
+The v3 remediation workstream is open. Phase 0 and Phase 1 are complete and
+recorded in [`latest-verification.md`](latest-verification.md); the next batch
+is Phase 2.
 
-## Next Batch: Phase 1 (High Severity & Send Path)
+## Next Batch: Phase 2 (Command-Surface Scoping)
 
 Defined in
-[`phases/phase-1-high-and-send-path.md`](phases/phase-1-high-and-send-path.md).
-Author the slices under `phases/slices/phase-1-high-and-send-path/` when
-starting; the v2 Phase 1 slices
-([`../archive/audit-stability-and-performance-v2/phases/slices/phase-1-high-severity-hot-paths/`](../archive/audit-stability-and-performance-v2/phases/slices/phase-1-high-severity-hot-paths/))
-are the structural template.
+[`phases/phase-2-command-surface-scoping.md`](phases/phase-2-command-surface-scoping.md).
+Use the already-authored slices under
+`phases/slices/phase-2-command-surface-scoping/`.
 
-1. H1 `transport-abort-contract`: guard `emitProviderChunks`' abort fallthrough
-   and prove durable cancel/deadline/in-loop/non-streaming abort paths with
-   terminal-frame assertions.
-2. M4 `send-append-fast-path`: route plain sends through the existing append
-   command, keep replace for trigger-rewritten transcripts, and compare
-   against the Phase 0 clone-count baseline.
-3. M5 `send-rollback-field-scope`: narrow steady-state rollback to
-   `lastInteraction`, retaining message-array snapshot only for the first-send
-   backfill branch.
-4. Phase 1 verification refresh: register gates, run focused before/after
-   proof plus full validation, and refresh
-   [`latest-verification.md`](latest-verification.md).
+1. M1 `send-persist-chat-scoped-read`: wire `chatScopedRead` into
+   `persistAssemblyMutations` for non-var-write sends and prove the event
+   parent id.
+2. M3 `settings-scoped-read`: add the settings-only mutation read for
+   settings and prompt-settings command routes, with broad fallback on the
+   pre-extraction edge.
+3. L11 `collection-scoped-reads`: add collection-scoped reads for preset,
+   persona, loadout, plugin, global-lorebook, and translator-preset routes.
+4. L12 `drop-validate-only-normalization`: preserve target-row validation and
+   remove discarded corpus-wide normalization passes.
+5. L13 `plugin-storage-skip-load`: use `skipDatabaseLoad` on the single-key
+   plugin-storage PUT/DELETE routes.
+6. L14 `single-lorebook-hydration-scope`: read one character row for single
+   lorebook hydration.
+7. K2 `proxy-hub-single-auth`: remove the redundant in-handler auth check
+   while keeping 401 behavior unchanged.
+8. Phase 2 verification refresh: gates, load-count proofs, full validation,
+   and [`latest-verification.md`](latest-verification.md).
 
-Exit: H1, M4, and M5 registered with regression tests; active-risk rows flipped
-to `DONE` only with matching v3 gate proofs; focused suites and TypeScript
-checks green; verification refreshed.
+Exit: M1, M3, L11-L14, and K2 registered with regression tests; active-risk
+rows flipped to `DONE` only with matching v3 gate proofs; focused suites and
+TypeScript checks green; verification refreshed.
 
-## After Phase 1
+## After Phase 2
 
-Phases 2-4 continue in order (see [`plan.md`](plan.md) Execution Cursor).
+Phases 3-4 continue in order (see [`plan.md`](plan.md) Execution Cursor).
 Phases 5-8 may then land independently by pain; Phase 9 closes.
 
 ## Proof Commands
 
 ```bash
-pnpm api:test
-pnpm test
-pnpm exec vitest run src/ts/__tests__/sendCloneCountProbe.test.ts
 pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
-pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/serverLoadCostHarness.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts
+pnpm api:test
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
 ## Standing Caveats
 
-- The v1/v2 gates point at `docs/archive/` and must keep passing; nothing in
-  this plan may edit the archived docs.
+- The v1/v2 gates point at `docs/archive/`; nothing in this plan may edit the
+  archived docs.
 - `pnpm check` retains its documented pre-existing svelte-check baseline
   (14 errors in 5 files at the v2 closeout); do not let it grow.
 - The audit's verifier corrections (in each finding's prose) are part of the

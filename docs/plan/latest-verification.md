@@ -7,16 +7,58 @@ after each change to a narrowed or bounded path.
 
 ## Current State
 
-- Plan state: open; Phase 0 complete; Phase 1 is the next batch. All
-  scheduled rows (`H1`, `M1-M9`, `L1-L56`, `K1-K4`) remain `PENDING` in
-  [`active-risk-analysis.md`](active-risk-analysis.md); Phase 0 fixed no
-  findings.
+- Plan state: open; Phase 0 and Phase 1 are complete; Phase 2 is the next
+  batch. `H1`, `M4`, and `M5` are `DONE` in
+  [`active-risk-analysis.md`](active-risk-analysis.md); every other scheduled
+  row (`M1-M3`, `M6-M9`, `L1-L56`, `K1-K4`) remains `PENDING`.
 - Gate state: the v1 gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
   and the v2 gate (`fixCompletenessGateV2.test.ts`) remain live against their
   archives. The v3 gate (`fixCompletenessGateV3.test.ts`) is live against
-  `docs/plan/`, with every scheduled v3 ID registered as `PLANNED`.
-- Tree: Phase 0 test-only foundations are committed through `b824bd299`;
-  this verification-refresh records the baseline and is not a runtime change.
+  `docs/plan/`, with `H1`, `M4`, and `M5` registered as `DONE` and all other
+  scheduled v3 IDs registered as `PLANNED`. The combined v1/v2/v3 gate command
+  is green.
+- Tree: Phase 1 implementation is committed through `71b36a150`; this
+  verification refresh keeps Phase 1 closed and does not implement Phase 2.
+
+## Phase 1 Verification Refresh (2026-06-07)
+
+Run after the Phase 1 implementation commits landed:
+`45fd16f2f` (H1), `e792b293d` (M4), and `71b36a150` (M5).
+
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts src/ts/__tests__/fixCompletenessGateV3.test.ts`:
+  passed, 3 files / 50 tests. The archived v1/v2 gates and the active v3 gate
+  are green; the v3 registry and active-risk map agree that only `H1`, `M4`,
+  and `M5` are `DONE`.
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts`:
+  passed, 1 file / 65 tests.
+- H1 proof coverage in `generation.chat.test.ts`: explicit durable
+  `DELETE` cancel, sliding-deadline/silent transport return, in-loop abort
+  race before a provider `done` frame, and non-streaming `resultFrames`-style
+  silent return.
+- `pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/process/__tests__/sendChatContext.test.ts src/ts/characterCommands.test.ts src/ts/__tests__/sendCloneCountProbe.test.ts`:
+  passed, 4 files / 69 tests. The run printed repeated
+  `ECONNREFUSED 127.0.0.1:3000` lines before the final passing summary.
+- Send clone-count after M4+M5 for the deterministic plain-send fixture:
+  `jsonCloneCount: 1`, `structuredCloneCount: 2`, `totalCloneCount: 3`,
+  `maxClonedSize: 198`.
+- Send fixture: 3 characters; 40 messages before send; 41 messages after
+  submit; 42 final messages; 200-byte message bodies; transcript JSON before
+  send `9941`; active chat JSON `10086`; active character JSON `10364`;
+  characters JSON `11710`.
+- Send command shape: 2 commands total; 0 message replace; 1 message append;
+  1 character patch; 0 generation-result commands; 1 persisted message;
+  `persistedWholeTranscript: false`.
+- Server-chat probe shape: 1 durable `send` call; user message length 16.
+  Compared with the Phase 0 baseline below, the plain send no longer uploads
+  or persists the whole transcript and no longer performs the large transcript
+  or character-row clone.
+- `pnpm api:test`: passed, 100 files / 1857 passed / 1 skipped.
+- `pnpm test`: passed, 152 files / 1340 passed / 4 skipped. The run emitted
+  repeated `ECONNREFUSED 127.0.0.1:3000` lines and the existing Svelte
+  `state_referenced_locally` warning for
+  `src/lib/SideBars/LoreBook/LoreBookData.svelte`.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: zero errors.
 
 ## Phase 0 Baseline Run (2026-06-07)
 
