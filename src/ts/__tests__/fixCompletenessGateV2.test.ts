@@ -13,6 +13,9 @@ import path from 'node:path'
 
 // `vitest run` executes from the repo root. Under the client vite transform,
 // import.meta.url is not a reliable filesystem anchor, so match the v1 gate.
+// Phase 9 intentionally keeps v2 pointed at the live plan docs until the
+// archive/repoint slice moves them; negative self-proofs below use doc-string
+// overrides or cloned registry arrays, never writes to these files.
 const ROOT = process.cwd()
 const PLAN_ROOT = 'docs/plan'
 const AUDIT_DOC = path.join(ROOT, PLAN_ROOT, 'audit-stability-and-performance-v2.md')
@@ -2463,7 +2466,16 @@ describe('v2 fix-completeness gate routing registry', () => {
   })
 
   it('validates primary and extra DONE test proofs against existing test files', () => {
+    const missingPrimaryTestPath = 'src/ts/__tests__/__missing_phase9_done_proof__.test.ts'
     const missingExtraTestName = ['missing extra proof title', 'assembled at runtime'].join(' ')
+    const syntheticMissingPath = SCHEDULED_FIXES.map((entry) =>
+      entry.id === 'H1'
+        ? {
+            ...entry,
+            testPath: missingPrimaryTestPath,
+          }
+        : entry,
+    )
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
       entry.id === 'H1'
         ? {
@@ -2478,6 +2490,11 @@ describe('v2 fix-completeness gate routing registry', () => {
         : entry,
     )
 
+    expect(collectGateProblems({ scheduled: syntheticMissingPath })).toEqual(
+      expect.arrayContaining([
+        `H1: registered test "${missingPrimaryTestPath}" is missing`,
+      ]),
+    )
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
         `H1: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
