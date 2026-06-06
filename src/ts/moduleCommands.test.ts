@@ -17,8 +17,11 @@ import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGu
 import { DBState, selectedCharID } from './stores.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
 import {
+  currentCharacterModuleStateSnapshot,
+  currentGlobalModuleStateSnapshot,
   createGlobalModule,
   deleteGlobalModule,
+  restoreCharacterModuleState,
   setGlobalModuleEnabled,
   toggledModuleIds,
   toggleSelectedCharacterModule,
@@ -95,11 +98,37 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
+function stubFailingCommandFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      return jsonResponse({ error: 'forced failure' }, 500)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
 async function waitForCallCount(calls: CapturedFetch[], expected: number): Promise<void> {
   for (let attempt = 0; attempt < 20 && calls.length < expected; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
   expect(calls).toHaveLength(expected)
+}
+
+async function flushCommandEffects(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 beforeEach(() => {
@@ -348,5 +377,167 @@ describe('Phase 3 chat-scoped module toggle (L34)', () => {
 
     expect(DBState.db.characters[0].chats[0].modules).toEqual(['mod-a'])
     expect(DBState.db.characters[0].chats[1].name).toBe('Concurrent sibling edit')
+  })
+})
+
+describe('Phase 4 module snapshot narrowing (M10)', () => {
+  it('M10: global module snapshots clone only modules and enabledModules', () => {
+    DBState.db = seedCloneCostDb({
+      characterCount: 3,
+      hydratedMessageCount: 40,
+      messageBodySize: 300,
+    }) as any
+    DBState.db.modules = [{ id: 'mod-a', name: 'Module A' }] as any
+    DBState.db.enabledModules = ['mod-a']
+    const charactersSize = JSON.stringify(DBState.db.characters).length
+
+    const instrumented = withCloneInstrumentation(() => currentGlobalModuleStateSnapshot())
+
+    expect(instrumented.result).toEqual({
+      modules: [{ id: 'mod-a', name: 'Module A' }],
+      enabledModules: ['mod-a'],
+    })
+    expect('characters' in instrumented.result).toBe(false)
+    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+  })
+
+  it('M10: character-module snapshots clone and restore only the target modules field', () => {
+    DBState.db = seedCloneCostDb({
+      characterCount: 2,
+      hydratedMessageCount: 40,
+      messageBodySize: 300,
+    }) as any
+    DBState.db.characters[0].modules = ['sibling-original']
+    DBState.db.characters[1].modules = ['mod-a']
+    DBState.db.characters[1].notes = 'same-row payload '.repeat(500)
+    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const targetCharacterSize = JSON.stringify(DBState.db.characters[1]).length
+
+    const instrumented = withCloneInstrumentation(() =>
+      currentCharacterModuleStateSnapshot('char-1'),
+    )
+    const snapshot = instrumented.result
+
+    expect(snapshot).toEqual({
+      characterId: 'char-1',
+      hasModulesField: true,
+      modules: ['mod-a'],
+    })
+    expect(snapshot && 'characters' in snapshot).toBe(false)
+    expect(instrumented.maxClonedSize).toBeLessThan(targetCharacterSize)
+    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+
+    DBState.db.characters[0].modules = ['sibling-concurrent']
+    DBState.db.characters[1].name = 'Concurrent same-row edit'
+    DBState.db.characters[1].modules = ['mod-b']
+    restoreCharacterModuleState(snapshot!)
+
+    expect(DBState.db.characters[1].modules).toEqual(['mod-a'])
+    expect(DBState.db.characters[1].name).toBe('Concurrent same-row edit')
+    expect(DBState.db.characters[0].modules).toEqual(['sibling-concurrent'])
+  })
+
+  it('M10: forced-failure global rollback preserves concurrent character edits', async () => {
+    const calls = stubFailingCommandFetch()
+    DBState.db.characters = [
+      {
+        chaId: 'char-a',
+        name: 'Character A',
+        chatPage: 0,
+        chats: [{ id: 'chat-a', name: 'Chat A', modules: [], message: [] }],
+        modules: ['char-module'],
+      },
+    ] as any
+    DBState.db.modules = [
+      { id: 'mod-a', name: 'Module A' },
+      { id: 'mod-b', name: 'Module B' },
+    ] as any
+    DBState.db.enabledModules = []
+
+    setGlobalModuleEnabled('mod-a', true)
+    expect(DBState.db.enabledModules).toEqual([])
+
+    DBState.db.characters[0].name = 'Concurrent character edit'
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(DBState.db.enabledModules).toEqual([])
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b'])
+    expect(DBState.db.characters[0].name).toBe('Concurrent character edit')
+    expect(DBState.db.characters[0].modules).toEqual(['char-module'])
+  })
+
+  it('M10: forced-failure character-module rollback preserves sibling and same-row edits', async () => {
+    const calls = stubFailingCommandFetch()
+    DBState.db.characters = [
+      {
+        chaId: 'char-a',
+        name: 'Character A',
+        notes: 'original notes',
+        chatPage: 0,
+        chats: [{ id: 'chat-a', name: 'Chat A', modules: [], message: [] }],
+        modules: ['mod-a'],
+      },
+      {
+        chaId: 'char-b',
+        name: 'Character B',
+        chatPage: 0,
+        chats: [{ id: 'chat-b', name: 'Chat B', modules: [], message: [] }],
+        modules: ['mod-b'],
+      },
+    ] as any
+    selectedCharID.set(0)
+
+    toggleSelectedCharacterModule('mod-c')
+    expect(DBState.db.characters[0].modules).toEqual(['mod-a', 'mod-c'])
+
+    DBState.db.characters[0].notes = 'Concurrent same-row edit'
+    DBState.db.characters[1].name = 'Concurrent sibling edit'
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(DBState.db.characters[0].modules).toEqual(['mod-a'])
+    expect(DBState.db.characters[0].notes).toBe('Concurrent same-row edit')
+    expect(DBState.db.characters[1].name).toBe('Concurrent sibling edit')
+    expect(DBState.db.characters[1].modules).toEqual(['mod-b'])
+  })
+
+  it('M10: character-module rollback uses stable ids across index shifts', async () => {
+    const calls = stubFailingCommandFetch()
+    DBState.db.characters = [
+      {
+        chaId: 'char-a',
+        name: 'Character A',
+        chatPage: 0,
+        chats: [{ id: 'chat-a', name: 'Chat A', modules: [], message: [] }],
+        modules: ['mod-a'],
+      },
+      {
+        chaId: 'char-b',
+        name: 'Character B',
+        chatPage: 0,
+        chats: [{ id: 'chat-b', name: 'Chat B', modules: [], message: [] }],
+        modules: ['mod-b'],
+      },
+    ] as any
+    selectedCharID.set(1)
+
+    toggleSelectedCharacterModule('mod-c')
+    expect(DBState.db.characters[1].modules).toEqual(['mod-b', 'mod-c'])
+
+    const [target] = DBState.db.characters.splice(1, 1)
+    DBState.db.characters.unshift(target)
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(DBState.db.characters.map((character) => character.chaId)).toEqual([
+      'char-b',
+      'char-a',
+    ])
+    expect(DBState.db.characters[0].modules).toEqual(['mod-b'])
+    expect(DBState.db.characters[1].modules).toEqual(['mod-a'])
   })
 })

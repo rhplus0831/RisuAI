@@ -38,8 +38,8 @@ import {
   toPluginSnapshot,
 } from '../pluginCommands'
 import {
-  currentModuleStateSnapshot,
-  restoreModuleState,
+  currentGlobalModuleStateSnapshot,
+  restoreGlobalModuleState,
   sanitizeModulePatch,
   toModuleSnapshot,
 } from '../moduleCommands'
@@ -667,7 +667,7 @@ function applyPluginDatabasePatch(
 ): void {
   const previous = currentPluginStateSnapshot()
   const previousModules =
-    'modules' in newDb || 'enabledModules' in newDb ? currentModuleStateSnapshot() : null
+    'modules' in newDb || 'enabledModules' in newDb ? currentGlobalModuleStateSnapshot() : null
   const serverMode = canUseServerCommands()
   const settingsPatch: Record<string, unknown> = {}
   const storageValues: Record<string, unknown> = {}
@@ -780,7 +780,7 @@ function dispatchPluginCollectionPatch(
 
 function dispatchModuleCollectionPatch(
   modules: RisuModule[],
-  previous: ReturnType<typeof currentModuleStateSnapshot>,
+  previous: ReturnType<typeof currentGlobalModuleStateSnapshot>,
 ): void {
   if (!canUseServerCommands()) return
 
@@ -831,13 +831,13 @@ function dispatchModuleCollectionPatch(
   }
 
   if (factories.length > 0) {
-    runOptimisticCommandSequence(factories, () => restoreModuleState(previous))
+    runOptimisticCommandSequence(factories, () => restoreGlobalModuleState(previous))
   }
 }
 
 function dispatchEnabledModulesPatch(
   enabledModules: unknown[],
-  previous: ReturnType<typeof currentModuleStateSnapshot>,
+  previous: ReturnType<typeof currentGlobalModuleStateSnapshot>,
   modules: RisuModule[],
 ): void {
   if (!canUseServerCommands()) return
@@ -866,7 +866,7 @@ function dispatchEnabledModulesPatch(
   }
 
   if (factories.length > 0) {
-    runOptimisticCommandSequence(factories, () => restoreModuleState(previous))
+    runOptimisticCommandSequence(factories, () => restoreGlobalModuleState(previous))
   }
 }
 

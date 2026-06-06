@@ -17,10 +17,15 @@ import type { RisuModule } from './process/modules'
 import type { character } from './storage/database.svelte'
 import { get } from 'svelte/store'
 
-export interface ModuleStateSnapshot {
+export interface GlobalModuleStateSnapshot {
   modules: RisuModule[]
   enabledModules: string[]
-  characters: character[]
+}
+
+export interface CharacterModuleStateSnapshot {
+  characterId: string
+  hasModulesField: boolean
+  modules: string[] | undefined
 }
 
 const MODULE_PATCH_EXCLUDED_KEYS = new Set(['id', 'mcp', 'lorebook', 'regex', 'trigger'])
@@ -30,19 +35,46 @@ export function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-export function currentModuleStateSnapshot(): ModuleStateSnapshot {
+export function currentGlobalModuleStateSnapshot(): GlobalModuleStateSnapshot {
   return {
     modules: cloneJsonValue(DBState.db.modules ?? []),
     enabledModules: cloneJsonValue(DBState.db.enabledModules ?? []),
-    characters: cloneJsonValue(DBState.db.characters ?? []),
   }
 }
 
-export function restoreModuleState(snapshot: ModuleStateSnapshot): void {
+export function restoreGlobalModuleState(snapshot: GlobalModuleStateSnapshot): void {
   withTrustedServerProjectionWrite(() => {
     DBState.db.modules = cloneJsonValue(snapshot.modules)
     DBState.db.enabledModules = cloneJsonValue(snapshot.enabledModules)
-    DBState.db.characters = cloneJsonValue(snapshot.characters)
+    reloadGuiAfterDefinitionChange()
+  })
+}
+
+function findCharacterById(characterId: string): character | undefined {
+  return DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+}
+
+export function currentCharacterModuleStateSnapshot(
+  characterId: string,
+): CharacterModuleStateSnapshot | null {
+  const character = findCharacterById(characterId)
+  if (!character) return null
+  return {
+    characterId,
+    hasModulesField: Object.prototype.hasOwnProperty.call(character, 'modules'),
+    modules: cloneJsonValue(character.modules),
+  }
+}
+
+export function restoreCharacterModuleState(snapshot: CharacterModuleStateSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const character = findCharacterById(snapshot.characterId)
+    if (!character) return
+    if (snapshot.hasModulesField) {
+      character.modules = cloneJsonValue(snapshot.modules)
+    } else {
+      delete character.modules
+    }
     reloadGuiAfterDefinitionChange()
   })
 }
@@ -55,21 +87,24 @@ export function runModuleCommand<T extends Record<string, unknown>>(
   void runServerCommand({ command, rollback })
 }
 
-export function dispatchCreateModule(module: RisuModule, previous: ModuleStateSnapshot): void {
+export function dispatchCreateModule(
+  module: RisuModule,
+  previous: GlobalModuleStateSnapshot,
+): void {
   runModuleCommand(
     (baseRevision) =>
       createModuleCommand({
         baseRevision,
         module: toModuleSnapshot(module),
       }),
-    () => restoreModuleState(previous),
+    () => restoreGlobalModuleState(previous),
   )
 }
 
 export function dispatchUpdateModule(
   moduleId: string,
   patch: ModuleSnapshot,
-  previous: ModuleStateSnapshot,
+  previous: GlobalModuleStateSnapshot,
 ): void {
   const commandPatch = sanitizeModulePatch(patch)
   if (Object.keys(commandPatch).length === 0) return
@@ -80,25 +115,28 @@ export function dispatchUpdateModule(
         moduleId,
         patch: commandPatch,
       }),
-    () => restoreModuleState(previous),
+    () => restoreGlobalModuleState(previous),
   )
 }
 
-export function dispatchDeleteModule(moduleId: string, previous: ModuleStateSnapshot): void {
+export function dispatchDeleteModule(
+  moduleId: string,
+  previous: GlobalModuleStateSnapshot,
+): void {
   runModuleCommand(
     (baseRevision) =>
       deleteModuleCommand({
         baseRevision,
         moduleId,
       }),
-    () => restoreModuleState(previous),
+    () => restoreGlobalModuleState(previous),
   )
 }
 
 export function dispatchEnableModule(
   moduleId: string,
   enabled: boolean,
-  previous: ModuleStateSnapshot,
+  previous: GlobalModuleStateSnapshot,
 ): void {
   runModuleCommand(
     (baseRevision) =>
@@ -107,13 +145,13 @@ export function dispatchEnableModule(
         moduleId,
         enabled,
       }),
-    () => restoreModuleState(previous),
+    () => restoreGlobalModuleState(previous),
   )
 }
 
 export function setGlobalModuleEnabled(moduleId: string, enabled: boolean): void {
-  const previous = currentModuleStateSnapshot()
   if (canUseServerCommands()) {
+    const previous = currentGlobalModuleStateSnapshot()
     dispatchEnableModule(moduleId, enabled, previous)
     return
   }
@@ -129,8 +167,8 @@ export function setGlobalModuleEnabled(moduleId: string, enabled: boolean): void
 }
 
 export function createGlobalModule(module: RisuModule): void {
-  const previous = currentModuleStateSnapshot()
   if (canUseServerCommands()) {
+    const previous = currentGlobalModuleStateSnapshot()
     dispatchCreateModule(module, previous)
     return
   }
@@ -140,8 +178,8 @@ export function createGlobalModule(module: RisuModule): void {
 }
 
 export function updateGlobalModule(moduleId: string, module: RisuModule): void {
-  const previous = currentModuleStateSnapshot()
   if (canUseServerCommands()) {
+    const previous = currentGlobalModuleStateSnapshot()
     dispatchUpdateModule(moduleId, toModuleSnapshot(module), previous)
     return
   }
@@ -154,8 +192,8 @@ export function updateGlobalModule(moduleId: string, module: RisuModule): void {
 }
 
 export function deleteGlobalModule(moduleId: string): void {
-  const previous = currentModuleStateSnapshot()
   if (canUseServerCommands()) {
+    const previous = currentGlobalModuleStateSnapshot()
     dispatchDeleteModule(moduleId, previous)
     return
   }
@@ -165,22 +203,22 @@ export function deleteGlobalModule(moduleId: string): void {
   reloadGuiAfterDefinitionChange()
 }
 
-export function dispatchReorderModules(previous: ModuleStateSnapshot): void {
+export function dispatchReorderModules(previous: GlobalModuleStateSnapshot): void {
   runModuleCommand(
     (baseRevision) =>
       reorderModulesCommand({
         baseRevision,
         moduleIds: (DBState.db.modules ?? []).map((module) => module.id),
       }),
-    () => restoreModuleState(previous),
+    () => restoreGlobalModuleState(previous),
   )
 }
 
 export function dispatchReorderCharacterModules(
   characterId: string,
-  previous: ModuleStateSnapshot,
+  previous: CharacterModuleStateSnapshot,
 ): void {
-  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  const character = findCharacterById(characterId)
   if (!character) return
   runModuleCommand(
     (baseRevision) =>
@@ -189,7 +227,7 @@ export function dispatchReorderCharacterModules(
         characterId,
         moduleIds: character.modules ?? [],
       }),
-    () => restoreModuleState(previous),
+    () => restoreCharacterModuleState(previous),
   )
 }
 
@@ -222,7 +260,8 @@ export function toggleSelectedCharacterModule(moduleId: string): void {
   const character = DBState.db.characters?.[selectedIndex]
   if (!character?.chaId) return
 
-  const previous = currentModuleStateSnapshot()
+  const previous = currentCharacterModuleStateSnapshot(character.chaId)
+  if (!previous) return
   const nextModules = toggledModuleIds(character.modules, moduleId)
 
   withTrustedServerProjectionWrite(() => {

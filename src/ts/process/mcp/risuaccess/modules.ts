@@ -14,10 +14,10 @@ import {
   ensureClientTriggerDefinitionIds,
 } from 'src/ts/server/scriptDefinitionBridge.svelte'
 import {
-  currentModuleStateSnapshot,
+  currentGlobalModuleStateSnapshot,
   dispatchEnableModule,
   dispatchUpdateModule,
-  type ModuleStateSnapshot,
+  type GlobalModuleStateSnapshot,
 } from 'src/ts/moduleCommands'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
@@ -474,8 +474,8 @@ export class ModuleHandler extends MCPToolHandler {
       'customModuleToggle',
     ]
 
-    const previous: ModuleStateSnapshot | null = canUseServerCommands()
-      ? currentModuleStateSnapshot()
+    const previous: GlobalModuleStateSnapshot | null = canUseServerCommands()
+      ? currentGlobalModuleStateSnapshot()
       : null
     const patch: Record<string, unknown> = {}
     let enabled: boolean | null = null

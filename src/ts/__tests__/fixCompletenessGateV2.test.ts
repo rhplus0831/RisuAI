@@ -352,7 +352,33 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('M10', 4, 'Module-only / single-row module snapshots.'),
+  done(
+    'M10',
+    4,
+    'Module-only / single-row module snapshots.',
+    'src/ts/moduleCommands.test.ts',
+    'M10: global module snapshots clone only modules and enabledModules',
+    [
+      {
+        testPath: 'src/ts/moduleCommands.test.ts',
+        testName:
+          'M10: character-module snapshots clone and restore only the target modules field',
+      },
+      {
+        testPath: 'src/ts/moduleCommands.test.ts',
+        testName: 'M10: forced-failure global rollback preserves concurrent character edits',
+      },
+      {
+        testPath: 'src/ts/moduleCommands.test.ts',
+        testName:
+          'M10: forced-failure character-module rollback preserves sibling and same-row edits',
+      },
+      {
+        testPath: 'src/ts/moduleCommands.test.ts',
+        testName: 'M10: character-module rollback uses stable ids across index shifts',
+      },
+    ],
+  ),
   planned('M11', 6, 'Apply-epoch gate for the lorebook watcher (+ epoch-bumping apply).'),
   planned('M12', 6, 'Apply-epoch gate for the character-profile watcher.'),
   planned('M13', 5, 'Debounce + per-item memo for prompt-template tokenize.'),
@@ -1327,7 +1353,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M10'
+      entry.id === 'M11'
         ? {
             ...entry,
             testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
@@ -1337,7 +1363,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'M10: PLANNED entries must not claim proof fields',
+      'M11: PLANNED entries must not claim proof fields',
     )
   })
 
@@ -1360,6 +1386,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M7',
       'M8',
       'M9',
+      'M10',
       'L3',
       'L4',
       'L5',
@@ -1380,7 +1407,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects DONE entries without a registered test path and test name', () => {
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M10'
+      entry.id === 'M11'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1390,9 +1417,9 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M10: status mismatch (registry DONE, docs PENDING)',
-        'M10: DONE without a registered testPath',
-        'M10: DONE without a registered testName',
+        'M11: status mismatch (registry DONE, docs PENDING)',
+        'M11: DONE without a registered testPath',
+        'M11: DONE without a registered testName',
       ]),
     )
   })
@@ -1400,7 +1427,7 @@ describe('v2 fix-completeness gate routing registry', () => {
   it('validates primary and extra DONE test proofs against existing test files', () => {
     const missingExtraTestName = ['missing extra proof title', 'assembled at runtime'].join(' ')
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M10'
+      entry.id === 'M11'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1418,8 +1445,8 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M10: status mismatch (registry DONE, docs PENDING)',
-        `M10: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
+        'M11: status mismatch (registry DONE, docs PENDING)',
+        `M11: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
       ]),
     )
   })
@@ -1453,12 +1480,12 @@ describe('v2 fix-completeness gate routing registry', () => {
     const riskText = readDoc(RISK_DOC)
     const withDoneDocRow = replaceRiskRow(
       riskText,
-      'M10',
-      '| M10 | [4](phases/phase-4-client-clone-ring-2.md) | Module-only / single-row module snapshots. | DONE |',
+      'M11',
+      '| M11 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the lorebook watcher (+ epoch-bumping apply). | DONE |',
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'M10: status mismatch (registry PLANNED, docs DONE)',
+      'M11: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 

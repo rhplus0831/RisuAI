@@ -15,7 +15,7 @@ v1 finding IDs are referenced as `v1-*`.
 - Confirmed findings: 102 total: 3 high, 22 medium, 59 low, 18 informational.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 3 M1-M4 and L4-L11, Phase
-  2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 4 M7-M9 are `DONE`;
+  2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 4 M7-M10 are `DONE`;
   the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
@@ -62,7 +62,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M7  | [4](phases/phase-4-client-clone-ring-2.md)       | Assign `replace_all` messages without `structuredClone`.         | DONE    |
 | M8  | [4](phases/phase-4-client-clone-ring-2.md)       | `getItem` reads one key, not a whole-DB snapshot.                | DONE    |
 | M9  | [4](phases/phase-4-client-clone-ring-2.md)       | Allowed-keys diff for `changedChatMetadata` (v1-M13 shape).      | DONE    |
-| M10 | [4](phases/phase-4-client-clone-ring-2.md)       | Module-only / single-row module snapshots.                       | PENDING |
+| M10 | [4](phases/phase-4-client-clone-ring-2.md)       | Module-only / single-row module snapshots.                       | DONE    |
 | M11 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the lorebook watcher (+ epoch-bumping apply). | PENDING |
 | M12 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the character-profile watcher.              | PENDING |
 | M13 | [5](phases/phase-5-client-render-and-ui.md)      | Debounce + per-item memo for prompt-template tokenize.           | PENDING |
