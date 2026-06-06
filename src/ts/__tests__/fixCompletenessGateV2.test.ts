@@ -679,7 +679,20 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L26', 8, 'Temp-file + rename for legacy storage writes.'),
+  done(
+    'L26',
+    8,
+    'Temp-file + rename for legacy storage writes.',
+    'server/fastify/__tests__/legacyStorage.test.ts',
+    'L26: preserves the old legacy storage file and removes temp bytes after a mid-write failure',
+    [
+      {
+        testPath: 'server/fastify/__tests__/legacyStorage.test.ts',
+        testName:
+          'L26: preserves the old legacy storage file and removes temp bytes after a rename failure',
+      },
+    ],
+  ),
   planned('L27', 8, 'Abort/timeout (+ streaming) for hub forwards.'),
   planned('L28', 8, 'Drop the double clone in JSON import normalize.'),
   planned('L29', 8, 'Cap the charx download near the expanded limit.'),
@@ -1526,6 +1539,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L23',
       'L24',
       'L25',
+      'L26',
       'K1',
       'K2',
     ])

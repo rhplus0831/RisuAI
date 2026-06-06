@@ -1,5 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import fs, {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
@@ -33,6 +40,20 @@ async function startHarness(): Promise<Harness> {
 async function stopHarness(h: Harness): Promise<void> {
   await h.app.close()
   rmSync(h.dataDir, { recursive: true, force: true })
+}
+
+function legacyStorageTempFiles(dataDir: string): string[] {
+  const savePath = path.join(dataDir, 'save')
+  if (!existsSync(savePath)) return []
+  return readdirSync(savePath).filter(
+    (name) => name.startsWith('.legacy-storage-') && name.endsWith('.tmp'),
+  )
+}
+
+function isLegacyStorageTempPath(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  const basename = path.basename(value)
+  return basename.startsWith('.legacy-storage-') && basename.endsWith('.tmp')
 }
 
 async function signAssertion(
@@ -84,6 +105,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await stopHarness(harness)
 })
 
@@ -125,6 +147,71 @@ describe('Phase 3D-Broad /api/v1/storage', () => {
     expect(readRes.statusCode).toBe(200)
     expect(readRes.headers['content-type']).toContain('application/octet-stream')
     expect(Buffer.from(readRes.rawPayload)).toEqual(payload)
+  })
+
+  it('L26: preserves the old legacy storage file and removes temp bytes after a mid-write failure', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const oldPayload = Buffer.from('old-final-bytes')
+    const writeOld = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/storage/write',
+      headers: { 'risu-auth': assertion, 'file-path': HELLO_HEX },
+      payload: oldPayload,
+    })
+    expect(writeOld.statusCode).toBe(200)
+    const onDisk = path.join(harness.dataDir, 'save', HELLO_HEX)
+    expect(Buffer.from(readFileSync(onDisk))).toEqual(oldPayload)
+
+    const originalWriteFile = fs.promises.writeFile.bind(fs.promises)
+    vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (file, data, options) => {
+      if (isLegacyStorageTempPath(file)) {
+        writeFileSync(String(file), Buffer.from('partial-new-bytes'))
+        throw new Error('simulated mid-write failure')
+      }
+      await originalWriteFile(file, data, options)
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/storage/write',
+      headers: { 'risu-auth': assertion, 'file-path': HELLO_HEX },
+      payload: Buffer.from('replacement-bytes'),
+    })
+    expect(res.statusCode).toBe(500)
+    expect(Buffer.from(readFileSync(onDisk))).toEqual(oldPayload)
+    expect(legacyStorageTempFiles(harness.dataDir)).toEqual([])
+  })
+
+  it('L26: preserves the old legacy storage file and removes temp bytes after a rename failure', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const oldPayload = Buffer.from('old-final-before-rename')
+    const writeOld = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/storage/write',
+      headers: { 'risu-auth': assertion, 'file-path': HELLO_HEX },
+      payload: oldPayload,
+    })
+    expect(writeOld.statusCode).toBe(200)
+    const onDisk = path.join(harness.dataDir, 'save', HELLO_HEX)
+    expect(Buffer.from(readFileSync(onDisk))).toEqual(oldPayload)
+
+    const originalRename = fs.promises.rename.bind(fs.promises)
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (oldPath, newPath) => {
+      if (isLegacyStorageTempPath(oldPath)) {
+        throw new Error('simulated rename failure')
+      }
+      await originalRename(oldPath, newPath)
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/storage/write',
+      headers: { 'risu-auth': assertion, 'file-path': HELLO_HEX },
+      payload: Buffer.from('replacement-after-rename'),
+    })
+    expect(res.statusCode).toBe(500)
+    expect(Buffer.from(readFileSync(onDisk))).toEqual(oldPayload)
+    expect(legacyStorageTempFiles(harness.dataDir)).toEqual([])
   })
 
   it('returns an empty body for read of a missing path', async () => {

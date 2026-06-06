@@ -1,12 +1,22 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import type { FileHandle } from 'node:fs/promises'
 import type { FastifyInstance } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { authCryptoRateLimit } from '../routeRateLimits.js'
 
 const HEX_RE = /^[0-9a-fA-F]+$/
+const LEGACY_STORAGE_TEMP_PREFIX = '.legacy-storage-'
+const DIRECTORY_FSYNC_UNSUPPORTED_CODES = new Set([
+  'EISDIR',
+  'EINVAL',
+  'ENOSYS',
+  'ENOTSUP',
+  'EOPNOTSUPP',
+  'EPERM',
+])
 
 function isHexFilename(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && HEX_RE.test(value)
@@ -16,6 +26,72 @@ function ensureSaveDir(dataDir: string): string {
   const savePath = path.join(dataDir, 'save')
   fs.mkdirSync(savePath, { recursive: true })
   return savePath
+}
+
+function legacyStorageTempPath(savePath: string): string {
+  return path.join(savePath, `${LEGACY_STORAGE_TEMP_PREFIX}${process.pid}-${randomUUID()}.tmp`)
+}
+
+function errorCode(err: unknown): string | undefined {
+  if (typeof err !== 'object' || err === null || !('code' in err)) return undefined
+  const code = (err as { code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
+}
+
+function isUnsupportedDirectoryFsyncError(err: unknown): boolean {
+  const code = errorCode(err)
+  return code !== undefined && DIRECTORY_FSYNC_UNSUPPORTED_CODES.has(code)
+}
+
+async function syncFile(filePath: string): Promise<void> {
+  const handle = await fs.promises.open(filePath, 'r')
+  let syncError: unknown
+  try {
+    await handle.sync()
+  } catch (err) {
+    syncError = err
+    throw err
+  } finally {
+    try {
+      await handle.close()
+    } catch (err) {
+      if (syncError === undefined) throw err
+    }
+  }
+}
+
+async function syncDirectoryIfAvailable(dirPath: string): Promise<void> {
+  let handle: FileHandle | undefined
+  try {
+    handle = await fs.promises.open(dirPath, 'r')
+    await handle.sync()
+  } catch (err) {
+    if (isUnsupportedDirectoryFsyncError(err)) return
+    throw err
+  } finally {
+    if (handle) await handle.close().catch(() => {})
+  }
+}
+
+async function writeLegacyStorageFileAtomic(
+  savePath: string,
+  filePath: string,
+  body: Buffer,
+): Promise<void> {
+  const finalPath = path.join(savePath, filePath)
+  const tempPath = legacyStorageTempPath(savePath)
+  let renamed = false
+  try {
+    await fs.promises.writeFile(tempPath, body, { flag: 'wx' })
+    await syncFile(tempPath)
+    await fs.promises.rename(tempPath, finalPath)
+    renamed = true
+    await syncDirectoryIfAvailable(savePath)
+  } finally {
+    if (!renamed) {
+      await fs.promises.rm(tempPath, { force: true }).catch(() => {})
+    }
+  }
 }
 
 interface CryptoBody {
@@ -82,7 +158,7 @@ export function registerLegacyStorageRoutes(
         return { error: 'Body required' }
       }
       const savePath = ensureSaveDir(dataDir)
-      await fs.promises.writeFile(path.join(savePath, filePath), req.body)
+      await writeLegacyStorageFileAtomic(savePath, filePath, req.body)
       return { success: true }
     })
 
