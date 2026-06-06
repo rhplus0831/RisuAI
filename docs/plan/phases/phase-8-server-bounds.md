@@ -111,7 +111,7 @@ L27, L28, L29, L30, L31. (I3's unused-index drop may ride along if free.)
 
 ## Exit Criteria
 
-- [ ] L1: a >deadline actively-streaming generation survives (sliding) or
+- [x] L1: a >deadline actively-streaming generation survives (sliding) or
       honors the raised configured cap; runaway no-token jobs still die.
 - [ ] L2/L17: terminal retry rows and terminal memory jobs are swept; live
       rows untouched (retention tests).

@@ -315,7 +315,28 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('M20', 7, 'Bounded deadlines for MCP request/handshake/SSE waits.'),
   planned('M21', 7, 'Parenthesized guard + mid-stream byte cap in CharX import.'),
   planned('M22', 7, 'Remove the `.po` 100-line test cap.'),
-  planned('L1', 8, 'Configurable/sliding durable deadline (pair with the non-durable twin).'),
+  done(
+    'L1',
+    8,
+    'Sliding durable deadline paired with the non-durable generation abort window.',
+    'server/fastify/__tests__/streamJobs.test.ts',
+    'L1: sliding durable generation jobs survive past the original deadline while active',
+    [
+      {
+        testPath: 'server/fastify/__tests__/streamJobs.test.ts',
+        testName: 'L1: silent sliding durable generation jobs still die within the bounded deadline',
+      },
+      {
+        testPath: 'server/fastify/__tests__/requestAbort.test.ts',
+        testName:
+          'L1: refresh keeps an active non-durable generation alive past its original deadline',
+      },
+      {
+        testPath: 'server/fastify/__tests__/requestAbort.test.ts',
+        testName: 'L1: configured non-durable deadlines are capped at the shared max timeout',
+      },
+    ],
+  ),
   planned('L2', 8, 'Delete/TTL terminal finalization-retry rows.'),
   done(
     'L3',
@@ -1307,6 +1328,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M4',
       'M5',
       'M6',
+      'L1',
       'L3',
       'L4',
       'L5',

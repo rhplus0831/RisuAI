@@ -50,6 +50,7 @@ export interface StreamJob {
   deadlineAt: number
   heartbeatSec: number
   timeoutMs: number
+  slidingDeadline: boolean
   /**
    * Durable-generation extensions. Unused by the proxy stream job. `chatId` ties
    * the job to its chat for the one-job-per-chat submission lock and reload-resume
@@ -154,6 +155,7 @@ export function normalizeHeartbeatSec(raw: unknown): number {
 export interface CreateJobOptions {
   timeoutMs: unknown
   heartbeatSec: unknown
+  slidingDeadline?: boolean
   now?: number
 }
 
@@ -161,6 +163,31 @@ function serializedSseEventType(text: string): string | undefined {
   const firstLineEnd = text.search(/\r?\n/)
   const firstLine = firstLineEnd === -1 ? text : text.slice(0, firstLineEnd)
   return firstLine.startsWith('event: ') ? firstLine.slice('event: '.length).trim() : undefined
+}
+
+function serializedSseData(text: string): unknown {
+  const data = text
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter((line) => line.startsWith('data: '))
+    .map((line) => line.slice('data: '.length))
+    .join('\n')
+  if (data.length === 0) return undefined
+  try {
+    return JSON.parse(data) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+export function isStreamDeadlineActivityFrame(text: string): boolean {
+  const type = serializedSseEventType(text)
+  if (!type || type === 'done' || type === 'error') return false
+  if (type !== 'token') return true
+  const data = serializedSseData(text)
+  if (!data || typeof data !== 'object') return false
+  const content = (data as { content?: unknown }).content
+  return typeof content === 'string' && content.length > 0
 }
 
 function removeReplayFrame(job: StreamJob, index: number): void {
@@ -255,9 +282,17 @@ export class JobRegistry {
       deadlineAt: createdAt + timeoutMs,
       heartbeatSec,
       timeoutMs,
+      slidingDeadline: opts.slidingDeadline === true,
     }
     this.jobs.set(job.id, job)
     return job
+  }
+
+  refreshDeadline(job: StreamJob, now?: number): void {
+    if (job.done || job.abortController.signal.aborted) return
+    const t = now ?? Date.now()
+    job.updatedAt = t
+    job.deadlineAt = t + job.timeoutMs
   }
 
   enableReplay(job: StreamJob): void {
@@ -274,7 +309,11 @@ export class JobRegistry {
    * `pushEvent` (JSON.stringify) path.
    */
   pushRaw(job: StreamJob, text: string, now?: number): void {
-    job.updatedAt = now ?? Date.now()
+    const t = now ?? Date.now()
+    job.updatedAt = t
+    if (job.slidingDeadline && isStreamDeadlineActivityFrame(text)) {
+      this.refreshDeadline(job, t)
+    }
     appendDurableReplayFrame(job, text)
     if (job.clients.size === 0) {
       if (job.replayEvents) return
