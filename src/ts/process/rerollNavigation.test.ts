@@ -19,6 +19,7 @@ const prerollSpies = vi.hoisted(() => ({
   Prereroll: vi.fn(() => null),
   PreUnreroll: vi.fn(() => null),
   addRerolls: vi.fn(),
+  clearPrererolls: vi.fn(),
 }))
 vi.mock('./prereroll', () => prerollSpies)
 
@@ -213,9 +214,10 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
     expect(getRerollBuffer().length).toBeGreaterThan(0)
     clearRerollBuffer()
     expect(getRerollBuffer()).toEqual([])
+    expect(prerollSpies.clearPrererolls).not.toHaveBeenCalled()
   })
 
-  it('resetRerollOnCharChange wipes the buffer when the character changed', () => {
+  it('resetRerollOnCharChange wipes the buffer and preroll candidates when the character changed', () => {
     const active: Msg[] = [
       { role: 'user', data: 'hi', chatId: 'u1' },
       { role: 'char', data: 'c2', chatId: 'g2' },
@@ -231,6 +233,31 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
     resetRerollOnCharChange()
     expect(getRerollBuffer()).toEqual([])
     expect(getRerollId()).toBe(-1)
+    expect(prerollSpies.clearPrererolls).toHaveBeenCalledTimes(1)
+  })
+
+  it('resetRerollOnCharChange wipes the buffer and preroll candidates when the chat changed', () => {
+    const active: Msg[] = [
+      { role: 'user', data: 'hi', chatId: 'u1' },
+      { role: 'char', data: 'c2', chatId: 'g2' },
+    ]
+    setupChat(active)
+    DBState.db.characters[0].chats.push({
+      id: 'chat-1b',
+      message: [{ role: 'char', data: 'other', chatId: 'other-g1' }],
+    } as never)
+    seedRerollBufferFromAlternates(active, [
+      { role: 'char', data: 'c2', chatId: 'g2' },
+      { role: 'char', data: 'c1', chatId: 'g1' },
+    ])
+    expect(getRerollBuffer().length).toBe(2)
+
+    DBState.db.characters[0].chatPage = 1
+    resetRerollOnCharChange()
+
+    expect(getRerollBuffer()).toEqual([])
+    expect(getRerollId()).toBe(-1)
+    expect(prerollSpies.clearPrererolls).toHaveBeenCalledTimes(1)
   })
 })
 

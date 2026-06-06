@@ -840,9 +840,9 @@ export function mergeServerProjectionCharacterRow(
         const priorMessage = (prior as { message?: unknown }).message
         if (Array.isArray(priorMessage) && priorMessage.length > 0) {
           ;(chat as { message?: unknown }).message = priorMessage
-          const priorHypa = (prior as { hypaV3Data?: unknown }).hypaV3Data
-          if (priorHypa !== undefined) (chat as { hypaV3Data?: unknown }).hypaV3Data = priorHypa
         }
+        const priorHypa = (prior as { hypaV3Data?: unknown }).hypaV3Data
+        if (priorHypa !== undefined) (chat as { hypaV3Data?: unknown }).hypaV3Data = priorHypa
       }
     }
     // Preserve resident globalLore if the shipped row stubbed it (stubs on).
@@ -917,14 +917,32 @@ export function hydrateServerCharacterLorebook(
   globalLore: unknown[],
 ): boolean {
   return withTrustedServerProjectionWrite(() => {
-    for (const character of DBState.db.characters ?? []) {
-      if (character.chaId === characterId) {
-        character.globalLore = globalLore as typeof character.globalLore
-        return true
-      }
-    }
-    return false
+    return writeServerCharacterLorebook(characterId, globalLore)
   })
+}
+
+/**
+ * Apply a foreign command-event `character-lorebook` projection. Unlike
+ * user-open hydration, this advances the projection epoch so mounted bridge
+ * watchers refresh their baselines instead of echoing the foreign edit.
+ */
+export function applyServerCharacterLorebookProjection(
+  characterId: string,
+  globalLore: unknown[],
+): boolean {
+  return withServerProjectionApply(() => {
+    return writeServerCharacterLorebook(characterId, globalLore)
+  })
+}
+
+function writeServerCharacterLorebook(characterId: string, globalLore: unknown[]): boolean {
+  for (const character of DBState.db.characters ?? []) {
+    if (character.chaId === characterId) {
+      character.globalLore = globalLore as typeof character.globalLore
+      return true
+    }
+  }
+  return false
 }
 
 export {

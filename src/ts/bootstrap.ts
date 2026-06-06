@@ -2,11 +2,11 @@ import { checkNullish } from './util'
 import { v4 as uuidv4 } from 'uuid'
 import { get } from 'svelte/store'
 import {
+  applyServerCharacterLorebookProjection,
   applyServerCharacterSelectionProjection,
   applyServerProjectionDatabase,
   mergeServerProjectionFields,
   mergeServerProjectionCharacterRow,
-  hydrateServerCharacterLorebook,
   setDatabase,
   defaultSdDataFunc,
   getDatabase,
@@ -73,9 +73,9 @@ import {
 } from './process/reattach'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 
-// Delay before re-subscribing to the command-event stream after it drops. On
-// reconnect we full-bootstrap to recover any events missed while disconnected.
-const SERVER_PROJECTION_RECONNECT_DELAY_MS = 1000
+const SERVER_PROJECTION_RECONNECT_BASE_DELAY_MS = 1000
+const SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS = 30_000
+const SERVER_PROJECTION_RECONNECT_JITTER_RATIO = 0.2
 
 let serverProjectionEventSubscription: { unsubscribe: () => void } | null = null
 // Serializes the surgical-sync decision tree so inbound command events are
@@ -83,6 +83,7 @@ let serverProjectionEventSubscription: { unsubscribe: () => void } | null = null
 let serverProjectionSyncChain: Promise<void> = Promise.resolve()
 let serverProjectionEventsDesired = false
 let serverProjectionReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let serverProjectionReconnectAttempt = 0
 /**
  * Loads the application data.
  */
@@ -230,6 +231,7 @@ export function stopServerProjectionEvents() {
     clearTimeout(serverProjectionReconnectTimer)
     serverProjectionReconnectTimer = null
   }
+  serverProjectionReconnectAttempt = 0
 }
 
 async function startServerProjectionEvents() {
@@ -248,6 +250,7 @@ async function startServerProjectionEvents() {
     },
   })
   if (subscription.status === 'ok') {
+    serverProjectionReconnectAttempt = 0
     serverProjectionEventSubscription = subscription
   } else if (subscription.status === 'error') {
     console.warn(`Server event subscription failed: ${subscription.error}`)
@@ -270,13 +273,39 @@ function teardownServerProjectionSubscription() {
 
 function scheduleServerProjectionReconnect() {
   if (serverProjectionReconnectTimer || !serverProjectionEventsDesired) return
+  const delayMs = calculateServerProjectionReconnectDelayMs(serverProjectionReconnectAttempt)
+  serverProjectionReconnectAttempt += 1
   serverProjectionReconnectTimer = setTimeout(() => {
     serverProjectionReconnectTimer = null
     if (!serverProjectionEventsDesired) return
     void (async () => {
       await startServerProjectionEvents()
     })()
-  }, SERVER_PROJECTION_RECONNECT_DELAY_MS)
+  }, delayMs)
+}
+
+export function calculateServerProjectionReconnectDelayMs(
+  attempt: number,
+  random: () => number = Math.random,
+): number {
+  const normalizedAttempt =
+    Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0
+  const exponentialDelay = Math.min(
+    SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS,
+    SERVER_PROJECTION_RECONNECT_BASE_DELAY_MS * 2 ** normalizedAttempt,
+  )
+  const randomValue = random()
+  const normalizedRandom =
+    Number.isFinite(randomValue) && randomValue >= 0 && randomValue <= 1 ? randomValue : 0.5
+  const jitterMultiplier =
+    1 - SERVER_PROJECTION_RECONNECT_JITTER_RATIO +
+    normalizedRandom * SERVER_PROJECTION_RECONNECT_JITTER_RATIO * 2
+  const jitteredDelay = Math.round(exponentialDelay * jitterMultiplier)
+
+  return Math.min(
+    SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS,
+    Math.max(1, jitteredDelay),
+  )
 }
 
 function applyServerMemoryEvent(event: ServerMemoryEvent) {
@@ -340,7 +369,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       // A foreign character-globalLore edit: surgically replace just that
       // character's globalLore instead of re-shipping every character. Works
       // whether or not lorebook stubs are on (the field is set resident).
-      hydrateServerCharacterLorebook(result.characterId, result.globalLore)
+      applyServerCharacterLorebookProjection(result.characterId, result.globalLore)
       setCachedServerCommandRevision(event.revision)
       return
     }

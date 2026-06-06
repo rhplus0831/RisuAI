@@ -20,7 +20,10 @@ import {
   type LorebookEntrySnapshot,
   type ServerCommandResult,
 } from './commands'
-import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import {
+  getServerProjectionApplyEpoch,
+  withTrustedServerProjectionWrite,
+} from './projectionWriteGuard.svelte'
 
 type GlobalLorebook = { id?: string; name: string; data: loreBook[] }
 
@@ -560,6 +563,7 @@ export function watchServerBackedLorebooks(
   let initialized = false
   let clientIdsInitializedFor: string | null = null
   let previousSnapshots = new Map<string, string>()
+  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
   // A character-scoped watcher must re-run when the selected character changes,
   // so mirror the store into the $state the collector reads. Other scopes do not
@@ -573,6 +577,7 @@ export function watchServerBackedLorebooks(
 
   const stop = $effect.root(() => {
     $effect(() => {
+      const projectionApplyEpoch = getServerProjectionApplyEpoch()
       const clientIdsScopeKey = lorebookWatchScopeIdKey(scope)
       if (clientIdsInitializedFor !== clientIdsScopeKey) {
         ensureWatchScopeClientLorebookIds(scope)
@@ -580,8 +585,13 @@ export function watchServerBackedLorebooks(
       }
       const currentSnapshots = collectLorebookCollectionSnapshots(scope)
 
-      if (suppressRollbackDispatch || !initialized) {
+      if (
+        suppressRollbackDispatch ||
+        !initialized ||
+        projectionApplyEpoch !== previousProjectionApplyEpoch
+      ) {
         initialized = true
+        previousProjectionApplyEpoch = projectionApplyEpoch
         previousSnapshots = currentSnapshots
         return
       }

@@ -1,6 +1,6 @@
 # Active Risk Analysis
 
-Date: 2026-06-05
+Date: 2026-06-06
 
 This file maps every confirmed v2 audit finding to a phase, target fix, and
 status. Evidence lives in
@@ -14,8 +14,9 @@ v1 finding IDs are referenced as `v1-*`.
 
 - Confirmed findings: 102 total: 3 high, 22 medium, 59 low, 18 informational.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
-  known-overlap residuals K1-K4. H1-H3, Phase 3 M1-M4 and L4-L11, plus Phase
-  2 M5, M6, L3, L13, L14, L16, K1, and K2 are `DONE`; the rest are `PENDING`.
+  known-overlap residuals K1-K4. H1-H3, Phase 2 M5, M6, L3, L13, L14, L16,
+  K1, and K2, Phase 3 M1-M4 and L4-L11, and Phase 6 M11, M12, M14, L35,
+  L36, and L45-L47 are `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -62,10 +63,10 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M8  | [4](phases/phase-4-client-clone-ring-2.md)       | `getItem` reads one key, not a whole-DB snapshot.                | PENDING |
 | M9  | [4](phases/phase-4-client-clone-ring-2.md)       | Allowed-keys diff for `changedChatMetadata` (v1-M13 shape).      | PENDING |
 | M10 | [4](phases/phase-4-client-clone-ring-2.md)       | Module-only / single-row module snapshots.                       | PENDING |
-| M11 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the lorebook watcher (+ epoch-bumping apply). | PENDING |
-| M12 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the character-profile watcher.              | PENDING |
+| M11 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the lorebook watcher (+ epoch-bumping apply). | DONE    |
+| M12 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the character-profile watcher.              | DONE    |
 | M13 | [5](phases/phase-5-client-render-and-ui.md)      | Debounce + per-item memo for prompt-template tokenize.           | PENDING |
-| M14 | [6](phases/phase-6-bridges-lifecycle-network.md) | Idempotent `nodeObserve` (or wire the dead MutationObserver).    | PENDING |
+| M14 | [6](phases/phase-6-bridges-lifecycle-network.md) | Idempotent `nodeObserve` (or wire the dead MutationObserver).    | DONE    |
 | M15 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded Map (LRU) translate cache.                               | PENDING |
 | M16 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove html log; `DoingChat` gate for non-exp translators.       | PENDING |
 | M17 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed translate-detection memo.             | PENDING |
@@ -113,8 +114,8 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L32 | [4](phases/phase-4-client-clone-ring-2.md)       | Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`. | PENDING |
 | L33 | [4](phases/phase-4-client-clone-ring-2.md)       | Single-row snapshot for trash `removeChar`.                       | PENDING |
 | L34 | [4](phases/phase-4-client-clone-ring-2.md)       | Minimal `supaMemory` patch on selection.                          | PENDING |
-| L35 | [6](phases/phase-6-bridges-lifecycle-network.md) | Carry `hypaV3Data` independently of message length.               | PENDING |
-| L36 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound the prereroll maps; clear on chat switch.                   | PENDING |
+| L35 | [6](phases/phase-6-bridges-lifecycle-network.md) | Carry `hypaV3Data` independently of message length.               | DONE    |
+| L36 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound the prereroll maps; clear on chat switch.                   | DONE    |
 | L37 | [4](phases/phase-4-client-clone-ring-2.md)       | Same-language early-return in `changeLanguage`.                   | PENDING |
 | L38 | [5](phases/phase-5-client-render-and-ui.md)      | Remove `{{#function}}`/`{{call::}}` logs.                         | PENDING |
 | L39 | [5](phases/phase-5-client-render-and-ui.md)      | `includes()` fast path + indexOf scan in `parseThoughtsAndTools`. | PENDING |
@@ -123,9 +124,9 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L42 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for GridCatalog.                          | PENDING |
 | L43 | [5](phases/phase-5-client-render-and-ui.md)      | `$derived` + keyed each for ModuleSettings.                       | PENDING |
 | L44 | [5](phases/phase-5-client-render-and-ui.md)      | Cheap signature compare for the sidebar list effect.              | PENDING |
-| L45 | [6](phases/phase-6-bridges-lifecycle-network.md) | Capped exponential backoff + jitter for SSE reconnect.            | PENDING |
-| L46 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound `sseIdDone` (windowed dedup).                               | PENDING |
-| L47 | [6](phases/phase-6-bridges-lifecycle-network.md) | Remove the `fetchNative` body log.                                | PENDING |
+| L45 | [6](phases/phase-6-bridges-lifecycle-network.md) | Capped exponential backoff + jitter for SSE reconnect.            | DONE    |
+| L46 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound `sseIdDone` (windowed dedup).                               | DONE    |
+| L47 | [6](phases/phase-6-bridges-lifecycle-network.md) | Remove the `fetchNative` body log.                                | DONE    |
 | L48 | [7](phases/phase-7-opt-in-subsystems.md)         | Translate once; cap HF TTS retries.                               | PENDING |
 | L49 | [7](phases/phase-7-opt-in-subsystems.md)         | `decode()`/`complete` guard + onerror for inlay images.           | PENDING |
 | L50 | [7](phases/phase-7-opt-in-subsystems.md)         | LRU + revoke for `blobUrlCache`.                                  | PENDING |

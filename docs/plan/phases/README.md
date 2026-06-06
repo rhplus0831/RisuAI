@@ -23,16 +23,16 @@ the finding -> phase map is in
 - Phase 3, complete (Root 2: assembly CBS & triggers; M1-M4, L4-L11):
   [`phase-3-assembly-cbs-and-triggers.md`](phase-3-assembly-cbs-and-triggers.md),
   [`slices/phase-3-assembly-cbs-and-triggers/`](slices/phase-3-assembly-cbs-and-triggers/).
-- Phase 4, next (Root 3: client clone narrowing ring 2; M7-M10, L32-L34,
+- Phase 4, pending (Root 3: client clone narrowing ring 2; M7-M10, L32-L34,
   L37, K4):
   [`phase-4-client-clone-ring-2.md`](phase-4-client-clone-ring-2.md),
   [`slices/phase-4-client-clone-ring-2/`](slices/phase-4-client-clone-ring-2/).
 - Phase 5, pending (Root 4: client render & UI; M13, M17, L38-L44):
   [`phase-5-client-render-and-ui.md`](phase-5-client-render-and-ui.md).
-- Phase 6, pending (Root 6: bridges, lifecycle, network; M11, M12, M14, L35,
+- Phase 6, complete (Root 6: bridges, lifecycle, network; M11, M12, M14, L35,
   L36, L45-L47):
   [`phase-6-bridges-lifecycle-network.md`](phase-6-bridges-lifecycle-network.md).
-- Phase 7, pending (Root 5: opt-in subsystems; M15, M16, M18-M22, L48-L59,
+- Phase 7, next (Root 5: opt-in subsystems; M15, M16, M18-M22, L48-L59,
   K3): [`phase-7-opt-in-subsystems.md`](phase-7-opt-in-subsystems.md).
 - Phase 8, pending (server jobs/memory/import bounds; L1, L2, L15, L17-L31):
   [`phase-8-server-bounds.md`](phase-8-server-bounds.md).
