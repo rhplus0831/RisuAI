@@ -130,10 +130,22 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'M1',
     2,
     'Wire `chatScopedRead: hasVarWrite ? undefined : { chatId }` into `persistAssemblyMutations` (K1 shape; assert event parentId = character id).',
+    'server/fastify/__tests__/generation.chat.test.ts',
+    'M1: no-var editinput transcript persistence emits messages.replaced parented to the character',
+    [
+      {
+        testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+        testName: 'M1: no-var editinput transcript replacement adds zero whole-corpus loads',
+      },
+      {
+        testPath: 'server/fastify/__tests__/generation.chat.test.ts',
+        testName: 'reviews representative generation prompt metric families for next-slice selection',
+      },
+    ],
   ),
   planned(
     'M2',
@@ -1218,7 +1230,15 @@ describe('v3 fix-completeness gate routing registry', () => {
     const plannedEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'PLANNED')
     const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
 
-    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'M4', 'M5', 'L13', 'L14', 'K2'])
+    expect(doneEntries.map((entry) => entry.id)).toEqual([
+      'H1',
+      'M1',
+      'M4',
+      'M5',
+      'L13',
+      'L14',
+      'K2',
+    ])
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
     expect(doneEntries.every(hasProofFields)).toBe(true)
     for (const entry of plannedEntries) {
@@ -1226,11 +1246,11 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M4, M5, L13, L14, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M4, M5, L13, L14, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1', 'M4', 'M5', 'L13', 'L14', 'K2'])
+    ).toEqual(['H1', 'M1', 'M4', 'M5', 'L13', 'L14', 'K2'])
     expect(collectGateProblems()).toEqual([])
   })
 
@@ -1251,7 +1271,7 @@ describe('v3 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M1'
+      entry.id === 'M2'
         ? {
             ...entry,
             testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
@@ -1261,35 +1281,35 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'M1: PLANNED entries must not claim proof fields',
+      'M2: PLANNED entries must not claim proof fields',
     )
   })
 
   it('rejects doc DONE rows that do not have matching registry proof', () => {
-    const m1 = SCHEDULED_FIXES.find((entry) => entry.id === 'M1')
-    if (!m1) throw new Error('M1 registry entry not found')
+    const m2 = SCHEDULED_FIXES.find((entry) => entry.id === 'M2')
+    if (!m2) throw new Error('M2 registry entry not found')
 
     const withDoneDocRow = replaceRiskRow(
       readDoc(RISK_DOC),
-      'M1',
-      `| M1 | [2](phases/phase-2-command-surface-scoping.md) | ${m1.fix} | DONE |`,
+      'M2',
+      `| M2 | [3](phases/phase-3-memory-subsystem.md) | ${m2.fix} | DONE |`,
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'M1: status mismatch (registry PLANNED, docs DONE)',
+      'M2: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 
   it('rejects DONE registry entries without a registered test path and test name', () => {
-    const m1 = SCHEDULED_FIXES.find((entry) => entry.id === 'M1')
-    if (!m1) throw new Error('M1 registry entry not found')
+    const m2 = SCHEDULED_FIXES.find((entry) => entry.id === 'M2')
+    if (!m2) throw new Error('M2 registry entry not found')
     const riskText = replaceRiskRow(
       readDoc(RISK_DOC),
-      'M1',
-      `| M1 | [2](phases/phase-2-command-surface-scoping.md) | ${m1.fix} | DONE |`,
+      'M2',
+      `| M2 | [3](phases/phase-3-memory-subsystem.md) | ${m2.fix} | DONE |`,
     )
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M1'
+      entry.id === 'M2'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1299,8 +1319,8 @@ describe('v3 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone, riskText })).toEqual(
       expect.arrayContaining([
-        'M1: DONE without a registered testPath',
-        'M1: DONE without a registered testName',
+        'M2: DONE without a registered testPath',
+        'M2: DONE without a registered testName',
       ]),
     )
   })

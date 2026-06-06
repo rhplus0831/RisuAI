@@ -47,7 +47,10 @@ import {
   withServerLoadInstrumentation,
 } from './helpers/loadCostHarness.js'
 import type { GenerationChatRouteOptions } from '../src/routes/generationChat.js'
-import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
+import {
+  buildLargeCorpusFixture,
+  type LargeCorpusFixture,
+} from '../../../src/ts/__tests__/largeCorpusFixture.js'
 
 // Phase 0 (measurement-baseline-harness): prove the server load-count harness
 // can (a) pass a genuinely scoped hot path and (b) FAIL a path that performs a
@@ -119,6 +122,24 @@ async function importDatabase(database: unknown): Promise<number> {
   })
   expect(res.statusCode).toBe(200)
   return res.json().revision as number
+}
+
+function promptReadyLargeCorpusDatabase(fixture: LargeCorpusFixture): Record<string, unknown> {
+  return {
+    ...structuredClone(fixture.database),
+    promptTemplate: undefined,
+    formatingOrder: ['main', 'description', 'chats', 'lastChat'],
+    promptSettings: {
+      assistantPrefill: '',
+      postEndInnerFormat: '',
+      sendChatAsSystem: false,
+      sendName: false,
+      utilOverride: false,
+    },
+    mainPrompt: 'MAIN',
+    maxContext: 100_000,
+    maxResponse: 50,
+  }
 }
 
 function isMemorySummaryPayloadRead(sql: string): boolean {
@@ -810,21 +831,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const fixture = buildLargeCorpusFixture()
     // The fixture is hydration-oriented; add the assembly settings the prompt
     // path needs (and drop the template so the `chats` history slot renders).
-    await importDatabase({
-      ...fixture.database,
-      promptTemplate: undefined,
-      formatingOrder: ['main', 'description', 'chats', 'lastChat'],
-      promptSettings: {
-        assistantPrefill: '',
-        postEndInnerFormat: '',
-        sendChatAsSystem: false,
-        sendName: false,
-        utilOverride: false,
-      },
-      mainPrompt: 'MAIN',
-      maxContext: 100_000,
-      maxResponse: 50,
-    })
+    await importDatabase(promptReadyLargeCorpusDatabase(fixture))
 
     // Audit M1 regression: assembly resolved its database through
     // `loadPersistedWithMessages`, paying the whole-table messages +
@@ -848,6 +855,54 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(JSON.stringify(body.messages)).toContain(lastMarker)
     expect(loadCountByTable.messages ?? 0).toBe(0)
     expect(loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
+  })
+
+  it('M1: no-var editinput transcript replacement adds zero whole-corpus loads', async () => {
+    const fixture = buildLargeCorpusFixture()
+
+    await importDatabase(promptReadyLargeCorpusDatabase(fixture))
+    const plainRun = await withServerLoadInstrumentation(() =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          chatId: fixture.hot.chatId,
+          characterId: fixture.hot.characterId,
+          mode: 'send',
+          userMessage: 'hi',
+        },
+      }),
+    )
+    expect(plainRun.result.statusCode).toBe(200)
+
+    const editinputDatabase = promptReadyLargeCorpusDatabase(fixture)
+    const hotCharacter = (editinputDatabase.characters as Array<Record<string, unknown>>).find(
+      (character) => character.chaId === fixture.hot.characterId,
+    )
+    if (!hotCharacter) throw new Error('large-corpus hot character missing')
+    hotCharacter.customscript = [
+      { in: 'hi', out: 'HELLO', type: 'editinput', flag: '', ableFlag: false },
+    ]
+
+    await importDatabase(editinputDatabase)
+    const editinputRun = await withServerLoadInstrumentation(() =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          chatId: fixture.hot.chatId,
+          characterId: fixture.hot.characterId,
+          mode: 'send',
+          userMessage: 'hi',
+        },
+      }),
+    )
+    expect(editinputRun.result.statusCode).toBe(200)
+    expect(editinputRun.result.body).toContain('HELLO')
+    expect(editinputRun.corpusLoadCount).toBe(plainRun.corpusLoadCount)
+    expect(editinputRun.loadCountByTable).toEqual(plainRun.loadCountByTable)
   })
 
   it('L20: prompt memory cleanup and selection share one summary payload read', async () => {

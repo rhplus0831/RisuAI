@@ -560,6 +560,7 @@ function persistAssemblyMutations(args: {
       eventSink: args.eventSink,
       mutationPath: 'targeted-assembly',
       writeDatabase: hasVarWrite,
+      chatScopedRead: hasVarWrite ? undefined : { chatId: args.input.chatId },
       mutate(database, targetDb) {
         const characters = normalizeAllCharacterChats(database)
         const { character, chat } = requireChatLocation(characters, args.input.chatId)

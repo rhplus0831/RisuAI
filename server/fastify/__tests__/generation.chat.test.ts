@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url'
 import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { listPersistedCommandEventHistory } from '../src/commands/events.js'
+import { openDatabase } from '../src/db.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
   createRequestScopedStoredAssetResolver,
@@ -972,6 +974,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(chatVar.find((entry) => entry.metric === 'command_mutation')).toMatchObject({
         type: 'chat.scriptstate.updated',
         mutationPath: 'targeted-assembly',
+        writtenTables: [...BROAD_WRITE_TABLES],
       })
       assertCommandMetricGate(
         chatVar.find((entry) => entry.metric === 'command_mutation') as CommandMutationMetric,
@@ -1007,6 +1010,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(transcriptRewrite.find((entry) => entry.metric === 'command_mutation')).toMatchObject({
         type: 'messages.replaced',
         mutationPath: 'targeted-assembly',
+        writtenTables: ['messages'],
       })
       assertCommandMetricGate(
         transcriptRewrite.find(
@@ -1521,6 +1525,39 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(chat.message.map((m) => ({ role: m.role, data: m.data }))).toEqual([
       { role: 'user', data: 'hi [EDITINPUT]' },
     ])
+  })
+
+  it('M1: no-var editinput transcript persistence emits messages.replaced parented to the character', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithSubmitLua(
+        `
+        listenEdit('editInput', function(id, data, meta)
+          return data .. ' [EDITINPUT]'
+        end)
+      `,
+        ['main', 'description', 'chats', 'lastChat'],
+      ),
+    )
+
+    await sendBase(assertion)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const event = listPersistedCommandEventHistory(db).find(
+        (candidate) => candidate.type === 'messages.replaced',
+      )
+      expect(event).toMatchObject({
+        type: 'messages.replaced',
+        resource: 'message',
+        id: 'chat-1',
+        parentId: 'char-1',
+      })
+    } finally {
+      db.close()
+    }
   })
 
   it('runs a regex editinput script that rewrites the submitted user message (slice 3b-4)', async () => {
