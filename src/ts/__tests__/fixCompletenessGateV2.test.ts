@@ -574,7 +574,32 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L20', 8, 'Share one summaries fetch between cleanup and selection.'),
+  done(
+    'L20',
+    8,
+    'Share one summaries fetch between cleanup and selection.',
+    'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+    'L20: prompt memory cleanup and selection share one summary payload read',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryRepository.test.ts',
+        testName:
+          'L20: cleans orphaned rows from a shared summary snapshot and returns retained summaries',
+      },
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName: 'L20: selects retained memory from the shared post-cleanup summary snapshot',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memorySelectionService.test.ts',
+        testName: 'L20: selects from a shared summary snapshot without rereading summaries',
+      },
+      {
+        testPath: 'server/fastify/__tests__/promptMemoryAdapter.test.ts',
+        testName: 'L20: passes a shared summary snapshot through to the selection facade',
+      },
+    ],
+  ),
   planned('L21', 8, 'Per-chunk size ceiling before embed requests.'),
   planned('L22', 8, 'Size the contextual budget from provider limits; surface splits.'),
   planned('L23', 8, 'Batch JSON-card asset persists (charx shape).'),
@@ -1421,6 +1446,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L17',
       'L18',
       'L19',
+      'L20',
       'K1',
       'K2',
     ])

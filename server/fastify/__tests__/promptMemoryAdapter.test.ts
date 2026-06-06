@@ -346,6 +346,35 @@ describe('prompt memory adapter', () => {
     }
   })
 
+  it('L20: passes a shared summary snapshot through to the selection facade', () => {
+    const db = openDatabase(makeDataDir())
+    const selected = makeSummary('summary-a')
+    const summarySnapshot = { chatId: 'chat-1', summaries: [selected] }
+    const selectMemory = vi.fn<PromptMemorySelector>(() =>
+      selectionResult({ selectedSummaries: [selected] }),
+    )
+    try {
+      const result = selectPromptMemory({
+        db,
+        enabled: true,
+        chatId: 'chat-1',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 20,
+        settings: { recentMemoryRatio: 1, similarMemoryRatio: 0 },
+        summarySnapshot,
+        selectMemory,
+      })
+
+      expect(selectMemory).toHaveBeenCalledOnce()
+      expect(selectMemory.mock.calls[0]?.[0].summarySnapshot).toBe(summarySnapshot)
+      expect(result.selectedSummaries).toEqual([selected])
+    } finally {
+      db.close()
+    }
+  })
+
   it('assembles no prompt rows for an empty selection while preserving diagnostics', () => {
     const db = openDatabase(makeDataDir())
     try {

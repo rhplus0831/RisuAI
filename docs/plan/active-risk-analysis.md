@@ -99,7 +99,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L17 | [8](phases/phase-8-server-bounds.md)             | Retention sweep for terminal memory jobs.                         | DONE    |
 | L18 | [8](phases/phase-8-server-bounds.md)             | Fast-path reschedule after a productive worker tick.              | DONE    |
 | L19 | [8](phases/phase-8-server-bounds.md)             | Scope the fail-cascade to contextual groups.                      | DONE    |
-| L20 | [8](phases/phase-8-server-bounds.md)             | Share one summaries fetch between cleanup and selection.          | PENDING |
+| L20 | [8](phases/phase-8-server-bounds.md)             | Share one summaries fetch between cleanup and selection.          | DONE    |
 | L21 | [8](phases/phase-8-server-bounds.md)             | Per-chunk size ceiling before embed requests.                     | PENDING |
 | L22 | [8](phases/phase-8-server-bounds.md)             | Size the contextual budget from provider limits; surface splits.  | PENDING |
 | L23 | [8](phases/phase-8-server-bounds.md)             | Batch JSON-card asset persists (charx shape).                     | PENDING |

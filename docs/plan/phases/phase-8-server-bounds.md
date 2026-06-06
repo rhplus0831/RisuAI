@@ -118,10 +118,10 @@ L27, L28, L29, L30, L31. (I3's unused-index drop may ride along if free.)
 - [x] L15: `synchronous = NORMAL` set after WAL; durability note recorded.
 - [x] L18: worker drains a backlog without idle gaps while idle ticks keep the
       configured poll delay.
-- [ ] L19/L20/L21/L22: transient failures retry only the failed jobs; one
-      summaries fetch per assembly; oversized chunks fail fast with a clear
-      error; contextual splits are observable and the window policy is
-      documented.
+- [x] L19/L20: transient failures retry only the failed jobs; one summaries
+      fetch per assembly.
+- [ ] L21/L22: oversized chunks fail fast with a clear error; contextual
+      splits are observable and the window policy is documented.
 - [ ] L23-L29: batched asset persists, compensating cleanup, open-or-skip
       streaming, atomic legacy writes, single-clone import, bounded charx
       download — each with a behavior test; import/export bytes unchanged.

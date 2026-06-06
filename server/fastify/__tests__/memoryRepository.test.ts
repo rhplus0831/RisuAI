@@ -7,6 +7,7 @@ import {
   cancelMemoryJob,
   claimNextMemoryJob,
   cleanupOrphanedMemory,
+  cleanupOrphanedMemoryWithSummarySnapshot,
   completeMemoryJob,
   createMemoryChunk,
   createMemoryEmbedding,
@@ -23,6 +24,7 @@ import {
   listMemoryEmbeddings,
   listMemoryJobs,
   listMemorySummaries,
+  loadMemorySummarySnapshot,
   mapMemoryJobRow,
   pruneTerminalMemoryJobs,
   recoverRunningMemoryJobs,
@@ -578,6 +580,66 @@ describe('memory repository orphan cleanup', () => {
       ])
       expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
         'chunk-unknown-metadata',
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L20: cleans orphaned rows from a shared summary snapshot and returns retained summaries', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-keep',
+        chatId: 'chat-1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'keep chunk',
+        status: 'summarized',
+      })
+      createMemoryChunk(db, {
+        id: 'chunk-delete',
+        chatId: 'chat-1',
+        rangeStartSeq: 2,
+        rangeEndSeq: 3,
+        text: 'delete chunk',
+        status: 'summarized',
+      })
+      createMemorySummary(db, {
+        id: 'summary-keep',
+        chatId: 'chat-1',
+        chunkId: 'chunk-keep',
+        model: 'summary-model',
+        text: 'keep summary',
+        metadata: { chatMemos: ['memo-a'] },
+        tokens: 3,
+      })
+      createMemorySummary(db, {
+        id: 'summary-delete-other-model',
+        chatId: 'chat-1',
+        chunkId: 'chunk-delete',
+        model: 'other-summary-model',
+        text: 'delete summary',
+        metadata: { chatMemos: ['removed-memo'] },
+        tokens: 3,
+      })
+
+      const snapshot = loadMemorySummarySnapshot(db, { chatId: 'chat-1' })
+      const result = cleanupOrphanedMemoryWithSummarySnapshot(db, {
+        chatId: 'chat-1',
+        currentChatMemos: ['memo-a'],
+        summarySnapshot: snapshot,
+      })
+
+      expect(result.cleanup).toEqual({ summariesDeleted: 1, chunksDeleted: 1 })
+      expect(result.summarySnapshot.summaries.map((summary) => summary.id)).toEqual([
+        'summary-keep',
+      ])
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.id)).toEqual([
+        'summary-keep',
+      ])
+      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((chunk) => chunk.id)).toEqual([
+        'chunk-keep',
       ])
     } finally {
       db.close()

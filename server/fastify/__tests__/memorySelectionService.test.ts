@@ -7,6 +7,7 @@ import {
   createMemoryChunk,
   createMemoryEmbedding,
   createMemorySummary,
+  loadMemorySummarySnapshot,
 } from '../src/memoryRepository.js'
 import { selectMemorySummaries } from '../src/memorySelectionService.js'
 
@@ -135,6 +136,78 @@ describe('memory selection service', () => {
         scoredEmbeddings: 0,
       })
       expect(result.diagnostics.allocation.inputSummaries).toBe(0)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L20: selects from a shared summary snapshot without rereading summaries', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedMemory(db, {
+        chatId: 'chat-1',
+        chunkId: 'chunk-a',
+        summaryId: 'summary-a',
+        summaryModel: 'summary-model',
+        embeddingId: 'embedding-a',
+        embeddingModel: 'embedding-model',
+        rangeStartSeq: 0,
+        vector: [1, 0],
+        tokens: 5,
+      })
+      seedMemory(db, {
+        chatId: 'chat-1',
+        chunkId: 'chunk-b',
+        summaryId: 'summary-b',
+        summaryModel: 'summary-model',
+        embeddingId: 'embedding-b',
+        embeddingModel: 'embedding-model',
+        rangeStartSeq: 2,
+        vector: [0, 1],
+        tokens: 5,
+      })
+      seedMemory(db, {
+        chatId: 'chat-1',
+        chunkId: 'chunk-other-model',
+        summaryId: 'summary-other-model',
+        summaryModel: 'other-summary-model',
+        embeddingId: 'embedding-other-model',
+        embeddingModel: 'embedding-model',
+        rangeStartSeq: 4,
+        vector: [1, 0],
+        tokens: 5,
+      })
+
+      const summarySnapshot = loadMemorySummarySnapshot(db, { chatId: 'chat-1' })
+      const preparedSql: string[] = []
+      const originalPrepare = db.prepare.bind(db)
+      db.prepare = ((sql: string) => {
+        preparedSql.push(sql)
+        return originalPrepare(sql)
+      }) as typeof db.prepare
+
+      const result = selectMemorySummaries({
+        db,
+        chatId: 'chat-1',
+        summaryModel: 'summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 10,
+        settings: { recentMemoryRatio: 0, similarMemoryRatio: 1 },
+        summarySnapshot,
+      })
+
+      expect(result.selectedSummaries.map((summary) => summary.id)).toEqual([
+        'summary-a',
+        'summary-b',
+      ])
+      expect(result.diagnostics.repository).toMatchObject({
+        summaries: 2,
+        chunks: 3,
+        embeddings: 3,
+        chunkIdsMissingSummaries: ['chunk-other-model'],
+      })
+      expect(preparedSql.some((sql) => sql.includes('memory_summaries'))).toBe(false)
     } finally {
       db.close()
     }

@@ -85,6 +85,7 @@ export interface PromptMemoryAdapterInput {
   availableTokens: number
   settings: MemoryBudgetAllocatorSettings
   randomSeed?: string
+  summarySnapshot?: MemorySelectionInput['summarySnapshot']
   getSummaryTokenCost?: MemorySelectionInput['getSummaryTokenCost']
   isImportantSummary?: MemorySelectionInput['isImportantSummary']
   selectMemory?: PromptMemorySelector
@@ -104,6 +105,7 @@ export function selectPromptMemory(input: PromptMemoryAdapterInput): PromptMemor
     availableTokens: input.availableTokens,
     settings: input.settings,
     randomSeed: input.randomSeed,
+    summarySnapshot: input.summarySnapshot,
     getSummaryTokenCost: input.getSummaryTokenCost,
     isImportantSummary: input.isImportantSummary,
   })

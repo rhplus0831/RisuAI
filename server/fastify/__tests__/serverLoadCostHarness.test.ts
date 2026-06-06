@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
+import { StatementSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { runAssetGc } from '../src/assetGc.js'
@@ -33,6 +34,11 @@ import {
   replaceChatMessages,
   resetChatMessageDiffInstrumentation,
 } from '../src/messageStore.js'
+import {
+  createMemoryChunk,
+  createMemoryEmbedding,
+  createMemorySummary,
+} from '../src/memoryRepository.js'
 import { resourceProjectionFields } from '../src/routes/projection.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import {
@@ -56,6 +62,11 @@ import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFi
 interface Harness {
   app: FastifyInstance
   dataDir: string
+}
+
+interface MemorySummaryPayloadReadObservation {
+  method: 'all' | 'get' | 'iterate'
+  sql: string
 }
 
 let harness: Harness
@@ -108,6 +119,48 @@ async function importDatabase(database: unknown): Promise<number> {
   })
   expect(res.statusCode).toBe(200)
   return res.json().revision as number
+}
+
+function isMemorySummaryPayloadRead(sql: string): boolean {
+  const normalized = sql.toLowerCase().replace(/\s+/g, ' ').trim()
+  return (
+    normalized.startsWith('select *') &&
+    /\bfrom memory_summaries\b/.test(normalized) &&
+    !/\bchunk_id\s*=/.test(normalized)
+  )
+}
+
+async function withMemorySummaryPayloadReadCount<T>(
+  fn: () => T | Promise<T>,
+): Promise<{ result: T; reads: MemorySummaryPayloadReadObservation[] }> {
+  const reads: MemorySummaryPayloadReadObservation[] = []
+  const proto = StatementSync.prototype as unknown as Record<
+    MemorySummaryPayloadReadObservation['method'],
+    (...args: unknown[]) => unknown
+  >
+  const originals = {
+    all: proto.all,
+    get: proto.get,
+    iterate: proto.iterate,
+  }
+
+  for (const method of ['all', 'get', 'iterate'] as const) {
+    const original = originals[method]
+    proto[method] = function tracked(this: StatementSync, ...args: unknown[]) {
+      if (isMemorySummaryPayloadRead(this.sourceSQL)) {
+        reads.push({ method, sql: this.sourceSQL })
+      }
+      return original.apply(this, args)
+    }
+  }
+
+  try {
+    return { result: await fn(), reads }
+  } finally {
+    proto.all = originals.all
+    proto.get = originals.get
+    proto.iterate = originals.iterate
+  }
 }
 
 function createPausedProvider(text: string): {
@@ -718,6 +771,90 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(JSON.stringify(body.messages)).toContain(lastMarker)
     expect(loadCountByTable.messages ?? 0).toBe(0)
     expect(loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
+  })
+
+  it('L20: prompt memory cleanup and selection share one summary payload read', async () => {
+    const fixture = buildLargeCorpusFixture({ hotChatMessageCount: 12 })
+    await importDatabase({
+      ...fixture.database,
+      promptTemplate: undefined,
+      formatingOrder: ['main', 'description', 'chats', 'lastChat'],
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false,
+      },
+      mainPrompt: 'MAIN',
+      maxContext: 100_000,
+      maxResponse: 50,
+      hypaV3: true,
+      hypaModel: 'embedding-model',
+      characters: fixture.characters.map((character, index) =>
+        index === 0 ? { ...character, supaMemory: true } : character,
+      ),
+      hypaV3Presets: [
+        {
+          name: 'Test',
+          settings: {
+            summarizationModel: 'summary-model',
+            memoryTokensRatio: 0.2,
+            recentMemoryRatio: 1,
+            similarMemoryRatio: 0,
+          },
+        },
+      ],
+      hypaV3PresetId: 0,
+    })
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-l20-selected',
+        chatId: fixture.hot.chatId,
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'L20 selected summary',
+        status: 'summarized',
+      })
+      createMemorySummary(db, {
+        id: 'summary-l20-selected',
+        chatId: fixture.hot.chatId,
+        chunkId: 'chunk-l20-selected',
+        model: 'summary-model',
+        text: 'L20 selected summary',
+        metadata: {
+          chatMemos: Array.from(
+            { length: fixture.hot.messageCount },
+            (_unused, index) => `corpus-msg-0-0-${index}`,
+          ),
+        },
+        tokens: 4,
+      })
+      createMemoryEmbedding(db, {
+        id: 'embedding-l20-selected',
+        chatId: fixture.hot.chatId,
+        chunkId: 'chunk-l20-selected',
+        model: 'embedding-model',
+        vector: [1, 0],
+      })
+    } finally {
+      db.close()
+    }
+
+    const observed = await withMemorySummaryPayloadReadCount(() =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/preview-prompt',
+        headers: { 'risu-auth': assertion },
+        payload: { chatId: fixture.hot.chatId, characterId: fixture.hot.characterId },
+      }),
+    )
+
+    expect(observed.result.statusCode).toBe(200)
+    expect(JSON.stringify(observed.result.json().messages)).toContain('L20 selected summary')
+    expect(observed.reads).toHaveLength(1)
   })
 
   it('M1: the scoped assembly loader matches the broad loader on the target chat and stubs siblings', async () => {

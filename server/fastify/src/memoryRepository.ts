@@ -144,6 +144,20 @@ export interface CleanupOrphanedMemoryResult {
   chunksDeleted: number
 }
 
+export interface MemorySummarySnapshot {
+  chatId: string
+  summaries: MemorySummary[]
+}
+
+export interface CleanupOrphanedMemoryWithSummarySnapshotInput extends CleanupOrphanedMemoryInput {
+  summarySnapshot: MemorySummarySnapshot
+}
+
+export interface CleanupOrphanedMemoryWithSummarySnapshotResult {
+  cleanup: CleanupOrphanedMemoryResult
+  summarySnapshot: MemorySummarySnapshot
+}
+
 type SqlValue = string | number | bigint | null | Buffer
 
 interface MemoryChunkRow {
@@ -617,6 +631,17 @@ export function listMemorySummaries(
   return rows.map(mapMemorySummaryRow)
 }
 
+export function loadMemorySummarySnapshot(
+  db: DatabaseSync,
+  input: { chatId: string },
+): MemorySummarySnapshot {
+  requireString(input.chatId, 'chat id')
+  return {
+    chatId: input.chatId,
+    summaries: listMemorySummaries(db, { chatId: input.chatId }),
+  }
+}
+
 export function cleanupOrphanedMemory(
   db: DatabaseSync,
   input: CleanupOrphanedMemoryInput,
@@ -640,8 +665,30 @@ export function cleanupOrphanedMemory(
     return { summariesDeleted: 0, chunksDeleted: 0 }
   }
 
+  return cleanupOrphanedMemoryWithSummarySnapshot(db, {
+    ...input,
+    summarySnapshot: loadMemorySummarySnapshot(db, { chatId: input.chatId }),
+  }).cleanup
+}
+
+export function cleanupOrphanedMemoryWithSummarySnapshot(
+  db: DatabaseSync,
+  input: CleanupOrphanedMemoryWithSummarySnapshotInput,
+): CleanupOrphanedMemoryWithSummarySnapshotResult {
+  requireString(input.chatId, 'chat id')
+  for (const memo of input.currentChatMemos) {
+    requireString(memo, 'current chat memo')
+  }
+  validateMemorySummarySnapshot(input.summarySnapshot, input.chatId)
+  if (input.preserveOrphanedMemory === true || input.summarySnapshot.summaries.length === 0) {
+    return {
+      cleanup: { summariesDeleted: 0, chunksDeleted: 0 },
+      summarySnapshot: input.summarySnapshot,
+    }
+  }
+
   const currentChatMemos = new Set(input.currentChatMemos)
-  const orphanedSummaries = listMemorySummaries(db, { chatId: input.chatId }).filter((summary) => {
+  const orphanedSummaries = input.summarySnapshot.summaries.filter((summary) => {
     const chatMemos = readSummaryChatMemos(summary)
     return chatMemos !== null && !isMemoSubset(chatMemos, currentChatMemos)
   })
@@ -652,7 +699,10 @@ export function cleanupOrphanedMemory(
   // The deletes below would be no-ops; opening a write txn on every
   // generation just contends with the writer for nothing.
   if (summaryIds.length === 0 && chunkIds.length === 0) {
-    return { summariesDeleted: 0, chunksDeleted: 0 }
+    return {
+      cleanup: { summariesDeleted: 0, chunksDeleted: 0 },
+      summarySnapshot: input.summarySnapshot,
+    }
   }
 
   db.exec('BEGIN IMMEDIATE')
@@ -665,9 +715,33 @@ export function cleanupOrphanedMemory(
     throw error
   }
 
+  const deletedSummaryIds = new Set(summaryIds)
+  const deletedChunkIds = new Set(chunkIds)
+  const retainedSummaries = input.summarySnapshot.summaries.filter(
+    (summary) => !deletedSummaryIds.has(summary.id) && !deletedChunkIds.has(summary.chunkId),
+  )
+
   return {
-    summariesDeleted: summaryIds.length,
-    chunksDeleted: chunkIds.length,
+    cleanup: {
+      summariesDeleted: summaryIds.length,
+      chunksDeleted: chunkIds.length,
+    },
+    summarySnapshot: {
+      chatId: input.summarySnapshot.chatId,
+      summaries: retainedSummaries,
+    },
+  }
+}
+
+function validateMemorySummarySnapshot(snapshot: MemorySummarySnapshot, chatId: string): void {
+  requireString(snapshot.chatId, 'summary snapshot chat id')
+  if (snapshot.chatId !== chatId) {
+    throw new ValidationError('memory summary snapshot chatId must match the cleanup chatId')
+  }
+  for (const summary of snapshot.summaries) {
+    if (summary.chatId !== chatId) {
+      throw new ValidationError('memory summary snapshot contains summaries from another chat')
+    }
   }
 }
 
