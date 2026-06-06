@@ -57,6 +57,30 @@ batching, bundle import inflation caps, or general hub proxy behavior.
 - The L29 v2 gate entry points at a real focused test and the risk-map row is
   `DONE`.
 
+## Proof
+
+Status: DONE (2026-06-06).
+
+- Implementation:
+  `server/fastify/src/routes/realmImport.ts` derives the Realm `.charx`
+  staging-download cap from `maxExpandedImportBytes * 3` (300 MiB fallback when
+  route options omit the expanded cap). The multiplier allows zip entry/header
+  overhead for many small packaged assets while keeping the first effective
+  bound close to the expanded import limit instead of the old 2 GiB ceiling.
+- Failure behavior:
+  oversized `Content-Length` is rejected before temp-file staging; unknown-size
+  streams count bytes, abort the upstream fetch, stop writing, and remove the
+  partial temp directory as soon as the staging cap is crossed.
+- Regression tests:
+  `server/fastify/__tests__/realmImport.test.ts` covers
+  `L29: rejects known-length Realm charx downloads above the staging cap before reading the body`,
+  `L29: aborts unknown-length Realm charx downloads as soon as the staging cap is crossed`,
+  and `L29: accepts a valid Realm charx download within the staging cap`.
+- Gate/risk proof:
+  `src/ts/__tests__/fixCompletenessGateV2.test.ts` registers L29 as `DONE`
+  with the focused Realm import tests, and
+  `docs/plan/active-risk-analysis.md` marks the L29 row `DONE`.
+
 ## Validation
 
 ```bash

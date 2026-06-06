@@ -95,6 +95,19 @@ function assetFileNames(dataDir: string): string[] {
   return existsSync(dir) ? readdirSync(dir).sort() : []
 }
 
+function realmCharxTempDirs(): Set<string> {
+  return new Set(
+    readdirSync(tmpdir())
+      .filter((name) => name.startsWith('risu-realm-charx-'))
+      .map((name) => path.join(tmpdir(), name)),
+  )
+}
+
+function newRealmCharxTempDirs(before: Set<string>): string[] {
+  const after = realmCharxTempDirs()
+  return [...after].filter((dir) => !before.has(dir)).sort()
+}
+
 const subtle = webcrypto.subtle
 const directRealmImportTestRun = process.env.RISU_DIRECT_REALM_IMPORT_TEST === 'true'
 const directOnlyIt = directRealmImportTestRun ? it : it.skip
@@ -992,6 +1005,139 @@ describe('Realm character import route', () => {
     expect(character.additionalAssets).toEqual([
       ['theme', expect.stringMatching(/^[a-f0-9]{64}$/), 'css'],
     ])
+  })
+
+  it('L29: rejects known-length Realm charx downloads above the staging cap before reading the body', async () => {
+    let bodyWriteAttempted = false
+    let bodyTimer: ReturnType<typeof setTimeout> | undefined
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, {
+          'content-type': 'application/charx',
+          'content-length': String(3 * 1024 * 1024 + 1),
+        })
+        res.flushHeaders()
+        bodyTimer = setTimeout(() => {
+          bodyWriteAttempted = true
+          if (!res.destroyed) {
+            res.end(Buffer.alloc(3 * 1024 * 1024 + 1))
+          }
+        }, 50)
+        res.on('close', () => {
+          if (bodyTimer) clearTimeout(bodyTimer)
+        })
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+    const tempDirsBefore = realmCharxTempDirs()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+    if (bodyTimer) clearTimeout(bodyTimer)
+
+    expect(res.statusCode).toBe(413)
+    expect(res.json()).toEqual({ error: 'Realm charx download exceeds size limit' })
+    expect(bodyWriteAttempted).toBe(false)
+    expect(newRealmCharxTempDirs(tempDirsBefore)).toEqual([])
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
+  })
+
+  it('L29: aborts unknown-length Realm charx downloads as soon as the staging cap is crossed', async () => {
+    const chunks = Array.from({ length: 10 }, () => Buffer.alloc(400 * 1024, 0x61))
+    let chunksAttempted = 0
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/charx' })
+        res.flushHeaders()
+        const timer = setInterval(() => {
+          if (res.destroyed) {
+            clearInterval(timer)
+            return
+          }
+          if (chunksAttempted >= chunks.length) {
+            clearInterval(timer)
+            res.end()
+            return
+          }
+          res.write(chunks[chunksAttempted])
+          chunksAttempted += 1
+        }, 10)
+        res.on('close', () => clearInterval(timer))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+    const tempDirsBefore = realmCharxTempDirs()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(413)
+    expect(res.json()).toEqual({ error: 'Realm charx download exceeds size limit' })
+    expect(chunksAttempted).toBeLessThan(chunks.length)
+    expect(newRealmCharxTempDirs(tempDirsBefore)).toEqual([])
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
+  })
+
+  it('L29: accepts a valid Realm charx download within the staging cap', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        const bytes = Buffer.from(realmCharx())
+        res.writeHead(200, {
+          'content-type': 'application/charx',
+          'content-length': String(bytes.byteLength),
+        })
+        res.end(bytes)
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+    const tempDirsBefore = realmCharxTempDirs()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(newRealmCharxTempDirs(tempDirsBefore)).toEqual([])
+    expect(queryAssets(harness.dataDir).map((asset) => asset.contentType).sort()).toEqual([
+      'image/png',
+      'image/png',
+      'text/css',
+    ])
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> })
+      .characters[0]
+    expect(character.name).toBe('Realm CharX')
+    expect(character.image).toMatch(/^[a-f0-9]{64}$/)
   })
 
   it('rejects Realm charx packages whose expanded payload exceeds the import limit', async () => {

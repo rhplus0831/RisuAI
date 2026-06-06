@@ -54,7 +54,8 @@ type JsonRecord = Record<string, unknown>
 const REALM_DYNAMIC_PATH = '/api/v1/download/dynamic/'
 const CHARX_CONTENT_TYPES = new Set(['application/charx', 'application/zip'])
 const MAX_CHARX_ASSET_SIZE_BYTES = 50 * 1024 * 1024
-const MAX_REALM_CHARX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
+const DEFAULT_REALM_CHARX_EXPANDED_IMPORT_BYTES = 100 * 1024 * 1024
+const REALM_CHARX_DOWNLOAD_CAP_MULTIPLIER = 3
 const CHARX_STREAM_CHUNK_BYTES = 64 * 1024
 const EXTENSION_CONTENT_TYPES = Object.fromEntries(
   Object.entries(CONTENT_TYPE_EXTENSIONS).map(([contentType, ext]) => [ext, contentType]),
@@ -223,13 +224,18 @@ async function runRealmImport(args: {
 
   const id = readRealmId(args.body.id)
   reportProgress({ phase: 'download', message: 'Downloading Realm character', percent: 5 })
-  const dynamic = await fetchRealmDynamicPayload(args.realmUrl, id, (percent) => {
-    reportProgress({
-      phase: 'download',
-      message: 'Downloading Realm character',
-      percent: scaleProgress(percent, 5, 30),
-    })
-  })
+  const dynamic = await fetchRealmDynamicPayload(
+    args.realmUrl,
+    id,
+    args.maxExpandedImportBytes,
+    (percent) => {
+      reportProgress({
+        phase: 'download',
+        message: 'Downloading Realm character',
+        percent: scaleProgress(percent, 5, 30),
+      })
+    },
+  )
   try {
     reportProgress({ phase: 'download', message: 'Realm character downloaded', percent: 30 })
     if (dynamic.contentType === 'application/json') {
@@ -407,13 +413,16 @@ function acceptsProgressStream(accept: unknown): boolean {
 async function fetchRealmDynamicPayload(
   realmUrl: string,
   id: string,
+  maxExpandedImportBytes?: number,
   reportDownloadProgress?: (percent: number) => void,
 ): Promise<RealmDynamicPayload> {
   const url = `${realmUrl}${REALM_DYNAMIC_PATH}${encodeURIComponent(id)}?cors=true`
+  const controller = new AbortController()
   const res = await fetch(url, {
     headers: {
       'x-risu-api-version': '4',
     },
+    signal: controller.signal,
   })
   if (!res.ok) {
     throw new UpstreamError(`Realm download failed: ${res.status}`, 502)
@@ -423,7 +432,11 @@ async function fetchRealmDynamicPayload(
     return {
       contentType,
       body: null,
-      ...(await writeRealmDownloadToTempFile(res, reportDownloadProgress)),
+      ...(await writeRealmDownloadToTempFile(res, {
+        maxDownloadBytes: realmCharxDownloadLimit(maxExpandedImportBytes),
+        reportDownloadProgress,
+        abortDownload: () => controller.abort(),
+      })),
     }
   }
   let body: unknown
@@ -437,12 +450,22 @@ async function fetchRealmDynamicPayload(
 
 async function writeRealmDownloadToTempFile(
   res: Response,
-  reportDownloadProgress?: (percent: number) => void,
+  options: {
+    maxDownloadBytes: number
+    reportDownloadProgress?: (percent: number) => void
+    abortDownload?: () => void
+  },
 ): Promise<{ filePath: string; tempDir: string }> {
+  const contentLength = readPositiveContentLength(res.headers.get('content-length'))
+  if (contentLength !== null && contentLength > options.maxDownloadBytes) {
+    options.abortDownload?.()
+    await cancelResponseBody(res)
+    throw createRealmCharxDownloadLimitError()
+  }
+
   const tempDir = await fs.promises.mkdtemp(path.join(tmpdir(), 'risu-realm-charx-'))
   const filePath = path.join(tempDir, 'realm.charx')
   let totalBytes = 0
-  const contentLength = readPositiveContentLength(res.headers.get('content-length'))
 
   try {
     if (!res.body) {
@@ -453,12 +476,13 @@ async function writeRealmDownloadToTempFile(
     const byteCounter = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         totalBytes += chunk.byteLength
-        if (totalBytes > MAX_REALM_CHARX_DOWNLOAD_BYTES) {
-          callback(new UpstreamError('Realm download too large', 413))
+        if (totalBytes > options.maxDownloadBytes) {
+          options.abortDownload?.()
+          callback(createRealmCharxDownloadLimitError())
           return
         }
-        if (contentLength) {
-          reportDownloadProgress?.(Math.min(100, (totalBytes / contentLength) * 100))
+        if (contentLength !== null) {
+          options.reportDownloadProgress?.(Math.min(100, (totalBytes / contentLength) * 100))
         }
         callback(null, chunk)
       },
@@ -473,6 +497,29 @@ async function writeRealmDownloadToTempFile(
   } catch (err) {
     await fs.promises.rm(tempDir, { recursive: true, force: true })
     throw err
+  }
+}
+
+function realmCharxDownloadLimit(maxExpandedImportBytes: number | undefined): number {
+  const expandedLimit =
+    typeof maxExpandedImportBytes === 'number' &&
+    Number.isFinite(maxExpandedImportBytes) &&
+    maxExpandedImportBytes > 0
+      ? Math.floor(maxExpandedImportBytes)
+      : DEFAULT_REALM_CHARX_EXPANDED_IMPORT_BYTES
+  return expandedLimit * REALM_CHARX_DOWNLOAD_CAP_MULTIPLIER
+}
+
+function createRealmCharxDownloadLimitError(): UpstreamError {
+  return new UpstreamError('Realm charx download exceeds size limit', 413)
+}
+
+async function cancelResponseBody(res: Response): Promise<void> {
+  if (!res.body) return
+  try {
+    await res.body.cancel()
+  } catch {
+    // Best-effort cancellation: the caller still returns the size-limit error.
   }
 }
 

@@ -701,7 +701,24 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'server/fastify/__tests__/risuSaveImportRoute.test.ts',
     'L28: imports JSON bodies through the normalized throwaway object without repository structuredClone',
   ),
-  planned('L29', 8, 'Cap the charx download near the expanded limit.'),
+  done(
+    'L29',
+    8,
+    'Cap the charx download near the expanded limit.',
+    'server/fastify/__tests__/realmImport.test.ts',
+    'L29: rejects known-length Realm charx downloads above the staging cap before reading the body',
+    [
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName:
+          'L29: aborts unknown-length Realm charx downloads as soon as the staging cap is crossed',
+      },
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName: 'L29: accepts a valid Realm charx download within the staging cap',
+      },
+    ],
+  ),
   planned('L30', 8, 'In-flight promise dedupe for Vertex tokens.'),
   planned('L31', 8, 'Default proxy deadline when `risu-timeout-ms` is absent.'),
   planned('L32', 4, 'Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`.'),
@@ -1547,6 +1564,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L25',
       'L26',
       'L28',
+      'L29',
       'K1',
       'K2',
     ])
