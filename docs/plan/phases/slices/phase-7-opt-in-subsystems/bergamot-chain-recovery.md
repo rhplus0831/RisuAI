@@ -1,6 +1,7 @@
 # Slice: Bergamot Chain Recovery
 
 Phase: [7](../../phase-7-opt-in-subsystems.md). Finding: M19. Runtime change.
+Status: done on 2026-06-06.
 
 ## Scope
 
@@ -48,11 +49,11 @@ cache, Google/deepl behavior, or UI retry policy.
 
 ## Done Criteria
 
-- A rejected bergamot translation does not make the next unrelated translation
+- [x] A rejected bergamot translation does not make the next unrelated translation
   fail before it reaches the translator.
-- A simulated hard translator failure clears cached state and the next call can
+- [x] A simulated hard translator failure clears cached state and the next call can
   initialize a fresh translator.
-- The M19 v2 gate entry points at real focused tests and the risk-map row is
+- [x] The M19 v2 gate entry points at real focused tests and the risk-map row is
   `DONE`.
 
 ## Validation

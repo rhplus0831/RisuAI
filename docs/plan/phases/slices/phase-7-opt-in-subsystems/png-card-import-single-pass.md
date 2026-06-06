@@ -2,6 +2,9 @@
 
 Phase: [7](../../phase-7-opt-in-subsystems.md). Finding: L51. Runtime change.
 
+Status: done on 2026-06-06; final Phase 7 proof/status refresh remains in the
+proof slice.
+
 ## Scope
 
 Avoid decoding and slicing PNG character-card asset chunks twice merely to
@@ -57,6 +60,20 @@ or inlay blob URL caching.
 - Multi-asset PNG import behavior and progress remain covered by focused tests.
 - The L51 v2 gate entry points at real focused tests and the risk-map row is
   `DONE`.
+
+## Completion Notes
+
+- `src/ts/characterCards.ts` now uses one trimmed `PngChunk.readGenerator` pass
+  for PNG card data, image trimming, and embedded asset chunk collection.
+- Embedded asset base64 values are consumed once into the save queue, then the
+  temporary base64 and byte queues are cleared after use.
+- `src/ts/pngChunk.ts` decodes PNG tEXt key/value fields from `subarray` views,
+  avoiding an extra value-copy inside the single import pass.
+- Focused coverage:
+  `src/ts/characterCards.pngImport.test.ts` -
+  `L51: decodes and slices each PNG embedded asset value once during import`
+  and
+  `L51: preserves multi-asset PNG import output and progress order`.
 
 ## Validation
 

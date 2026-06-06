@@ -1,3 +1,74 @@
+<script module lang="ts">
+  export interface SuggestionTranslationRun {
+    runId: number
+    requestId: number
+    toggle: boolean
+    messages: readonly string[] | undefined
+    translationEnabled: () => boolean
+    getCurrentRunId: () => number
+    getCurrentRequestId: () => number
+    getCurrentMessages: () => readonly string[] | undefined
+    translateMessage: (message: string) => Promise<string>
+    clear: () => void
+    commit: (messages: string[]) => void
+  }
+
+  function isSameSuggestionSource(
+    currentMessages: readonly string[] | undefined,
+    snapshot: readonly string[],
+  ) {
+    return (
+      currentMessages !== undefined &&
+      currentMessages.length === snapshot.length &&
+      snapshot.every((message, index) => currentMessages[index] === message)
+    )
+  }
+
+  export async function runSuggestionTranslation({
+    runId,
+    requestId,
+    toggle,
+    messages,
+    translationEnabled,
+    getCurrentRunId,
+    getCurrentRequestId,
+    getCurrentMessages,
+    translateMessage,
+    clear,
+    commit,
+  }: SuggestionTranslationRun) {
+    const snapshot = messages ? [...messages] : []
+
+    const isCurrentRun = () =>
+      runId === getCurrentRunId() &&
+      requestId === getCurrentRequestId() &&
+      toggle &&
+      translationEnabled()
+
+    if (!toggle || !translationEnabled() || snapshot.length === 0) {
+      if (runId === getCurrentRunId()) {
+        clear()
+      }
+      return
+    }
+
+    clear()
+
+    const translatedMessages: string[] = []
+
+    for (let i = 0; i < snapshot.length; i++) {
+      translatedMessages[i] = await translateMessage(snapshot[i])
+      if (!isCurrentRun()) {
+        return
+      }
+    }
+
+    if (isCurrentRun() && isSameSuggestionSource(getCurrentMessages(), snapshot)) {
+      commit(translatedMessages)
+    }
+  }
+</script>
+
 <script lang="ts">
   import { requestChatData } from 'src/ts/process/request/request'
   import { doingChat, type OpenAIChat } from '../../ts/process/index.svelte'
@@ -31,6 +102,7 @@
   let chatPage: number | undefined = $state()
   let progressChatId: string | undefined
   let suggestionRequestId = 0
+  let suggestionTranslationId = 0
 
   const updateSuggestions = () => {
     if ($selectedCharID > -1 && !$doingChat) {
@@ -149,15 +221,27 @@
     }
   })
 
-  const translateSuggest = async (toggle, messages) => {
-    if (toggle && messages && messages.length > 0) {
-      suggestMessagesTranslated = []
-      for (let i = 0; i < suggestMessages.length; i++) {
-        let msg = suggestMessages[i]
-        let translated = await translate(msg, false)
-        suggestMessagesTranslated[i] = translated
-      }
-    }
+  const translateSuggest = async (toggle: boolean, messages: string[] | undefined) => {
+    const runId = ++suggestionTranslationId
+    const requestId = suggestionRequestId
+
+    await runSuggestionTranslation({
+      runId,
+      requestId,
+      toggle,
+      messages,
+      translationEnabled: () => DBState.db.translator !== '',
+      getCurrentRunId: () => suggestionTranslationId,
+      getCurrentRequestId: () => suggestionRequestId,
+      getCurrentMessages: () => suggestMessages,
+      translateMessage: (message) => translate(message, false),
+      clear: () => {
+        suggestMessagesTranslated = []
+      },
+      commit: (messages) => {
+        suggestMessagesTranslated = messages
+      },
+    })
   }
 
   onDestroy(unsub)

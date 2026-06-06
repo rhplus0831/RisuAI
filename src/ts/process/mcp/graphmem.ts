@@ -1,5 +1,5 @@
 import { getChatVar, setChatVar } from 'src/ts/parser/chatVar.svelte'
-import { MCPClientLike } from './internalmcp'
+import { cloneMCPTools, MCPClientLike } from './internalmcp'
 import type { MCPTool, RPCToolCallContent } from './mcplib'
 import { HypaProcesser } from '../memory/hypamemory'
 
@@ -8,6 +8,56 @@ type GraphIndex = {
   summary: string
   connections: string[]
 }
+
+const GRAPH_MEMORY_TOOLS: MCPTool[] = [
+  {
+    name: 'writeMemory',
+    description: 'Write a memory entry to the graph database.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'The name of the memory entry.',
+        },
+        summary: {
+          type: 'string',
+          description: 'A brief summary of the memory entry.',
+        },
+        connections: {
+          type: 'array',
+          items: {
+            type: 'string',
+            description: 'Names of related memory entries.',
+          },
+          description: 'Connections to other memory entries.',
+        },
+      },
+      required: ['name', 'summary'],
+    },
+  },
+  {
+    name: 'readMemory',
+    description: 'Read a memory entry from the graph database.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'array',
+          items: {
+            type: 'string',
+          },
+          description: 'The query terms to search for memory entries.',
+        },
+        search_depth: {
+          type: 'number',
+          description: 'The depth of connections to explore in the graph. default is 2.',
+        },
+      },
+      required: ['query'],
+    },
+  },
+]
 
 export class GraphMemClient extends MCPClientLike {
   constructor() {
@@ -18,55 +68,7 @@ export class GraphMemClient extends MCPClientLike {
   }
 
   async getToolList(): Promise<MCPTool[]> {
-    return [
-      {
-        name: 'writeMemory',
-        description: 'Write a memory entry to the graph database.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: {
-              type: 'string',
-              description: 'The name of the memory entry.',
-            },
-            summary: {
-              type: 'string',
-              description: 'A brief summary of the memory entry.',
-            },
-            connections: {
-              type: 'array',
-              items: {
-                type: 'string',
-                description: 'Names of related memory entries.',
-              },
-              description: 'Connections to other memory entries.',
-            },
-          },
-          required: ['name', 'summary'],
-        },
-      },
-      {
-        name: 'readMemory',
-        description: 'Read a memory entry from the graph database.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description: 'The query terms to search for memory entries.',
-            },
-            search_depth: {
-              type: 'number',
-              description: 'The depth of connections to explore in the graph. default is 2.',
-            },
-          },
-          required: ['query'],
-        },
-      },
-    ]
+    return cloneMCPTools(GRAPH_MEMORY_TOOLS)
   }
 
   async callTool(toolName: string, args: any): Promise<RPCToolCallContent[]> {

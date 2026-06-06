@@ -67,11 +67,59 @@
     }
   }
 
+  function reportParsingError(error: unknown) {
+    const parsingError =
+      error instanceof Error ? error : new Error(typeof error === 'string' ? error : String(error))
+    alertError(
+      `Error while parsing chat message: ${translated}, ${parsingError.message}, ${parsingError.stack}`,
+    )
+  }
+
+  async function parseWithRetry(
+    parse: () => Promise<string>,
+    fallback: string,
+  ): Promise<{ ok: true; value: string } | { ok: false; value: string }> {
+    let tries = 0
+
+    while (true) {
+      try {
+        return { ok: true, value: await parse() }
+      } catch (error) {
+        if (tries > 2) {
+          reportParsingError(error)
+          return { ok: false, value: fallback }
+        }
+        tries += 1
+      }
+    }
+  }
+
+  async function translateHTMLOnce(
+    html: string,
+    charArg: string | simpleCharacterArgument,
+    chatID: number,
+    regenerate: boolean,
+    fallback: string,
+    setTranslating: (value: boolean) => void,
+  ): Promise<{ ok: true; value: string } | { ok: false; value: string }> {
+    setTranslating(true)
+    try {
+      return {
+        ok: true,
+        value: await translateHTML(html, false, charArg, chatID, regenerate),
+      }
+    } catch (error) {
+      reportParsingError(error)
+      return { ok: false, value: fallback }
+    } finally {
+      setTranslating(false)
+    }
+  }
+
   const markParsing = async (
     data: string,
     charArg: string | simpleCharacterArgument,
     chatID: number,
-    tries?: number,
   ) => {
     const runId = ++markParsingRun
     const setTranslatingForRun = (value: boolean) => {
@@ -85,6 +133,7 @@
     let lastParsedQueue = ''
     let mode = 'notrim' as const
     const cbsConditions = getCbsCondition()
+
     try {
       const detectionKey = getChatBodyCachedOnlyLlmDetectionKey({
         data,
@@ -121,7 +170,7 @@
           }, 10)
 
           // State change of `translated` triggers markParsing again,
-          // causing redundant translation attempts
+          // causing redundant translation attempts.
           if (lastTranslated !== translateText) {
             return
           }
@@ -129,86 +178,140 @@
           console.error(error)
         }
       }
+
       if (retranslate || translated) {
         if (DBState.db.showTranslationLoading) {
           lastParsed = `<div style="display:flex;justify-content:center;align-items:center;height:48px;"><div style="animation: spin 1s linear infinite; border-radius: 50%; height: 32px; width: 32px; border: 2px solid #3b82f6; border-top: 2px solid transparent;"></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`
         }
 
-        let transResult
-
         if (DBState.db.translatorType === 'llm' && DBState.db.translateBeforeHTMLFormatting) {
           await sleep(100)
-          setTranslatingForRun(true)
-          data = await translateHTML(data, false, charArg, chatID, retranslate)
-          setTranslatingForRun(false)
-          const marked = await memoizedChatBodyParse({
+          const translatedHtml = await translateHTMLOnce(
             data,
             charArg,
-            mode,
             chatID,
-            cbsConditions,
-          })
-          lastParsedQueue = marked
-          transResult = marked
-        } else if (!DBState.db.legacyTranslation) {
-          const marked = await memoizedChatBodyParse({
+            retranslate,
             data,
-            charArg,
-            mode: 'pretranslate',
-            chatID,
-            cbsConditions,
-          })
-          setTranslatingForRun(true)
-          const translated = await postTranslationParse(
-            await translateHTML(marked, false, charArg, chatID, retranslate),
+            setTranslatingForRun,
           )
-          setTranslatingForRun(false)
-          lastParsedQueue = translated
-          transResult = translated
-        } else {
-          const marked = await memoizedChatBodyParse({
-            data,
-            charArg,
-            mode,
-            chatID,
-            cbsConditions,
-          })
-          setTranslatingForRun(true)
-          const translated = await translateHTML(marked, false, charArg, chatID, retranslate)
-          setTranslatingForRun(false)
-          lastParsedQueue = translated
-          transResult = translated
-        }
-
-        setTimeout(() => {
-          if (runId === markParsingRun) {
-            retranslate = false
+          if (!translatedHtml.ok) {
+            return translatedHtml.value
           }
-        }, 10)
-
-        return transResult
+          const marked = await parseWithRetry(
+            () =>
+              memoizedChatBodyParse({
+                data: translatedHtml.value,
+                charArg,
+                mode,
+                chatID,
+                cbsConditions,
+              }),
+            data,
+          )
+          if (!marked.ok) {
+            return marked.value
+          }
+          lastParsedQueue = marked.value
+          setTimeout(() => {
+            if (runId === markParsingRun) {
+              retranslate = false
+            }
+          }, 10)
+          return marked.value
+        } else if (!DBState.db.legacyTranslation) {
+          const marked = await parseWithRetry(
+            () =>
+              memoizedChatBodyParse({
+                data,
+                charArg,
+                mode: 'pretranslate',
+                chatID,
+                cbsConditions,
+              }),
+            data,
+          )
+          if (!marked.ok) {
+            return marked.value
+          }
+          const translatedHtml = await translateHTMLOnce(
+            marked.value,
+            charArg,
+            chatID,
+            retranslate,
+            data,
+            setTranslatingForRun,
+          )
+          if (!translatedHtml.ok) {
+            return translatedHtml.value
+          }
+          const translated = await parseWithRetry(
+            () => Promise.resolve(postTranslationParse(translatedHtml.value)),
+            data,
+          )
+          if (!translated.ok) {
+            return translated.value
+          }
+          lastParsedQueue = translated.value
+          setTimeout(() => {
+            if (runId === markParsingRun) {
+              retranslate = false
+            }
+          }, 10)
+          return translated.value
+        } else {
+          const marked = await parseWithRetry(
+            () =>
+              memoizedChatBodyParse({
+                data,
+                charArg,
+                mode,
+                chatID,
+                cbsConditions,
+              }),
+            data,
+          )
+          if (!marked.ok) {
+            return marked.value
+          }
+          const translated = await translateHTMLOnce(
+            marked.value,
+            charArg,
+            chatID,
+            retranslate,
+            data,
+            setTranslatingForRun,
+          )
+          if (!translated.ok) {
+            return translated.value
+          }
+          lastParsedQueue = translated.value
+          setTimeout(() => {
+            if (runId === markParsingRun) {
+              retranslate = false
+            }
+          }, 10)
+          return translated.value
+        }
       } else {
-        const marked = await memoizedChatBodyParse({
+        const marked = await parseWithRetry(
+          () =>
+            memoizedChatBodyParse({
+              data,
+              charArg,
+              mode,
+              chatID,
+              cbsConditions,
+            }),
           data,
-          charArg,
-          mode,
-          chatID,
-          cbsConditions,
-        })
-        lastParsedQueue = marked
-        return marked
-      }
-    } catch (error) {
-      //retry
-      if (tries > 2) {
-        alertError(
-          `Error while parsing chat message: ${translated}, ${error.message}, ${error.stack}`,
         )
-        return data
+        if (!marked.ok) {
+          return marked.value
+        }
+        lastParsedQueue = marked.value
+        return marked.value
       }
-      return await markParsing(data, charArg, chatID, (tries ?? 0) + 1)
     } finally {
-      //since trimMarkdown is fast, we don't need to cache it
+      // Since trimMarkdown is fast, we don't need to cache it.
       if (runId === markParsingRun) {
         lastParsed = lastParsedQueue
       }

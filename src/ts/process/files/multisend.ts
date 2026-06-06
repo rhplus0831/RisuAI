@@ -7,12 +7,17 @@ import { HypaProcesser } from '../memory/hypamemory'
 import { BufferToText as BufferToText, selectMultipleFile } from 'src/ts/util'
 import { postInlayAsset } from './inlays'
 
-type sendFileArg = {
+type sendTextFileArg = {
   file: string
   query: string
 }
 
-async function sendPofile(arg: sendFileArg) {
+type sendPDFFileArg = {
+  data: Uint8Array | ArrayBuffer
+  query: string
+}
+
+async function sendPofile(arg: sendTextFileArg) {
   let result = ''
   let msgId = ''
   let note = ''
@@ -22,7 +27,6 @@ async function sendPofile(arg: sendFileArg) {
   let currentChat = currentChar.chats[currentChar.chatPage]
   const lines = arg.file.split('\n')
   for (let i = 0; i < lines.length; i++) {
-    console.log(i)
     const line = lines[i]
     if (line === '') {
       if (msgId === '') {
@@ -101,19 +105,15 @@ async function sendPofile(arg: sendFileArg) {
       continue
     }
     result += line + '\n'
-
-    if (i > 100) {
-      break //prevent too long message in testing
-    }
   }
   await downloadFile('translated.po', result)
 }
 
-async function sendPDFFile(arg: sendFileArg) {
+async function sendPDFFile(arg: sendPDFFileArg) {
   const pdfjsLib = await import('pdfjs-dist')
   const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker?worker&url')
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default
-  const pdf = await pdfjsLib.getDocument({ data: arg.file }).promise
+  const pdf = await pdfjsLib.getDocument({ data: arg.data }).promise
   const texts: string[] = []
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
@@ -123,7 +123,6 @@ async function sendPDFFile(arg: sendFileArg) {
       texts.push(item.str)
     }
   }
-  console.log(texts)
   const hypa = new HypaProcesser()
   hypa.addText(texts)
   const result = await hypa.similaritySearch(arg.query)
@@ -134,11 +133,10 @@ async function sendPDFFile(arg: sendFileArg) {
       break
     }
   }
-  console.log(message)
   return Buffer.from(`<File>\n${message}\n</File>\n`).toString('base64')
 }
 
-async function sendTxtFile(arg: sendFileArg) {
+async function sendTxtFile(arg: sendTextFileArg) {
   const lines = arg.file.split('\n').filter((a) => {
     return a !== ''
   })
@@ -152,11 +150,10 @@ async function sendTxtFile(arg: sendFileArg) {
       break
     }
   }
-  console.log(message)
   return Buffer.from(`<File>\n${message}\n</File>\n`).toString('base64')
 }
 
-async function sendXMLFile(arg: sendFileArg) {
+async function sendXMLFile(arg: sendTextFileArg) {
   const hypa = new HypaProcesser()
   let nodeTexts: string[] = []
   const parser = new DOMParser()
@@ -174,7 +171,6 @@ async function sendXMLFile(arg: sendFileArg) {
       break
     }
   }
-  console.log(message)
   return Buffer.from(`<File>\n${message}\n</File>\n`).toString('base64')
 }
 
@@ -241,7 +237,6 @@ export async function postChatFile(
 
   for (const file of files) {
     const extention = file.name.split('.').at(-1)
-    console.log(extention)
 
     switch (extention) {
       case 'po': {
@@ -258,7 +253,7 @@ export async function postChatFile(
         results.push({
           type: 'text',
           data: await sendPDFFile({
-            file: BufferToText(file.data),
+            data: file.data,
             query: xquery,
           }),
           name: file.name,

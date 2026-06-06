@@ -10,8 +10,8 @@ after each change to a narrowed or bounded path.
 - Plan state: open. Phase 1 H1-H3, Phase 2's M5, M6, L3, L13, L14, L16, K1,
   and K2, Phase 3's M1-M4 and L4-L11, Phase 4's M7-M10, L32-L34, L37, and
   K4, Phase 5's M13, M17, and L38-L44, plus Phase 6's M11, M12, M14, L35,
-  L36, and L45-L47 are implemented and proof-refreshed. Phases 7 and 8 remain
-  open.
+  L36, and L45-L47, plus Phase 7's M15, M16, M18-M22, L48-L59, and K3 are
+  implemented and proof-refreshed. Phase 8 remains open.
 - Gate state: the v1 gate
   (`src/ts/__tests__/fixCompletenessGate.test.ts`) stays live against the
   archived v1 docs. The v2 gate
@@ -20,10 +20,11 @@ after each change to a narrowed or bounded path.
 - Scheduled IDs: H1-H3 plus Phase 2's M5, M6, L3, L13, L14, L16, K1, and K2,
   plus Phase 3's M1-M4 and L4-L11, plus Phase 4's M7-M10, L32-L34, L37, and
   K4, plus Phase 5's M13, M17, and L38-L44, plus Phase 6's M11, M12, M14,
-  L35, L36, and L45-L47 are registered `DONE` in the v2 gate and
-  [`active-risk-analysis.md`](active-risk-analysis.md). Remaining scheduled
-  gate entries stay `PLANNED`; risk-map rows stay `PENDING`; gated/no-action
-  rows are unchanged.
+  L35, L36, and L45-L47, plus Phase 7's M15, M16, M18-M22, L48-L59, and K3
+  are registered `DONE` in the v2 gate and
+  [`active-risk-analysis.md`](active-risk-analysis.md). Phase 8 scheduled gate
+  entries stay `PLANNED`; Phase 8 risk-map rows stay `PENDING`;
+  gated/no-action rows are unchanged.
 - Current full-proof caveats: `pnpm test` passes after the Phase 5
   proof-refresh isolation fix; `pnpm check` retains the documented
   svelte-check baseline.
@@ -397,6 +398,73 @@ Phase 6 focused proof summaries:
   structured fetch logs.
 
 
+
+## Phase 7 Verification Refresh
+
+Recorded on 2026-06-06 KST after M15, M16, M18-M22, L48-L59, and K3 landed.
+Those Phase 7 IDs are confirmed `DONE` in both
+`src/ts/__tests__/fixCompletenessGateV2.test.ts` and
+[`active-risk-analysis.md`](active-risk-analysis.md). The v2 gate entries point
+at real focused test paths and test names for each ID. The focused runtime
+proofs, parent phase validation snippets, gates, root test suite, API suite,
+client-thinning audit, and TypeScript checks passed.
+
+- `pnpm exec vitest run src/ts/translator/translator.cache.test.ts src/ts/translator/translator.html.test.ts src/ts/translator/bergamotTranslator.test.ts`:
+  passed, 3 files / 11 tests.
+- `pnpm exec vitest run src/lib/ChatScreens/Suggestion.svelte.test.ts src/lib/ChatScreens/ChatBody.svelte.test.ts`:
+  passed, 2 files / 5 tests.
+- `pnpm exec vitest run src/ts/process/tts.test.ts src/ts/process/ttsHooks.test.ts`:
+  passed, 2 files / 14 tests.
+- `pnpm exec vitest run src/ts/process/mcp/mcplib.test.ts src/ts/process/mcp/mcp.test.ts src/ts/process/mcp/internalClients.test.ts src/ts/process/mcp/googlesearchclient.test.ts`:
+  passed, 4 files / 19 tests.
+- `pnpm exec vitest run src/ts/process/processzip.test.ts src/ts/process/files/multisend.test.ts src/ts/process/files/tests/inlays.test.ts`:
+  passed, 3 files / 35 tests.
+- `pnpm exec vitest run src/ts/parser/tests/inlayBlobCache.test.ts src/ts/characterCards.pngImport.test.ts src/ts/characters.importChat.test.ts src/ts/storage/risuSave.test.ts`:
+  passed, 4 files / 8 tests.
+- Parent phase validation snippets:
+  `pnpm exec vitest run src/ts/process/coldstorage.test.ts src/ts/process/ttsHooks.test.ts`
+  passed, 2 files / 11 tests;
+  `pnpm exec vitest run src/ts/characters.importChat.test.ts src/ts/storage/risuSave.test.ts`
+  passed, 2 files / 2 tests.
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts`:
+  passed, 2 files / 26 tests. The frozen v1 gate and live v2 gate are green;
+  the live v2 gate expects Phase 7's M15, M16, M18-M22, L48-L59, and K3 as
+  `DONE` alongside the earlier completed IDs.
+- `pnpm test`: passed, 137 files; 1212 passed / 4 skipped (1216). The run
+  printed the pre-existing repeated `ECONNREFUSED 127.0.0.1:3000`
+  local-service probe noise but exited 0.
+- `pnpm api:test`: passed, 99 files; 1792 passed / 1 skipped (1793). The run
+  printed normal Fastify request logs and exited 0.
+- `pnpm client-thinning:audit`: passed (`Client-thinning audit passed.`).
+- `pnpm exec tsc -p tsconfig.client-lib.json`: passed with zero diagnostics.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: passed with zero
+  diagnostics after the client-lib build.
+
+Phase 7 focused proof summaries:
+
+- M15/M16/L58/L59: the translate cache is bounded and LRU-evicted, repeated and
+  concurrent lookups dedupe, chat switch clears the cache, streaming
+  auto-translate work and HTML logs stay suppressed, suggestion translation
+  commits are epoch/source guarded, and `markParsing` does not retry network
+  translation failures through the full parse pipeline.
+- M18/L48/M19: repeated TTS playback reuses one `AudioContext`, releases
+  network and gain nodes, `stopTTS` clears stale refs, HuggingFace retries are
+  capped with one translation pass, and bergamot recovers after rejected calls
+  or simulated hard wasm failures while preserving serialized success order.
+- M20/L54/L55/L56/L57: MCP request/handshake/SSE waits time out with listener
+  cleanup, debug payload logs are gated off by default, internal tool schemas
+  are mutation-safe, dispatch reuses the name-to-client index, duplicate-name
+  winner order is preserved, and FileSystem client recreation reuses a valid
+  stored directory handle.
+- M21/M22/L49-L53/K3/L51: known and unknown-size oversized CharX assets are
+  skipped or terminated without retaining partial bytes while valid imports
+  stay byte-identical; `.po` files longer than 100 lines translate fully; file
+  sends log nothing for `.po`, PDF, XML, and text; PDF parsing receives raw
+  bytes; inlay image failures reject instead of hanging; blob URL caching is
+  LRU bounded, revokes evicted URLs, checks the cache before fetching bytes,
+  and renders cached/uncached inlays identically; PNG embedded assets are
+  decoded/sliced once while preserving import output and progress order.
+
 ## Phase 0 Baseline Refresh
 
 Recorded on 2026-06-05 after the v2 gate and render-count baseline landed:
@@ -507,3 +575,9 @@ Recorded during the 2026-06-05 v2 audit (evidence in
   client-thinning audit and both TypeScript checks passed. `pnpm check` still
   failed on the unrelated existing 14-error baseline in 5 files.
   `git diff --check` passed.
+- 2026-06-06, Phase 7 verification refresh: focused translate/UI/TTS/MCP/
+  file-import suites passed (11, 5, 14, 19, 35, and 8 tests respectively);
+  parent phase validation snippets passed (11 and 2 tests); v1+v2 gates passed
+  (26 tests) with M15, M16, M18-M22, L48-L59, and K3 as `DONE`; `pnpm test`
+  passed (1212/4, 137 files); `pnpm api:test` passed (1792/1, 99 files);
+  client-thinning audit and both TypeScript checks passed.

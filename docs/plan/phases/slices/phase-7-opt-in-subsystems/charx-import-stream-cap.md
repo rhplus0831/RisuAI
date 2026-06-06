@@ -1,6 +1,7 @@
 # Slice: CharX Import Stream Cap
 
 Phase: [7](../../phase-7-opt-in-subsystems.md). Finding: M21. Runtime change.
+Status: done on 2026-06-06.
 
 ## Scope
 
@@ -58,11 +59,19 @@ server-side bundle import behavior.
 
 ## Done Criteria
 
-- Oversized known-size entries are not buffered.
-- Oversized unknown-size entries are abandoned mid-stream under the cap, with a
+- [x] Oversized known-size entries are not buffered.
+- [x] Oversized unknown-size entries are abandoned mid-stream under the cap, with a
   memory/counting assertion proving no full oversized buffer is retained.
-- The M21 v2 gate entry points at real focused tests and the risk-map row is
+- [x] The M21 v2 gate entry points at real focused tests and the risk-map row is
   `DONE`.
+
+## Completion Proof
+
+- `src/ts/process/processzip.test.ts`:
+  `M21: skips a known oversized CharX asset before allocating a buffer`,
+  `M21: abandons an unknown-size CharX asset mid-stream and discards partial bytes`,
+  `M21: ignores completion callbacks after terminating an oversized CharX asset`,
+  and `M21: preserves representative valid CharX import output`.
 
 ## Validation
 

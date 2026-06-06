@@ -1,6 +1,7 @@
 # Slice: Inlay Image And Blob Cache Bounds
 
 Phase: [7](../../phase-7-opt-in-subsystems.md). Findings: L49, L50, K3.
+Status: done on 2026-06-06.
 Runtime change.
 
 ## Scope
@@ -58,10 +59,10 @@ re-open the broader leftover gate for bulk per-asset byte fanout.
 
 ## Done Criteria
 
-- `writeInlayImage` cannot hang forever on broken or already-loaded images.
-- `blobUrlCache` is bounded and revokes evicted URLs.
-- Re-rendering an already cached inlay does not fetch asset bytes again.
-- L49, L50, and K3 v2 gate entries point at real focused tests and the
+- [x] `writeInlayImage` cannot hang forever on broken or already-loaded images.
+- [x] `blobUrlCache` is bounded and revokes evicted URLs.
+- [x] Re-rendering an already cached inlay does not fetch asset bytes again.
+- [x] L49, L50, and K3 v2 gate entries point at real focused tests and the
   risk-map rows are `DONE`.
 
 ## Validation

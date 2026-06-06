@@ -1,5 +1,22 @@
-import { MCPClientLike } from './internalmcp'
-import type { RPCToolCallContent } from './mcplib'
+import { cloneMCPTools, MCPClientLike } from './internalmcp'
+import type { MCPTool, RPCToolCallContent } from './mcplib'
+
+const DICE_TOOLS: MCPTool[] = [
+  {
+    name: 'rollDice',
+    description: 'Roll dice based on the given notation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        notation: {
+          type: 'string',
+          description: 'The dice notation to roll, e.g., "2d6+3".',
+        },
+      },
+      required: ['notation'],
+    },
+  },
+]
 
 export class DiceClient extends MCPClientLike {
   constructor() {
@@ -9,22 +26,7 @@ export class DiceClient extends MCPClientLike {
     this.serverInfo.instructions = "A tool to roll dice in various formats. like '2d6+3' or 'd20'."
   }
   async getToolList() {
-    return [
-      {
-        name: 'rollDice',
-        description: 'Roll dice based on the given notation.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            notation: {
-              type: 'string',
-              description: 'The dice notation to roll, e.g., "2d6+3".',
-            },
-          },
-          required: ['notation'],
-        },
-      },
-    ]
+    return cloneMCPTools(DICE_TOOLS)
   }
   async callTool(toolName: string, args: any): Promise<RPCToolCallContent[]> {
     if (toolName === 'rollDice') {

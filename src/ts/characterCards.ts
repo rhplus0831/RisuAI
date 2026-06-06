@@ -197,36 +197,12 @@ export async function importCharacterProcess(f: {
   let readedChara = ''
   let readedCCv3 = ''
   let img: Uint8Array | undefined
-  let pngChunks = 0
-  let readedPngChunks = 0
-
-  {
-    let readData: File | Uint8Array | ReadableStream<Uint8Array>
-    if (f.data instanceof ReadableStream) {
-      const tee = f.data.tee()
-      f.data = tee[0]
-      readData = tee[1]
-    } else {
-      readData = f.data
-    }
-
-    const prereader = PngChunk.readGenerator(readData, {})
-
-    for await (const chunk of prereader) {
-      if (chunk instanceof AppendableBuffer) {
-        break
-      }
-      if (chunk.key.startsWith('chara-ext-asset_')) {
-        pngChunks++
-      }
-    }
-  }
 
   const readGenerator = PngChunk.readGenerator(f.data, {
     returnTrimed: true,
   })
   const assets: { [key: string]: string } = {}
-  const embeddedAssetPayloads: { index: string; data: Uint8Array }[] = []
+  const embeddedAssetChunks: { index: string; value: string }[] = []
   for await (const chunk of readGenerator) {
     if (!chunk) {
       continue
@@ -250,22 +226,26 @@ export async function importCharacterProcess(f: {
     }
     if (chunk.key.startsWith('chara-ext-asset_')) {
       const assetIndex = chunk.key.replace('chara-ext-asset_:', '').replace('chara-ext-asset_', '')
-      const assetData = Buffer.from(chunk.value, 'base64')
-      if (pngChunks === 0) {
-        alertWait('Loading... (Loaded ' + readedPngChunks + ' Assets)')
-      } else {
-        alertStore.set({
-          type: 'progress',
-          msg: 'Loading... (Loading Assets)',
-          submsg: ((readedPngChunks / pngChunks) * 100).toFixed(2),
-        })
-      }
-
-      readedPngChunks++
-
-      embeddedAssetPayloads.push({ index: assetIndex, data: assetData })
+      embeddedAssetChunks.push({ index: assetIndex, value: chunk.value })
     }
   }
+
+  const embeddedAssetPayloads: { index: string; data: Uint8Array }[] = []
+  for (let i = 0; i < embeddedAssetChunks.length; i++) {
+    const assetChunk = embeddedAssetChunks[i]
+    alertStore.set({
+      type: 'progress',
+      msg: 'Loading... (Loading Assets)',
+      submsg: ((i / embeddedAssetChunks.length) * 100).toFixed(2),
+    })
+
+    embeddedAssetPayloads.push({
+      index: assetChunk.index,
+      data: Buffer.from(assetChunk.value, 'base64'),
+    })
+    assetChunk.value = ''
+  }
+  embeddedAssetChunks.length = 0
 
   if (embeddedAssetPayloads.length > 0) {
     alertStore.set({
@@ -280,7 +260,9 @@ export async function importCharacterProcess(f: {
     )
     for (let i = 0; i < embeddedAssetPayloads.length; i++) {
       assets[embeddedAssetPayloads[i].index] = savedAssetIds[i]
+      embeddedAssetPayloads[i].data = new Uint8Array(0)
     }
+    embeddedAssetPayloads.length = 0
   }
 
   if (!readedChara && !readedCCv3) {

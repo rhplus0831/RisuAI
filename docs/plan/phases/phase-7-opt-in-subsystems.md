@@ -1,7 +1,10 @@
 # Phase 7: Opt-In Subsystems (Root 5)
 
-Status: pending. Independent; order by pain. Largest finding count, but most
-fixes are small and local (several are one-liners).
+Status: complete and proof-refreshed on 2026-06-06. M15/M16, M18/L48, M19,
+M20/L54/L57, M21, M22/L52/L53, L49/L50/K3, L51, L55/L56, L58/L59, and the
+verification refresh slice are done.
+Independent; order by pain. Largest finding count, but most fixes are small
+and local (several are one-liners).
 
 Goal: make the translate/TTS/MCP/file-import subsystems stop leaking,
 hanging, truncating, and over-working once enabled. These paths were outside
@@ -12,45 +15,46 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
 
 ## Slices
 
-- M15/M16:
+- M15/M16 (done):
   [`slices/phase-7-opt-in-subsystems/translation-cache-and-streaming-guards.md`](slices/phase-7-opt-in-subsystems/translation-cache-and-streaming-guards.md)
   - bound the auto-translate cache and suppress streaming-frame Google/default
     translation work and HTML logs.
-- L58/L59:
+- L58/L59 (done):
   [`slices/phase-7-opt-in-subsystems/translation-ui-race-and-retry-bounds.md`](slices/phase-7-opt-in-subsystems/translation-ui-race-and-retry-bounds.md)
   - epoch-guard translated suggestions and stop `markParsing` from retrying
     network translation failures through the full parse pipeline.
-- M19:
+- M19 (done):
   [`slices/phase-7-opt-in-subsystems/bergamot-chain-recovery.md`](slices/phase-7-opt-in-subsystems/bergamot-chain-recovery.md)
   - keep bergamot serialization without permanently poisoning the promise
-    chain after a rejected translation.
-- M18/L48:
+    chain after a rejected translation; reset cached translator state after
+    hard wasm/translator failures.
+- M18/L48 (done):
   [`slices/phase-7-opt-in-subsystems/tts-context-and-hf-retry-bounds.md`](slices/phase-7-opt-in-subsystems/tts-context-and-hf-retry-bounds.md)
-  - reuse or close TTS `AudioContext`s and cap HuggingFace retry/translation
-    work.
-- M20/L54/L57:
+  - reuse TTS `AudioContext`s, release playback nodes, and cap HuggingFace
+    retry/translation work.
+- M20/L54/L57 (done):
   [`slices/phase-7-opt-in-subsystems/mcp-deadlines-listeners-and-debug-logs.md`](slices/phase-7-opt-in-subsystems/mcp-deadlines-listeners-and-debug-logs.md)
   - add MCP request/handshake/SSE deadlines, remove unresolved listeners, and
     gate MCP debug logs.
-- L55/L56:
+- L55/L56 (done):
   [`slices/phase-7-opt-in-subsystems/mcp-internal-tool-index-and-filesystem-handle.md`](slices/phase-7-opt-in-subsystems/mcp-internal-tool-index-and-filesystem-handle.md)
   - cache internal MCP tool schemas, index tool dispatch, and preserve the
     FileSystem directory handle across client recreation.
-- M21:
+- M21 (done):
   [`slices/phase-7-opt-in-subsystems/charx-import-stream-cap.md`](slices/phase-7-opt-in-subsystems/charx-import-stream-cap.md)
   - fix the CharX size guard and enforce the asset byte cap while streaming.
-- M22/L52/L53:
+- M22/L52/L53 (done):
   [`slices/phase-7-opt-in-subsystems/file-send-po-pdf-and-logs.md`](slices/phase-7-opt-in-subsystems/file-send-po-pdf-and-logs.md)
   - remove the `.po` test cap, stop file-send console logs, and pass raw PDF
     bytes to pdfjs.
-- L49/L50/K3:
+- L49/L50/K3 (done):
   [`slices/phase-7-opt-in-subsystems/inlay-image-and-blob-cache-bounds.md`](slices/phase-7-opt-in-subsystems/inlay-image-and-blob-cache-bounds.md)
   - make inlay image writes fail instead of hang, bound/revoke blob URLs, and
     check the blob cache before fetching asset bytes.
-- L51:
+- L51 (done):
   [`slices/phase-7-opt-in-subsystems/png-card-import-single-pass.md`](slices/phase-7-opt-in-subsystems/png-card-import-single-pass.md)
   - avoid decoding PNG character-card asset chunks twice for progress.
-- Proof:
+- Proof (done):
   [`slices/phase-7-opt-in-subsystems/phase-7-verification-refresh.md`](slices/phase-7-opt-in-subsystems/phase-7-verification-refresh.md)
   - refresh gates, focused proofs, full validation, and latest verification.
 
@@ -97,21 +101,37 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
 
 ## Exit Criteria
 
-- [ ] M21: an oversized charx asset entry is abandoned mid-stream under the
+- [x] M21: an oversized charx asset entry is abandoned mid-stream under the
       cap (memory assertion); valid imports byte-identical.
-- [ ] M22: a >100-line .po file translates fully (fixture test).
-- [ ] M19: a rejected bergamot translate recovers on the next call.
-- [ ] M18: repeated TTS playbacks hold at most one live AudioContext
+- [x] M22: a >100-line .po file translates fully (fixture test).
+- [x] M19: a rejected bergamot translate recovers on the next call.
+- [x] M18: repeated TTS playbacks hold at most one live AudioContext
       (counting assertion via a stubbed constructor).
-- [ ] M15: translate lookups are O(1) and the cache is bounded; M16:
+- [x] L48: HuggingFace TTS translates once and caps 503 retry attempts.
+- [x] M15: translate lookups are O(1) and the cache is bounded; M16:
       streaming with google auto-translate performs zero mid-stream
       translateHTML runs and zero html logs.
-- [ ] M20/L54: a hung MCP server fails the operation within the deadline,
+- [x] M20/L54: a hung MCP server fails the operation within the deadline,
       removes its listeners, and surfaces an error result.
-- [ ] L48-L53, L55-L59, K3: each has a focused behavior/counting test per
+- [x] L49/L50/K3: each has a focused behavior/counting test per
       its target fix in the risk map.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] L51: has a focused behavior/counting test per its target fix in the
+      risk map.
+- [x] L52/L53: file-send paths log nothing on `.po`/PDF/XML/text cases, and
+      the PDF path passes raw bytes to pdfjs.
+- [x] L55: internal MCP static tool schemas are mutation-safe and `callMCPTool`
+      reuses the indexed name-to-client dispatch cache while preserving
+      duplicate-name winner order.
+- [x] L56: FileSystem MCP client recreation reuses a valid stored directory
+      handle and prompts again only after the stored handle is invalid.
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
+
+Final proof was refreshed on 2026-06-06 KST: focused translate/UI/TTS/MCP/
+file-import suites, the parent phase validation snippets, both
+fix-completeness gates, `pnpm test`, `pnpm api:test`,
+`pnpm client-thinning:audit`, and both TypeScript checks passed. See
+[`../latest-verification.md`](../latest-verification.md).
 
 ## Validation
 

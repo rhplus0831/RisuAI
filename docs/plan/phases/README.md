@@ -32,7 +32,7 @@ the finding -> phase map is in
 - Phase 6, complete (Root 6: bridges, lifecycle, network; M11, M12, M14, L35,
   L36, L45-L47):
   [`phase-6-bridges-lifecycle-network.md`](phase-6-bridges-lifecycle-network.md).
-- Phase 7, next (Root 5: opt-in subsystems; M15, M16, M18-M22, L48-L59,
+- Phase 7, complete (Root 5: opt-in subsystems; M15, M16, M18-M22, L48-L59,
   K3): [`phase-7-opt-in-subsystems.md`](phase-7-opt-in-subsystems.md).
 - Phase 8, pending (server jobs/memory/import bounds; L1, L2, L15, L17-L31):
   [`phase-8-server-bounds.md`](phase-8-server-bounds.md).
@@ -40,7 +40,7 @@ the finding -> phase map is in
   [`phase-9-verification-budgets.md`](phase-9-verification-budgets.md).
 
 Phases 4-8 are independent of each other and may be reordered by observed
-pain. Phases 1-6 have landed; Phase 7 remains the next pending batch in the
+pain. Phases 1-7 have landed; Phase 8 remains the next pending batch in the
 current routing docs.
 
 ## Slice Rules

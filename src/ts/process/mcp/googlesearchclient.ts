@@ -1,4 +1,4 @@
-import { MCPClientLike } from './internalmcp'
+import { cloneMCPTools, MCPClientLike } from './internalmcp'
 import type { MCPTool, RPCToolCallContent } from './mcplib'
 import { fetchNative } from '../../globalApi.svelte'
 import localforage from 'localforage'
@@ -28,6 +28,103 @@ interface GoogleSearchCredentials {
   apiKey: string
   searchEngineId: string
 }
+
+const GOOGLE_SEARCH_TOOLS: MCPTool[] = [
+  {
+    name: 'google_search',
+    description:
+      'Search the web using Google Custom Search API. Returns web page results with titles, links, and snippets.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The search query to execute' },
+        num: {
+          type: 'integer',
+          description: 'Number of search results to return (1-10, default: 10)',
+          minimum: 1,
+          maximum: 10,
+          default: 10,
+        },
+        start: {
+          type: 'integer',
+          description: 'The index of the first result to return (default: 1)',
+          minimum: 1,
+          default: 1,
+        },
+        dateRestrict: {
+          type: 'string',
+          description:
+            "Restrict results to a specific time period (e.g., 'd1' for past day, 'w1' for past week)",
+        },
+        siteSearch: {
+          type: 'string',
+          description: "Restrict search to a specific site (e.g., 'reddit.com')",
+        },
+        fileType: {
+          type: 'string',
+          description: "Restrict search to specific file types (e.g., 'pdf', 'doc')",
+        },
+        language: {
+          type: 'string',
+          description: "Language code for search results (e.g., 'en', 'es')",
+        },
+        safe: {
+          type: 'string',
+          description: 'SafeSearch setting',
+          enum: ['active', 'off'],
+          default: 'active',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'google_search_images',
+    description:
+      'Search for images using Google Custom Search API. Returns image results with thumbnails, dimensions, and context.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The image search query to execute' },
+        num: {
+          type: 'integer',
+          description: 'Number of image results to return (1-10, default: 10)',
+          minimum: 1,
+          maximum: 10,
+          default: 10,
+        },
+        start: {
+          type: 'integer',
+          description: 'The index of the first result to return (default: 1)',
+          minimum: 1,
+          default: 1,
+        },
+        imageSize: {
+          type: 'string',
+          description: 'Size of images to search for',
+          enum: ['huge', 'icon', 'large', 'medium', 'small', 'xlarge', 'xxlarge'],
+        },
+        imageType: {
+          type: 'string',
+          description: 'Type of images to search for',
+          enum: ['clipart', 'face', 'lineart', 'stock', 'photo', 'animated'],
+        },
+        imageColorType: {
+          type: 'string',
+          description: 'Color type of images',
+          enum: ['color', 'gray', 'mono', 'trans'],
+        },
+        safe: {
+          type: 'string',
+          description: 'SafeSearch setting',
+          enum: ['active', 'off'],
+          default: 'active',
+        },
+      },
+      required: ['query'],
+    },
+  },
+]
 
 export class GoogleSearchClient extends MCPClientLike {
   private initialized: boolean = false
@@ -61,102 +158,7 @@ export class GoogleSearchClient extends MCPClientLike {
   }
 
   async getToolList(): Promise<MCPTool[]> {
-    return [
-      {
-        name: 'google_search',
-        description:
-          'Search the web using Google Custom Search API. Returns web page results with titles, links, and snippets.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'The search query to execute' },
-            num: {
-              type: 'integer',
-              description: 'Number of search results to return (1-10, default: 10)',
-              minimum: 1,
-              maximum: 10,
-              default: 10,
-            },
-            start: {
-              type: 'integer',
-              description: 'The index of the first result to return (default: 1)',
-              minimum: 1,
-              default: 1,
-            },
-            dateRestrict: {
-              type: 'string',
-              description:
-                "Restrict results to a specific time period (e.g., 'd1' for past day, 'w1' for past week)",
-            },
-            siteSearch: {
-              type: 'string',
-              description: "Restrict search to a specific site (e.g., 'reddit.com')",
-            },
-            fileType: {
-              type: 'string',
-              description: "Restrict search to specific file types (e.g., 'pdf', 'doc')",
-            },
-            language: {
-              type: 'string',
-              description: "Language code for search results (e.g., 'en', 'es')",
-            },
-            safe: {
-              type: 'string',
-              description: 'SafeSearch setting',
-              enum: ['active', 'off'],
-              default: 'active',
-            },
-          },
-          required: ['query'],
-        },
-      },
-      {
-        name: 'google_search_images',
-        description:
-          'Search for images using Google Custom Search API. Returns image results with thumbnails, dimensions, and context.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'The image search query to execute' },
-            num: {
-              type: 'integer',
-              description: 'Number of image results to return (1-10, default: 10)',
-              minimum: 1,
-              maximum: 10,
-              default: 10,
-            },
-            start: {
-              type: 'integer',
-              description: 'The index of the first result to return (default: 1)',
-              minimum: 1,
-              default: 1,
-            },
-            imageSize: {
-              type: 'string',
-              description: 'Size of images to search for',
-              enum: ['huge', 'icon', 'large', 'medium', 'small', 'xlarge', 'xxlarge'],
-            },
-            imageType: {
-              type: 'string',
-              description: 'Type of images to search for',
-              enum: ['clipart', 'face', 'lineart', 'stock', 'photo', 'animated'],
-            },
-            imageColorType: {
-              type: 'string',
-              description: 'Color type of images',
-              enum: ['color', 'gray', 'mono', 'trans'],
-            },
-            safe: {
-              type: 'string',
-              description: 'SafeSearch setting',
-              enum: ['active', 'off'],
-              default: 'active',
-            },
-          },
-          required: ['query'],
-        },
-      },
-    ]
+    return cloneMCPTools(GOOGLE_SEARCH_TOOLS)
   }
 
   async callTool(toolName: string, args: any): Promise<RPCToolCallContent[]> {

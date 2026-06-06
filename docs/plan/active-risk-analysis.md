@@ -16,8 +16,9 @@ v1 finding IDs are referenced as `v1-*`.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 2 M5, M6, L3, L13, L14, L16,
   K1, and K2, Phase 3 M1-M4 and L4-L11, Phase 4 M7-M10, L32-L34, L37, and
-  K4, Phase 5 M13, M17, and L38-L44, and Phase 6 M11, M12, M14, L35, L36,
-  and L45-L47 are `DONE`; the rest are `PENDING`.
+  K4, Phase 5 M13, M17, and L38-L44, Phase 6 M11, M12, M14, L35, L36, and
+  L45-L47, and Phase 7 M15, M16, M18-M22, L48-L59, and K3 are `DONE`; Phase
+  8's scheduled server-bound rows remain `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -68,14 +69,14 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M12 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the character-profile watcher.              | DONE    |
 | M13 | [5](phases/phase-5-client-render-and-ui.md)      | Debounce + per-item memo for prompt-template tokenize.           | DONE    |
 | M14 | [6](phases/phase-6-bridges-lifecycle-network.md) | Idempotent `nodeObserve` (or wire the dead MutationObserver).    | DONE    |
-| M15 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded Map (LRU) translate cache.                               | PENDING |
-| M16 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove html log; `DoingChat` gate for non-exp translators.       | PENDING |
+| M15 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded Map (LRU) translate cache.                               | DONE    |
+| M16 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove html log; `DoingChat` gate for non-exp translators.       | DONE    |
 | M17 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed translate-detection memo.             | DONE    |
-| M18 | [7](phases/phase-7-opt-in-subsystems.md)         | Reuse/close `AudioContext` per playback.                         | PENDING |
-| M19 | [7](phases/phase-7-opt-in-subsystems.md)         | Reset bergamot chain on rejection; reinit on wasm error.         | PENDING |
-| M20 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded deadlines for MCP request/handshake/SSE waits.           | PENDING |
-| M21 | [7](phases/phase-7-opt-in-subsystems.md)         | Parenthesized guard + mid-stream byte cap in CharX import.       | PENDING |
-| M22 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove the `.po` 100-line test cap.                              | PENDING |
+| M18 | [7](phases/phase-7-opt-in-subsystems.md)         | Reuse/close `AudioContext` per playback.                         | DONE    |
+| M19 | [7](phases/phase-7-opt-in-subsystems.md)         | Reset bergamot chain on rejection; reinit on wasm error.         | DONE    |
+| M20 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded deadlines for MCP request/handshake/SSE waits.           | DONE    |
+| M21 | [7](phases/phase-7-opt-in-subsystems.md)         | Parenthesized guard + mid-stream byte cap in CharX import.       | DONE    |
+| M22 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove the `.po` 100-line test cap.                              | DONE    |
 
 ### Low
 
@@ -128,18 +129,18 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L45 | [6](phases/phase-6-bridges-lifecycle-network.md) | Capped exponential backoff + jitter for SSE reconnect.            | DONE    |
 | L46 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound `sseIdDone` (windowed dedup).                               | DONE    |
 | L47 | [6](phases/phase-6-bridges-lifecycle-network.md) | Remove the `fetchNative` body log.                                | DONE    |
-| L48 | [7](phases/phase-7-opt-in-subsystems.md)         | Translate once; cap HF TTS retries.                               | PENDING |
-| L49 | [7](phases/phase-7-opt-in-subsystems.md)         | `decode()`/`complete` guard + onerror for inlay images.           | PENDING |
-| L50 | [7](phases/phase-7-opt-in-subsystems.md)         | LRU + revoke for `blobUrlCache`.                                  | PENDING |
-| L51 | [7](phases/phase-7-opt-in-subsystems.md)         | Single-pass PNG import (or value-free count pass).                | PENDING |
-| L52 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove the file-send logs.                                        | PENDING |
-| L53 | [7](phases/phase-7-opt-in-subsystems.md)         | Pass raw bytes to pdfjs.                                          | PENDING |
-| L54 | [7](phases/phase-7-opt-in-subsystems.md)         | Timeout + tracked listeners for MCP SSE waits.                    | PENDING |
-| L55 | [7](phases/phase-7-opt-in-subsystems.md)         | Cache internal MCP tool lists; name->client index.                | PENDING |
-| L56 | [7](phases/phase-7-opt-in-subsystems.md)         | Persist the FS directory handle across recreate.                  | PENDING |
-| L57 | [7](phases/phase-7-opt-in-subsystems.md)         | Wire the debug flag; gate MCP logs.                               | PENDING |
-| L58 | [7](phases/phase-7-opt-in-subsystems.md)         | Epoch-guard `translateSuggest` writes.                            | PENDING |
-| L59 | [7](phases/phase-7-opt-in-subsystems.md)         | Skip retrying translation network errors in `markParsing`.        | PENDING |
+| L48 | [7](phases/phase-7-opt-in-subsystems.md)         | Translate once; cap HF TTS retries.                               | DONE    |
+| L49 | [7](phases/phase-7-opt-in-subsystems.md)         | `decode()`/`complete` guard + onerror for inlay images.           | DONE    |
+| L50 | [7](phases/phase-7-opt-in-subsystems.md)         | LRU + revoke for `blobUrlCache`.                                  | DONE    |
+| L51 | [7](phases/phase-7-opt-in-subsystems.md)         | Single-pass PNG import (or value-free count pass).                | DONE    |
+| L52 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove the file-send logs.                                        | DONE    |
+| L53 | [7](phases/phase-7-opt-in-subsystems.md)         | Pass raw bytes to pdfjs.                                          | DONE    |
+| L54 | [7](phases/phase-7-opt-in-subsystems.md)         | Timeout + tracked listeners for MCP SSE waits.                    | DONE    |
+| L55 | [7](phases/phase-7-opt-in-subsystems.md)         | Cache internal MCP tool lists; name->client index.                | DONE    |
+| L56 | [7](phases/phase-7-opt-in-subsystems.md)         | Persist the FS directory handle across recreate.                  | DONE    |
+| L57 | [7](phases/phase-7-opt-in-subsystems.md)         | Wire the debug flag; gate MCP logs.                               | DONE    |
+| L58 | [7](phases/phase-7-opt-in-subsystems.md)         | Epoch-guard `translateSuggest` writes.                            | DONE    |
+| L59 | [7](phases/phase-7-opt-in-subsystems.md)         | Skip retrying translation network errors in `markParsing`.        | DONE    |
 
 ### Phase 5 DONE Proofs
 
@@ -185,6 +186,33 @@ paths and test names.
   `L44: character name image index and order changes rebuild the sidebar list`;
   `L44: folder name color image and data changes rebuild the sidebar list`.
 
+### Phase 7 DONE Proofs
+
+- M15/M16 - `src/ts/translator/translator.cache.test.ts` and
+  `src/ts/translator/translator.html.test.ts`: translate cache entries are
+  bounded and LRU-evicted; streaming auto-translate work and HTML logs stay
+  suppressed.
+- M18/L48/M19 - `src/ts/process/tts.test.ts` and
+  `src/ts/translator/bergamotTranslator.test.ts`: playback reuses and clears
+  audio resources, HuggingFace retry work is capped, and bergamot recovers
+  after rejected calls or hard wasm failures.
+- M20/L54/L55/L56/L57 - `src/ts/process/mcp/mcplib.test.ts`,
+  `src/ts/process/mcp/mcp.test.ts`, and
+  `src/ts/process/mcp/internalClients.test.ts`: MCP waits time out with
+  listener cleanup, debug logs are gated, internal tool schemas are cached,
+  dispatch uses the name index, and filesystem clients reuse stored handles.
+- M21/M22/L49-L53/K3/L51 - `src/ts/process/processzip.test.ts`,
+  `src/ts/process/files/multisend.test.ts`,
+  `src/ts/process/files/tests/inlays.test.ts`,
+  `src/ts/parser/tests/inlayBlobCache.test.ts`, and
+  `src/ts/characterCards.pngImport.test.ts`: import/download caps, file-send
+  log suppression, raw PDF bytes, inlay failure bounds, blob URL LRU/revoke,
+  cache-first reads, and single-pass PNG decoding are covered.
+- L58/L59 - `src/lib/ChatScreens/Suggestion.svelte.test.ts` and
+  `src/lib/ChatScreens/ChatBody.svelte.test.ts`: suggestion translation writes
+  are epoch/source guarded and translation network errors do not retry through
+  the full parse pipeline.
+
 ### Known-Overlap Residuals (scheduled)
 
 Rediscovered live residuals of landed v1 fixes; the v1 IDs stay `DONE` in the
@@ -194,7 +222,7 @@ archive, these rows own the remaining gap.
 | --- | ------------------------------------------------ | ------------------------------------------------------------------ | ------- |
 | K1  | [2](phases/phase-2-server-corpus-ring-2.md)      | Wire `chatScopedRead` into generation finalization persist (v1-L6 residual). | DONE    |
 | K2  | [2](phases/phase-2-server-corpus-ring-2.md)      | Message-free/scoped load for the asset-GC sweep (v1-M10 residual). | DONE    |
-| K3  | [7](phases/phase-7-opt-in-subsystems.md)         | Check `blobUrlCache` before fetching asset bytes (ordering only; bulk-byte route stays gated). | PENDING |
+| K3  | [7](phases/phase-7-opt-in-subsystems.md)         | Check `blobUrlCache` before fetching asset bytes (ordering only; bulk-byte route stays gated). | DONE    |
 | K4  | [4](phases/phase-4-client-clone-ring-2.md)       | Debounce/scope the lorebook editor per-keystroke collection clone (v1-L32 residual). | DONE    |
 
 ### Informational

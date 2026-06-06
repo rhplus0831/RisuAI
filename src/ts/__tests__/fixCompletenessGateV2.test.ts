@@ -435,8 +435,44 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('M15', 7, 'Bounded Map (LRU) translate cache.'),
-  planned('M16', 7, 'Remove html log; `DoingChat` gate for non-exp translators.'),
+  done(
+    'M15',
+    7,
+    'Bounded Map (LRU) translate cache.',
+    'src/ts/translator/translator.cache.test.ts',
+    'M15: reuses cached translations, refreshes hits, and deterministically evicts the oldest cold entry',
+    [
+      {
+        testPath: 'src/ts/translator/translator.cache.test.ts',
+        testName: 'M15: dedupes repeated and concurrent translation lookups',
+      },
+      {
+        testPath: 'src/ts/translator/translator.cache.test.ts',
+        testName: 'M15: keeps forward and reverse translation cache keys separate',
+      },
+      {
+        testPath: 'src/ts/translator/translator.cache.test.ts',
+        testName: 'M15: clears the auto-translate cache when the active chat changes',
+      },
+    ],
+  ),
+  done(
+    'M16',
+    7,
+    'Remove html log; `DoingChat` gate for non-exp translators.',
+    'src/ts/translator/translator.html.test.ts',
+    'M16: skips Google auto-translate work while a message is streaming',
+    [
+      {
+        testPath: 'src/ts/translator/translator.html.test.ts',
+        testName: 'M16: default HTML translation no longer logs source HTML or chunks',
+      },
+      {
+        testPath: 'src/ts/translator/translator.html.test.ts',
+        testName: 'M16: preserves cached LLM translations during streaming',
+      },
+    ],
+  ),
   done(
     'M17',
     5,
@@ -450,11 +486,85 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('M18', 7, 'Reuse/close `AudioContext` per playback.'),
-  planned('M19', 7, 'Reset bergamot chain on rejection; reinit on wasm error.'),
-  planned('M20', 7, 'Bounded deadlines for MCP request/handshake/SSE waits.'),
-  planned('M21', 7, 'Parenthesized guard + mid-stream byte cap in CharX import.'),
-  planned('M22', 7, 'Remove the `.po` 100-line test cap.'),
+  done(
+    'M18',
+    7,
+    'Reuse/close `AudioContext` per playback.',
+    'src/ts/process/tts.test.ts',
+    'M18: repeated network TTS playbacks reuse one AudioContext and release ended sources',
+    [
+      {
+        testPath: 'src/ts/process/tts.test.ts',
+        testName: 'M18: gptsovits gain path reuses one AudioContext and releases its gain graph',
+      },
+      {
+        testPath: 'src/ts/process/tts.test.ts',
+        testName: 'M18: stopTTS stops the active source and clears stale playback refs',
+      },
+    ],
+  ),
+  done(
+    'M19',
+    7,
+    'Reset bergamot chain on rejection; reinit on wasm error.',
+    'src/ts/translator/bergamotTranslator.test.ts',
+    'M19: recovers the next bergamot call after a rejected translation',
+    [
+      {
+        testPath: 'src/ts/translator/bergamotTranslator.test.ts',
+        testName: 'M19: keeps successful bergamot translations serialized in call order',
+      },
+      {
+        testPath: 'src/ts/translator/bergamotTranslator.test.ts',
+        testName: 'M19: rejects the current bergamot call when the active translation fails',
+      },
+      {
+        testPath: 'src/ts/translator/bergamotTranslator.test.ts',
+        testName: 'M19: re-instantiates bergamot after a simulated hard wasm failure',
+      },
+    ],
+  ),
+  done(
+    'M20',
+    7,
+    'Bounded deadlines for MCP request/handshake/SSE waits.',
+    'src/ts/process/mcp/mcplib.test.ts',
+    'M20: aborts a hung MCP HTTP request at the configured deadline',
+    [
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'M20: times out the fallback SSE handshake endpoint wait and removes its listener',
+      },
+    ],
+  ),
+  done(
+    'M21',
+    7,
+    'Parenthesized guard + mid-stream byte cap in CharX import.',
+    'src/ts/process/processzip.test.ts',
+    'M21: abandons an unknown-size CharX asset mid-stream and discards partial bytes',
+    [
+      {
+        testPath: 'src/ts/process/processzip.test.ts',
+        testName: 'M21: skips a known oversized CharX asset before allocating a buffer',
+      },
+      {
+        testPath: 'src/ts/process/processzip.test.ts',
+        testName: 'M21: ignores completion callbacks after terminating an oversized CharX asset',
+      },
+      {
+        testPath: 'src/ts/process/processzip.test.ts',
+        testName: 'M21: preserves representative valid CharX import output',
+      },
+    ],
+  ),
+  done(
+    'M22',
+    7,
+    'Remove the `.po` 100-line test cap.',
+    'src/ts/process/files/multisend.test.ts',
+    'M22: translates every entry in a .po file longer than 100 lines',
+  ),
   planned('L1', 8, 'Configurable/sliding durable deadline (pair with the non-durable twin).'),
   planned('L2', 8, 'Delete/TTL terminal finalization-retry rows.'),
   done(
@@ -951,18 +1061,171 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'src/ts/globalApi.fetchNative.test.ts',
     'L47: does not console.log the request body and keeps structured fetch logs',
   ),
-  planned('L48', 7, 'Translate once; cap HF TTS retries.'),
-  planned('L49', 7, '`decode()`/`complete` guard + onerror for inlay images.'),
-  planned('L50', 7, 'LRU + revoke for `blobUrlCache`.'),
-  planned('L51', 7, 'Single-pass PNG import (or value-free count pass).'),
-  planned('L52', 7, 'Remove the file-send logs.'),
-  planned('L53', 7, 'Pass raw bytes to pdfjs.'),
-  planned('L54', 7, 'Timeout + tracked listeners for MCP SSE waits.'),
-  planned('L55', 7, 'Cache internal MCP tool lists; name->client index.'),
-  planned('L56', 7, 'Persist the FS directory handle across recreate.'),
-  planned('L57', 7, 'Wire the debug flag; gate MCP logs.'),
-  planned('L58', 7, 'Epoch-guard `translateSuggest` writes.'),
-  planned('L59', 7, 'Skip retrying translation network errors in `markParsing`.'),
+  done(
+    'L48',
+    7,
+    'Translate once; cap HF TTS retries.',
+    'src/ts/process/tts.test.ts',
+    'L48: caps HuggingFace 503 retries and reports failure',
+    [
+      {
+        testPath: 'src/ts/process/tts.test.ts',
+        testName: 'L48: translates non-English HuggingFace TTS text once across retries',
+      },
+    ],
+  ),
+  done(
+    'L49',
+    7,
+    '`decode()`/`complete` guard + onerror for inlay images.',
+    'src/ts/process/files/tests/inlays.test.ts',
+    'L49: already-complete inlay images decode and upload without waiting for onload',
+    [
+      {
+        testPath: 'src/ts/process/files/tests/inlays.test.ts',
+        testName: 'L49: broken inlay images reject instead of hanging',
+      },
+      {
+        testPath: 'src/ts/process/files/tests/inlays.test.ts',
+        testName: 'L49: decode rejection without dimensions rejects instead of uploading',
+      },
+    ],
+  ),
+  done(
+    'L50',
+    7,
+    'LRU + revoke for `blobUrlCache`.',
+    'src/ts/parser/tests/inlayBlobCache.test.ts',
+    'L50: blob URL cache evicts least-recently-used entries and revokes object URLs',
+    [
+      {
+        testPath: 'src/ts/parser/tests/inlayBlobCache.test.ts',
+        testName: 'K3/L50: cached and uncached inlays render identical output',
+      },
+    ],
+  ),
+  done(
+    'L51',
+    7,
+    'Single-pass PNG import (or value-free count pass).',
+    'src/ts/characterCards.pngImport.test.ts',
+    'L51: decodes and slices each PNG embedded asset value once during import',
+    [
+      {
+        testPath: 'src/ts/characterCards.pngImport.test.ts',
+        testName: 'L51: preserves multi-asset PNG import output and progress order',
+      },
+    ],
+  ),
+  done(
+    'L52',
+    7,
+    'Remove the file-send logs.',
+    'src/ts/process/files/multisend.test.ts',
+    'L52: postChatFile logs nothing for .po, PDF, XML, and text files',
+  ),
+  done(
+    'L53',
+    7,
+    'Pass raw bytes to pdfjs.',
+    'src/ts/process/files/multisend.test.ts',
+    'L53: passes raw PDF bytes to pdfjs and preserves the text result shape',
+  ),
+  done(
+    'L54',
+    7,
+    'Timeout + tracked listeners for MCP SSE waits.',
+    'src/ts/process/mcp/mcplib.test.ts',
+    'L54: times out unmatched MCP SSE responses and removes the document listener',
+    [
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'L54: text/event-stream response waits time out and remove their listener',
+      },
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'L54: removes the SSE listener when the initial POST aborts at the deadline',
+      },
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'L54: removes the SSE listener after a matching MCP response',
+      },
+    ],
+  ),
+  done(
+    'L55',
+    7,
+    'Cache internal MCP tool lists; name->client index.',
+    'src/ts/process/mcp/mcp.test.ts',
+    'L55: dispatch builds the tool-name index once and reuses it for later calls',
+    [
+      {
+        testPath: 'src/ts/process/mcp/mcp.test.ts',
+        testName: 'L55: rebuilds the dispatch index when MCP initialization inputs change',
+      },
+      {
+        testPath: 'src/ts/process/mcp/internalClients.test.ts',
+        testName:
+          'L55: FileSystem and Google Search return mutation-safe copies of static tool schemas',
+      },
+    ],
+  ),
+  done(
+    'L56',
+    7,
+    'Persist the FS directory handle across recreate.',
+    'src/ts/process/mcp/internalClients.test.ts',
+    'L56: reuses a valid directory handle across FileSystem client recreation',
+    [
+      {
+        testPath: 'src/ts/process/mcp/internalClients.test.ts',
+        testName: 'L56: prompts again only after the stored directory handle becomes invalid',
+      },
+    ],
+  ),
+  done(
+    'L57',
+    7,
+    'Wire the debug flag; gate MCP logs.',
+    'src/ts/process/mcp/mcplib.test.ts',
+    'L57: keeps MCP frame and tools-list payload logs silent by default',
+    [
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'L57: emits MCP frame and tools-list payload logs when debug is enabled',
+      },
+    ],
+  ),
+  done(
+    'L58',
+    7,
+    'Epoch-guard `translateSuggest` writes.',
+    'src/lib/ChatScreens/Suggestion.svelte.test.ts',
+    'L58: keeps only the newest overlapping translated suggestion run',
+    [
+      {
+        testPath: 'src/lib/ChatScreens/Suggestion.svelte.test.ts',
+        testName: 'L58: snapshots source messages and refuses a mutated-source commit',
+      },
+      {
+        testPath: 'src/lib/ChatScreens/Suggestion.svelte.test.ts',
+        testName: 'L58: clears translated suggestions when translation is disabled',
+      },
+    ],
+  ),
+  done(
+    'L59',
+    7,
+    'Skip retrying translation network errors in `markParsing`.',
+    'src/lib/ChatScreens/ChatBody.svelte.test.ts',
+    'L59: surfaces translateHTML failure once without retrying the full pipeline',
+    [
+      {
+        testPath: 'src/lib/ChatScreens/ChatBody.svelte.test.ts',
+        testName: 'L59: retries parser failures against already translated HTML only',
+      },
+    ],
+  ),
   done(
     'K1',
     2,
@@ -994,10 +1257,18 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'K3',
     7,
     'Check `blobUrlCache` before fetching asset bytes (ordering only; bulk-byte route stays gated).',
+    'src/ts/parser/tests/inlayBlobCache.test.ts',
+    'K3: cached inlay rendering skips asset byte fetches',
+    [
+      {
+        testPath: 'src/ts/parser/tests/inlayBlobCache.test.ts',
+        testName: 'K3/L50: cached and uncached inlays render identical output',
+      },
+    ],
   ),
   done(
     'K4',
@@ -1663,7 +1934,7 @@ describe('v2 fix-completeness gate doc universe', () => {
 
     expect(rows).toHaveLength(4)
     expect(ids).toEqual(rangeIds('K', 4))
-    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'PENDING', 'DONE'])
+    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'DONE', 'DONE'])
 
     expect(rows[0].targetFix).toContain('v1-L6 residual')
     expect(rows[1].targetFix).toContain('v1-M10 residual')
@@ -1755,7 +2026,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M15'
+      entry.id === 'L1'
         ? {
             ...entry,
             testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
@@ -1765,7 +2036,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'M15: PLANNED entries must not claim proof fields',
+      'L1: PLANNED entries must not claim proof fields',
     )
   })
 
@@ -1793,7 +2064,14 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M12',
       'M13',
       'M14',
+      'M15',
+      'M16',
       'M17',
+      'M18',
+      'M19',
+      'M20',
+      'M21',
+      'M22',
       'L3',
       'L4',
       'L5',
@@ -1822,8 +2100,21 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L45',
       'L46',
       'L47',
+      'L48',
+      'L49',
+      'L50',
+      'L51',
+      'L52',
+      'L53',
+      'L54',
+      'L55',
+      'L56',
+      'L57',
+      'L58',
+      'L59',
       'K1',
       'K2',
+      'K3',
       'K4',
     ])
     expect(doneEntries.every(hasProofFields)).toBe(true)
@@ -1831,7 +2122,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects DONE entries without a registered test path and test name', () => {
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M15'
+      entry.id === 'L1'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1841,9 +2132,9 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M15: status mismatch (registry DONE, docs PENDING)',
-        'M15: DONE without a registered testPath',
-        'M15: DONE without a registered testName',
+        'L1: status mismatch (registry DONE, docs PENDING)',
+        'L1: DONE without a registered testPath',
+        'L1: DONE without a registered testName',
       ]),
     )
   })
@@ -1851,7 +2142,7 @@ describe('v2 fix-completeness gate routing registry', () => {
   it('validates primary and extra DONE test proofs against existing test files', () => {
     const missingExtraTestName = ['missing extra proof title', 'assembled at runtime'].join(' ')
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M15'
+      entry.id === 'L1'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1869,8 +2160,8 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M15: status mismatch (registry DONE, docs PENDING)',
-        `M15: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
+        'L1: status mismatch (registry DONE, docs PENDING)',
+        `L1: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
       ]),
     )
   })
@@ -1904,12 +2195,12 @@ describe('v2 fix-completeness gate routing registry', () => {
     const riskText = readDoc(RISK_DOC)
     const withDoneDocRow = replaceRiskRow(
       riskText,
-      'M15',
-      '| M15 | [7](phases/phase-7-opt-in-subsystems.md) | Bounded Map (LRU) translate cache. | DONE |',
+      'L1',
+      '| L1 | [8](phases/phase-8-server-bounds.md) | Configurable/sliding durable deadline (pair with the non-durable twin). | DONE |',
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'M15: status mismatch (registry PLANNED, docs DONE)',
+      'L1: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 
