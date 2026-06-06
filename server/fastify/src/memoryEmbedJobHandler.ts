@@ -27,6 +27,7 @@ import {
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
 import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler } from './memoryWorker.js'
 import { emitProtocolMetric } from './protocolMetrics.js'
+import { armMemoryProviderFetchDeadline } from './memoryProviderDeadline.js'
 
 export interface EmbedMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -40,6 +41,8 @@ export interface EmbedMemoryJobHandlerOptions {
   ) => Promise<Awaited<ReturnType<typeof embedTextGroups>>>
   sleep?: (ms: number) => Promise<void>
   now?: () => number
+  /** Provider-call deadline override for tests; production uses a generous shared default. */
+  providerFetchDeadlineMs?: number
   /** Token budget per contextual sub-batch (test seam; production defaults to
    *  the resolved model's contextual window limit). */
   contextualSubBatchTokenBudget?: number
@@ -247,11 +250,20 @@ async function executeEmbedJob(input: {
   const controller = new AbortController()
   await input.acquireRateLimit(input.settings)
   if (modelRequest.request.provider === 'voyage-contextual') {
-    const embedding = await input.embedGroups({
-      request: modelRequest.request,
-      groups: [[chunk.text]],
-      signal: controller.signal,
-    })
+    let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>>>
+    const clearDeadline = armMemoryProviderFetchDeadline(
+      controller,
+      input.opts.providerFetchDeadlineMs,
+    )
+    try {
+      embedding = await input.embedGroups({
+        request: modelRequest.request,
+        groups: [[chunk.text]],
+        signal: controller.signal,
+      })
+    } finally {
+      clearDeadline()
+    }
     if ('error' in embedding) {
       throw new Error(embedding.error)
     }
@@ -271,11 +283,20 @@ async function executeEmbedJob(input: {
     }
   }
 
-  const embedding = await input.embed({
-    request: modelRequest.request,
-    input: [chunk.text],
-    signal: controller.signal,
-  })
+  let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embed']>>>
+  const clearDeadline = armMemoryProviderFetchDeadline(
+    controller,
+    input.opts.providerFetchDeadlineMs,
+  )
+  try {
+    embedding = await input.embed({
+      request: modelRequest.request,
+      input: [chunk.text],
+      signal: controller.signal,
+    })
+  } finally {
+    clearDeadline()
+  }
   if ('error' in embedding) {
     throw new Error(embedding.error)
   }
@@ -487,11 +508,20 @@ async function executeContextualEmbedJobs(input: {
 
     const controller = new AbortController()
     await input.acquireRateLimit(input.settings)
-    const embedding = await input.embedGroups({
-      request: input.modelRequest,
-      groups: [parsed.map((item) => item.chunk.text)],
-      signal: controller.signal,
-    })
+    let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>>>
+    const clearDeadline = armMemoryProviderFetchDeadline(
+      controller,
+      input.opts.providerFetchDeadlineMs,
+    )
+    try {
+      embedding = await input.embedGroups({
+        request: input.modelRequest,
+        groups: [parsed.map((item) => item.chunk.text)],
+        signal: controller.signal,
+      })
+    } finally {
+      clearDeadline()
+    }
     if ('error' in embedding) {
       throw new Error(embedding.error)
     }

@@ -342,10 +342,30 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L16',
     3,
     'Arm a default deadline on the already-threaded memory-fetch AbortController (clear in finally).',
+    'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+    'L16: aborts a hung normal embedding provider call and continues the batch',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L16: clears the embedding deadline after a provider call resolves under it',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L16: aborts a hung single contextual embedding provider call within the deadline',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L16: aborts a hung contextual embedding provider call within the deadline',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memorySummarizeJobHandler.test.ts',
+        testName: 'L16: aborts a hung summarize fetch through runOpenAI within the deadline',
+      },
+    ],
   ),
   planned(
     'L17',
@@ -1295,6 +1315,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L13',
       'L14',
       'L15',
+      'L16',
       'K2',
     ])
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
@@ -1304,11 +1325,25 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, L11, L12, L13, L14, L15, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, L11, L12, L13, L14, L15, L16, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1', 'M1', 'M2', 'M3', 'M4', 'M5', 'L11', 'L12', 'L13', 'L14', 'L15', 'K2'])
+    ).toEqual([
+      'H1',
+      'M1',
+      'M2',
+      'M3',
+      'M4',
+      'M5',
+      'L11',
+      'L12',
+      'L13',
+      'L14',
+      'L15',
+      'L16',
+      'K2',
+    ])
     expect(collectGateProblems()).toEqual([])
   })
 

@@ -15,6 +15,7 @@ import { summarizeOnce, type SummaryAdapterResult } from './memorySummaryAdapter
 import { resolveMemorySummaryModel, type MemorySummaryModelRequest } from './memorySummaryModel.js'
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
 import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler } from './memoryWorker.js'
+import { armMemoryProviderFetchDeadline } from './memoryProviderDeadline.js'
 
 export interface SummarizeMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -26,6 +27,8 @@ export interface SummarizeMemoryJobHandlerOptions {
   ) => Promise<SummaryAdapterResult>
   sleep?: (ms: number) => Promise<void>
   now?: () => number
+  /** Provider-call deadline override for tests; production uses a generous shared default. */
+  providerFetchDeadlineMs?: number
 }
 
 interface HypaV3SummarizeJobPayload {
@@ -213,12 +216,21 @@ async function executeSummarizeJob(input: {
   })
   const controller = new AbortController()
   await input.acquireRateLimit(input.settings)
-  const summary = await input.summarize(prompt.messages, {
-    ...modelRequest.request,
-    maxTokens: prompt.options.maxTokens,
-    temperature: prompt.options.temperature,
-    signal: controller.signal,
-  })
+  let summary: SummaryAdapterResult
+  const clearDeadline = armMemoryProviderFetchDeadline(
+    controller,
+    input.opts.providerFetchDeadlineMs,
+  )
+  try {
+    summary = await input.summarize(prompt.messages, {
+      ...modelRequest.request,
+      maxTokens: prompt.options.maxTokens,
+      temperature: prompt.options.temperature,
+      signal: controller.signal,
+    })
+  } finally {
+    clearDeadline()
+  }
   if ('error' in summary) {
     markChunkFailed(input.opts.db, chunk.id)
     throw new Error(summary.error)

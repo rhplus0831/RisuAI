@@ -30,11 +30,18 @@ function makeDataDir(): string {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   for (const dataDir of dataDirs.splice(0)) {
     rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 8; index += 1) {
+    await Promise.resolve()
+  }
+}
 
 function payload(chunkId = 'chunk-1', rangeStartSeq = 0, rangeEndSeq = 1) {
   return {
@@ -530,6 +537,55 @@ describe('summarize memory job handler', () => {
 
       expect(sleeps).toEqual([1_000])
       expect(listMemorySummaries(db, { chatId: 'chat-1' })).toHaveLength(2)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L16: aborts a hung summarize fetch through runOpenAI within the deadline', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      seedChunkAndJob(db)
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+        const signal = (init as RequestInit | undefined)?.signal as AbortSignal | undefined
+        return new Promise<Response>((_resolve, reject) => {
+          const onAbort = (): void => reject(new Error('aborted'))
+          if (signal?.aborted) {
+            onAbort()
+            return
+          }
+          signal?.addEventListener('abort', onAbort, { once: true })
+        })
+      })
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          summarize: createSummarizeMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            providerFetchDeadlineMs: 25,
+            sleep: async () => {},
+          }),
+        },
+      })
+
+      const tick = worker.tick()
+      await flushMicrotasks()
+
+      expect(fetchMock).toHaveBeenCalledOnce()
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'running' })
+
+      await vi.advanceTimersByTimeAsync(25)
+      await expect(tick).resolves.toBe(true)
+
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({
+        status: 'pending',
+        error: 'aborted',
+      })
+      expect(getMemoryChunk(db, 'chunk-1')).toMatchObject({ status: 'failed' })
+      expect(listMemorySummaries(db, { chatId: 'chat-1' })).toHaveLength(0)
+      expect(worker.isProcessing).toBe(false)
     } finally {
       db.close()
     }

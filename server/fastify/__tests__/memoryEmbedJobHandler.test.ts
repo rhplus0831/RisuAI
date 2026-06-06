@@ -36,11 +36,52 @@ function makeDataDir(): string {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   for (const dataDir of dataDirs.splice(0)) {
     rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+function resolveOnAbort<T>(signal: AbortSignal, value: T): Promise<T> {
+  return new Promise((resolve) => {
+    const done = (): void => resolve(value)
+    if (signal.aborted) {
+      done()
+      return
+    }
+    signal.addEventListener('abort', done, { once: true })
+  })
+}
+
+function resolveAfterUnlessAborted<T>(
+  signal: AbortSignal,
+  delayMs: number,
+  value: T,
+  aborted: T,
+): Promise<T> {
+  return new Promise((resolve) => {
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      resolve(aborted)
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve(value)
+    }, delayMs)
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 8; index += 1) {
+    await Promise.resolve()
+  }
+}
 
 function payload(chunkId = 'chunk-1', model = 'custom') {
   return {
@@ -462,6 +503,148 @@ describe('embed memory job handler', () => {
 
       expect(sleeps).toEqual([1_000])
       expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(2)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L16: aborts a hung normal embedding provider call and continues the batch', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, { id: 'job-1', chunkId: 'chunk-1', text: 'hung chunk' })
+      seedBatchJob(db, { id: 'job-2', chunkId: 'chunk-2', text: 'fast chunk' })
+      const embed = vi.fn(async (opts: { input: readonly string[]; signal: AbortSignal }) => {
+        const text = String(opts.input[0] ?? '')
+        if (text.includes('hung')) {
+          return resolveOnAbort(opts.signal, { error: 'aborted', code: 'aborted' as const })
+        }
+        return { model: 'custom', vectors: [new Float32Array([text.length])], dim: 1 }
+      })
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: () => database({ embeddingMaxConcurrent: 1 }),
+            embed: embed as never,
+            sleep: async () => {},
+            providerFetchDeadlineMs: 25,
+          }),
+        },
+      })
+
+      const tick = worker.tick()
+      await flushMicrotasks()
+
+      expect(embed).toHaveBeenCalledOnce()
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'running' })
+
+      await vi.advanceTimersByTimeAsync(24)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'running' })
+
+      await vi.advanceTimersByTimeAsync(1)
+      await expect(tick).resolves.toBe(true)
+
+      expect(embed).toHaveBeenCalledTimes(2)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({
+        status: 'pending',
+        error: 'aborted',
+      })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed', error: null })
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((row) => row.chunkId)).toEqual([
+        'chunk-2',
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L16: clears the embedding deadline after a provider call resolves under it', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      seedChunkAndJob(db)
+      const providerSignals: AbortSignal[] = []
+      const worker = new MemoryWorker({
+        db,
+        handlers: {
+          embed: createEmbedMemoryJobHandler({
+            db,
+            loadDatabase: database,
+            providerFetchDeadlineMs: 50,
+            embed: async (opts) => {
+              providerSignals.push(opts.signal)
+              return resolveAfterUnlessAborted(
+                opts.signal,
+                20,
+                { model: 'custom', vectors: [new Float32Array([1])], dim: 1 },
+                { error: 'aborted', code: 'aborted' as const },
+              )
+            },
+          }),
+        },
+      })
+
+      const tick = worker.tick()
+      await flushMicrotasks()
+      await vi.advanceTimersByTimeAsync(20)
+      await expect(tick).resolves.toBe(true)
+
+      expect(providerSignals).toHaveLength(1)
+      expect(providerSignals[0]?.aborted).toBe(false)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed', error: null })
+
+      await vi.advanceTimersByTimeAsync(100)
+      expect(providerSignals[0]?.aborted).toBe(false)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L16: aborts a hung single contextual embedding provider call within the deadline', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      seedChunkAndJob(db, payload('chunk-1', 'voyageContext3'))
+      const embedGroups = vi.fn((opts: { signal: AbortSignal }) => {
+        return resolveOnAbort(opts.signal, { error: 'aborted', code: 'aborted' as const })
+      })
+      const worker = new MemoryWorker({
+        db,
+        handlers: {
+          embed: createEmbedMemoryJobHandler({
+            db,
+            loadDatabase: database,
+            embedGroups: embedGroups as never,
+            providerFetchDeadlineMs: 25,
+            sleep: async () => {},
+          }),
+        },
+      })
+
+      const tick = worker.tick()
+      await flushMicrotasks()
+
+      expect(embedGroups).toHaveBeenCalledOnce()
+      expect((embedGroups.mock.calls as any[][])[0][0]).toMatchObject({
+        request: { provider: 'voyage-contextual' },
+        groups: [['assistant: first\nassistant: second']],
+      })
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'running' })
+
+      await vi.advanceTimersByTimeAsync(24)
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'running' })
+
+      await vi.advanceTimersByTimeAsync(1)
+      await expect(tick).resolves.toBe(true)
+
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({
+        status: 'pending',
+        error: 'aborted',
+      })
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1', chunkId: 'chunk-1' })).toHaveLength(0)
+      expect(worker.isProcessing).toBe(false)
     } finally {
       db.close()
     }
@@ -1028,6 +1211,62 @@ describe('embed memory job handler', () => {
       expect(
         listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((embedding) => embedding.chunkId),
       ).toEqual(['chunk-3'])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L16: aborts a hung contextual embedding provider call within the deadline', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        text: 'first contextual chunk',
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        text: 'second contextual chunk',
+        model: 'voyageContext3',
+      })
+      const embedGroups = vi.fn((opts: { signal: AbortSignal }) => {
+        return resolveOnAbort(opts.signal, { error: 'aborted', code: 'aborted' as const })
+      })
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            embedGroups: embedGroups as never,
+            providerFetchDeadlineMs: 25,
+            sleep: async () => {},
+          }),
+        },
+      })
+
+      const tick = worker.tick()
+      await flushMicrotasks()
+
+      expect(embedGroups).toHaveBeenCalledOnce()
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'running' })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'running' })
+
+      await vi.advanceTimersByTimeAsync(25)
+      await expect(tick).resolves.toBe(true)
+
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({
+        status: 'pending',
+        error: 'aborted',
+      })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({
+        status: 'pending',
+        error: 'aborted',
+      })
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(0)
     } finally {
       db.close()
     }
