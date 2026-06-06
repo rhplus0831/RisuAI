@@ -1,6 +1,6 @@
 # Phase 3: Memory Subsystem (Theme 7)
 
-Status: pending — NEXT.
+Status: complete.
 
 Goal: make the Hypa V3 memory budget actually work, and remove the per-send
 memory waste around it. M2 is one of the plan's two scheduled behavior
@@ -9,9 +9,7 @@ memory-enabled chats with accumulated summaries change intentionally.
 
 Findings: M2, L15, L16, K1.
 
-## Planned Slices
-
-Author under `slices/phase-3-memory-subsystem/` when starting.
+## Completed Slices
 
 - [summary-token-budget](slices/phase-3-memory-subsystem/summary-token-budget.md)
   (M2) — supply `getSummaryTokenCost` in the
@@ -62,7 +60,7 @@ Author under `slices/phase-3-memory-subsystem/` when starting.
   `memorySimilarityRanking.ts` (`validQueries` loop),
   `routes/generationChat.ts` (`loadPromptMemoryQueryVectors: () => []`).
 
-## Planned Shape
+## Implemented Shape
 
 - M2 must document and test the behavior change: with the budget enforced,
   the `recent`/`important`/`similar` category caps engage and
@@ -83,30 +81,37 @@ Author under `slices/phase-3-memory-subsystem/` when starting.
 
 ## Exit Criteria
 
-- [ ] M2: summaries are budget-capped on a memory-enabled send (selection
+- [x] M2: summaries are budget-capped on a memory-enabled send (selection
       respects `memoryTokensRatio` and category ratios); existing
       `tokens: 0` rows are costed via the fallback; behavior change
       documented in the slice and tests.
-- [ ] L15: repeated sends on an unchanged summarized prefix perform zero
+- [x] L15: repeated sends on an unchanged summarized prefix perform zero
       re-encodes of prefix rows (count probe).
-- [ ] L16: a hung embed/summarize endpoint fails the job within the deadline
+- [x] L16: a hung embed/summarize endpoint fails the job within the deadline
       and the worker proceeds; legitimate slow calls under the deadline
       unaffected.
-- [ ] K1: memory-enabled sends decode zero embedding vectors when query
+- [x] K1: memory-enabled sends decode zero embedding vectors when query
       vectors are empty; similarity path (tests with real vectors)
       unchanged.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/memoryBudgetAllocator.test.ts \
+  server/fastify/__tests__/memorySelectionService.test.ts \
+  server/fastify/__tests__/promptMemoryAdapter.test.ts \
+  server/fastify/__tests__/memoryPlanner.test.ts \
   server/fastify/__tests__/memoryRepository.test.ts \
   server/fastify/__tests__/memoryWorker.test.ts \
   server/fastify/__tests__/memoryEmbedJobHandler.test.ts \
-  server/fastify/__tests__/memorySummarizeJobHandler.test.ts
+  server/fastify/__tests__/memorySummarizeJobHandler.test.ts \
+  server/fastify/__tests__/memorySimilarityRanking.test.ts \
+  server/fastify/__tests__/generation.chat.test.ts
 pnpm api:test
 pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
+pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```

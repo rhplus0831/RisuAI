@@ -2,46 +2,54 @@
 
 Date: 2026-06-07
 
-The v3 remediation workstream is open. Phase 0, Phase 1, and Phase 2 are
-complete and recorded in [`latest-verification.md`](latest-verification.md);
-the next batch is Phase 3.
+The v3 remediation workstream is open. Phase 0, Phase 1, Phase 2, and Phase 3
+are complete and recorded in
+[`latest-verification.md`](latest-verification.md); the next batch is Phase 4.
 
-## Next Batch: Phase 3 (Memory Subsystem)
+## Next Batch: Phase 4 (Server Lifecycle, Deadlines & Transport)
 
 Defined in
-[`phases/phase-3-memory-subsystem.md`](phases/phase-3-memory-subsystem.md).
-Use the already-authored slices under
-`phases/slices/phase-3-memory-subsystem/`.
+[`phases/phase-4-server-lifecycle-and-transport.md`](phases/phase-4-server-lifecycle-and-transport.md).
+Author slices under `phases/slices/phase-4-server-lifecycle-and-transport/`
+as they open.
 
-1. M2 `summary-token-budget`: supply the tiktoken fallback cost in
-   `selectPromptMemory`, proving existing `tokens: 0` rows are budgeted and
-   documenting the intentional prompt-selection behavior change.
-2. L15 `prefix-token-memo`: memoize immutable summarized-prefix token costs so
-   unchanged rows are not re-encoded on repeated sends.
-3. L16 `memory-fetch-deadline`: add default deadlines to the embed and
-   summarize job AbortControllers and prove hung providers fail/retry.
-4. K1 `skip-dead-embedding-decode`: skip or lazily defer embedding vector
-   decode when query vectors are empty, preserving real-vector similarity.
-5. Phase 3 verification refresh: gates, focused memory proofs, full
-   validation, and [`latest-verification.md`](latest-verification.md).
+1. M9 `signal-handlers-app-close`: wire SIGTERM/SIGINT to `app.close()` and
+   prove shutdown runs the existing onClose cleanup within a backstop.
+2. L2/L5 `sliding-deadlines`: refresh deadlines for active generation/proxy
+   streams while preserving idle timeout behavior.
+3. L56 `proxy-stream-cancel`: keep cancel listeners live for proxy streams and
+   DELETE the server job when the client cancels before a terminal frame.
+4. L17/L18 `realm-egress-bounds`: add per-import abort/deadline handling and
+   JSON-card asset size caps without regressing legitimate imports.
+5. L4 `horde-delete-timeout`: bound the fire-and-forget Horde DELETE.
+6. L19/L20 transport quick wins: gzip bootstrap responses and serve immutable
+   hashed chunks while keeping `index.html` uncached.
+7. Phase 4 verification refresh: gates, focused proofs, full validation, and
+   [`latest-verification.md`](latest-verification.md).
 
-Exit: M2, L15, L16, and K1 registered with regression tests; active-risk rows
-flipped to `DONE` only with matching v3 gate proofs; focused suites and
-TypeScript checks green; verification refreshed.
+Exit: M9, L2, L4, L5, L17-L20, and L56 registered with regression tests;
+active-risk rows flipped to `DONE` only with matching v3 gate proofs; focused
+suites, API tests, and TypeScript checks green; verification refreshed.
 
-## After Phase 3
+## Proof History
 
-Phase 4 continues in order (see [`plan.md`](plan.md) Execution Cursor).
+Phase 3 closed on 2026-06-07 with M2, L15, L16, and K1 registered as `DONE`,
+the focused memory proof suite green, `pnpm api:test` green, the v3 gate green,
+and both TypeScript checks green. Keep new Phase 4 proof entries in
+[`latest-verification.md`](latest-verification.md) above the Phase 3 entry.
+
+## After Phase 4
+
 Phases 5-8 may then land independently by pain; Phase 9 closes.
 
 ## Proof Commands
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts \
-  server/fastify/__tests__/memoryRepository.test.ts \
-  server/fastify/__tests__/memoryWorker.test.ts \
-  server/fastify/__tests__/memoryEmbedJobHandler.test.ts \
-  server/fastify/__tests__/memorySummarizeJobHandler.test.ts
+  server/fastify/__tests__/streamJobs.test.ts \
+  server/fastify/__tests__/requestAbort.test.ts \
+  server/fastify/__tests__/realmImport.test.ts \
+  server/fastify/__tests__/hub.test.ts
 pnpm api:test
 pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json

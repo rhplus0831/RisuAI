@@ -7,18 +7,48 @@ after each change to a narrowed or bounded path.
 
 ## Current State
 
-- Plan state: open; Phase 0, Phase 1, and Phase 2 are complete; Phase 3 is
-  the next batch. `H1`, `M1`, `M3`, `M4`, `M5`, `L11-L14`, and `K2` are
+- Plan state: open; Phase 0, Phase 1, Phase 2, and Phase 3 are complete;
+  Phase 4 is the next batch. `H1`, `M1-M5`, `L11-L16`, `K1`, and `K2` are
   `DONE` in [`active-risk-analysis.md`](active-risk-analysis.md); every other
   scheduled row remains `PENDING`.
 - Gate state: the v1 gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
   and the v2 gate (`fixCompletenessGateV2.test.ts`) remain live against their
   archives. The v3 gate (`fixCompletenessGateV3.test.ts`) is live against
-  `docs/plan/`, with `H1`, `M1`, `M3`, `M4`, `M5`, `L11-L14`, and `K2`
-  registered as `DONE` and all other scheduled v3 IDs registered as
-  `PLANNED`. The combined v1/v2/v3 gate command is green.
-- Tree: Phase 2 implementation is committed through `6e1c63303`; this
-  verification refresh closes Phase 2 and does not implement Phase 3.
+  `docs/plan/`, with `H1`, `M1-M5`, `L11-L16`, `K1`, and `K2` registered as
+  `DONE` and all other scheduled v3 IDs registered as `PLANNED`. The Phase 3
+  v3 gate command is green; the v1/v2 archive gates were last refreshed in
+  the Phase 2 verification run below.
+- Tree: Phase 3 implementation is committed through `2a889d4d3`; this
+  verification refresh closes Phase 3 and does not change runtime code.
+
+## Phase 3 Verification Refresh (2026-06-07)
+
+Run after the Phase 3 implementation commits landed:
+`18cc05099` (M2), `91551a7c9` (L15), `570f11e75` (L16), and
+`2a889d4d3` (K1).
+
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memoryBudgetAllocator.test.ts server/fastify/__tests__/memorySelectionService.test.ts server/fastify/__tests__/promptMemoryAdapter.test.ts server/fastify/__tests__/memoryPlanner.test.ts server/fastify/__tests__/memoryRepository.test.ts server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/memoryEmbedJobHandler.test.ts server/fastify/__tests__/memorySummarizeJobHandler.test.ts server/fastify/__tests__/memorySimilarityRanking.test.ts server/fastify/__tests__/generation.chat.test.ts`:
+  passed, 10 files / 196 tests.
+- Phase 3 memory-budget proofs: M2 costs existing `tokens: 0` Hypa summaries
+  via the assembly-time fallback, proves `memoryTokensRatio` and category
+  ratios cap selected summaries, and prevents old over-injected summaries from
+  overflowing final budgeting. L15 proves unchanged summarized prefixes are
+  memoized across planner and live assembly passes, while edited content and
+  tokenizer-option changes re-encode.
+- Phase 3 deadline and decode proofs: L16 proves hung normal embedding,
+  single contextual embedding, batched contextual embedding, and summarize
+  `runOpenAI` calls abort within the provider deadline, and that under-deadline
+  calls clear the deadline. K1 proves embedding vectors decode lazily, empty
+  or invalid query vectors skip vector reads while preserving diagnostics, and
+  valid-vector ranking still reads vectors and preserves ranking diagnostics.
+- `pnpm api:test`: passed, 100 files / 1888 passed / 1 skipped.
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts`:
+  passed, 1 file / 24 tests. The command emitted the usual Vite/Svelte
+  default-config notice. The v3 gate and active-risk map agree that `M2`,
+  `L15`, `L16`, and `K1` are `DONE`.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: zero errors.
+- Skipped/failed items: none.
 
 ## Phase 2 Verification Refresh (2026-06-07)
 
