@@ -4,6 +4,7 @@ import {
   RevisionMismatchError,
   ValidationError,
   loadPersistedForCharacterMutation,
+  loadPersistedForSettingsMutation,
   loadCharacterSelectionRows,
   loadPersisted,
   loadPersistedForChatMutation,
@@ -86,6 +87,13 @@ export interface TargetedCommandMutationArgs<TExtra extends Record<string, unkno
    */
   skipDatabaseLoad?: boolean
   /**
+   * Opt-in narrowed read for settings-only commands: load the single settings
+   * row via `loadSettingsFromSqlite`, with broad fallback for missing or
+   * legacy embedded-shape rows. Incompatible with whole-database write-back
+   * and other scoped reads.
+   */
+  settingsScopedRead?: boolean
+  /**
    * Opt-in narrowed read for callbacks that only locate one chat row and
    * mutate it / do kit-writer message writes (audit M3/L5/L6): load the target
    * chat row + its parent character via {@link loadPersistedForChatMutation},
@@ -152,7 +160,13 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
   if (args.chatScopedRead && args.characterScopedRead) {
     throw new Error('chatScopedRead cannot be combined with characterScopedRead')
   }
-  if (args.skipDatabaseLoad && (args.chatScopedRead || args.characterScopedRead)) {
+  if (args.settingsScopedRead && (args.chatScopedRead || args.characterScopedRead)) {
+    throw new Error('settingsScopedRead cannot be combined with other scoped reads')
+  }
+  if (
+    args.skipDatabaseLoad &&
+    (args.settingsScopedRead || args.chatScopedRead || args.characterScopedRead)
+  ) {
     throw new Error('skipDatabaseLoad cannot be combined with scoped reads')
   }
   if (args.skipDatabaseLoad && args.writeDatabase) {
@@ -160,6 +174,9 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
   }
   if (args.chatScopedRead && args.writeDatabase) {
     throw new Error('chatScopedRead cannot be combined with writeDatabase')
+  }
+  if (args.settingsScopedRead && args.writeDatabase) {
+    throw new Error('settingsScopedRead cannot be combined with writeDatabase')
   }
   if (args.characterScopedRead && args.writeDatabase) {
     // A scoped read holds only part of the character/chat corpus; writing it
@@ -186,11 +203,13 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     const loadStartedAt = protocolNowMs()
     const persisted = args.skipDatabaseLoad
       ? undefined
-      : args.chatScopedRead
-        ? loadPersistedForChatMutation(args.db, args.dataDir, args.chatScopedRead)
-        : args.characterScopedRead
-          ? loadPersistedForCharacterMutation(args.db, args.dataDir, args.characterScopedRead)
-          : loadPersisted(args.db, args.dataDir)
+      : args.settingsScopedRead
+        ? loadPersistedForSettingsMutation(args.db, args.dataDir)
+        : args.chatScopedRead
+          ? loadPersistedForChatMutation(args.db, args.dataDir, args.chatScopedRead)
+          : args.characterScopedRead
+            ? loadPersistedForCharacterMutation(args.db, args.dataDir, args.characterScopedRead)
+            : loadPersisted(args.db, args.dataDir)
     loadMs = protocolDurationMs(loadStartedAt)
 
     // The callback owns its targeted SQLite writes (kit writers); capture which

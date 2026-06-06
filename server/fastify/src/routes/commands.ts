@@ -1201,6 +1201,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.settings,
+        settingsScopedRead: true,
         mutate(database, innerDb) {
           applySettingsPatch(database, patch)
           writeSettingsOnly(innerDb, extractSettings(database as Record<string, unknown>))
@@ -1612,6 +1613,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.settings,
+        settingsScopedRead: true,
         mutate(database, innerDb) {
           applySettingsPatch(database, patch)
           writeSettingsOnly(innerDb, extractSettings(database as Record<string, unknown>))

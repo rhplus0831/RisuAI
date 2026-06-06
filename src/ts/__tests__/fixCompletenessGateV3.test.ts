@@ -152,10 +152,18 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     3,
     'Supply tiktoken-fallback `getSummaryTokenCost` in the `selectPromptMemory` call (repairs existing `tokens:0` rows); optionally also measure at persist.',
   ),
-  planned(
+  done(
     'M3',
     2,
     'Settings-scoped read for the settings/prompt-settings command routes (v2-L3 shape; broad fallback on the pre-extraction edge).',
+    'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
+    'M3: settings commands read only the settings row on extracted SQLite state',
+    [
+      {
+        testPath: 'server/fastify/__tests__/commandSettingsAndPluginStorageRange.test.ts',
+        testName: 'prompt-settings writes only the settings row',
+      },
+    ],
   ),
   done(
     'M4',
@@ -1233,6 +1241,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     expect(doneEntries.map((entry) => entry.id)).toEqual([
       'H1',
       'M1',
+      'M3',
       'M4',
       'M5',
       'L13',
@@ -1246,11 +1255,11 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M4, M5, L13, L14, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M3, M4, M5, L13, L14, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1', 'M1', 'M4', 'M5', 'L13', 'L14', 'K2'])
+    ).toEqual(['H1', 'M1', 'M3', 'M4', 'M5', 'L13', 'L14', 'K2'])
     expect(collectGateProblems()).toEqual([])
   })
 

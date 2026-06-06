@@ -186,7 +186,7 @@ export function createSettingsTable(db: DatabaseSync): void {
   `)
 }
 
-function loadSettingsFromSqlite(db: DatabaseSync): Record<string, unknown> | null {
+export function loadSettingsFromSqlite(db: DatabaseSync): Record<string, unknown> | null {
   const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
     | { data_json: string }
     | undefined
@@ -833,6 +833,19 @@ export function loadPersisted(db: DatabaseSync, _dataDir: string): Persisted {
     _version: PERSISTED_VERSION,
     database,
     assets: getAllAssetMetadata(db),
+  }
+}
+
+export function loadPersistedForSettingsMutation(db: DatabaseSync, dataDir: string): Persisted {
+  const settings = loadSettingsFromSqlite(db)
+  if (settings === null) return loadPersisted(db, dataDir)
+  for (const field of NON_SETTINGS_FIELDS) {
+    if (field in settings) return loadPersisted(db, dataDir)
+  }
+  return {
+    _version: PERSISTED_VERSION,
+    database: settings,
+    assets: [],
   }
 }
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { StatementSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
@@ -88,6 +89,49 @@ function hydrationGet(chatId: string) {
     url: `/api/v1/projection/chatMessages?id=${chatId}`,
     headers: { 'risu-auth': assertion },
   })
+}
+
+type SqliteReadMethod = 'all' | 'get' | 'iterate'
+
+async function withSqliteSelectReadInstrumentation<T>(
+  fn: () => T | Promise<T>,
+): Promise<{ result: T; readCountByTable: Record<string, number> }> {
+  const readCountByTable: Record<string, number> = {}
+  const proto = StatementSync.prototype as unknown as Record<
+    SqliteReadMethod,
+    (...args: unknown[]) => unknown
+  >
+  const originals = {
+    all: proto.all,
+    get: proto.get,
+    iterate: proto.iterate,
+  }
+
+  for (const method of ['all', 'get', 'iterate'] as const) {
+    const original = originals[method]
+    proto[method] = function tracked(this: StatementSync, ...args: unknown[]) {
+      const normalized = this.sourceSQL.toLowerCase().replace(/\s+/g, ' ').trim()
+      const match = normalized.startsWith('select')
+        ? /\bfrom\s+([a-z0-9_]+)/.exec(normalized)
+        : null
+      if (match) {
+        readCountByTable[match[1]] = (readCountByTable[match[1]] ?? 0) + 1
+      }
+      return original.apply(this, args)
+    }
+  }
+
+  try {
+    return { result: await fn(), readCountByTable }
+  } finally {
+    for (const method of ['all', 'get', 'iterate'] as const) proto[method] = originals[method]
+  }
+}
+
+function expectSettingsCommandReadOnlySettings(
+  readCountByTable: Record<string, number>,
+): void {
+  expect(readCountByTable).toEqual({ schema_version: 1, settings: 1 })
 }
 
 describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture', () => {
@@ -361,6 +405,101 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     } finally {
       db.close()
     }
+  })
+
+  it('M3: settings commands read only the settings row on extracted SQLite state', async () => {
+    const fixture = buildLargeCorpusFixture()
+    let revision = await importDatabase({
+      ...fixture.database,
+      theme: 'dark',
+      mainPrompt: 'Old main prompt',
+    })
+
+    const settingsRun = await withSqliteSelectReadInstrumentation(() =>
+      withServerLoadInstrumentation(() =>
+        command('PATCH', '/api/v1/commands/settings/display', {
+          baseRevision: revision,
+          patch: { theme: 'light' },
+        }),
+      ),
+    )
+    expect(settingsRun.result.result.statusCode).toBe(200)
+    expect(settingsRun.result.corpusLoadCount).toBe(0)
+    expectSettingsCommandReadOnlySettings(settingsRun.readCountByTable)
+    revision = settingsRun.result.result.json().revision
+
+    const memoryRun = await withSqliteSelectReadInstrumentation(() =>
+      withServerLoadInstrumentation(() =>
+        command('PATCH', '/api/v1/commands/settings/memory', {
+          baseRevision: revision,
+          patch: { hypaV3Presets: [{ name: 'request-preset' }] },
+        }),
+      ),
+    )
+    expect(memoryRun.result.result.statusCode).toBe(200)
+    expect(memoryRun.result.corpusLoadCount).toBe(0)
+    expect(memoryRun.result.loadCountByTable.hypa_v3_presets ?? 0).toBe(0)
+    expectSettingsCommandReadOnlySettings(memoryRun.readCountByTable)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const rows = db
+        .prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position')
+        .all() as Array<{ data_json: string }>
+      expect(rows.map((row) => JSON.parse(row.data_json))).toEqual([{ name: 'request-preset' }])
+    } finally {
+      db.close()
+    }
+    revision = memoryRun.result.result.json().revision
+
+    const promptRun = await withSqliteSelectReadInstrumentation(() =>
+      withServerLoadInstrumentation(() =>
+        command('PATCH', '/api/v1/commands/prompt-settings', {
+          baseRevision: revision,
+          patch: { mainPrompt: 'Scoped main prompt' },
+        }),
+      ),
+    )
+    expect(promptRun.result.result.statusCode).toBe(200)
+    expect(promptRun.result.corpusLoadCount).toBe(0)
+    expectSettingsCommandReadOnlySettings(promptRun.readCountByTable)
+  })
+
+  it('M3: settings scoped read falls back broad for legacy embedded settings rows', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      settings.characters = [
+        {
+          chaId: 'embedded-char',
+          name: 'Embedded',
+          chats: [{ id: 'embedded-chat', name: 'Embedded chat', message: [] }],
+        },
+      ]
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      db.exec('DELETE FROM chats')
+      db.exec('DELETE FROM characters')
+    } finally {
+      db.close()
+    }
+
+    const { result: res, corpusLoadCount, loadCountByTable } = await withServerLoadInstrumentation(
+      () =>
+        command('PATCH', '/api/v1/commands/settings/display', {
+          baseRevision: revision,
+          patch: { theme: 'legacy-fallback' },
+        }),
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(corpusLoadCount).toBeGreaterThan(0)
+    expect(loadCountByTable.characters ?? 0).toBeGreaterThanOrEqual(1)
   })
 
   it('M3/L5/L6: the full message lifecycle stays scoped (append, patch, delete, truncate, replace, generation-result)', async () => {

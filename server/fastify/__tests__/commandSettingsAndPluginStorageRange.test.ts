@@ -257,6 +257,23 @@ describe('Phase 2 settings-scalar mutation range', () => {
     expect(readCollection('bot_presets')).toHaveLength(2)
   })
 
+  it('prompt-settings writes only the settings row', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-settings',
+      payload: { baseRevision: revision, patch: { mainPrompt: 'Prompt main' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-settings')
+    expect(metric.writtenTables).toEqual(['settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readSettings().mainPrompt).toBe('Prompt main')
+  })
+
   it('characters/reorder writes only the settings row (characterOrder)', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
