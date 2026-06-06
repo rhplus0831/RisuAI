@@ -347,7 +347,27 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   ),
   planned('M17', 5, 'Module-level content-keyed translate-detection memo.'),
   planned('M18', 7, 'Reuse/close `AudioContext` per playback.'),
-  planned('M19', 7, 'Reset bergamot chain on rejection; reinit on wasm error.'),
+  done(
+    'M19',
+    7,
+    'Reset bergamot chain on rejection; reinit on wasm error.',
+    'src/ts/translator/bergamotTranslator.test.ts',
+    'M19: recovers the next bergamot call after a rejected translation',
+    [
+      {
+        testPath: 'src/ts/translator/bergamotTranslator.test.ts',
+        testName: 'M19: keeps successful bergamot translations serialized in call order',
+      },
+      {
+        testPath: 'src/ts/translator/bergamotTranslator.test.ts',
+        testName: 'M19: rejects the current bergamot call when the active translation fails',
+      },
+      {
+        testPath: 'src/ts/translator/bergamotTranslator.test.ts',
+        testName: 'M19: re-instantiates bergamot after a simulated hard wasm failure',
+      },
+    ],
+  ),
   planned('M20', 7, 'Bounded deadlines for MCP request/handshake/SSE waits.'),
   planned('M21', 7, 'Parenthesized guard + mid-stream byte cap in CharX import.'),
   planned('M22', 7, 'Remove the `.po` 100-line test cap.'),
@@ -1372,6 +1392,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M6',
       'M15',
       'M16',
+      'M19',
       'L3',
       'L4',
       'L5',

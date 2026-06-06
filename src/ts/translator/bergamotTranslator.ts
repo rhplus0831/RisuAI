@@ -126,8 +126,43 @@ async function decompressGZip(buffer: ArrayBuffer) {
   }
 }
 
-let translator = null
-let translateTask = null
+type BergamotTranslateRequest = {
+  from: string
+  to: string
+  text: string
+  html: boolean | null
+}
+
+type BergamotTranslateResponse = {
+  target: {
+    text: string
+  }
+}
+
+type BergamotTranslator = {
+  translate: (request: BergamotTranslateRequest) => Promise<BergamotTranslateResponse>
+  delete?: () => void
+}
+
+let translator: BergamotTranslator | null = null
+let translateTask: Promise<void> | null = null
+
+function getTranslator(): BergamotTranslator {
+  translator ??= new LatencyOptimisedTranslator({}, new FirefoxBacking()) as BergamotTranslator
+  return translator
+}
+
+function resetTranslator(failedTranslator: BergamotTranslator | null = translator) {
+  if (failedTranslator?.delete) {
+    try {
+      failedTranslator.delete()
+    } catch (_error) {}
+  }
+
+  if (!failedTranslator || translator === failedTranslator) {
+    translator = null
+  }
+}
 
 // Translate
 export async function bergamotTranslate(
@@ -136,23 +171,54 @@ export async function bergamotTranslate(
   to: string,
   html: boolean | null,
 ) {
-  translator ??= new LatencyOptimisedTranslator({}, new FirefoxBacking())
-  const result = await (translateTask = translate())
-  return result.target.text
+  const previousTask = translateTask
+  const currentTask = (async () => {
+    await previousTask
 
-  // Wait for previous tasks...
-  async function translate() {
-    await translateTask
-    return translator.translate({
-      from: from,
-      to: to,
-      text: text,
-      html: html,
-    })
-  }
+    let activeTranslator: BergamotTranslator | null = null
+    try {
+      activeTranslator = getTranslator()
+      const result = await activeTranslator.translate({
+        from: from,
+        to: to,
+        text: text,
+        html: html,
+      })
+      return result.target.text
+    } catch (error) {
+      resetTranslator(activeTranslator)
+      throw error
+    }
+  })()
+
+  const chainTask = currentTask.then(
+    () => undefined,
+    () => undefined,
+  )
+  translateTask = chainTask
+  void chainTask.then(() => {
+    if (translateTask === chainTask) {
+      translateTask = null
+    }
+  })
+
+  return await currentTask
 }
 
 // Clear Cache
 export async function clearCache() {
   await new CacheDB('firefox-translations-models').clear()
+}
+
+export const __bergamotTranslatorTestHooks = {
+  resetState() {
+    resetTranslator()
+    translateTask = null
+  },
+  getState() {
+    return {
+      hasTranslator: translator !== null,
+      hasTranslateTask: translateTask !== null,
+    }
+  },
 }

@@ -71,7 +71,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M16 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove html log; `DoingChat` gate for non-exp translators.       | DONE    |
 | M17 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed translate-detection memo.             | PENDING |
 | M18 | [7](phases/phase-7-opt-in-subsystems.md)         | Reuse/close `AudioContext` per playback.                         | PENDING |
-| M19 | [7](phases/phase-7-opt-in-subsystems.md)         | Reset bergamot chain on rejection; reinit on wasm error.         | PENDING |
+| M19 | [7](phases/phase-7-opt-in-subsystems.md)         | Reset bergamot chain on rejection; reinit on wasm error.         | DONE    |
 | M20 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded deadlines for MCP request/handshake/SSE waits.           | PENDING |
 | M21 | [7](phases/phase-7-opt-in-subsystems.md)         | Parenthesized guard + mid-stream byte cap in CharX import.       | PENDING |
 | M22 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove the `.po` 100-line test cap.                              | PENDING |
