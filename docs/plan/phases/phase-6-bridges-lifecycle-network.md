@@ -1,6 +1,6 @@
 # Phase 6: Bridges, Lifecycle & Network (Root 6)
 
-Status: pending. Independent; order by pain.
+Status: complete; proof refreshed on 2026-06-06. Independent; order by pain.
 
 Goal: stop bridge watchers from echoing server-originated edits back as
 commands, fix the DOM-observer listener accumulation, and bound the client's
@@ -76,25 +76,40 @@ Findings: M11, M12, M14, L35, L36, L45, L46, L47.
 
 ## Exit Criteria
 
-- [ ] M11/M12: a foreign projection apply produces zero echoed commands
+- [x] M11/M12: a foreign projection apply produces zero echoed commands
       while local edits still dispatch (both watchers, epoch-gate tests).
-- [ ] M14: repeated observe ticks bind each code block exactly once
+- [x] M14: repeated observe ticks bind each code block exactly once
       (listener-count assertion); context menu behavior unchanged.
-- [ ] L35: hypaV3Data survives a foreign characterRow refresh when the
+- [x] L35: hypaV3Data survives a foreign characterRow refresh when the
       hydrated chat has zero live messages.
-- [ ] L36: prereroll maps are bounded (LRU/active-chat) with reroll
+- [x] L36: prereroll maps are bounded (LRU/active-chat) with reroll
       navigation behavior unchanged.
-- [ ] L45: reconnect attempts back off under a simulated outage and reset on
+- [x] L45: reconnect attempts back off under a simulated outage and reset on
       success.
-- [ ] L46/L47: `sseIdDone` bounded; `fetchNative` body log removed.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] L46/L47: `sseIdDone` bounded; `fetchNative` body log removed.
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation
 
 ```bash
-pnpm exec vitest run src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/lorebookBridge.test.ts
-pnpm exec vitest run src/ts/bootstrap.test.ts src/ts/server/events.test.ts
-pnpm exec vitest run src/ts/process/rerollNavigation.test.ts
-pnpm test && pnpm client-thinning:audit
+pnpm exec vitest run src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/lorebookBridge.test.ts src/ts/server/characterBridge.svelte.test.ts
+pnpm exec vitest run src/ts/observer.svelte.test.ts
+pnpm exec vitest run src/ts/storage/database.svelte.test.ts src/ts/bootstrap.test.ts src/ts/server/events.test.ts
+pnpm exec vitest run src/ts/process/prereroll.test.ts src/ts/process/rerollNavigation.test.ts src/ts/process/rerollNavigation.guard.test.ts src/ts/process/rerollNavigation.rollback.test.ts
+pnpm exec vitest run src/ts/process/mcp/mcp.test.ts src/ts/process/mcp/mcplib.test.ts src/ts/globalApi.fetchNative.test.ts
+pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts
+pnpm test
+pnpm api:test
+pnpm client-thinning:audit
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+pnpm check
+git diff --check
 ```
+
+2026-06-06 proof refresh: all focused suites, both gates, `pnpm test`,
+`pnpm api:test`, `pnpm client-thinning:audit`, and both TypeScript checks
+passed. `pnpm check` still fails on the unrelated pre-existing 14-error
+baseline in `PlaygroundMenu.svelte`, Fastify repository/routes files, and
+`sendChat.fixtures.serverBacked.test.ts`.

@@ -8,15 +8,17 @@ after each change to a narrowed or bounded path.
 ## Current State
 
 - Plan state: open. Phase 1 H1-H3, Phase 2's M5, M6, L3, L13, L14, L16, K1,
-  and K2, and Phase 3's M1-M4 and L4-L11 are implemented and
-  proof-refreshed. Phase 4 is the next fix batch.
+  and K2, Phase 3's M1-M4 and L4-L11, and Phase 6's M11, M12, M14, L35,
+  L36, and L45-L47 are implemented and proof-refreshed. Phase 7 is the next
+  fix batch after Phase 6.
 - Gate state: the v1 gate
   (`src/ts/__tests__/fixCompletenessGate.test.ts`) stays live against the
   archived v1 docs. The v2 gate
   (`src/ts/__tests__/fixCompletenessGateV2.test.ts`) is live against the v2
   docs and active-risk routing.
 - Scheduled IDs: H1-H3 plus Phase 2's M5, M6, L3, L13, L14, L16, K1, and K2,
-  plus Phase 3's M1-M4 and L4-L11 are registered `DONE` in the v2 gate and
+  plus Phase 3's M1-M4 and L4-L11, plus Phase 6's M11, M12, M14, L35, L36,
+  and L45-L47 are registered `DONE` in the v2 gate and
   [`active-risk-analysis.md`](active-risk-analysis.md). Remaining scheduled
   gate entries stay `PLANNED`; risk-map rows stay `PENDING`; gated/no-action
   rows are unchanged.
@@ -201,6 +203,69 @@ Phase 3 focused proof summaries:
   lookup normalizes registered names/aliases once while preserving raw tag
   text and normal output below the cap.
 
+## Phase 6 Verification Refresh
+
+Recorded on 2026-06-06 KST after M11, M12, M14, L35, L36, L45, L46, and L47
+landed. Those Phase 6 IDs are confirmed `DONE` in both
+`src/ts/__tests__/fixCompletenessGateV2.test.ts` and
+[`active-risk-analysis.md`](active-risk-analysis.md). The proof-refresh slice
+made documentation-only changes; no runtime fixes were required by the proof
+commands.
+
+- `pnpm exec vitest run src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/lorebookBridge.test.ts src/ts/server/characterBridge.svelte.test.ts`:
+  passed, 3 files / 27 tests.
+- `pnpm exec vitest run src/ts/observer.svelte.test.ts`: passed, 1 file / 5
+  tests.
+- `pnpm exec vitest run src/ts/storage/database.svelte.test.ts src/ts/bootstrap.test.ts src/ts/server/events.test.ts`:
+  passed, 3 files / 39 tests.
+- `pnpm exec vitest run src/ts/process/prereroll.test.ts src/ts/process/rerollNavigation.test.ts src/ts/process/rerollNavigation.guard.test.ts src/ts/process/rerollNavigation.rollback.test.ts`:
+  passed, 4 files / 26 tests.
+- `pnpm exec vitest run src/ts/process/mcp/mcp.test.ts src/ts/process/mcp/mcplib.test.ts src/ts/globalApi.fetchNative.test.ts`:
+  passed, 3 files / 7 tests.
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts`:
+  passed, 2 files / 26 tests. The frozen v1 gate and live v2 gate are green;
+  the v2 gate now expects Phase 6's M11, M12, M14, L35, L36, and L45-L47 as
+  `DONE` in addition to the earlier completed phases.
+- `pnpm test`: passed, 131 files; 1185 passed / 4 skipped (1189). The run
+  printed the pre-existing repeated `ECONNREFUSED 127.0.0.1:3000`
+  local-service probe noise but exited 0.
+- `pnpm api:test`: passed, 99 files; 1792 passed / 1 skipped (1793). The run
+  printed normal Fastify request logs and exited 0.
+- `pnpm client-thinning:audit`: passed (`Client-thinning audit passed.`).
+- `pnpm exec tsc -p tsconfig.client-lib.json`: passed with zero diagnostics.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: passed with zero
+  diagnostics after the client-lib build.
+- `pnpm check`: failed on the unrelated existing svelte-check baseline:
+  14 errors / 0 warnings in 5 files. The files were
+  `src/lib/Playground/PlaygroundMenu.svelte`,
+  `server/fastify/src/repository.ts`,
+  `server/fastify/src/routes/commands.ts`,
+  `server/fastify/src/routes/generationChat.ts`, and
+  `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`.
+- `git diff --check`: passed.
+
+Phase 6 focused proof summaries:
+
+- M11/M12: foreign character-lorebook and character-row projection applies
+  refresh bridge baselines without echoing commands; later local edits still
+  dispatch.
+- M14: DOM observation no longer uses the 10 Hz full-document polling loop;
+  repeated starts bind one context-menu listener per code block, process
+  inserted descendants via `MutationObserver`, and handle BGM controls once.
+- L35: character-row projection refreshes preserve hydrated `hypaV3Data`
+  even when the prior chat has zero live messages, while unknown-character and
+  stub-protection paths stay unchanged.
+- L36: pre-reroll response state is a capped LRU buffer, copies input arrays,
+  evicts deterministically, and clears on character/chat lifecycle resets
+  without breaking immediate post-generation reroll navigation.
+- L45: command-event reconnects use capped exponential backoff with jitter,
+  keep one pending timer, reset after successful subscribe/stop, and preserve
+  replay-unavailable resync before reconnect.
+- L46/L47: MCP SSE duplicate ids are bounded per client with deterministic
+  eviction, duplicate JSON-RPC and ping ids inside the retained window are
+  suppressed, and `fetchNative` no longer logs request bodies while keeping
+  structured fetch logs.
+
 ## Phase 0 Baseline Refresh
 
 Recorded on 2026-06-05 after the v2 gate and render-count baseline landed:
@@ -288,3 +353,11 @@ Recorded during the 2026-06-05 v2 audit (evidence in
   (1160/4, 125 files); `pnpm api:test` passed (1792/1, 99 files);
   client-thinning audit and both TypeScript checks passed. I16 remained
   no-action.
+- 2026-06-06, Phase 6 verification refresh: focused bridge, DOM observer,
+  storage/bootstrap/events, reroll lifecycle, MCP SSE, and `fetchNative`
+  suites passed (104 focused tests total); v1+v2 gates passed (26 tests) with
+  M11, M12, M14, L35, L36, and L45-L47 as `DONE`; `pnpm test` passed
+  (1185/4, 131 files); `pnpm api:test` passed (1792/1, 99 files);
+  client-thinning audit and both TypeScript checks passed. `pnpm check` still
+  failed on the unrelated existing 14-error baseline in 5 files.
+  `git diff --check` passed.
