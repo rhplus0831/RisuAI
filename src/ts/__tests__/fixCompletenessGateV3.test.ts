@@ -162,10 +162,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'M5',
     1,
     'Field-scoped send rollback (`lastInteraction`; messages only on the first-send backfill branch), `restoreCharacterSelection` shape.',
+    'src/ts/process/__tests__/sendChatContext.test.ts',
+    'M5: steady-state send rollback captures no character row or message payload',
+    [
+      {
+        testPath: 'src/ts/process/__tests__/sendChatContext.test.ts',
+        testName:
+          'M5: failed first-send backfill restores only active chat messages and lastInteraction',
+      },
+      {
+        testPath: 'src/ts/__tests__/sendCloneCountProbe.test.ts',
+        testName: 'M5 field-scoped rollback clone-count shape',
+      },
+    ],
   ),
   planned(
     'M6',
@@ -1182,7 +1195,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     const plannedEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'PLANNED')
     const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
 
-    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'M4'])
+    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'M4', 'M5'])
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
     expect(doneEntries.every(hasProofFields)).toBe(true)
     for (const entry of plannedEntries) {
@@ -1190,11 +1203,11 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1 and M4 marked DONE', () => {
+  it('keeps the live registry green with H1, M4, and M5 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1', 'M4'])
+    ).toEqual(['H1', 'M4', 'M5'])
     expect(collectGateProblems()).toEqual([])
   })
 

@@ -95,6 +95,17 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+function deferredResponse(): {
+  promise: Promise<Response>
+  resolve: (response: Response) => void
+} {
+  let resolve!: (response: Response) => void
+  const promise = new Promise<Response>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
+}
+
 function stubCommandFetch(): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
@@ -431,33 +442,37 @@ describe('setupSendChatContext - selectedChar / selectedChat', () => {
   })
 })
 
-describe('setupSendChatContext - M14 single-row rollback (stability/perf plan, Phase 3)', () => {
-  it('M14: the send-context rollback captures one character row, never the whole corpus', () => {
+describe('setupSendChatContext - M5 field-scoped send rollback', () => {
+  it('M5: steady-state send rollback captures no character row or message payload', async () => {
     const seeded = seedCloneCostDb() // char-0 large (40 messages), siblings small
     seedDb({ characters: seeded.characters as unknown as Database['characters'] })
     selectedCharID.set(1)
-    stubCommandFetch()
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const calls = stubCommandFetch()
 
     // Messages already carry chatIds, so the only optimistic write is the
-    // lastInteraction stamp — its rollback snapshot must stay one row.
+    // lastInteraction stamp. M5 narrows that rollback to scalar locator data
+    // plus the previous timestamp, so the synchronous send setup performs no
+    // JSON/structured clone at all.
     const instrumented = withCloneInstrumentation(() =>
       setupSendChatContext({ chatProcessIndex: -1 }),
     )
 
-    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+    expect(instrumented.totalCloneCount).toBe(0)
+    expect(instrumented.maxClonedSize).toBe(0)
     expect(instrumented.result.selectedChar).toBe(1)
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-1')).toBe(
+        true,
+      )
+    })
   })
 
-  it('M14: a failed send-context command restores only the selected row, preserving sibling edits', async () => {
-    // Earlier tests in this file dispatch without a fetch stub; their leaked
-    // rollbacks can later rewrite rows 0/1 (their snapshots' fallback indexes).
-    // Keep this test's rollback row and sibling row at index >= 2, which no
-    // leaked legacy snapshot can ever touch.
+  it('M5: failed lastInteraction rollback restores only that field', async () => {
     const seeded = seedCloneCostDb({ characterCount: 4 })
     seedDb({ characters: seeded.characters as unknown as Database['characters'] })
     selectedCharID.set(2)
     const originalLastInteraction = DBState.db.characters[2].lastInteraction
+    const patchResponse = deferredResponse()
 
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -470,20 +485,137 @@ describe('setupSendChatContext - M14 single-row rollback (stability/perf plan, P
           body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
         })
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 21 })
+        if (url === '/api/v1/commands/characters/char-2') return patchResponse.promise
         return jsonResponse({ error: 'nope' }, 500)
       }) as unknown as typeof fetch,
     )
 
     setupSendChatContext({ chatProcessIndex: -1 })
     expect(DBState.db.characters[2].lastInteraction).not.toBe(originalLastInteraction)
-    // a concurrent, unrelated sibling edit a whole-array restore would wipe
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-2')).toBe(
+        true,
+      )
+    })
+
+    DBState.db.characters[2].name = 'Concurrent same-row edit'
+    DBState.db.characters[2].chats[0].note = 'Concurrent active-chat note'
+    DBState.db.characters[2].chats[0].message.push({
+      role: 'user',
+      data: 'Concurrent active-chat message',
+      chatId: 'concurrent-message',
+    })
     DBState.db.characters[3].name = 'Concurrent sibling edit'
+    patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
 
     await vi.waitFor(() => {
-      // bootstrap + failed lastInteraction PATCH, then the rollback has run
-      expect(calls.length).toBeGreaterThanOrEqual(2)
       expect(DBState.db.characters[2].lastInteraction).toBe(originalLastInteraction)
     })
+    expect(DBState.db.characters[2].name).toBe('Concurrent same-row edit')
+    expect(DBState.db.characters[2].chats[0].note).toBe('Concurrent active-chat note')
+    expect(DBState.db.characters[2].chats[0].message.at(-1)?.chatId).toBe('concurrent-message')
     expect(DBState.db.characters[3].name).toBe('Concurrent sibling edit')
+  })
+
+  it('M5: failed first-send backfill restores only active chat messages and lastInteraction', async () => {
+    const replaceResponse = deferredResponse()
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 21 })
+        if (url === '/api/v1/commands/characters/cha-1') {
+          return jsonResponse({
+            revision: 22,
+            event: { type: 'character.updated', revision: 22, resource: 'character' },
+          })
+        }
+        if (url === '/api/v1/commands/chats/chat-active/messages') {
+          return replaceResponse.promise
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    seedDb({
+      characters: [
+        makeChar({
+          lastInteraction: 123,
+          chats: [
+            {
+              id: 'chat-active',
+              name: 'active',
+              note: 'original active note',
+              localLore: [],
+              scriptstate: {},
+              fmIndex: -1,
+              message: [
+                {
+                  role: 'char',
+                  data: 'missing id',
+                  chatId: undefined as unknown as string,
+                  time: 1,
+                },
+                { role: 'user', data: 'kept id', chatId: 'kept-message', time: 2 },
+              ],
+            } as character['chats'][number],
+            {
+              id: 'chat-sibling',
+              name: 'sibling',
+              note: 'sibling note',
+              localLore: [],
+              scriptstate: {},
+              fmIndex: -1,
+              message: [{ role: 'user', data: 'sibling', chatId: 'sibling-message' }],
+            } as character['chats'][number],
+          ],
+        }),
+      ],
+    })
+    const originalLastInteraction = DBState.db.characters[0].lastInteraction
+    const originalMessages = JSON.parse(
+      JSON.stringify(DBState.db.characters[0].chats[0].message),
+    )
+
+    setupSendChatContext({ chatProcessIndex: -1 })
+    expect(DBState.db.characters[0].chats[0].message[0].chatId).toBeTruthy()
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-active/messages')).toBe(
+        true,
+      )
+    })
+
+    DBState.db.characters[0].name = 'Concurrent character edit'
+    DBState.db.characters[0].chats[0].note = 'Concurrent active note'
+    DBState.db.characters[0].chats[1].message.push({
+      role: 'char',
+      data: 'Concurrent sibling chat message',
+      chatId: 'sibling-concurrent',
+    })
+    replaceResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].lastInteraction).toBe(originalLastInteraction)
+      expect(DBState.db.characters[0].chats[0].message).toEqual(originalMessages)
+    })
+    expect(DBState.db.characters[0].name).toBe('Concurrent character edit')
+    expect(DBState.db.characters[0].chats[0].note).toBe('Concurrent active note')
+    expect(DBState.db.characters[0].chats[1].message.at(-1)?.chatId).toBe('sibling-concurrent')
+    expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-active/messages'))
+      .toMatchObject({
+        method: 'PUT',
+        body: {
+          messages: [
+            { role: 'char', data: 'missing id', chatId: expect.any(String), time: 1 },
+            { role: 'user', data: 'kept id', chatId: 'kept-message', time: 2 },
+          ],
+        },
+      })
   })
 })

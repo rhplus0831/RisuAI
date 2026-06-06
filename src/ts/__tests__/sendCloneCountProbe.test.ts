@@ -80,15 +80,15 @@ afterEach(() => {
 })
 
 describe('send clone-count probe', () => {
-  it('records the M4 plain-send append fast-path clone-count shape', async () => {
+  it('records the M4 plain-send append fast-path clone-count shape and M5 field-scoped rollback clone-count shape', async () => {
     const result = await runSendCloneCountProbe()
 
     expect(result).toEqual({
       ok: true,
-      jsonCloneCount: 2,
+      jsonCloneCount: 1,
       structuredCloneCount: 2,
-      totalCloneCount: 4,
-      maxClonedSize: 10463,
+      totalCloneCount: 3,
+      maxClonedSize: 198,
       fixture: {
         characterCount: 3,
         messageCountBeforeSend: 40,
@@ -120,6 +120,7 @@ describe('send clone-count probe', () => {
     expect(result.commands.messageReplaceCommandCount).toBe(0)
     expect(result.commands.persistedWholeTranscript).toBe(false)
     expect(result.jsonCloneCount).toBeLessThan(result.fixture.messageCountBeforeSend)
-    expect(result.maxClonedSize).toBeGreaterThan(result.fixture.transcriptJsonSizeBeforeSend)
+    expect(result.maxClonedSize).toBeLessThan(result.fixture.transcriptJsonSizeBeforeSend)
+    expect(result.maxClonedSize).toBeLessThan(result.fixture.activeCharacterJsonSizeBeforeSend)
   })
 })
