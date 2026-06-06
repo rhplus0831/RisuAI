@@ -7,5 +7,5 @@ planned slice names and scopes; the archived v2 slices
 structural template (scope, anchors, target shape, invariants, done criteria,
 validation).
 
-Next to author: `phase-0-baseline-and-gate/` — see
-[`../../next-steps.md`](../../next-steps.md).
+Authored: [`phase-0-baseline-and-gate/`](phase-0-baseline-and-gate/) — see
+[`../phase-0-baseline-and-gate.md`](../phase-0-baseline-and-gate.md).
