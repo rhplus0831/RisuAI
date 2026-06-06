@@ -1,16 +1,16 @@
 # Phase 0: Baseline & V3 Gate
 
-Status: pending — NEXT.
+Status: complete.
 
 Goal: land the shared prerequisites before any runtime fix. No runtime change
 in this phase; everything is test/doc scaffolding and measurement.
 
 Findings: none (foundations for all scheduled IDs).
 
-## Planned Slices
+## Completed Slices
 
-Author under `slices/phase-0-baseline-and-gate/` when starting; the v2
-Phase 0 slices are the template
+Authored under `slices/phase-0-baseline-and-gate/`; the v2 Phase 0 slices were
+the template
 ([`../../archive/audit-stability-and-performance-v2/phases/slices/phase-0-baseline-and-gate/`](../../archive/audit-stability-and-performance-v2/phases/slices/phase-0-baseline-and-gate/)).
 
 - [v3-gate-doc-universe](slices/phase-0-baseline-and-gate/v3-gate-doc-universe.md)
@@ -55,12 +55,14 @@ Phase 0 slices are the template
 
 ## Exit Criteria
 
-- [ ] v3 gate green with every scheduled ID `PLANNED`; negative self-proofs
+- [x] v3 gate green with every scheduled ID `PLANNED`; negative self-proofs
       in place.
-- [ ] Send-path clone-count probe and terminal-frame helper landed test-only.
-- [ ] Existing v1/v2 gates and full proof set still green.
-- [ ] Phase 0 baseline recorded in
+- [x] Send-path clone-count probe and terminal-frame helper landed test-only.
+- [x] Existing v1/v2 gates and full proof set still green.
+- [x] Phase 0 baseline recorded in
       [`../latest-verification.md`](../latest-verification.md).
+
+Closed on 2026-06-07 with no runtime change and no active-risk rows flipped.
 
 ## Validation
 

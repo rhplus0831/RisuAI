@@ -1,37 +1,38 @@
 # Stability And Performance Remediation Status (V3)
 
-Date: 2026-06-06
+Date: 2026-06-07
 
 This is the entry router for the open v3 remediation workstream. Read this
 first, then [`next-steps.md`](next-steps.md) for the active task batch.
 
 ## Snapshot
 
-- Plan state: OPEN. Phases 0-9 are all pending; Phase 0 is the next batch.
+- Plan state: OPEN. Phase 0 is complete; Phase 1 is the next batch.
 - Findings covered: 89 confirmed v3 audit findings (1 high, 9 medium, 56 low,
   23 informational) plus the K1-K4 known-overlap residuals/re-opens.
 - Scheduled IDs: H1, M1-M9, L1-L56, and K1-K4 — all `PENDING` in
-  [`active-risk-analysis.md`](active-risk-analysis.md). The v3 gate
-  (`fixCompletenessGateV3.test.ts`) does not exist yet; authoring it is
-  Phase 0 work.
+  [`active-risk-analysis.md`](active-risk-analysis.md). Phase 0 only landed
+  test/doc scaffolding and measurement; it fixed no findings.
 - Gated IDs: unchanged from the v2 closeout — `v2-L12`, the v1 carry-overs
   (v1-L4, v1-L7, v1-L26, v1-U2), and the
   [`../archive/leftover.md`](../archive/leftover.md) evidence gates. I1-I23
   need no action (ride notes in the risk analysis).
 - Standing gates: `src/ts/__tests__/fixCompletenessGate.test.ts` stays live
-  against the archived v1 docs, and
+  against the archived v1 docs,
   `src/ts/__tests__/fixCompletenessGateV2.test.ts` stays live against the
-  archived v2 docs. Both must keep passing throughout this plan.
-- Current proof: the v2 closing baseline plus a fresh TypeScript-check run at
-  `ad07004ba` (2026-06-06). See
+  archived v2 docs, and
+  `src/ts/__tests__/fixCompletenessGateV3.test.ts` stays live against this
+  plan. All three must keep passing throughout this plan.
+- Current proof: fresh Phase 0 baseline on 2026-06-07. See
   [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
 
-- [Phase 0](phases/phase-0-baseline-and-gate.md): pending — NEXT. v3 gate
-  scaffold, send-path clone-count probe, baseline refresh. No runtime change.
-- [Phase 1](phases/phase-1-high-and-send-path.md): pending. H1 abort-contract
-  guard, M4 append fast-path, M5 field-scoped send rollback.
+- [Phase 0](phases/phase-0-baseline-and-gate.md): complete. v3 gate
+  scaffold, send-path clone-count probe, terminal-frame helper, baseline
+  refresh. No runtime change.
+- [Phase 1](phases/phase-1-high-and-send-path.md): pending — NEXT. H1
+  abort-contract guard, M4 append fast-path, M5 field-scoped send rollback.
 - [Phase 2](phases/phase-2-command-surface-scoping.md): pending. Command
   surface scoping (M1, M3, L11-L14, K2).
 - [Phase 3](phases/phase-3-memory-subsystem.md): pending. Memory budget +

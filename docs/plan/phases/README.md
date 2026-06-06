@@ -1,6 +1,6 @@
 # Stability And Performance Remediation Phases (V3)
 
-Date: 2026-06-06
+Date: 2026-06-07
 
 This phase index routes the open v3 remediation workstream. Use these files
 for phase scope, exit criteria, and slice routing. Concrete slices are
@@ -11,9 +11,9 @@ in
 the finding -> phase map is in
 [`../active-risk-analysis.md`](../active-risk-analysis.md).
 
-- Phase 0, pending — NEXT (foundations; no runtime change):
+- Phase 0, complete (foundations; no runtime change):
   [`phase-0-baseline-and-gate.md`](phase-0-baseline-and-gate.md).
-- Phase 1, pending (H1 abort contract; M4/M5 send path):
+- Phase 1, pending — NEXT (H1 abort contract; M4/M5 send path):
   [`phase-1-high-and-send-path.md`](phase-1-high-and-send-path.md).
 - Phase 2, pending (Theme 2: command-surface scoping; M1, M3, L11-L14, K2):
   [`phase-2-command-surface-scoping.md`](phase-2-command-surface-scoping.md).
