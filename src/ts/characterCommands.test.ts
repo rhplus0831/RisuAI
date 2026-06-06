@@ -33,11 +33,13 @@ import {
   changedCharacterFields,
   currentCharacterRowSnapshot,
   currentCharacterSelectionSnapshot,
+  currentCharacterSupaMemorySnapshot,
   currentCharacterStateSnapshot,
   currentCharacterTrashTimeSnapshot,
   dispatchCompatibleCharacterUpdateScoped,
   prepareCompatibleCharacterUpdate,
   restoreCharacterRow,
+  restoreCharacterSupaMemory,
   restoreCharacterTrashTime,
   sanitizeCharacterPatch,
   setCharacterSupaMemory,
@@ -45,7 +47,7 @@ import {
 import { setCharacterByIndex } from './storage/database.svelte'
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from './stores.svelte'
+import { DBState, selectedCharID, selIdState } from './stores.svelte'
 import { removeChar } from './characters'
 import {
   assertRollbackRestoresOnly,
@@ -123,6 +125,12 @@ async function waitForCharacterPatch(calls: CapturedFetch[], characterId: string
   })
 }
 
+async function flushAsyncWork(ticks = 4): Promise<void> {
+  for (let tick = 0; tick < ticks; tick += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+}
+
 async function withMockedNow<T>(now: number, fn: () => Promise<T>): Promise<T> {
   const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now)
   try {
@@ -150,7 +158,7 @@ afterEach(() => {
 })
 
 describe('character command projection helpers', () => {
-  it('routes supa memory toggles through a character command under the projection guard', async () => {
+  it('L34: setCharacterSupaMemory applies one-field optimistic command patch', async () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
 
@@ -160,7 +168,7 @@ describe('character command projection helpers', () => {
 
     setCharacterSupaMemory('char-a', true)
 
-    expect(DBState.db.characters[0].supaMemory).toBe(false)
+    expect(DBState.db.characters[0].supaMemory).toBe(true)
 
     await waitForCallCount(calls, 2)
     expect(calls).toEqual([
@@ -180,6 +188,295 @@ describe('character command projection helpers', () => {
         },
       },
     ])
+  })
+})
+
+describe('Phase 4 select supa memory flag patch (L34)', () => {
+  it('L34: supaMemory snapshots are scalar and restore only the target flag', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(1)
+
+    const snapshot = currentCharacterSupaMemorySnapshot('char-1')
+
+    expect(snapshot).toEqual({
+      characterId: 'char-1',
+      hadSupaMemory: false,
+      supaMemory: undefined,
+    })
+    assertSnapshotIsScalar(snapshot)
+
+    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const instrumented = withCloneInstrumentation(() =>
+      currentCharacterSupaMemorySnapshot('char-1'),
+    )
+    expect(instrumented.totalCloneCount).toBe(0)
+    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+
+    DBState.db.characters[1].supaMemory = true
+    DBState.db.characters[1].name = 'Same row concurrent edit'
+    DBState.db.characters[0].name = 'Sibling concurrent edit'
+    selectedCharID.set(2)
+
+    restoreCharacterSupaMemory(snapshot!)
+
+    expect(Object.prototype.hasOwnProperty.call(DBState.db.characters[1], 'supaMemory')).toBe(
+      false,
+    )
+    expect(DBState.db.characters[1].name).toBe('Same row concurrent edit')
+    expect(DBState.db.characters[0].name).toBe('Sibling concurrent edit')
+    expect(get(selectedCharID)).toBe(2)
+  })
+
+  it('L34: setCharacterSupaMemory captures no full character row or characters array clone', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/characters/char-1') {
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'character.updated', revision: 11, resource: 'character' },
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    DBState.db = seedCloneCostDb({
+      hydratedMessageCount: 80,
+      messageBodySize: 500,
+    }) as any
+    selectedCharID.set(1)
+    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const targetRowSize = JSON.stringify(DBState.db.characters[1]).length
+
+    const instrumented = withCloneInstrumentation(() => {
+      setCharacterSupaMemory('char-1', true)
+    })
+
+    expect(DBState.db.characters[1].supaMemory).toBe(true)
+    expect(instrumented.maxClonedSize).toBeLessThan(targetRowSize)
+    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+
+    await waitForCallCount(calls, 2)
+    expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-1')).toEqual({
+      url: '/api/v1/commands/characters/char-1',
+      method: 'PATCH',
+      authHeader: 'character-command-token',
+      body: {
+        baseRevision: 10,
+        patch: { supaMemory: true },
+      },
+    })
+  })
+
+  it('L34: failed supaMemory command restores only supaMemory and preserves selection', async () => {
+    const calls: CapturedFetch[] = []
+    const patchResponse = deferredResponse()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/characters/char-a') return patchResponse.promise
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'Character', chats: [], supaMemory: false },
+        { chaId: 'char-b', name: 'Sibling', chats: [], supaMemory: false },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+
+    setCharacterSupaMemory('char-a', true)
+    await waitForCharacterPatch(calls, 'char-a')
+    expect(DBState.db.characters[0].supaMemory).toBe(true)
+
+    DBState.db.characters[0].name = 'Same row concurrent edit'
+    DBState.db.characters[1].name = 'Sibling concurrent edit'
+    selectedCharID.set(1)
+    patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].supaMemory).toBe(false)
+    })
+    expect(DBState.db.characters[0].name).toBe('Same row concurrent edit')
+    expect(DBState.db.characters[1].name).toBe('Sibling concurrent edit')
+    expect(get(selectedCharID)).toBe(1)
+  })
+
+  it('L34: selectedCharID auto-enable uses one-field patch without full row clone', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/characters/char-1') {
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'character.updated', revision: 11, resource: 'character' },
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    selectedCharID.set(-1)
+    DBState.db = {
+      ...seedCloneCostDb({
+        hydratedMessageCount: 80,
+        messageBodySize: 500,
+      }),
+      hypaV3: true,
+      hypaV3PresetId: 'preset-on',
+      hypaV3Presets: {
+        'preset-on': { settings: { alwaysToggleOn: true } },
+      },
+    } as any
+    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const targetRowSize = JSON.stringify(DBState.db.characters[1]).length
+
+    const instrumented = await withAsyncCloneInstrumentation(async () => {
+      selectedCharID.set(1)
+      expect(selIdState.selId).toBe(1)
+      await waitForCharacterPatch(calls, 'char-1')
+    })
+
+    expect(DBState.db.characters[1].supaMemory).toBe(true)
+    expect(instrumented.maxClonedSize).toBeLessThan(targetRowSize)
+    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+    expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-1')).toEqual({
+      url: '/api/v1/commands/characters/char-1',
+      method: 'PATCH',
+      authHeader: 'character-command-token',
+      body: {
+        baseRevision: 10,
+        patch: { supaMemory: true },
+      },
+    })
+
+    selectedCharID.set(-1)
+    selectedCharID.set(1)
+    await flushAsyncWork()
+    expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-1')).toHaveLength(
+      1,
+    )
+  })
+
+  it('L34: selectedCharID auto-enable preserves all no-op gates', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        calls.push({
+          url: String(input),
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        return jsonResponse({ error: 'unexpected command' }, 500)
+      }) as unknown as typeof fetch,
+    )
+
+    const cases: Array<[string, unknown]> = [
+      [
+        'Hypa V3 disabled',
+        {
+          characters: [{ chaId: 'char-a', name: 'Character', chats: [], supaMemory: false }],
+          hypaV3: false,
+          hypaV3PresetId: 'preset-on',
+          hypaV3Presets: { 'preset-on': { settings: { alwaysToggleOn: true } } },
+        },
+      ],
+      [
+        'preset missing',
+        {
+          characters: [{ chaId: 'char-a', name: 'Character', chats: [], supaMemory: false }],
+          hypaV3: true,
+          hypaV3PresetId: 'missing',
+          hypaV3Presets: {},
+        },
+      ],
+      [
+        'alwaysToggleOn disabled',
+        {
+          characters: [{ chaId: 'char-a', name: 'Character', chats: [], supaMemory: false }],
+          hypaV3: true,
+          hypaV3PresetId: 'preset-off',
+          hypaV3Presets: { 'preset-off': { settings: { alwaysToggleOn: false } } },
+        },
+      ],
+      [
+        'selected character missing',
+        {
+          characters: [],
+          hypaV3: true,
+          hypaV3PresetId: 'preset-on',
+          hypaV3Presets: { 'preset-on': { settings: { alwaysToggleOn: true } } },
+        },
+      ],
+      [
+        'character id missing',
+        {
+          characters: [{ name: 'Character', chats: [], supaMemory: false }],
+          hypaV3: true,
+          hypaV3PresetId: 'preset-on',
+          hypaV3Presets: { 'preset-on': { settings: { alwaysToggleOn: true } } },
+        },
+      ],
+      [
+        'already enabled',
+        {
+          characters: [{ chaId: 'char-a', name: 'Character', chats: [], supaMemory: true }],
+          hypaV3: true,
+          hypaV3PresetId: 'preset-on',
+          hypaV3Presets: { 'preset-on': { settings: { alwaysToggleOn: true } } },
+        },
+      ],
+    ]
+
+    for (const [label, db] of cases) {
+      clearCachedServerCommandRevision()
+      calls.length = 0
+      selectedCharID.set(-1)
+      DBState.db = db as any
+      const beforeSupaMemory = DBState.db.characters?.[0]?.supaMemory
+      selectedCharID.set(0)
+      expect(selIdState.selId).toBe(0)
+      await flushAsyncWork()
+      expect(DBState.db.characters?.[0]?.supaMemory, label).toBe(beforeSupaMemory)
+      expect(calls, label).toHaveLength(0)
+    }
   })
 })
 

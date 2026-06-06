@@ -632,7 +632,32 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L34', 4, 'Minimal `supaMemory` patch on selection.'),
+  done(
+    'L34',
+    4,
+    'Minimal `supaMemory` patch on selection.',
+    'src/ts/characterCommands.test.ts',
+    'L34: selectedCharID auto-enable uses one-field patch without full row clone',
+    [
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L34: setCharacterSupaMemory applies one-field optimistic command patch',
+      },
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName:
+          'L34: setCharacterSupaMemory captures no full character row or characters array clone',
+      },
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L34: failed supaMemory command restores only supaMemory and preserves selection',
+      },
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L34: selectedCharID auto-enable preserves all no-op gates',
+      },
+    ],
+  ),
   planned('L35', 6, 'Carry `hypaV3Data` independently of message length.'),
   planned('L36', 6, 'Bound the prereroll maps; clear on chat switch.'),
   planned('L37', 4, 'Same-language early-return in `changeLanguage`.'),
@@ -1465,6 +1490,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L16',
       'L32',
       'L33',
+      'L34',
       'K1',
       'K2',
     ])

@@ -229,9 +229,10 @@ $effect.root(() => {
         DBState.db.hypaV3Presets?.[DBState.db.hypaV3PresetId]?.settings?.alwaysToggleOn
       ) {
         const char = DBState.db.characters[selIdState.selId]
-        if (!char.supaMemory) {
-          void import('./storage/database.svelte').then(({ setCharacterByIndex }) => {
-            setCharacterByIndex(selIdState.selId, { ...char, supaMemory: true } as character)
+        if (!char.supaMemory && char.chaId) {
+          const characterId = char.chaId
+          void import('./characterCommands').then(({ setCharacterSupaMemory }) => {
+            setCharacterSupaMemory(characterId, true)
           })
         }
       }
