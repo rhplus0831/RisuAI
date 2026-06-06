@@ -7,9 +7,10 @@ Date: 2026-06-04
 > phases (0-8) closed with the recorded closing verification run. The
 > fix-completeness gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
 > stays live against this archive and keeps every landed fix's regression
-> test registered. The follow-up v2 audit and its open remediation plan live
-> in [`../../plan/`](../../plan/); the still-gated items here (L4, L7, L26,
-> U2) remain owner-decision/evidence-gated and are referenced by the v2 plan.
+> test registered. The follow-up v2 audit and its remediation plan are now
+> closed in [`../audit-stability-and-performance-v2/`](../audit-stability-and-performance-v2/);
+> the still-gated items here (L4, L7, L26, U2) remain
+> owner-decision/evidence-gated and are referenced by the v2 archive.
 
 This directory turns the stability/performance audit into a phased repair plan.
 The audit found 57 confirmed issues: 3 high, 14 medium, and 40 low. The plan

@@ -13,13 +13,13 @@ import path from 'node:path'
 
 // `vitest run` executes from the repo root. Under the client vite transform,
 // import.meta.url is not a reliable filesystem anchor, so match the v1 gate.
-// Phase 9 intentionally keeps v2 pointed at the live plan docs until the
-// archive/repoint slice moves them; negative self-proofs below use doc-string
-// overrides or cloned registry arrays, never writes to these files.
+// Phase 9 repointed v2 to the archived plan docs. Negative self-proofs below
+// use doc-string overrides or cloned registry arrays, never writes to these
+// files.
 const ROOT = process.cwd()
-const PLAN_ROOT = 'docs/plan'
-const AUDIT_DOC = path.join(ROOT, PLAN_ROOT, 'audit-stability-and-performance-v2.md')
-const RISK_DOC = path.join(ROOT, PLAN_ROOT, 'active-risk-analysis.md')
+const ARCHIVED_PLAN = 'docs/archive/audit-stability-and-performance-v2'
+const AUDIT_DOC = path.join(ROOT, ARCHIVED_PLAN, 'audit-stability-and-performance-v2.md')
+const RISK_DOC = path.join(ROOT, ARCHIVED_PLAN, 'active-risk-analysis.md')
 
 type AuditKind = 'H' | 'M' | 'L' | 'I'
 type GateStatus = 'PLANNED' | 'DONE'
