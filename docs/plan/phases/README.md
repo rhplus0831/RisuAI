@@ -23,11 +23,11 @@ the finding -> phase map is in
 - Phase 3, complete (Root 2: assembly CBS & triggers; M1-M4, L4-L11):
   [`phase-3-assembly-cbs-and-triggers.md`](phase-3-assembly-cbs-and-triggers.md),
   [`slices/phase-3-assembly-cbs-and-triggers/`](slices/phase-3-assembly-cbs-and-triggers/).
-- Phase 4, next (Root 3: client clone narrowing ring 2; M7-M10, L32-L34,
+- Phase 4, next pending (Root 3: client clone narrowing ring 2; M7-M10, L32-L34,
   L37, K4):
   [`phase-4-client-clone-ring-2.md`](phase-4-client-clone-ring-2.md),
   [`slices/phase-4-client-clone-ring-2/`](slices/phase-4-client-clone-ring-2/).
-- Phase 5, pending (Root 4: client render & UI; M13, M17, L38-L44):
+- Phase 5, complete (Root 4: client render & UI; M13, M17, L38-L44):
   [`phase-5-client-render-and-ui.md`](phase-5-client-render-and-ui.md).
 - Phase 6, pending (Root 6: bridges, lifecycle, network; M11, M12, M14, L35,
   L36, L45-L47):
@@ -40,8 +40,8 @@ the finding -> phase map is in
   [`phase-9-verification-budgets.md`](phase-9-verification-budgets.md).
 
 Phases 4-8 are independent of each other and may be reordered by observed
-pain. Phases 1-3 landed first: they own the corpus-scaling and whole-screen
-costs.
+pain. Phases 1-3 and 5 have landed; Phase 4 remains the next pending batch in
+the current routing docs.
 
 ## Slice Rules
 

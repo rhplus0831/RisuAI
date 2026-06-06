@@ -1,6 +1,6 @@
 import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { character, Database } from '../../ts/storage/database.svelte'
 import {
   DBState,
@@ -39,11 +39,28 @@ vi.mock('../../ts/process/triggers', async (importActual) => {
   }
 })
 
+const translateHTMLMock = vi.hoisted(() => ({
+  calls: [] as unknown[][],
+  implementation: async (...args: unknown[]) => String(args[0] ?? ''),
+}))
+
+vi.mock('../../ts/translator/translator', async (importActual) => {
+  const actual = await importActual<typeof import('../../ts/translator/translator')>()
+  return {
+    ...actual,
+    translateHTML: async (...args: unknown[]) => {
+      translateHTMLMock.calls.push(args)
+      return translateHTMLMock.implementation(...args)
+    },
+  }
+})
+
 const previousDb = DBState.db
 const previousSelectedChar = get(selectedCharID)
 const previousReloadGui = get(ReloadGUIPointer)
 const previousVariableReloadGui = get(VariableReloadGUIPointer)
 const previousReloadChat = get(ReloadChatPointer)
+const explicitRetranslateCacheKey = '<p>explicit source body</p>'
 
 function makeCharacter(): character {
   return {
@@ -166,6 +183,11 @@ async function loadChatBodyWithParseSpy() {
   return { ChatBody, memoModule, parseSpy }
 }
 
+beforeEach(() => {
+  translateHTMLMock.calls = []
+  translateHTMLMock.implementation = async (...args: unknown[]) => String(args[0] ?? '')
+})
+
 function mountChatBody(
   ChatBody: Awaited<ReturnType<typeof loadChatBodyWithParseSpy>>['ChatBody'],
   target: HTMLElement,
@@ -198,6 +220,8 @@ afterEach(async () => {
   memoModule.clearChatBodyParseMemo()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  const translatorModule = await import('../../ts/translator/translator')
+  await translatorModule.LLMCacheStorage.removeItem(explicitRetranslateCacheKey)
   document.body.innerHTML = ''
   DBState.db = previousDb
   selectedCharID.set(previousSelectedChar)
@@ -383,9 +407,8 @@ describe('ChatBody content-keyed parse memo', () => {
     const parserModule = await import('../../ts/parser/parser.svelte')
     vi.spyOn(parserModule, 'ParseMarkdown').mockImplementation(async (data) => `<p>${data}</p>`)
     const translatorModule = await import('../../ts/translator/translator')
-    const translateSpy = vi
-      .spyOn(translatorModule, 'translateHTML')
-      .mockResolvedValue('explicit translated body')
+    await translatorModule.LLMCacheStorage.setItem(explicitRetranslateCacheKey, 'cached hit')
+    translateHTMLMock.implementation = async () => 'explicit translated body'
     const memoModule = await import('./ChatBodyParseMemo')
     memoModule.clearChatBodyParseMemo()
     const { default: ChatBody } = await import('./ChatBody.svelte')
@@ -400,13 +423,13 @@ describe('ChatBody content-keyed parse memo', () => {
     })
     await waitForText(target, 'explicit translated body')
 
-    expect(translateSpy).toHaveBeenCalledWith(
+    expect(translateHTMLMock.calls).toContainEqual([
       '<p>explicit source body</p>',
       false,
       char.chaId,
       0,
       true,
-    )
+    ])
     unmount(component)
   })
 })

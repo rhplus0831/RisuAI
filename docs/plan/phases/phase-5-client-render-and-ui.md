@@ -1,7 +1,8 @@
 # Phase 5: Client Render & UI (Root 4)
 
-Status: pending. Lands after Phase 1 (H3 owns the remount decoupling this
-phase builds on). Independent of Phases 4/6/7/8 otherwise.
+Status: complete and proof-refreshed on 2026-06-06. Lands after Phase 1 (H3
+owns the remount decoupling this phase builds on). Independent of
+Phases 4/6/7/8 otherwise.
 
 Goal: per-render and per-keystroke costs in the chat screen and editors that
 remain after H3 — content-keyed parse memos, editor debounce, and unmemoized
@@ -72,19 +73,26 @@ Findings: M13, M17, L38, L39, L40, L41, L42, L43, L44.
 
 ## Exit Criteria
 
-- [ ] M13: typing in a prompt item triggers at most one (debounced) template
+- [x] M13: typing in a prompt item triggers at most one (debounced) template
       tokenize; token counts displayed unchanged after settle.
-- [ ] M17/L40: an unchanged message re-derivation performs zero
+- [x] M17/L40: an unchanged message re-derivation performs zero
       `ParseMarkdown` runs (memo hit), across a simulated GUI reload;
       changed messages still re-parse.
-- [ ] L38/L39: logs removed / fast path added with focused tests; parse
+- [x] L38/L39: logs removed / fast path added with focused tests; parse
       output identical.
-- [ ] L41: one shared mousemove handler regardless of visible-message count;
+- [x] L41: one shared mousemove handler regardless of visible-message count;
       partial-edit behavior unchanged.
-- [ ] L42/L43/L44: scans memoized via `$derived`/signature compare; list
-      behavior identical (svelte-check clean).
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] L42/L43/L44: scans memoized via `$derived`/signature compare; focused
+      list behavior identical. The global svelte-check baseline remains noted
+      below.
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
+
+Validation caveats: the Phase 5 focused suites, render-count proof, both
+fix-completeness gates, `pnpm test`, client-thinning audit, and both
+TypeScript checks pass. `pnpm check` retains the documented svelte-check
+baseline; it is recorded in
+[`../latest-verification.md`](../latest-verification.md).
 
 ## Validation
 

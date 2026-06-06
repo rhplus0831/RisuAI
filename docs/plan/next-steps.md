@@ -2,7 +2,8 @@
 
 Date: 2026-06-06
 
-Phases 1-3 are implemented and proof-refreshed. The next fix batch is Phase 4.
+Phases 1-3 and 5 are implemented and proof-refreshed. The next pending fix
+batch remains Phase 4 under the current project sequencing.
 
 ## Next Batch: Phase 4 (Client Clone Narrowing Ring 2)
 
@@ -85,3 +86,10 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 Optional metric review: clone-cost harness assertions in the focused tests,
 `RISU_PROTOCOL_METRICS=1` only when a change crosses the server send path,
 and `pnpm analyze:db <input>` for static corpus comparisons.
+
+## Current Validation Caveats
+
+The Phase 5 proof refresh is green for focused suites, both gates, and
+`pnpm test` after the proof-refresh isolation fix. The remaining nonzero
+baseline in [`latest-verification.md`](latest-verification.md) is `pnpm check`
+retaining its 14-error svelte-check baseline.

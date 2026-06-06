@@ -3,6 +3,9 @@
 Phase: [5](../../phase-5-client-render-and-ui.md). Findings: M17, L40.
 Depends on Phase 1 H3 and the Phase 0 render-count harness. Runtime change.
 
+Status: complete; proof refreshed in
+[`phase-5-verification-refresh.md`](phase-5-verification-refresh.md).
+
 ## Scope
 
 Add a bounded module-level memo for `ChatBody` markdown parsing and LLM

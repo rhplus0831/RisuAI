@@ -8,18 +8,23 @@ after each change to a narrowed or bounded path.
 ## Current State
 
 - Plan state: open. Phase 1 H1-H3, Phase 2's M5, M6, L3, L13, L14, L16, K1,
-  and K2, and Phase 3's M1-M4 and L4-L11 are implemented and
-  proof-refreshed. Phase 4 is the next fix batch.
+  and K2, Phase 3's M1-M4 and L4-L11, and Phase 5's M13, M17, and L38-L44
+  are implemented and proof-refreshed. Phase 4 remains the next pending fix
+  batch under the current sequencing.
 - Gate state: the v1 gate
   (`src/ts/__tests__/fixCompletenessGate.test.ts`) stays live against the
   archived v1 docs. The v2 gate
   (`src/ts/__tests__/fixCompletenessGateV2.test.ts`) is live against the v2
   docs and active-risk routing.
 - Scheduled IDs: H1-H3 plus Phase 2's M5, M6, L3, L13, L14, L16, K1, and K2,
-  plus Phase 3's M1-M4 and L4-L11 are registered `DONE` in the v2 gate and
+  Phase 3's M1-M4 and L4-L11, and Phase 5's M13, M17, and L38-L44 are
+  registered `DONE` in the v2 gate and
   [`active-risk-analysis.md`](active-risk-analysis.md). Remaining scheduled
   gate entries stay `PLANNED`; risk-map rows stay `PENDING`; gated/no-action
   rows are unchanged.
+- Current full-proof caveats: `pnpm test` passes after the Phase 5
+  proof-refresh isolation fix; `pnpm check` retains the documented
+  svelte-check baseline.
 
 ## Baseline (carried from the v1 close)
 
@@ -201,6 +206,78 @@ Phase 3 focused proof summaries:
   lookup normalizes registered names/aliases once while preserving raw tag
   text and normal output below the cap.
 
+## Phase 5 Verification Refresh
+
+Recorded on 2026-06-06 KST after M13, M17, and L38-L44 landed. Updated after
+the proof-refresh isolation fix for the render-cost harness and ChatBody
+retranslate test. Those Phase 5 IDs are confirmed `DONE` in both
+`src/ts/__tests__/fixCompletenessGateV2.test.ts` and
+[`active-risk-analysis.md`](active-risk-analysis.md), with focused proof paths
+listed in the risk map. Runtime Phase 5 slices were already landed; this
+follow-up changed test/harness isolation and documentation only.
+
+- `pnpm exec vitest run src/ts/process/promptTokenizeMemo.test.ts src/lib/Setting/Pages/PromptSettings.svelte.test.ts src/lib/ChatScreens/ChatBody.parseMemo.test.ts src/ts/parser/tests/renderFastPaths.test.ts src/lib/ChatScreens/PartialEditController.sharedHover.test.ts src/lib/Others/GridCatalog.svelte.test.ts src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts src/lib/SideBars/Sidebar.charList.test.ts`:
+  passed, 7 files / 33 tests. The command included the older optional
+  `PromptSettings.svelte.test.ts` path, which is not present in this worktree;
+  Vitest ran the seven existing focused files and exited 0.
+- `pnpm exec vitest run src/ts/__tests__/renderCountBaseline.test.ts src/ts/process/scripts.editdisplay.test.ts src/ts/process/scripts.regexCache.test.ts src/ts/process/triggers.regexMemo.test.ts`:
+  passed, 4 files / 11 tests.
+- `pnpm exec vitest run src/ts/parser/tests/renderFastPaths.test.ts src/ts/parser/tests/cbs/strings.test.ts src/ts/parser/tests/cbs/conditionals.test.ts src/ts/process/scripts.editdisplay.test.ts`:
+  passed, 4 files; 45 passed / 2 skipped.
+- `pnpm exec vitest run src/ts/process/scripts.editdisplay.test.ts src/ts/process/scripts.regexCache.test.ts`:
+  passed, 2 files / 6 tests.
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV2.test.ts src/ts/__tests__/fixCompletenessGate.test.ts`:
+  passed, 2 files / 26 tests. The frozen v1 gate and live v2 gate are green.
+- `pnpm exec vitest run src/ts/__tests__/renderCostHarness.test.ts`: passed,
+  1 file / 3 tests after the harness clears `ChatBodyParseMemo` at entry and
+  teardown.
+- `pnpm exec vitest run src/lib/ChatScreens/ChatBody.parseMemo.test.ts src/ts/__tests__/renderCostHarness.test.ts`:
+  passed, 2 files / 8 tests. The ChatBody explicit retranslate proof keeps the
+  cached-only LLM setting, seeds the parsed cache key for the follow-up pass,
+  and asserts the `translateHTML(..., regenerate=true)` call.
+- `pnpm test`: passed, 132 files; 1193 passed / 4 skipped (1197). The run
+  still printed the repeated local-service `ECONNREFUSED 127.0.0.1:3000`
+  probe noise, but no tests failed.
+- `pnpm check`: failed with the pre-existing svelte-check baseline: 14 errors
+  / 0 warnings in 5 files
+  (`src/lib/Playground/PlaygroundMenu.svelte`,
+  `server/fastify/src/repository.ts`,
+  `server/fastify/src/routes/commands.ts`,
+  `server/fastify/src/routes/generationChat.ts`, and
+  `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`).
+- `pnpm client-thinning:audit`: passed (`Client-thinning audit passed.`).
+- `pnpm exec tsc -p tsconfig.client-lib.json`: passed with zero diagnostics.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: passed with zero
+  diagnostics after the client-lib build.
+
+Phase 5 focused proof summaries:
+
+- M13 token counts: memoized prompt totals matched `tokenizePreset` for
+  supported item types; unchanged prompt items hit cached totals for both
+  `consti` variants; rapid edits settled to the newest token total; stale
+  in-flight results could not overwrite newer edits; reorder/delete/add kept
+  totals stable.
+- M17/L40 render parse shape: `renderCountBaseline.test.ts` used
+  `mountedMessages=5` and asserted a variable-only GUI refresh produced
+  `parseMarkdown=0`, `risuChatParser=0`, `editDisplay=0`, and
+  `editDisplayRunsAfterBump=0`, with caches warm before the bump and not
+  wiped after. `ChatBody.parseMemo.test.ts` asserted unchanged remount delta
+  `ParseMarkdown=0`, changed content delta `ParseMarkdown=1`, cached-only LLM
+  detection shared two in-flight requests at `ParseMarkdown=1` /
+  `getLLMCache=1`, a resolved memo hit stayed at 1/1, and a changed body
+  advanced both counts to 2/2.
+- L38/L39 parser fast paths: function/call parsing wrote nothing to
+  `console.log`; marker-free thoughts/tool parsing returned unchanged without
+  slicing; nested, malformed, and tool-call combinations preserved output.
+- L41 hover handling: visible partial-edit controllers shared one document
+  `mousemove` listener, removed it after unmount, preserved button-zone
+  reachability, and still suppressed hover UI during text selection.
+- L42/L43/L44 list costs: GridCatalog search recomputed formatted lists once
+  per search edit and reused them across tabs; ModuleSettings recomputed
+  sorted rows once per search edit and reused them across view switches; the
+  sidebar reused its character list for unrelated metadata/chat changes and
+  rebuilt only for name/image/order/folder-affecting changes.
+
 ## Phase 0 Baseline Refresh
 
 Recorded on 2026-06-05 after the v2 gate and render-count baseline landed:
@@ -288,3 +365,12 @@ Recorded during the 2026-06-05 v2 audit (evidence in
   (1160/4, 125 files); `pnpm api:test` passed (1792/1, 99 files);
   client-thinning audit and both TypeScript checks passed. I16 remained
   no-action.
+- 2026-06-06, Phase 5 verification refresh: focused render/UI suites passed
+  (33 tests), render-count/script proof passed (11 tests), parser companion
+  suites passed (45 passed / 2 skipped), explicit script validation passed (6
+  tests), and v1+v2 gates passed (26 tests) with M13, M17, and L38-L44 as
+  `DONE`. `pnpm client-thinning:audit` and both TypeScript checks passed.
+  A proof-refresh isolation fix cleared the render-cost harness parse memo
+  between runs and made the ChatBody retranslate test deterministic under
+  full-suite parallelism; `pnpm test` then passed (1193/4, 132 files).
+  `pnpm check` retained the 14-error svelte-check baseline.

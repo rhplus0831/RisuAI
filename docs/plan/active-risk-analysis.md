@@ -14,8 +14,9 @@ v1 finding IDs are referenced as `v1-*`.
 
 - Confirmed findings: 102 total: 3 high, 22 medium, 59 low, 18 informational.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
-  known-overlap residuals K1-K4. H1-H3, Phase 3 M1-M4 and L4-L11, plus Phase
-  2 M5, M6, L3, L13, L14, L16, K1, and K2 are `DONE`; the rest are `PENDING`.
+  known-overlap residuals K1-K4. H1-H3, Phase 2 M5, M6, L3, L13, L14, L16,
+  K1, and K2, Phase 3 M1-M4 and L4-L11, and Phase 5 M13, M17, and L38-L44
+  are `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -138,6 +139,50 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L57 | [7](phases/phase-7-opt-in-subsystems.md)         | Wire the debug flag; gate MCP logs.                               | PENDING |
 | L58 | [7](phases/phase-7-opt-in-subsystems.md)         | Epoch-guard `translateSuggest` writes.                            | PENDING |
 | L59 | [7](phases/phase-7-opt-in-subsystems.md)         | Skip retrying translation network errors in `markParsing`.        | PENDING |
+
+### Phase 5 DONE Proofs
+
+The machine-readable tables above intentionally keep their four-column shape.
+These bullets attach the Phase 5 `DONE` rows to concrete regression proof
+paths and test names.
+
+- M13 - `src/ts/process/promptTokenizeMemo.test.ts`:
+  `M13: memoized prompt token totals match tokenizePreset for supported prompt item types`;
+  `M13: unchanged prompt items hit cached token totals for both consti variants`;
+  `M13: rapid prompt edits debounce to the newest token total`;
+  `M13: stale in-flight prompt tokenization results cannot overwrite newer edits`;
+  `M13: reorder delete and add preserve memoized token totals`.
+- M17 - `src/lib/ChatScreens/ChatBody.parseMemo.test.ts`:
+  `M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo`;
+  `M17: explicit retranslate still calls translateHTML with regenerate enabled`.
+- L38 - `src/ts/parser/tests/renderFastPaths.test.ts`:
+  `L38: function definition and call parsing writes nothing to console.log`.
+- L39 - `src/ts/parser/tests/renderFastPaths.test.ts`:
+  `L39: marker-free thoughts/tools parsing returns unchanged without slicing`;
+  `preserves nested thoughts while matching the outer block`;
+  `preserves malformed unclosed thoughts and still converts later nested thoughts`;
+  `replaces tool calls inside and outside thoughts after thoughts conversion`.
+- L40 - `src/lib/ChatScreens/ChatBody.parseMemo.test.ts`:
+  `L40: unchanged ChatBody remount performs zero additional ParseMarkdown calls`;
+  `L40: changed ChatBody content misses the parse memo and renders the new body`;
+  `M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo`.
+- L41 - `src/lib/ChatScreens/PartialEditController.sharedHover.test.ts`:
+  `L41: visible partial edit controllers share one document mousemove listener and remove it after unmount`;
+  `L41: shared hover keeps button zone reachability and hides on leave or scroll`;
+  `L41: shared hover suppresses the block button during text selection`.
+- L42 - `src/lib/Others/GridCatalog.svelte.test.ts`:
+  `L42: GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs`;
+  `L42: GridCatalog filters active and trash lists with shared count and stable order`;
+  `L42: GridCatalog trash actions keep restore and permanent-delete targets`.
+- L43 - `src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts`:
+  `L43: ModuleSettings search recomputes sorted rows once per search edit and reuses them across view switches`;
+  `L43: ModuleSettings empty search shows every module in lowercase sorted order`;
+  `L43: ModuleSettings filtered rows keep action targets by module id`;
+  `L43: ModuleSettings edit after filtering saves the original module id`.
+- L44 - `src/lib/SideBars/Sidebar.charList.test.ts`:
+  `L44: unrelated character metadata and chat changes reuse the sidebar list`;
+  `L44: character name image index and order changes rebuild the sidebar list`;
+  `L44: folder name color image and data changes rebuild the sidebar list`.
 
 ### Known-Overlap Residuals (scheduled)
 
