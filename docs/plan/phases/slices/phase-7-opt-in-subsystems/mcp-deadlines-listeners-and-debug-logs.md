@@ -1,6 +1,7 @@
 # Slice: MCP Deadlines Listeners And Debug Logs
 
 Phase: [7](../../phase-7-opt-in-subsystems.md). Findings: M20, L54, L57.
+Status: done on 2026-06-06.
 Runtime change.
 
 ## Scope
@@ -62,12 +63,24 @@ schema caching, or FileSystem directory-handle persistence.
 
 ## Done Criteria
 
-- Hung MCP HTTP and SSE response paths settle within the configured deadline.
-- Temporary `mcp-sse` listeners are removed on success, timeout, and abort.
-- MCP full-frame/tools-list logs are silent by default and appear only when
+- [x] Hung MCP HTTP and SSE response paths settle within the configured deadline.
+- [x] Temporary `mcp-sse` listeners are removed on success, timeout, and abort.
+- [x] MCP full-frame/tools-list logs are silent by default and appear only when
   debug is enabled.
-- M20, L54, and L57 v2 gate entries point at real focused tests and the
+- [x] M20, L54, and L57 v2 gate entries point at real focused tests and the
   risk-map rows are `DONE`.
+
+## Focused Proofs
+
+- `src/ts/process/mcp/mcplib.test.ts`:
+  `M20: aborts a hung MCP HTTP request at the configured deadline`,
+  `M20: times out the fallback SSE handshake endpoint wait and removes its listener`,
+  `L54: times out unmatched MCP SSE responses and removes the document listener`,
+  `L54: removes the SSE listener after a matching MCP response`,
+  `L54: removes the SSE listener when the initial POST aborts at the deadline`,
+  `L54: text/event-stream response waits time out and remove their listener`,
+  `L57: keeps MCP frame and tools-list payload logs silent by default`, and
+  `L57: emits MCP frame and tools-list payload logs when debug is enabled`.
 
 ## Validation
 

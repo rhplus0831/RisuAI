@@ -51,6 +51,32 @@ export type SseEventDetail = {
   data: JsonRPC
 }
 
+const DEFAULT_MCP_REQUEST_TIMEOUT_MS = 30000
+const MCP_REQUEST_TIMEOUT_ERROR_CODE = -32001
+const MCP_INTERNAL_ERROR_CODE = -32603
+
+class MCPDeadlineError extends Error {
+  constructor(public readonly timeoutMs: number) {
+    super(`MCP request timed out after ${timeoutMs}ms`)
+    this.name = 'MCPDeadlineError'
+  }
+}
+
+type MCPRequestOptions = {
+  notifications?: boolean
+  initMethod?: 'init' | 'none'
+  id?: string | number
+  requestTimeoutMs?: number
+}
+
+type MCPFetchOptions = {
+  body?: string
+  method: 'GET' | 'POST'
+  headers: Record<string, string>
+  signal?: AbortSignal
+  requestTimeoutMs?: number
+}
+
 export type RPCToolCallTextContent = {
   type: 'text'
   text: string
@@ -85,6 +111,8 @@ export class MCPClient {
   mcpClientObjectId: string = v4()
   sessionId: string | null = null
   initialized: boolean = false
+  debug: boolean = false
+  requestTimeoutMs: number = DEFAULT_MCP_REQUEST_TIMEOUT_MS
   url: string
   sseEndpoint: string
   accessToken: string | null = null
@@ -142,102 +170,292 @@ export class MCPClient {
     arg: {
       accessToken?: string
       debug?: boolean
+      requestTimeoutMs?: number
     } = {},
   ) {
     this.url = url
+    this.debug = arg.debug === true
+    this.requestTimeoutMs = this.normalizeTimeoutMs(arg.requestTimeoutMs)
     if (arg.accessToken) {
       this.accessToken = arg.accessToken
     }
+  }
+
+  private normalizeTimeoutMs(timeoutMs?: number) {
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      return Math.max(1, Math.floor(timeoutMs))
+    }
+    return DEFAULT_MCP_REQUEST_TIMEOUT_MS
+  }
+
+  private resolveTimeoutMs(options?: Pick<MCPRequestOptions, 'requestTimeoutMs'>) {
+    return this.normalizeTimeoutMs(options?.requestTimeoutMs ?? this.requestTimeoutMs)
+  }
+
+  private createRpcErrorResult(
+    id: string | number | undefined,
+    message: string,
+    {
+      code = MCP_INTERNAL_ERROR_CODE,
+      status = 500,
+      headers = {},
+      data,
+    }: {
+      code?: number
+      status?: number
+      headers?: Record<string, string>
+      data?: any
+    } = {},
+  ): RPCRequestResult {
+    return {
+      rpc: {
+        jsonrpc: '2.0',
+        id: id ?? '',
+        error: {
+          code,
+          message,
+          ...(data !== undefined ? { data } : {}),
+        },
+      },
+      http: {
+        status,
+        headers,
+      },
+    }
+  }
+
+  private createTimeoutResult(
+    id: string | number | undefined,
+    timeoutMs: number,
+    data?: any,
+    http?: Partial<RPCRequestResult['http']>,
+  ) {
+    return this.createRpcErrorResult(id, `MCP request timed out after ${timeoutMs}ms`, {
+      code: MCP_REQUEST_TIMEOUT_ERROR_CODE,
+      status: http?.status ?? 408,
+      headers: http?.headers ?? {},
+      data,
+    })
+  }
+
+  private async fetchNativeWithDeadline(
+    url: string,
+    requestParams: MCPFetchOptions,
+    timeoutMs: number,
+    abortController: AbortController,
+  ) {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        abortController.abort()
+        reject(new MCPDeadlineError(timeoutMs))
+      }, timeoutMs)
+    })
+
+    try {
+      return (await Promise.race([
+        fetchNative(url, {
+          ...requestParams,
+          signal: abortController.signal,
+          requestTimeoutMs: timeoutMs,
+        }),
+        timeoutPromise,
+      ])) as Response
+    } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId)
+      }
+    }
+  }
+
+  private waitForSseResponse(
+    id: string | number | undefined,
+    {
+      timeoutMs,
+      signal,
+      http,
+      timeoutData,
+      onTimeout,
+    }: {
+      timeoutMs: number
+      signal?: AbortSignal
+      http: RPCRequestResult['http']
+      timeoutData?: any
+      onTimeout?: () => void
+    },
+  ): Promise<RPCRequestResult> {
+    return new Promise<RPCRequestResult>((resolve) => {
+      let settled = false
+      let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+      const cleanup = () => {
+        document.removeEventListener('mcp-sse', sseListener)
+        signal?.removeEventListener('abort', abortListener)
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId)
+        }
+      }
+
+      const settle = (result: RPCRequestResult) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(result)
+      }
+
+      const abortListener = () => {
+        settle(
+          this.createRpcErrorResult(id, 'MCP request aborted before SSE response', {
+            code: MCP_REQUEST_TIMEOUT_ERROR_CODE,
+            status: 408,
+            headers: http.headers,
+            data: timeoutData,
+          }),
+        )
+      }
+
+      const sseListener = (event: Event) => {
+        try {
+          const detail = (event as CustomEvent<SseEventDetail>).detail
+          if (detail?.mcpClientObjectId !== this.mcpClientObjectId) return
+          const data = detail.data
+          if (data?.id !== id) return
+
+          settle({
+            rpc: data,
+            http,
+          })
+        } catch (error) {
+          settle(
+            this.createRpcErrorResult(id, 'MCP SSE response listener failed', {
+              status: 500,
+              headers: http.headers,
+              data: {
+                error: String(error),
+              },
+            }),
+          )
+        }
+      }
+
+      document.addEventListener('mcp-sse', sseListener)
+
+      if (signal?.aborted) {
+        abortListener()
+        return
+      }
+
+      signal?.addEventListener('abort', abortListener, { once: true })
+      timeoutId = setTimeout(() => {
+        settle(this.createTimeoutResult(id, timeoutMs, timeoutData, http))
+        onTimeout?.()
+      }, timeoutMs)
+    })
   }
 
   async connectSSE(stream: ReadableStream, abortController?: AbortController) {
     const reader = stream.getReader()
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
-    this.sses.push({
+    const sse = {
       stream: stream,
       abortController: abortController,
-    })
+    }
+    this.sses.push(sse)
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
 
-      buffer += decoder.decode(value, { stream: true })
+        buffer += decoder.decode(value, { stream: true })
 
-      let parts = buffer.split('\n\n')
-      buffer = parts.pop() || ''
+        let parts = buffer.split('\n\n')
+        buffer = parts.pop() || ''
 
-      for (const part of parts) {
-        let lines = part.split('\n')
-        let data = ''
-        let eventName = ''
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            data += line.slice(6) + '\n'
-          } else if (line.startsWith('event: ')) {
-            eventName = line.slice(7).trim()
-          }
-        }
-
-        data = data.trim()
-        if (data) {
-          console.log('MCP SSE Data', {
-            eventName: eventName,
-            data: data,
-          })
-
-          if (eventName === 'endpoint') {
-            const sseEventDetail: SseEventDetail = {
-              mcpClientObjectId: this.mcpClientObjectId,
-              data: {
-                jsonrpc: '2.0',
-                id: 'connected',
-                result: {
-                  endpoint: data,
-                },
-              },
+        for (const part of parts) {
+          let lines = part.split('\n')
+          let data = ''
+          let eventName = ''
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              data += line.slice(6) + '\n'
+            } else if (line.startsWith('event: ')) {
+              eventName = line.slice(7).trim()
             }
-            document.dispatchEvent(
-              new CustomEvent('mcp-sse', {
-                detail: sseEventDetail,
-              }),
-            )
-          } else {
-            try {
-              const jsonData = JSON.parse(data) as JsonRPC | JsonPing
-              if (this.sseIdDone.has(jsonData.id)) {
-                continue
-              }
+          }
 
-              //@ts-expect-error JsonRPC type doesn't have method property, but JsonPing does
-              if (jsonData.method === 'ping') {
-                await this.request(
-                  'response',
-                  {},
-                  {
-                    notifications: true,
-                    initMethod: 'none',
-                    id: jsonData.id,
-                  },
-                )
-                this.sseIdDone.add(jsonData.id)
-                continue
-              }
+          data = data.trim()
+          if (data) {
+            if (this.debug) {
+              console.log('MCP SSE Data', {
+                eventName: eventName,
+                data: data,
+              })
+            }
 
+            if (eventName === 'endpoint') {
               const sseEventDetail: SseEventDetail = {
                 mcpClientObjectId: this.mcpClientObjectId,
-                data: jsonData,
+                data: {
+                  jsonrpc: '2.0',
+                  id: 'connected',
+                  result: {
+                    endpoint: data,
+                  },
+                },
               }
               document.dispatchEvent(
                 new CustomEvent('mcp-sse', {
                   detail: sseEventDetail,
                 }),
               )
-              this.sseIdDone.add(jsonData.id)
-            } catch (error) {}
+            } else {
+              try {
+                const jsonData = JSON.parse(data) as JsonRPC | JsonPing
+                if (this.sseIdDone.has(jsonData.id)) {
+                  continue
+                }
+
+                //@ts-expect-error JsonRPC type doesn't have method property, but JsonPing does
+                if (jsonData.method === 'ping') {
+                  await this.request(
+                    'response',
+                    {},
+                    {
+                      notifications: true,
+                      initMethod: 'none',
+                      id: jsonData.id,
+                    },
+                  )
+                  this.sseIdDone.add(jsonData.id)
+                  continue
+                }
+
+                const sseEventDetail: SseEventDetail = {
+                  mcpClientObjectId: this.mcpClientObjectId,
+                  data: jsonData,
+                }
+                document.dispatchEvent(
+                  new CustomEvent('mcp-sse', {
+                    detail: sseEventDetail,
+                  }),
+                )
+                this.sseIdDone.add(jsonData.id)
+              } catch (error) {}
+            }
           }
         }
+      }
+    } catch (error) {
+      if (this.debug && !abortController?.signal.aborted) {
+        console.warn('MCP SSE stream failed', error)
+      }
+    } finally {
+      reader.releaseLock()
+      const index = this.sses.indexOf(sse)
+      if (index >= 0) {
+        this.sses.splice(index, 1)
       }
     }
   }
@@ -245,15 +463,11 @@ export class MCPClient {
   async request(
     method: string,
     params?: any,
-    options: {
-      notifications?: boolean
-      initMethod?: 'init' | 'none'
-      id?: string | number
-    } = {},
+    options: MCPRequestOptions = {},
   ): Promise<RPCRequestResult> {
     options ??= {}
     const initMethod = options.initMethod || 'none'
-    let httpStatus = 500
+    const timeoutMs = this.resolveTimeoutMs(options)
     const url = this.sseEndpoint ?? this.url
 
     const body =
@@ -325,39 +539,49 @@ export class MCPClient {
         method: 'POST',
         headers: headers,
         signal: abortController.signal,
-      } as {
-        body?: string
-        method: 'GET' | 'POST'
-        headers: Record<string, string>
-        signal?: AbortSignal
-      }
-
-      if (requestParams.method === 'GET') {
-        delete requestParams.body
-      }
+        requestTimeoutMs: timeoutMs,
+      } satisfies MCPFetchOptions
 
       let responsePromise: Promise<RPCRequestResult> | null = null
       if (this.sseEndpoint && !options.notifications) {
-        responsePromise = new Promise<RPCRequestResult>((resolve) => {
-          const sseListener = (event: CustomEvent<SseEventDetail>) => {
-            if (event.detail.mcpClientObjectId !== this.mcpClientObjectId) return
-            const data = event.detail.data
-            if (data.id === body.id) {
-              document.removeEventListener('mcp-sse', sseListener)
-              resolve({
-                rpc: data,
-                http: {
-                  status: 200,
-                  headers: {},
-                },
-              })
-            }
-          }
-          document.addEventListener('mcp-sse', sseListener)
+        responsePromise = this.waitForSseResponse(body.id, {
+          timeoutMs,
+          signal: abortController.signal,
+          http: {
+            status: 200,
+            headers: {},
+          },
+          timeoutData: {
+            method: method,
+            params: params,
+          },
+          onTimeout: () => abortController.abort(),
         })
       }
 
-      const response = await fetchNative(url, requestParams)
+      let response: Response
+      try {
+        response = await this.fetchNativeWithDeadline(url, requestParams, timeoutMs, abortController)
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          abortController.abort()
+        }
+
+        if (error instanceof MCPDeadlineError || error?.['name'] === 'AbortError') {
+          return this.createTimeoutResult(body.id, timeoutMs, {
+            method: method,
+            params: params,
+          })
+        }
+
+        return this.createRpcErrorResult(body.id, 'Internal Error', {
+          status: 500,
+          data: {
+            method: method,
+            params: params,
+          },
+        })
+      }
 
       if (this.sseEndpoint && options.notifications) {
         return {
@@ -413,26 +637,28 @@ export class MCPClient {
       const contentType = response.headers.get('Content-Type') || ''
 
       if (contentType.includes('text/event-stream')) {
-        this.connectSSE(response.body, abortController)
+        if (!response.body) {
+          return this.createRpcErrorResult(body.id, 'Missing SSE response body', {
+            status: response.status,
+            headers: Object.fromEntries(response.headers.entries()),
+          })
+        }
 
-        const v = new Promise<RPCRequestResult>((resolve) => {
-          const sseListener = (event: CustomEvent<SseEventDetail>) => {
-            if (event.detail.mcpClientObjectId !== this.mcpClientObjectId) return
-            const data = event.detail.data
-            if (data.id === body.id) {
-              document.removeEventListener('mcp-sse', sseListener)
-              resolve({
-                rpc: data,
-                http: {
-                  status: response.status,
-                  headers: Object.fromEntries(response.headers.entries()),
-                },
-              })
-            }
-          }
-          document.addEventListener('mcp-sse', sseListener)
+        void this.connectSSE(response.body, abortController)
+
+        return this.waitForSseResponse(body.id, {
+          timeoutMs,
+          signal: abortController.signal,
+          http: {
+            status: response.status,
+            headers: Object.fromEntries(response.headers.entries()),
+          },
+          timeoutData: {
+            method: method,
+            params: params,
+          },
+          onTimeout: () => abortController.abort(),
         })
-        return v
       }
 
       if (!contentType.includes('application/json')) {
@@ -466,20 +692,14 @@ export class MCPClient {
         },
       }
     } catch (error) {
-      return {
-        rpc: {
-          jsonrpc: '2.0',
-          id: '',
-          error: {
-            code: httpStatus,
-            message: 'Internal Error',
-          },
-        },
-        http: {
-          status: httpStatus,
-          headers: {},
-        },
+      if (error instanceof MCPDeadlineError || error?.['name'] === 'AbortError') {
+        return this.createTimeoutResult(body.id, timeoutMs, {
+          method: method,
+          params: params,
+        })
       }
+
+      return this.createRpcErrorResult(body.id, 'Internal Error')
     }
   }
 
@@ -506,7 +726,9 @@ export class MCPClient {
   }
 
   async handshake() {
-    console.log('MCP Handshake', this.url, this.mcpClientObjectId)
+    if (this.debug) {
+      console.log('MCP Handshake', this.url, this.mcpClientObjectId)
+    }
     this.protocolVersion = '2025-03-26' //default to latest version
     let { rpc: d, http } = await this.request(
       'initialize',
@@ -539,10 +761,28 @@ export class MCPClient {
         headers['Authorization'] = `Bearer ${this.accessToken}`
       }
 
-      const connection = await fetchNative(this.url, {
-        method: 'GET',
-        headers: headers,
-      })
+      const timeoutMs = this.resolveTimeoutMs()
+      const connectionAbortController = new AbortController()
+      let connection: Response
+      try {
+        connection = await this.fetchNativeWithDeadline(
+          this.url,
+          {
+            method: 'GET',
+            headers: headers,
+            signal: connectionAbortController.signal,
+            requestTimeoutMs: timeoutMs,
+          },
+          timeoutMs,
+          connectionAbortController,
+        )
+      } catch (error) {
+        connectionAbortController.abort()
+        if (error instanceof MCPDeadlineError || error?.['name'] === 'AbortError') {
+          throw new Error(`MCP handshake timed out after ${timeoutMs}ms`)
+        }
+        throw error
+      }
 
       if (connection.status !== 200) {
         throw new Error(
@@ -550,25 +790,30 @@ export class MCPClient {
         )
       }
 
-      this.connectSSE(connection.body)
+      if (!connection.body) {
+        throw new Error('Failed to connect to MCP server: missing SSE body')
+      }
 
-      const connectionResult = await new Promise<RPCRequestResult>((resolve) => {
-        const sseListener = (event: CustomEvent<SseEventDetail>) => {
-          if (event.detail.mcpClientObjectId !== this.mcpClientObjectId) return
-          const data = event.detail.data
-          if (data.id === 'connected') {
-            document.removeEventListener('mcp-sse', sseListener)
-            resolve({
-              rpc: data,
-              http: {
-                status: connection.status,
-                headers: Object.fromEntries(connection.headers.entries()),
-              },
-            })
-          }
-        }
-        document.addEventListener('mcp-sse', sseListener)
+      void this.connectSSE(connection.body, connectionAbortController)
+
+      const connectionResult = await this.waitForSseResponse('connected', {
+        timeoutMs,
+        signal: connectionAbortController.signal,
+        http: {
+          status: connection.status,
+          headers: Object.fromEntries(connection.headers.entries()),
+        },
+        timeoutData: {
+          method: 'GET',
+          endpoint: this.url,
+        },
+        onTimeout: () => connectionAbortController.abort(),
       })
+
+      if (connectionResult.rpc.error) {
+        connectionAbortController.abort()
+        throw new Error(connectionResult.rpc.error.message)
+      }
 
       const endpoint = connectionResult.rpc.result.endpoint
 
@@ -604,6 +849,10 @@ export class MCPClient {
       return this.handshake()
     }
 
+    if (d?.error?.code === MCP_REQUEST_TIMEOUT_ERROR_CODE) {
+      throw new Error(d.error.message)
+    }
+
     if (d?.result?.serverInfo) {
       this.serverInfo = d.result
 
@@ -623,7 +872,9 @@ export class MCPClient {
         this.protocolVersion = d.result.protocolVersion
       }
 
-      console.log('MCP Handshake Successful', this.serverInfo, this.mcpClientObjectId)
+      if (this.debug) {
+        console.log('MCP Handshake Successful', this.serverInfo, this.mcpClientObjectId)
+      }
       this.initialized = true
 
       return this.serverInfo
@@ -827,7 +1078,9 @@ export class MCPClient {
       }
 
       const response = await this.request('tools/list', args)
-      console.log('MCP Tools List Response', response)
+      if (this.debug) {
+        console.log('MCP Tools List Response', response)
+      }
       if (response.rpc.result?.tools) {
         tools.push(...response.rpc.result.tools)
         if (response.rpc.result.nextCursor) {

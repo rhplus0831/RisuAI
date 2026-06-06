@@ -269,7 +269,6 @@ export async function importMCPModule() {
   }
   try {
     const metas = await getMCPMeta([x])
-    console.log(metas)
     const meta = metas[x]
     if (!meta) {
       alertError('MCP module not found or invalid URL')

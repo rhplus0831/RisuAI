@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const alertMocks = vi.hoisted(() => ({
+  alertConfirm: vi.fn(),
+  alertError: vi.fn(),
+  alertInput: vi.fn(),
+  alertNormal: vi.fn(),
+}))
+
 vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/platform')>()
   return {
@@ -17,10 +24,22 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, getModuleMcps: () => [] }
 })
 
+vi.mock('src/ts/alert', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/alert')>()
+  return {
+    ...actual,
+    alertConfirm: alertMocks.alertConfirm,
+    alertError: alertMocks.alertError,
+    alertInput: alertMocks.alertInput,
+    alertNormal: alertMocks.alertNormal,
+  }
+})
+
 import { clearCachedServerCommandRevision, type CommandEvent } from '../../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
 import { DBState } from '../../stores.svelte'
-import { persistMCPRefreshToken } from './mcp'
+import { callOnlyMCPs, importMCPModule, MCPs, persistMCPRefreshToken } from './mcp'
+import { registeredCustomPluginMCPs, registerMCPModule } from './pluginmcp'
 
 interface CapturedFetch {
   url: string
@@ -67,9 +86,24 @@ function stubCommandFetch(commandStatus = 200): CapturedFetch[] {
   return calls
 }
 
+function clearMCPRuntimeState() {
+  for (const registry of [MCPs, callOnlyMCPs]) {
+    for (const key of Object.keys(registry)) {
+      registry[key].destroy()
+      delete registry[key]
+    }
+  }
+  registeredCustomPluginMCPs.clear()
+}
+
 beforeEach(() => {
   clearCachedServerCommandRevision()
   vi.unstubAllGlobals()
+  alertMocks.alertConfirm.mockReset()
+  alertMocks.alertError.mockReset()
+  alertMocks.alertInput.mockReset()
+  alertMocks.alertNormal.mockReset()
+  clearMCPRuntimeState()
   setServerProjectionWriteGuardEnabled(false)
   DBState.db = {
     authRefreshes: [],
@@ -77,6 +111,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  clearMCPRuntimeState()
   setServerProjectionWriteGuardEnabled(false)
 })
 
@@ -178,5 +213,41 @@ describe('MCP runtime persistence', () => {
         },
       ])
     })
+  })
+})
+
+describe('MCP module import logging', () => {
+  it('L57: importing an MCP module does not log the meta payload by default', async () => {
+    const identifier = 'plugin:mcp-import-log-silence'
+    await registerMCPModule(
+      {
+        identifier,
+        name: 'Import Log Silence MCP',
+        version: '1.0.0',
+        description: 'MCP fixture used to prove import meta payload logging is opt-in.',
+      },
+      async () => [],
+      async () => [],
+    )
+    alertMocks.alertInput.mockResolvedValue(identifier)
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* test spy */
+    })
+
+    await importMCPModule()
+
+    expect(alertMocks.alertError).toHaveBeenCalledWith(
+      'MCP module import is not supported in Fastify server-backed mode yet',
+    )
+    expect(logSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        [identifier]: expect.objectContaining({
+          serverInfo: expect.objectContaining({
+            name: 'Import Log Silence MCP',
+          }),
+        }),
+      }),
+    )
+    expect(logSpy).not.toHaveBeenCalled()
   })
 })

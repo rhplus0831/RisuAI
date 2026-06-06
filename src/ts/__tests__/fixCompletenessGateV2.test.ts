@@ -384,7 +384,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('M20', 7, 'Bounded deadlines for MCP request/handshake/SSE waits.'),
+  done(
+    'M20',
+    7,
+    'Bounded deadlines for MCP request/handshake/SSE waits.',
+    'src/ts/process/mcp/mcplib.test.ts',
+    'M20: aborts a hung MCP HTTP request at the configured deadline',
+    [
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'M20: times out the fallback SSE handshake endpoint wait and removes its listener',
+      },
+    ],
+  ),
   planned('M21', 7, 'Parenthesized guard + mid-stream byte cap in CharX import.'),
   planned('M22', 7, 'Remove the `.po` 100-line test cap.'),
   planned('L1', 8, 'Configurable/sliding durable deadline (pair with the non-durable twin).'),
@@ -595,10 +607,42 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L51', 7, 'Single-pass PNG import (or value-free count pass).'),
   planned('L52', 7, 'Remove the file-send logs.'),
   planned('L53', 7, 'Pass raw bytes to pdfjs.'),
-  planned('L54', 7, 'Timeout + tracked listeners for MCP SSE waits.'),
+  done(
+    'L54',
+    7,
+    'Timeout + tracked listeners for MCP SSE waits.',
+    'src/ts/process/mcp/mcplib.test.ts',
+    'L54: times out unmatched MCP SSE responses and removes the document listener',
+    [
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'L54: text/event-stream response waits time out and remove their listener',
+      },
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'L54: removes the SSE listener when the initial POST aborts at the deadline',
+      },
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'L54: removes the SSE listener after a matching MCP response',
+      },
+    ],
+  ),
   planned('L55', 7, 'Cache internal MCP tool lists; name->client index.'),
   planned('L56', 7, 'Persist the FS directory handle across recreate.'),
-  planned('L57', 7, 'Wire the debug flag; gate MCP logs.'),
+  done(
+    'L57',
+    7,
+    'Wire the debug flag; gate MCP logs.',
+    'src/ts/process/mcp/mcplib.test.ts',
+    'L57: keeps MCP frame and tools-list payload logs silent by default',
+    [
+      {
+        testPath: 'src/ts/process/mcp/mcplib.test.ts',
+        testName: 'L57: emits MCP frame and tools-list payload logs when debug is enabled',
+      },
+    ],
+  ),
   done(
     'L58',
     7,
@@ -1422,6 +1466,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M16',
       'M18',
       'M19',
+      'M20',
       'L3',
       'L4',
       'L5',
@@ -1435,6 +1480,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L14',
       'L16',
       'L48',
+      'L54',
+      'L57',
       'L58',
       'L59',
       'K1',
