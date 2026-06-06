@@ -1,6 +1,7 @@
 # Slice: SQLite WAL Synchronous Normal
 
 Phase: [8](../../phase-8-server-bounds.md). Finding: L15. Runtime change.
+Status: done on 2026-06-06 KST.
 
 ## Scope
 
@@ -48,6 +49,25 @@ along only if it is free and separately documented.
 - The durability trade-off is visible in code or docs.
 - The L15 v2 gate entry points at a real focused test and the risk-map row is
   `DONE`.
+
+## Proof
+
+- Runtime/code docs: `server/fastify/src/db.ts` sets
+  `PRAGMA synchronous = NORMAL` immediately after WAL and records the
+  WAL/NORMAL durability trade-off; `docs/structure/data-and-events.md` mirrors
+  the operational note.
+- Regression proof:
+  `server/fastify/__tests__/db.test.ts` /
+  `L15: opens Fastify databases with WAL synchronous NORMAL`.
+- Gate proof:
+  `src/ts/__tests__/fixCompletenessGateV2.test.ts` registers L15 `DONE` with
+  the focused DB test path/name; `docs/plan/active-risk-analysis.md` marks
+  L15 `DONE`.
+- Validation: `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/db.test.ts`
+  passed, 1 file / 11 tests;
+  `pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV2.test.ts`
+  passed, 1 file / 18 tests;
+  both TypeScript project-reference checks passed with zero diagnostics.
 
 ## Validation
 

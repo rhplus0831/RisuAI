@@ -500,7 +500,13 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L15', 8, '`PRAGMA synchronous = NORMAL`.'),
+  done(
+    'L15',
+    8,
+    '`PRAGMA synchronous = NORMAL`.',
+    'server/fastify/__tests__/db.test.ts',
+    'L15: opens Fastify databases with WAL synchronous NORMAL',
+  ),
   done(
     'L16',
     2,
@@ -1370,6 +1376,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L11',
       'L13',
       'L14',
+      'L15',
       'L16',
       'L17',
       'K1',

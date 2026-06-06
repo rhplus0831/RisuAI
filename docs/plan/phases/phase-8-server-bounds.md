@@ -115,7 +115,7 @@ L27, L28, L29, L30, L31. (I3's unused-index drop may ride along if free.)
       honors the raised configured cap; runaway no-token jobs still die.
 - [x] L2/L17: terminal retry rows and terminal memory jobs are swept; live
       rows untouched (retention tests).
-- [ ] L15: `synchronous = NORMAL` set after WAL; durability note recorded.
+- [x] L15: `synchronous = NORMAL` set after WAL; durability note recorded.
 - [ ] L18/L19/L20/L21/L22: worker drains a backlog without idle gaps;
       transient failures retry only the failed jobs; one summaries fetch per
       assembly; oversized chunks fail fast with a clear error; contextual
@@ -132,6 +132,7 @@ L27, L28, L29, L30, L31. (I3's unused-index drop may ride along if free.)
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/db.test.ts \
   server/fastify/__tests__/streamJobs.test.ts \
   server/fastify/__tests__/durableGeneration.test.ts \
   server/fastify/__tests__/memoryWorker.test.ts \

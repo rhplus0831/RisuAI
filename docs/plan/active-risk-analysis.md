@@ -15,8 +15,8 @@ v1 finding IDs are referenced as `v1-*`.
 - Confirmed findings: 102 total: 3 high, 22 medium, 59 low, 18 informational.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 3 M1-M4 and L4-L11, Phase
-  2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 8 L1, L2, and L17
-  are `DONE`; the rest are `PENDING`.
+  2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 8 L1, L2, L15, and
+  L17 are `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -94,7 +94,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L12 | gated                                            | Lua pool/boot serialization is the documented wasmoon constraint. | -       |
 | L13 | [2](phases/phase-2-server-corpus-ring-2.md)      | Targeted writes for Realm character append.                       | DONE    |
 | L14 | [2](phases/phase-2-server-corpus-ring-2.md)      | Delta-aware transcript persist diff.                              | DONE    |
-| L15 | [8](phases/phase-8-server-bounds.md)             | `PRAGMA synchronous = NORMAL`.                                    | PENDING |
+| L15 | [8](phases/phase-8-server-bounds.md)             | `PRAGMA synchronous = NORMAL`.                                    | DONE    |
 | L16 | [2](phases/phase-2-server-corpus-ring-2.md)      | Single auth verification on the bulk routes.                      | DONE    |
 | L17 | [8](phases/phase-8-server-bounds.md)             | Retention sweep for terminal memory jobs.                         | DONE    |
 | L18 | [8](phases/phase-8-server-bounds.md)             | Fast-path reschedule after a productive worker tick.              | PENDING |

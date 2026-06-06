@@ -158,6 +158,9 @@ export function openDatabase(dataDir: string): DatabaseSync {
   const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
   try {
     db.exec('PRAGMA journal_mode = WAL')
+    // WAL with NORMAL keeps database consistency crash-safe while accepting
+    // that the latest committed transactions may be lost on OS/power failure.
+    db.exec('PRAGMA synchronous = NORMAL')
     db.exec('PRAGMA foreign_keys = ON')
     db.exec(`
       CREATE TABLE IF NOT EXISTS schema_version (
