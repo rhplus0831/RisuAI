@@ -16,7 +16,7 @@ v1 finding IDs are referenced as `v1-*`.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 3 M1-M4 and L4-L11, Phase
   2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 8 L1, L2, L15, and
-  L17-L19 are `DONE`; the rest are `PENDING`.
+  L17-L22 are `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -100,8 +100,8 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L18 | [8](phases/phase-8-server-bounds.md)             | Fast-path reschedule after a productive worker tick.              | DONE    |
 | L19 | [8](phases/phase-8-server-bounds.md)             | Scope the fail-cascade to contextual groups.                      | DONE    |
 | L20 | [8](phases/phase-8-server-bounds.md)             | Share one summaries fetch between cleanup and selection.          | DONE    |
-| L21 | [8](phases/phase-8-server-bounds.md)             | Per-chunk size ceiling before embed requests.                     | PENDING |
-| L22 | [8](phases/phase-8-server-bounds.md)             | Size the contextual budget from provider limits; surface splits.  | PENDING |
+| L21 | [8](phases/phase-8-server-bounds.md)             | Per-chunk size ceiling before embed requests.                     | DONE    |
+| L22 | [8](phases/phase-8-server-bounds.md)             | Size the contextual budget from provider limits; surface splits.  | DONE    |
 | L23 | [8](phases/phase-8-server-bounds.md)             | Batch JSON-card asset persists (charx shape).                     | PENDING |
 | L24 | [8](phases/phase-8-server-bounds.md)             | Compensating asset cleanup when the append fails.                 | PENDING |
 | L25 | [8](phases/phase-8-server-bounds.md)             | Open-or-skip assets at stream time (`missingFiles` degrade).      | PENDING |

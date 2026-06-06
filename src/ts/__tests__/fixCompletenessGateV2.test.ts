@@ -600,8 +600,52 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L21', 8, 'Per-chunk size ceiling before embed requests.'),
-  planned('L22', 8, 'Size the contextual budget from provider limits; surface splits.'),
+  done(
+    'L21',
+    8,
+    'Per-chunk size ceiling before embed requests.',
+    'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+    'L21: fails an oversized single chunk before provider request construction',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L21: fails an oversized non-contextual batch item before provider dispatch',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L21: fails an oversized contextual chunk before provider request construction',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbeddingAdapter.test.ts',
+        testName: 'L21: rejects oversized inputs before constructing an embedding request body',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbeddingModel.test.ts',
+        testName: 'L21: formats per-input size violations with the offending bound',
+      },
+    ],
+  ),
+  done(
+    'L22',
+    8,
+    'Size the contextual budget from provider limits; surface splits.',
+    'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+    'L22: emits a protocol metric when provider limits split a contextual batch',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
+        testName: 'L22: sends a valid contextual batch under the model window in one request',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbeddingAdapter.test.ts',
+        testName: 'L22: rejects grouped contextual inputs when the request has no context limit',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryEmbeddingModel.test.ts',
+        testName: 'resolves Voyage contextual embeddings with explicit credentials',
+      },
+    ],
+  ),
   planned('L23', 8, 'Batch JSON-card asset persists (charx shape).'),
   planned('L24', 8, 'Compensating asset cleanup when the append fails.'),
   planned('L25', 8, 'Open-or-skip assets at stream time (`missingFiles` degrade).'),
@@ -1447,6 +1491,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L18',
       'L19',
       'L20',
+      'L21',
+      'L22',
       'K1',
       'K2',
     ])

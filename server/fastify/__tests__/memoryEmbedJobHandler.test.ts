@@ -7,6 +7,12 @@ import {
   createEmbedMemoryJobBatchHandler,
   createEmbedMemoryJobHandler,
 } from '../src/memoryEmbedJobHandler.js'
+import {
+  MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+  MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES,
+  VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
+  VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
+} from '../src/memoryEmbeddingModel.js'
 import { MEMORY_JOB_BATCH_MAX_JOBS, MemoryWorker } from '../src/memoryWorker.js'
 import {
   cancelMemoryJob,
@@ -20,6 +26,8 @@ import { writePersistedWithMessages } from '../src/repository.js'
 import { assertScopedLoadOnHotPath } from './helpers/loadCostHarness.js'
 
 const dataDirs: string[] = []
+
+type ProtocolMetric = Record<string, unknown> & { metric: string }
 
 function makeDataDir(): string {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-memory-embed-handler-'))
@@ -100,6 +108,26 @@ function seedBatchJob(
     kind: 'embed',
     payload: payload(input.chunkId, input.model ?? 'custom'),
   })
+}
+
+async function withProtocolMetrics<T>(run: (metrics: ProtocolMetric[]) => Promise<T>): Promise<T> {
+  const previous = process.env.RISU_PROTOCOL_METRICS
+  const metrics: ProtocolMetric[] = []
+  process.env.RISU_PROTOCOL_METRICS = '1'
+  const info = vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
+    if (typeof message !== 'string' || !message.startsWith('[protocol-metric] ')) return
+    metrics.push(JSON.parse(message.slice('[protocol-metric] '.length)) as ProtocolMetric)
+  })
+  try {
+    return await run(metrics)
+  } finally {
+    info.mockRestore()
+    if (previous === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = previous
+    }
+  }
 }
 
 describe('embed memory job handler', () => {
@@ -248,6 +276,86 @@ describe('embed memory job handler', () => {
       )
       expect(embed).not.toHaveBeenCalled()
       expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(0)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L21: fails an oversized single chunk before provider request construction', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-1',
+        chatId: 'chat-1',
+        messageId: 'm1',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'x'.repeat(MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES + 1),
+      })
+      const job = enqueueMemoryJob(db, {
+        id: 'job-1',
+        chatId: 'chat-1',
+        kind: 'embed',
+        payload: payload('chunk-1', 'custom'),
+      })
+      const embed = vi.fn(async () => ({
+        model: 'custom',
+        vectors: [new Float32Array([1])],
+        dim: 1,
+      }))
+      const handler = createEmbedMemoryJobHandler({
+        db,
+        loadDatabase: database,
+        embed,
+      })
+
+      await expect(handler(job)).rejects.toThrow(
+        'memory embedding chunk chunk-1 exceeds maxInputBytes',
+      )
+      expect(embed).not.toHaveBeenCalled()
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(0)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L21: fails an oversized non-contextual batch item before provider dispatch', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        text: 'x'.repeat(MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES + 1),
+      })
+      seedBatchJob(db, { id: 'job-2', chunkId: 'chunk-2', text: 'valid chunk' })
+      const embed = vi.fn(async (opts: { input: readonly string[] }) => ({
+        model: 'custom',
+        vectors: [new Float32Array([String(opts.input[0]).length])],
+        dim: 1,
+      }))
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            embed: embed as never,
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(embed).toHaveBeenCalledOnce()
+      expect((embed.mock.calls as any[][])[0][0].input).toEqual(['valid chunk'])
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({
+        status: 'pending',
+        error: expect.stringContaining('memory embedding chunk chunk-1 exceeds maxInputBytes'),
+      })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed', error: null })
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((row) => row.chunkId)).toEqual([
+        'chunk-2',
+      ])
     } finally {
       db.close()
     }
@@ -488,6 +596,186 @@ describe('embed memory job handler', () => {
       expect(Array.from(embeddings[1].vector)).toEqual([3, 4])
       expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed' })
       expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed' })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L21: fails an oversized contextual chunk before provider request construction', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        text: 'valid contextual chunk',
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        text: 'x'.repeat(
+          (VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS + 1) *
+            MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+        ),
+        model: 'voyageContext3',
+      })
+      const embedGroups = vi.fn(async (opts: { groups: readonly (readonly string[])[] }) => ({
+        model: 'voyage-context-3',
+        groups: [opts.groups[0].map(() => new Float32Array([1]))],
+        dim: 1,
+      }))
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            embedGroups: embedGroups as never,
+            sleep: async () => {},
+          }),
+        },
+      })
+
+      expect(await worker.tick()).toBe(true)
+
+      expect(embedGroups).toHaveBeenCalledOnce()
+      expect((embedGroups.mock.calls as any[][])[0][0].groups).toEqual([['valid contextual chunk']])
+      expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed', error: null })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({
+        status: 'pending',
+        error: expect.stringContaining('memory embedding chunk chunk-2 exceeds maxInputTokens'),
+      })
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((row) => row.chunkId)).toEqual([
+        'chunk-1',
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L22: sends a valid contextual batch under the model window in one request', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        text: 'a'.repeat(100_000),
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        text: 'b'.repeat(100_000),
+        model: 'voyageContext3',
+      })
+      const embedGroups = vi.fn(async (opts: { groups: readonly (readonly string[])[] }) => ({
+        model: 'voyage-context-3',
+        groups: [opts.groups[0].map((_text, index) => new Float32Array([index + 1]))],
+        dim: 1,
+      }))
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            embedGroups: embedGroups as never,
+          }),
+        },
+      })
+
+      await withProtocolMetrics(async (metrics) => {
+        expect(await worker.tick()).toBe(true)
+
+        expect(embedGroups).toHaveBeenCalledOnce()
+        expect((embedGroups.mock.calls as any[][])[0][0].groups).toEqual([
+          ['a'.repeat(100_000), 'b'.repeat(100_000)],
+        ])
+        expect(metrics.some((entry) => entry.metric === 'memory_contextual_embed_split')).toBe(
+          false,
+        )
+      })
+      const embeddings = listMemoryEmbeddings(db, { chatId: 'chat-1', model: 'voyageContext3' })
+      expect(embeddings.map((row) => row.chunkId)).toEqual(['chunk-1', 'chunk-2'])
+      expect(embeddings[1].groupId).toBe(embeddings[0].groupId)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L22: emits a protocol metric when provider limits split a contextual batch', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedBatchJob(db, {
+        id: 'job-1',
+        chunkId: 'chunk-1',
+        text: 'a'.repeat(124_000),
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-2',
+        chunkId: 'chunk-2',
+        text: 'b'.repeat(124_000),
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-3',
+        chunkId: 'chunk-3',
+        text: 'c'.repeat(124_000),
+        model: 'voyageContext3',
+      })
+      seedBatchJob(db, {
+        id: 'job-4',
+        chunkId: 'chunk-4',
+        text: 'd'.repeat(124_000),
+        model: 'voyageContext3',
+      })
+      const embedGroups = vi.fn(async (opts: { groups: readonly (readonly string[])[] }) => ({
+        model: 'voyage-context-3',
+        groups: [opts.groups[0].map((_text, index) => new Float32Array([index + 1]))],
+        dim: 1,
+      }))
+      const worker = new MemoryWorker({
+        db,
+        batchHandlers: {
+          embed: createEmbedMemoryJobBatchHandler({
+            db,
+            loadDatabase: database,
+            embedGroups: embedGroups as never,
+            sleep: async () => {},
+          }),
+        },
+      })
+
+      await withProtocolMetrics(async (metrics) => {
+        expect(await worker.tick()).toBe(true)
+
+        expect(embedGroups).toHaveBeenCalledTimes(2)
+        expect((embedGroups.mock.calls as any[][])[0][0].groups).toEqual([
+          ['a'.repeat(124_000), 'b'.repeat(124_000), 'c'.repeat(124_000)],
+        ])
+        expect((embedGroups.mock.calls as any[][])[1][0].groups).toEqual([
+          ['d'.repeat(124_000)],
+        ])
+        expect(metrics.find((entry) => entry.metric === 'memory_contextual_embed_split')).toEqual(
+          expect.objectContaining({
+            chatId: 'chat-1',
+            model: 'voyageContext3',
+            provider: 'voyage-contextual',
+            requestModel: 'voyage-context-3',
+            originalJobCount: 4,
+            subBatchCount: 2,
+            tokenBudget: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
+            budgetSource: 'model-context-limit',
+            subBatchJobCounts: [3, 1],
+          }),
+        )
+      })
+      expect(
+        listMemoryEmbeddings(db, { chatId: 'chat-1', model: 'voyageContext3' }).map(
+          (row) => row.chunkId,
+        ),
+      ).toEqual(['chunk-1', 'chunk-2', 'chunk-3', 'chunk-4'])
     } finally {
       db.close()
     }

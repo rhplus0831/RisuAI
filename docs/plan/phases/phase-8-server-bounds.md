@@ -99,8 +99,10 @@ L27, L28, L29, L30, L31. (I3's unused-index drop may ride along if free.)
   same decision to the non-durable 600 s twin.
 - L22 is a documented semantic decision, not a silent tweak: size the
   contextual budget from the provider's context limit or fall back to
-  non-contextual for unsplittable batches; at minimum emit a metric when a
-  contextual batch is split.
+  non-contextual for unsplittable batches; for `voyage-context-3`, enforce a
+  32,000 estimated-token per-context-chunk ceiling while keeping the 120,000
+  estimated-token contextual group/request budget and 16,000 chunk request cap;
+  at minimum emit a metric when a contextual batch is split.
 - L24: compensating delete (mirroring `addAssets`' own `createdFiles`
   rollback) rather than widening transactions across network fetches.
 - L26: temp-file + fsync + rename in the same directory.
@@ -120,7 +122,7 @@ L27, L28, L29, L30, L31. (I3's unused-index drop may ride along if free.)
       configured poll delay.
 - [x] L19/L20: transient failures retry only the failed jobs; one summaries
       fetch per assembly.
-- [ ] L21/L22: oversized chunks fail fast with a clear error; contextual
+- [x] L21/L22: oversized chunks fail fast with a clear error; contextual
       splits are observable and the window policy is documented.
 - [ ] L23-L29: batched asset persists, compensating cleanup, open-or-skip
       streaming, atomic legacy writes, single-clone import, bounded charx

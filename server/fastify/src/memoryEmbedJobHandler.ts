@@ -8,6 +8,11 @@ import {
   type MemoryEmbeddingAdapterResult,
 } from './memoryEmbeddingAdapter.js'
 import {
+  effectiveMemoryEmbeddingLimits,
+  estimateMemoryEmbeddingTokens,
+  findMemoryEmbeddingContextualGroupLimitViolation,
+  findMemoryEmbeddingLimitViolation,
+  formatMemoryEmbeddingLimitViolation,
   resolveMemoryEmbeddingModel,
   type MemoryEmbeddingModelRequest,
 } from './memoryEmbeddingModel.js'
@@ -21,14 +26,7 @@ import {
 } from './memoryRepository.js'
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
 import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler } from './memoryWorker.js'
-
-/**
- * Default token budget per contextual (`voyageContext3`) sub-batch request
- * (audit M7). Approximated at ~4 chars/token; conservative against the
- * provider's request limits so a long imported chat's first embedding pass
- * never materializes into one uncapped request.
- */
-export const CONTEXTUAL_EMBED_SUB_BATCH_TOKEN_BUDGET = 12_000
+import { emitProtocolMetric } from './protocolMetrics.js'
 
 export interface EmbedMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -42,8 +40,8 @@ export interface EmbedMemoryJobHandlerOptions {
   ) => Promise<Awaited<ReturnType<typeof embedTextGroups>>>
   sleep?: (ms: number) => Promise<void>
   now?: () => number
-  /** Token budget per contextual sub-batch (test seam; defaults to
-   *  {@link CONTEXTUAL_EMBED_SUB_BATCH_TOKEN_BUDGET}). */
+  /** Token budget per contextual sub-batch (test seam; production defaults to
+   *  the resolved model's contextual window limit). */
   contextualSubBatchTokenBudget?: number
 }
 
@@ -110,15 +108,39 @@ export function createEmbedMemoryJobBatchHandler(
 
     const orderedJobs = [...jobs].sort(compareEmbedJobs)
     if (isContextualVoyageBatch(orderedJobs)) {
+      const modelRequest = resolveMemoryEmbeddingModel(database, 'voyageContext3')
+      if (modelRequest.ok === false) {
+        commitContextualBatchResults(
+          opts,
+          context,
+          orderedJobs.map((job) => ({ job, error: modelRequest.error })),
+        )
+        return
+      }
+
+      let plan: ContextualSubBatchPlan
+      try {
+        plan = planContextualSubBatches(opts, orderedJobs, modelRequest.request)
+      } catch (error) {
+        const message = error instanceof Error && error.message ? error.message : String(error)
+        commitContextualBatchResults(
+          opts,
+          context,
+          orderedJobs.map((job) => ({ job, error: message })),
+        )
+        return
+      }
+      emitContextualSubBatchSplitMetric(orderedJobs, plan, modelRequest.request)
+
       // Token-aware sub-batches, each committed independently (audit M7): an
       // oversized or failing sub-batch retries alone instead of failing the
       // unrelated chunks drained alongside it.
-      for (const subBatch of planContextualSubBatches(opts, orderedJobs)) {
+      for (const subBatch of plan.subBatches) {
         const results = await executeContextualEmbedJobs({
           opts,
           jobs: subBatch,
-          database,
           settings,
+          modelRequest: modelRequest.request,
           embedGroups,
           acquireRateLimit,
         })
@@ -177,6 +199,16 @@ type BatchJobResult =
   | { job: MemoryJob; result: EmbedExecutionResult }
   | { job: MemoryJob; error: string }
 
+interface ContextualSubBatchBudget {
+  tokenBudget: number
+  source: 'model-context-limit' | 'override'
+}
+
+interface ContextualSubBatchPlan {
+  subBatches: MemoryJob[][]
+  budget: ContextualSubBatchBudget
+}
+
 async function executeEmbedJob(input: {
   opts: EmbedMemoryJobHandlerOptions
   job: MemoryJob
@@ -210,6 +242,7 @@ async function executeEmbedJob(input: {
   if (modelRequest.ok === false) {
     throw new Error(modelRequest.error)
   }
+  assertChunkWithinEmbeddingLimits(modelRequest.request, chunk.id, chunk.text)
 
   const controller = new AbortController()
   await input.acquireRateLimit(input.settings)
@@ -263,27 +296,19 @@ async function executeEmbedJob(input: {
   }
 }
 
-/** ~4 chars/token approximation for contextual sub-batch sizing (M7). */
-function approximateTokenCount(text: string): number {
-  return Math.ceil(text.length / 4)
-}
-
 /**
- * Slice an ordered contextual batch into token-aware sub-batches (audit M7).
- * Greedy walk in batch order: a sub-batch closes once adding the next chunk
- * would exceed the token budget (an oversized single chunk still travels
- * alone). A job whose chunk cannot be resolved is isolated into its own
- * sub-batch, so `executeContextualEmbedJobs` fails just that job with the
- * existing error message instead of poisoning unrelated chunks.
+ * Slice an ordered contextual batch into provider-budgeted sub-batches (audit
+ * M7/L22). Production budgets come from model metadata; the option override is
+ * only a test seam. A chunk already known to exceed its per-input ceiling is
+ * isolated and then failed before provider dispatch, so valid siblings are not
+ * serialized into the same doomed request.
  */
 function planContextualSubBatches(
   opts: EmbedMemoryJobHandlerOptions,
   jobs: readonly MemoryJob[],
-): MemoryJob[][] {
-  const budget = Math.max(
-    1,
-    opts.contextualSubBatchTokenBudget ?? CONTEXTUAL_EMBED_SUB_BATCH_TOKEN_BUDGET,
-  )
+  request: MemoryEmbeddingModelRequest,
+): ContextualSubBatchPlan {
+  const budget = resolveContextualSubBatchBudget(opts, request)
   const subBatches: MemoryJob[][] = []
   let current: MemoryJob[] = []
   let currentTokens = 0
@@ -302,22 +327,121 @@ function planContextualSubBatches(
       subBatches.push([job])
       continue
     }
-    const tokens = approximateTokenCount(chunk.text)
-    if (current.length > 0 && currentTokens + tokens > budget) {
+
+    const violation = findMemoryEmbeddingLimitViolation(
+      request,
+      [chunk.text],
+      () => `memory embedding chunk ${chunk.id}`,
+    )
+    if (violation) {
+      flush()
+      subBatches.push([job])
+      continue
+    }
+
+    const tokens = estimateMemoryEmbeddingTokens(chunk.text)
+    if (current.length > 0 && currentTokens + tokens > budget.tokenBudget) {
       flush()
     }
     current.push(job)
     currentTokens += tokens
   }
   flush()
-  return subBatches
+  return { subBatches, budget }
+}
+
+function resolveContextualSubBatchBudget(
+  opts: EmbedMemoryJobHandlerOptions,
+  request: MemoryEmbeddingModelRequest,
+): ContextualSubBatchBudget {
+  if (
+    typeof opts.contextualSubBatchTokenBudget === 'number' &&
+    Number.isFinite(opts.contextualSubBatchTokenBudget) &&
+    opts.contextualSubBatchTokenBudget > 0
+  ) {
+    return {
+      tokenBudget: Math.max(1, Math.floor(opts.contextualSubBatchTokenBudget)),
+      source: 'override',
+    }
+  }
+
+  const contextualWindowTokens = effectiveMemoryEmbeddingLimits(request).contextualWindowTokens
+  if (
+    typeof contextualWindowTokens === 'number' &&
+    Number.isFinite(contextualWindowTokens) &&
+    contextualWindowTokens > 0
+  ) {
+    return {
+      tokenBudget: Math.max(1, Math.floor(contextualWindowTokens)),
+      source: 'model-context-limit',
+    }
+  }
+
+  throw new Error(
+    `contextual embedding model ${request.model} is missing contextualWindowTokens; refusing to split contextual batch`,
+  )
+}
+
+function assertChunkWithinEmbeddingLimits(
+  request: MemoryEmbeddingModelRequest,
+  chunkId: string,
+  text: string,
+): void {
+  assertChunksWithinEmbeddingLimits(request, [{ id: chunkId, text }])
+}
+
+function assertChunksWithinEmbeddingLimits(
+  request: MemoryEmbeddingModelRequest,
+  chunks: ReadonlyArray<{ id: string; text: string }>,
+): void {
+  const violation = findMemoryEmbeddingLimitViolation(
+    request,
+    chunks.map((chunk) => chunk.text),
+    (index) => `memory embedding chunk ${chunks[index].id}`,
+  )
+  if (violation) {
+    throw new Error(formatMemoryEmbeddingLimitViolation(violation))
+  }
+}
+
+function assertContextualGroupWithinEmbeddingLimits(
+  request: MemoryEmbeddingModelRequest,
+  texts: readonly string[],
+): void {
+  const violation = findMemoryEmbeddingContextualGroupLimitViolation(
+    request,
+    [texts],
+    () => 'contextual embedding group',
+  )
+  if (violation) {
+    throw new Error(formatMemoryEmbeddingLimitViolation(violation))
+  }
+}
+
+function emitContextualSubBatchSplitMetric(
+  jobs: readonly MemoryJob[],
+  plan: ContextualSubBatchPlan,
+  request: MemoryEmbeddingModelRequest,
+): void {
+  if (plan.subBatches.length <= 1) return
+  emitProtocolMetric('memory_contextual_embed_split', () => ({
+    chatId: jobs[0]?.chatId ?? null,
+    model: 'voyageContext3',
+    provider: request.provider,
+    requestModel: request.model,
+    originalJobCount: jobs.length,
+    subBatchCount: plan.subBatches.length,
+    tokenBudget: plan.budget.tokenBudget,
+    budgetSource: plan.budget.source,
+    subBatchJobCounts: plan.subBatches.map((subBatch) => subBatch.length),
+  }))
 }
 
 async function executeContextualEmbedJobs(input: {
   opts: EmbedMemoryJobHandlerOptions
   jobs: readonly MemoryJob[]
-  database: Database
   settings: HypaV3Settings
+  modelRequest: MemoryEmbeddingModelRequest
   embedGroups: NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>
   acquireRateLimit: EmbeddingRateLimiter
 }): Promise<BatchJobResult[]> {
@@ -333,11 +457,6 @@ async function executeContextualEmbedJobs(input: {
       }
       return { job, payload, chunk }
     })
-
-    const modelRequest = resolveMemoryEmbeddingModel(input.database, 'voyageContext3')
-    if (modelRequest.ok === false) {
-      throw new Error(modelRequest.error)
-    }
 
     const groupChunkIds = parsed.map((item) => item.chunk.id)
     const groupId = buildEmbeddingGroupId(input.jobs[0].chatId, 'voyageContext3', groupChunkIds)
@@ -357,11 +476,19 @@ async function executeContextualEmbedJobs(input: {
         result: { kind: 'existing', job, payload, chunkId: chunk.id },
       }))
     }
+    assertChunksWithinEmbeddingLimits(
+      input.modelRequest,
+      parsed.map((item) => ({ id: item.chunk.id, text: item.chunk.text })),
+    )
+    assertContextualGroupWithinEmbeddingLimits(
+      input.modelRequest,
+      parsed.map((item) => item.chunk.text),
+    )
 
     const controller = new AbortController()
     await input.acquireRateLimit(input.settings)
     const embedding = await input.embedGroups({
-      request: modelRequest.request,
+      request: input.modelRequest,
       groups: [parsed.map((item) => item.chunk.text)],
       signal: controller.signal,
     })
@@ -389,7 +516,7 @@ async function executeContextualEmbedJobs(input: {
           kind: 'embedding',
           job,
           payload,
-          request: modelRequest.request,
+          request: input.modelRequest,
           vector: vectors[index],
           dim: embedding.dim,
           groupId,
