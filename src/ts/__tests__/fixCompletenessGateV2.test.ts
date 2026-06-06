@@ -532,8 +532,34 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L35', 6, 'Carry `hypaV3Data` independently of message length.'),
   planned('L36', 6, 'Bound the prereroll maps; clear on chat switch.'),
   planned('L37', 4, 'Same-language early-return in `changeLanguage`.'),
-  planned('L38', 5, 'Remove `{{#function}}`/`{{call::}}` logs.'),
-  planned('L39', 5, '`includes()` fast path + indexOf scan in `parseThoughtsAndTools`.'),
+  done(
+    'L38',
+    5,
+    'Remove `{{#function}}`/`{{call::}}` logs.',
+    'src/ts/parser/tests/renderFastPaths.test.ts',
+    'L38: function definition and call parsing writes nothing to console.log',
+  ),
+  done(
+    'L39',
+    5,
+    '`includes()` fast path + indexOf scan in `parseThoughtsAndTools`.',
+    'src/ts/parser/tests/renderFastPaths.test.ts',
+    'L39: marker-free thoughts/tools parsing returns unchanged without slicing',
+    [
+      {
+        testPath: 'src/ts/parser/tests/renderFastPaths.test.ts',
+        testName: 'preserves nested thoughts while matching the outer block',
+      },
+      {
+        testPath: 'src/ts/parser/tests/renderFastPaths.test.ts',
+        testName: 'preserves malformed unclosed thoughts and still converts later nested thoughts',
+      },
+      {
+        testPath: 'src/ts/parser/tests/renderFastPaths.test.ts',
+        testName: 'replaces tool calls inside and outside thoughts after thoughts conversion',
+      },
+    ],
+  ),
   done(
     'L40',
     5,
@@ -1374,6 +1400,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L13',
       'L14',
       'L16',
+      'L38',
+      'L39',
       'L40',
       'K1',
       'K2',

@@ -794,29 +794,79 @@ export interface simpleCharacterArgument {
   triggerscript?: triggerscript[]
 }
 
-function parseThoughtsAndTools(data: string) {
-  let result = '',
-    i = 0
-  while (i < data.length) {
-    if (data.slice(i, i + 10) === '<Thoughts>') {
-      let j = i + 10,
-        depth = 1
-      while (j < data.length && depth > 0) {
-        if (data.slice(j, j + 10) === '<Thoughts>') depth++
-        if (data.slice(j, j + 11) === '</Thoughts>') depth--
-        j++
-      }
-      if (depth === 0) {
-        result += `<details><summary>${language.cot}</summary>${data.substring(i + 10, j - 1)}</details>`
-        i = j + 10
-        continue
-      }
-    }
-    result += data[i++]
-  }
-  return result.replace(/<tool_call>(.+?)<\/tool_call>/gms, (full, txt: string) => {
+const THOUGHTS_OPEN_MARKER = '<Thoughts>'
+const THOUGHTS_CLOSE_MARKER = '</Thoughts>'
+const TOOL_CALL_OPEN_MARKER = '<tool_call>'
+
+function replaceToolCalls(data: string) {
+  return data.replace(/<tool_call>(.+?)<\/tool_call>/gms, (full, txt: string) => {
     return `<div class="x-risu-tool-call">🛠️ ${language.toolCalled.replace('{{tool}}', txt.split('\uf100')?.[1] ?? 'unknown')}</div>\n\n`
   })
+}
+
+function findThoughtsClose(data: string, from: number) {
+  let depth = 1
+  let searchFrom = from
+
+  while (searchFrom < data.length && depth > 0) {
+    const nextOpen = data.indexOf(THOUGHTS_OPEN_MARKER, searchFrom)
+    const nextClose = data.indexOf(THOUGHTS_CLOSE_MARKER, searchFrom)
+
+    if (nextOpen === -1 && nextClose === -1) {
+      return -1
+    }
+
+    if (nextOpen !== -1 && (nextClose === -1 || nextOpen < nextClose)) {
+      depth++
+      searchFrom = nextOpen + 1
+      continue
+    }
+
+    depth--
+    if (depth === 0) {
+      return nextClose
+    }
+    searchFrom = nextClose + 1
+  }
+
+  return -1
+}
+
+export function parseThoughtsAndTools(data: string) {
+  const hasThoughts = data.includes(THOUGHTS_OPEN_MARKER)
+  const hasToolCalls = data.includes(TOOL_CALL_OPEN_MARKER)
+  if (!hasThoughts && !hasToolCalls) {
+    return data
+  }
+
+  if (!hasThoughts) {
+    return replaceToolCalls(data)
+  }
+
+  let result = ''
+  let from = 0
+  let thoughtStart = data.indexOf(THOUGHTS_OPEN_MARKER, from)
+
+  while (thoughtStart !== -1) {
+    const thoughtEnd = findThoughtsClose(data, thoughtStart + THOUGHTS_OPEN_MARKER.length)
+    if (thoughtEnd === -1) {
+      result += data.slice(from, thoughtStart + 1)
+      from = thoughtStart + 1
+      thoughtStart = data.indexOf(THOUGHTS_OPEN_MARKER, from)
+      continue
+    }
+
+    result += data.slice(from, thoughtStart)
+    result += `<details><summary>${language.cot}</summary>${data.substring(
+      thoughtStart + THOUGHTS_OPEN_MARKER.length,
+      thoughtEnd,
+    )}</details>`
+    from = thoughtEnd + THOUGHTS_CLOSE_MARKER.length
+    thoughtStart = data.indexOf(THOUGHTS_OPEN_MARKER, from)
+  }
+
+  result += data.slice(from)
+  return hasToolCalls ? replaceToolCalls(result) : result
 }
 
 export async function ParseMarkdown(
