@@ -646,8 +646,26 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L23', 8, 'Batch JSON-card asset persists (charx shape).'),
-  planned('L24', 8, 'Compensating asset cleanup when the append fails.'),
+  done(
+    'L23',
+    8,
+    'Batch JSON-card asset persists (charx shape).',
+    'server/fastify/__tests__/realmImport.test.ts',
+    'L23: JSON Realm card asset import uses one batched asset revision and event',
+    [
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName: 'keeps valid JSON Realm import output unchanged with batched assets',
+      },
+    ],
+  ),
+  done(
+    'L24',
+    8,
+    'Compensating asset cleanup when the append fails.',
+    'server/fastify/__tests__/realmImport.test.ts',
+    'L24: JSON Realm import removes newly persisted assets when character append fails',
+  ),
   planned('L25', 8, 'Open-or-skip assets at stream time (`missingFiles` degrade).'),
   planned('L26', 8, 'Temp-file + rename for legacy storage writes.'),
   planned('L27', 8, 'Abort/timeout (+ streaming) for hub forwards.'),
@@ -1493,6 +1511,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L20',
       'L21',
       'L22',
+      'L23',
+      'L24',
       'K1',
       'K2',
     ])

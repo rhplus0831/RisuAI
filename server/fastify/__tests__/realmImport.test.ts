@@ -1,10 +1,10 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { webcrypto } from 'node:crypto'
+import { createHash, webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import * as fflate from 'fflate'
 import { buildApp } from '../src/app.js'
@@ -54,6 +54,29 @@ function commandEventCount(dataDir: string): number {
   }
 }
 
+function commandEventsAfter(dataDir: string, revision: number) {
+  const db = openDatabase(dataDir)
+  try {
+    return db
+      .prepare(
+        `
+          SELECT revision, type, resource, id
+          FROM command_events
+          WHERE revision > ?
+          ORDER BY revision ASC
+        `,
+      )
+      .all(revision) as Array<{
+      revision: number
+      type: string
+      resource: string
+      id: string | null
+    }>
+  } finally {
+    db.close()
+  }
+}
+
 function currentRevision(dataDir: string): number {
   const db = openDatabase(dataDir)
   try {
@@ -61,6 +84,15 @@ function currentRevision(dataDir: string): number {
   } finally {
     db.close()
   }
+}
+
+function assetIdFor(bytes: string): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+function assetFileNames(dataDir: string): string[] {
+  const dir = path.join(dataDir, 'assets')
+  return existsSync(dir) ? readdirSync(dir).sort() : []
 }
 
 const subtle = webcrypto.subtle
@@ -240,6 +272,50 @@ function realmCard(options: { lowLevelAccess?: boolean } = {}) {
       },
     },
   }
+}
+
+function realmJsonAssetPayloads(suffix = '') {
+  const marker = suffix ? ` ${suffix}` : ''
+  return {
+    main: `main image${marker}`,
+    emotion: `emotion image${marker}`,
+    theme: suffix ? `body { color: red; } /* ${suffix} */` : 'body { color: red; }',
+    voice: `voice data${marker}`,
+  }
+}
+
+function respondRealmJsonCard(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  suffix = '',
+): boolean {
+  const payloads = realmJsonAssetPayloads(suffix)
+  if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ card: realmCard(), img: 'main-img' }))
+    return true
+  }
+  if (req.url === '/resource/main-img') {
+    res.writeHead(200, { 'content-type': 'image/png' })
+    res.end(payloads.main)
+    return true
+  }
+  if (req.url === '/resource/emotion-img') {
+    res.writeHead(200, { 'content-type': 'image/png' })
+    res.end(payloads.emotion)
+    return true
+  }
+  if (req.url === '/resource/theme-css') {
+    res.writeHead(200, { 'content-type': 'text/css' })
+    res.end(payloads.theme)
+    return true
+  }
+  if (req.url === '/resource/voice-wav') {
+    res.writeHead(200, { 'content-type': 'audio/wav' })
+    res.end(payloads.voice)
+    return true
+  }
+  return false
 }
 
 function realmCharx(): Uint8Array {
@@ -603,6 +679,177 @@ describe('Realm character import route', () => {
     expect(character.vits).toMatchObject({
       files: { 'voice.wav': expect.stringMatching(/^[a-f0-9]{64}$/) },
     })
+  })
+
+  it('L23: JSON Realm card asset import uses one batched asset revision and event', async () => {
+    echo.setResponder((req, res) => {
+      if (respondRealmJsonCard(req, res)) return
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ revision: baseRevision + 2 })
+    expect(queryAssets(harness.dataDir)).toHaveLength(4)
+    expect(commandEventsAfter(harness.dataDir, baseRevision)).toEqual([
+      {
+        revision: baseRevision + 1,
+        type: 'asset.created',
+        resource: 'asset',
+        id: null,
+      },
+      {
+        revision: baseRevision + 2,
+        type: 'character.created',
+        resource: 'character',
+        id: res.json().characterId,
+      },
+    ])
+  })
+
+  it('L24: JSON Realm import removes newly persisted assets when character append fails', async () => {
+    let assetSuffix = ''
+    echo.setResponder((req, res) => {
+      if (respondRealmJsonCard(req, res, assetSuffix)) return
+      res.writeHead(404)
+      res.end()
+    })
+
+    const duplicateCharacterId = '11111111-1111-4111-8111-111111111111'
+    cryptoMock.randomUuidOverride = duplicateCharacterId
+
+    try {
+      const { assertion } = await setupAuthedClient(harness.app)
+      const baseRevision = await importEmptyDatabase(harness.app, assertion)
+      const first = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+        payload: { id: 'realm-id', baseRevision },
+      })
+
+      expect(first.statusCode).toBe(200)
+      const assetsAfterFirstImport = queryAssets(harness.dataDir)
+      const filesAfterFirstImport = assetFileNames(harness.dataDir)
+
+      assetSuffix = 'second'
+      const duplicate = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+        payload: { id: 'realm-id', baseRevision: currentRevision(harness.dataDir) },
+      })
+
+      expect(duplicate.statusCode).toBe(400)
+      expect(duplicate.json()).toEqual({
+        error: `Duplicate character id: ${duplicateCharacterId}`,
+      })
+      expect(queryAssets(harness.dataDir)).toEqual(assetsAfterFirstImport)
+      expect(assetFileNames(harness.dataDir)).toEqual(filesAfterFirstImport)
+
+      const secondPayloads = realmJsonAssetPayloads(assetSuffix)
+      const removedFiles = [
+        `${assetIdFor(secondPayloads.main)}.png`,
+        `${assetIdFor(secondPayloads.emotion)}.png`,
+        `${assetIdFor(secondPayloads.theme)}.css`,
+        `${assetIdFor(secondPayloads.voice)}.wav`,
+      ]
+      for (const fileName of removedFiles) {
+        expect(existsSync(path.join(harness.dataDir, 'assets', fileName))).toBe(false)
+      }
+
+      const persisted = loadPersistedFromDir(harness.dataDir)
+      expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(1)
+    } finally {
+      cryptoMock.randomUuidOverride = undefined
+    }
+  })
+
+  it('keeps valid JSON Realm import output unchanged with batched assets', async () => {
+    echo.setResponder((req, res) => {
+      if (respondRealmJsonCard(req, res)) return
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const payloads = realmJsonAssetPayloads()
+    const expectedAssets = [
+      {
+        id: assetIdFor(payloads.main),
+        ext: 'png',
+        size: Buffer.byteLength(payloads.main),
+        contentType: 'image/png',
+        bytes: payloads.main,
+      },
+      {
+        id: assetIdFor(payloads.emotion),
+        ext: 'png',
+        size: Buffer.byteLength(payloads.emotion),
+        contentType: 'image/png',
+        bytes: payloads.emotion,
+      },
+      {
+        id: assetIdFor(payloads.theme),
+        ext: 'css',
+        size: Buffer.byteLength(payloads.theme),
+        contentType: 'text/css',
+        bytes: payloads.theme,
+      },
+      {
+        id: assetIdFor(payloads.voice),
+        ext: 'wav',
+        size: Buffer.byteLength(payloads.voice),
+        contentType: 'audio/wav',
+        bytes: payloads.voice,
+      },
+    ].sort((a, b) => a.id.localeCompare(b.id))
+
+    expect(queryAssets(harness.dataDir)).toEqual(
+      expectedAssets.map(({ bytes: _bytes, ...asset }) => asset),
+    )
+    for (const asset of expectedAssets) {
+      expect(
+        Buffer.from(readFileSync(path.join(harness.dataDir, 'assets', `${asset.id}.${asset.ext}`))),
+      ).toEqual(Buffer.from(asset.bytes))
+    }
+
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> })
+      .characters[0]
+    expect(character).toMatchObject({
+      name: 'Realm Utility',
+      firstMessage: 'hello',
+      desc: 'does useful things',
+      image: assetIdFor(payloads.main),
+      emotionImages: [['happy', assetIdFor(payloads.emotion)]],
+      additionalAssets: [['theme', assetIdFor(payloads.theme), 'theme.css']],
+      vits: {
+        name: 'Imported VITS',
+        files: { 'voice.wav': assetIdFor(payloads.voice) },
+      },
+    })
+    expect(character.chaId).toBe(res.json().characterId)
   })
 
   it('rejects duplicate Realm character ids without bumping revision or emitting events', async () => {

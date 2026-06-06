@@ -25,10 +25,12 @@ import { createCharacterRecord } from '../commands/characters.js'
 import {
   ValidationError,
   addAsset,
+  addAssets,
   assetPath,
   assetsDir,
   characterRowExists,
   CONTENT_TYPE_EXTENSIONS,
+  deleteAssetMetadataByIds,
   getAssetMetadataById,
   insertCharacterChatRow,
   insertCharacterRow,
@@ -85,6 +87,12 @@ interface StagedCharxAsset {
   fileName: string
   filePath: string
   byteLength: number
+}
+
+interface StagedFetchedAsset {
+  bytes: Buffer
+  contentType: string
+  id: string
 }
 
 type RealmDynamicPayload =
@@ -285,13 +293,16 @@ async function importRealmJsonCard(args: {
 
   args.reportProgress({ phase: 'assets', message: 'Saving main image', percent: 35 })
   const imgResource = readNonEmptyString(payload.img, 'Realm download response.img')
-  const mainImageId = await saveFetchedAsset({
-    db: args.db,
-    dataDir: args.dataDir,
-    eventSink: args.eventSink,
-    source: { kind: 'resource', id: imgResource, fileName: 'realm.png' },
-    hubUrl: args.hubUrl,
-  })
+  const stagedAssets: StagedFetchedAsset[] = []
+  const stageAsset = async (source: RealmAssetSource): Promise<string> => {
+    const staged = await stageFetchedAsset({
+      source,
+      hubUrl: args.hubUrl,
+    })
+    stagedAssets.push(staged)
+    return staged.id
+  }
+  const mainImageId = await stageAsset({ kind: 'resource', id: imgResource, fileName: 'realm.png' })
 
   const assetProgress = createCountingAssetProgress(card, args.reportProgress, 40, 82)
   args.reportProgress({ phase: 'convert', message: 'Converting character card', percent: 40 })
@@ -299,25 +310,44 @@ async function importRealmJsonCard(args: {
     mainImageId,
     allowLowLevelAccess: args.body.allowLowLevelAccess === true,
     storeAsset: async (source) => {
-      const assetId = await saveFetchedAsset({
-        db: args.db,
-        dataDir: args.dataDir,
-        eventSink: args.eventSink,
-        source,
-        hubUrl: args.hubUrl,
-      })
+      const assetId = await stageAsset(source)
       assetProgress()
       return assetId
     },
   })
 
-  args.reportProgress({ phase: 'commit', message: 'Saving character', percent: 90 })
-  const result = appendRealmCharacter({
+  args.reportProgress({ phase: 'assets', message: 'Saving card assets', percent: 82 })
+  const assetResults = persistStagedFetchedAssets({
     db: args.db,
     dataDir: args.dataDir,
     eventSink: args.eventSink,
-    character,
+    assets: stagedAssets,
   })
+
+  args.reportProgress({ phase: 'commit', message: 'Saving character', percent: 90 })
+  let result: JsonCommandMutationResult<{ characterId: string }>
+  try {
+    result = appendRealmCharacter({
+      db: args.db,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      character,
+    })
+  } catch (err) {
+    try {
+      cleanupCreatedAssetResults({
+        db: args.db,
+        dataDir: args.dataDir,
+        results: assetResults,
+      })
+    } catch (cleanupErr) {
+      emitProtocolMetric('realm_import_asset_cleanup_failed', {
+        createdAssetCount: assetResults.filter((result) => result.created).length,
+        error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+      })
+    }
+    throw err
+  }
 
   args.reportProgress({ phase: 'commit', message: 'Realm import complete', percent: 100 })
   return {
@@ -855,6 +885,69 @@ function parseJsonBytes(bytes: Uint8Array, label: string): unknown {
   }
 }
 
+async function stageFetchedAsset(args: {
+  source: RealmAssetSource
+  hubUrl: string
+}): Promise<StagedFetchedAsset> {
+  const bytes =
+    args.source.kind === 'bytes'
+      ? (args.source.bytes ?? Buffer.alloc(0))
+      : await fetchHubResource(args.hubUrl, readRealmId(args.source.id))
+  if (bytes.length === 0) {
+    throw new ValidationError('Realm asset payload is empty')
+  }
+  const contentType = resolveAssetContentType(args.source)
+  return {
+    bytes,
+    contentType,
+    id: createHash('sha256').update(bytes).digest('hex'),
+  }
+}
+
+function persistStagedFetchedAssets(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  assets: readonly StagedFetchedAsset[]
+}): AddAssetResult[] {
+  if (args.assets.length === 0) return []
+  const results = addAssets(args.db, args.dataDir, args.assets)
+  emitCreatedAssetEvents(args.eventSink, results)
+  return results
+}
+
+function cleanupCreatedAssetResults(args: {
+  db: DatabaseSync
+  dataDir: string
+  results: readonly AddAssetResult[]
+}): void {
+  const created = new Map<string, PersistedAsset>()
+  for (const result of args.results) {
+    if (result.created) {
+      created.set(result.entry.id, result.entry)
+    }
+  }
+  if (created.size === 0) return
+
+  let transactionOpen = false
+  args.db.exec('BEGIN IMMEDIATE')
+  transactionOpen = true
+  try {
+    deleteAssetMetadataByIds(args.db, [...created.keys()])
+    args.db.exec('COMMIT')
+    transactionOpen = false
+  } catch (err) {
+    if (transactionOpen) {
+      args.db.exec('ROLLBACK')
+    }
+    throw err
+  }
+
+  for (const asset of created.values()) {
+    fs.rmSync(assetPath(args.dataDir, asset), { force: true })
+  }
+}
+
 async function saveFetchedAsset(args: {
   db: DatabaseSync
   dataDir: string
@@ -887,6 +980,16 @@ function emitAssetEvent(eventSink: CommandEventSink, result: AddAssetResult): vo
   if (!result.created) return
   if (result.event) {
     eventSink.emit(result.event)
+  }
+}
+
+function emitCreatedAssetEvents(
+  eventSink: CommandEventSink,
+  results: readonly AddAssetResult[],
+): void {
+  const event = results.find((result) => result.event)?.event
+  if (event) {
+    eventSink.emit(event)
   }
 }
 
