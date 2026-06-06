@@ -64,17 +64,65 @@
     }
   }
 
+  function reportParsingError(error: unknown) {
+    const parsingError =
+      error instanceof Error ? error : new Error(typeof error === 'string' ? error : String(error))
+    alertError(
+      `Error while parsing chat message: ${translated}, ${parsingError.message}, ${parsingError.stack}`,
+    )
+  }
+
+  async function parseWithRetry(
+    parse: () => Promise<string>,
+    fallback: string,
+  ): Promise<{ ok: true; value: string } | { ok: false; value: string }> {
+    let tries = 0
+
+    while (true) {
+      try {
+        return { ok: true, value: await parse() }
+      } catch (error) {
+        if (tries > 2) {
+          reportParsingError(error)
+          return { ok: false, value: fallback }
+        }
+        tries += 1
+      }
+    }
+  }
+
+  async function translateHTMLOnce(
+    html: string,
+    charArg: string | simpleCharacterArgument,
+    chatID: number,
+    regenerate: boolean,
+    fallback: string,
+  ): Promise<{ ok: true; value: string } | { ok: false; value: string }> {
+    translating = true
+    try {
+      return {
+        ok: true,
+        value: await translateHTML(html, false, charArg, chatID, regenerate),
+      }
+    } catch (error) {
+      reportParsingError(error)
+      return { ok: false, value: fallback }
+    } finally {
+      translating = false
+    }
+  }
+
   const markParsing = async (
     data: string,
     charArg: string | simpleCharacterArgument,
     chatID: number,
-    tries?: number,
   ) => {
     // track 'translated' and 'retranslate' state
     translated
     retranslate
     let lastParsedQueue = ''
     let mode = 'notrim' as const
+
     try {
       if (!isEqual(lastCharArg, charArg) || chatID !== lastChatId) {
         lastParsedQueue = ''
@@ -120,63 +168,93 @@
           lastParsed = `<div style="display:flex;justify-content:center;align-items:center;height:48px;"><div style="animation: spin 1s linear infinite; border-radius: 50%; height: 32px; width: 32px; border: 2px solid #3b82f6; border-top: 2px solid transparent;"></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`
         }
 
-        let transResult
-
         if (DBState.db.translatorType === 'llm' && DBState.db.translateBeforeHTMLFormatting) {
           await sleep(100)
-          translating = true
-          data = await translateHTML(data, false, charArg, chatID, retranslate)
-          translating = false
-          const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
-          lastParsedQueue = marked
-          lastCharArg = charArg
-          transResult = marked
-        } else if (!DBState.db.legacyTranslation) {
-          const marked = await ParseMarkdown(
+          const translatedHtml = await translateHTMLOnce(data, charArg, chatID, retranslate, data)
+          if (!translatedHtml.ok) {
+            return translatedHtml.value
+          }
+          const marked = await parseWithRetry(
+            () => ParseMarkdown(translatedHtml.value, charArg, mode, chatID, getCbsCondition()),
             data,
+          )
+          if (!marked.ok) {
+            return marked.value
+          }
+          lastParsedQueue = marked.value
+          lastCharArg = charArg
+          setTimeout(() => {
+            retranslate = false
+          }, 10)
+          return marked.value
+        } else if (!DBState.db.legacyTranslation) {
+          const marked = await parseWithRetry(
+            () => ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition()),
+            data,
+          )
+          if (!marked.ok) {
+            return marked.value
+          }
+          const translatedHtml = await translateHTMLOnce(
+            marked.value,
             charArg,
-            'pretranslate',
             chatID,
-            getCbsCondition(),
+            retranslate,
+            data,
           )
-          translating = true
-          const translated = await postTranslationParse(
-            await translateHTML(marked, false, charArg, chatID, retranslate),
+          if (!translatedHtml.ok) {
+            return translatedHtml.value
+          }
+          const translated = await parseWithRetry(
+            () => postTranslationParse(translatedHtml.value),
+            data,
           )
-          translating = false
-          lastParsedQueue = translated
+          if (!translated.ok) {
+            return translated.value
+          }
+          lastParsedQueue = translated.value
           lastCharArg = charArg
-          transResult = translated
+          setTimeout(() => {
+            retranslate = false
+          }, 10)
+          return translated.value
         } else {
-          const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
-          translating = true
-          const translated = await translateHTML(marked, false, charArg, chatID, retranslate)
-          translating = false
-          lastParsedQueue = translated
+          const marked = await parseWithRetry(
+            () => ParseMarkdown(data, charArg, mode, chatID, getCbsCondition()),
+            data,
+          )
+          if (!marked.ok) {
+            return marked.value
+          }
+          const translated = await translateHTMLOnce(
+            marked.value,
+            charArg,
+            chatID,
+            retranslate,
+            data,
+          )
+          if (!translated.ok) {
+            return translated.value
+          }
+          lastParsedQueue = translated.value
           lastCharArg = charArg
-          transResult = translated
+          setTimeout(() => {
+            retranslate = false
+          }, 10)
+          return translated.value
         }
-
-        setTimeout(() => {
-          retranslate = false
-        }, 10)
-
-        return transResult
       } else {
-        const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
-        lastParsedQueue = marked
-        lastCharArg = charArg
-        return marked
-      }
-    } catch (error) {
-      //retry
-      if (tries > 2) {
-        alertError(
-          `Error while parsing chat message: ${translated}, ${error.message}, ${error.stack}`,
+        const marked = await parseWithRetry(
+          () => ParseMarkdown(data, charArg, mode, chatID, getCbsCondition()),
+          data,
         )
-        return data
+        if (!marked.ok) {
+          return marked.value
+        }
+        lastParsedQueue = marked.value
+        lastCharArg = charArg
+        return marked.value
       }
-      return await markParsing(data, charArg, chatID, (tries ?? 0) + 1)
     } finally {
       //since trimMarkdown is fast, we don't need to cache it
       lastParsed = lastParsedQueue

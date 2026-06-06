@@ -137,8 +137,8 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L55 | [7](phases/phase-7-opt-in-subsystems.md)         | Cache internal MCP tool lists; name->client index.                | PENDING |
 | L56 | [7](phases/phase-7-opt-in-subsystems.md)         | Persist the FS directory handle across recreate.                  | PENDING |
 | L57 | [7](phases/phase-7-opt-in-subsystems.md)         | Wire the debug flag; gate MCP logs.                               | PENDING |
-| L58 | [7](phases/phase-7-opt-in-subsystems.md)         | Epoch-guard `translateSuggest` writes.                            | PENDING |
-| L59 | [7](phases/phase-7-opt-in-subsystems.md)         | Skip retrying translation network errors in `markParsing`.        | PENDING |
+| L58 | [7](phases/phase-7-opt-in-subsystems.md)         | Epoch-guard `translateSuggest` writes.                            | DONE    |
+| L59 | [7](phases/phase-7-opt-in-subsystems.md)         | Skip retrying translation network errors in `markParsing`.        | DONE    |
 
 ### Known-Overlap Residuals (scheduled)
 

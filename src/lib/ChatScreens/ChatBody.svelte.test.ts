@@ -1,0 +1,175 @@
+import { flushSync, mount, tick, unmount } from 'svelte'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const chatBodyMocks = vi.hoisted(() => ({
+  addMetadataToElement: vi.fn((html: string) => html),
+  alertError: vi.fn(),
+  getCurrentCharacter: vi.fn(() => ({
+    additionalAssets: [],
+    prebuiltAssetStyle: 'none',
+  })),
+  getDistance: vi.fn(() => 0),
+  getFileSrc: vi.fn(async (src: string) => src),
+  getLLMCache: vi.fn(async () => null),
+  getModuleAssets: vi.fn(() => []),
+  ParseMarkdown: vi.fn(async (text: string) => text),
+  postTranslationParse: vi.fn(async (html: string) => html),
+  sleep: vi.fn(async () => {}),
+  translateHTML: vi.fn(async (html: string) => html),
+  trimMarkdown: vi.fn((html: string) => html),
+}))
+
+vi.mock('../../ts/parser/parser.svelte', () => ({
+  addMetadataToElement: chatBodyMocks.addMetadataToElement,
+  getDistance: chatBodyMocks.getDistance,
+  ParseMarkdown: chatBodyMocks.ParseMarkdown,
+  postTranslationParse: chatBodyMocks.postTranslationParse,
+  trimMarkdown: chatBodyMocks.trimMarkdown,
+}))
+
+vi.mock('../../ts/translator/translator', () => ({
+  getLLMCache: chatBodyMocks.getLLMCache,
+  translateHTML: chatBodyMocks.translateHTML,
+}))
+
+vi.mock('../../ts/alert', () => ({
+  alertError: chatBodyMocks.alertError,
+}))
+
+vi.mock('src/ts/util', () => ({
+  sleep: chatBodyMocks.sleep,
+}))
+
+vi.mock('src/ts/process/modules', () => ({
+  getModuleAssets: chatBodyMocks.getModuleAssets,
+  getModules: () => [],
+  getModuleLorebooks: () => [],
+  getModuleRegexScripts: () => [],
+  getModuleTriggers: () => [],
+  moduleUpdate: () => {},
+}))
+
+vi.mock('src/ts/process/scripts', () => ({
+  resetScriptCache: vi.fn(),
+}))
+
+vi.mock('src/ts/storage/database.svelte', () => ({
+  getCurrentCharacter: chatBodyMocks.getCurrentCharacter,
+}))
+
+vi.mock('src/ts/globalApi.svelte', () => ({
+  getFileSrc: chatBodyMocks.getFileSrc,
+}))
+
+import ChatBody from './ChatBody.svelte'
+import { DBState } from 'src/ts/stores.svelte'
+
+async function flushComponentPromises() {
+  for (let i = 0; i < 8; i++) {
+    await Promise.resolve()
+    await tick()
+  }
+}
+
+function setChatBodyDatabase(overrides: Record<string, unknown> = {}) {
+  DBState.db = {
+    autoTranslate: true,
+    autoTranslateCachedOnly: false,
+    legacyTranslation: false,
+    newImageHandlingBeta: false,
+    showTranslationLoading: false,
+    translateBeforeHTMLFormatting: false,
+    translatorType: 'google',
+    ...overrides,
+  } as never
+}
+
+describe('ChatBody translation parse bounds', () => {
+  let target: HTMLElement
+  let component: Record<string, never> | undefined
+
+  beforeEach(() => {
+    target = document.createElement('div')
+    document.body.appendChild(target)
+    vi.clearAllMocks()
+    setChatBodyDatabase()
+  })
+
+  afterEach(() => {
+    if (component) {
+      unmount(component)
+      component = undefined
+    }
+    target.remove()
+    document.body.innerHTML = ''
+    DBState.db = {} as never
+  })
+
+  it('L59: surfaces translateHTML failure once without retrying the full pipeline', async () => {
+    chatBodyMocks.ParseMarkdown.mockResolvedValue('marked:source message')
+    chatBodyMocks.translateHTML.mockRejectedValue(new Error('translator unavailable'))
+
+    component = mount(ChatBody, {
+      target,
+      props: {
+        idx: 0,
+        modelShortName: '',
+        msgDisplay: 'source message',
+        role: 'char',
+        translated: true,
+        translating: false,
+        retranslate: false,
+      },
+    })
+    flushSync()
+    await flushComponentPromises()
+
+    expect(chatBodyMocks.translateHTML).toHaveBeenCalledTimes(1)
+    expect(chatBodyMocks.ParseMarkdown).toHaveBeenCalledTimes(1)
+    expect(chatBodyMocks.alertError).toHaveBeenCalledTimes(1)
+    expect(chatBodyMocks.alertError.mock.calls[0][0]).toContain('translator unavailable')
+    expect(target.textContent).toContain('source message')
+  })
+
+  it('L59: retries parser failures against already translated HTML only', async () => {
+    setChatBodyDatabase({
+      translateBeforeHTMLFormatting: true,
+      translatorType: 'llm',
+    })
+    const parseInputs: string[] = []
+    chatBodyMocks.translateHTML.mockResolvedValue('translated html')
+    chatBodyMocks.ParseMarkdown.mockImplementation(async (text: string) => {
+      parseInputs.push(text)
+      if (parseInputs.length < 4) {
+        throw new Error(`parse failed ${parseInputs.length}`)
+      }
+      return `parsed:${text}`
+    })
+
+    component = mount(ChatBody, {
+      target,
+      props: {
+        idx: 0,
+        modelShortName: '',
+        msgDisplay: 'source message',
+        role: 'char',
+        translated: true,
+        translating: false,
+        retranslate: false,
+      },
+    })
+    flushSync()
+    await flushComponentPromises()
+
+    expect(chatBodyMocks.translateHTML).toHaveBeenCalledTimes(1)
+    expect(chatBodyMocks.ParseMarkdown).toHaveBeenCalledTimes(4)
+    expect(parseInputs).toEqual([
+      'translated html',
+      'translated html',
+      'translated html',
+      'translated html',
+    ])
+    expect(chatBodyMocks.alertError).not.toHaveBeenCalled()
+    expect(target.textContent).toContain('parsed:translated html')
+  })
+})

@@ -1,8 +1,8 @@
 # Phase 7: Opt-In Subsystems (Root 5)
 
-Status: pending; M15/M16 slice done on 2026-06-06. Independent; order by pain.
-Largest finding count, but most fixes are small and local (several are
-one-liners).
+Status: pending; M15/M16 and L58/L59 slices done on 2026-06-06. Independent;
+order by pain. Largest finding count, but most fixes are small and local
+(several are one-liners).
 
 Goal: make the translate/TTS/MCP/file-import subsystems stop leaking,
 hanging, truncating, and over-working once enabled. These paths were outside
@@ -17,7 +17,7 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
   [`slices/phase-7-opt-in-subsystems/translation-cache-and-streaming-guards.md`](slices/phase-7-opt-in-subsystems/translation-cache-and-streaming-guards.md)
   - bound the auto-translate cache and suppress streaming-frame Google/default
     translation work and HTML logs.
-- L58/L59:
+- L58/L59 (done):
   [`slices/phase-7-opt-in-subsystems/translation-ui-race-and-retry-bounds.md`](slices/phase-7-opt-in-subsystems/translation-ui-race-and-retry-bounds.md)
   - epoch-guard translated suggestions and stop `markParsing` from retrying
     network translation failures through the full parse pipeline.

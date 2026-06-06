@@ -1,7 +1,7 @@
 # Slice: Translation UI Race And Retry Bounds
 
 Phase: [7](../../phase-7-opt-in-subsystems.md). Findings: L58, L59. Runtime
-change.
+change. Status: done on 2026-06-06.
 
 ## Scope
 
@@ -68,6 +68,16 @@ not the translator cache, Google streaming guard, or bergamot global chain.
   translation + markdown parse passes.
 - L58 and L59 v2 gate entries point at real focused tests and the risk-map rows
   are `DONE`.
+
+## Completed Proof
+
+- `src/lib/ChatScreens/Suggestion.svelte.test.ts`
+  - `L58: keeps only the newest overlapping translated suggestion run`
+  - `L58: snapshots source messages and refuses a mutated-source commit`
+  - `L58: clears translated suggestions when translation is disabled`
+- `src/lib/ChatScreens/ChatBody.svelte.test.ts`
+  - `L59: surfaces translateHTML failure once without retrying the full pipeline`
+  - `L59: retries parser failures against already translated HTML only`
 
 ## Validation
 

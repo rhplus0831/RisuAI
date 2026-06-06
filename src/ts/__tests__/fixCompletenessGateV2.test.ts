@@ -551,8 +551,36 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L55', 7, 'Cache internal MCP tool lists; name->client index.'),
   planned('L56', 7, 'Persist the FS directory handle across recreate.'),
   planned('L57', 7, 'Wire the debug flag; gate MCP logs.'),
-  planned('L58', 7, 'Epoch-guard `translateSuggest` writes.'),
-  planned('L59', 7, 'Skip retrying translation network errors in `markParsing`.'),
+  done(
+    'L58',
+    7,
+    'Epoch-guard `translateSuggest` writes.',
+    'src/lib/ChatScreens/Suggestion.svelte.test.ts',
+    'L58: keeps only the newest overlapping translated suggestion run',
+    [
+      {
+        testPath: 'src/lib/ChatScreens/Suggestion.svelte.test.ts',
+        testName: 'L58: snapshots source messages and refuses a mutated-source commit',
+      },
+      {
+        testPath: 'src/lib/ChatScreens/Suggestion.svelte.test.ts',
+        testName: 'L58: clears translated suggestions when translation is disabled',
+      },
+    ],
+  ),
+  done(
+    'L59',
+    7,
+    'Skip retrying translation network errors in `markParsing`.',
+    'src/lib/ChatScreens/ChatBody.svelte.test.ts',
+    'L59: surfaces translateHTML failure once without retrying the full pipeline',
+    [
+      {
+        testPath: 'src/lib/ChatScreens/ChatBody.svelte.test.ts',
+        testName: 'L59: retries parser failures against already translated HTML only',
+      },
+    ],
+  ),
   done(
     'K1',
     2,
@@ -1356,6 +1384,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L13',
       'L14',
       'L16',
+      'L58',
+      'L59',
       'K1',
       'K2',
     ])
