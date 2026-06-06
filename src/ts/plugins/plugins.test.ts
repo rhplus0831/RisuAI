@@ -78,6 +78,70 @@ function seedModule(id: string, patch: Partial<RisuModule> = {}): RisuModule {
   } as RisuModule
 }
 
+interface PluginStorageCloneStats<T> {
+  result: T
+  jsonStringifyCount: number
+  structuredCloneCount: number
+  totalCloneCount: number
+  maxClonedSize: number
+}
+
+function withPluginStorageCloneStats<T>(fn: () => T): PluginStorageCloneStats<T> {
+  const originalStringify = JSON.stringify
+  const originalStructuredClone = globalThis.structuredClone
+  let jsonStringifyCount = 0
+  let structuredCloneCount = 0
+  let maxClonedSize = 0
+
+  const measure = (value: unknown): number => {
+    try {
+      return (originalStringify as (input: unknown) => string)(value)?.length ?? 0
+    } catch {
+      return 0
+    }
+  }
+
+  const trackedStringify = function trackedStringify(
+    this: unknown,
+    value: unknown,
+    replacer?: unknown,
+    space?: unknown,
+  ) {
+    jsonStringifyCount += 1
+    const out = (originalStringify as (...args: unknown[]) => string).call(
+      this,
+      value,
+      replacer,
+      space,
+    )
+    if (typeof out === 'string' && out.length > maxClonedSize) maxClonedSize = out.length
+    return out
+  } as unknown as typeof JSON.stringify
+
+  const trackedStructuredClone = function trackedStructuredClone<V>(value: V): V {
+    structuredCloneCount += 1
+    const size = measure(value)
+    if (size > maxClonedSize) maxClonedSize = size
+    return (originalStructuredClone as (input: V) => V)(value)
+  } as typeof structuredClone
+
+  JSON.stringify = trackedStringify
+  globalThis.structuredClone = trackedStructuredClone
+  try {
+    const result = fn()
+    return {
+      result,
+      jsonStringifyCount,
+      structuredCloneCount,
+      totalCloneCount: jsonStringifyCount + structuredCloneCount,
+      maxClonedSize,
+    }
+  } finally {
+    JSON.stringify = originalStringify
+    globalThis.structuredClone = originalStructuredClone
+  }
+}
+
 beforeEach(() => {
   clearCachedServerCommandRevision()
   vi.unstubAllGlobals()
@@ -432,6 +496,93 @@ describe('plugin database command bridge', () => {
     expect(Object.keys(safeDb)).toContain('customPluginKey')
     expect(Object.keys(safeDb)).not.toContain('pluginV2')
     expect(Object.keys(safeDb)).not.toContain('botPresets')
+  })
+
+  it('M8: pluginStorage.getItem clones only the selected key without a whole-DB snapshot', () => {
+    const apis = getV2PluginAPIs()
+    const largeBody = 'x'.repeat(80_000)
+    DBState.db.characters = [
+      {
+        chaId: 'char-a',
+        chats: [
+          {
+            id: 'chat-a',
+            message: [{ role: 'user', data: largeBody, chatId: 'msg-a' }],
+          },
+        ],
+      },
+    ] as any
+    DBState.db.pluginCustomStorage = {
+      selected: { nested: { count: 1 }, list: ['kept'] },
+      unrelated: { blob: largeBody },
+    }
+    const unrelatedStorageSize = JSON.stringify(DBState.db.pluginCustomStorage.unrelated).length
+    const charactersSize = JSON.stringify(DBState.db.characters).length
+
+    const stats = withPluginStorageCloneStats(
+      () => apis.pluginStorage.getItem('selected') as {
+        nested: { count: number }
+        list: string[]
+      },
+    )
+
+    expect(stats.structuredCloneCount).toBe(1)
+    expect(stats.totalCloneCount).toBe(1)
+    expect(stats.maxClonedSize).toBeLessThan(unrelatedStorageSize)
+    expect(stats.maxClonedSize).toBeLessThan(charactersSize)
+    expect(stats.result).toEqual({ nested: { count: 1 }, list: ['kept'] })
+    expect(stats.result).not.toBe(DBState.db.pluginCustomStorage.selected)
+
+    stats.result.nested.count = 2
+    stats.result.list.push('changed')
+    expect(DBState.db.pluginCustomStorage.selected).toEqual({
+      nested: { count: 1 },
+      list: ['kept'],
+    })
+  })
+
+  it('M8: pluginStorage.getItem preserves missing scalar and falsey results', () => {
+    const apis = getV2PluginAPIs()
+    DBState.db.pluginCustomStorage = {
+      empty: '',
+      zero: 0,
+      disabled: false,
+      text: 'stored',
+      nullValue: null,
+    }
+
+    expect(apis.pluginStorage.getItem('empty')).toBe('')
+    expect(apis.pluginStorage.getItem('zero')).toBe(0)
+    expect(apis.pluginStorage.getItem('disabled')).toBe(false)
+    expect(apis.pluginStorage.getItem('text')).toBe('stored')
+    expect(apis.pluginStorage.getItem('nullValue')).toBeNull()
+    expect(apis.pluginStorage.getItem('missing')).toBeNull()
+
+    DBState.db = {
+      currentPluginProvider: 'old-provider',
+      pluginCompatibilityMode: false,
+      plugins: [seedPlugin('plugin-a')],
+      modules: [seedModule('mod-a')],
+      enabledModules: [],
+    } as any
+    expect(Object.prototype.hasOwnProperty.call(DBState.db, 'pluginCustomStorage')).toBe(false)
+    expect(apis.pluginStorage.getItem('missing')).toBeNull()
+    expect(Object.prototype.hasOwnProperty.call(DBState.db, 'pluginCustomStorage')).toBe(false)
+  })
+
+  it('M8: pluginStorage.getItem detaches array values from live plugin storage', () => {
+    const apis = getV2PluginAPIs()
+    DBState.db.pluginCustomStorage = {
+      arrayValue: [{ label: 'live' }],
+    }
+
+    const value = apis.pluginStorage.getItem('arrayValue') as Array<{ label: string }>
+
+    expect(value).toEqual([{ label: 'live' }])
+    expect(value).not.toBe(DBState.db.pluginCustomStorage.arrayValue)
+    value[0].label = 'mutated'
+    value.push({ label: 'new' })
+    expect(DBState.db.pluginCustomStorage.arrayValue).toEqual([{ label: 'live' }])
   })
 
   it('disables device-local plugin storage APIs by default in server mode', async () => {

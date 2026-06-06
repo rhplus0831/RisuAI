@@ -13,6 +13,7 @@ import { fetchNative, globalFetch, readImage, saveAsset, toGetter } from '../glo
 import { DBState, hotReloading, pluginAlertModalStore, selectedCharID } from '../stores.svelte'
 import type { ScriptMode } from '../process/scripts'
 import type { RisuModule } from '../process/modules'
+import { safeStructuredClone } from '../polyfill'
 import { checkCodeSafety } from './pluginSafety'
 import {
   SafeDocument,
@@ -1126,9 +1127,8 @@ export const getV2PluginAPIs = () => {
     },
     pluginStorage: {
       getItem: (key: string) => {
-        const db = getDatabase({ snapshot: true })
-        db.pluginCustomStorage ??= {}
-        return db.pluginCustomStorage[key] || null
+        const value = getDatabase().pluginCustomStorage?.[key]
+        return value == null ? null : safeStructuredClone(value)
       },
       setItem: (key: string, value: string) => {
         setPluginStorageValue(key, value)
