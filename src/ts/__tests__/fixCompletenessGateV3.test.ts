@@ -7,8 +7,8 @@ import path from 'node:path'
  *
  * Phase 0 seeds the document universe plus the routing registry. Later phases
  * flip scheduled entries from PLANNED to DONE and attach regression proof
- * fields; this slice forbids proof fields while entries are PLANNED but does
- * not validate DONE proofs yet.
+ * fields; while entries are PLANNED, proof fields are forbidden so the gate
+ * cannot imply coverage before a fix lands.
  */
 
 // `vitest run` executes from the repo root. Match the v1/v2 gates and keep
@@ -74,6 +74,11 @@ interface GateProblemInput {
   noAction?: readonly RegistryReason[]
   auditText?: string
   riskText?: string
+}
+
+interface TestProof {
+  testPath?: string
+  testName?: string
 }
 
 function planned(id: string, phase: Phase, fix: string): ScheduledFix {
@@ -785,6 +790,42 @@ function hasProofFields(entry: ScheduledFix): boolean {
   return 'testPath' in entry || 'testName' in entry || 'extraTests' in entry
 }
 
+function repoRootRelativePath(testPath: string): string | null {
+  if (path.isAbsolute(testPath)) return null
+
+  const fullPath = path.resolve(ROOT, testPath)
+  const relative = path.relative(ROOT, fullPath)
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return null
+
+  return fullPath
+}
+
+function collectTestProofProblems(id: string, proof: TestProof): string[] {
+  const problems: string[] = []
+  if (!proof.testPath) {
+    problems.push(`${id}: DONE without a registered testPath`)
+  }
+  if (!proof.testName) {
+    problems.push(`${id}: DONE without a registered testName`)
+  }
+  if (!proof.testPath || !proof.testName) return problems
+
+  const fullPath = repoRootRelativePath(proof.testPath)
+  if (!fullPath) {
+    problems.push(`${id}: registered test "${proof.testPath}" must be repo-root-relative`)
+    return problems
+  }
+  if (!existsSync(fullPath)) {
+    problems.push(`${id}: registered test "${proof.testPath}" is missing`)
+    return problems
+  }
+  if (!readFileSync(fullPath, 'utf8').includes(proof.testName)) {
+    problems.push(`${id}: test "${proof.testPath}" does not contain "${proof.testName}"`)
+  }
+
+  return problems
+}
+
 function replaceRiskRow(text: string, id: string, replacement: string): string {
   let replaced = false
   const result = text
@@ -832,6 +873,11 @@ export function collectGateProblems(input: GateProblemInput = {}): string[] {
     }
     if (entry.status === 'PLANNED' && hasProofFields(entry)) {
       problems.push(`${entry.id}: PLANNED entries must not claim proof fields`)
+    } else if (entry.status === 'DONE') {
+      problems.push(...collectTestProofProblems(entry.id, entry))
+      for (const proof of entry.extraTests ?? []) {
+        problems.push(...collectTestProofProblems(entry.id, proof))
+      }
     }
   }
 
@@ -1094,6 +1140,13 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
+  it('keeps the live Phase 0 registry green with all scheduled entries still PLANNED', () => {
+    expect(SCHEDULED_FIXES).toHaveLength(70)
+    expect(SCHEDULED_FIXES.every((entry) => entry.status === 'PLANNED')).toBe(true)
+    expect(SCHEDULED_FIXES.filter(hasProofFields)).toEqual([])
+    expect(collectGateProblems()).toEqual([])
+  })
+
   it('records legacy gated and owner-decision context only as explanatory context', () => {
     const registeredIds = [
       ...SCHEDULED_FIXES.map((entry) => entry.id),
@@ -1125,6 +1178,141 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
   })
 
+  it('rejects doc DONE rows that do not have matching registry proof', () => {
+    const h1 = SCHEDULED_FIXES.find((entry) => entry.id === 'H1')
+    if (!h1) throw new Error('H1 registry entry not found')
+
+    const withDoneDocRow = replaceRiskRow(
+      readDoc(RISK_DOC),
+      'H1',
+      `| H1 | [1](phases/phase-1-high-and-send-path.md) | ${h1.fix} | DONE |`,
+    )
+
+    expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
+      'H1: status mismatch (registry PLANNED, docs DONE)',
+    )
+  })
+
+  it('rejects DONE registry entries without a registered test path and test name', () => {
+    const h1 = SCHEDULED_FIXES.find((entry) => entry.id === 'H1')
+    if (!h1) throw new Error('H1 registry entry not found')
+    const riskText = replaceRiskRow(
+      readDoc(RISK_DOC),
+      'H1',
+      `| H1 | [1](phases/phase-1-high-and-send-path.md) | ${h1.fix} | DONE |`,
+    )
+    const syntheticDone = SCHEDULED_FIXES.map((entry) =>
+      entry.id === 'H1'
+        ? {
+            ...entry,
+            status: 'DONE' as const,
+          }
+        : entry,
+    )
+
+    expect(collectGateProblems({ scheduled: syntheticDone, riskText })).toEqual(
+      expect.arrayContaining([
+        'H1: DONE without a registered testPath',
+        'H1: DONE without a registered testName',
+      ]),
+    )
+  })
+
+  it('validates primary and extra DONE test proofs against existing repo files', () => {
+    const h1 = SCHEDULED_FIXES.find((entry) => entry.id === 'H1')
+    if (!h1) throw new Error('H1 registry entry not found')
+    const riskText = replaceRiskRow(
+      readDoc(RISK_DOC),
+      'H1',
+      `| H1 | [1](phases/phase-1-high-and-send-path.md) | ${h1.fix} | DONE |`,
+    )
+    const missingPrimaryTestPath = 'src/ts/__tests__/__missing_v3_done_proof__.test.ts'
+    const missingPrimaryPathRegistry = SCHEDULED_FIXES.map((entry) =>
+      entry.id === 'H1'
+        ? {
+            ...entry,
+            status: 'DONE' as const,
+            testPath: missingPrimaryTestPath,
+            testName: 'synthetic v3 proof',
+          }
+        : entry,
+    )
+    const missingExtraTestName = ['missing v3 extra proof title', 'assembled at runtime'].join(' ')
+    const missingExtraNameRegistry = SCHEDULED_FIXES.map((entry) =>
+      entry.id === 'H1'
+        ? {
+            ...entry,
+            status: 'DONE' as const,
+            testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
+            testName: 'validates primary and extra DONE test proofs against existing repo files',
+            extraTests: [
+              {
+                testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
+                testName: missingExtraTestName,
+              },
+            ],
+          }
+        : entry,
+    )
+
+    expect(collectGateProblems({ scheduled: missingPrimaryPathRegistry, riskText })).toEqual(
+      expect.arrayContaining([`H1: registered test "${missingPrimaryTestPath}" is missing`]),
+    )
+    expect(collectGateProblems({ scheduled: missingExtraNameRegistry, riskText })).toEqual(
+      expect.arrayContaining([
+        `H1: test "src/ts/__tests__/fixCompletenessGateV3.test.ts" does not contain "${missingExtraTestName}"`,
+      ]),
+    )
+  })
+
+  it('rejects DONE registry entries when the primary test name is absent', () => {
+    const h1 = SCHEDULED_FIXES.find((entry) => entry.id === 'H1')
+    if (!h1) throw new Error('H1 registry entry not found')
+    const riskText = replaceRiskRow(
+      readDoc(RISK_DOC),
+      'H1',
+      `| H1 | [1](phases/phase-1-high-and-send-path.md) | ${h1.fix} | DONE |`,
+    )
+    const missingTestName = ['missing v3 primary proof title', 'assembled at runtime'].join(' ')
+    const syntheticDone = SCHEDULED_FIXES.map((entry) =>
+      entry.id === 'H1'
+        ? {
+            ...entry,
+            status: 'DONE' as const,
+            testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
+            testName: missingTestName,
+          }
+        : entry,
+    )
+
+    expect(collectGateProblems({ scheduled: syntheticDone, riskText })).toContain(
+      `H1: test "src/ts/__tests__/fixCompletenessGateV3.test.ts" does not contain "${missingTestName}"`,
+    )
+  })
+
+  it('self-proves fake audit and routing row detection through doc overrides', () => {
+    const auditText = `${readDoc(AUDIT_DOC)}\n| M10 | Med | perf | server | fake drift |\n`
+    const riskText = `${readDoc(RISK_DOC)}\n| M10 | [2](phases/phase-2-command-surface-scoping.md) | Synthetic drift row. | PENDING |\n`
+
+    expect(collectGateProblems({ auditText, riskText })).toEqual(
+      expect.arrayContaining([
+        'M10: scheduled in docs but missing from SCHEDULED_FIXES',
+        'M10: missing classification bucket',
+      ]),
+    )
+  })
+
+  it('self-proves removed scheduled row detection against an in-memory active-risk doc', () => {
+    const riskText = readDoc(RISK_DOC)
+      .split('\n')
+      .filter((line) => markdownTableCells(line)?.[0] !== 'H1')
+      .join('\n')
+
+    expect(collectGateProblems({ riskText })).toContain(
+      'H1: SCHEDULED_FIXES entry missing from active-risk docs',
+    )
+  })
+
   it('self-proves phase mismatch detection against an in-memory active-risk doc', () => {
     const h1 = SCHEDULED_FIXES.find((entry) => entry.id === 'H1')
     if (!h1) throw new Error('H1 registry entry not found')
@@ -1149,6 +1337,24 @@ describe('v3 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ riskText: withScheduledInformational })).toContain(
       'I1: doc schedules id but registry classifies it as no-action',
+    )
+  })
+
+  it('self-proves duplicate and missing classification detection', () => {
+    const duplicateH1 = [
+      ...NO_ACTION,
+      noAction('H1', 'Duplicate self-proof classification reason for scheduled H1.'),
+    ]
+    const missingM1 = SCHEDULED_FIXES.filter((entry) => entry.id !== 'M1')
+
+    expect(collectGateProblems({ noAction: duplicateH1 })).toContain(
+      'H1: classified 2 times (scheduled, no-action)',
+    )
+    expect(collectGateProblems({ scheduled: missingM1 })).toEqual(
+      expect.arrayContaining([
+        'M1: missing classification bucket',
+        'M1: scheduled in docs but missing from SCHEDULED_FIXES',
+      ]),
     )
   })
 
