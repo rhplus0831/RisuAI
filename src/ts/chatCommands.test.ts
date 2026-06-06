@@ -26,10 +26,12 @@ import { DBState, selectedCharID } from './stores.svelte'
 // Import the heavy database module AFTER stores.svelte: importing it first
 // triggers a circular-import TDZ when the reactive moduleUpdate $effect runs
 // mid-init (see the clone-narrowing Phase 8 gotcha).
-import { setCurrentChat } from './storage/database.svelte'
+import { setCurrentChat, type Chat } from './storage/database.svelte'
 import { get } from 'svelte/store'
 import {
   appendCurrentChatUserMessageForSend,
+  changedChatMetadata,
+  CHAT_PATCH_ALLOWED_KEYS,
   currentChatScopedSnapshot,
   currentChatScriptstateSnapshot,
   currentChatSelectionSnapshot,
@@ -50,6 +52,7 @@ import {
   restoreChatScriptstate,
   restoreChatSelection,
   runOptimisticCommandSequence,
+  sanitizeChatPatch,
 } from './chatCommands'
 import {
   assertRollbackRestoresOnly,
@@ -161,6 +164,42 @@ async function waitForCallCount(calls: CapturedFetch[], expected: number): Promi
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
   expect(calls).toHaveLength(expected)
+}
+
+function jsonClone<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function jsonSnapshot(value: unknown): string {
+  const snapshot = JSON.stringify(value)
+  return snapshot === undefined ? '__undefined__' : snapshot
+}
+
+function legacyChangedChatMetadata(previous: Chat, current: Chat): ChatSnapshot {
+  const patch: ChatSnapshot = {}
+  const previousSnapshot = sanitizeChatPatch(jsonClone(previous) as unknown as ChatSnapshot)
+  const currentSnapshot = sanitizeChatPatch(jsonClone(current) as unknown as ChatSnapshot)
+  const keys = new Set([...Object.keys(previousSnapshot), ...Object.keys(currentSnapshot)])
+  for (const key of keys) {
+    if (jsonSnapshot(previousSnapshot[key]) !== jsonSnapshot(currentSnapshot[key])) {
+      patch[key] = jsonClone(currentSnapshot[key])
+    }
+  }
+  return patch
+}
+
+function orderedChatMetadata(values: Record<string, unknown>): Chat {
+  const chat: Record<string, unknown> = {
+    id: 'chat-m9',
+    message: [{ role: 'user', data: 'ignored transcript', chatId: 'msg-m9' }],
+    localLore: [{ id: 'ignored-lore', key: 'x', content: 'ignored' }],
+    hypaV3Data: { ignored: true },
+  }
+  for (const key of CHAT_PATCH_ALLOWED_KEYS) {
+    if (key in values) chat[key] = values[key]
+  }
+  return chat as unknown as Chat
 }
 
 beforeEach(() => {
@@ -754,6 +793,122 @@ describe('Phase 2 chat-metadata-row rollback', () => {
         expect(DBState.db.characters[1].chatFolders[0].name).toBe('Sibling Folder Edit')
       },
     })
+  })
+})
+
+describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
+  it('M9: allowed metadata diffs match the previous clone-sanitize patch bytes', () => {
+    const previous = orderedChatMetadata({
+      name: 'Old chat',
+      note: 'same note',
+      lastMemory: 'same memory',
+      suggestMessages: ['old suggestion'],
+      bindedPersona: 'persona-old',
+      fmIndex: 1,
+      folderId: 'folder-old',
+      bookmarks: ['msg-old'],
+      bookmarkNames: { 'msg-old': 'Old bookmark' },
+      modules: ['module-a'],
+    })
+    const current = orderedChatMetadata({
+      name: 'New chat',
+      note: 'same note',
+      sdData: 'new sd payload',
+      lastMemory: 'same memory',
+      suggestMessages: ['new suggestion'],
+      fmIndex: 2,
+      folderId: null,
+      bookmarks: ['msg-new'],
+      bookmarkNames: { 'msg-new': 'New bookmark' },
+      modules: ['module-a', 'module-b'],
+    })
+    current.message = [{ role: 'char', data: 'ignored transcript change', chatId: 'msg-new' }]
+    current.localLore = [{ id: 'ignored-lore-new', key: 'y', content: 'ignored changed lore' }] as any
+    ;(current as any).hypaV3Data = { ignored: 'changed memory payload' }
+
+    const patch = changedChatMetadata(previous, current)
+    const legacyPatch = legacyChangedChatMetadata(previous, current)
+
+    expect(Object.keys(patch)).toEqual(Object.keys(legacyPatch))
+    expect(JSON.stringify(patch)).toBe(JSON.stringify(legacyPatch))
+    expect(JSON.stringify(sanitizeChatPatch(patch))).toBe(
+      JSON.stringify(sanitizeChatPatch(legacyPatch)),
+    )
+    expect(patch).toHaveProperty('bindedPersona', undefined)
+    expect(sanitizeChatPatch(patch)).not.toHaveProperty('bindedPersona')
+    expect(patch).not.toHaveProperty('message')
+    expect(patch).not.toHaveProperty('localLore')
+    expect(patch).not.toHaveProperty('hypaV3Data')
+  })
+
+  it('M9: message-only changes produce an empty patch without serializing message arrays', () => {
+    const body = 'x'.repeat(1200)
+    const previous = orderedChatMetadata({ name: 'Same chat', note: 'same note' })
+    previous.message = Array.from({ length: 120 }, (_unused, index) => ({
+      role: index % 2 === 0 ? 'user' : 'char',
+      data: `${body}-${index}`,
+      chatId: `msg-long-${index}`,
+    }))
+    previous.localLore = [{ id: 'lore-old', key: 'old', content: body.repeat(10) }] as any
+    ;(previous as any).hypaV3Data = { ignored: body.repeat(10) }
+
+    const current = {
+      ...previous,
+      message: previous.message.map((message, index) => ({
+        ...message,
+        data: `${message.data}-changed-${index}`,
+      })),
+      localLore: [{ id: 'lore-new', key: 'new', content: body.repeat(10) }],
+      hypaV3Data: { ignored: `${body}-changed` },
+    } as unknown as Chat
+    const messageSize = JSON.stringify(current.message).length
+
+    const instrumented = withCloneInstrumentation(() => changedChatMetadata(previous, current))
+
+    expect(instrumented.result).toEqual({})
+    expect(instrumented.maxClonedSize).toBeLessThan(messageSize)
+  })
+
+  it('M9: changed object metadata is detached from the current chat record', () => {
+    const previous = orderedChatMetadata({
+      name: 'Same chat',
+      bookmarks: ['msg-old'],
+      bookmarkNames: { 'msg-old': 'Old bookmark' },
+      modules: ['module-a'],
+      suggestMessages: ['old suggestion'],
+    })
+    const bookmarks = ['msg-new']
+    const bookmarkNames = { 'msg-new': 'New bookmark' }
+    const modules = ['module-a', 'module-b']
+    const suggestMessages = ['new suggestion']
+    const current = orderedChatMetadata({
+      name: 'Same chat',
+      bookmarks,
+      bookmarkNames,
+      modules,
+      suggestMessages,
+    })
+
+    const patch = changedChatMetadata(previous, current)
+
+    expect(patch.bookmarks).toEqual(['msg-new'])
+    expect(patch.bookmarkNames).toEqual({ 'msg-new': 'New bookmark' })
+    expect(patch.modules).toEqual(['module-a', 'module-b'])
+    expect(patch.suggestMessages).toEqual(['new suggestion'])
+    expect(patch.bookmarks).not.toBe(bookmarks)
+    expect(patch.bookmarkNames).not.toBe(bookmarkNames)
+    expect(patch.modules).not.toBe(modules)
+    expect(patch.suggestMessages).not.toBe(suggestMessages)
+
+    bookmarks.push('msg-late')
+    bookmarkNames['msg-new'] = 'Mutated later'
+    modules.push('module-late')
+    suggestMessages.push('late suggestion')
+
+    expect(patch.bookmarks).toEqual(['msg-new'])
+    expect(patch.bookmarkNames).toEqual({ 'msg-new': 'New bookmark' })
+    expect(patch.modules).toEqual(['module-a', 'module-b'])
+    expect(patch.suggestMessages).toEqual(['new suggestion'])
   })
 })
 

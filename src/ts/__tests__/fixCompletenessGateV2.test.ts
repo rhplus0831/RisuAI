@@ -330,7 +330,28 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('M9', 4, 'Allowed-keys diff for `changedChatMetadata` (v1-M13 shape).'),
+  done(
+    'M9',
+    4,
+    'Allowed-keys diff for `changedChatMetadata` (v1-M13 shape).',
+    'src/ts/chatCommands.test.ts',
+    'M9: allowed metadata diffs match the previous clone-sanitize patch bytes',
+    [
+      {
+        testPath: 'src/ts/chatCommands.test.ts',
+        testName:
+          'M9: message-only changes produce an empty patch without serializing message arrays',
+      },
+      {
+        testPath: 'src/ts/chatCommands.test.ts',
+        testName: 'M9: changed object metadata is detached from the current chat record',
+      },
+      {
+        testPath: 'src/ts/chatCommands.test.ts',
+        testName: 'restores only the one chat row, preserving message history and unrelated chats',
+      },
+    ],
+  ),
   planned('M10', 4, 'Module-only / single-row module snapshots.'),
   planned('M11', 6, 'Apply-epoch gate for the lorebook watcher (+ epoch-bumping apply).'),
   planned('M12', 6, 'Apply-epoch gate for the character-profile watcher.'),
@@ -1306,7 +1327,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M9'
+      entry.id === 'M10'
         ? {
             ...entry,
             testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
@@ -1316,7 +1337,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'M9: PLANNED entries must not claim proof fields',
+      'M10: PLANNED entries must not claim proof fields',
     )
   })
 
@@ -1338,6 +1359,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M6',
       'M7',
       'M8',
+      'M9',
       'L3',
       'L4',
       'L5',
@@ -1358,7 +1380,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects DONE entries without a registered test path and test name', () => {
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M9'
+      entry.id === 'M10'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1368,9 +1390,9 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M9: status mismatch (registry DONE, docs PENDING)',
-        'M9: DONE without a registered testPath',
-        'M9: DONE without a registered testName',
+        'M10: status mismatch (registry DONE, docs PENDING)',
+        'M10: DONE without a registered testPath',
+        'M10: DONE without a registered testName',
       ]),
     )
   })
@@ -1378,7 +1400,7 @@ describe('v2 fix-completeness gate routing registry', () => {
   it('validates primary and extra DONE test proofs against existing test files', () => {
     const missingExtraTestName = ['missing extra proof title', 'assembled at runtime'].join(' ')
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M9'
+      entry.id === 'M10'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1396,8 +1418,8 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M9: status mismatch (registry DONE, docs PENDING)',
-        `M9: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
+        'M10: status mismatch (registry DONE, docs PENDING)',
+        `M10: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
       ]),
     )
   })
@@ -1431,12 +1453,12 @@ describe('v2 fix-completeness gate routing registry', () => {
     const riskText = readDoc(RISK_DOC)
     const withDoneDocRow = replaceRiskRow(
       riskText,
-      'M9',
-      '| M9 | [4](phases/phase-4-client-clone-ring-2.md) | Allowed-keys diff for `changedChatMetadata` (v1-M13 shape). | DONE |',
+      'M10',
+      '| M10 | [4](phases/phase-4-client-clone-ring-2.md) | Module-only / single-row module snapshots. | DONE |',
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'M9: status mismatch (registry PLANNED, docs DONE)',
+      'M10: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 

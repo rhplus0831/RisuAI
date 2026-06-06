@@ -1019,17 +1019,72 @@ function isScriptstateValue(value: unknown): value is ChatScriptstateValue {
   )
 }
 
-function changedChatMetadata(previous: Chat, current: Chat): ChatSnapshot {
+export function changedChatMetadata(previous: Chat, current: Chat): ChatSnapshot {
   const patch: ChatSnapshot = {}
-  const previousSnapshot = sanitizeChatPatch(cloneJsonValue(previous) as unknown as ChatSnapshot)
-  const currentSnapshot = sanitizeChatPatch(cloneJsonValue(current) as unknown as ChatSnapshot)
-  const keys = new Set([...Object.keys(previousSnapshot), ...Object.keys(currentSnapshot)])
-  for (const key of keys) {
-    if (snapshotJson(previousSnapshot[key]) !== snapshotJson(currentSnapshot[key])) {
-      patch[key] = cloneJsonValue(currentSnapshot[key])
+  const previousRecord = (previous ?? {}) as unknown as Record<string, unknown>
+  const currentRecord = (current ?? {}) as unknown as Record<string, unknown>
+  const orderedKeys = chatMetadataPatchKeyOrder(previousRecord, currentRecord)
+  const orderedKeySet = new Set(orderedKeys)
+  const changedValues = new Map<string, unknown>()
+
+  // Diff only the server-accepted metadata keys. The old shape deep-cloned the
+  // entire chat row before `sanitizeChatPatch` immediately stripped transcript,
+  // lorebook, and memory payloads; comparing raw allowed values preserves the
+  // JSON patch decision while cloning only values that enter the patch.
+  for (const key of CHAT_PATCH_ALLOWED_KEYS) {
+    if (!orderedKeySet.has(key)) continue
+    const previousValue = sanitizedChatMetadataValue(previousRecord, key)
+    const currentValue = sanitizedChatMetadataValue(currentRecord, key)
+    const currentSnapshotJson = snapshotJson(currentValue)
+    if (snapshotJson(previousValue) !== currentSnapshotJson) {
+      const patchValue =
+        currentSnapshotJson === JSON_UNDEFINED_SNAPSHOT ? undefined : cloneJsonValue(currentValue)
+      changedValues.set(key, patchValue)
+    }
+  }
+
+  // Emit changed keys in the same order as the old
+  // sanitize(previous)->sanitize(current) key union, so serialized patches stay
+  // byte-identical while the expensive comparison remains allowlist-scoped.
+  for (const key of orderedKeys) {
+    if (changedValues.has(key)) {
+      patch[key] = changedValues.get(key)
     }
   }
   return patch
+}
+
+function chatMetadataPatchKeyOrder(
+  previousRecord: Record<string, unknown>,
+  currentRecord: Record<string, unknown>,
+): string[] {
+  const orderedKeys: string[] = []
+  const seen = new Set<string>()
+  const appendKeys = (record: Record<string, unknown>) => {
+    for (const key of Object.keys(record)) {
+      if (seen.has(key) || !CHAT_PATCH_ALLOWED_KEYS.has(key)) continue
+      if (!hasSanitizedChatMetadataValue(record, key)) continue
+      seen.add(key)
+      orderedKeys.push(key)
+    }
+  }
+  appendKeys(previousRecord)
+  appendKeys(currentRecord)
+  return orderedKeys
+}
+
+function sanitizedChatMetadataValue(
+  record: Record<string, unknown>,
+  key: string,
+): unknown {
+  return hasSanitizedChatMetadataValue(record, key) ? record[key] : undefined
+}
+
+function hasSanitizedChatMetadataValue(record: Record<string, unknown>, key: string): boolean {
+  return (
+    Object.prototype.propertyIsEnumerable.call(record, key) &&
+    snapshotJson(record[key]) !== JSON_UNDEFINED_SNAPSHOT
+  )
 }
 
 function changedScriptstatePatch(
@@ -1053,7 +1108,9 @@ function changedScriptstatePatch(
   return { patch: sanitizeScriptstatePatch(patch), deleteKeys }
 }
 
+const JSON_UNDEFINED_SNAPSHOT = '__undefined__'
+
 function snapshotJson(value: unknown): string {
   const snapshot = JSON.stringify(value)
-  return snapshot === undefined ? '__undefined__' : snapshot
+  return snapshot === undefined ? JSON_UNDEFINED_SNAPSHOT : snapshot
 }
