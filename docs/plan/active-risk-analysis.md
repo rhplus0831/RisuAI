@@ -111,7 +111,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L29 | [8](phases/phase-8-server-bounds.md)             | Cap the charx download near the expanded limit.                   | PENDING |
 | L30 | [8](phases/phase-8-server-bounds.md)             | In-flight promise dedupe for Vertex tokens.                       | PENDING |
 | L31 | [8](phases/phase-8-server-bounds.md)             | Default proxy deadline when `risu-timeout-ms` is absent.          | PENDING |
-| L32 | [4](phases/phase-4-client-clone-ring-2.md)       | Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`. | PENDING |
+| L32 | [4](phases/phase-4-client-clone-ring-2.md)       | Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`. | DONE |
 | L33 | [4](phases/phase-4-client-clone-ring-2.md)       | Single-row snapshot for trash `removeChar`.                       | PENDING |
 | L34 | [4](phases/phase-4-client-clone-ring-2.md)       | Minimal `supaMemory` patch on selection.                          | PENDING |
 | L35 | [6](phases/phase-6-bridges-lifecycle-network.md) | Carry `hypaV3Data` independently of message length.               | PENDING |

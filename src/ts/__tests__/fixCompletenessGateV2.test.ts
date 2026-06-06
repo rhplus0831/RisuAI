@@ -566,7 +566,51 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L29', 8, 'Cap the charx download near the expanded limit.'),
   planned('L30', 8, 'In-flight promise dedupe for Vertex tokens.'),
   planned('L31', 8, 'Default proxy deadline when `risu-timeout-ms` is absent.'),
-  planned('L32', 4, 'Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`.'),
+  done(
+    'L32',
+    4,
+    'Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`.',
+    'src/ts/process/__tests__/command.projectionGuard.test.ts',
+    'L32: /send appends a user message without setDatabase or whole-db clone churn',
+    [
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /sendas appends a character message without setDatabase',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /comment appends the legacy comment block to the last message',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /cut range keeps the legacy sliced transcript bytes',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /cut index keeps the legacy spliced row bytes',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /cut id removes the matching chatId without setDatabase',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /del keeps the legacy last-N truncation without setDatabase',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /multisend appends each segment in order and sends after each one',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /multisend clear resets before each segment and still sends each segment',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: forced message-command failure restores only the active chat',
+      },
+    ],
+  ),
   planned('L33', 4, 'Single-row snapshot for trash `removeChar`.'),
   planned('L34', 4, 'Minimal `supaMemory` patch on selection.'),
   planned('L35', 6, 'Carry `hypaV3Data` independently of message length.'),
@@ -1399,6 +1443,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L13',
       'L14',
       'L16',
+      'L32',
       'K1',
       'K2',
     ])
