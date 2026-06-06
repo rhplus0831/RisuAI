@@ -24,6 +24,7 @@ import {
   listMemoryJobs,
   listMemorySummaries,
   mapMemoryJobRow,
+  pruneTerminalMemoryJobs,
   recoverRunningMemoryJobs,
   retryOrFailMemoryJob,
   updateMemoryChunkStatus,
@@ -903,6 +904,70 @@ describe('memory repository jobs', () => {
       })
       expect(cancelMemoryJob(db, 'cancel-running')).toBeNull()
       expect(completeMemoryJob(db, 'missing')).toBeNull()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('L17: prunes only terminal memory jobs older than retention', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      for (const [id, status] of [
+        ['old-cancelled', 'cancelled'],
+        ['old-completed', 'completed'],
+        ['old-failed', 'failed'],
+        ['recent-completed', 'completed'],
+        ['pending-old', 'pending'],
+        ['running-old', 'running'],
+      ] as const) {
+        createMemoryJob(db, {
+          id,
+          chatId: 'chat-1',
+          kind: 'chunk',
+          payload: {},
+          status,
+        })
+      }
+      db.prepare(
+        `
+          UPDATE memory_jobs
+          SET updated_at = '2026-06-01T00:00:00.000Z'
+          WHERE id IN ('old-cancelled', 'old-completed', 'old-failed', 'pending-old', 'running-old')
+        `,
+      ).run()
+      db.prepare(
+        `
+          UPDATE memory_jobs
+          SET updated_at = '2026-06-05T12:00:00.000Z'
+          WHERE id = 'recent-completed'
+        `,
+      ).run()
+
+      expect(
+        pruneTerminalMemoryJobs(db, {
+          now: '2026-06-06T00:00:00.000Z',
+          retentionMs: 24 * 60 * 60 * 1000,
+          maxPerSweep: 2,
+        }),
+      ).toBe(2)
+      expect(getMemoryJob(db, 'old-failed')).toMatchObject({ status: 'failed' })
+
+      expect(
+        pruneTerminalMemoryJobs(db, {
+          now: '2026-06-06T00:00:00.000Z',
+          retentionMs: 24 * 60 * 60 * 1000,
+        }),
+      ).toBe(1)
+
+      expect(
+        listMemoryJobs(db)
+          .map((job) => [job.id, job.status])
+          .sort((left, right) => String(left[0]).localeCompare(String(right[0]))),
+      ).toEqual([
+        ['pending-old', 'pending'],
+        ['recent-completed', 'completed'],
+        ['running-old', 'running'],
+      ])
     } finally {
       db.close()
     }

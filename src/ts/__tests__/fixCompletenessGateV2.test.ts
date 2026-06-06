@@ -337,7 +337,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L2', 8, 'Delete/TTL terminal finalization-retry rows.'),
+  done(
+    'L2',
+    8,
+    'Delete/TTL terminal finalization-retry rows.',
+    'server/fastify/__tests__/durableGeneration.test.ts',
+    'L2: prunes only terminal finalization retries older than retention',
+    [
+      {
+        testPath: 'server/fastify/__tests__/durableGeneration.test.ts',
+        testName: 'L2: app finalization retry sweep also removes retained terminal history',
+      },
+    ],
+  ),
   done(
     'L3',
     2,
@@ -496,7 +508,24 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'server/fastify/__tests__/auth.test.ts',
     'rejects unauthenticated requests and verifies authenticated requests exactly once',
   ),
-  planned('L17', 8, 'Retention sweep for terminal memory jobs.'),
+  done(
+    'L17',
+    8,
+    'Retention sweep for terminal memory jobs.',
+    'server/fastify/__tests__/memoryRepository.test.ts',
+    'L17: prunes only terminal memory jobs older than retention',
+    [
+      {
+        testPath: 'server/fastify/__tests__/memoryWorker.test.ts',
+        testName: 'L17: sweeps old terminal memory jobs when worker maintenance starts',
+      },
+      {
+        testPath: 'server/fastify/__tests__/memoryJobsRoutes.test.ts',
+        testName:
+          'L17: lists retained memory jobs after startup retention prunes old terminal rows',
+      },
+    ],
+  ),
   planned('L18', 8, 'Fast-path reschedule after a productive worker tick.'),
   planned('L19', 8, 'Scope the fail-cascade to contextual groups.'),
   planned('L20', 8, 'Share one summaries fetch between cleanup and selection.'),
@@ -1329,6 +1358,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M5',
       'M6',
       'L1',
+      'L2',
       'L3',
       'L4',
       'L5',
@@ -1341,6 +1371,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L13',
       'L14',
       'L16',
+      'L17',
       'K1',
       'K2',
     ])

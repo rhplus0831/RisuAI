@@ -12,6 +12,11 @@ export const MEMORY_JOB_STATUSES = [
 ] as const
 export const MEMORY_JOB_DEFAULT_MAX_ATTEMPTS = 3
 export const MEMORY_JOB_DEFAULT_RETRY_BACKOFF_MS = 1_000
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export const MEMORY_JOB_TERMINAL_RETENTION_MS = 7 * DAY_MS
+export const MEMORY_JOB_TERMINAL_RETENTION_SWEEP_LIMIT = 1000
+export const MEMORY_JOB_TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'] as const
 
 export type MemoryChunkStatus = (typeof MEMORY_CHUNK_STATUSES)[number]
 export type MemoryJobKind = (typeof MEMORY_JOB_KINDS)[number]
@@ -120,6 +125,12 @@ export interface EnqueueMemoryJobInput {
 export interface MemoryJobRetryOptions {
   now?: string | Date
   backoffBaseMs?: number
+}
+
+export interface PruneTerminalMemoryJobsOptions {
+  now?: string | Date
+  retentionMs?: number
+  maxPerSweep?: number
 }
 
 export interface CleanupOrphanedMemoryInput {
@@ -247,6 +258,18 @@ function requireJobStatusList(statuses: readonly MemoryJobStatus[]): MemoryJobSt
     throw new ValidationError('memory job statuses filter must not be empty')
   }
   return statuses.map((status) => requireJobStatus(status))
+}
+
+function requireRetentionMs(value: number | undefined): number {
+  if (value === undefined) return MEMORY_JOB_TERMINAL_RETENTION_MS
+  requireNonNegativeInteger(value, 'retentionMs')
+  return value
+}
+
+function requireSweepLimit(value: number | undefined): number {
+  if (value === undefined) return MEMORY_JOB_TERMINAL_RETENTION_SWEEP_LIMIT
+  requirePositiveInteger(value, 'maxPerSweep')
+  return value
 }
 
 function runStatement(statement: StatementSync, ...values: SqlValue[]): void {
@@ -415,7 +438,10 @@ function readSummaryChatMemos(summary: MemorySummary): string[] | null {
   return chatMemos
 }
 
-function isMemoSubset(chatMemos: readonly string[], currentChatMemos: ReadonlySet<string>): boolean {
+function isMemoSubset(
+  chatMemos: readonly string[],
+  currentChatMemos: ReadonlySet<string>,
+): boolean {
   return chatMemos.every((memo) => currentChatMemos.has(memo))
 }
 
@@ -965,6 +991,32 @@ export function retryOrFailMemoryJob(
 
 export function cancelMemoryJob(db: DatabaseSync, id: string): MemoryJob | null {
   return transitionMemoryJobStatus(db, id, ['pending', 'running'], 'cancelled', { error: null })
+}
+
+export function pruneTerminalMemoryJobs(
+  db: DatabaseSync,
+  options: PruneTerminalMemoryJobsOptions = {},
+): number {
+  const retentionMs = requireRetentionMs(options.retentionMs)
+  const maxPerSweep = requireSweepLimit(options.maxPerSweep)
+  const cutoff = new Date(Date.parse(normalizeTimestamp(options.now)) - retentionMs).toISOString()
+  const terminalStatuses = requireJobStatusList(MEMORY_JOB_TERMINAL_STATUSES)
+  const result = db
+    .prepare(
+      `
+        DELETE FROM memory_jobs
+        WHERE id IN (
+          SELECT id
+          FROM memory_jobs
+          WHERE status IN (${terminalStatuses.map(() => '?').join(', ')})
+            AND updated_at < ?
+          ORDER BY updated_at ASC, id ASC
+          LIMIT ?
+        )
+      `,
+    )
+    .run(...terminalStatuses, cutoff, maxPerSweep)
+  return Number(result.changes)
 }
 
 export function recoverRunningMemoryJobs(

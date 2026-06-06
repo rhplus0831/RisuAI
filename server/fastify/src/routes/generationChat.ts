@@ -113,7 +113,14 @@ export type ChatProviderDispatcher = (
 
 export interface GenerationChatRouteOptions {
   dispatchProvider?: ChatProviderDispatcher
-  finalizationRetry?: false | { intervalMs?: number; maxPerSweep?: number }
+  finalizationRetry?:
+    | false
+    | {
+        intervalMs?: number
+        maxPerSweep?: number
+        terminalRetentionMs?: number
+        terminalRetentionMaxPerSweep?: number
+      }
   /**
    * Cadence of the durable viewer's SSE comment heartbeat (audit L14).
    * Defaults to the job's `heartbeatSec`; injectable for tests.

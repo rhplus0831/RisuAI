@@ -15,8 +15,8 @@ v1 finding IDs are referenced as `v1-*`.
 - Confirmed findings: 102 total: 3 high, 22 medium, 59 low, 18 informational.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 3 M1-M4 and L4-L11, Phase
-  2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 8 L1 are `DONE`;
-  the rest are `PENDING`.
+  2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 8 L1, L2, and L17
+  are `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -81,7 +81,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | ID  | Phase                                            | Target fix                                                       | Status  |
 | --- | ------------------------------------------------ | ----------------------------------------------------------------- | ------- |
 | L1  | [8](phases/phase-8-server-bounds.md)             | Sliding durable deadline paired with the non-durable generation abort window. | DONE    |
-| L2  | [8](phases/phase-8-server-bounds.md)             | Delete/TTL terminal finalization-retry rows.                      | PENDING |
+| L2  | [8](phases/phase-8-server-bounds.md)             | Delete/TTL terminal finalization-retry rows.                      | DONE    |
 | L3  | [2](phases/phase-2-server-corpus-ring-2.md)      | Settings-only loader for server-intent completion.                | DONE    |
 | L4  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Persist lorebook sticky-activation chat-var writes.               | DONE    |
 | L5  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Hoist per-message normalization out of `searchMatch`.             | DONE    |
@@ -96,7 +96,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L14 | [2](phases/phase-2-server-corpus-ring-2.md)      | Delta-aware transcript persist diff.                              | DONE    |
 | L15 | [8](phases/phase-8-server-bounds.md)             | `PRAGMA synchronous = NORMAL`.                                    | PENDING |
 | L16 | [2](phases/phase-2-server-corpus-ring-2.md)      | Single auth verification on the bulk routes.                      | DONE    |
-| L17 | [8](phases/phase-8-server-bounds.md)             | Retention sweep for terminal memory jobs.                         | PENDING |
+| L17 | [8](phases/phase-8-server-bounds.md)             | Retention sweep for terminal memory jobs.                         | DONE    |
 | L18 | [8](phases/phase-8-server-bounds.md)             | Fast-path reschedule after a productive worker tick.              | PENDING |
 | L19 | [8](phases/phase-8-server-bounds.md)             | Scope the fail-cascade to contextual groups.                      | PENDING |
 | L20 | [8](phases/phase-8-server-bounds.md)             | Share one summaries fetch between cleanup and selection.          | PENDING |

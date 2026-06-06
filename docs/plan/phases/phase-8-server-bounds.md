@@ -113,7 +113,7 @@ L27, L28, L29, L30, L31. (I3's unused-index drop may ride along if free.)
 
 - [x] L1: a >deadline actively-streaming generation survives (sliding) or
       honors the raised configured cap; runaway no-token jobs still die.
-- [ ] L2/L17: terminal retry rows and terminal memory jobs are swept; live
+- [x] L2/L17: terminal retry rows and terminal memory jobs are swept; live
       rows untouched (retention tests).
 - [ ] L15: `synchronous = NORMAL` set after WAL; durability note recorded.
 - [ ] L18/L19/L20/L21/L22: worker drains a backlog without idle gaps;

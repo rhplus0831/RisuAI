@@ -3,7 +3,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
 import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
-import { createAssetMetadataTable, createCharacterTables, createCollectionTables, createSettingsTable } from './repository.js'
+import {
+  createAssetMetadataTable,
+  createCharacterTables,
+  createCollectionTables,
+  createSettingsTable,
+} from './repository.js'
 
 export const CURRENT_SCHEMA_VERSION = 15
 
@@ -354,6 +359,8 @@ function createMemoryTables(db: DatabaseSync): void {
       ON memory_jobs (kind, status);
     CREATE INDEX IF NOT EXISTS idx_memory_jobs_status_next_run
       ON memory_jobs (status, next_run_at, created_at, id);
+    CREATE INDEX IF NOT EXISTS idx_memory_jobs_status_updated
+      ON memory_jobs (status, updated_at, id);
   `)
   ensureColumn(
     db,

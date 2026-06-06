@@ -591,6 +591,64 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
+  it('L17: sweeps old terminal memory jobs when worker maintenance starts', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      for (const [id, status] of [
+        ['old-completed', 'completed'],
+        ['old-failed', 'failed'],
+        ['old-cancelled', 'cancelled'],
+        ['recent-completed', 'completed'],
+        ['pending-old', 'pending'],
+      ] as const) {
+        createMemoryJob(db, {
+          id,
+          chatId: 'chat-1',
+          kind: 'chunk',
+          payload: {},
+          status,
+        })
+      }
+      db.prepare(
+        `
+          UPDATE memory_jobs
+          SET updated_at = '2026-06-01T00:00:00.000Z'
+          WHERE id IN ('old-completed', 'old-failed', 'old-cancelled', 'pending-old')
+        `,
+      ).run()
+      db.prepare(
+        `
+          UPDATE memory_jobs
+          SET updated_at = '2026-06-05T12:00:00.000Z'
+          WHERE id = 'recent-completed'
+        `,
+      ).run()
+
+      const worker = new MemoryWorker({
+        db,
+        pollIntervalMs: 10_000,
+        terminalRetention: {
+          now: '2026-06-06T00:00:00.000Z',
+          retentionMs: 24 * 60 * 60 * 1000,
+        },
+      })
+
+      worker.start()
+      await worker.stop()
+
+      expect(
+        listMemoryJobs(db)
+          .map((job) => [job.id, job.status])
+          .sort((left, right) => String(left[0]).localeCompare(String(right[0]))),
+      ).toEqual([
+        ['pending-old', 'pending'],
+        ['recent-completed', 'completed'],
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
   it('emits memory.job events for abandoned running job recovery', async () => {
     const db = openDatabase(makeDataDir())
     try {
