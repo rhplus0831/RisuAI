@@ -1066,6 +1066,48 @@ describe('Phase 5 lorebook stubs (enableLorebookStubs)', () => {
     expect(body.globalLore[0].content).toBe('secret lore')
   })
 
+  it('matches single and bulk character lorebook hydration for the same character', async () => {
+    await importDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          globalLore: [
+            { key: 'a', content: 'lore a' },
+            { key: 'aa', content: 'second lore a' },
+          ],
+        },
+        {
+          chaId: 'char-b',
+          name: 'Babbage',
+          globalLore: [{ key: 'b', content: 'lore b' }],
+        },
+      ],
+      enableLorebookStubs: true,
+    })
+
+    const single = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/characterLorebook?id=char-a',
+      headers: { 'risu-auth': assertion },
+    })
+    const bulk = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/projection/characterLorebooks/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: { ids: ['char-a'] },
+    })
+
+    expect(single.statusCode).toBe(200)
+    expect(bulk.statusCode).toBe(200)
+    expect(bulk.json().characters).toEqual([
+      {
+        characterId: 'char-a',
+        globalLore: single.json().globalLore,
+      },
+    ])
+  })
+
   it('serves requested character lorebooks in one read-only response', async () => {
     const revision = await importDatabase({
       characters: [

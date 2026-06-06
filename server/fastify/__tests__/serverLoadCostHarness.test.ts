@@ -202,6 +202,14 @@ function hydrationGet(chatId: string) {
   })
 }
 
+function characterLorebookGet(characterId: string) {
+  return harness.app.inject({
+    method: 'GET',
+    url: `/api/v1/projection/characterLorebook?id=${characterId}`,
+    headers: { 'risu-auth': assertion },
+  })
+}
+
 function selectFields(
   database: Record<string, unknown>,
   fieldKeys: readonly string[],
@@ -600,6 +608,79 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
+  it('L14: single character-lorebook hydration performs zero whole-corpus payload reads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase({ ...fixture.database, enableLorebookStubs: true })
+
+    const characterId = fixture.characters[0].chaId
+    const bulk = await assertScopedLoadOnHotPath(() =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/projection/characterLorebooks/bulk',
+        headers: { 'risu-auth': assertion },
+        payload: { ids: [characterId] },
+      }),
+    )
+    expect(bulk.statusCode).toBe(200)
+    const bulkBody = bulk.json()
+    expect(bulkBody.characters).toHaveLength(1)
+    expect(bulkBody.missing).toEqual([])
+
+    const single = await assertScopedLoadOnHotPath(() => characterLorebookGet(characterId))
+    expect(single.statusCode).toBe(200)
+    const singleBody = single.json()
+    expect(singleBody).toMatchObject({
+      resource: 'characterLorebook',
+      mode: 'character-lorebook',
+      characterId,
+    })
+    expect(singleBody.globalLore).toEqual(bulkBody.characters[0].globalLore)
+    expect(singleBody.globalLore).toHaveLength(fixture.characters[0].globalLore.length)
+    const expectedFirstLore = fixture.characters[0].globalLore[0] as Record<string, unknown>
+    expect(singleBody.globalLore[0]).toMatchObject(expectedFirstLore)
+
+    const missing = await assertScopedLoadOnHotPath(() => characterLorebookGet('missing-char'))
+    expect(missing.statusCode).toBe(200)
+    expect(missing.json()).toMatchObject({
+      mode: 'character-lorebook',
+      characterId: 'missing-char',
+      globalLore: [],
+    })
+  })
+
+  it('L14: single character-lorebook hydration keeps the broad pre-extraction fallback', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase({ ...fixture.database, enableLorebookStubs: true })
+
+    const embeddedLore = [{ key: 'embedded', content: 'legacy embedded lore' }]
+    const db = openDatabase(harness.dataDir)
+    try {
+      const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      settings.characters = [
+        {
+          chaId: 'embedded-char',
+          name: 'Embedded',
+          globalLore: embeddedLore,
+        },
+      ]
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      db.exec('DELETE FROM chats')
+      db.exec('DELETE FROM characters')
+    } finally {
+      db.close()
+    }
+
+    const { result: res, corpusLoadCount } = await withServerLoadInstrumentation(() =>
+      characterLorebookGet('embedded-char'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.json().globalLore).toEqual(embeddedLore)
+    expect(corpusLoadCount).toBeGreaterThan(0)
+  })
+
   it('U1: bulk character-lorebook hydration performs zero whole-corpus payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({ ...fixture.database, enableLorebookStubs: true })
@@ -625,11 +706,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     ])
     for (const row of body.characters) {
       const single = (
-        await harness.app.inject({
-          method: 'GET',
-          url: `/api/v1/projection/characterLorebook?id=${row.characterId}`,
-          headers: { 'risu-auth': assertion },
-        })
+        await assertScopedLoadOnHotPath(() => characterLorebookGet(row.characterId))
       ).json()
       expect(row.globalLore).toHaveLength(fixture.characters[0].globalLore.length)
       expect(JSON.stringify(row.globalLore)).toBe(JSON.stringify(single.globalLore))

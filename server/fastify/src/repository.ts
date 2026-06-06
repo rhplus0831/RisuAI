@@ -1574,14 +1574,26 @@ function getChatRowsByIds(db: DatabaseSync, chatIds: readonly string[]): Map<str
 }
 
 /**
- * One character's full `globalLore` for the hydration endpoint. Reads the full,
- * un-stubbed db.json and returns `[]` for an unknown / lore-less character.
+ * One character's full `globalLore` for the hydration endpoint. In extracted
+ * SQLite states this reads only the requested character row; pre-extraction
+ * embedded-character states keep the broad fallback. Unknown / lore-less
+ * characters return `[]`.
  */
 export function loadCharacterLorebookHydration(
   db: DatabaseSync,
   dataDir: string,
   characterId: string,
 ): { globalLore: unknown[] } {
+  if (sqliteIsCharacterAuthority(db)) {
+    const character = getCharacterRowsByIds(db, [characterId]).get(characterId)
+    return {
+      globalLore:
+        character?.chaId === characterId && Array.isArray(character.globalLore)
+          ? (character.globalLore as unknown[])
+          : [],
+    }
+  }
+
   const persisted = loadPersisted(db, dataDir)
   const characters =
     (

@@ -259,10 +259,18 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
     'L13: single-key plugin-storage PUT/DELETE skip database loads while bulk merge still reads current storage',
   ),
-  planned(
+  done(
     'L14',
     2,
     'Single-row read via `getCharacterRowsByIds` for the single lorebook hydration (mirror the bulk sibling).',
+    'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+    'L14: single character-lorebook hydration performs zero whole-corpus payload reads',
+    [
+      {
+        testPath: 'server/fastify/__tests__/projection.test.ts',
+        testName: 'matches single and bulk character lorebook hydration for the same character',
+      },
+    ],
   ),
   planned(
     'L15',
@@ -1201,7 +1209,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     const plannedEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'PLANNED')
     const doneEntries = SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE')
 
-    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'M4', 'M5', 'L13'])
+    expect(doneEntries.map((entry) => entry.id)).toEqual(['H1', 'M4', 'M5', 'L13', 'L14'])
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
     expect(doneEntries.every(hasProofFields)).toBe(true)
     for (const entry of plannedEntries) {
@@ -1209,11 +1217,11 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M4, M5, and L13 marked DONE', () => {
+  it('keeps the live registry green with H1, M4, M5, L13, and L14 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual(['H1', 'M4', 'M5', 'L13'])
+    ).toEqual(['H1', 'M4', 'M5', 'L13', 'L14'])
     expect(collectGateProblems()).toEqual([])
   })
 
