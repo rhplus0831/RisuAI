@@ -15,8 +15,9 @@ v1 finding IDs are referenced as `v1-*`.
 - Confirmed findings: 102 total: 3 high, 22 medium, 59 low, 18 informational.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 2 M5, M6, L3, L13, L14, L16,
-  K1, and K2, Phase 3 M1-M4 and L4-L11, and Phase 6 M11, M12, M14, L35,
-  L36, and L45-L47 are `DONE`; the rest are `PENDING`.
+  K1, and K2, Phase 3 M1-M4 and L4-L11, Phase 4 M7-M10, L32-L34, L37, and
+  K4, and Phase 6 M11, M12, M14, L35, L36, and L45-L47 are `DONE`; the rest
+  are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -59,10 +60,10 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M4  | [3](phases/phase-3-assembly-cbs-and-triggers.md) | Memoize charhistory/userhistory/lorebook callbacks per assembly. | DONE    |
 | M5  | [2](phases/phase-2-server-corpus-ring-2.md)      | Single-row scoped read + repair for character/chat PATCH.        | DONE    |
 | M6  | [2](phases/phase-2-server-corpus-ring-2.md)      | Field-scoped projection loaders that skip the characters parse.  | DONE    |
-| M7  | [4](phases/phase-4-client-clone-ring-2.md)       | Assign `replace_all` messages without `structuredClone`.         | PENDING |
-| M8  | [4](phases/phase-4-client-clone-ring-2.md)       | `getItem` reads one key, not a whole-DB snapshot.                | PENDING |
-| M9  | [4](phases/phase-4-client-clone-ring-2.md)       | Allowed-keys diff for `changedChatMetadata` (v1-M13 shape).      | PENDING |
-| M10 | [4](phases/phase-4-client-clone-ring-2.md)       | Module-only / single-row module snapshots.                       | PENDING |
+| M7  | [4](phases/phase-4-client-clone-ring-2.md)       | Assign `replace_all` messages without `structuredClone`.         | DONE    |
+| M8  | [4](phases/phase-4-client-clone-ring-2.md)       | `getItem` reads one key, not a whole-DB snapshot.                | DONE    |
+| M9  | [4](phases/phase-4-client-clone-ring-2.md)       | Allowed-keys diff for `changedChatMetadata` (v1-M13 shape).      | DONE    |
+| M10 | [4](phases/phase-4-client-clone-ring-2.md)       | Module-only / single-row module snapshots.                       | DONE    |
 | M11 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the lorebook watcher (+ epoch-bumping apply). | DONE    |
 | M12 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the character-profile watcher.              | DONE    |
 | M13 | [5](phases/phase-5-client-render-and-ui.md)      | Debounce + per-item memo for prompt-template tokenize.           | PENDING |
@@ -111,12 +112,12 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L29 | [8](phases/phase-8-server-bounds.md)             | Cap the charx download near the expanded limit.                   | PENDING |
 | L30 | [8](phases/phase-8-server-bounds.md)             | In-flight promise dedupe for Vertex tokens.                       | PENDING |
 | L31 | [8](phases/phase-8-server-bounds.md)             | Default proxy deadline when `risu-timeout-ms` is absent.          | PENDING |
-| L32 | [4](phases/phase-4-client-clone-ring-2.md)       | Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`. | PENDING |
-| L33 | [4](phases/phase-4-client-clone-ring-2.md)       | Single-row snapshot for trash `removeChar`.                       | PENDING |
-| L34 | [4](phases/phase-4-client-clone-ring-2.md)       | Minimal `supaMemory` patch on selection.                          | PENDING |
-| L35 | [6](phases/phase-6-bridges-lifecycle-network.md) | Carry `hypaV3Data` independently of message length.               | DONE    |
-| L36 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound the prereroll maps; clear on chat switch.                   | DONE    |
-| L37 | [4](phases/phase-4-client-clone-ring-2.md)       | Same-language early-return in `changeLanguage`.                   | PENDING |
+| L32 | [4](phases/phase-4-client-clone-ring-2.md)       | Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`. | DONE |
+| L33 | [4](phases/phase-4-client-clone-ring-2.md)       | Single-row snapshot for trash `removeChar`.                       | DONE |
+| L34 | [4](phases/phase-4-client-clone-ring-2.md)       | Minimal `supaMemory` patch on selection.                          | DONE |
+| L35 | [6](phases/phase-6-bridges-lifecycle-network.md) | Carry `hypaV3Data` independently of message length.               | DONE |
+| L36 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound the prereroll maps; clear on chat switch.                   | DONE |
+| L37 | [4](phases/phase-4-client-clone-ring-2.md)       | Same-language early-return in `changeLanguage`.                   | DONE |
 | L38 | [5](phases/phase-5-client-render-and-ui.md)      | Remove `{{#function}}`/`{{call::}}` logs.                         | PENDING |
 | L39 | [5](phases/phase-5-client-render-and-ui.md)      | `includes()` fast path + indexOf scan in `parseThoughtsAndTools`. | PENDING |
 | L40 | [5](phases/phase-5-client-render-and-ui.md)      | Module-level content-keyed `ParseMarkdown` memo (with H3).        | PENDING |
@@ -150,7 +151,7 @@ archive, these rows own the remaining gap.
 | K1  | [2](phases/phase-2-server-corpus-ring-2.md)      | Wire `chatScopedRead` into generation finalization persist (v1-L6 residual). | DONE    |
 | K2  | [2](phases/phase-2-server-corpus-ring-2.md)      | Message-free/scoped load for the asset-GC sweep (v1-M10 residual). | DONE    |
 | K3  | [7](phases/phase-7-opt-in-subsystems.md)         | Check `blobUrlCache` before fetching asset bytes (ordering only; bulk-byte route stays gated). | PENDING |
-| K4  | [4](phases/phase-4-client-clone-ring-2.md)       | Debounce/scope the lorebook editor per-keystroke collection clone (v1-L32 residual). | PENDING |
+| K4  | [4](phases/phase-4-client-clone-ring-2.md)       | Debounce/scope the lorebook editor per-keystroke collection clone (v1-L32 residual). | DONE    |
 
 ### Informational
 

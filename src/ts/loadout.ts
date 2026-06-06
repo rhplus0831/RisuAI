@@ -1,5 +1,5 @@
 import { changeUserPersona } from './persona'
-import { currentModuleStateSnapshot, dispatchEnableModule } from './moduleCommands'
+import { currentGlobalModuleStateSnapshot, dispatchEnableModule } from './moduleCommands'
 import {
   canUseServerCommands,
   createLoadoutCommand,
@@ -165,7 +165,7 @@ export function applyLoadout(
     }
   }
   if (apply.includes('modules')) {
-    const modulePrevious = currentModuleStateSnapshot()
+    const modulePrevious = currentGlobalModuleStateSnapshot()
     const previousModules = new Set(DBState.db.enabledModules ?? [])
     const nextModules = new Set(loadout.modules ?? [])
     withTrustedServerProjectionWrite(() => {

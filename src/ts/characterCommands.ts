@@ -108,6 +108,21 @@ export interface CharacterRowSnapshot {
   selectedCharID: number
 }
 
+export interface CharacterTrashTimeSnapshot {
+  characterId: string | undefined
+  index: number
+  hadTrashTime: boolean
+  trashTime: number | null | undefined
+  currentChar?: number
+  selectedCharID: number
+}
+
+export interface CharacterSupaMemorySnapshot {
+  characterId: string
+  hadSupaMemory: boolean
+  supaMemory: boolean | undefined
+}
+
 export function currentCharacterRowSnapshot(index: number = get(selectedCharID)): CharacterRowSnapshot {
   const character = DBState.db.characters?.[index]
   return {
@@ -116,6 +131,34 @@ export function currentCharacterRowSnapshot(index: number = get(selectedCharID))
     character: character ? cloneJsonValue(character) : undefined,
     currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
     selectedCharID: get(selectedCharID),
+  }
+}
+
+export function currentCharacterTrashTimeSnapshot(
+  index: number = get(selectedCharID),
+): CharacterTrashTimeSnapshot {
+  const character = DBState.db.characters?.[index] as
+    | (character & { trashTime?: number | null })
+    | undefined
+  return {
+    characterId: character?.chaId,
+    index,
+    hadTrashTime: !!character && Object.prototype.hasOwnProperty.call(character, 'trashTime'),
+    trashTime: character?.trashTime,
+    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    selectedCharID: get(selectedCharID),
+  }
+}
+
+export function currentCharacterSupaMemorySnapshot(
+  characterId: string,
+): CharacterSupaMemorySnapshot | null {
+  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  if (!character) return null
+  return {
+    characterId,
+    hadSupaMemory: Object.prototype.hasOwnProperty.call(character, 'supaMemory'),
+    supaMemory: character.supaMemory,
   }
 }
 
@@ -130,6 +173,39 @@ export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
     }
     ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
     selectedCharID.set(snapshot.selectedCharID)
+  })
+}
+
+export function restoreCharacterTrashTime(snapshot: CharacterTrashTimeSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const characters = DBState.db.characters
+    if (characters) {
+      const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
+      if (index >= 0) {
+        const character = characters[index] as character & { trashTime?: number | null }
+        if (snapshot.hadTrashTime) {
+          character.trashTime = snapshot.trashTime
+        } else {
+          delete character.trashTime
+        }
+      }
+    }
+    ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
+    selectedCharID.set(snapshot.selectedCharID)
+  })
+}
+
+export function restoreCharacterSupaMemory(snapshot: CharacterSupaMemorySnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const character = DBState.db.characters?.find(
+      (candidate) => candidate.chaId === snapshot.characterId,
+    )
+    if (!character) return
+    if (snapshot.hadSupaMemory) {
+      character.supaMemory = snapshot.supaMemory
+    } else {
+      delete character.supaMemory
+    }
   })
 }
 
@@ -225,6 +301,24 @@ export function dispatchUpdateCharacterScoped(
   previous: CharacterRowSnapshot,
 ): void {
   dispatchUpdateCharacterWith(characterId, patch, () => restoreCharacterRow(previous))
+}
+
+export function dispatchUpdateCharacterTrashTime(
+  characterId: string,
+  trashTime: number,
+  previous: CharacterTrashTimeSnapshot,
+): void {
+  dispatchUpdateCharacterWith(characterId, { trashTime }, () => restoreCharacterTrashTime(previous))
+}
+
+export function dispatchUpdateCharacterSupaMemory(
+  characterId: string,
+  enabled: boolean,
+  previous: CharacterSupaMemorySnapshot,
+): void {
+  dispatchUpdateCharacterWith(characterId, { supaMemory: enabled }, () =>
+    restoreCharacterSupaMemory(previous),
+  )
 }
 
 function dispatchCompatibleCharacterUpdateWith(
@@ -334,16 +428,17 @@ export function dispatchReorderCharacters(previous: CharacterStateSnapshot): voi
 }
 
 export function setCharacterSupaMemory(characterId: string, enabled: boolean): void {
-  const previous = currentCharacterStateSnapshot()
-  if (canUseServerCommands()) {
-    dispatchUpdateCharacter(characterId, { supaMemory: enabled }, previous)
-    return
-  }
+  if (!characterId) return
+  withTrustedServerProjectionWrite(() => {
+    const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    if (!character || Boolean(character.supaMemory) === enabled) return
 
-  const character = DBState.db.characters.find((candidate) => candidate.chaId === characterId)
-  if (character) {
+    const previous = canUseServerCommands() ? currentCharacterSupaMemorySnapshot(characterId) : null
     character.supaMemory = enabled
-  }
+    if (previous) {
+      dispatchUpdateCharacterSupaMemory(characterId, enabled, previous)
+    }
+  })
 }
 
 export function toCharacterSnapshot(character: character): CharacterSnapshot {

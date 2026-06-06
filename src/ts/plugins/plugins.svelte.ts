@@ -13,6 +13,7 @@ import { fetchNative, globalFetch, readImage, saveAsset, toGetter } from '../glo
 import { DBState, hotReloading, pluginAlertModalStore, selectedCharID } from '../stores.svelte'
 import type { ScriptMode } from '../process/scripts'
 import type { RisuModule } from '../process/modules'
+import { safeStructuredClone } from '../polyfill'
 import { checkCodeSafety } from './pluginSafety'
 import {
   SafeDocument,
@@ -37,8 +38,8 @@ import {
   toPluginSnapshot,
 } from '../pluginCommands'
 import {
-  currentModuleStateSnapshot,
-  restoreModuleState,
+  currentGlobalModuleStateSnapshot,
+  restoreGlobalModuleState,
   sanitizeModulePatch,
   toModuleSnapshot,
 } from '../moduleCommands'
@@ -666,7 +667,7 @@ function applyPluginDatabasePatch(
 ): void {
   const previous = currentPluginStateSnapshot()
   const previousModules =
-    'modules' in newDb || 'enabledModules' in newDb ? currentModuleStateSnapshot() : null
+    'modules' in newDb || 'enabledModules' in newDb ? currentGlobalModuleStateSnapshot() : null
   const serverMode = canUseServerCommands()
   const settingsPatch: Record<string, unknown> = {}
   const storageValues: Record<string, unknown> = {}
@@ -779,7 +780,7 @@ function dispatchPluginCollectionPatch(
 
 function dispatchModuleCollectionPatch(
   modules: RisuModule[],
-  previous: ReturnType<typeof currentModuleStateSnapshot>,
+  previous: ReturnType<typeof currentGlobalModuleStateSnapshot>,
 ): void {
   if (!canUseServerCommands()) return
 
@@ -830,13 +831,13 @@ function dispatchModuleCollectionPatch(
   }
 
   if (factories.length > 0) {
-    runOptimisticCommandSequence(factories, () => restoreModuleState(previous))
+    runOptimisticCommandSequence(factories, () => restoreGlobalModuleState(previous))
   }
 }
 
 function dispatchEnabledModulesPatch(
   enabledModules: unknown[],
-  previous: ReturnType<typeof currentModuleStateSnapshot>,
+  previous: ReturnType<typeof currentGlobalModuleStateSnapshot>,
   modules: RisuModule[],
 ): void {
   if (!canUseServerCommands()) return
@@ -865,7 +866,7 @@ function dispatchEnabledModulesPatch(
   }
 
   if (factories.length > 0) {
-    runOptimisticCommandSequence(factories, () => restoreModuleState(previous))
+    runOptimisticCommandSequence(factories, () => restoreGlobalModuleState(previous))
   }
 }
 
@@ -1126,9 +1127,8 @@ export const getV2PluginAPIs = () => {
     },
     pluginStorage: {
       getItem: (key: string) => {
-        const db = getDatabase({ snapshot: true })
-        db.pluginCustomStorage ??= {}
-        return db.pluginCustomStorage[key] || null
+        const value = getDatabase().pluginCustomStorage?.[key]
+        return value == null ? null : safeStructuredClone(value)
       },
       setItem: (key: string, value: string) => {
         setPluginStorageValue(key, value)

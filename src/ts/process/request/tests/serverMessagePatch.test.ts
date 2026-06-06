@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Chat } from '../../../storage/database.svelte'
 import type { ServerChatMessagePatch } from '../serverChatEvents'
 import { applyServerMessagePatch } from '../serverMessagePatch'
@@ -18,7 +18,14 @@ function patch(overrides: Partial<ServerChatMessagePatch>): ServerChatMessagePat
 }
 
 describe('applyServerMessagePatch', () => {
-  it('normalizes an already-local user append without duplicating it', () => {
+  it('preserves append single-message detach while normalizing an already-local user append', () => {
+    const serverMessage = {
+      role: 'user',
+      data: 'hi',
+      chatId: 'server-id',
+      time: 1,
+      generationInfo: { model: 'server-model' },
+    } satisfies Chat['message'][number]
     const chat = {
       message: [{ role: 'user', data: 'hi' }],
       note: '',
@@ -35,15 +42,105 @@ describe('applyServerMessagePatch', () => {
             type: 'append',
             source: 'user_message',
             index: 0,
-            message: { role: 'user', data: 'hi', chatId: 'server-id', time: 1, name: null },
+            message: serverMessage,
           },
         ],
       }),
     )
 
     expect(chat.message).toEqual([
-      { role: 'user', data: 'hi', chatId: 'server-id', time: 1, name: null },
+      {
+        role: 'user',
+        data: 'hi',
+        chatId: 'server-id',
+        time: 1,
+        generationInfo: { model: 'server-model' },
+      },
     ])
+    expect(chat.message[0]).not.toBe(serverMessage)
+    expect(chat.message[0].generationInfo).not.toBe(serverMessage.generationInfo)
+
+    serverMessage.data = 'mutated after apply'
+    serverMessage.generationInfo = { model: 'mutated model' }
+    expect(chat.message[0]).toEqual({
+      role: 'user',
+      data: 'hi',
+      chatId: 'server-id',
+      time: 1,
+      generationInfo: { model: 'server-model' },
+    })
+  })
+
+  it('M7: replace_all applies a byte-identical transcript with zero structuredClone calls', () => {
+    const replacementMessages = [
+      {
+        role: 'user',
+        data: 'edited',
+        chatId: 'server-user',
+        time: 10,
+        name: 'Tester',
+        otherUser: true,
+      },
+      {
+        role: 'char',
+        data: 'inserted',
+        saying: 'spoken',
+        chatId: 'server-char',
+        time: 11,
+        name: 'Character',
+        generationInfo: {
+          model: 'server-model',
+          generationId: 'generation-1',
+          inputTokens: 12,
+          outputTokens: 4,
+          maxContext: 4096,
+          stageTiming: { stage1: 1, stage2: 2 },
+        },
+        promptInfo: {
+          promptName: 'preset',
+          promptToggles: [{ key: 'toggle', value: 'on' }],
+          promptText: [{ role: 'assistant', content: 'prompt row' }],
+        },
+        disabled: 'allBefore',
+        isComment: true,
+      },
+    ] satisfies Chat['message']
+    const expectedTranscript = JSON.stringify(replacementMessages)
+    const chat = {
+      message: [{ role: 'user', data: 'before', chatId: 'old-id' }],
+      note: 'preserve note',
+      name: 'preserve name',
+      localLore: [],
+      scriptstate: { $old: '1' },
+    } satisfies Chat
+
+    const structuredCloneSpy = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      applyServerMessagePatch(
+        chat,
+        patch({
+          messageMutations: [
+            {
+              type: 'replace_all',
+              source: 'start_trigger',
+              beforeLength: 1,
+              afterLength: replacementMessages.length,
+              messages: replacementMessages,
+            },
+          ],
+        }),
+      )
+
+      expect(structuredCloneSpy).toHaveBeenCalledTimes(0)
+    } finally {
+      structuredCloneSpy.mockRestore()
+    }
+
+    expect(chat.message).toEqual(replacementMessages)
+    expect(JSON.stringify(chat.message)).toBe(expectedTranscript)
+    expect(chat.note).toBe('preserve note')
+    expect(chat.name).toBe('preserve name')
+    expect(chat.scriptstate).toEqual({ $old: '1' })
   })
 
   it('applies replace-all message mutations and chat variable deltas', () => {

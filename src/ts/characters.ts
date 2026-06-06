@@ -59,12 +59,13 @@ import {
   currentCharacterRowSnapshot,
   currentCharacterSelectionSnapshot,
   currentCharacterStateSnapshot,
+  currentCharacterTrashTimeSnapshot,
   dispatchCreateAndSelectCharacter,
   dispatchCompatibleCharacterUpdateScoped,
   dispatchCreateCharacter,
   dispatchDeleteCharacter,
   dispatchSelectCharacter,
-  dispatchUpdateCharacter,
+  dispatchUpdateCharacterTrashTime,
 } from './characterCommands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
@@ -915,15 +916,15 @@ export async function removeChar(
   }
   let chars = db.characters
   if (type === 'normal') {
-    const previous = currentCharacterStateSnapshot()
-    const characterId = chars[index]?.chaId
+    const previous = currentCharacterTrashTimeSnapshot(index)
+    const characterId = previous.characterId
     const trashTime = Date.now()
     withTrustedServerProjectionWrite(() => {
       DBState.db.characters[index].trashTime = trashTime
       chars = DBState.db.characters
     })
     if (characterId) {
-      dispatchUpdateCharacter(characterId, { trashTime }, previous)
+      dispatchUpdateCharacterTrashTime(characterId, trashTime, previous)
     }
   } else {
     const previous = currentCharacterStateSnapshot()

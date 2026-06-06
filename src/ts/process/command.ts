@@ -4,7 +4,6 @@ import {
   getCurrentChat,
   getDatabase,
   setCurrentChat,
-  setDatabase,
 } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { alertInput, alertMd, alertNormal, alertSelect } from '../alert'
@@ -31,7 +30,12 @@ export async function processMultiCommand(command: string) {
     const char = command[i]
     if (char === '"') {
       quoteDepth = !quoteDepth
-    } else if (char === '|' && quoteDepth === false) {
+    } else if (
+      char === '|' &&
+      quoteDepth === false &&
+      command[i - 1] !== '|' &&
+      command[i + 1] !== '|'
+    ) {
       splited.push(command.slice(lastIndex, i))
       lastIndex = i + 1
     }
@@ -172,15 +176,8 @@ async function processCommand(command: string, pipe: string): Promise<false | st
         clearMode = true
         splited.shift()
       }
-      const selectedChar = get(selectedCharID)
       for (const e of splited) {
-        // Optimistic local writes must not mutate the read-only server
-        // projection directly; wrap them in a trusted write scope and re-read
-        // the live database inside it.
-        withTrustedServerProjectionWrite(() => {
-          const db = getDatabase()
-          const char = db.characters[selectedChar]
-          const chat = char.chats[char.chatPage]
+        mutateCurrentChatMessages((chat) => {
           if (clearMode) {
             chat.message = []
           }
@@ -188,7 +185,6 @@ async function processCommand(command: string, pipe: string): Promise<false | st
             role: 'user',
             data: e,
           })
-          setDatabase(db)
         })
         await sendChat(-1)
       }
@@ -350,7 +346,6 @@ function mutateCurrentChatMessages(mutate: (chat: Chat) => void): void {
     const char = db.characters[selectedChar]
     const chat = char.chats[char.chatPage]
     mutate(chat)
-    setDatabase(db)
   })
   const afterChar = getDatabase().characters[selectedChar]
   const nextChat = snapshotChat(afterChar.chats[afterChar.chatPage])

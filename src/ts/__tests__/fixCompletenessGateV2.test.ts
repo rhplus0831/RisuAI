@@ -299,10 +299,86 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('M7', 4, 'Assign `replace_all` messages without `structuredClone`.'),
-  planned('M8', 4, '`getItem` reads one key, not a whole-DB snapshot.'),
-  planned('M9', 4, 'Allowed-keys diff for `changedChatMetadata` (v1-M13 shape).'),
-  planned('M10', 4, 'Module-only / single-row module snapshots.'),
+  done(
+    'M7',
+    4,
+    'Assign `replace_all` messages without `structuredClone`.',
+    'src/ts/process/request/tests/serverMessagePatch.test.ts',
+    'M7: replace_all applies a byte-identical transcript with zero structuredClone calls',
+    [
+      {
+        testPath: 'src/ts/process/request/tests/serverMessagePatch.test.ts',
+        testName:
+          'preserves append single-message detach while normalizing an already-local user append',
+      },
+    ],
+  ),
+  done(
+    'M8',
+    4,
+    '`getItem` reads one key, not a whole-DB snapshot.',
+    'src/ts/plugins/plugins.test.ts',
+    'M8: pluginStorage.getItem clones only the selected key without a whole-DB snapshot',
+    [
+      {
+        testPath: 'src/ts/plugins/plugins.test.ts',
+        testName: 'M8: pluginStorage.getItem preserves missing scalar and falsey results',
+      },
+      {
+        testPath: 'src/ts/plugins/plugins.test.ts',
+        testName: 'M8: pluginStorage.getItem detaches array values from live plugin storage',
+      },
+    ],
+  ),
+  done(
+    'M9',
+    4,
+    'Allowed-keys diff for `changedChatMetadata` (v1-M13 shape).',
+    'src/ts/chatCommands.test.ts',
+    'M9: allowed metadata diffs match the previous clone-sanitize patch bytes',
+    [
+      {
+        testPath: 'src/ts/chatCommands.test.ts',
+        testName:
+          'M9: message-only changes produce an empty patch without serializing message arrays',
+      },
+      {
+        testPath: 'src/ts/chatCommands.test.ts',
+        testName: 'M9: changed object metadata is detached from the current chat record',
+      },
+      {
+        testPath: 'src/ts/chatCommands.test.ts',
+        testName: 'restores only the one chat row, preserving message history and unrelated chats',
+      },
+    ],
+  ),
+  done(
+    'M10',
+    4,
+    'Module-only / single-row module snapshots.',
+    'src/ts/moduleCommands.test.ts',
+    'M10: global module snapshots clone only modules and enabledModules',
+    [
+      {
+        testPath: 'src/ts/moduleCommands.test.ts',
+        testName:
+          'M10: character-module snapshots clone and restore only the target modules field',
+      },
+      {
+        testPath: 'src/ts/moduleCommands.test.ts',
+        testName: 'M10: forced-failure global rollback preserves concurrent character edits',
+      },
+      {
+        testPath: 'src/ts/moduleCommands.test.ts',
+        testName:
+          'M10: forced-failure character-module rollback preserves sibling and same-row edits',
+      },
+      {
+        testPath: 'src/ts/moduleCommands.test.ts',
+        testName: 'M10: character-module rollback uses stable ids across index shifts',
+      },
+    ],
+  ),
   done(
     'M11',
     6,
@@ -518,9 +594,98 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L29', 8, 'Cap the charx download near the expanded limit.'),
   planned('L30', 8, 'In-flight promise dedupe for Vertex tokens.'),
   planned('L31', 8, 'Default proxy deadline when `risu-timeout-ms` is absent.'),
-  planned('L32', 4, 'Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`.'),
-  planned('L33', 4, 'Single-row snapshot for trash `removeChar`.'),
-  planned('L34', 4, 'Minimal `supaMemory` patch on selection.'),
+  done(
+    'L32',
+    4,
+    'Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`.',
+    'src/ts/process/__tests__/command.projectionGuard.test.ts',
+    'L32: /send appends a user message without setDatabase or whole-db clone churn',
+    [
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /sendas appends a character message without setDatabase',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /comment appends the legacy comment block to the last message',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /cut range keeps the legacy sliced transcript bytes',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /cut index keeps the legacy spliced row bytes',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /cut id removes the matching chatId without setDatabase',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /del keeps the legacy last-N truncation without setDatabase',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /multisend appends each segment in order and sends after each one',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: /multisend clear resets before each segment and still sends each segment',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testName: 'L32: forced message-command failure restores only the active chat',
+      },
+    ],
+  ),
+  done(
+    'L33',
+    4,
+    'Single-row snapshot for trash `removeChar`.',
+    'src/ts/characterCommands.test.ts',
+    'L33: removeChar normal trash captures no whole-characters clone and reuses one timestamp',
+    [
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L33: trashTime snapshots are scalar and restore only the target field',
+      },
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L33: failed removeChar trash update restores only trashTime',
+      },
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L33: trash rollback restores by stable id after index shifts',
+      },
+    ],
+  ),
+  done(
+    'L34',
+    4,
+    'Minimal `supaMemory` patch on selection.',
+    'src/ts/characterCommands.test.ts',
+    'L34: selectedCharID auto-enable uses one-field patch without full row clone',
+    [
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L34: setCharacterSupaMemory applies one-field optimistic command patch',
+      },
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName:
+          'L34: setCharacterSupaMemory captures no full character row or characters array clone',
+      },
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L34: failed supaMemory command restores only supaMemory and preserves selection',
+      },
+      {
+        testPath: 'src/ts/characterCommands.test.ts',
+        testName: 'L34: selectedCharID auto-enable preserves all no-op gates',
+      },
+    ],
+  ),
   done(
     'L35',
     6,
@@ -556,7 +721,28 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L37', 4, 'Same-language early-return in `changeLanguage`.'),
+  done(
+    'L37',
+    4,
+    'Same-language early-return in `changeLanguage`.',
+    'src/lang/index.test.ts',
+    'L37: repeated same-code changeLanguage calls reuse the applied language object without clone work',
+    [
+      {
+        testPath: 'src/lang/index.test.ts',
+        testName: 'L37: switching between languages rebuilds language objects and merged strings',
+      },
+      {
+        testPath: 'src/lang/index.test.ts',
+        testName:
+          'L37: switching back to English changes identity once and then reuses the English object',
+      },
+      {
+        testPath: 'src/lang/index.test.ts',
+        testName: 'L37: unknown language codes resolve to English and share the English cache key',
+      },
+    ],
+  ),
   planned('L38', 5, 'Remove `{{#function}}`/`{{call::}}` logs.'),
   planned('L39', 5, '`includes()` fast path + indexOf scan in `parseThoughtsAndTools`.'),
   planned('L40', 5, 'Module-level content-keyed `ParseMarkdown` memo (with H3).'),
@@ -665,10 +851,43 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     7,
     'Check `blobUrlCache` before fetching asset bytes (ordering only; bulk-byte route stays gated).',
   ),
-  planned(
+  done(
     'K4',
     4,
     'Debounce/scope the lorebook editor per-keystroke collection clone (v1-L32 residual).',
+    'src/ts/server/lorebookBridge.svelte.test.ts',
+    'K4: typing drafts clone only the edited entry before debounce settle',
+    [
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: the debounced final server write contains the final edited entry',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: flushing a draft sends the final replacement before the debounce delay',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: immediate flush with an active watcher sends one replacement only',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName:
+          'K4: module external entry drafts avoid collection clones and flush final module replacement',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: ModuleMenu wires external LoreBookList typing through module draft handlers',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: failed entry-draft rollback restores only the edited entry',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: collection operations still use collection-level replacement rollback',
+      },
+    ],
   ),
 ]
 
@@ -1296,7 +1515,7 @@ describe('v2 fix-completeness gate doc universe', () => {
 
     expect(rows).toHaveLength(4)
     expect(ids).toEqual(rangeIds('K', 4))
-    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'PENDING', 'PENDING'])
+    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'PENDING', 'DONE'])
 
     expect(rows[0].targetFix).toContain('v1-L6 residual')
     expect(rows[1].targetFix).toContain('v1-M10 residual')
@@ -1388,7 +1607,7 @@ describe('v2 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M7'
+      entry.id === 'M13'
         ? {
             ...entry,
             testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
@@ -1398,7 +1617,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'M7: PLANNED entries must not claim proof fields',
+      'M13: PLANNED entries must not claim proof fields',
     )
   })
 
@@ -1418,6 +1637,10 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M4',
       'M5',
       'M6',
+      'M7',
+      'M8',
+      'M9',
+      'M10',
       'M11',
       'M12',
       'M14',
@@ -1433,20 +1656,25 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L13',
       'L14',
       'L16',
+      'L32',
+      'L33',
+      'L34',
       'L35',
       'L36',
+      'L37',
       'L45',
       'L46',
       'L47',
       'K1',
       'K2',
+      'K4',
     ])
     expect(doneEntries.every(hasProofFields)).toBe(true)
   })
 
   it('rejects DONE entries without a registered test path and test name', () => {
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M7'
+      entry.id === 'M13'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1456,9 +1684,9 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M7: status mismatch (registry DONE, docs PENDING)',
-        'M7: DONE without a registered testPath',
-        'M7: DONE without a registered testName',
+        'M13: status mismatch (registry DONE, docs PENDING)',
+        'M13: DONE without a registered testPath',
+        'M13: DONE without a registered testName',
       ]),
     )
   })
@@ -1466,7 +1694,7 @@ describe('v2 fix-completeness gate routing registry', () => {
   it('validates primary and extra DONE test proofs against existing test files', () => {
     const missingExtraTestName = ['missing extra proof title', 'assembled at runtime'].join(' ')
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M7'
+      entry.id === 'M13'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1484,8 +1712,8 @@ describe('v2 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
-        'M7: status mismatch (registry DONE, docs PENDING)',
-        `M7: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
+        'M13: status mismatch (registry DONE, docs PENDING)',
+        `M13: test "src/ts/__tests__/fixCompletenessGateV2.test.ts" does not contain "${missingExtraTestName}"`,
       ]),
     )
   })
@@ -1519,12 +1747,12 @@ describe('v2 fix-completeness gate routing registry', () => {
     const riskText = readDoc(RISK_DOC)
     const withDoneDocRow = replaceRiskRow(
       riskText,
-      'M7',
-      '| M7 | [4](phases/phase-4-client-clone-ring-2.md) | Assign `replace_all` messages without `structuredClone`. | DONE |',
+      'M13',
+      '| M13 | [5](phases/phase-5-client-render-and-ui.md) | Debounce + per-item memo for prompt-template tokenize. | DONE |',
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'M7: status mismatch (registry PLANNED, docs DONE)',
+      'M13: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 

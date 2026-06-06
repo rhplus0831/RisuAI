@@ -19,7 +19,7 @@ function sameMessageContent(a: Message | undefined, b: Message): boolean {
 
 function applyMessageMutation(chat: Chat, mutation: ServerChatMessageMutation): void {
   if (mutation.type === 'replace_all') {
-    chat.message = cloneMessages(mutation.messages)
+    chat.message = mutation.messages
     return
   }
 

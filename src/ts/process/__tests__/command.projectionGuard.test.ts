@@ -23,9 +23,15 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
 })
 
-// M12 spy: count setDatabase normalizer runs without changing its behavior.
-// `/setvar`/`/addvar` must not reach it (the in-place scriptstate write + the
-// scoped dispatch persist the change); `/send`'s message mutation still does.
+const sendChatMock = vi.hoisted(() => vi.fn(async () => true))
+vi.mock('../index.svelte', () => ({
+  sendChat: sendChatMock,
+}))
+
+// M12/L32 spy: count setDatabase normalizer runs without changing its behavior.
+// `/setvar`/`/addvar` and send-family message mutations must not reach it: the
+// trusted in-place write plus scoped dispatch persist the change without the
+// whole-database normalizer and language refresh churn.
 const setDatabaseSpy = vi.hoisted(() => ({ count: 0 }))
 vi.mock('../../storage/database.svelte', async (importActual) => {
   const actual = await importActual<typeof import('../../storage/database.svelte')>()
@@ -41,7 +47,10 @@ vi.mock('../../storage/database.svelte', async (importActual) => {
 import { safeStructuredClone } from '../../polyfill'
 import { processMultiCommand } from '../command'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from '../../server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from '../../stores.svelte'
 
 interface CapturedFetch {
@@ -105,34 +114,176 @@ async function waitForCommand(
   throw new Error(`command not dispatched; saw: ${JSON.stringify(calls)}`)
 }
 
-function seedDatabase(messages: unknown[] = []): void {
+async function waitForMatchingCalls(
+  calls: CapturedFetch[],
+  predicate: (call: CapturedFetch) => boolean,
+  expected: number,
+): Promise<CapturedFetch[]> {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const matches = calls.filter(predicate)
+    if (matches.length >= expected) return matches
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  throw new Error(`expected ${expected} matching commands; saw: ${JSON.stringify(calls)}`)
+}
+
+function commandMessages(call: CapturedFetch): Array<Record<string, unknown>> {
+  const body = call.body as { messages?: Array<Record<string, unknown>> } | null
+  return body?.messages ?? []
+}
+
+async function runMessageCommand(
+  command: string,
+  messages: unknown[],
+): Promise<Array<Record<string, unknown>>> {
+  seedDatabase(messages)
+  const calls = stubCommandFetch()
+  setServerProjectionWriteGuardEnabled(true)
+
+  await expect(processMultiCommand(command)).resolves.not.toBe(false)
+
+  const cmd = await waitForCommand(
+    calls,
+    (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+  )
+  return commandMessages(cmd)
+}
+
+async function withAsyncCloneInstrumentation<T>(fn: () => Promise<T>) {
+  const originalStringify = JSON.stringify
+  const originalStructuredClone = globalThis.structuredClone
+  let jsonCloneCount = 0
+  let structuredCloneCount = 0
+  let maxClonedSize = 0
+
+  const measure = (value: unknown): number => {
+    try {
+      return (originalStringify as (input: unknown) => string)(value)?.length ?? 0
+    } catch {
+      return 0
+    }
+  }
+
+  const trackedStringify = function trackedStringify(
+    this: unknown,
+    value: unknown,
+    replacer?: unknown,
+    space?: unknown,
+  ) {
+    jsonCloneCount += 1
+    const out = (originalStringify as (...args: unknown[]) => string).call(
+      this,
+      value,
+      replacer,
+      space,
+    )
+    if (typeof out === 'string' && out.length > maxClonedSize) maxClonedSize = out.length
+    return out
+  } as unknown as typeof JSON.stringify
+
+  const trackedStructuredClone = function trackedStructuredClone<V>(value: V): V {
+    structuredCloneCount += 1
+    const size = measure(value)
+    if (size > maxClonedSize) maxClonedSize = size
+    return (originalStructuredClone as (input: V) => V)(value)
+  } as typeof structuredClone
+
+  JSON.stringify = trackedStringify
+  globalThis.structuredClone = trackedStructuredClone
+  try {
+    const result = await fn()
+    return {
+      result,
+      jsonCloneCount,
+      structuredCloneCount,
+      totalCloneCount: jsonCloneCount + structuredCloneCount,
+      maxClonedSize,
+    }
+  } finally {
+    JSON.stringify = originalStringify
+    globalThis.structuredClone = originalStructuredClone
+  }
+}
+
+function seedDatabase(
+  messages: unknown[] = [],
+  options: { language?: string; includeSiblings?: boolean } = {},
+): void {
   selectedCharID.set(0)
+  const activeChats = [
+    {
+      id: 'chat-1',
+      message: messages,
+      note: '',
+      name: 'main',
+      localLore: [],
+      scriptstate: {},
+    },
+  ]
+  if (options.includeSiblings) {
+    activeChats.push({
+      id: 'chat-active-sibling',
+      message: [{ role: 'user', data: 'active sibling', chatId: 'm-active-sibling' }],
+      note: '',
+      name: 'active sibling',
+      localLore: [],
+      scriptstate: {},
+    })
+  }
   DBState.db = {
+    language: options.language ?? 'en',
     characters: [
       {
         chaId: 'char-a',
         name: 'Character',
         desc: '',
         chatPage: 0,
-        chats: [
-          {
-            id: 'chat-1',
-            message: messages,
-            note: '',
-            name: 'main',
-            localLore: [],
-            scriptstate: {},
-          },
-        ],
+        chats: activeChats,
         triggerscript: [],
         defaultVariables: '',
         globalLore: [],
         type: 'character',
       },
+      ...(options.includeSiblings
+        ? [
+            {
+              chaId: 'char-b',
+              name: 'Sibling Character',
+              desc: '',
+              chatPage: 0,
+              chats: [
+                {
+                  id: 'chat-sibling',
+                  message: [{ role: 'user', data: 'sibling', chatId: 'm-sibling' }],
+                  note: '',
+                  name: 'sibling',
+                  localLore: [],
+                  scriptstate: {},
+                },
+              ],
+              triggerscript: [],
+              defaultVariables: '',
+              globalLore: [],
+              type: 'character',
+            },
+          ]
+        : []),
     ],
     characterOrder: [],
     customscript: [],
   } as any
+}
+
+function seedLargeSiblingDatabase(): void {
+  seedDatabase([{ role: 'user', data: 'seed', chatId: 'm-seed' }], {
+    language: 'ko',
+    includeSiblings: true,
+  })
+  DBState.db.characters[1].chats[0].message = Array.from({ length: 120 }, (_unused, index) => ({
+    role: index % 2 === 0 ? 'user' : 'char',
+    data: `${'x'.repeat(500)}-${index}`,
+    chatId: `m-sibling-large-${index}`,
+  }))
 }
 
 beforeEach(() => {
@@ -141,6 +292,8 @@ beforeEach(() => {
   setServerProjectionWriteGuardEnabled(false)
   seedDatabase()
   setDatabaseSpy.count = 0
+  sendChatMock.mockClear()
+  sendChatMock.mockResolvedValue(true)
 })
 
 afterEach(() => {
@@ -156,18 +309,238 @@ describe('slash-command durable writes under the projection guard', () => {
     }).toThrow(/read-only server projection/)
   })
 
-  it('/send appends a message without throwing and replaces messages via command', async () => {
+  it('L32: /send appends a user message without setDatabase or whole-db clone churn', async () => {
+    seedLargeSiblingDatabase()
+    const wholeCharactersSize = JSON.stringify(DBState.db.characters).length
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
 
-    await expect(processMultiCommand('/send hello world')).resolves.not.toBe(false)
+    const instrumented = await withAsyncCloneInstrumentation(() =>
+      processMultiCommand('/send hello world'),
+    )
+
+    expect(instrumented.result).toBe('')
+    expect(DBState.db.characters[0].chats[0].message.at(-1)).toMatchObject({
+      role: 'user',
+      data: 'hello world',
+    })
+    expect(setDatabaseSpy.count).toBe(0)
+    expect(instrumented.maxClonedSize).toBeLessThan(wholeCharactersSize)
+    expect(instrumented.structuredCloneCount).toBe(0)
 
     const cmd = await waitForCommand(
       calls,
       (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
     )
-    const lastMessage = cmd.body.messages[cmd.body.messages.length - 1]
+    const lastMessage = commandMessages(cmd).at(-1)
     expect(lastMessage).toMatchObject({ role: 'user', data: 'hello world' })
+  })
+
+  it('L32: /send preserves pipe return behavior while appending the piped text', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    await expect(processMultiCommand('/pass piped text|/send {{pipe}}')).resolves.toBe(
+      'piped text',
+    )
+
+    const cmd = await waitForCommand(
+      calls,
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+    )
+    expect(commandMessages(cmd).at(-1)).toMatchObject({ role: 'user', data: 'piped text' })
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('L32: /sendas appends a character message without setDatabase', async () => {
+    const messages = await runMessageCommand('/sendas character line', [
+      { role: 'user', data: 'seed', chatId: 'm-seed' },
+    ])
+
+    expect(messages).toHaveLength(2)
+    expect(messages.at(-1)).toMatchObject({ role: 'char', data: 'character line' })
+    expect(DBState.db.characters[0].chats[0].message.at(-1)).toMatchObject({
+      role: 'char',
+      data: 'character line',
+    })
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('L32: /comment appends the legacy comment block to the last message', async () => {
+    const messages = await runMessageCommand('/comment side note', [
+      { role: 'char', data: 'base', chatId: 'm-base' },
+    ])
+
+    expect(messages).toEqual([
+      {
+        role: 'char',
+        data: 'base<Comment>\nside note\n</Comment>',
+        chatId: 'm-base',
+      },
+    ])
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('L32: /cut range keeps the legacy sliced transcript bytes', async () => {
+    const messages = await runMessageCommand('/cut 1-3', [
+      { role: 'user', data: 'zero', chatId: 'm0' },
+      { role: 'char', data: 'one', chatId: 'm1' },
+      { role: 'user', data: 'two', chatId: 'm2' },
+      { role: 'char', data: 'three', chatId: 'm3' },
+    ])
+
+    expect(messages.map((message) => message.chatId)).toEqual(['m1', 'm2'])
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('L32: /cut index keeps the legacy spliced row bytes', async () => {
+    const messages = await runMessageCommand('/cut 1', [
+      { role: 'user', data: 'zero', chatId: 'm0' },
+      { role: 'char', data: 'one', chatId: 'm1' },
+      { role: 'user', data: 'two', chatId: 'm2' },
+    ])
+
+    expect(messages).toEqual([{ role: 'char', data: 'one', chatId: 'm1' }])
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('L32: /cut id removes the matching chatId without setDatabase', async () => {
+    const messages = await runMessageCommand('/cut m2', [
+      { role: 'user', data: 'zero', chatId: 'm0' },
+      { role: 'char', data: 'one', chatId: 'm1' },
+      { role: 'user', data: 'two', chatId: 'm2' },
+    ])
+
+    expect(messages.map((message) => message.chatId)).toEqual(['m0', 'm1'])
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('L32: /del keeps the legacy last-N truncation without setDatabase', async () => {
+    const messages = await runMessageCommand('/del 2', [
+      { role: 'user', data: 'zero', chatId: 'm0' },
+      { role: 'char', data: 'one', chatId: 'm1' },
+      { role: 'user', data: 'two', chatId: 'm2' },
+      { role: 'char', data: 'three', chatId: 'm3' },
+    ])
+
+    expect(messages.map((message) => message.chatId)).toEqual(['m2', 'm3'])
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('L32: /multisend appends each segment in order and sends after each one', async () => {
+    seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    await expect(processMultiCommand('/multisend first|||second')).resolves.toBe('')
+
+    const messageCommands = await waitForMatchingCalls(
+      calls,
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+      2,
+    )
+    expect(messageCommands.map((call) => commandMessages(call).map((message) => message.data))).toEqual([
+      ['base', 'first'],
+      ['base', 'first', 'second'],
+    ])
+    expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
+      'base',
+      'first',
+      'second',
+    ])
+    expect(sendChatMock).toHaveBeenCalledTimes(2)
+    expect(sendChatMock).toHaveBeenNthCalledWith(1, -1)
+    expect(sendChatMock).toHaveBeenNthCalledWith(2, -1)
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('L32: /multisend clear resets before each segment and still sends each segment', async () => {
+    seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    await expect(processMultiCommand('/multisend clear|||first|||second')).resolves.toBe('')
+
+    const messageCommands = await waitForMatchingCalls(
+      calls,
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+      2,
+    )
+    expect(messageCommands.map((call) => commandMessages(call).map((message) => message.data))).toEqual([
+      ['first'],
+      ['second'],
+    ])
+    expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
+      'second',
+    ])
+    expect(sendChatMock).toHaveBeenCalledTimes(2)
+    expect(sendChatMock).toHaveBeenNthCalledWith(1, -1)
+    expect(sendChatMock).toHaveBeenNthCalledWith(2, -1)
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('L32: forced message-command failure restores only the active chat', async () => {
+    const calls: CapturedFetch[] = []
+    let resolveMessageResponse: ((response: Response) => void) | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-1/messages') {
+          return new Promise<Response>((resolve) => {
+            resolveMessageResponse = resolve
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }], { includeSiblings: true })
+    setServerProjectionWriteGuardEnabled(true)
+
+    await expect(processMultiCommand('/send optimistic')).resolves.toBe('')
+    await waitForCommand(
+      calls,
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+    )
+    expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
+      'base',
+      'optimistic',
+    ])
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[1].name = 'active sibling edit'
+      DBState.db.characters[1].name = 'sibling character edit'
+      DBState.db.characters[1].chats[0].message.push({
+        role: 'char',
+        data: 'sibling message edit',
+        chatId: 'm-sibling-edit',
+      })
+    })
+
+    resolveMessageResponse?.(jsonResponse({ error: 'forced failure' }, 500))
+
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats[0].message).toEqual([
+        {
+          role: 'char',
+          data: 'base',
+          chatId: 'm-base',
+        },
+      ])
+    })
+    expect(DBState.db.characters[0].chats[1].name).toBe('active sibling edit')
+    expect(DBState.db.characters[1].name).toBe('sibling character edit')
+    expect(DBState.db.characters[1].chats[0].message.map((message: any) => message.data)).toEqual([
+      'sibling',
+      'sibling message edit',
+    ])
+    expect(setDatabaseSpy.count).toBe(0)
   })
 
   it('/setvar updates chat scriptstate via the scriptstate command', async () => {
@@ -221,19 +594,6 @@ describe('slash-command durable writes under the projection guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('M12 boundary: /send still runs setDatabase (message mutation is not lumped in)', async () => {
-    const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
-
-    await expect(processMultiCommand('/send hello world')).resolves.not.toBe(false)
-    await waitForCommand(
-      calls,
-      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
-    )
-
-    expect(setDatabaseSpy.count).toBeGreaterThan(0)
-  })
-
   it('/del truncates message history without throwing', async () => {
     seedDatabase([
       { role: 'user', data: 'one', chatId: 'm1' },
@@ -249,6 +609,7 @@ describe('slash-command durable writes under the projection guard', () => {
       (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
     )
     expect(cmd.body.messages.length).toBe(1)
+    expect(setDatabaseSpy.count).toBe(0)
   })
 
   it('L37: command processing logs nothing to console.log on the warm path', async () => {
