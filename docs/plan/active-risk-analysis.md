@@ -16,7 +16,7 @@ v1 finding IDs are referenced as `v1-*`.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 3 M1-M4 and L4-L11, plus Phase
   2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 7 M15, M16, M18-M22,
-  L48, L52-L54, L57-L59 are `DONE`; the rest are `PENDING`.
+  L48-L50, L52-L54, L57-L59, and K3 are `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -128,8 +128,8 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | L46 | [6](phases/phase-6-bridges-lifecycle-network.md) | Bound `sseIdDone` (windowed dedup).                               | PENDING |
 | L47 | [6](phases/phase-6-bridges-lifecycle-network.md) | Remove the `fetchNative` body log.                                | PENDING |
 | L48 | [7](phases/phase-7-opt-in-subsystems.md)         | Translate once; cap HF TTS retries.                               | DONE    |
-| L49 | [7](phases/phase-7-opt-in-subsystems.md)         | `decode()`/`complete` guard + onerror for inlay images.           | PENDING |
-| L50 | [7](phases/phase-7-opt-in-subsystems.md)         | LRU + revoke for `blobUrlCache`.                                  | PENDING |
+| L49 | [7](phases/phase-7-opt-in-subsystems.md)         | `decode()`/`complete` guard + onerror for inlay images.           | DONE    |
+| L50 | [7](phases/phase-7-opt-in-subsystems.md)         | LRU + revoke for `blobUrlCache`.                                  | DONE    |
 | L51 | [7](phases/phase-7-opt-in-subsystems.md)         | Single-pass PNG import (or value-free count pass).                | PENDING |
 | L52 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove the file-send logs.                                        | DONE    |
 | L53 | [7](phases/phase-7-opt-in-subsystems.md)         | Pass raw bytes to pdfjs.                                          | DONE    |
@@ -149,7 +149,7 @@ archive, these rows own the remaining gap.
 | --- | ------------------------------------------------ | ------------------------------------------------------------------ | ------- |
 | K1  | [2](phases/phase-2-server-corpus-ring-2.md)      | Wire `chatScopedRead` into generation finalization persist (v1-L6 residual). | DONE    |
 | K2  | [2](phases/phase-2-server-corpus-ring-2.md)      | Message-free/scoped load for the asset-GC sweep (v1-M10 residual). | DONE    |
-| K3  | [7](phases/phase-7-opt-in-subsystems.md)         | Check `blobUrlCache` before fetching asset bytes (ordering only; bulk-byte route stays gated). | PENDING |
+| K3  | [7](phases/phase-7-opt-in-subsystems.md)         | Check `blobUrlCache` before fetching asset bytes (ordering only; bulk-byte route stays gated). | DONE    |
 | K4  | [4](phases/phase-4-client-clone-ring-2.md)       | Debounce/scope the lorebook editor per-keystroke collection clone (v1-L32 residual). | PENDING |
 
 ### Informational

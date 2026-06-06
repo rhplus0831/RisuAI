@@ -628,8 +628,36 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L49', 7, '`decode()`/`complete` guard + onerror for inlay images.'),
-  planned('L50', 7, 'LRU + revoke for `blobUrlCache`.'),
+  done(
+    'L49',
+    7,
+    '`decode()`/`complete` guard + onerror for inlay images.',
+    'src/ts/process/files/tests/inlays.test.ts',
+    'L49: already-complete inlay images decode and upload without waiting for onload',
+    [
+      {
+        testPath: 'src/ts/process/files/tests/inlays.test.ts',
+        testName: 'L49: broken inlay images reject instead of hanging',
+      },
+      {
+        testPath: 'src/ts/process/files/tests/inlays.test.ts',
+        testName: 'L49: decode rejection without dimensions rejects instead of uploading',
+      },
+    ],
+  ),
+  done(
+    'L50',
+    7,
+    'LRU + revoke for `blobUrlCache`.',
+    'src/ts/parser/tests/inlayBlobCache.test.ts',
+    'L50: blob URL cache evicts least-recently-used entries and revokes object URLs',
+    [
+      {
+        testPath: 'src/ts/parser/tests/inlayBlobCache.test.ts',
+        testName: 'K3/L50: cached and uncached inlays render identical output',
+      },
+    ],
+  ),
   planned('L51', 7, 'Single-pass PNG import (or value-free count pass).'),
   done(
     'L52',
@@ -771,10 +799,18 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'K3',
     7,
     'Check `blobUrlCache` before fetching asset bytes (ordering only; bulk-byte route stays gated).',
+    'src/ts/parser/tests/inlayBlobCache.test.ts',
+    'K3: cached inlay rendering skips asset byte fetches',
+    [
+      {
+        testPath: 'src/ts/parser/tests/inlayBlobCache.test.ts',
+        testName: 'K3/L50: cached and uncached inlays render identical output',
+      },
+    ],
   ),
   planned(
     'K4',
@@ -1407,7 +1443,7 @@ describe('v2 fix-completeness gate doc universe', () => {
 
     expect(rows).toHaveLength(4)
     expect(ids).toEqual(rangeIds('K', 4))
-    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'PENDING', 'PENDING'])
+    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'DONE', 'PENDING'])
 
     expect(rows[0].targetFix).toContain('v1-L6 residual')
     expect(rows[1].targetFix).toContain('v1-M10 residual')
@@ -1549,6 +1585,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L14',
       'L16',
       'L48',
+      'L49',
+      'L50',
       'L52',
       'L53',
       'L54',
@@ -1559,6 +1597,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L59',
       'K1',
       'K2',
+      'K3',
     ])
     expect(doneEntries.every(hasProofFields)).toBe(true)
   })

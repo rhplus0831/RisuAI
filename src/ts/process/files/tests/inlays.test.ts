@@ -108,18 +108,24 @@ const supportedVideoExts = ['webm', 'mp4', 'mkv'] as const
 const supportedImageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'] as const
 const allSupportedExts = [...supportedAudioExts, ...supportedVideoExts, ...supportedImageExts]
 
-function makeImage(w: number, h: number): HTMLImageElement {
+function makeImage(
+  w: number,
+  h: number,
+  options: {
+    complete?: boolean
+    decode?: (() => Promise<void>) | null
+    naturalHeight?: number
+    naturalWidth?: number
+  } = {},
+): HTMLImageElement {
   const img = new Image()
+  const decode = options.decode === null ? undefined : (options.decode ?? vi.fn(async () => {}))
   Object.defineProperty(img, 'width', { get: () => w })
   Object.defineProperty(img, 'height', { get: () => h })
-  Object.defineProperty(img, 'onload', {
-    set(fn: () => void) {
-      fn?.()
-    },
-    get() {
-      return null
-    },
-  })
+  Object.defineProperty(img, 'naturalWidth', { get: () => options.naturalWidth ?? w })
+  Object.defineProperty(img, 'naturalHeight', { get: () => options.naturalHeight ?? h })
+  Object.defineProperty(img, 'complete', { get: () => options.complete ?? true })
+  Object.defineProperty(img, 'decode', { value: decode })
   return img
 }
 
@@ -434,6 +440,64 @@ describe('postInlayAsset', () => {
 })
 
 describe('writeInlayImage', () => {
+  test('L49: already-complete inlay images decode and upload without waiting for onload', async () => {
+    const decode = vi.fn(async () => {})
+    const imgObj = makeImage(120, 80, { complete: true, decode })
+    let assignedOnload = false
+    Object.defineProperty(imgObj, 'onload', {
+      configurable: true,
+      set() {
+        assignedOnload = true
+      },
+    })
+
+    const result = await writeInlayImage(imgObj, {
+      name: 'complete.png',
+    })
+
+    expect(decode).toHaveBeenCalledTimes(1)
+    expect(assignedOnload).toBe(false)
+    expect(serverAssetStore.has(result)).toBe(true)
+    expect(store.get(result)).toMatchObject({
+      height: 80,
+      name: 'complete.png',
+      type: 'image',
+      width: 120,
+    })
+  })
+
+  test('L49: broken inlay images reject instead of hanging', async () => {
+    const imgObj = makeImage(0, 0, {
+      complete: false,
+      decode: null,
+      naturalHeight: 0,
+      naturalWidth: 0,
+    })
+
+    const result = writeInlayImage(imgObj)
+    imgObj.dispatchEvent(new Event('error'))
+
+    await expect(result).rejects.toThrow('Inlay image failed to load')
+    expect(fakeCtx.drawImage).not.toHaveBeenCalled()
+    expect(serverAssetStore.size).toBe(0)
+  })
+
+  test('L49: decode rejection without dimensions rejects instead of uploading', async () => {
+    const decode = vi.fn(async () => {
+      throw new Error('decode failed')
+    })
+    const imgObj = makeImage(0, 0, {
+      complete: true,
+      decode,
+      naturalHeight: 0,
+      naturalWidth: 0,
+    })
+
+    await expect(writeInlayImage(imgObj)).rejects.toThrow('decode failed')
+    expect(fakeCtx.drawImage).not.toHaveBeenCalled()
+    expect(serverAssetStore.size).toBe(0)
+  })
+
   test('uploads image to server and stores metadata under both server and custom id', async () => {
     const imgObj = makeImage(200, 100)
 

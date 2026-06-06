@@ -95,6 +95,76 @@ async function rememberServerInlayAsset(id: string, img: InlayAsset): Promise<vo
   await inlayStorage.setItem(id, { ...img, data: undefined })
 }
 
+function getLoadedImageDimensions(imgObj: HTMLImageElement) {
+  const width = imgObj.width || imgObj.naturalWidth
+  const height = imgObj.height || imgObj.naturalHeight
+  return { width, height }
+}
+
+function hasLoadedImageDimensions(imgObj: HTMLImageElement) {
+  const { width, height } = getLoadedImageDimensions(imgObj)
+  return width > 0 && height > 0
+}
+
+function imageLoadError(error?: unknown) {
+  if (error instanceof Error) return error
+  return new Error('Inlay image failed to load')
+}
+
+async function waitForInlayImageLoad(imgObj: HTMLImageElement) {
+  if (typeof imgObj.decode === 'function') {
+    let rejectOnError: ((error: Error) => void) | null = null
+    const errorPromise = new Promise<never>((_, reject) => {
+      rejectOnError = reject
+    })
+    const onError = () => rejectOnError?.(new Error('Inlay image failed to load'))
+    imgObj.addEventListener('error', onError, { once: true })
+    try {
+      await Promise.race([imgObj.decode(), errorPromise])
+      if (hasLoadedImageDimensions(imgObj)) return
+    } catch (error) {
+      if (imgObj.complete && hasLoadedImageDimensions(imgObj)) return
+      throw imageLoadError(error)
+    } finally {
+      imgObj.removeEventListener('error', onError)
+    }
+  }
+
+  if (imgObj.complete) {
+    if (hasLoadedImageDimensions(imgObj)) return
+    throw new Error('Inlay image failed to load')
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      imgObj.removeEventListener('load', onLoad)
+      imgObj.removeEventListener('error', onError)
+    }
+    const onLoad = () => {
+      cleanup()
+      if (hasLoadedImageDimensions(imgObj)) {
+        resolve()
+      } else {
+        reject(new Error('Inlay image loaded without dimensions'))
+      }
+    }
+    const onError = () => {
+      cleanup()
+      reject(new Error('Inlay image failed to load'))
+    }
+    imgObj.addEventListener('load', onLoad, { once: true })
+    imgObj.addEventListener('error', onError, { once: true })
+
+    if (imgObj.complete) {
+      if (hasLoadedImageDimensions(imgObj)) {
+        onLoad()
+      } else {
+        onError()
+      }
+    }
+  })
+}
+
 export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
   const extention = img.name.split('.').at(-1)?.toLowerCase()
   const imgObj = new Image()
@@ -141,27 +211,22 @@ export async function writeInlayImage(
   let drawWidth = 0
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
-  await new Promise((resolve) => {
-    imgObj.onload = () => {
-      drawHeight = imgObj.height
-      drawWidth = imgObj.width
+  await waitForInlayImageLoad(imgObj)
+  ;({ height: drawHeight, width: drawWidth } = getLoadedImageDimensions(imgObj))
 
-      //resize image to fit inlay, if total pixels exceed 1024*1024
-      const maxPixels = 1024 * 1024
-      const currentPixels = drawHeight * drawWidth
+  //resize image to fit inlay, if total pixels exceed 1024*1024
+  const maxPixels = 1024 * 1024
+  const currentPixels = drawHeight * drawWidth
 
-      if (currentPixels > maxPixels) {
-        const scaleFactor = Math.sqrt(maxPixels / currentPixels)
-        drawWidth = Math.floor(drawWidth * scaleFactor)
-        drawHeight = Math.floor(drawHeight * scaleFactor)
-      }
+  if (currentPixels > maxPixels) {
+    const scaleFactor = Math.sqrt(maxPixels / currentPixels)
+    drawWidth = Math.floor(drawWidth * scaleFactor)
+    drawHeight = Math.floor(drawHeight * scaleFactor)
+  }
 
-      canvas.width = drawWidth
-      canvas.height = drawHeight
-      ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight)
-      resolve(null)
-    }
-  })
+  canvas.width = drawWidth
+  canvas.height = drawHeight
+  ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight)
   const imageBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
 
   const imgid = arg.id ?? v4()
