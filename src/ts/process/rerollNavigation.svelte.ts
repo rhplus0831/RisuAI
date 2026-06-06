@@ -9,7 +9,7 @@ import {
 import { safeStructuredClone } from '../polyfill'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import type { Chat, Message } from '../storage/database.svelte'
-import { PreUnreroll, Prereroll } from './prereroll'
+import { clearPrererolls, PreUnreroll, Prereroll } from './prereroll'
 
 // Reroll *swipe* state machine, extracted out of `DefaultChatScreen.svelte` so it
 // is unit-testable and so persisted reroll buffers (server alternate rows) can be
@@ -26,6 +26,7 @@ import { PreUnreroll, Prereroll } from './prereroll'
 let rerolls: Message[][] = []
 let rerollid = -1
 let lastCharId = -1
+let lastChatKey: string | undefined
 
 export interface RerollDeps {
   /** The component's send wrapper (owns the AbortController + send sound). */
@@ -39,15 +40,35 @@ function activeChatRecord(): Chat {
   return character.chats[character.chatPage]
 }
 
+function currentRerollScope(): { charId: number; chatKey: string | undefined } {
+  const charId = get(selectedCharID)
+  const character = DBState.db?.characters?.[charId]
+  if (!character) return { charId, chatKey: undefined }
+  const chatPage = character?.chatPage ?? -1
+  const chat = character?.chats?.[chatPage]
+  return {
+    charId,
+    chatKey: typeof chat?.id === 'string' && chat.id ? chat.id : `index:${chatPage}`,
+  }
+}
+
+function markRerollScope(): void {
+  const scope = currentRerollScope()
+  lastCharId = scope.charId
+  lastChatKey = scope.chatKey
+}
+
 function currentTailGenerationId(): string | undefined {
   return activeChatRecord()?.message.at(-1)?.generationInfo?.generationId
 }
 
-/** Reset the swipe history when the selected character changed since last use. */
+/** Reset the swipe history when the selected character/chat changed since last use. */
 export function resetRerollOnCharChange(): void {
-  if (lastCharId !== get(selectedCharID)) {
+  const scope = currentRerollScope()
+  if (lastCharId !== scope.charId || lastChatKey !== scope.chatKey) {
     rerolls = []
     rerollid = -1
+    clearPrererolls()
   }
 }
 
@@ -71,7 +92,7 @@ export function recordGeneratedReroll(previousLength: number): void {
 
 /** Mark the character a generation finished on (gates the char-change reset). */
 export function markRerollChar(): void {
-  lastCharId = get(selectedCharID)
+  markRerollScope()
 }
 
 // ── guard-safe optimistic mutations ─────────────────────────────────────────────
@@ -273,7 +294,7 @@ export function seedRerollBufferFromAlternates(activeMessages: unknown[], altern
   rerollid = activeIdx
   // The buffer now belongs to the selected character — keep the char-change guard
   // from wiping the freshly-seeded buffer on the next reroll/unReroll.
-  lastCharId = get(selectedCharID)
+  markRerollScope()
 }
 
 // ── test/observability accessors ────────────────────────────────────────────────
@@ -287,4 +308,6 @@ export function resetRerollNavigation(): void {
   rerolls = []
   rerollid = -1
   lastCharId = -1
+  lastChatKey = undefined
+  clearPrererolls()
 }

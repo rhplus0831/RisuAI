@@ -20,6 +20,7 @@ const prerollSpies = vi.hoisted(() => ({
   Prereroll: vi.fn(() => null),
   PreUnreroll: vi.fn(() => null),
   addRerolls: vi.fn(),
+  clearPrererolls: vi.fn(),
 }))
 vi.mock('./prereroll', () => prerollSpies)
 

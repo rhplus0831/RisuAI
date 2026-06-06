@@ -538,7 +538,24 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L36', 6, 'Bound the prereroll maps; clear on chat switch.'),
+  done(
+    'L36',
+    6,
+    'Bound the prereroll maps; clear on chat switch.',
+    'src/ts/process/prereroll.test.ts',
+    'evicts least-recently-used entries deterministically',
+    [
+      {
+        testPath: 'src/ts/process/prereroll.test.ts',
+        testName: 'clearPrererolls drops all retained generation ids',
+      },
+      {
+        testPath: 'src/ts/process/rerollNavigation.test.ts',
+        testName:
+          'resetRerollOnCharChange wipes the buffer and preroll candidates when the chat changed',
+      },
+    ],
+  ),
   planned('L37', 4, 'Same-language early-return in `changeLanguage`.'),
   planned('L38', 5, 'Remove `{{#function}}`/`{{call::}}` logs.'),
   planned('L39', 5, '`includes()` fast path + indexOf scan in `parseThoughtsAndTools`.'),
@@ -1367,6 +1384,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L14',
       'L16',
       'L35',
+      'L36',
       'K1',
       'K2',
     ])
