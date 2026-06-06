@@ -195,7 +195,12 @@ vi.mock('./model/modellist', async (importActual) => {
   }
 })
 
-import { loadData, loadWebInitialDatabase } from './bootstrap'
+import {
+  calculateServerProjectionReconnectDelayMs,
+  loadData,
+  loadWebInitialDatabase,
+  stopServerProjectionEvents,
+} from './bootstrap'
 import {
   isServerProjectionWriteGuardEnabled,
   setServerProjectionWriteGuardEnabled,
@@ -241,6 +246,7 @@ function serverDefaultDatabase() {
 }
 
 beforeEach(() => {
+  stopServerProjectionEvents()
   serverBootstrapState.fetch.mockImplementation(async () => serverBootstrapState.response)
   serverBootstrapState.fetchReadOnly.mockImplementation(async () => serverBootstrapState.response)
   serverBootstrapState.response = {
@@ -258,6 +264,10 @@ beforeEach(() => {
   serverBootstrapState.fetch.mockClear()
   serverBootstrapState.fetchReadOnly.mockClear()
   serverEventsState.subscriptions = []
+  serverEventsState.subscribe.mockImplementation(async (input: any) => {
+    serverEventsState.subscriptions.push(input)
+    return { status: 'ok' as const, unsubscribe: serverEventsState.unsubscribe }
+  })
   serverEventsState.unsubscribe.mockClear()
   serverEventsState.subscribe.mockClear()
   // Default: the server cannot narrow the resource → full bootstrap. Targeted
@@ -846,6 +856,7 @@ describe('web bootstrap startup source', () => {
 
   it('re-subscribes with a replay cursor after the event stream drops', async () => {
     vi.useFakeTimers()
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5)
     try {
       await loadWebInitialDatabase()
       expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
@@ -861,12 +872,162 @@ describe('web bootstrap startup source', () => {
       expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
       expect(peekCachedServerCommandRevision()).toBe(5)
     } finally {
+      stopServerProjectionEvents()
+      randomSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('L45: calculates bounded jittered exponential reconnect delays', () => {
+    expect(calculateServerProjectionReconnectDelayMs(0, () => 0.5)).toBe(1000)
+    expect(calculateServerProjectionReconnectDelayMs(1, () => 0.5)).toBe(2000)
+    expect(calculateServerProjectionReconnectDelayMs(2, () => 0.5)).toBe(4000)
+    expect(calculateServerProjectionReconnectDelayMs(5, () => 0.5)).toBe(30000)
+    expect(calculateServerProjectionReconnectDelayMs(10, () => 1)).toBe(30000)
+    expect(calculateServerProjectionReconnectDelayMs(0, () => Number.NaN)).toBe(1000)
+  })
+
+  it('L45: keeps one pending reconnect timer for repeated stream failures', async () => {
+    vi.useFakeTimers()
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    try {
+      await loadWebInitialDatabase()
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
+
+      const subscription = serverEventsState.subscriptions[0]
+      subscription.onError?.('stream dropped')
+      subscription.onClose?.()
+      subscription.onError?.('still dropped')
+
+      expect(vi.getTimerCount()).toBe(1)
+      await vi.advanceTimersByTimeAsync(999)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(1)
+
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
+      expect(serverEventsState.subscriptions[1].sinceRevision).toBe(5)
+    } finally {
+      stopServerProjectionEvents()
+      randomSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('L45: schedules increasing reconnect delays during a simulated outage', async () => {
+    vi.useFakeTimers()
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    try {
+      await loadWebInitialDatabase()
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
+
+      const subscribeMock = serverEventsState.subscribe as any
+      subscribeMock.mockImplementation(async (input: any) => {
+        serverEventsState.subscriptions.push(input)
+        return { status: 'error' as const, error: 'offline' }
+      })
+
+      serverEventsState.subscriptions[0].onClose?.()
+
+      await vi.advanceTimersByTimeAsync(999)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
+
+      await vi.advanceTimersByTimeAsync(1999)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(3)
+
+      await vi.advanceTimersByTimeAsync(3999)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(4)
+    } finally {
+      stopServerProjectionEvents()
+      randomSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('L45: resets reconnect backoff to the base delay after a successful subscribe', async () => {
+    vi.useFakeTimers()
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    try {
+      await loadWebInitialDatabase()
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
+
+      const subscribeMock = serverEventsState.subscribe as any
+      subscribeMock
+        .mockImplementationOnce(async (input: any) => {
+          serverEventsState.subscriptions.push(input)
+          return { status: 'error' as const, error: 'offline' }
+        })
+        .mockImplementationOnce(async (input: any) => {
+          serverEventsState.subscriptions.push(input)
+          return { status: 'ok' as const, unsubscribe: serverEventsState.unsubscribe }
+        })
+
+      serverEventsState.subscriptions[0].onClose?.()
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
+
+      await vi.advanceTimersByTimeAsync(1999)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(3)
+
+      serverEventsState.subscriptions[2].onClose?.()
+      await vi.advanceTimersByTimeAsync(999)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(4)
+    } finally {
+      stopServerProjectionEvents()
+      randomSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('L45: stop clears pending reconnect and resets the next outage to base delay', async () => {
+    vi.useFakeTimers()
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    try {
+      await loadWebInitialDatabase()
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
+
+      const subscribeMock = serverEventsState.subscribe as any
+      subscribeMock.mockImplementationOnce(async (input: any) => {
+        serverEventsState.subscriptions.push(input)
+        return { status: 'error' as const, error: 'offline' }
+      })
+
+      serverEventsState.subscriptions[0].onClose?.()
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
+
+      stopServerProjectionEvents()
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
+
+      await loadWebInitialDatabase()
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(3)
+
+      serverEventsState.subscriptions[2].onClose?.()
+      await vi.advanceTimersByTimeAsync(999)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(4)
+    } finally {
+      stopServerProjectionEvents()
+      randomSpy.mockRestore()
       vi.useRealTimers()
     }
   })
 
   it('full-bootstraps when reconnect replay is unavailable', async () => {
     vi.useFakeTimers()
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5)
     try {
       await loadWebInitialDatabase()
       expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
@@ -893,14 +1054,24 @@ describe('web bootstrap startup source', () => {
 
       await vi.advanceTimersByTimeAsync(1000)
 
-      await vi.waitFor(() => {
-        expect(DBState.db.language).toBe('ko')
-      })
+      await flushServerProjectionSync()
+      expect(DBState.db.language).toBe('ko')
       expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
       expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
       expect(peekCachedServerCommandRevision()).toBe(6)
       expectFullBootstrapResyncDelta(diagnosticsBefore, 'event-replay-unavailable')
+
+      await vi.advanceTimersByTimeAsync(1999)
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1)
+
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(3)
+      expect(serverBootstrapState.fetchReadOnly.mock.invocationCallOrder[0]).toBeLessThan(
+        serverEventsState.subscribe.mock.invocationCallOrder[2],
+      )
     } finally {
+      stopServerProjectionEvents()
+      randomSpy.mockRestore()
       vi.useRealTimers()
     }
   })

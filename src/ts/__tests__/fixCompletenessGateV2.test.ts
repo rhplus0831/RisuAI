@@ -564,7 +564,35 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L42', 5, '`$derived` + keyed each for GridCatalog.'),
   planned('L43', 5, '`$derived` + keyed each for ModuleSettings.'),
   planned('L44', 5, 'Cheap signature compare for the sidebar list effect.'),
-  planned('L45', 6, 'Capped exponential backoff + jitter for SSE reconnect.'),
+  done(
+    'L45',
+    6,
+    'Capped exponential backoff + jitter for SSE reconnect.',
+    'src/ts/bootstrap.test.ts',
+    'L45: schedules increasing reconnect delays during a simulated outage',
+    [
+      {
+        testPath: 'src/ts/bootstrap.test.ts',
+        testName: 'L45: keeps one pending reconnect timer for repeated stream failures',
+      },
+      {
+        testPath: 'src/ts/bootstrap.test.ts',
+        testName: 'L45: resets reconnect backoff to the base delay after a successful subscribe',
+      },
+      {
+        testPath: 'src/ts/bootstrap.test.ts',
+        testName: 'L45: stop clears pending reconnect and resets the next outage to base delay',
+      },
+      {
+        testPath: 'src/ts/bootstrap.test.ts',
+        testName: 'full-bootstraps when reconnect replay is unavailable',
+      },
+      {
+        testPath: 'src/ts/bootstrap.test.ts',
+        testName: 'L45: calculates bounded jittered exponential reconnect delays',
+      },
+    ],
+  ),
   planned('L46', 6, 'Bound `sseIdDone` (windowed dedup).'),
   planned('L47', 6, 'Remove the `fetchNative` body log.'),
   planned('L48', 7, 'Translate once; cap HF TTS retries.'),
@@ -1385,6 +1413,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L16',
       'L35',
       'L36',
+      'L45',
       'K1',
       'K2',
     ])
