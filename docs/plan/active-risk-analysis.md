@@ -16,7 +16,7 @@ v1 finding IDs are referenced as `v1-*`.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 3 M1-M4 and L4-L11, Phase
   2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 8 L1, L2, L15, and
-  L17-L22 are `DONE`; the rest are `PENDING`.
+  L17-L31 are `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).
@@ -151,6 +151,26 @@ archive, these rows own the remaining gap.
 | K2  | [2](phases/phase-2-server-corpus-ring-2.md)      | Message-free/scoped load for the asset-GC sweep (v1-M10 residual). | DONE    |
 | K3  | [7](phases/phase-7-opt-in-subsystems.md)         | Check `blobUrlCache` before fetching asset bytes (ordering only; bulk-byte route stays gated). | PENDING |
 | K4  | [4](phases/phase-4-client-clone-ring-2.md)       | Debounce/scope the lorebook editor per-keystroke collection clone (v1-L32 residual). | PENDING |
+
+### Phase 8 DONE Proofs
+
+- L1/L2/L15/L17-L22 - `server/fastify/__tests__/streamJobs.test.ts`,
+  `durableGeneration.test.ts`, `requestAbort.test.ts`, `db.test.ts`,
+  `memoryRepository.test.ts`, `memoryWorker.test.ts`,
+  `memoryEmbedJobHandler.test.ts`, `memorySummarizeJobHandler.test.ts`, and
+  companion memory tests cover sliding generation deadlines, terminal job
+  retention, WAL synchronous mode, backlog fast-path ticks, scoped memory
+  failure handling, shared summary snapshots, embedding chunk ceilings, and
+  contextual split metrics.
+- L23-L29 - `server/fastify/__tests__/realmImport.test.ts`,
+  `risuSaveBundleExportRoute.test.ts`, `legacyStorage.test.ts`,
+  `risuSaveImportRoute.test.ts`, and `hub.test.ts` cover batched JSON-card
+  asset persists, compensating cleanup, open-or-skip bundle assets, atomic
+  legacy writes, single-clone JSON import, Realm `.charx` caps, and bounded hub
+  forwards.
+- L30/L31 - `server/fastify/__tests__/vertexAuth.test.ts` and
+  `proxy.test.ts` cover Vertex in-flight token dedupe and proxy default/capped
+  deadlines, including timeout cleanup and stripped proxy-control headers.
 
 ### Informational
 

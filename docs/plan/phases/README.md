@@ -34,14 +34,14 @@ the finding -> phase map is in
   [`phase-6-bridges-lifecycle-network.md`](phase-6-bridges-lifecycle-network.md).
 - Phase 7, pending (Root 5: opt-in subsystems; M15, M16, M18-M22, L48-L59,
   K3): [`phase-7-opt-in-subsystems.md`](phase-7-opt-in-subsystems.md).
-- Phase 8, pending (server jobs/memory/import bounds; L1, L2, L15, L17-L31):
+- Phase 8, complete (server jobs/memory/import bounds; L1, L2, L15, L17-L31):
   [`phase-8-server-bounds.md`](phase-8-server-bounds.md).
 - Phase 9, pending (verification budgets; the v2 gate):
   [`phase-9-verification-budgets.md`](phase-9-verification-budgets.md).
 
 Phases 4-8 are independent of each other and may be reordered by observed
-pain. Phases 1-3 landed first: they own the corpus-scaling and whole-screen
-costs.
+pain. Phases 1-3 and 8 have landed in this branch: they own the
+corpus-scaling, whole-screen, and server-bound costs.
 
 ## Slice Rules
 

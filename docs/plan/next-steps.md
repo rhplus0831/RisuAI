@@ -2,7 +2,17 @@
 
 Date: 2026-06-06
 
-Phases 1-3 are implemented and proof-refreshed. The next fix batch is Phase 4.
+Phases 1-3 and Phase 8 are implemented and proof-refreshed in this branch.
+The next remaining branch-local fix batch is Phase 4.
+
+## Completed Batch: Phase 8 (Server Jobs, Memory & Import Bounds)
+
+Server-bound work is complete and proof-refreshed: L1, L2, L15, and L17-L31
+are `DONE` in the v2 gate and
+[`active-risk-analysis.md`](active-risk-analysis.md). The Phase 8 proof refresh
+passed focused server-bound suites (17 files / 297 tests), the v2 gate
+(18 tests), `pnpm api:test` (1846 passed / 1 skipped), and both TypeScript
+checks. See [`latest-verification.md`](latest-verification.md).
 
 ## Next Batch: Phase 4 (Client Clone Narrowing Ring 2)
 

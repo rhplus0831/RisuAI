@@ -1,8 +1,8 @@
 # Phase 8: Server Jobs, Memory & Import Bounds
 
-Status: pending. Independent; order by pain. Bounded, mostly-local server
-fixes grouped by subsystem; L15 is a cheap standalone win that can land any
-time.
+Status: complete. Independent server-bound fixes landed and proof-refreshed.
+Bounded, mostly-local server fixes are grouped by subsystem; L15 landed as a
+cheap standalone win.
 
 Goal: server jobs, memory, import/export, and outbound paths get retention,
 fairness, durability, and deadline bounds; one scheduled semantic correction
@@ -124,12 +124,12 @@ L27, L28, L29, L30, L31. (I3's unused-index drop may ride along if free.)
       fetch per assembly.
 - [x] L21/L22: oversized chunks fail fast with a clear error; contextual
       splits are observable and the window policy is documented.
-- [ ] L23-L29: batched asset persists, compensating cleanup, open-or-skip
+- [x] L23-L29: batched asset persists, compensating cleanup, open-or-skip
       streaming, atomic legacy writes, single-clone import, bounded charx
       download — each with a behavior test; import/export bytes unchanged.
-- [ ] L27/L30/L31: hub abort/deadline, Vertex in-flight dedupe, proxy
+- [x] L27/L30/L31: hub abort/deadline, Vertex in-flight dedupe, proxy
       default deadline — each with a focused test.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation

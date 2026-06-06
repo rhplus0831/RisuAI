@@ -70,6 +70,12 @@ function legacyDatabase() {
   }
 }
 
+function legacySummaryIndex(metadata: unknown): number {
+  if (!metadata || typeof metadata !== 'object') return -1
+  const value = (metadata as { summaryIndex?: unknown }).summaryIndex
+  return typeof value === 'number' ? value : -1
+}
+
 describe('legacy Hypa V3 memory import', () => {
   it('backfills legacy summaries into summarized chunk and summary rows idempotently', () => {
     const db = openDatabase(makeDataDir())
@@ -99,7 +105,10 @@ describe('legacy Hypa V3 memory import', () => {
         model: LEGACY_HYPA_V3_SUMMARY_MODEL,
       })
       expect(summaries).toHaveLength(2)
-      expect(summaries[0]).toMatchObject({
+      const summariesByIndex = [...summaries].sort((left, right) => {
+        return legacySummaryIndex(left.metadata) - legacySummaryIndex(right.metadata)
+      })
+      expect(summariesByIndex[0]).toMatchObject({
         chatId: 'chat-1',
         chunkId: chunks[0].id,
         model: LEGACY_HYPA_V3_SUMMARY_MODEL,

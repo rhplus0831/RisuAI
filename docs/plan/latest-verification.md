@@ -8,15 +8,17 @@ after each change to a narrowed or bounded path.
 ## Current State
 
 - Plan state: open. Phase 1 H1-H3, Phase 2's M5, M6, L3, L13, L14, L16, K1,
-  and K2, and Phase 3's M1-M4 and L4-L11 are implemented and
-  proof-refreshed. Phase 4 is the next fix batch.
+  and K2, Phase 3's M1-M4 and L4-L11, and Phase 8's L1, L2, L15, and L17-L31
+  are implemented and proof-refreshed. Phase 4 is the next branch-local fix
+  batch.
 - Gate state: the v1 gate
   (`src/ts/__tests__/fixCompletenessGate.test.ts`) stays live against the
   archived v1 docs. The v2 gate
   (`src/ts/__tests__/fixCompletenessGateV2.test.ts`) is live against the v2
   docs and active-risk routing.
 - Scheduled IDs: H1-H3 plus Phase 2's M5, M6, L3, L13, L14, L16, K1, and K2,
-  plus Phase 3's M1-M4 and L4-L11 are registered `DONE` in the v2 gate and
+  plus Phase 3's M1-M4 and L4-L11, plus Phase 8's L1, L2, L15, and L17-L31
+  are registered `DONE` in the v2 gate and
   [`active-risk-analysis.md`](active-risk-analysis.md). Remaining scheduled
   gate entries stay `PLANNED`; risk-map rows stay `PENDING`; gated/no-action
   rows are unchanged.
@@ -201,6 +203,50 @@ Phase 3 focused proof summaries:
   lookup normalizes registered names/aliases once while preserving raw tag
   text and normal output below the cap.
 
+## Phase 8 Verification Refresh
+
+Recorded on 2026-06-06 KST after L1, L2, L15, and L17-L31 landed. Those Phase
+8 IDs are confirmed `DONE` in both
+`src/ts/__tests__/fixCompletenessGateV2.test.ts` and
+[`active-risk-analysis.md`](active-risk-analysis.md). The focused server-bound
+proofs, v2 gate, API suite, and TypeScript checks passed. The first API-suite
+run exposed a nondeterministic legacy-memory test assertion; the follow-up fix
+sorts imported summaries by `metadata.summaryIndex`, and the focused file plus
+full API suite then passed.
+
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/streamJobs.test.ts server/fastify/__tests__/streamJobsRoutes.test.ts server/fastify/__tests__/durableGeneration.test.ts server/fastify/__tests__/requestAbort.test.ts server/fastify/__tests__/memoryRepository.test.ts server/fastify/__tests__/memoryWorker.test.ts server/fastify/__tests__/memoryEmbedJobHandler.test.ts server/fastify/__tests__/memorySummarizeJobHandler.test.ts server/fastify/__tests__/memoryChunkPlanner.test.ts server/fastify/__tests__/realmImport.test.ts server/fastify/__tests__/risuSaveBundleExportRoute.test.ts server/fastify/__tests__/legacyStorage.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/hub.test.ts server/fastify/__tests__/proxy.test.ts server/fastify/__tests__/vertexAuth.test.ts server/fastify/__tests__/db.test.ts`:
+  passed, 17 files / 297 tests.
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV2.test.ts`:
+  passed, 1 file / 18 tests. The v2 gate expects L1, L2, L15, and L17-L31 as
+  `DONE` alongside the earlier completed IDs on this branch.
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memoryLegacyImport.test.ts`:
+  passed, 1 file / 3 tests after the summary-order assertion fix.
+- `pnpm api:test`: passed, 99 files; 1846 passed / 1 skipped (1847). The run
+  printed normal Fastify request logs and exited 0.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: passed with zero diagnostics.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: passed with zero
+  diagnostics after the client-lib build.
+
+Phase 8 focused proof summaries:
+
+- L1/L2/L15: durable and non-durable generation deadlines are bounded and can
+  refresh active work; terminal finalization retries and memory jobs are
+  pruned by retention without touching live rows; new databases open with WAL
+  synchronous `NORMAL`.
+- L17-L22: memory workers fast-path productive ticks, scope provider/write
+  failures to independent jobs or contextual groups, reuse shared summary
+  snapshots, fail oversized embedding chunks before provider dispatch, and
+  emit observable contextual split metrics under provider limits.
+- L23-L29: Realm JSON-card imports batch asset persists and clean up failed
+  appends; bundle export skips vanished assets; legacy storage writes use
+  temp-file/fsync/rename; JSON `.risu` import avoids the extra full-corpus
+  clone; Realm `.charx` staging downloads are capped; hub forwards timeout,
+  abort, and preserve upload/body bounds.
+- L30/L31: concurrent cold Vertex auth callers share one in-flight token
+  exchange while failure and distinct credentials remain isolated; proxy fetch
+  uses a default deadline, caps excessive explicit values, keeps explicit
+  valid values, strips proxy-control headers, and clears timeout resources.
+
 ## Phase 0 Baseline Refresh
 
 Recorded on 2026-06-05 after the v2 gate and render-count baseline landed:
@@ -288,3 +334,8 @@ Recorded during the 2026-06-05 v2 audit (evidence in
   (1160/4, 125 files); `pnpm api:test` passed (1792/1, 99 files);
   client-thinning audit and both TypeScript checks passed. I16 remained
   no-action.
+- 2026-06-06, Phase 8 verification refresh: focused server-bound suites
+  passed (297 tests); v2 gate passed (18 tests) with L1, L2, L15, and L17-L31
+  as `DONE`; `memoryLegacyImport.test.ts` passed after sorting legacy
+  summaries by semantic summary index; `pnpm api:test` passed (1846/1, 99
+  files); both TypeScript checks passed.
