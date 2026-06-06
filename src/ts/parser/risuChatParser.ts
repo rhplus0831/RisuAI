@@ -37,6 +37,78 @@ export type RisuChatParserArg = {
 
 export const matcherMap = new Map<string, RegisterCallback>()
 
+export const RISU_EACH_EXPANSION_BUDGET = {
+  maxElements: 4096,
+  maxExpandedChars: 1024 * 1024,
+} as const
+
+type EachExpansionBudget = {
+  elements: number
+  expandedChars: number
+}
+
+export class RisuParserBudgetError extends Error {
+  readonly code = 'RISU_PARSER_BUDGET_EXCEEDED'
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'RisuParserBudgetError'
+  }
+}
+
+export function normalizeRisuChatParserMatcherName(name: string, end = name.length): string {
+  let normalized = ''
+  for (let i = 0; i < end; i++) {
+    const code = name.charCodeAt(i)
+    if (code === 45 || code === 95 || code === 32 || (code >= 9 && code <= 13)) {
+      continue
+    }
+    normalized += code >= 65 && code <= 90 ? String.fromCharCode(code + 32) : name[i]
+  }
+  return normalized
+}
+
+function findMatcherSeparator(text: string): { index: number; separator: ':' | '::' } | null {
+  const index = text.indexOf(':')
+  if (index === -1) {
+    return null
+  }
+  return { index, separator: text[index + 1] === ':' ? '::' : ':' }
+}
+
+function splitMatcherArgs(text: string, start: number, separator: ':' | '::'): string[] {
+  const args: string[] = []
+  let pointer = start
+  let next = text.indexOf(separator, pointer)
+  while (next !== -1) {
+    args.push(text.substring(pointer, next))
+    pointer = next + separator.length
+    next = text.indexOf(separator, pointer)
+  }
+  args.push(text.substring(pointer))
+  return args
+}
+
+function chargeEachElements(budget: EachExpansionBudget, count: number): void {
+  const next = budget.elements + count
+  if (next > RISU_EACH_EXPANSION_BUDGET.maxElements) {
+    throw new RisuParserBudgetError(
+      `{{#each}} element budget exceeded: ${next} > ${RISU_EACH_EXPANSION_BUDGET.maxElements}`,
+    )
+  }
+  budget.elements = next
+}
+
+function chargeEachOutput(budget: EachExpansionBudget, chars: number): void {
+  const next = budget.expandedChars + chars
+  if (next > RISU_EACH_EXPANSION_BUDGET.maxExpandedChars) {
+    throw new RisuParserBudgetError(
+      `{{#each}} expanded output budget exceeded: ${next} > ${RISU_EACH_EXPANSION_BUDGET.maxExpandedChars}`,
+    )
+  }
+  budget.expandedChars = next
+}
+
 export function registerRisuChatParserMatcher(arg: {
   name: string
   callback: RegisterCallback | 'doc_only'
@@ -51,7 +123,10 @@ export function registerRisuChatParserMatcher(arg: {
   }
   const names = [arg.name, ...arg.alias]
   for (const name of names) {
-    matcherMap.set(name, callback)
+    const normalizedName = normalizeRisuChatParserMatcherName(name)
+    if (normalizedName) {
+      matcherMap.set(normalizedName, callback)
+    }
   }
 }
 
@@ -78,20 +153,20 @@ export function matcher(
       const substring = p1.substring(2)
       return calcString(substring).toString()
     }
-    const colonIndex = p1.indexOf(':')
-    let splited: string[]
-    if (colonIndex !== -1 && p1[colonIndex + 1] === ':') {
-      splited = p1.split('::')
-    } else {
-      splited = p1.split(':')
-    }
-    const name = splited[0].toLocaleLowerCase().replace(/[\s_-]/g, '')
-    const args = splited.slice(1)
+    const separator = findMatcherSeparator(p1)
+    const name = normalizeRisuChatParserMatcherName(p1, separator?.index ?? p1.length)
     const callback = matcherMap.get(name)
     if (callback) {
+      const args = separator
+        ? splitMatcherArgs(p1, separator.index + separator.separator.length, separator.separator)
+        : []
       return callback(p1, matcherArg, args, vars)
     }
-  } catch (error) {}
+  } catch (error) {
+    if (error instanceof RisuParserBudgetError) {
+      throw error
+    }
+  }
 
   return null
 }
@@ -504,6 +579,10 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
   let commentV = new Uint8Array(512)
   let thinkingMode = false
   let tempVar: { [key: string]: string } = {}
+  const eachExpansionBudget: EachExpansionBudget = {
+    elements: 0,
+    expandedChars: 0,
+  }
   let functions: Map<
     string,
     {
@@ -632,8 +711,8 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
             if (blockType.type === 'each') {
               const type2 = blockType.type2 ?? ''
               const asIndex = type2.lastIndexOf(' as ')
-              let sub = type2.substring(asIndex + 4).trim()
-              let array = parseArray(type2.substring(0, asIndex))
+              let sub: string
+              let arraySource: string
               if (asIndex === -1) {
                 //compability mode
                 const subind = type2.lastIndexOf(' ')
@@ -641,19 +720,23 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
                   break
                 }
                 sub = type2.substring(subind + 1)
-                array = parseArray(type2.substring(0, subind))
+                arraySource = type2.substring(0, subind)
+              } else {
+                sub = type2.substring(asIndex + 4).trim()
+                arraySource = type2.substring(0, asIndex)
               }
+              const array = parseArray(arraySource)
+              chargeEachElements(eachExpansionBudget, array.length)
               const slot = `{{slot::${sub}}}`
-              const parts: string[] = []
+              let added = ''
               for (let i = 0; i < array.length; i++) {
-                parts.push(
-                  matchResult.replaceAll(
-                    slot,
-                    typeof array[i] === 'string' ? (array[i] as string) : JSON.stringify(array[i]),
-                  ),
+                const replaced = matchResult.replaceAll(
+                  slot,
+                  typeof array[i] === 'string' ? (array[i] as string) : JSON.stringify(array[i]),
                 )
+                chargeEachOutput(eachExpansionBudget, replaced.length)
+                added += replaced
               }
-              const added = parts.join('')
               // Re-inject the expanded body for re-scanning, but drop the already
               // consumed prefix instead of rebuilding the whole source: nothing is
               // ever read behind `pointer` (the loop only reads da[pointer] /

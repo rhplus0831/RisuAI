@@ -2,6 +2,7 @@ import fc from 'fast-check'
 import { writable } from 'svelte/store'
 import { expect, test, vi } from 'vitest'
 import { risuChatParser } from '../../parser.svelte'
+import { registerRisuChatParserMatcher } from '../../risuChatParser'
 import { cbs, trimVarPrefix, validCBSArgProp } from './lib'
 
 //#region module mocks
@@ -66,6 +67,33 @@ const validCBSArgPropLong = validCBSArgProp.filter((s) => s.length > 1)
 
 const quickParse = (op: string, ...args: (string | number)[]) =>
   risuChatParser(cbs(op, ...args.map(String)))
+
+test('L11: normalizes matcher aliases with case and separators while preserving args', () => {
+  expect(risuChatParser('{{NOT_EQUAL::a::b}}')).toBe('1')
+  expect(risuChatParser('{{not-equal::same::same}}')).toBe('0')
+  expect(risuChatParser('{{greater equal::2::2}}')).toBe('1')
+  expect(risuChatParser('{{Array_Element::["a","b"]::1}}')).toBe('b')
+})
+
+test('L11: preserves raw matcher tag text passed to callbacks', () => {
+  const seen: { raw?: string; args?: string[] } = {}
+  registerRisuChatParserMatcher({
+    name: 'phase_l11_raw',
+    alias: ['phase-l11-alias'],
+    description: 'Phase 3 L11 parser normalization test hook.',
+    callback: (raw, _matcherArg, args) => {
+      seen.raw = raw
+      seen.args = args
+      return `${raw}|${args.join(',')}`
+    },
+  })
+
+  expect(risuChatParser('{{Phase L11 Alias::A:B::C}}')).toBe('Phase L11 Alias::A:B::C|A:B,C')
+  expect(seen).toEqual({
+    raw: 'Phase L11 Alias::A:B::C',
+    args: ['A:B', 'C'],
+  })
+})
 
 test('startswith, endswith, contains', () => {
   expect(quickParse('startswith', 'Hello World', 'Hello')).toBe('1')

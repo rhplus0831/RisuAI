@@ -402,8 +402,36 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'server/fastify/__tests__/assemble.test.ts',
     'expands depth-prompt bodies once for preflight and reuses them for final splice',
   ),
-  planned('L10', 3, 'Cap `{{#each}}` expansion size.'),
-  planned('L11', 3, 'Cheap CBS tag-name normalization.'),
+  done(
+    'L10',
+    3,
+    'Cap `{{#each}}` expansion size.',
+    'src/ts/parser/tests/cbs/eachReinjection.test.ts',
+    'L10: throws parser budget error when #each element count exceeds cap',
+    [
+      {
+        testPath: 'src/ts/parser/tests/cbs/eachReinjection.test.ts',
+        testName: 'L10: throws parser budget error when #each expanded output exceeds cap',
+      },
+      {
+        testPath: 'src/ts/parser/tests/cbs/eachReinjection.test.ts',
+        testName: 'L10: keeps normal and nested #each output byte-identical below the cap',
+      },
+    ],
+  ),
+  done(
+    'L11',
+    3,
+    'Cheap CBS tag-name normalization.',
+    'src/ts/parser/tests/cbs/strings.test.ts',
+    'L11: normalizes matcher aliases with case and separators while preserving args',
+    [
+      {
+        testPath: 'src/ts/parser/tests/cbs/strings.test.ts',
+        testName: 'L11: preserves raw matcher tag text passed to callbacks',
+      },
+    ],
+  ),
   done(
     'L13',
     2,
@@ -1286,6 +1314,8 @@ describe('v2 fix-completeness gate routing registry', () => {
       'L7',
       'L8',
       'L9',
+      'L10',
+      'L11',
       'L13',
       'L14',
       'L16',
