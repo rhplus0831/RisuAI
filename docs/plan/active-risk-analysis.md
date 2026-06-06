@@ -16,7 +16,7 @@ v1 finding IDs are referenced as `v1-*`.
 - Scheduled: H1-H3, M1-M22, L1-L11 (except L12), L13-L59, and the
   known-overlap residuals K1-K4. H1-H3, Phase 3 M1-M4 and L4-L11, plus Phase
   2 M5, M6, L3, L13, L14, L16, K1, and K2, plus Phase 7 M15, M16, M18-M22,
-  L48-L50, L52-L54, L57-L59, and K3 are `DONE`; the rest are `PENDING`.
+  L48-L59, and K3 are `DONE`; the rest are `PENDING`.
 - Gated items: L12, plus the v1 carry-overs (v1-L4, v1-L7, v1-L26, v1-U2) and
   the `leftover.md` evidence gates.
 - No-action items: I1-I18 (inventory; I3 and I16 may ride Phases 8/3 if free).

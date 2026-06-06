@@ -1,7 +1,8 @@
 # Phase 7: Opt-In Subsystems (Root 5)
 
-Status: pending; M15/M16, M18/L48, M19, M20/L54/L57, M21, M22/L52/L53,
-L49/L50/K3, L51, L55/L56, and L58/L59 slices done on 2026-06-06.
+Status: complete and proof-refreshed on 2026-06-06. M15/M16, M18/L48, M19,
+M20/L54/L57, M21, M22/L52/L53, L49/L50/K3, L51, L55/L56, L58/L59, and the
+verification refresh slice are done.
 Independent; order by pain. Largest finding count, but most fixes are small
 and local (several are one-liners).
 
@@ -53,7 +54,7 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
 - L51 (done):
   [`slices/phase-7-opt-in-subsystems/png-card-import-single-pass.md`](slices/phase-7-opt-in-subsystems/png-card-import-single-pass.md)
   - avoid decoding PNG character-card asset chunks twice for progress.
-- Proof:
+- Proof (done):
   [`slices/phase-7-opt-in-subsystems/phase-7-verification-refresh.md`](slices/phase-7-opt-in-subsystems/phase-7-verification-refresh.md)
   - refresh gates, focused proofs, full validation, and latest verification.
 
@@ -123,8 +124,14 @@ Findings: M15, M16, M18, M19, M20, M21, M22, L48-L59, K3.
       duplicate-name winner order.
 - [x] L56: FileSystem MCP client recreation reuses a valid stored directory
       handle and prompts again only after the stored handle is invalid.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
+
+Final proof was refreshed on 2026-06-06 KST: focused translate/UI/TTS/MCP/
+file-import suites, the parent phase validation snippets, both
+fix-completeness gates, `pnpm test`, `pnpm api:test`,
+`pnpm client-thinning:audit`, and both TypeScript checks passed. See
+[`../latest-verification.md`](../latest-verification.md).
 
 ## Validation
 

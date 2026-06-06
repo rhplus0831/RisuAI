@@ -2,7 +2,8 @@
 
 Date: 2026-06-06
 
-Phases 1-3 are implemented and proof-refreshed. The next fix batch is Phase 4.
+Phases 1-3 and Phase 7 are implemented and proof-refreshed. Phase 4 remains
+the next fix batch.
 
 ## Next Batch: Phase 4 (Client Clone Narrowing Ring 2)
 

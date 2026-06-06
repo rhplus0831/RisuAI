@@ -3,6 +3,8 @@
 Phase: [7](../../phase-7-opt-in-subsystems.md). Depends on all Phase 7 runtime
 slices. No runtime change.
 
+Status: done on 2026-06-06. This slice changed verification/planning docs only.
+
 ## Scope
 
 Run the focused and full proof set after M15, M16, M18-M22, L48-L59, and K3
@@ -54,6 +56,30 @@ documentation slice; it should not change runtime behavior.
   evidence in the v2 gate and risk map.
 - The parent Phase 7 exit criteria match the recorded proof results.
 
+## Proof Notes
+
+Recorded on 2026-06-06 KST. M15, M16, M18-M22, L48-L59, and K3 were confirmed
+`DONE` in `src/ts/__tests__/fixCompletenessGateV2.test.ts` with concrete
+focused test paths/names, and in `docs/plan/active-risk-analysis.md`.
+
+- Focused Phase 7 suites passed:
+  translate/cache/bergamot (3 files / 11 tests), suggestion/chat-body UI (2
+  files / 5 tests), TTS/hooks (2 files / 14 tests), MCP clients/libs (4 files
+  / 19 tests), CharX/file-send/inlay writes (3 files / 35 tests), and
+  inlay-cache/PNG/import/save fixtures (4 files / 8 tests).
+- Parent phase validation snippets passed:
+  `src/ts/process/coldstorage.test.ts` + `src/ts/process/ttsHooks.test.ts`
+  (2 files / 11 tests), and `src/ts/characters.importChat.test.ts` +
+  `src/ts/storage/risuSave.test.ts` (2 files / 2 tests).
+- Gates and broad validation passed: both fix-completeness gates (2 files / 26
+  tests), `pnpm test` (137 files; 1212 passed / 4 skipped), `pnpm api:test`
+  (99 files; 1792 passed / 1 skipped), `pnpm client-thinning:audit`, the
+  client-lib TypeScript build, the strict Fastify TypeScript check, and
+  `git diff --check`.
+- Residual noise: `pnpm test` still prints the pre-existing repeated
+  `ECONNREFUSED 127.0.0.1:3000` local-service probe messages, but the command
+  exits 0.
+
 ## Validation
 
 ```bash
@@ -63,9 +89,13 @@ pnpm exec vitest run src/ts/process/tts.test.ts src/ts/process/ttsHooks.test.ts
 pnpm exec vitest run src/ts/process/mcp/mcplib.test.ts src/ts/process/mcp/mcp.test.ts src/ts/process/mcp/internalClients.test.ts src/ts/process/mcp/googlesearchclient.test.ts
 pnpm exec vitest run src/ts/process/processzip.test.ts src/ts/process/files/multisend.test.ts src/ts/process/files/tests/inlays.test.ts
 pnpm exec vitest run src/ts/parser/tests/inlayBlobCache.test.ts src/ts/characterCards.pngImport.test.ts src/ts/characters.importChat.test.ts src/ts/storage/risuSave.test.ts
-pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV2.test.ts
+pnpm exec vitest run src/ts/process/coldstorage.test.ts src/ts/process/ttsHooks.test.ts
+pnpm exec vitest run src/ts/characters.importChat.test.ts src/ts/storage/risuSave.test.ts
+pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts
 pnpm test
+pnpm api:test
 pnpm client-thinning:audit
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+git diff --check
 ```
