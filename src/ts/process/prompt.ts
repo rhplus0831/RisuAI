@@ -96,6 +96,162 @@ export async function tokenizePreset(prompts: PromptItem[], consti: boolean = fa
   return total
 }
 
+export interface PromptTokenizeTotals {
+  tokens: number
+  extokens: number
+}
+
+export interface PromptTokenizeMemo {
+  tokenize(prompts: PromptItem[]): Promise<PromptTokenizeTotals>
+  clear(): void
+  size(): number
+}
+
+export type PromptTokenizeText = (text: string, consti: boolean) => Promise<number>
+
+interface PromptTokenizeMemoEntry {
+  tokens: number
+  extokens: number
+}
+
+export interface PromptTokenizeMemoOptions {
+  tokenizeText?: PromptTokenizeText
+}
+
+export interface PromptTokenizeDebouncerOptions {
+  debounceMs?: number
+  memo?: PromptTokenizeMemo
+  tokenizeText?: PromptTokenizeText
+  onResult: (totals: PromptTokenizeTotals) => void
+}
+
+function promptItemTokenizedText(prompt: PromptItem): string | null {
+  switch (prompt.type) {
+    case 'plain':
+    case 'jailbreak':
+      return prompt.text
+    case 'persona':
+    case 'description':
+    case 'lorebook':
+    case 'postEverything':
+    case 'authornote':
+    case 'memory':
+      return prompt.innerFormat ? prompt.innerFormat : null
+  }
+  return null
+}
+
+function promptItemTokenizeParts(prompt: PromptItem): [string | undefined, string, string, string] {
+  switch (prompt.type) {
+    case 'plain':
+    case 'jailbreak':
+      return [prompt.id, prompt.type, prompt.text, '']
+    case 'persona':
+    case 'description':
+    case 'lorebook':
+    case 'postEverything':
+    case 'authornote':
+    case 'memory':
+      return [
+        prompt.id,
+        prompt.type,
+        '',
+        typeof prompt.innerFormat === 'string' ? prompt.innerFormat : '',
+      ]
+  }
+  return [prompt.id, prompt.type, '', '']
+}
+
+function promptItemTokenizeKey(prompt: PromptItem): string {
+  const parts = promptItemTokenizeParts(prompt)
+  const signature = JSON.stringify(parts.slice(1))
+  const identity = parts[0] ? `id:${parts[0]}` : `content:${signature}`
+  return JSON.stringify([identity, signature])
+}
+
+export function promptTemplateTokenizeSignature(prompts: PromptItem[]): string {
+  return JSON.stringify(prompts.map(promptItemTokenizeParts))
+}
+
+export function createPromptTokenizeMemo(
+  options: PromptTokenizeMemoOptions = {},
+): PromptTokenizeMemo {
+  const tokenizeText = options.tokenizeText ?? tokenizeAccurate
+  const cache = new Map<string, PromptTokenizeMemoEntry>()
+
+  return {
+    async tokenize(prompts: PromptItem[]) {
+      let tokens = 0
+      let extokens = 0
+      const liveKeys = new Set<string>()
+
+      for (const prompt of prompts) {
+        const text = promptItemTokenizedText(prompt)
+        if (text === null) continue
+
+        const key = promptItemTokenizeKey(prompt)
+        liveKeys.add(key)
+        let entry = cache.get(key)
+        if (!entry) {
+          entry = {
+            tokens: await tokenizeText(text, true),
+            extokens: await tokenizeText(text, false),
+          }
+          cache.set(key, entry)
+        }
+        tokens += entry.tokens
+        extokens += entry.extokens
+      }
+
+      for (const key of cache.keys()) {
+        if (!liveKeys.has(key)) cache.delete(key)
+      }
+
+      return { tokens, extokens }
+    },
+    clear() {
+      cache.clear()
+    },
+    size() {
+      return cache.size
+    },
+  }
+}
+
+export function createPromptTokenizeDebouncer(options: PromptTokenizeDebouncerOptions) {
+  const debounceMs = options.debounceMs ?? 300
+  const memo = options.memo ?? createPromptTokenizeMemo({ tokenizeText: options.tokenizeText })
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let tokenizeRun = 0
+
+  async function execute(prompts: PromptItem[], run: number) {
+    const totals = await memo.tokenize(prompts)
+    if (run !== tokenizeRun) return
+    options.onResult(totals)
+  }
+
+  return {
+    schedule(prompts: PromptItem[]) {
+      const run = ++tokenizeRun
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        timer = null
+        void execute(prompts, run)
+      }, debounceMs)
+    },
+    cancel() {
+      tokenizeRun += 1
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+    },
+    clearMemo() {
+      memo.clear()
+    },
+  }
+}
+
 export function detectPromptJSONType(text: string) {
   function notNull<T>(x: T | null): x is T {
     return x !== null && x !== undefined

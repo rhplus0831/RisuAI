@@ -2,7 +2,11 @@
   import { ArrowLeft, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import PromptDataItem from 'src/lib/UI/PromptDataItem.svelte'
-  import { tokenizePreset, type PromptItem } from 'src/ts/process/prompt'
+  import {
+    createPromptTokenizeDebouncer,
+    promptTemplateTokenizeSignature,
+    type PromptItem,
+  } from 'src/ts/process/prompt'
   import { templateCheck } from 'src/ts/process/templates/templateCheck'
 
   import { DBState } from 'src/ts/stores.svelte'
@@ -58,6 +62,13 @@
     attempted: {} as SettingsPatch,
     timer: null as ReturnType<typeof setTimeout> | null,
   }
+  const promptTokenizeDebouncer = createPromptTokenizeDebouncer({
+    debounceMs: 300,
+    onResult: (totals) => {
+      tokens = totals.tokens
+      extokens = totals.extokens
+    },
+  })
   const promptTemplateDraft = $state<{ value: PromptItem[] }>({
     value: cloneJsonValue(DBState.db.promptTemplate ?? []),
   })
@@ -101,7 +112,6 @@
     'doNotChangeFallbackModels',
     false,
   )
-  executeTokenize(promptTemplateDraft.value)
   interface Props {
     onGoBack?: () => void
     mode?: 'independent' | 'inline'
@@ -109,11 +119,6 @@
   }
 
   let { onGoBack = () => {}, mode = 'independent', subMenu = $bindable(0) }: Props = $props()
-
-  async function executeTokenize(prest: PromptItem[]) {
-    tokens = await tokenizePreset(prest, true)
-    extokens = await tokenizePreset(prest, false)
-  }
 
   function promptItemId(item: PromptItem): string {
     withTrustedServerProjectionWrite(() => {
@@ -355,7 +360,10 @@
     warns = templateCheck(DBState.db)
   })
   $effect.pre(() => {
-    executeTokenize(promptTemplateDraft.value)
+    promptTemplateTokenizeSignature(promptTemplateDraft.value)
+    untrack(() => {
+      promptTokenizeDebouncer.schedule(promptTemplateDraft.value)
+    })
   })
   $effect(() => {
     // Reconcile the draft from the projection only when the cached server command
@@ -463,6 +471,7 @@
     if (pendingPromptSettingsPatch.timer) {
       clearTimeout(pendingPromptSettingsPatch.timer)
     }
+    promptTokenizeDebouncer.cancel()
   })
 </script>
 

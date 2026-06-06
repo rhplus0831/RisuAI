@@ -305,7 +305,31 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('M10', 4, 'Module-only / single-row module snapshots.'),
   planned('M11', 6, 'Apply-epoch gate for the lorebook watcher (+ epoch-bumping apply).'),
   planned('M12', 6, 'Apply-epoch gate for the character-profile watcher.'),
-  planned('M13', 5, 'Debounce + per-item memo for prompt-template tokenize.'),
+  done(
+    'M13',
+    5,
+    'Debounce + per-item memo for prompt-template tokenize.',
+    'src/ts/process/promptTokenizeMemo.test.ts',
+    'M13: memoized prompt token totals match tokenizePreset for supported prompt item types',
+    [
+      {
+        testPath: 'src/ts/process/promptTokenizeMemo.test.ts',
+        testName: 'M13: unchanged prompt items hit cached token totals for both consti variants',
+      },
+      {
+        testPath: 'src/ts/process/promptTokenizeMemo.test.ts',
+        testName: 'M13: rapid prompt edits debounce to the newest token total',
+      },
+      {
+        testPath: 'src/ts/process/promptTokenizeMemo.test.ts',
+        testName: 'M13: stale in-flight prompt tokenization results cannot overwrite newer edits',
+      },
+      {
+        testPath: 'src/ts/process/promptTokenizeMemo.test.ts',
+        testName: 'M13: reorder delete and add preserve memoized token totals',
+      },
+    ],
+  ),
   planned('M14', 6, 'Idempotent `nodeObserve` (or wire the dead MutationObserver).'),
   planned('M15', 7, 'Bounded Map (LRU) translate cache.'),
   planned('M16', 7, 'Remove html log; `DoingChat` gate for non-exp translators.'),
@@ -1307,6 +1331,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       'M4',
       'M5',
       'M6',
+      'M13',
       'L3',
       'L4',
       'L5',

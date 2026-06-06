@@ -64,7 +64,7 @@ rows and the `DONE` marker (Phase 0 authors the v2 gate with ID classes
 | M10 | [4](phases/phase-4-client-clone-ring-2.md)       | Module-only / single-row module snapshots.                       | PENDING |
 | M11 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the lorebook watcher (+ epoch-bumping apply). | PENDING |
 | M12 | [6](phases/phase-6-bridges-lifecycle-network.md) | Apply-epoch gate for the character-profile watcher.              | PENDING |
-| M13 | [5](phases/phase-5-client-render-and-ui.md)      | Debounce + per-item memo for prompt-template tokenize.           | PENDING |
+| M13 | [5](phases/phase-5-client-render-and-ui.md)      | Debounce + per-item memo for prompt-template tokenize.           | DONE    |
 | M14 | [6](phases/phase-6-bridges-lifecycle-network.md) | Idempotent `nodeObserve` (or wire the dead MutationObserver).    | PENDING |
 | M15 | [7](phases/phase-7-opt-in-subsystems.md)         | Bounded Map (LRU) translate cache.                               | PENDING |
 | M16 | [7](phases/phase-7-opt-in-subsystems.md)         | Remove html log; `DoingChat` gate for non-exp translators.       | PENDING |
