@@ -91,6 +91,11 @@
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { isChatMessageHydrationPending } from 'src/ts/server/chatMessageHydration.svelte'
+  import {
+    buildTranscriptWindowIdentity,
+    DEFAULT_CHAT_LOAD_PAGES,
+    getLoadPagesForMessageJump,
+  } from './DefaultChatScreen.loadPages'
 
   const loadPlaygroundMenu = () =>
     import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
@@ -104,13 +109,15 @@
   let messageInput: string = $state('')
   let messageInputTranslate: string = $state('')
   let openMenu = $state(false)
-  let loadPages = $state(30)
+  let loadPages = $state(DEFAULT_CHAT_LOAD_PAGES)
   let doingChatInputTranslate = false
   let toggleStickers: boolean = $state(false)
   let fileInput: string[] = $state([])
   let showNewMessageButton = $state(false)
   let chatsInstance: any = $state()
   let isScrollingToMessage = $state(false)
+  let scrollToMessageRunId = 0
+  let activeTranscriptWindowIdentity: string | null = $state(null)
   let {
     openModuleList = $bindable(false),
     openChatList = $bindable(false),
@@ -131,6 +138,44 @@
   function scrollToBottom() {
     chatsInstance?.scrollToLatestMessage()
   }
+
+  function getActiveTranscriptWindowIdentity(): string | null {
+    const selectedCharacterIndex = $selectedCharID
+    const character = DBState.db.characters?.[selectedCharacterIndex]
+    const chatPage = character?.chatPage ?? null
+    const chat = chatPage === null ? null : character?.chats?.[chatPage]
+
+    return buildTranscriptWindowIdentity({
+      selectedCharacterIndex,
+      characterId: character?.chaId,
+      chatPage,
+      chatId: chat?.id,
+    })
+  }
+
+  function resetTranscriptWindowForChatSwitch() {
+    loadPages = DEFAULT_CHAT_LOAD_PAGES
+    isScrollingToMessage = false
+    scrollToMessageRunId += 1
+    chatFoldedState.data = null
+    chatFoldedStateMessageIndex.index = -1
+  }
+
+  $effect(() => {
+    const nextIdentity = getActiveTranscriptWindowIdentity()
+    if (activeTranscriptWindowIdentity === nextIdentity) {
+      return
+    }
+
+    const previousIdentity = activeTranscriptWindowIdentity
+    activeTranscriptWindowIdentity = nextIdentity
+    loadPages = DEFAULT_CHAT_LOAD_PAGES
+
+    if (previousIdentity !== null) {
+      resetTranscriptWindowForChatSwitch()
+    }
+  })
+
   $effect(() => {
     if (ScrollToMessageStore.value !== -1) {
       const index = ScrollToMessageStore.value
@@ -140,23 +185,42 @@
   })
 
   async function scrollToMessage(index: number) {
+    const targetIdentity = getActiveTranscriptWindowIdentity()
+    if (!targetIdentity || !Number.isInteger(index) || index < 0) {
+      return
+    }
+
+    const runId = ++scrollToMessageRunId
+    const isCurrentJump = () =>
+      scrollToMessageRunId === runId && getActiveTranscriptWindowIdentity() === targetIdentity
+
     // Forces the loading of past messages not rendered on the screen
     isScrollingToMessage = true
     try {
       const totalMessages = currentChat.length
-      const neededLoadPages = totalMessages - index + 5
+      const neededLoadPages = getLoadPagesForMessageJump(loadPages, totalMessages, index)
 
       if (loadPages < neededLoadPages) {
         loadPages = neededLoadPages
         await tick()
+        if (!isCurrentJump()) {
+          return
+        }
       }
 
       let element: Element | null = null
       // Poll for element existence (max 5 seconds)
       for (let i = 0; i < 50; i++) {
+        if (!isCurrentJump()) {
+          return
+        }
         element = document.querySelector(`[data-chat-index="${index}"]`)
         if (element) break
         await sleep(100)
+      }
+
+      if (!isCurrentJump()) {
+        return
       }
 
       const preIndex = Math.max(0, index - 3)
@@ -167,6 +231,10 @@
         element?.scrollIntoView({ behavior: 'instant', block: 'start' })
       }
       await sleep(50)
+
+      if (!isCurrentJump()) {
+        return
+      }
 
       if (element) {
         // Wait for images to load to prevent layout shift
@@ -185,9 +253,15 @@
         }
 
         element.scrollIntoView({ behavior: 'instant', block: 'start' })
+        if (!isCurrentJump()) {
+          return
+        }
 
         // Small delay and scroll again to ensure position is correct after any final layout adjustments
         await sleep(50)
+        if (!isCurrentJump()) {
+          return
+        }
         element.scrollIntoView({ behavior: 'instant', block: 'start' })
 
         element.classList.add('ring-2', 'ring-blue-500')
@@ -196,7 +270,9 @@
         }, 2000)
       }
     } finally {
-      isScrollingToMessage = false
+      if (scrollToMessageRunId === runId) {
+        isScrollingToMessage = false
+      }
     }
   }
 
@@ -432,14 +508,16 @@
   }
 
   async function screenShot() {
+    const screenshotIdentity = getActiveTranscriptWindowIdentity()
     const previousLoadPages = loadPages
+    let canvases: Array<HTMLCanvasElement | null> = []
+    let mergedCanvas: HTMLCanvasElement | null = null
     try {
       loadPages = Infinity
       await tick()
       const html2canvas = await import('html-to-image')
       const chats = document.querySelectorAll('.default-chat-screen .risu-chat')
       alertWait('Taking screenShot...')
-      let canvases: HTMLCanvasElement[] = []
 
       for (const chat of chats) {
         const cnv = await html2canvas.toCanvas(chat as HTMLElement)
@@ -451,7 +529,7 @@
 
       alertWait('Merging images...')
 
-      let mergedCanvas = document.createElement('canvas')
+      mergedCanvas = document.createElement('canvas')
       mergedCanvas.width = 0
       mergedCanvas.height = 0
       let mergedCtx = mergedCanvas.getContext('2d')
@@ -460,6 +538,7 @@
       let maxWidth = 0
       for (let i = 0; i < canvases.length; i++) {
         let canvas = canvases[i]
+        if (!canvas) continue
         totalHeight += canvas.height
         maxWidth = Math.max(maxWidth, canvas.width)
 
@@ -472,9 +551,11 @@
       let indh = 0
       for (let i = 0; i < canvases.length; i++) {
         let canvas = canvases[i]
+        if (!canvas) continue
         indh += canvas.height
         mergedCtx.drawImage(canvas, 0, indh - canvas.height)
-        canvases[i].remove()
+        canvas.remove()
+        canvases[i] = null
       }
 
       if (mergedCanvas) {
@@ -483,13 +564,21 @@
           Buffer.from(mergedCanvas.toDataURL('png').split(',').at(-1), 'base64'),
         )
         mergedCanvas.remove()
+        mergedCanvas = null
       }
       alertNormal(language.screenshotSaved)
     } catch (error) {
       console.error(error)
       alertError('Error while taking screenshot')
     } finally {
-      loadPages = previousLoadPages
+      for (const canvas of canvases) {
+        canvas?.remove()
+      }
+      mergedCanvas?.remove()
+      loadPages =
+        getActiveTranscriptWindowIdentity() === screenshotIdentity
+          ? previousLoadPages
+          : DEFAULT_CHAT_LOAD_PAGES
     }
   }
 
@@ -755,6 +844,7 @@
         {/if}
         {#if DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
           <button
+            data-testid="default-chat-menu-button"
             onclick={(e) => {
               openMenu = !openMenu
               e.stopPropagation()
@@ -1132,6 +1222,7 @@
           {/if}
 
           <div
+            data-testid="default-chat-screenshot-button"
             class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
             onclick={() => {
               screenShot()

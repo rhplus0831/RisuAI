@@ -22,8 +22,22 @@ after each change to a narrowed or bounded path.
   v3 gate command is green; the v1/v2 archive gates were refreshed during the
   Phase 5 verification run below.
 - Tree: Phase 5 implementation is committed through `68edd23d7`; this
-  verification-refresh adjusted documentation/test/audit-tooling only and did
-  not change runtime code.
+  working-tree update adds the v4-only Phase 6 transcript-window reset
+  runtime/test/docs proof below and does not move v3 statuses or gates.
+
+## Phase 6 Transcript Window Reset (2026-06-07)
+
+Run for the v4-only Phase 6 `transcript-window-reset` slice. No v3
+active-risk rows moved to `DONE`, and the v3 gate registry was not edited.
+
+- `pnpm exec vitest run src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`:
+  passed, 1 file / 4 tests, duration 17.19s. The command emitted the usual
+  Vite/Svelte default-config notice. The proof covers deep-jump expansion in
+  the current chat, active-chat identity reset after a deep jump, bounded
+  mount/window when opening another long chat, and screenshot window cleanup
+  on both success and capture-error paths.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- Skipped/failed items: none.
 
 ## Phase 5 Verification Refresh (2026-06-07)
 
