@@ -728,10 +728,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L31',
     6,
     'Memoize the parsed customHTML GUI template per template version, shared across messages.',
+    'src/lib/ChatScreens/Chat.customHtml.test.ts',
+    'L31: repeated customHTML rows share one parsed template per template version',
+    [
+      {
+        testPath: 'src/lib/ChatScreens/Chat.customHtml.test.ts',
+        testName:
+          'L31: guiHTML changes and cbs-condition changes invalidate the customHTML template memo',
+      },
+    ],
   ),
   planned('L32', 6, 'Cap `bestMatchCache` and reset it in `resetScriptCache()`.'),
   planned(
@@ -1801,6 +1810,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L28',
       'L29',
       'L30',
+      'L31',
       'L34',
       'L35',
       'L36',
@@ -1816,7 +1826,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1853,6 +1863,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L28',
       'L29',
       'L30',
+      'L31',
       'L34',
       'L35',
       'L36',

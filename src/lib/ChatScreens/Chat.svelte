@@ -72,6 +72,7 @@
   import PopupButton from '../UI/PopupButton.svelte'
   import PartialEditController from './PartialEditController.svelte'
   import { getLLMCache, setLLMCache } from '../../ts/translator/translator'
+  import { renderCustomHtmlTemplate } from './ChatCustomHtmlTemplate'
   import {
     currentChatScopedSnapshot,
     currentChatStateSnapshot,
@@ -379,17 +380,7 @@
   })
 
   function RenderGUIHtml(html: string) {
-    try {
-      const parser = new DOMParser()
-      const doc = parser.parseFromString(
-        risuChatParser(html ?? '', { cbsConditions: getCbsCondition() }),
-        'text/html',
-      )
-      return doc.body
-    } catch (error) {
-      const placeholder = document.createElement('div')
-      return placeholder
-    }
+    return renderCustomHtmlTemplate(html, getCbsCondition())
   }
 
   function getRisuButtonAttributes(dom: HTMLElement) {
