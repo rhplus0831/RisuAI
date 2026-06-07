@@ -19,6 +19,8 @@ const STRIP_RESPONSE_HEADERS = new Set([
   'clear-site-data',
   'cache-control',
   'content-encoding',
+  'content-length',
+  'transfer-encoding',
 ])
 
 export const PROXY_FETCH_DEFAULT_TIMEOUT_MS = SHARED_DEFAULT_REQUEST_TIMEOUT_MS

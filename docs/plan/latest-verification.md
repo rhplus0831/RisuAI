@@ -8,10 +8,10 @@ after each change to a narrowed or bounded path.
 ## Current State
 
 - Plan state: open; Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are
-  complete; Phase 5 is the next batch. `H1`, `M1-M5`, `M9`, `L2`, `L4`,
-  `L5`, `L11-L20`, `L56`, `K1`, and `K2` are `DONE` in
-  [`active-risk-analysis.md`](active-risk-analysis.md); every other scheduled
-  row remains `PENDING`.
+  complete; the v4-H2 Phase 4.5 hotfix is also complete; Phase 5 is the next
+  batch. `H1`, `M1-M5`, `M9`, `L2`, `L4`, `L5`, `L11-L20`, `L56`, `K1`, and
+  `K2` are `DONE` in [`active-risk-analysis.md`](active-risk-analysis.md);
+  every other scheduled row remains `PENDING`.
 - Gate state: the v1 gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
   and the v2 gate (`fixCompletenessGateV2.test.ts`) remain live against their
   archives. The v3 gate (`fixCompletenessGateV3.test.ts`) is live against
@@ -19,8 +19,26 @@ after each change to a narrowed or bounded path.
   `L56`, `K1`, and `K2` registered as `DONE` and all other scheduled v3 IDs
   registered as `PLANNED`. The Phase 4 v3 gate command is green; the v1/v2
   archive gates were last refreshed in the Phase 2 verification run below.
-- Tree: Phase 4 implementation is committed through `3d1777616`; this
-  verification refresh closes Phase 4 and does not change runtime code.
+- Tree: Phase 4 implementation is committed through `3d1777616`; Phase 4.5
+  closes v4-H2 as a focused proxy/transport hotfix and does not move any v3
+  active-risk IDs.
+
+## Phase 4.5 V4-H2 Proxy Framing Hotfix (2026-06-07)
+
+Run after the v4 integration brief routed H2 as a small proxy/transport
+closeout before Phase 5.
+
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/proxy.test.ts server/fastify/__tests__/hub.test.ts`:
+  passed, 2 files / 32 tests. The new proxy proof uses a real socket and a
+  gzip upstream with fixed compressed `content-length`; the proxied response
+  omits stale `content-encoding` / `content-length` framing and returns the
+  full decompressed body. The shared response-header filter also strips
+  `transfer-encoding`, matching the hub framing policy.
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/streamJobs.test.ts server/fastify/__tests__/streamJobsRoutes.test.ts`:
+  passed, 2 files / 70 tests. This covers the shared response-header filter's
+  stream-job header-frame consumer after the v4-I23 inventory rider.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: zero errors.
+- Skipped/failed items: none.
 
 ## Phase 4 Verification Refresh (2026-06-07)
 

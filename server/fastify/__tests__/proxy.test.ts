@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
+import { gzipSync } from 'node:zlib'
 import type { FastifyInstance } from 'fastify'
 import { REQUEST_RECEIVE_TIMEOUT_MS, buildApp } from '../src/app.js'
 import { NON_DURABLE_REQUEST_DEADLINE_MS } from '../src/requestAbort.js'
@@ -12,6 +13,7 @@ import {
   PROXY_FETCH_DEFAULT_TIMEOUT_MS,
   PROXY_FETCH_MAX_TIMEOUT_MS,
   createTimeoutController,
+  filterResponseHeaders,
   getRequestTimeoutMs,
 } from '../src/proxy.js'
 
@@ -187,6 +189,49 @@ async function withShortenedProxyDeadline(
   }
 }
 
+function appPort(app: FastifyInstance): number {
+  const addr = app.server.address() as AddressInfo
+  return addr.port
+}
+
+function requestProxyFetchOverSocket(
+  app: FastifyInstance,
+  assertion: string,
+  upstreamUrl: string,
+): Promise<{ statusCode: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port: appPort(app),
+        method: 'POST',
+        path: '/api/v1/proxy/fetch',
+        headers: {
+          'risu-auth': assertion,
+          'risu-url': encodeURIComponent(upstreamUrl),
+        },
+      },
+      (res) => {
+        res.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)))
+        res.once('error', reject)
+        res.once('end', () => {
+          resolve({
+            statusCode: res.statusCode ?? 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks),
+          })
+        })
+      },
+    )
+    req.setTimeout(3_000, () => {
+      req.destroy(new Error('proxy fetch socket request timed out'))
+    })
+    req.once('error', reject)
+    req.end()
+  })
+}
+
 describe('Phase 3 POST /api/v1/proxy/fetch', () => {
   it('L31: normalizes proxy fetch timeout headers to the default, explicit value, or cap', () => {
     expect(PROXY_FETCH_DEFAULT_TIMEOUT_MS).toBe(NON_DURABLE_REQUEST_DEADLINE_MS)
@@ -206,6 +251,19 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     vi.advanceTimersByTime(25)
     expect(timeout.signal.aborted).toBe(false)
     expect(timeout.timedOut()).toBe(false)
+  })
+
+  it('Phase 4.5: strips decompression-sensitive upstream response framing headers', () => {
+    expect(
+      filterResponseHeaders(
+        new Headers({
+          'content-encoding': 'gzip',
+          'content-length': '73',
+          'transfer-encoding': 'chunked',
+          'x-custom': 'preserved',
+        }),
+      ),
+    ).toEqual({ 'x-custom': 'preserved' })
   })
 
   it('returns 401 without auth once a password is set', async () => {
@@ -266,6 +324,32 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(res.headers['content-security-policy-report-only']).toBeUndefined()
     expect(res.headers['clear-site-data']).toBeUndefined()
     expect(res.body).toBe('hello upstream')
+  })
+
+  it('Phase 4.5: streams decompressed gzip responses without stale content-length', async () => {
+    const plain = 'proxy gzip payload\n'.repeat(750)
+    const compressed = gzipSync(Buffer.from(plain, 'utf8'))
+    expect(compressed.length).toBeLessThan(Buffer.byteLength(plain))
+
+    echo.setResponder((_req, res) => {
+      res.writeHead(200, {
+        'content-type': 'text/plain; charset=utf-8',
+        'content-encoding': 'gzip',
+        'content-length': String(compressed.length),
+        'x-upstream-compressed-length': String(compressed.length),
+      })
+      res.end(compressed)
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    await harness.app.listen({ port: 0, host: '127.0.0.1' })
+
+    const res = await requestProxyFetchOverSocket(harness.app, assertion, echo.url)
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-encoding']).toBeUndefined()
+    expect(res.headers['content-length']).toBeUndefined()
+    expect(res.headers['x-upstream-compressed-length']).toBe(String(compressed.length))
+    expect(res.body.toString('utf8')).toBe(plain)
   })
 
   it('forwards POST body bytes upstream verbatim', async () => {

@@ -4,7 +4,16 @@ Date: 2026-06-07
 
 The v3 remediation workstream is open. Phase 0, Phase 1, Phase 2, Phase 3,
 and Phase 4 are complete and recorded in
-[`latest-verification.md`](latest-verification.md); the next batch is Phase 5.
+[`latest-verification.md`](latest-verification.md). The v4-H2 Phase 4.5
+hotfix is complete; use [`v4-integration-brief.md`](v4-integration-brief.md)
+as the post-Phase-4 router for v4 findings that amend the remaining v3 plan.
+
+## Completed Checkpoint: V4 Phase 4.5
+
+Closed v4-H2 before Phase 5: the `/fetch` proxy strips stale compressed
+`content-length` / `transfer-encoding` framing headers after undici
+decompression and proves it with a real-socket gzip test. No unrelated v3 IDs
+move for this v4-only closeout.
 
 ## Next Batch: Phase 5 (Client Write-Path Correctness)
 
@@ -25,7 +34,10 @@ Slices already live under
    including preset selection and copied scalar settings.
 5. L34/L35/L36 `guard-repairs`: fix guarded projection writes for IGP,
    send-error inlays, `.po` file attach, and riding display-script injection
-   / coercion items.
+   / coercion items. Per
+   [`v4-integration-brief.md`](v4-integration-brief.md), amend this slice into
+   a tree-wide guarded-write / feature-breakage sweep and add v4-L30 and
+   v4-L33 to the guard-enabled test matrix.
 6. L37 `error-handler-hardening`: make global error/rejection handlers and
    `alertError` null-safe.
 7. Phase 5 verification refresh: gates, focused proofs, full validation, and
@@ -37,11 +49,13 @@ suites, client checks, and verification refreshed.
 
 ## Proof History
 
-Phase 4 closed on 2026-06-07 with M9, L2, L4, L5, L17, L18, L19, L20, and
-L56 registered as `DONE`, the focused lifecycle/deadline/transport proof
-suites green, `pnpm api:test` green, the v3 gate green, and both TypeScript
-checks green. Keep new Phase 5 proof entries in
-[`latest-verification.md`](latest-verification.md) above the Phase 4 entry.
+Phase 4.5 closed on 2026-06-07 with v4-H2 fixed and the focused proxy/hub
+suite plus strict server TypeScript green. Phase 4 closed earlier on
+2026-06-07 with M9, L2, L4, L5, L17, L18, L19, L20, and L56 registered as
+`DONE`, the focused lifecycle/deadline/transport proof suites green,
+`pnpm api:test` green, the v3 gate green, and both TypeScript checks green.
+Keep new Phase 5 proof entries in [`latest-verification.md`](latest-verification.md)
+above the Phase 4.5 entry.
 
 ## After Phase 5
 
