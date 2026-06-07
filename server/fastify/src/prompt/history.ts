@@ -3,7 +3,6 @@ import type { Chat, Message, character } from '../../../../src/ts/storage/databa
 import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { processScript } from './scripts.js'
-import { getActiveModules, getModuleAssets } from './modules.js'
 import {
   getDepthPrompts,
   resolvePosition,
@@ -14,6 +13,10 @@ import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { runStartTrigger, type TriggerRunResult } from './triggers.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
+import {
+  buildPromptAssetTable,
+  type PromptAssetTable,
+} from './promptAssets.js'
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -107,6 +110,8 @@ type MaybePromise<T> = T | Promise<T>
  */
 
 export interface AssetLookup {
+  /** Char + module asset rows built for this assembly/history walk. */
+  assetTable?: PromptAssetTable
   /** Resolves an inlay id from `{{inlay/inlayed/inlayeddata::id}}`. */
   getInlay?(id: string): MaybePromise<MultiModal | undefined>
   /** Resolves an `{{asset_prompt::name}}` against char + module assets. */
@@ -258,12 +263,10 @@ async function processInlays(
 
 async function processAssetPrompts(
   text: string,
-  currentChar: character,
-  moduleAssets: [string, string, string][],
+  assetTable: PromptAssetTable,
   lookup: AssetLookup,
 ): Promise<{ text: string; multimodals: MultiModal[] }> {
   const multimodals: MultiModal[] = []
-  const assetTable = (currentChar.additionalAssets ?? []).concat(moduleAssets)
   const matches = Array.from(text.matchAll(ASSET_PROMPT_RE))
   for (const match of matches) {
     const name = match[1]
@@ -289,7 +292,7 @@ async function formatHistoryMessage(
   totalCount: number,
   usingPromptTemplate: boolean,
   assetLookup: AssetLookup,
-  moduleAssets: [string, string, string][],
+  assetTable: PromptAssetTable,
   editProcess: EditProcessHook,
   preparedSendNameWrapper?: string,
 ): Promise<OpenAIChat> {
@@ -341,8 +344,7 @@ async function formatHistoryMessage(
 
   const assetResult = await processAssetPrompts(
     formatted,
-    currentChar,
-    moduleAssets,
+    assetTable,
     assetLookup,
   )
   formatted = assetResult.text
@@ -430,10 +432,14 @@ export async function buildHistoryWindow(
   assetLookup: AssetLookup = NO_ASSETS,
   report?: LorebookActivationReport,
   editProcess: EditProcessHook = IDENTITY_EDIT_PROCESS,
+  promptAssetTable?: PromptAssetTable,
 ): Promise<HistoryWindowResult> {
   const db = ctx.database
   const messages: OpenAIChat[] = []
-  const moduleAssets = getModuleAssets(getActiveModules(db, currentChar, currentChat))
+  const assetTable =
+    promptAssetTable ??
+    assetLookup.assetTable ??
+    buildPromptAssetTable({ database: db, currentChar, currentChat })
   const { encoding, options } = tokenizerOptionsFromDb(db)
   let addedTokens = 0
   const preparedSendNameWrapper =
@@ -540,7 +546,7 @@ export async function buildHistoryWindow(
       ms.length,
       usingPromptTemplate,
       assetLookup,
-      moduleAssets,
+      assetTable,
       editProcess,
       preparedSendNameWrapper,
     )

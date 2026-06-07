@@ -205,14 +205,28 @@ interface SearchableMessageCorpus {
   recursiveEntries: SearchableMessageEntry[]
 }
 
+const NO_SEARCH_ENTRIES: SearchableMessageEntry[] = []
+
 export interface LorebookSearchNormalizationInstrumentation {
   baseMessageNormalizations: number
   recursivePromptNormalizations: number
 }
 
+export interface LorebookSearchEntryListInstrumentation {
+  searchMatchCalls: number
+  depthSliceBuilds: number
+  combinedSearchEntryArrayBuilds: number
+}
+
 const lorebookSearchNormalizationInstrumentation: LorebookSearchNormalizationInstrumentation = {
   baseMessageNormalizations: 0,
   recursivePromptNormalizations: 0,
+}
+
+const lorebookSearchEntryListInstrumentation: LorebookSearchEntryListInstrumentation = {
+  searchMatchCalls: 0,
+  depthSliceBuilds: 0,
+  combinedSearchEntryArrayBuilds: 0,
 }
 
 export function resetLorebookSearchNormalizationInstrumentation(): void {
@@ -222,6 +236,16 @@ export function resetLorebookSearchNormalizationInstrumentation(): void {
 
 export function getLorebookSearchNormalizationInstrumentation(): LorebookSearchNormalizationInstrumentation {
   return { ...lorebookSearchNormalizationInstrumentation }
+}
+
+export function resetLorebookSearchEntryListInstrumentation(): void {
+  lorebookSearchEntryListInstrumentation.searchMatchCalls = 0
+  lorebookSearchEntryListInstrumentation.depthSliceBuilds = 0
+  lorebookSearchEntryListInstrumentation.combinedSearchEntryArrayBuilds = 0
+}
+
+export function getLorebookSearchEntryListInstrumentation(): LorebookSearchEntryListInstrumentation {
+  return { ...lorebookSearchEntryListInstrumentation }
 }
 
 const SEARCH_COMMENT_RE = /\{\{\/\/(.+?)\}\}/g
@@ -299,6 +323,7 @@ function baseSearchEntriesForDepth(
   if (cached) return cached
 
   const start = Math.max(corpus.baseEntries.length - searchDepth, 0)
+  lorebookSearchEntryListInstrumentation.depthSliceBuilds++
   const sliced = corpus.baseEntries.slice(start, corpus.baseEntries.length).map((entry, i) => ({
     ...entry,
     source: `message ${i} by ${entry.speakerType}`,
@@ -320,6 +345,20 @@ function appendRecursiveSearchEntry(
       kind: 'recursive',
     }) as SearchableMessageEntry,
   )
+}
+
+function visitSearchEntries(
+  baseEntries: SearchableMessageEntry[],
+  recursiveEntries: SearchableMessageEntry[],
+  visit: (entry: SearchableMessageEntry) => boolean,
+): boolean {
+  for (const entry of baseEntries) {
+    if (visit(entry)) return true
+  }
+  for (const entry of recursiveEntries) {
+    if (visit(entry)) return true
+  }
+  return false
 }
 
 /**
@@ -377,6 +416,7 @@ function searchMatch(
   arg: SearchArg,
   matchLog: LoreMatchLogEntry[],
 ): boolean {
+  lorebookSearchEntryListInstrumentation.searchMatchCalls++
   const trimmedKeys: string[] = []
   for (const k of arg.keys) {
     const t = k.trim()
@@ -384,24 +424,30 @@ function searchMatch(
   }
   if (trimmedKeys.length === 0) return false
 
-  const mList = arg.dontSearchWhenRecursive
-    ? baseSearchEntriesForDepth(corpus, arg.searchDepth)
-    : baseSearchEntriesForDepth(corpus, arg.searchDepth).concat(corpus.recursiveEntries)
+  const baseEntries = baseSearchEntriesForDepth(corpus, arg.searchDepth)
+  const recursiveEntries = arg.dontSearchWhenRecursive
+    ? NO_SEARCH_ENTRIES
+    : corpus.recursiveEntries
 
   if (arg.regex) {
-    for (const m of mList) {
+    let malformedRegex = false
+    const matched = visitSearchEntries(baseEntries, recursiveEntries, (m) => {
       for (const regexString of trimmedKeys) {
         // L3: compiled once per key string (memoized across messages, passes,
         // and activations) instead of per message × per key × per pass.
         const r = getCompiledLoreKeyRegex(regexString)
-        if (!r) return false
+        if (!r) {
+          malformedRegex = true
+          return true
+        }
         if (r.test(m.data)) {
           matchLog.push({ prompt: m.prompt, source: m.source, activated: regexString })
           return true
         }
       }
-    }
-    return false
+      return false
+    })
+    return matched && !malformedRegex
   }
 
   const allMode = arg.all ?? false
@@ -409,7 +455,7 @@ function searchMatch(
   const lowerKeys = trimmedKeys.map((key) => key.toLocaleLowerCase())
   const compactKeys = lowerKeys.map((key) => key.replace(/ /g, ''))
 
-  for (const m of mList) {
+  const matched = visitSearchEntries(baseEntries, recursiveEntries, (m) => {
     if (arg.fullWordMatching) {
       for (let i = 0; i < trimmedKeys.length; i++) {
         if (m.wordData.includes(lowerKeys[i])) {
@@ -429,7 +475,9 @@ function searchMatch(
         }
       }
     }
-  }
+    return false
+  })
+  if (matched) return true
 
   return allMode && allModeMatched
 }

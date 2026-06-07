@@ -46,6 +46,10 @@ import {
   type PreparedDepthPrompt,
 } from './history.js'
 import { buildAssetLookup, type ResolveStoredAsset } from './assetLookup.js'
+import {
+  buildPromptAssetTable,
+  type PromptAssetTable,
+} from './promptAssets.js'
 import { buildMemoryWindow } from './memory.js'
 import {
   assemblePromptMemoryRows,
@@ -472,10 +476,13 @@ export interface AssemblyState {
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
   /**
    * The non-empty asset lookup the history walk resolves inlay / asset bytes
-   * through. Built in `beginAssembly` from the route's store resolver plus
-   * optional legacy inlay id aliases; falls back to `NO_ASSETS` when unset.
+   * through. Built lazily for the history stage from the route's store resolver
+   * plus optional legacy inlay id aliases; falls back to `NO_ASSETS` when unset.
    */
   assetLookup?: AssetLookup
+  /** Char + module asset rows shared by `assetLookup` and the history walk. */
+  promptAssetTable?: PromptAssetTable
+  resolveStoredAsset?: ResolveStoredAsset
 }
 
 /** The 10 canonical slot arrays, all empty. Shared by the assembler and tests. */
@@ -580,14 +587,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     memoryDatabase: deps.loadMemoryDatabase?.() ?? null,
     promptMemoryQueryVectors: deps.loadPromptMemoryQueryVectors?.() ?? [],
     enqueuePromptMemoryFollowUpJob: deps.enqueuePromptMemoryFollowUpJob,
-    assetLookup: buildAssetLookup({
-      database,
-      currentChar,
-      currentChat,
-      inlayAssets: input.inlayAssets,
-      inlayAssetRefs: input.inlayAssetRefs,
-      resolveStoredAsset: deps.resolveStoredAsset,
-    }),
+    resolveStoredAsset: deps.resolveStoredAsset,
   }
 }
 
@@ -1142,6 +1142,24 @@ export function fillLorebookSlots(state: AssemblyState): void {
 export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   const { ctx, currentChar, usingPromptTemplate } = state
   const db = state.database
+  const promptAssetTable =
+    state.promptAssetTable ??
+    state.assetLookup?.assetTable ??
+    buildPromptAssetTable({
+      database: db,
+      currentChar,
+      currentChat: state.currentChat,
+    })
+  state.promptAssetTable = promptAssetTable
+  state.assetLookup ??= buildAssetLookup({
+    database: db,
+    currentChar,
+    currentChat: state.currentChat,
+    inlayAssets: state.input.inlayAssets,
+    inlayAssetRefs: state.input.inlayAssetRefs,
+    resolveStoredAsset: state.resolveStoredAsset,
+    assetTable: promptAssetTable,
+  })
 
   // Lua `editprocess` wires each first-message / per-message body through the
   // runtime, mirroring the SPA's leading `runLuaEditTrigger`. It is a browser
@@ -1161,6 +1179,7 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
     state.assetLookup ?? NO_ASSETS,
     state.report,
     editProcess,
+    promptAssetTable,
   )
 
   // The start trigger may have mutated the chat and chat-vars even when

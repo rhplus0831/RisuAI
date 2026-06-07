@@ -1,7 +1,10 @@
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { MultiModal } from '../../../../src/ts/process/index.svelte'
-import { getActiveModules, getModuleAssets } from './modules.js'
 import type { AssetLookup } from './history.js'
+import {
+  buildPromptAssetTable,
+  type PromptAssetTable,
+} from './promptAssets.js'
 
 /**
  * Build the non-empty {@link AssetLookup} that feeds image/asset bytes into the
@@ -96,18 +99,20 @@ export function buildAssetLookup(args: {
   inlayAssets: unknown
   inlayAssetRefs?: unknown
   resolveStoredAsset?: ResolveStoredAsset
+  assetTable?: PromptAssetTable
 }): AssetLookup {
   const requestInlays = parseRequestInlayAssets(args.inlayAssets)
   const requestInlayRefs = parseRequestInlayAssetRefs(args.inlayAssetRefs)
-  // Mirror `processAssetPrompts`' table (`history.ts:256`) so `getAsset(name)`
-  // can map a name to its `asset[1]` reference; `processAssetPrompts` only calls
-  // `getAsset` for names already present in this table.
-  const moduleAssets = getModuleAssets(
-    getActiveModules(args.database, args.currentChar, args.currentChat),
-  )
-  const assetTable = (args.currentChar.additionalAssets ?? []).concat(moduleAssets)
+  const assetTable =
+    args.assetTable ??
+    buildPromptAssetTable({
+      database: args.database,
+      currentChar: args.currentChar,
+      currentChat: args.currentChat,
+    })
   const resolve = args.resolveStoredAsset
   return {
+    assetTable,
     getInlay: async (id) => {
       const ref = requestInlayRefs.get(id)
       const resolved = resolve

@@ -56,6 +56,10 @@ import {
   getHypaV3PrefixTokenMemoStatsForTests,
   resetHypaV3PrefixTokenMemoForTests,
 } from '../src/prompt/prefixTokenMemo.js'
+import {
+  getPromptAssetTableInstrumentation,
+  resetPromptAssetTableInstrumentation,
+} from '../src/prompt/promptAssets.js'
 import { LLMFlags } from '../../../src/ts/model/types'
 
 beforeAll(() => {
@@ -201,6 +205,83 @@ describe('Phase 7 L1 async asset reads', () => {
       { type: 'image', base64: `data:asset_prompt:${assetId}` },
     ])
     expect(reads).toEqual([`asset_prompt:${assetId}`])
+  })
+})
+
+describe('Phase 7 L6 per-assembly asset table', () => {
+  it('L6: shares one char+module asset table across lookup and history without changing winners', async () => {
+    resetPromptAssetTableInstrumentation()
+    const resolved: string[] = []
+    const resolveStoredAsset = async (reference: string) => {
+      resolved.push(reference)
+      return { type: 'image' as const, base64: `data:image/png;base64,${reference}` }
+    }
+    const db = makeDatabase({
+      enabledModules: ['mod-assets'],
+      modules: [
+        {
+          id: 'mod-assets',
+          assets: [
+            ['hero', 'module-loses', ''],
+            ['moduleOnly', 'module-wins', ''],
+          ],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          image: 'icon-ref',
+          firstMessage: '',
+          additionalAssets: [
+            ['hero', 'char-wins', ''],
+            ['hero', 'char-loses', ''],
+          ],
+          chats: [
+            makeChat({
+              message: [
+                {
+                  role: 'user',
+                  data: [
+                    'A',
+                    '{{asset_prompt::hero}}',
+                    '{{asset_prompt::moduleOnly}}',
+                    '{{asset_prompt::icon}}',
+                    '{{asset_prompt::missing}}',
+                  ].join(' '),
+                  chatId: 'asset-table-row',
+                } as Message,
+              ],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const currentChar = db.characters[0]
+    const currentChat = currentChar.chats[0]
+    const lookup = buildAssetLookup({
+      database: db,
+      currentChar,
+      currentChat,
+      inlayAssets: undefined,
+      resolveStoredAsset,
+    })
+
+    const history = await buildHistoryWindow(
+      { database: db },
+      currentChar,
+      currentChat,
+      false,
+      lookup,
+    )
+
+    const row = history.messages.find((entry) => entry.memo === 'asset-table-row')
+    expect(row?.content).toBe('A    ')
+    expect(row?.multimodals).toEqual([
+      { type: 'image', base64: 'data:image/png;base64,char-wins' },
+      { type: 'image', base64: 'data:image/png;base64,module-wins' },
+      { type: 'image', base64: 'data:image/png;base64,icon-ref' },
+    ])
+    expect(resolved).toEqual(['char-wins', 'module-wins', 'icon-ref'])
+    expect(getPromptAssetTableInstrumentation()).toEqual({ builds: 1 })
   })
 })
 

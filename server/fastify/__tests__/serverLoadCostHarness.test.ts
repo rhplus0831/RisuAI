@@ -43,6 +43,10 @@ import {
   resetChatDispatchReformatInstrumentation,
 } from '../src/prompt/chatDispatch.js'
 import {
+  getPromptAssetTableInstrumentation,
+  resetPromptAssetTableInstrumentation,
+} from '../src/prompt/promptAssets.js'
+import {
   createMemoryChunk,
   createMemoryEmbedding,
   createMemorySummary,
@@ -964,6 +968,78 @@ describe('server load-count harness on the large-corpus fixture', () => {
     } finally {
       readFileSyncSpy.mockRestore()
     }
+  })
+
+  it('L6: image-bearing chat send builds one shared asset table per assembly', async () => {
+    const fixture = buildLargeCorpusFixture({ hotChatMessageCount: 2 })
+    const database = promptReadyLargeCorpusDatabase(fixture)
+    const charAssetBytes = Buffer.from('l6-char-image-bytes')
+    const moduleAssetBytes = Buffer.from('l6-module-image-bytes')
+    const charUpload = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'risu-auth': assertion, 'content-type': 'image/png' },
+      payload: charAssetBytes,
+    })
+    expect(charUpload.statusCode).toBe(201)
+    const moduleUpload = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'risu-auth': assertion, 'content-type': 'image/png' },
+      payload: moduleAssetBytes,
+    })
+    expect(moduleUpload.statusCode).toBe(201)
+    const charAssetId = charUpload.json().assetId as string
+    const moduleAssetId = moduleUpload.json().assetId as string
+
+    const hotCharacter = (database.characters as Array<Record<string, unknown>>).find(
+      (character) => character.chaId === fixture.hot.characterId,
+    )
+    if (!hotCharacter) throw new Error('large-corpus hot character missing')
+    hotCharacter.additionalAssets = [['hero', charAssetId, '']]
+    hotCharacter.modules = ['mod-assets']
+    const hotChat = (hotCharacter.chats as Array<Record<string, unknown>>).find(
+      (chat) => chat.id === fixture.hot.chatId,
+    )
+    if (!hotChat) throw new Error('large-corpus hot chat missing')
+    hotChat.message = [
+      {
+        role: 'user',
+        data: 'look {{asset_prompt::hero}}',
+        chatId: 'l6-char-asset-row',
+      },
+      {
+        role: 'char',
+        data: 'module {{asset_prompt::moduleHero}} and {{asset_prompt::hero}} again',
+        chatId: 'l6-module-asset-row',
+      },
+    ]
+    database.modules = [
+      {
+        id: 'mod-assets',
+        name: 'Asset Module',
+        assets: [['moduleHero', moduleAssetId, '']],
+      },
+    ]
+    await importDatabase(database)
+
+    resetPromptAssetTableInstrumentation()
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: fixture.hot.chatId,
+        characterId: fixture.hot.characterId,
+        mode: 'send',
+        userMessage: 'hi',
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain(`data:image/png;base64,${charAssetBytes.toString('base64')}`)
+    expect(res.body).toContain(`data:image/png;base64,${moduleAssetBytes.toString('base64')}`)
+    expect(getPromptAssetTableInstrumentation()).toEqual({ builds: 1 })
   })
 
   it('L20: prompt memory cleanup and selection share one summary payload read', async () => {

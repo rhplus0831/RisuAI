@@ -385,12 +385,26 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L6',
     7,
     'Build the char+module asset table once per assembly; share with `buildAssetLookup`.',
+    'server/fastify/__tests__/assemble.test.ts',
+    'L6: shares one char+module asset table across lookup and history without changing winners',
+    [
+      {
+        testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+        testName: 'L6: image-bearing chat send builds one shared asset table per assembly',
+      },
+    ],
   ),
-  planned('L7', 7, 'Iterate the depth slice and recursive entries without the per-call concat.'),
+  done(
+    'L7',
+    7,
+    'Iterate the depth slice and recursive entries without the per-call concat.',
+    'server/fastify/__tests__/lorebook.test.ts',
+    'L7: preserves recursive activation output without per-query combined arrays',
+  ),
   planned(
     'L8',
     7,
@@ -1836,6 +1850,8 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L3',
       'L4',
       'L5',
+      'L6',
+      'L7',
       'L11',
       'L12',
       'L13',
@@ -1875,7 +1891,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L56, K1, K2, and K3 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L6, L7, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L56, K1, K2, and K3 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1894,6 +1910,8 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L3',
       'L4',
       'L5',
+      'L6',
+      'L7',
       'L11',
       'L12',
       'L13',

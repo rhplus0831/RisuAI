@@ -10,7 +10,9 @@ import type { RisuModule } from '../../../src/ts/process/modules'
 import {
   activateLorebook,
   buildLorebookContext,
+  getLorebookSearchEntryListInstrumentation,
   getLorebookSearchNormalizationInstrumentation,
+  resetLorebookSearchEntryListInstrumentation,
   resetLorebookSearchNormalizationInstrumentation,
   type UnformatedLorebookSlots,
 } from '../src/prompt/lorebook.js'
@@ -1542,6 +1544,63 @@ describe('L5 lorebook search normalization', () => {
     expect(getLorebookSearchNormalizationInstrumentation()).toEqual({
       baseMessageNormalizations: messages.length,
       recursivePromptNormalizations: 3,
+    })
+  })
+})
+
+describe('Phase 7 L7 lorebook search entry lists', () => {
+  it('L7: preserves recursive activation output without per-query combined arrays', () => {
+    resetLorebookSearchEntryListInstrumentation()
+    const messages = Array.from({ length: 6 }, (_, i) =>
+      makeMessage({
+        data: i === 5 ? 'Alpha seed with filler.' : `filler ${i}`,
+        chatId: `l7-m-${i}`,
+      }),
+    )
+
+    const report = activateLorebook({
+      database: makeDb({ loreBookDepth: 6 } as Partial<Database>),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'alpha',
+            comment: 'A',
+            content: 'A recursive body mentions bravo.',
+          }),
+          makeLore({
+            alwaysActive: false,
+            key: 'bravo',
+            comment: 'B',
+            content: 'B recursive body mentions charlie.',
+          }),
+          makeLore({
+            alwaysActive: false,
+            key: 'charlie',
+            comment: 'C',
+            content: 'C body.',
+          }),
+          makeLore({
+            alwaysActive: false,
+            key: 'never-matches-l7',
+            comment: 'D',
+            content: 'D body.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({ message: messages }),
+    })
+
+    expect(report.actives.map((a) => a.source).sort()).toEqual(['A', 'B', 'C'])
+    expect(report.matchLog.map((entry) => entry.activated)).toEqual([
+      'alpha',
+      'bravo',
+      'charlie',
+    ])
+    expect(getLorebookSearchEntryListInstrumentation()).toEqual({
+      searchMatchCalls: 5,
+      depthSliceBuilds: 1,
+      combinedSearchEntryArrayBuilds: 0,
     })
   })
 })
