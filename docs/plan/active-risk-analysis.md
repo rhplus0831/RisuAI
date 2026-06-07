@@ -105,7 +105,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L27 | [5](phases/phase-5-client-write-path-correctness.md)        | Promote the pending entry snapshot to a collection snapshot when a second entry edit lands in the same debounce window. | DONE |
 | L28 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Reference-keyed lazy `localLore` snapshots in the character-scope watcher (keep full rollback coverage). | DONE |
 | L29 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Cheap short-circuit before the chat-metadata watcher's per-chat scalar Map rebuild. | DONE |
-| L30 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Cache the corpus-derived parse-memo key signature by its cheap invalidation tokens; build the detection key once per message. | PENDING |
+| L30 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Cache the corpus-derived parse-memo key signature by its cheap invalidation tokens; build the detection key once per message. | DONE |
 | L31 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Memoize the parsed customHTML GUI template per template version, shared across messages. | PENDING |
 | L32 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Cap `bestMatchCache` and reset it in `resetScriptCache()`.                  | PENDING |
 | L33 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Stop/null `bgmElement` on chat/character switch; clear stale observed bgm nodes. | PENDING |

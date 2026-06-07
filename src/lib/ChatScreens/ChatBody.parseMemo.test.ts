@@ -10,15 +10,21 @@ import {
   selectedCharID,
 } from '../../ts/stores.svelte'
 
+const moduleMockState = vi.hoisted(() => ({
+  modules: [] as any[],
+  assets: [] as [string, string, string][],
+  regexScripts: [] as any[],
+}))
+
 vi.mock('../../ts/process/modules', async (importActual) => {
   const actual = await importActual<typeof import('../../ts/process/modules')>()
   return {
     ...actual,
-    getModuleAssets: () => [],
+    getModuleAssets: () => moduleMockState.assets,
     getModuleLorebooks: () => [],
-    getModuleRegexScripts: () => [],
+    getModuleRegexScripts: () => moduleMockState.regexScripts,
     getModuleTriggers: () => [],
-    getModules: () => [],
+    getModules: () => moduleMockState.modules,
     moduleUpdate: () => {},
   }
 })
@@ -186,6 +192,9 @@ async function loadChatBodyWithParseSpy() {
 beforeEach(() => {
   translateHTMLMock.calls = []
   translateHTMLMock.implementation = async (...args: unknown[]) => String(args[0] ?? '')
+  moduleMockState.modules = []
+  moduleMockState.assets = []
+  moduleMockState.regexScripts = []
 })
 
 function mountChatBody(
@@ -231,6 +240,249 @@ afterEach(async () => {
 })
 
 describe('ChatBody content-keyed parse memo', () => {
+  it('L30: repeated parse-key builds reuse corpus signatures until invalidators change', async () => {
+    seedDb()
+    const script = (id: string, out: string) => ({
+      id,
+      comment: '',
+      in: '',
+      out,
+      type: 'regex',
+      flag: '',
+      ableFlag: '',
+    })
+    const trigger = (id: string, comment: string) => ({
+      id,
+      comment,
+      type: 'manual',
+      conditions: [],
+      effect: [],
+    })
+    const dbChar = DBState.db.characters[0]
+    const characterScripts = [script('character-regex-a', 'character one')]
+    const characterTriggers = [trigger('character-trigger-a', 'character trigger one')]
+    const characterAssets: [string, string, string][] = [
+      ['character-portrait', 'asset-character-a', 'character.png'],
+    ]
+    const moduleAssets: [string, string, string][] = [['portrait', 'asset-a', 'portrait.png']]
+    const moduleRegex = [script('module-regex-a', 'module one')]
+    const moduleTriggers = [trigger('module-trigger-a', 'module trigger one')]
+
+    dbChar.customscript = characterScripts as any
+    dbChar.triggerscript = characterTriggers as any
+    dbChar.additionalAssets = characterAssets
+    DBState.db.presetRegex = [script('preset-regex-a', 'preset one')] as any
+    moduleMockState.assets = moduleAssets
+    moduleMockState.regexScripts = moduleRegex
+    moduleMockState.modules = [
+      {
+        id: 'module-a',
+        namespace: 'module-namespace-a',
+        regex: moduleRegex,
+        assets: moduleAssets,
+        trigger: moduleTriggers,
+        lowLevelAccess: false,
+        customModuleToggle: 'toggle-a',
+      },
+    ]
+
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'L30 parse memo body one',
+      charArg: dbChar.chaId,
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+
+    const firstKey = memoModule.getChatBodyParseMemoKey(input)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 1,
+      characterSignatureBuilds: 1,
+      activeChatSignatureBuilds: 1,
+      moduleSignatureBuilds: 1,
+      settingsSignatureBuilds: 1,
+    })
+
+    const secondInput = { ...input, data: 'L30 parse memo body two' }
+    const secondKey = memoModule.getChatBodyParseMemoKey(secondInput)
+    expect(secondKey).not.toBe(firstKey)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 2,
+      characterSignatureBuilds: 1,
+      activeChatSignatureBuilds: 1,
+      moduleSignatureBuilds: 1,
+      settingsSignatureBuilds: 1,
+    })
+
+    dbChar.customscript[0].out = 'character two'
+    const characterInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
+    expect(characterInvalidatedKey).not.toBe(secondKey)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 3,
+      characterSignatureBuilds: 2,
+      activeChatSignatureBuilds: 1,
+      moduleSignatureBuilds: 1,
+      settingsSignatureBuilds: 1,
+    })
+
+    dbChar.triggerscript[0].comment = 'character trigger two'
+    const characterTriggerInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
+    expect(characterTriggerInvalidatedKey).not.toBe(characterInvalidatedKey)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 4,
+      characterSignatureBuilds: 3,
+      activeChatSignatureBuilds: 1,
+      moduleSignatureBuilds: 1,
+      settingsSignatureBuilds: 1,
+    })
+
+    dbChar.additionalAssets![0][1] = 'asset-character-b'
+    const characterAssetInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
+    expect(characterAssetInvalidatedKey).not.toBe(characterTriggerInvalidatedKey)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 5,
+      characterSignatureBuilds: 4,
+      activeChatSignatureBuilds: 1,
+      moduleSignatureBuilds: 1,
+      settingsSignatureBuilds: 1,
+    })
+
+    moduleRegex[0].out = 'module two'
+    const moduleInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
+    expect(moduleInvalidatedKey).not.toBe(characterAssetInvalidatedKey)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 6,
+      characterSignatureBuilds: 4,
+      activeChatSignatureBuilds: 1,
+      moduleSignatureBuilds: 2,
+      settingsSignatureBuilds: 2,
+    })
+
+    DBState.db.presetRegex[0].out = 'preset two'
+    const presetRegexInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
+    expect(presetRegexInvalidatedKey).not.toBe(moduleInvalidatedKey)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 7,
+      characterSignatureBuilds: 4,
+      activeChatSignatureBuilds: 1,
+      moduleSignatureBuilds: 2,
+      settingsSignatureBuilds: 3,
+    })
+
+    moduleAssets[0][1] = 'asset-b'
+    const moduleAssetInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
+    expect(moduleAssetInvalidatedKey).not.toBe(presetRegexInvalidatedKey)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 8,
+      characterSignatureBuilds: 4,
+      activeChatSignatureBuilds: 1,
+      moduleSignatureBuilds: 3,
+      settingsSignatureBuilds: 4,
+    })
+
+    moduleTriggers[0].comment = 'module trigger two'
+    const moduleTriggerInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
+    expect(moduleTriggerInvalidatedKey).not.toBe(moduleAssetInvalidatedKey)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 9,
+      characterSignatureBuilds: 4,
+      activeChatSignatureBuilds: 1,
+      moduleSignatureBuilds: 4,
+      settingsSignatureBuilds: 4,
+    })
+
+    DBState.db.customQuotes = true
+    const settingsInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
+    expect(settingsInvalidatedKey).not.toBe(moduleTriggerInvalidatedKey)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 10,
+      characterSignatureBuilds: 4,
+      activeChatSignatureBuilds: 1,
+      moduleSignatureBuilds: 4,
+      settingsSignatureBuilds: 5,
+    })
+
+    ReloadGUIPointer.update((value) => value + 1)
+    const reloadInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
+    expect(reloadInvalidatedKey).not.toBe(settingsInvalidatedKey)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 11,
+      characterSignatureBuilds: 5,
+      activeChatSignatureBuilds: 2,
+      moduleSignatureBuilds: 5,
+      settingsSignatureBuilds: 6,
+    })
+  })
+
+  it('L30: cached-only LLM detection reuses a prebuilt parse key without rebuilding it', async () => {
+    const char = seedDb({
+      autoTranslate: true,
+      autoTranslateCachedOnly: true,
+      translatorType: 'llm',
+      translateBeforeHTMLFormatting: false,
+      legacyTranslation: false,
+      translator: 'ja',
+    } as Partial<Database>)
+    const parserModule = await import('../../ts/parser/parser.svelte')
+    const parseSpy = vi
+      .spyOn(parserModule, 'ParseMarkdown')
+      .mockImplementation(async (data, _charArg, mode) => `parsed:${mode}:${data}`)
+    const translatorModule = await import('../../ts/translator/translator')
+    const getLLMCacheSpy = vi
+      .spyOn(translatorModule, 'getLLMCache')
+      .mockImplementation(async (text) =>
+        text === 'parsed:pretranslate:prebuilt cached body' ? 'hit' : null,
+      )
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+
+    const input = {
+      data: 'prebuilt cached body',
+      charArg: char.chaId,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+      fallbackMode: 'notrim' as const,
+    }
+    const cachedOnlyParseKey = memoModule.getChatBodyParseMemoKey({
+      data: input.data,
+      charArg: input.charArg,
+      mode: 'pretranslate',
+      chatID: input.chatID,
+      cbsConditions: input.cbsConditions,
+    })
+    expect(memoModule.getChatBodyParseMemoDebugStats().parseKeyBuilds).toBe(1)
+
+    const detectionKey = memoModule.getChatBodyCachedOnlyLlmDetectionKey({
+      ...input,
+      cachedOnlyParseKey,
+    })
+    expect(memoModule.getChatBodyParseMemoDebugStats().parseKeyBuilds).toBe(1)
+
+    await expect(
+      memoModule.getChatBodyCachedOnlyLlmDecision({
+        ...input,
+        cachedOnlyParseKey,
+        detectionKey,
+      }),
+    ).resolves.toBe(true)
+    expect(parseSpy).toHaveBeenCalledTimes(1)
+    expect(getLLMCacheSpy).toHaveBeenCalledTimes(1)
+    expect(memoModule.getChatBodyParseMemoDebugStats().parseKeyBuilds).toBe(1)
+
+    await expect(
+      memoModule.getChatBodyCachedOnlyLlmDecision({
+        ...input,
+        cachedOnlyParseKey,
+        detectionKey,
+      }),
+    ).resolves.toBe(true)
+    expect(parseSpy).toHaveBeenCalledTimes(1)
+    expect(getLLMCacheSpy).toHaveBeenCalledTimes(1)
+    expect(memoModule.getChatBodyParseMemoDebugStats().parseKeyBuilds).toBe(1)
+  })
+
   it('L40: unchanged ChatBody remount performs zero additional ParseMarkdown calls', async () => {
     const char = seedDb()
     const target = document.createElement('div')

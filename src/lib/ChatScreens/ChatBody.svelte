@@ -16,7 +16,9 @@
   import { getFileSrc } from 'src/ts/globalApi.svelte'
   import {
     getChatBodyCachedOnlyLlmDecision,
+    getChatBodyCachedOnlyLlmDetectionMode,
     getChatBodyCachedOnlyLlmDetectionKey,
+    getChatBodyParseMemoKey,
     memoizedChatBodyParse,
   } from './ChatBodyParseMemo'
 
@@ -135,12 +137,26 @@
     const cbsConditions = getCbsCondition()
 
     try {
+      const cachedOnlyDetectionMode = getChatBodyCachedOnlyLlmDetectionMode({
+        fallbackMode: mode,
+      })
+      const cachedOnlyParseKey =
+        cachedOnlyDetectionMode === 'raw'
+          ? undefined
+          : getChatBodyParseMemoKey({
+              data,
+              charArg,
+              mode: cachedOnlyDetectionMode,
+              chatID,
+              cbsConditions,
+            })
       const detectionKey = getChatBodyCachedOnlyLlmDetectionKey({
         data,
         charArg,
         chatID,
         cbsConditions,
         fallbackMode: mode,
+        cachedOnlyParseKey,
       })
       if (!retranslate && detectionKey !== lastTranslationDetectionKey) {
         lastParsedQueue = ''
@@ -155,6 +171,8 @@
                 chatID,
                 cbsConditions,
                 fallbackMode: mode,
+                cachedOnlyParseKey,
+                detectionKey,
               })
             } else {
               translateText = true
