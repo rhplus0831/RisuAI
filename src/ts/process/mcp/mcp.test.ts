@@ -45,12 +45,14 @@ import {
   callMCPTool,
   callOnlyMCPs,
   getTools,
+  initializeMCPs,
   importMCPModule,
   MCPs,
   persistMCPRefreshToken,
 } from './mcp'
-import type { MCPTool } from './mcplib'
+import { MCPClient, type MCPTool } from './mcplib'
 import { registeredCustomPluginMCPs, registerMCPModule } from './pluginmcp'
+import { requestChatData } from '../request/request'
 
 interface CapturedFetch {
   url: string
@@ -64,6 +66,39 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function mcpServerInfoFixture(): MCPClient['serverInfo'] {
+  return {
+    protocolVersion: '2025-03-26',
+    capabilities: {
+      tools: {},
+    },
+    serverInfo: {
+      name: 'test-mcp',
+      version: '1.0.0',
+    },
+  }
+}
+
+function configureServerCompletionDb() {
+  DBState.db = {
+    authRefreshes: [],
+    aiModel: 'echo_model',
+    subModel: 'echo_model',
+    fallbackModels: {},
+    maxResponse: 64,
+    temperature: 40,
+    useStreaming: false,
+    genTime: 1,
+    seperateModelsForAxModels: false,
+    seperateModels: {},
+    customModels: [],
+    fallbackWhenBlankResponse: false,
+    banCharacterset: [],
+    requestRetrys: 0,
+    characters: [],
+  } as any
 }
 
 function stubCommandFetch(commandStatus = 200): CapturedFetch[] {
@@ -132,6 +167,7 @@ function createDeferred<T>() {
 beforeEach(() => {
   clearCachedServerCommandRevision()
   vi.unstubAllGlobals()
+  vi.stubGlobal('safeStructuredClone', <T>(value: T) => structuredClone(value))
   moduleMocks.mcps = []
   alertMocks.alertConfirm.mockReset()
   alertMocks.alertError.mockReset()
@@ -147,6 +183,113 @@ beforeEach(() => {
 afterEach(() => {
   clearMCPRuntimeState()
   setServerProjectionWriteGuardEnabled(false)
+})
+
+describe('MCP request discovery', () => {
+  it('L45: skips MCP tool discovery for Fastify server completions that discard tools', async () => {
+    const identifier = 'plugin:l45-server-skip'
+    const getToolList = vi.fn(async () => [toolFixture('discarded_tool')])
+    await registerMCPModule(
+      {
+        identifier,
+        name: 'L45 Server Skip MCP',
+        version: '1.0.0',
+        description: 'MCP fixture that should not initialize for server completions.',
+      },
+      getToolList,
+      async () => [],
+    )
+    moduleMocks.mcps = [identifier]
+    configureServerCompletionDb()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          type: 'success',
+          result: 'server-ok',
+        }),
+      ),
+    )
+
+    await expect(
+      requestChatData(
+        {
+          bias: {},
+          formated: [{ role: 'user', content: 'hi' }],
+          useStreaming: false,
+        },
+        'model',
+      ),
+    ).resolves.toEqual({
+      type: 'success',
+      result: 'server-ok',
+    })
+
+    expect(getToolList).not.toHaveBeenCalled()
+    expect(MCPs[identifier]).toBeUndefined()
+  })
+})
+
+describe('MCP client initialization lifecycle', () => {
+  it('L46: shares concurrent first construction for one remote MCP key', async () => {
+    const mcpUrl = 'https://mcp.example/messages'
+    const handshake = createDeferred<MCPClient['serverInfo']>()
+    const constructedUrls: string[] = []
+    const checkHandshakeSpy = vi
+      .spyOn(MCPClient.prototype, 'checkHandshake')
+      .mockImplementation(function (this: MCPClient) {
+        constructedUrls.push(this.url)
+        return handshake.promise as unknown as ReturnType<MCPClient['checkHandshake']>
+      })
+    moduleMocks.mcps = [mcpUrl]
+
+    try {
+      const first = initializeMCPs()
+      const second = initializeMCPs()
+
+      await vi.waitFor(() => {
+        expect(constructedUrls).toHaveLength(1)
+      })
+      handshake.resolve(mcpServerInfoFixture())
+      await Promise.all([first, second])
+    } finally {
+      checkHandshakeSpy.mockRestore()
+    }
+
+    expect(constructedUrls).toEqual([mcpUrl])
+    expect(MCPs[mcpUrl]).toBeDefined()
+  })
+
+  it('L46: clears a failed in-flight remote construction so a later call can retry', async () => {
+    const mcpUrl = 'https://mcp-retry.example/messages'
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+      /* expected first failure */
+    })
+    let initializeCalls = 0
+    const checkHandshakeSpy = vi
+      .spyOn(MCPClient.prototype, 'checkHandshake')
+      .mockImplementation(() => {
+        initializeCalls += 1
+        if (initializeCalls === 1) {
+          return Promise.reject(new Error('temporary failure'))
+        }
+        return Promise.resolve(mcpServerInfoFixture())
+      })
+    moduleMocks.mcps = [mcpUrl]
+
+    try {
+      await initializeMCPs()
+      expect(MCPs[mcpUrl]).toBeUndefined()
+
+      await initializeMCPs()
+      expect(MCPs[mcpUrl]).toBeDefined()
+    } finally {
+      errorSpy.mockRestore()
+      checkHandshakeSpy.mockRestore()
+    }
+
+    expect(initializeCalls).toBe(2)
+  })
 })
 
 describe('MCP runtime persistence', () => {

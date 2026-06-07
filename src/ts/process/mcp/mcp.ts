@@ -31,6 +31,7 @@ let mcpToolClientIndexBuild: Promise<Map<string, MCPToolDispatchTarget>> | null 
 let mcpToolClientIndexGeneration = 0
 let mcpInitializationDepth = 0
 let mcpInitializationIdleWaiters: Array<() => void> = []
+const mcpClientInitializationBuilds = new Map<string, Promise<void>>()
 
 type MCPRefreshToken = {
   clientId: string
@@ -80,96 +81,7 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
       }
 
       if (!MCPs[mcp]) {
-        let mcpUrl = mcp
-
-        if (mcp.startsWith('internal:')) {
-          switch (mcp) {
-            case 'internal:fs': {
-              const { FileSystemClient } = await import('./filesystemclient')
-              MCPs[mcp] = new FileSystemClient()
-              break
-            }
-            case 'internal:risuai': {
-              const { RisuAccessClient } = await import('./risuaccess')
-              MCPs[mcp] = new RisuAccessClient()
-              break
-            }
-            case 'internal:aiaccess': {
-              const { AIAccessClient } = await import('./aiaccess')
-              MCPs[mcp] = new AIAccessClient()
-              break
-            }
-            case 'internal:googlesearch': {
-              const { GoogleSearchClient } = await import('./googlesearchclient')
-              MCPs[mcp] = new GoogleSearchClient()
-              break
-            }
-            case 'internal:graphmem': {
-              const { GraphMemClient } = await import('./graphmem')
-              MCPs[mcp] = new GraphMemClient()
-              break
-            }
-            case 'internal:dice': {
-              const { DiceClient } = await import('./dice')
-              MCPs[mcp] = new DiceClient()
-              break
-            }
-          }
-
-          if (MCPs[mcp]) {
-            invalidateMCPToolClientIndex()
-            await checkHandshakeOrRemoveClient(mcp)
-          }
-          continue
-        }
-
-        if (mcp.startsWith('plugin:')) {
-          const customMCP = registeredCustomPluginMCPs.get(mcp)
-          if (customMCP) {
-            MCPs[mcp] = customMCP
-            invalidateMCPToolClientIndex()
-            await checkHandshakeOrRemoveClient(mcp)
-            continue
-          }
-        }
-        if (mcp.startsWith('stdio:')) {
-          const MCPJSON = mcp.slice('stdio:'.length)
-          try {
-            const MCPData = JSON.parse(MCPJSON)
-            if (MCPData.url) {
-              mcpUrl = MCPData.url
-            } else if (MCPData.command && MCPData.args) {
-              throw new Error('Command-based stdio MCPs are not supported')
-            } else {
-              throw new Error('MCP JSON does not contain a valid URL')
-            }
-          } catch (error) {
-            throw new Error(`Failed to parse MCP JSON: ${error}`)
-          }
-        }
-
-        const registerRefresh: typeof MCPClient.prototype.registerRefreshToken = (arg) => {
-          persistMCPRefreshToken(mcp, arg)
-        }
-
-        const getRefresh: typeof MCPClient.prototype.getRefreshToken = async () => {
-          return DBState.db.authRefreshes.find((refresh) => refresh.url === mcp)
-        }
-
-        try {
-          if (!mcpUrl.startsWith('https://') && !mcpUrl.startsWith('http://')) {
-            throw new Error('Invalid MCP URL')
-          }
-
-          const mcpClient = new MCPClient(mcpUrl)
-          mcpClient.registerRefreshToken = registerRefresh
-          mcpClient.getRefreshToken = getRefresh
-          await mcpClient.checkHandshake()
-          MCPs[mcp] = mcpClient
-          invalidateMCPToolClientIndex()
-        } catch (error) {
-          console.error(`MCP: Failed to initialize MCP at ${mcp}:`, error)
-        }
+        await initializeMCPClientForKey(mcp)
       }
     }
 
@@ -190,6 +102,120 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
     }
   } finally {
     finishMCPInitialization()
+  }
+}
+
+async function initializeMCPClientForKey(mcp: string): Promise<void> {
+  if (MCPs[mcp]) return
+
+  const existingBuild = mcpClientInitializationBuilds.get(mcp)
+  if (existingBuild) {
+    await existingBuild
+    return
+  }
+
+  const build = constructMCPClientForKey(mcp).finally(() => {
+    if (mcpClientInitializationBuilds.get(mcp) === build) {
+      mcpClientInitializationBuilds.delete(mcp)
+    }
+  })
+  mcpClientInitializationBuilds.set(mcp, build)
+  await build
+}
+
+async function constructMCPClientForKey(mcp: string): Promise<void> {
+  if (MCPs[mcp]) return
+
+  let mcpUrl = mcp
+
+  if (mcp.startsWith('internal:')) {
+    switch (mcp) {
+      case 'internal:fs': {
+        const { FileSystemClient } = await import('./filesystemclient')
+        MCPs[mcp] = new FileSystemClient()
+        break
+      }
+      case 'internal:risuai': {
+        const { RisuAccessClient } = await import('./risuaccess')
+        MCPs[mcp] = new RisuAccessClient()
+        break
+      }
+      case 'internal:aiaccess': {
+        const { AIAccessClient } = await import('./aiaccess')
+        MCPs[mcp] = new AIAccessClient()
+        break
+      }
+      case 'internal:googlesearch': {
+        const { GoogleSearchClient } = await import('./googlesearchclient')
+        MCPs[mcp] = new GoogleSearchClient()
+        break
+      }
+      case 'internal:graphmem': {
+        const { GraphMemClient } = await import('./graphmem')
+        MCPs[mcp] = new GraphMemClient()
+        break
+      }
+      case 'internal:dice': {
+        const { DiceClient } = await import('./dice')
+        MCPs[mcp] = new DiceClient()
+        break
+      }
+    }
+
+    if (MCPs[mcp]) {
+      invalidateMCPToolClientIndex()
+      await checkHandshakeOrRemoveClient(mcp)
+    }
+    return
+  }
+
+  if (mcp.startsWith('plugin:')) {
+    const customMCP = registeredCustomPluginMCPs.get(mcp)
+    if (customMCP) {
+      MCPs[mcp] = customMCP
+      invalidateMCPToolClientIndex()
+      await checkHandshakeOrRemoveClient(mcp)
+      return
+    }
+  }
+
+  if (mcp.startsWith('stdio:')) {
+    const MCPJSON = mcp.slice('stdio:'.length)
+    try {
+      const MCPData = JSON.parse(MCPJSON)
+      if (MCPData.url) {
+        mcpUrl = MCPData.url
+      } else if (MCPData.command && MCPData.args) {
+        throw new Error('Command-based stdio MCPs are not supported')
+      } else {
+        throw new Error('MCP JSON does not contain a valid URL')
+      }
+    } catch (error) {
+      throw new Error(`Failed to parse MCP JSON: ${error}`)
+    }
+  }
+
+  const registerRefresh: typeof MCPClient.prototype.registerRefreshToken = (arg) => {
+    persistMCPRefreshToken(mcp, arg)
+  }
+
+  const getRefresh: typeof MCPClient.prototype.getRefreshToken = async () => {
+    return DBState.db.authRefreshes.find((refresh) => refresh.url === mcp)
+  }
+
+  try {
+    if (!mcpUrl.startsWith('https://') && !mcpUrl.startsWith('http://')) {
+      throw new Error('Invalid MCP URL')
+    }
+
+    const mcpClient = new MCPClient(mcpUrl)
+    mcpClient.registerRefreshToken = registerRefresh
+    mcpClient.getRefreshToken = getRefresh
+    await mcpClient.checkHandshake()
+    MCPs[mcp] = mcpClient
+    invalidateMCPToolClientIndex()
+  } catch (error) {
+    console.error(`MCP: Failed to initialize MCP at ${mcp}:`, error)
   }
 }
 

@@ -1045,25 +1045,58 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'src/ts/plugins/apiV3/factory.test.ts',
     'L44: guest RPC calls do not log request response payloads or transferables by default',
   ),
-  planned(
+  done(
     'L45',
     8,
     'Compute MCP tools lazily, only in the browser-local adapters that consume them.',
+    'src/ts/process/mcp/mcp.test.ts',
+    'L45: skips MCP tool discovery for Fastify server completions that discard tools',
   ),
-  planned(
+  done(
     'L46',
     8,
     'In-flight construction promise per MCP key (the `mcpToolClientIndexBuild` dedup shape).',
+    'src/ts/process/mcp/mcp.test.ts',
+    'L46: shares concurrent first construction for one remote MCP key',
+    [
+      {
+        testPath: 'src/ts/process/mcp/mcp.test.ts',
+        testName: 'L46: clears a failed in-flight remote construction so a later call can retry',
+      },
+    ],
   ),
-  planned(
+  done(
     'L47',
     8,
     'Size-cap the persistent `connectSSE` buffer (abort + destroy past a few MB without a delimiter).',
+    'src/ts/process/mcp/mcplib.test.ts',
+    'L47: aborts and errors when an SSE response buffer exceeds the delimiter cap',
   ),
-  planned(
+  done(
     'L48',
     8,
     'Page/byte caps + AbortSignal + honor the `limit` argument in the MCP PDF read.',
+    'src/ts/process/mcp/filesystemclient.test.ts',
+    'L48: passes PDF page/output caps and honors the requested limit',
+    [
+      {
+        testPath: 'src/ts/process/mcp/filesystemclient.test.ts',
+        testName: 'L48: rejects PDFs above the input byte cap before reading bytes',
+      },
+      {
+        testPath: 'src/ts/process/mcp/filesystemclient.test.ts',
+        testName: 'L48: honors AbortSignal before starting PDF byte reads',
+      },
+      {
+        testPath: 'src/ts/process/mcp/filesystemclient.test.ts',
+        testName:
+          'v4-L35: encodes capped base64 reads in chunks instead of spreading the whole file',
+      },
+      {
+        testPath: 'src/ts/process/mcp/filesystemclient.test.ts',
+        testName: 'v4-L35: skips oversized files before content-search text reads',
+      },
+    ],
   ),
   planned('L49', 8, '`await hypa.addText(...)` at the three file-attach builders.'),
   planned('L50', 8, 'Remove the image-generation payload logs (incl. the comfy poll-loop log).'),
@@ -2019,6 +2052,10 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L42',
       'L43',
       'L44',
+      'L45',
+      'L46',
+      'L47',
+      'L48',
       'L56',
       'K1',
       'K2',
@@ -2031,7 +2068,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1-M9, L1-L44, L56, K1, K2, and K3 marked DONE', () => {
+  it('keeps the live registry green with H1, M1-M9, L1-L48, L56, K1, K2, and K3 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -2090,6 +2127,10 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L42',
       'L43',
       'L44',
+      'L45',
+      'L46',
+      'L47',
+      'L48',
       'L56',
       'K1',
       'K2',
@@ -2135,7 +2176,7 @@ describe('v3 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'L45'
+      entry.id === 'L49'
         ? {
             ...entry,
             testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
@@ -2145,35 +2186,35 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'L45: PLANNED entries must not claim proof fields',
+      'L49: PLANNED entries must not claim proof fields',
     )
   })
 
   it('rejects doc DONE rows that do not have matching registry proof', () => {
-    const l45 = SCHEDULED_FIXES.find((entry) => entry.id === 'L45')
-    if (!l45) throw new Error('L45 registry entry not found')
+    const l49 = SCHEDULED_FIXES.find((entry) => entry.id === 'L49')
+    if (!l49) throw new Error('L49 registry entry not found')
 
     const withDoneDocRow = replaceRiskRow(
       readDoc(RISK_DOC),
-      'L45',
-      `| L45 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l45.fix} | DONE |`,
+      'L49',
+      `| L49 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l49.fix} | DONE |`,
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'L45: status mismatch (registry PLANNED, docs DONE)',
+      'L49: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 
   it('rejects DONE registry entries without a registered test path and test name', () => {
-    const l45 = SCHEDULED_FIXES.find((entry) => entry.id === 'L45')
-    if (!l45) throw new Error('L45 registry entry not found')
+    const l49 = SCHEDULED_FIXES.find((entry) => entry.id === 'L49')
+    if (!l49) throw new Error('L49 registry entry not found')
     const riskText = replaceRiskRow(
       readDoc(RISK_DOC),
-      'L45',
-      `| L45 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l45.fix} | DONE |`,
+      'L49',
+      `| L49 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l49.fix} | DONE |`,
     )
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'L45'
+      entry.id === 'L49'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -2183,8 +2224,8 @@ describe('v3 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone, riskText })).toEqual(
       expect.arrayContaining([
-        'L45: DONE without a registered testPath',
-        'L45: DONE without a registered testName',
+        'L49: DONE without a registered testPath',
+        'L49: DONE without a registered testName',
       ]),
     )
   })

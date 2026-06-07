@@ -12,6 +12,10 @@ const FILE_SYSTEM_TOOLS: MCPTool[] = [
           type: 'string',
           description: 'Path to the file relative to selected directory',
         },
+        limit: {
+          type: 'number',
+          description: 'Maximum bytes/content to read, bounded by file-type safety caps',
+        },
       },
       required: ['path'],
     },
@@ -213,10 +217,68 @@ const FILE_SYSTEM_TOOLS: MCPTool[] = [
 ]
 
 const DIRECTORY_PERMISSION_DENIED = 'Directory access permission was denied.'
+export const FILESYSTEM_TEXT_READ_LIMIT_BYTES = 100000
+export const FILESYSTEM_IMAGE_READ_LIMIT_BYTES = 5 * 1024 * 1024
+export const FILESYSTEM_PDF_MAX_INPUT_BYTES = 16 * 1024 * 1024
+export const FILESYSTEM_PDF_MAX_PAGES = 20
+export const FILESYSTEM_PDF_OUTPUT_LIMIT_BYTES = 5 * 1024 * 1024
+export const FILESYSTEM_SEARCH_CONTENT_MAX_FILE_BYTES = 1024 * 1024
+export const FILESYSTEM_BASE64_ENCODE_CHUNK_BYTES = 48 * 1024
 let persistedDirectoryHandle: FileSystemDirectoryHandle | null = null
 
 export function clearFileSystemDirectoryHandleForTests() {
   persistedDirectoryHandle = null
+}
+
+type FileReadOptions = {
+  limit?: unknown
+  signal?: AbortSignal
+}
+
+function normalizeReadLimit(value: unknown, fallback: number, cap: number): number {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback
+  return Math.min(Math.floor(numeric), cap)
+}
+
+function toAbortSignal(value: unknown): AbortSignal | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  if (!('aborted' in value)) return undefined
+  if (typeof (value as AbortSignal).addEventListener !== 'function') return undefined
+  return value as AbortSignal
+}
+
+function createAbortError(signal?: AbortSignal): Error {
+  const reason = signal?.reason
+  if (reason instanceof Error) return reason
+  if (typeof DOMException !== 'undefined') {
+    return new DOMException('Operation aborted', 'AbortError')
+  }
+  const error = new Error('Operation aborted')
+  error.name = 'AbortError'
+  return error
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw createAbortError(signal)
+  }
+}
+
+function encodeArrayBufferBase64(arrayBuffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(arrayBuffer)
+  let base64 = ''
+
+  for (let offset = 0; offset < bytes.length; offset += FILESYSTEM_BASE64_ENCODE_CHUNK_BYTES) {
+    const chunk = bytes.subarray(offset, offset + FILESYSTEM_BASE64_ENCODE_CHUNK_BYTES)
+    let binary = ''
+    for (let i = 0; i < chunk.length; i += 1) {
+      binary += String.fromCharCode(chunk[i])
+    }
+    base64 += btoa(binary)
+  }
+
+  return base64
 }
 
 async function getReusablePersistedDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
@@ -329,7 +391,10 @@ export class FileSystemClient extends MCPClientLike {
     try {
       switch (toolName) {
         case 'fs_read_file':
-          return await this.readFile(args.path)
+          return await this.readFile(args.path, {
+            limit: args.limit,
+            signal: toAbortSignal(args.signal),
+          })
         case 'fs_write_file':
           return await this.writeFile(args.path, args.content)
         case 'fs_list_directory':
@@ -372,7 +437,7 @@ export class FileSystemClient extends MCPClientLike {
     }
   }
 
-  private async readFile(path: string): Promise<RPCToolCallContent[]> {
+  private async readFile(path: string, options: FileReadOptions = {}): Promise<RPCToolCallContent[]> {
     if (!this.directoryHandle) {
       return [
         {
@@ -382,8 +447,10 @@ export class FileSystemClient extends MCPClientLike {
       ]
     }
 
+    throwIfAborted(options.signal)
     const fileHandle = await this.getFileHandle(path)
     const file = await fileHandle.getFile()
+    throwIfAborted(options.signal)
 
     // Check file size
     if (file.size === 0) {
@@ -395,12 +462,13 @@ export class FileSystemClient extends MCPClientLike {
       ]
     }
 
-    // Automatic limits based on file type
-    const maxTextLimit = 100000 // 100KB for text/code files
-    const maxImageLimit = 5 * 1024 * 1024 // 5MB for images
-
     if (file.name.endsWith('.pdf')) {
-      return await this.readFileAsPDF(file, maxTextLimit)
+      const pdfLimit = normalizeReadLimit(
+        options.limit,
+        FILESYSTEM_PDF_OUTPUT_LIMIT_BYTES,
+        FILESYSTEM_PDF_OUTPUT_LIMIT_BYTES,
+      )
+      return await this.readFileAsPDF(file, pdfLimit, options.signal)
     }
 
     // Auto-detect encoding
@@ -408,9 +476,19 @@ export class FileSystemClient extends MCPClientLike {
 
     try {
       if (encoding === 'base64') {
-        return await this.readFileAsBase64(file, 0, maxImageLimit)
+        const imageLimit = normalizeReadLimit(
+          options.limit,
+          FILESYSTEM_IMAGE_READ_LIMIT_BYTES,
+          FILESYSTEM_IMAGE_READ_LIMIT_BYTES,
+        )
+        return await this.readFileAsBase64(file, 0, imageLimit)
       } else {
-        return await this.readFileAsText(file, 0, maxTextLimit)
+        const textLimit = normalizeReadLimit(
+          options.limit,
+          FILESYSTEM_TEXT_READ_LIMIT_BYTES,
+          FILESYSTEM_TEXT_READ_LIMIT_BYTES,
+        )
+        return await this.readFileAsText(file, 0, textLimit)
       }
     } catch (error) {
       return [
@@ -422,24 +500,74 @@ export class FileSystemClient extends MCPClientLike {
     }
   }
 
-  private async readFileAsPDF(file: File, limit: number): Promise<RPCToolCallContent[]> {
+  private async readFileAsPDF(
+    file: File,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<RPCToolCallContent[]> {
+    if (file.size > FILESYSTEM_PDF_MAX_INPUT_BYTES) {
+      return [
+        {
+          type: 'text',
+          text: `PDF is too large to render (${this.formatBytes(file.size)}; cap ${this.formatBytes(
+            FILESYSTEM_PDF_MAX_INPUT_BYTES,
+          )})`,
+        },
+      ]
+    }
+
+    throwIfAborted(signal)
     const { convertPdfToImages } = await import('src/ts/process/dynamicutils/pdf.js')
+    throwIfAborted(signal)
     const pdfBuffer = await file.arrayBuffer()
-    const images = await convertPdfToImages(pdfBuffer, { scale: 1.5, format: 'jpeg', quality: 0.8 })
+    throwIfAborted(signal)
+    const images = await convertPdfToImages(pdfBuffer, {
+      scale: 1.5,
+      format: 'jpeg',
+      quality: 0.8,
+      maxPages: FILESYSTEM_PDF_MAX_PAGES,
+      maxOutputBytes: limit,
+      signal,
+    })
+    throwIfAborted(signal)
     if (images.length === 0) {
       return [
         {
           type: 'text',
-          text: 'No images extracted from PDF',
+          text: `No images extracted from PDF within ${this.formatBytes(limit)} output limit`,
         },
       ]
     }
     const result: RPCToolCallContent[] = []
+    let outputBytes = 0
+    let truncated = false
     for (const image of images) {
+      const nextBytes = image.length
+      if (outputBytes + nextBytes > limit) {
+        truncated = true
+        break
+      }
       result.push({
         type: 'image',
         data: image,
         mimeType: 'image/jpeg',
+      })
+      outputBytes += nextBytes
+    }
+
+    if (result.length === 0) {
+      return [
+        {
+          type: 'text',
+          text: `PDF render output exceeded ${this.formatBytes(limit)} before any page could be returned`,
+        },
+      ]
+    }
+
+    if (truncated || images.length >= FILESYSTEM_PDF_MAX_PAGES) {
+      result.unshift({
+        type: 'text',
+        text: `PDF rendering capped at ${this.formatBytes(limit)} and ${FILESYSTEM_PDF_MAX_PAGES} pages`,
       })
     }
     return result
@@ -523,9 +651,7 @@ export class FileSystemClient extends MCPClientLike {
       arrayBuffer = await slice.arrayBuffer()
     }
 
-    // Convert to base64
-    const uint8Array = new Uint8Array(arrayBuffer)
-    const base64 = btoa(String.fromCharCode(...uint8Array))
+    const base64 = encodeArrayBufferBase64(arrayBuffer)
 
     // Check if content was truncated
     const wasTruncated = offset + arrayBuffer.byteLength < file.size
@@ -544,13 +670,21 @@ export class FileSystemClient extends MCPClientLike {
       )
     }
 
-    return [
-      {
-        type: 'image',
-        data: base64,
-        mimeType: file.type || 'application/octet-stream',
-      },
-    ]
+    const result: RPCToolCallContent[] = []
+    if (offset > 0 || wasTruncated) {
+      result.push({
+        type: 'text',
+        text: info.join(', '),
+      })
+    }
+
+    result.push({
+      type: 'image',
+      data: base64,
+      mimeType: file.type || 'application/octet-stream',
+    })
+
+    return result
   }
 
   private async writeFile(path: string, content: string): Promise<RPCToolCallContent[]> {
@@ -696,6 +830,7 @@ export class FileSystemClient extends MCPClientLike {
     const maxDepth = args.maxDepth || 10
     const caseSensitive = args.caseSensitive || false
     const results: string[] = []
+    const skippedLargeFiles: string[] = []
 
     const searchDir = searchPath ? await this.getDirectoryHandle(searchPath) : this.directoryHandle
 
@@ -707,15 +842,25 @@ export class FileSystemClient extends MCPClientLike {
       maxDepth,
       caseSensitive,
       results,
+      skippedLargeFiles,
     )
+
+    const skippedText =
+      skippedLargeFiles.length > 0
+        ? `\n\nSkipped ${skippedLargeFiles.length} file(s) larger than ${this.formatBytes(
+            FILESYSTEM_SEARCH_CONTENT_MAX_FILE_BYTES,
+          )} content-search cap:\n${skippedLargeFiles.slice(0, 20).join('\n')}${
+            skippedLargeFiles.length > 20 ? '\n...' : ''
+          }`
+        : ''
 
     return [
       {
         type: 'text',
         text:
           results.length > 0
-            ? `Found ${results.length} matches:\n${results.join('\n')}`
-            : 'No matches found',
+            ? `Found ${results.length} matches:\n${results.join('\n')}${skippedText}`
+            : `No matches found${skippedText}`,
       },
     ]
   }
@@ -728,6 +873,7 @@ export class FileSystemClient extends MCPClientLike {
     maxDepth: number = 10,
     caseSensitive: boolean = false,
     results: string[] = [],
+    skippedLargeFiles: string[] = [],
   ): Promise<void> {
     if (maxDepth <= 0) return
 
@@ -747,6 +893,10 @@ export class FileSystemClient extends MCPClientLike {
         if (!matches && content) {
           try {
             const file = await handle.getFile()
+            if (file.size > FILESYSTEM_SEARCH_CONTENT_MAX_FILE_BYTES) {
+              skippedLargeFiles.push(fullPath)
+              continue
+            }
             const text = await file.text()
             const searchText = caseSensitive ? text : text.toLowerCase()
             const searchContent = caseSensitive ? content : content.toLowerCase()
@@ -768,6 +918,7 @@ export class FileSystemClient extends MCPClientLike {
           maxDepth - 1,
           caseSensitive,
           results,
+          skippedLargeFiles,
         )
       }
     }

@@ -52,6 +52,10 @@ export type SseEventDetail = {
 }
 
 export const MCP_SSE_DEDUP_ID_LIMIT = 1024
+export const MCP_SSE_BUFFER_LIMIT_BYTES = 8 * 1024 * 1024
+const MCP_SSE_BUFFER_LIMIT_ERROR_CODE = -32002
+const MCP_SSE_STREAM_ERROR_ID = '__risu_mcp_sse_stream_error__'
+const sseBufferByteCounter = new TextEncoder()
 
 export class WindowedSseIdDedup {
   private readonly ids = new Set<string | number>()
@@ -97,6 +101,18 @@ class MCPDeadlineError extends Error {
   constructor(public readonly timeoutMs: number) {
     super(`MCP request timed out after ${timeoutMs}ms`)
     this.name = 'MCPDeadlineError'
+  }
+}
+
+class MCPSseBufferLimitError extends Error {
+  constructor(
+    public readonly limitBytes: number,
+    public readonly bufferedBytes: number,
+  ) {
+    super(
+      `MCP SSE stream exceeded ${limitBytes} bytes without an event delimiter (${bufferedBytes} bytes buffered)`,
+    )
+    this.name = 'MCPSseBufferLimitError'
   }
 }
 
@@ -151,6 +167,7 @@ export class MCPClient {
   initialized: boolean = false
   debug: boolean = false
   requestTimeoutMs: number = DEFAULT_MCP_REQUEST_TIMEOUT_MS
+  sseBufferLimitBytes: number = MCP_SSE_BUFFER_LIMIT_BYTES
   url: string
   sseEndpoint: string
   accessToken: string | null = null
@@ -209,11 +226,13 @@ export class MCPClient {
       accessToken?: string
       debug?: boolean
       requestTimeoutMs?: number
+      sseBufferLimitBytes?: number
     } = {},
   ) {
     this.url = url
     this.debug = arg.debug === true
     this.requestTimeoutMs = this.normalizeTimeoutMs(arg.requestTimeoutMs)
+    this.sseBufferLimitBytes = this.normalizeBufferLimitBytes(arg.sseBufferLimitBytes)
     if (arg.accessToken) {
       this.accessToken = arg.accessToken
     }
@@ -228,6 +247,13 @@ export class MCPClient {
 
   private resolveTimeoutMs(options?: Pick<MCPRequestOptions, 'requestTimeoutMs'>) {
     return this.normalizeTimeoutMs(options?.requestTimeoutMs ?? this.requestTimeoutMs)
+  }
+
+  private normalizeBufferLimitBytes(limitBytes?: number) {
+    if (Number.isFinite(limitBytes) && limitBytes > 0) {
+      return Math.max(1, Math.floor(limitBytes))
+    }
+    return MCP_SSE_BUFFER_LIMIT_BYTES
   }
 
   private createRpcErrorResult(
@@ -274,6 +300,29 @@ export class MCPClient {
       headers: http?.headers ?? {},
       data,
     })
+  }
+
+  private dispatchSseStreamError(error: MCPSseBufferLimitError) {
+    const detail: SseEventDetail = {
+      mcpClientObjectId: this.mcpClientObjectId,
+      data: {
+        jsonrpc: '2.0',
+        id: MCP_SSE_STREAM_ERROR_ID,
+        error: {
+          code: MCP_SSE_BUFFER_LIMIT_ERROR_CODE,
+          message: error.message,
+          data: {
+            limitBytes: error.limitBytes,
+            bufferedBytes: error.bufferedBytes,
+          },
+        },
+      },
+    }
+    document.dispatchEvent(
+      new CustomEvent('mcp-sse', {
+        detail,
+      }),
+    )
   }
 
   private async fetchNativeWithDeadline(
@@ -357,6 +406,17 @@ export class MCPClient {
           const detail = (event as CustomEvent<SseEventDetail>).detail
           if (detail?.mcpClientObjectId !== this.mcpClientObjectId) return
           const data = detail.data
+          if (data?.id === MCP_SSE_STREAM_ERROR_ID && data.error) {
+            settle(
+              this.createRpcErrorResult(id, data.error.message, {
+                code: data.error.code,
+                status: 502,
+                headers: http.headers,
+                data: data.error.data,
+              }),
+            )
+            return
+          }
           if (data?.id !== id) return
 
           settle({
@@ -410,6 +470,10 @@ export class MCPClient {
 
         let parts = buffer.split('\n\n')
         buffer = parts.pop() || ''
+        const bufferedBytes = sseBufferByteCounter.encode(buffer).byteLength
+        if (bufferedBytes > this.sseBufferLimitBytes) {
+          throw new MCPSseBufferLimitError(this.sseBufferLimitBytes, bufferedBytes)
+        }
 
         for (const part of parts) {
           let lines = part.split('\n')
@@ -486,7 +550,21 @@ export class MCPClient {
         }
       }
     } catch (error) {
-      if (this.debug && !abortController?.signal.aborted) {
+      if (error instanceof MCPSseBufferLimitError) {
+        this.dispatchSseStreamError(error)
+        if (!abortController?.signal.aborted) {
+          abortController?.abort()
+        }
+        try {
+          await reader.cancel(error)
+        } catch {
+          // stream may already be closed by the underlying transport
+        }
+        this.destroy()
+        if (this.debug) {
+          console.warn('MCP SSE stream buffer limit exceeded', error)
+        }
+      } else if (this.debug && !abortController?.signal.aborted) {
         console.warn('MCP SSE stream failed', error)
       }
     } finally {

@@ -114,6 +114,36 @@ lifecycle and do not match this slice's abort/cap/log cleanup invariant.
 - L45-L48 are registered as `DONE` in the v3 gate and active-risk table, with
   no unrelated ID status changes.
 
+## Proof Notes
+
+- Fixed L45 request discovery: `requestChatDataMain()` resolves the Fastify
+  server route before MCP discovery, so server-backed completions return
+  through `requestServerCompletion()` without calling `getTools()` or
+  `initializeMCPs()`. Browser-local dispatch still fills `tools` lazily before
+  provider adapters that can consume MCP calls.
+- Fixed L46 MCP construction cache: `initializeMCPs()` now uses
+  `mcpClientInitializationBuilds`, an in-flight promise map keyed by MCP URL or
+  internal/plugin key. Concurrent first callers share construction, successful
+  clients still land in `MCPs`/`callOnlyMCPs`, tool-index invalidation remains
+  tied to client visibility, and failed builds clear their in-flight entry so a
+  later call retries instead of poisoning the key.
+- Fixed L47 stream/listener/timer inventory: `connectSSE()` now byte-counts the
+  unterminated persistent buffer and, past the cap, dispatches a client-scoped
+  JSON-RPC error, aborts the transport, cancels the reader, calls `destroy()`,
+  and removes the SSE record. The existing `waitForSseResponse()` listener and
+  timeout cleanup handles the dispatched stream error; the existing duplicate
+  ID cache remains window-bounded by `WindowedSseIdDedup`.
+- Fixed L48 PDF document and filesystem read inventory: PDF reads reject files
+  above the input cap before `arrayBuffer()`, thread `AbortSignal` into
+  pdf.js rendering, cap rendered pages and output bytes, and destroy pdf.js
+  loading/document state in cleanup. Text reads remain under the existing
+  100 KB limit and now honor smaller caller limits. Base64 reads honor the
+  image cap and encode in bounded chunks, covering the v4-L35 spread failure.
+  Content search checks each file size before `text()` and reports skipped
+  oversized files, covering the v4-L35 search rider. `extractPdfText()` is
+  no-action for this slice because the filesystem MCP read path renders PDF
+  pages through `convertPdfToImages()`.
+
 ## Validation
 
 ```bash

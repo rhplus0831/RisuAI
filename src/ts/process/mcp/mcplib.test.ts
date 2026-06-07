@@ -13,6 +13,7 @@ vi.mock('../../alert', () => ({
 
 import {
   MCPClient,
+  MCP_SSE_BUFFER_LIMIT_BYTES,
   MCP_SSE_DEDUP_ID_LIMIT,
   type JsonRPC,
   type SseEventDetail,
@@ -333,6 +334,56 @@ describe('MCPClient deadlines and SSE listener cleanup', () => {
     expect(capturedOptions.signal.aborted).toBe(true)
     expect(result.rpc.id).toBe('stream-response')
     expect(result.rpc.error?.message).toContain('timed out')
+    expect(listeners.size).toBe(0)
+  })
+
+  it('L47: aborts and errors when an SSE response buffer exceeds the delimiter cap', async () => {
+    const { listeners } = trackMcpSseListeners()
+    const encoder = new TextEncoder()
+    const cancelSpy = vi.fn()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: ${'x'.repeat(32)}`))
+      },
+      cancel: cancelSpy,
+    })
+    let capturedOptions: any
+    fetchNativeMock.mockImplementation((_url: string, options: any) => {
+      capturedOptions = options
+      return Promise.resolve(sseResponse(stream))
+    })
+
+    const client = new MCPClient('https://mcp.example/messages', {
+      sseBufferLimitBytes: 16,
+    })
+    const result = await client.request(
+      'tools/list',
+      {},
+      {
+        id: 'oversized-response',
+        requestTimeoutMs: 1000,
+      },
+    )
+
+    await vi.waitFor(() => {
+      expect(client.sses).toHaveLength(0)
+    })
+
+    expect(MCP_SSE_BUFFER_LIMIT_BYTES).toBeGreaterThanOrEqual(1024 * 1024)
+    expect(result.http.status).toBe(502)
+    expect(result.rpc.id).toBe('oversized-response')
+    expect(result.rpc.error).toEqual(
+      expect.objectContaining({
+        code: -32002,
+        message: expect.stringContaining('exceeded 16 bytes'),
+      }),
+    )
+    expect(result.rpc.error?.data).toEqual({
+      limitBytes: 16,
+      bufferedBytes: 38,
+    })
+    expect(capturedOptions.signal.aborted).toBe(true)
+    expect(cancelSpy).toHaveBeenCalledTimes(1)
     expect(listeners.size).toBe(0)
   })
 

@@ -235,7 +235,6 @@ export async function requestChatData(
 ): Promise<requestDataResponse> {
   const db = getDatabase()
   const fallBackModels: string[] = safeStructuredClone(db?.fallbackModels?.[model] ?? [])
-  const tools = arg.tools ?? (await getTools())
   fallBackModels.push('')
   let da: requestDataResponse
 
@@ -296,7 +295,6 @@ export async function requestChatData(
         {
           ...arg,
           staticModel: fallBackModels[fallbackIndex],
-          tools: tools,
         },
         model,
         abortSignal,
@@ -526,6 +524,8 @@ export async function requestChatDataMain(
       noRetry: true,
     }
   }
+
+  targ.tools = targ.tools ?? (await getTools())
 
   const format = targ.modelInfo.format
 
