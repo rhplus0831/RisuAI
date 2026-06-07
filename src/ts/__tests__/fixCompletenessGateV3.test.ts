@@ -216,10 +216,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'M6',
     6,
     '`$derived` + keyed each for the MobileCharacters sorted list (v2-L42/L43 helper shape, unit-testable pure function).',
+    'src/lib/Others/GridCatalog.svelte.test.ts',
+    'M6: MobileCharacters sorted rows recompute on corpus changes but not search-only changes',
+    [
+      {
+        testPath: 'src/lib/Others/GridCatalog.svelte.test.ts',
+        testName:
+          'M6: MobileCharacters helper preserves sort, trash filtering, legacy keys, search, and ago text',
+      },
+    ],
   ),
   planned(
     'M7',
@@ -1721,6 +1730,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M3',
       'M4',
       'M5',
+      'M6',
       'M8',
       'M9',
       'L2',
@@ -1757,7 +1767,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L23, L24, L25, L26, L27, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L23, L24, L25, L26, L27, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1768,6 +1778,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M3',
       'M4',
       'M5',
+      'M6',
       'M8',
       'M9',
       'L2',
@@ -1837,7 +1848,7 @@ describe('v3 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M6'
+      entry.id === 'M7'
         ? {
             ...entry,
             testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
@@ -1847,35 +1858,35 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'M6: PLANNED entries must not claim proof fields',
+      'M7: PLANNED entries must not claim proof fields',
     )
   })
 
   it('rejects doc DONE rows that do not have matching registry proof', () => {
-    const m6 = SCHEDULED_FIXES.find((entry) => entry.id === 'M6')
-    if (!m6) throw new Error('M6 registry entry not found')
+    const m7 = SCHEDULED_FIXES.find((entry) => entry.id === 'M7')
+    if (!m7) throw new Error('M7 registry entry not found')
 
     const withDoneDocRow = replaceRiskRow(
       readDoc(RISK_DOC),
-      'M6',
-      `| M6 | [6](phases/phase-6-reactive-amplification-and-render.md) | ${m6.fix} | DONE |`,
+      'M7',
+      `| M7 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${m7.fix} | DONE |`,
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'M6: status mismatch (registry PLANNED, docs DONE)',
+      'M7: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 
   it('rejects DONE registry entries without a registered test path and test name', () => {
-    const m6 = SCHEDULED_FIXES.find((entry) => entry.id === 'M6')
-    if (!m6) throw new Error('M6 registry entry not found')
+    const m7 = SCHEDULED_FIXES.find((entry) => entry.id === 'M7')
+    if (!m7) throw new Error('M7 registry entry not found')
     const riskText = replaceRiskRow(
       readDoc(RISK_DOC),
-      'M6',
-      `| M6 | [6](phases/phase-6-reactive-amplification-and-render.md) | ${m6.fix} | DONE |`,
+      'M7',
+      `| M7 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${m7.fix} | DONE |`,
     )
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M6'
+      entry.id === 'M7'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -1885,8 +1896,8 @@ describe('v3 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone, riskText })).toEqual(
       expect.arrayContaining([
-        'M6: DONE without a registered testPath',
-        'M6: DONE without a registered testName',
+        'M7: DONE without a registered testPath',
+        'M7: DONE without a registered testName',
       ]),
     )
   })

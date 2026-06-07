@@ -32,7 +32,13 @@ import GridCatalog, {
   formatGridCatalogCharacterLists,
   normalizeGridCatalogSearch,
 } from './GridCatalog.svelte'
-import { DBState } from 'src/ts/stores.svelte'
+import MobileCharacters, {
+  filterMobileCharacterRows,
+  formatMobileCharacterRows,
+  mobileCharacterRowKey,
+  normalizeMobileCharacterSearch,
+} from '../Mobile/MobileCharacters.svelte'
+import { DBState, MobileSearch } from 'src/ts/stores.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -46,6 +52,8 @@ interface CharacterFixtureOptions {
   image?: string
   creatorNotes?: string
   trashTime?: number
+  lastInteraction?: number
+  chatCount?: number
   readCounter?: NameReadCounter
 }
 
@@ -59,8 +67,8 @@ function makeCharacter(options: CharacterFixtureOptions) {
     image: options.image ?? '',
     creatorNotes: options.creatorNotes ?? 'No description',
     trashTime: options.trashTime,
-    chats: [],
-    lastInteraction: 0,
+    chats: Array.from({ length: options.chatCount ?? 0 }),
+    lastInteraction: options.lastInteraction ?? 0,
     type: 'character',
   }
   Object.defineProperty(char, 'name', {
@@ -126,6 +134,10 @@ function mountCatalog() {
   component = mount(GridCatalog, { target })
 }
 
+function mountMobileCharacters(props: { hideTrash?: boolean; search?: string } = {}) {
+  component = mount(MobileCharacters, { target, props })
+}
+
 async function clickButton(label: string) {
   const button = Array.from(target.querySelectorAll('button')).find(
     (candidate) => candidate.textContent?.trim() === label,
@@ -154,6 +166,12 @@ function listHeadings() {
   return Array.from(target.querySelectorAll('h4')).map((heading) => heading.textContent?.trim())
 }
 
+function mobileRowNames() {
+  return Array.from(target.querySelectorAll('button.border-t-darkborderc')).map((button) =>
+    button.querySelector('div.flex-1 span')?.textContent?.trim(),
+  )
+}
+
 function rowForHeading(name: string) {
   const heading = Array.from(target.querySelectorAll('h4')).find(
     (candidate) => candidate.textContent?.trim() === name,
@@ -166,6 +184,7 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   vi.clearAllMocks()
+  MobileSearch.set('')
   seedCatalog()
 })
 
@@ -176,6 +195,7 @@ afterEach(() => {
   }
   target.remove()
   document.body.innerHTML = ''
+  MobileSearch.set('')
 })
 
 describe('GridCatalog derived lists', () => {
@@ -269,5 +289,125 @@ describe('GridCatalog derived lists', () => {
 
     expect(trashLists.active.map((char) => char.name)).toEqual(['First Match'])
     expect(trashLists.trash.map((char) => char.name)).toEqual(['First Trash Match'])
+  })
+
+  it('M6: MobileCharacters helper preserves sort, trash filtering, legacy keys, search, and ago text', () => {
+    const now = 1_000_000_000
+    const agoFormatter = {
+      format: vi.fn((value: number, unit: Intl.RelativeTimeFormatUnit) => `${value}:${unit}`),
+    }
+    const rows = formatMobileCharacterRows(
+      [
+        makeCharacter({
+          chaId: 'zeta',
+          name: 'Zeta',
+          lastInteraction: now - 3_600_000,
+          chatCount: 2,
+        }),
+        makeCharacter({
+          chaId: 'beta',
+          name: 'Beta Tie',
+          lastInteraction: now - 600_000,
+        }),
+        makeCharacter({
+          chaId: 'trash',
+          name: 'Trash Newest',
+          lastInteraction: now - 60_000,
+          trashTime: 1,
+        }),
+        makeCharacter({
+          chaId: 'alpha',
+          name: 'Alpha Tie',
+          lastInteraction: now - 600_000,
+        }),
+        makeCharacter({
+          chaId: '',
+          name: '',
+          lastInteraction: 0,
+        }),
+      ] as any,
+      { hideTrash: true, agoFormatter, now },
+    )
+
+    expect(rows.map((char) => char.name)).toEqual(['Alpha Tie', 'Beta Tie', 'Zeta', 'Unnamed'])
+    expect(rows.map((char) => char.sortedIndex)).toEqual([0, 1, 2, 3])
+    expect(rows.find((char) => char.name === 'Zeta')).toMatchObject({
+      chats: 2,
+      index: 0,
+      agoText: '-1:hour',
+    })
+    expect(rows.find((char) => char.name === 'Unnamed')?.agoText).toBe('Unknown')
+    expect(mobileCharacterRowKey(rows[3])).toBe('legacy-4')
+    expect(
+      filterMobileCharacterRows(rows, normalizeMobileCharacterSearch('AL PHA')).map(
+        (char) => char.name,
+      ),
+    ).toEqual(['Alpha Tie'])
+
+    const rowsWithTrash = formatMobileCharacterRows(
+      [
+        makeCharacter({
+          chaId: 'active',
+          name: 'Active',
+          lastInteraction: now - 600_000,
+        }),
+        makeCharacter({
+          chaId: 'trash',
+          name: 'Trash Newest',
+          lastInteraction: now - 60_000,
+          trashTime: 1,
+        }),
+      ] as any,
+      { hideTrash: false, agoFormatter, now },
+    )
+
+    expect(rowsWithTrash.map((char) => char.name)).toEqual(['Trash Newest', 'Active'])
+  })
+
+  it('M6: MobileCharacters sorted rows recompute on corpus changes but not search-only changes', async () => {
+    const readCounter = { count: 0 }
+    DBState.db = {
+      language: 'en',
+      characters: [
+        makeCharacter({
+          chaId: 'alpha-old',
+          name: 'Alpha Old',
+          lastInteraction: 1_000,
+          readCounter,
+        }),
+        makeCharacter({
+          chaId: 'beta-new',
+          name: 'Beta New',
+          lastInteraction: 3_000,
+          readCounter,
+        }),
+        makeCharacter({
+          chaId: 'alpha-trash',
+          name: 'Alpha Trash',
+          lastInteraction: 5_000,
+          trashTime: 1,
+          readCounter,
+        }),
+      ],
+    } as any
+
+    mountMobileCharacters({ hideTrash: true })
+    await tick()
+    expect(mobileRowNames()).toEqual(['Beta New', 'Alpha Old'])
+
+    readCounter.count = 0
+    MobileSearch.set('AL PHA')
+    await tick()
+    expect(readCounter.count).toBe(0)
+    expect(mobileRowNames()).toEqual(['Alpha Old'])
+
+    DBState.db.characters[0].lastInteraction = 4_000
+    await tick()
+    expect(readCounter.count).toBe(2)
+
+    MobileSearch.set('')
+    await tick()
+    expect(readCounter.count).toBe(2)
+    expect(mobileRowNames()).toEqual(['Alpha Old', 'Beta New'])
   })
 })

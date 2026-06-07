@@ -1,31 +1,36 @@
-<script lang="ts">
+<script lang="ts" module>
   import { type character } from 'src/ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
-  import BarIcon from '../SideBars/BarIcon.svelte'
-  import { addCharacter, changeChar, getCharImage } from 'src/ts/characters'
-  import { MobileSearch } from 'src/ts/stores.svelte'
-  import { MessageSquareIcon, PlusIcon } from '@lucide/svelte'
 
-  interface Props {
-    endGrid?: () => void
-    search?: string
-    hideTrash?: boolean
+  export interface MobileCharacterRow {
+    chaId?: string
+    image?: string
+    chats: number
+    index: number
+    interaction: number
+    name: string
+    agoText: string
+    sortedIndex: number
   }
 
-  const agoFormatter = new Intl.RelativeTimeFormat(navigator.languages, { style: 'short' })
+  interface MobileCharacterRowsOptions {
+    hideTrash?: boolean
+    agoFormatter: Pick<Intl.RelativeTimeFormat, 'format'>
+    now?: number
+  }
 
-  let { endGrid = () => {}, search, hideTrash = false }: Props = $props()
-  let normalizedSearch = $derived(normalizeSearch(search ?? $MobileSearch))
-
-  function normalizeSearch(value: string) {
+  export function normalizeMobileCharacterSearch(value: string) {
     return value.replace(/ /g, '').toLocaleLowerCase()
   }
 
-  function makeAgoText(time: number) {
+  export function makeMobileCharacterAgoText(
+    time: number,
+    agoFormatter: Pick<Intl.RelativeTimeFormat, 'format'>,
+    now = Date.now(),
+  ) {
     if (time === 0) {
       return 'Unknown'
     }
-    const diff = Date.now() - time
+    const diff = now - time
     if (diff < 3600000) {
       const min = Math.floor(diff / 60000)
       return agoFormatter.format(-min, 'minute')
@@ -50,20 +55,26 @@
     return agoFormatter.format(-year, 'year')
   }
 
-  function sortChar(char: character[]) {
-    return char
+  export function formatMobileCharacterRows(
+    characters: readonly character[],
+    { hideTrash = false, agoFormatter, now = Date.now() }: MobileCharacterRowsOptions,
+  ): MobileCharacterRow[] {
+    const rows = characters
       .map((c, i) => ({ c, i }))
       .filter(({ c }) => {
         return !hideTrash || !c.trashTime
       })
       .map(({ c, i }) => {
+        const interaction = c.lastInteraction || 0
         return {
+          chaId: c.chaId,
           name: c.name || 'Unnamed',
           image: c.image,
           chats: c.chats.length,
-          i: i,
-          interaction: c.lastInteraction || 0,
-          agoText: makeAgoText(c.lastInteraction || 0),
+          index: i,
+          interaction,
+          agoText: makeMobileCharacterAgoText(interaction, agoFormatter, now),
+          sortedIndex: 0,
         }
       })
       .sort((a, b) => {
@@ -72,32 +83,74 @@
         }
         return b.interaction - a.interaction
       })
+
+    for (let sortedIndex = 0; sortedIndex < rows.length; sortedIndex++) {
+      rows[sortedIndex].sortedIndex = sortedIndex
+    }
+
+    return rows
+  }
+
+  export function filterMobileCharacterRows(
+    rows: readonly MobileCharacterRow[],
+    normalizedSearch: string,
+  ) {
+    return rows.filter((char) =>
+      normalizeMobileCharacterSearch(char.name).includes(normalizedSearch),
+    )
+  }
+
+  export function mobileCharacterRowKey(char: MobileCharacterRow) {
+    return char.chaId || `legacy-${char.index}`
   }
 </script>
 
+<script lang="ts">
+  import { DBState } from 'src/ts/stores.svelte'
+  import BarIcon from '../SideBars/BarIcon.svelte'
+  import { addCharacter, changeChar, getCharImage } from 'src/ts/characters'
+  import { MobileSearch } from 'src/ts/stores.svelte'
+  import { MessageSquareIcon, PlusIcon } from '@lucide/svelte'
+
+  interface Props {
+    endGrid?: () => void
+    search?: string
+    hideTrash?: boolean
+  }
+
+  const agoFormatter = new Intl.RelativeTimeFormat(navigator.languages, { style: 'short' })
+
+  let { endGrid = () => {}, search, hideTrash = false }: Props = $props()
+  let normalizedSearch = $derived(normalizeMobileCharacterSearch(search ?? $MobileSearch))
+  let mobileCharacterRows = $derived(
+    formatMobileCharacterRows(DBState.db.characters, { hideTrash, agoFormatter }),
+  )
+  let visibleMobileCharacterRows = $derived(
+    filterMobileCharacterRows(mobileCharacterRows, normalizedSearch),
+  )
+</script>
+
 <div class="flex flex-col items-center w-full overflow-y-auto h-full">
-  {#each sortChar(DBState.db.characters) as char, i}
-    {#if normalizeSearch(char.name).includes(normalizedSearch)}
-      <button
-        class="flex p-2 border-t-darkborderc gap-2 w-full"
-        class:border-t={i !== 0}
-        onclick={() => {
-          changeChar(char.i)
-          endGrid()
-        }}
-      >
-        <BarIcon additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
-        <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
-          <span>{char.name}</span>
-          <div class="text-sm text-textcolor2 flex items-center w-full flex-wrap">
-            <span class="mr-1">{char.chats}</span>
-            <MessageSquareIcon size={14} />
-            <span class="mr-1 ml-1">|</span>
-            <span>{char.agoText}</span>
-          </div>
+  {#each visibleMobileCharacterRows as char (mobileCharacterRowKey(char))}
+    <button
+      class="flex p-2 border-t-darkborderc gap-2 w-full"
+      class:border-t={char.sortedIndex !== 0}
+      onclick={() => {
+        changeChar(char.index)
+        endGrid()
+      }}
+    >
+      <BarIcon additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
+      <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
+        <span>{char.name}</span>
+        <div class="text-sm text-textcolor2 flex items-center w-full flex-wrap">
+          <span class="mr-1">{char.chats}</span>
+          <MessageSquareIcon size={14} />
+          <span class="mr-1 ml-1">|</span>
+          <span>{char.agoText}</span>
         </div>
-      </button>
-    {/if}
+      </div>
+    </button>
   {/each}
 </div>
 

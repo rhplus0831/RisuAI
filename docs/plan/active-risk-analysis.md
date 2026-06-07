@@ -67,7 +67,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | M3  | [2](phases/phase-2-command-surface-scoping.md)              | Settings-scoped read for the settings/prompt-settings command routes (v2-L3 shape; broad fallback on the pre-extraction edge). | DONE |
 | M4  | [1](phases/phase-1-high-and-send-path.md)                   | Plain-append fast-path via the single-message append command + id-keyed rollback; keep replace for trigger-rewritten transcripts. | DONE |
 | M5  | [1](phases/phase-1-high-and-send-path.md)                   | Field-scoped send rollback (`lastInteraction`; messages only on the first-send backfill branch), `restoreCharacterSelection` shape. | DONE |
-| M6  | [6](phases/phase-6-reactive-amplification-and-render.md)    | `$derived` + keyed each for the MobileCharacters sorted list (v2-L42/L43 helper shape, unit-testable pure function). | PENDING |
+| M6  | [6](phases/phase-6-reactive-amplification-and-render.md)    | `$derived` + keyed each for the MobileCharacters sorted list (v2-L42/L43 helper shape, unit-testable pure function). | DONE |
 | M7  | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Store `run()`'s cleanup closure on the SandboxHost instance; invoke from `terminate()`. | PENDING |
 | M8  | [5](phases/phase-5-client-write-path-correctness.md)        | `flushAllPendingBridgePatches()` aggregator on `pagehide`/`visibilitychange(hidden)` + watcher teardown; `keepalive` dispatch. | DONE |
 | M9  | [4](phases/phase-4-server-lifecycle-and-transport.md)       | `process.once('SIGTERM'\|'SIGINT')` -> `await app.close()` with a force-exit backstop. | DONE |
