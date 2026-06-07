@@ -127,7 +127,7 @@ async function sendPDFFile(arg: sendPDFFileArg) {
     }
   }
   const hypa = new HypaProcesser()
-  hypa.addText(texts)
+  await hypa.addText(texts)
   const result = await hypa.similaritySearch(arg.query)
   let message = ''
   for (let i = 0; i < result.length; i++) {
@@ -144,7 +144,7 @@ async function sendTxtFile(arg: sendTextFileArg) {
     return a !== ''
   })
   const hypa = new HypaProcesser()
-  hypa.addText(lines)
+  await hypa.addText(lines)
   const result = await hypa.similaritySearch(arg.query)
   let message = ''
   for (let i = 0; i < result.length; i++) {
@@ -165,7 +165,7 @@ async function sendXMLFile(arg: sendTextFileArg) {
   for (const node of nodes) {
     nodeTexts.push(node.textContent)
   }
-  hypa.addText(nodeTexts)
+  await hypa.addText(nodeTexts)
   const result = await hypa.similaritySearch(arg.query)
   let message = ''
   for (let i = 0; i < result.length; i++) {

@@ -289,6 +289,51 @@ describe('postChatFile file-send handling', () => {
     ])
   })
 
+  it('L49: awaits async text ingestion so .txt content reaches the File block', async () => {
+    let resolveAddTextStarted: () => void = () => {}
+    let releaseAddText: () => void = () => {}
+    const addTextStarted = new Promise<void>((resolve) => {
+      resolveAddTextStarted = resolve
+    })
+    const addTextRelease = new Promise<void>((resolve) => {
+      releaseAddText = resolve
+    })
+    let indexedTexts: string[] = []
+
+    testState.addTextSpy.mockImplementation(async (texts: string[]) => {
+      resolveAddTextStarted()
+      await addTextRelease
+      indexedTexts = [...texts]
+    })
+    testState.similaritySearchSpy.mockImplementation(async () => indexedTexts)
+
+    const resultPromise = postChatFile({
+      name: 'notes.txt',
+      data: textBytes('alpha file content\n\nbeta file content\n'),
+    })
+
+    await addTextStarted
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(testState.similaritySearchSpy).not.toHaveBeenCalled()
+
+    releaseAddText()
+    const results = await resultPromise
+
+    expect(testState.addTextSpy).toHaveBeenCalledWith([
+      'alpha file content',
+      'beta file content',
+    ])
+    expect(testState.similaritySearchSpy).toHaveBeenCalledTimes(1)
+    expect(results).toHaveLength(1)
+    const result = results?.[0]
+    if (result?.type !== 'text') throw new Error('expected text attachment result')
+    const fileBlock = Buffer.from(result.data, 'base64').toString('utf8')
+    expect(fileBlock).toContain('<File>\n')
+    expect(fileBlock).toContain('alpha file content')
+    expect(fileBlock).toContain('beta file content')
+    expect(result.name).toBe('notes.txt')
+  })
+
   it('L36: .po transcript writes persist through scoped commands under the guard', async () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)

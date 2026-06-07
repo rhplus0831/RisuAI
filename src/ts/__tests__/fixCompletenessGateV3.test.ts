@@ -1098,7 +1098,13 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L49', 8, '`await hypa.addText(...)` at the three file-attach builders.'),
+  done(
+    'L49',
+    8,
+    '`await hypa.addText(...)` at the three file-attach builders.',
+    'src/ts/process/files/multisend.test.ts',
+    'L49: awaits async text ingestion so .txt content reaches the File block',
+  ),
   planned('L50', 8, 'Remove the image-generation payload logs (incl. the comfy poll-loop log).'),
   planned(
     'L51',
@@ -2056,6 +2062,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L46',
       'L47',
       'L48',
+      'L49',
       'L56',
       'K1',
       'K2',
@@ -2068,7 +2075,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1-M9, L1-L48, L56, K1, K2, and K3 marked DONE', () => {
+  it('keeps the live registry green with H1, M1-M9, L1-L49, L56, K1, K2, and K3 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -2131,6 +2138,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L46',
       'L47',
       'L48',
+      'L49',
       'L56',
       'K1',
       'K2',
@@ -2176,7 +2184,7 @@ describe('v3 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'L49'
+      entry.id === 'L50'
         ? {
             ...entry,
             testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
@@ -2186,35 +2194,35 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'L49: PLANNED entries must not claim proof fields',
+      'L50: PLANNED entries must not claim proof fields',
     )
   })
 
   it('rejects doc DONE rows that do not have matching registry proof', () => {
-    const l49 = SCHEDULED_FIXES.find((entry) => entry.id === 'L49')
-    if (!l49) throw new Error('L49 registry entry not found')
+    const l50 = SCHEDULED_FIXES.find((entry) => entry.id === 'L50')
+    if (!l50) throw new Error('L50 registry entry not found')
 
     const withDoneDocRow = replaceRiskRow(
       readDoc(RISK_DOC),
-      'L49',
-      `| L49 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l49.fix} | DONE |`,
+      'L50',
+      `| L50 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l50.fix} | DONE |`,
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'L49: status mismatch (registry PLANNED, docs DONE)',
+      'L50: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 
   it('rejects DONE registry entries without a registered test path and test name', () => {
-    const l49 = SCHEDULED_FIXES.find((entry) => entry.id === 'L49')
-    if (!l49) throw new Error('L49 registry entry not found')
+    const l50 = SCHEDULED_FIXES.find((entry) => entry.id === 'L50')
+    if (!l50) throw new Error('L50 registry entry not found')
     const riskText = replaceRiskRow(
       readDoc(RISK_DOC),
-      'L49',
-      `| L49 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l49.fix} | DONE |`,
+      'L50',
+      `| L50 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l50.fix} | DONE |`,
     )
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'L49'
+      entry.id === 'L50'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -2224,8 +2232,8 @@ describe('v3 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone, riskText })).toEqual(
       expect.arrayContaining([
-        'L49: DONE without a registered testPath',
-        'L49: DONE without a registered testName',
+        'L50: DONE without a registered testPath',
+        'L50: DONE without a registered testName',
       ]),
     )
   })

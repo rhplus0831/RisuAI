@@ -16,8 +16,8 @@ prior-audit finding IDs are referenced as `v1-*` / `v2-*`.
 
 - Confirmed findings: 89 total: 1 high, 9 medium, 56 low, 23 informational.
 - Scheduled: H1, M1-M9, L1-L56, and the known-overlap residuals K1-K4.
-  `H1`, `M1-M9`, `L1-L48`, `L56`, and `K1-K3` are `DONE`;
-  `L49-L55` and `K4` remain `PENDING`.
+  `H1`, `M1-M9`, `L1-L49`, `L56`, and `K1-K3` are `DONE`;
+  `L50-L55` and `K4` remain `PENDING`.
 - Gated items: unchanged from v2 — `v2-L12`, plus the v1 carry-overs (v1-L4,
   v1-L7, v1-L26, v1-U2) and the `../archive/leftover.md` evidence gates. The
   v3 audit re-confirmed and respected all of them.
@@ -125,7 +125,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L46 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | In-flight construction promise per MCP key (the `mcpToolClientIndexBuild` dedup shape). | DONE |
 | L47 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Size-cap the persistent `connectSSE` buffer (abort + destroy past a few MB without a delimiter). | DONE |
 | L48 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Page/byte caps + AbortSignal + honor the `limit` argument in the MCP PDF read. | DONE |
-| L49 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | `await hypa.addText(...)` at the three file-attach builders.                 | PENDING |
+| L49 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | `await hypa.addText(...)` at the three file-attach builders.                 | DONE |
 | L50 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Remove the image-generation payload logs (incl. the comfy poll-loop log).    | PENDING |
 | L51 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Revoke object URLs in `finally` at the image-processing sites (incl. the `scriptings.ts` siblings). | PENDING |
 | L52 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Shared/closed AudioContext for `runVITS` (mirror `getNetworkAudioContext`); add the missing decode error callback. | PENDING |
