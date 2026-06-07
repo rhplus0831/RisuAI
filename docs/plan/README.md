@@ -24,11 +24,14 @@ and
 2. [`next-steps.md`](next-steps.md) - the next task batch and proof commands.
 3. [`active-risk-analysis.md`](active-risk-analysis.md) - per-finding routing
    to its phase, target fix, and the gated/non-goal exclusions.
-4. [`plan.md`](plan.md) - goal, sources, invariants, prerequisites, phase order.
-5. [`phases/README.md`](phases/README.md) - phase index.
-6. [`phases/slices/`](phases/slices/) - concrete task slices, authored when a
+4. [`v4-integration-brief.md`](v4-integration-brief.md) - post-Phase-4 v4
+   routing layer; use it to amend remaining v3 phases without creating a v4
+   mega-plan.
+5. [`plan.md`](plan.md) - goal, sources, invariants, prerequisites, phase order.
+6. [`phases/README.md`](phases/README.md) - phase index.
+7. [`phases/slices/`](phases/slices/) - concrete task slices, authored when a
    phase opens.
-7. [`latest-verification.md`](latest-verification.md) - the maintained
+8. [`latest-verification.md`](latest-verification.md) - the maintained
    verification baseline.
 
 ## Where Detail Lives
@@ -38,6 +41,8 @@ and
 - Status and phase routing: [`status.md`](status.md).
 - Finding -> phase map plus gated/dismissed exclusions:
   [`active-risk-analysis.md`](active-risk-analysis.md).
+- Post-Phase-4 v4 routing amendments:
+  [`v4-integration-brief.md`](v4-integration-brief.md).
 - Goal, invariants, prerequisites, and non-goals: [`plan.md`](plan.md).
 - Phase scope and exit criteria: [`phases/`](phases/).
 - Slice definitions live in `phases/slices/[phase]/[slice-name].md`,
@@ -161,5 +166,10 @@ Reuse these already-landed patterns:
 Each slice narrows the hot path, keeps the broad path for true full-corpus
 consumers, and adds a regression test.
 
-## Small note
-- `docs/audit-stability-and-performance-v4.md` is a new audit report that is unrelated to the current plan.
+## V4 Integration
+
+[`../audit-stability-and-performance-v4.md`](../audit-stability-and-performance-v4.md)
+is now treated as a post-Phase-4 routing input for the remaining v3 work, not
+as an unrelated plan. Start with
+[`v4-integration-brief.md`](v4-integration-brief.md) before opening Phase 5
+or rewriting any later phase slices.
