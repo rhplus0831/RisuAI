@@ -98,10 +98,10 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L20 | [4](phases/phase-4-server-lifecycle-and-transport.md)       | `maxAge: '1y', immutable: true` for the hashed SPA chunks (index.html stays uncached). | DONE |
 | L21 | [5](phases/phase-5-client-write-path-correctness.md)        | Add a rollback parameter to `runPresetCommand`; snapshot `botPresets`/`botPresetsId` + the `setPreset` scalar settings. | PENDING |
 | L22 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Gate the character-draft mirror recomputation (character switch / apply epoch); split the read/seed effect. | PENDING |
-| L23 | [5](phases/phase-5-client-write-path-correctness.md)        | `suppressRollbackDispatch` around both the optimistic write and the rollback in `applyServerBackedSettingsPatch`. | PENDING |
-| L24 | [5](phases/phase-5-client-write-path-correctness.md)        | Suppress the global-lorebook direct dispatchers' rollbacks (route through `rollbackLorebookReplacement`). | PENDING |
+| L23 | [5](phases/phase-5-client-write-path-correctness.md)        | `suppressRollbackDispatch` around both the optimistic write and the rollback in `applyServerBackedSettingsPatch`. | DONE |
+| L24 | [5](phases/phase-5-client-write-path-correctness.md)        | Suppress the global-lorebook direct dispatchers' rollbacks (route through `rollbackLorebookReplacement`). | DONE |
 | L25 | [5](phases/phase-5-client-write-path-correctness.md)        | Keep the FIRST baseline across coalesced same-item prompt-template edits.   | PENDING |
-| L26 | [5](phases/phase-5-client-write-path-correctness.md)        | Route the chat-row metadata rollback through the suppressing wrapper.       | PENDING |
+| L26 | [5](phases/phase-5-client-write-path-correctness.md)        | Route the chat-row metadata rollback through the suppressing wrapper.       | DONE |
 | L27 | [5](phases/phase-5-client-write-path-correctness.md)        | Promote the pending entry snapshot to a collection snapshot when a second entry edit lands in the same debounce window. | PENDING |
 | L28 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Reference-keyed lazy `localLore` snapshots in the character-scope watcher (keep full rollback coverage). | PENDING |
 | L29 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Cheap short-circuit before the chat-metadata watcher's per-chat scalar Map rebuild. | PENDING |

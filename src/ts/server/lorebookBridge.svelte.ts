@@ -553,7 +553,7 @@ export function dispatchCreateGlobalLorebook(
         baseRevision,
         lorebook: cloneJsonValue(lorebook) as GlobalLorebookSnapshot,
       }),
-    rollback: () => restoreGlobalLorebookState(previous),
+    rollback: () => rollbackServerBackedGlobalLorebooks(previous),
   })
 }
 
@@ -570,7 +570,7 @@ export function dispatchUpdateGlobalLorebook(
         lorebookId,
         patch,
       }),
-    rollback: () => restoreLorebookState(previous),
+    rollback: () => rollbackServerBackedLorebooks(previous),
   })
 }
 
@@ -585,7 +585,7 @@ export function dispatchDeleteGlobalLorebook(
         baseRevision,
         lorebookId,
       }),
-    rollback: () => restoreGlobalLorebookState(previous),
+    rollback: () => rollbackServerBackedGlobalLorebooks(previous),
   })
 }
 
@@ -600,7 +600,7 @@ export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot):
         baseRevision,
         lorebookIds,
       }),
-    rollback: () => restoreLorebookState(previous),
+    rollback: () => rollbackServerBackedLorebooks(previous),
   })
 }
 
@@ -615,7 +615,7 @@ export function dispatchSelectGlobalLorebook(
         baseRevision,
         lorebookId,
       }),
-    rollback: () => restoreGlobalLorebookState(previous),
+    rollback: () => rollbackServerBackedGlobalLorebooks(previous),
   })
 }
 
@@ -1035,20 +1035,27 @@ function rollbackLorebookReplacement(snapshot: LorebookReplacementSnapshot): voi
 }
 
 function rollbackServerBackedLorebooks(snapshot: LorebookStateSnapshot): void {
-  suppressRollbackDispatch = true
-  try {
+  withSuppressedLorebookWatcher(() => {
     restoreLorebookState(snapshot)
-  } finally {
-    queueMicrotask(() => {
-      suppressRollbackDispatch = false
-    })
-  }
+  })
+}
+
+function rollbackServerBackedGlobalLorebooks(snapshot: GlobalLorebookStateSnapshot): void {
+  withSuppressedLorebookWatcher(() => {
+    restoreGlobalLorebookState(snapshot)
+  })
 }
 
 function rollbackServerBackedLorebookEntry(snapshot: LorebookEntryStateSnapshot): void {
+  withSuppressedLorebookWatcher(() => {
+    restoreLorebookEntryState(snapshot)
+  })
+}
+
+function withSuppressedLorebookWatcher(fn: () => void): void {
   suppressRollbackDispatch = true
   try {
-    restoreLorebookEntryState(snapshot)
+    fn()
   } finally {
     queueMicrotask(() => {
       suppressRollbackDispatch = false

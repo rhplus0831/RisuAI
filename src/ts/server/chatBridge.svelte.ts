@@ -5,6 +5,7 @@ import {
   cloneJsonValue,
   dispatchUpdateChatFolderRow,
   dispatchUpdateChatRow,
+  restoreChatRowMetadata,
   restoreChatState,
   type ChatFolderRowMetadataSnapshot,
   type ChatRowMetadataSnapshot,
@@ -38,6 +39,7 @@ const pendingChatPatches = new Map<string, PendingChatPatch>()
 const pendingFolderPatches = new Map<string, PendingFolderPatch>()
 let suppressRollbackDispatch = false
 let activeStop: (() => void) | null = null
+let resetActiveChatMetadataBaselines: (() => void) | null = null
 let watcherRefs = 0
 
 export interface WatchServerBackedChatMetadataOptions {
@@ -67,22 +69,18 @@ export function watchServerBackedChatMetadata(
   let previousFolders = new Map<string, ChatFolderSnapshot>()
   let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
+  resetActiveChatMetadataBaselines = () => {
+    const current = currentChatMetadataBaselines()
+    previousChats = current.chats
+    previousFolders = current.folders
+    previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+    initialized = true
+  }
+
   activeStop = $effect.root(() => {
     $effect(() => {
       const projectionApplyEpoch = getServerProjectionApplyEpoch()
-      const selectedChar = get(selectedCharID)
-      const character = DBState.db.characters?.[selectedChar]
-      const characterId = character?.chaId
-      const currentChats = new Map(
-        (character?.chats ?? [])
-          .filter((chat) => typeof chat.id === 'string' && chat.id)
-          .map((chat) => [chat.id as string, scalarChatMetadata(chat as unknown as ChatSnapshot)]),
-      )
-      const currentFolders = new Map(
-        (character?.chatFolders ?? [])
-          .filter((folder) => typeof folder.id === 'string' && folder.id)
-          .map((folder) => [folder.id, scalarChatFolderMetadata(folder as unknown as ChatFolder)]),
-      )
+      const current = currentChatMetadataBaselines()
 
       if (
         suppressRollbackDispatch ||
@@ -91,22 +89,22 @@ export function watchServerBackedChatMetadata(
       ) {
         initialized = true
         previousProjectionApplyEpoch = projectionApplyEpoch
-        previousChats = currentChats
-        previousFolders = currentFolders
+        previousChats = current.chats
+        previousFolders = current.folders
         return
       }
 
-      for (const [chatId, current] of currentChats) {
+      for (const [chatId, currentChat] of current.chats) {
         const previous = previousChats.get(chatId)
         if (!previous) continue
-        const patch = changedFields(previous, current)
+        const patch = changedFields(previous, currentChat)
         if (Object.keys(patch).length > 0) {
           // Capture the rollback lazily, only when there is a real change: the
           // per-row scalar baseline (`previous`) is exactly what a failed patch
           // must restore. No whole-characters clone.
           const rollback: ChatRowMetadataSnapshot = {
-            selectedCharID: selectedChar,
-            characterId,
+            selectedCharID: current.selectedChar,
+            characterId: current.characterId,
             chatId,
             metadata: previous,
           }
@@ -114,14 +112,14 @@ export function watchServerBackedChatMetadata(
         }
       }
 
-      for (const [folderId, current] of currentFolders) {
+      for (const [folderId, currentFolder] of current.folders) {
         const previous = previousFolders.get(folderId)
         if (!previous) continue
-        const patch = changedFields(previous, current)
+        const patch = changedFields(previous, currentFolder)
         if (Object.keys(patch).length > 0) {
           const rollback: ChatFolderRowMetadataSnapshot = {
-            selectedCharID: selectedChar,
-            characterId,
+            selectedCharID: current.selectedChar,
+            characterId: current.characterId,
             folderId,
             metadata: previous,
           }
@@ -129,8 +127,8 @@ export function watchServerBackedChatMetadata(
         }
       }
 
-      previousChats = currentChats
-      previousFolders = currentFolders
+      previousChats = current.chats
+      previousFolders = current.folders
     })
   })
 
@@ -141,6 +139,7 @@ export function watchServerBackedChatMetadata(
       flushPendingServerBackedChatPatches()
       activeStop?.()
       activeStop = null
+      resetActiveChatMetadataBaselines = null
       watcherRefs = 0
     }
   }
@@ -216,7 +215,13 @@ function runPendingChatPatch(chatId: string, options: ServerCommandTransportOpti
   if (!commandPatch) return
   if (commandPatch.timer) clearTimeout(commandPatch.timer)
   pendingChatPatches.delete(chatId)
-  dispatchUpdateChatRow(commandPatch.chatId, commandPatch.patch, commandPatch.rollback, options)
+  dispatchUpdateChatRow(
+    commandPatch.chatId,
+    commandPatch.patch,
+    commandPatch.rollback,
+    options,
+    rollbackServerBackedChatRowMetadata,
+  )
 }
 
 function runPendingFolderPatch(
@@ -259,6 +264,30 @@ function scalarChatFolderMetadata(folder: ChatFolder): ChatFolderSnapshot {
   }
 }
 
+function currentChatMetadataBaselines(): {
+  selectedChar: number
+  characterId: string | undefined
+  chats: Map<string, ChatSnapshot>
+  folders: Map<string, ChatFolderSnapshot>
+} {
+  const selectedChar = get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  return {
+    selectedChar,
+    characterId: character?.chaId,
+    chats: new Map(
+      (character?.chats ?? [])
+        .filter((chat) => typeof chat.id === 'string' && chat.id)
+        .map((chat) => [chat.id as string, scalarChatMetadata(chat as unknown as ChatSnapshot)]),
+    ),
+    folders: new Map(
+      (character?.chatFolders ?? [])
+        .filter((folder) => typeof folder.id === 'string' && folder.id)
+        .map((folder) => [folder.id, scalarChatFolderMetadata(folder as unknown as ChatFolder)]),
+    ),
+  }
+}
+
 function changedFields<T extends Record<string, unknown>>(previous: T, current: T): T {
   const patch: Record<string, unknown> = {}
   const keys = new Set([...Object.keys(previous), ...Object.keys(current)])
@@ -279,6 +308,19 @@ export function rollbackServerBackedChatMetadata(snapshot: ChatStateSnapshot): v
   suppressRollbackDispatch = true
   try {
     restoreChatState(snapshot)
+    resetActiveChatMetadataBaselines?.()
+  } finally {
+    queueMicrotask(() => {
+      suppressRollbackDispatch = false
+    })
+  }
+}
+
+export function rollbackServerBackedChatRowMetadata(snapshot: ChatRowMetadataSnapshot): void {
+  suppressRollbackDispatch = true
+  try {
+    restoreChatRowMetadata(snapshot)
+    resetActiveChatMetadataBaselines?.()
   } finally {
     queueMicrotask(() => {
       suppressRollbackDispatch = false

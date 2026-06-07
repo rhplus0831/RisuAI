@@ -236,6 +236,8 @@ export interface ChatRowMetadataSnapshot {
   metadata: ChatSnapshot
 }
 
+type ChatRowMetadataRollback = (snapshot: ChatRowMetadataSnapshot) => void
+
 export function restoreChatRowMetadata(snapshot: ChatRowMetadataSnapshot): void {
   withTrustedServerProjectionWrite(() => {
     const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
@@ -388,6 +390,7 @@ export function dispatchUpdateChatRow(
   patch: ChatSnapshot,
   rollback: ChatRowMetadataSnapshot,
   options: ServerCommandTransportOptions = {},
+  rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
 ): void {
   const commandPatch = sanitizeChatPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
@@ -403,7 +406,7 @@ export function dispatchUpdateChatRow(
         options.signal,
         options.keepalive,
       ),
-    () => restoreChatRowMetadata(rollback),
+    () => rollbackRowMetadata(rollback),
     options,
   )
 }

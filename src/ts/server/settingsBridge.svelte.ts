@@ -100,28 +100,30 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
   const previous: SettingsPatch = {}
   const attempted: SettingsPatch = {}
 
-  withTrustedServerProjectionWrite(() => {
-    const target = DBState.db as unknown as Record<string, unknown>
-    for (const [key, value] of Object.entries(patch)) {
-      if (!settingsGroupForKey(key) || value === undefined) continue
-      const currentValue = target[key]
-      if (snapshotJson(currentValue) === snapshotJson(value)) continue
-      previous[key] = cloneJsonValue(currentValue)
-      attempted[key] = cloneJsonValue(value)
-      commandPatch[key] = cloneJsonValue(value)
-      target[key] = cloneJsonValue(value)
-    }
-  })
+  const currentSettings = DBState.db as unknown as Record<string, unknown>
+  for (const [key, value] of Object.entries(patch)) {
+    if (!settingsGroupForKey(key) || value === undefined) continue
+    const currentValue = currentSettings[key]
+    if (snapshotJson(currentValue) === snapshotJson(value)) continue
+    previous[key] = cloneJsonValue(currentValue)
+    attempted[key] = cloneJsonValue(value)
+    commandPatch[key] = cloneJsonValue(value)
+  }
 
   if (Object.keys(commandPatch).length === 0) return
 
+  withSuppressedSettingsWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      const target = DBState.db as unknown as Record<string, unknown>
+      for (const [key, value] of Object.entries(commandPatch)) {
+        target[key] = cloneJsonValue(value)
+      }
+    })
+  })
+
   void patchServerBackedSettings({
     patch: commandPatch,
-    rollback: () => {
-      withTrustedServerProjectionWrite(() => {
-        rollbackSettings(previous, attempted)
-      })
-    },
+    rollback: () => rollbackServerBackedSettings(previous, attempted),
   })
 }
 
@@ -226,17 +228,25 @@ function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {
     patch: commandPatch,
     keepalive: options.keepalive,
     signal: options.signal,
-    rollback: () => {
-      suppressRollbackDispatch = true
-      try {
-        rollbackSettings(commandPrevious, commandAttempted)
-      } finally {
-        queueMicrotask(() => {
-          suppressRollbackDispatch = false
-        })
-      }
-    },
+    rollback: () => rollbackServerBackedSettings(commandPrevious, commandAttempted),
   })
+}
+
+function rollbackServerBackedSettings(previous: SettingsPatch, attempted: SettingsPatch): void {
+  withSuppressedSettingsWatcher(() => {
+    rollbackSettings(previous, attempted)
+  })
+}
+
+function withSuppressedSettingsWatcher(fn: () => void): void {
+  suppressRollbackDispatch = true
+  try {
+    fn()
+  } finally {
+    queueMicrotask(() => {
+      suppressRollbackDispatch = false
+    })
+  }
 }
 
 function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): void {

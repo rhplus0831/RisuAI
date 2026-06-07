@@ -7,6 +7,7 @@ const recorded = vi.hoisted(() => ({
     patch: Record<string, unknown>
     keepalive?: boolean
   }>,
+  chatRollbacks: [] as Array<() => void>,
   folderUpdates: [] as Array<{
     folderId: string
     patch: Record<string, unknown>
@@ -50,13 +51,22 @@ vi.mock('../chatCommands', () => {
     dispatchUpdateChatRow: (
       chatId: string,
       patch: Record<string, unknown>,
-      _rollback: unknown,
+      rollback: {
+        selectedCharID: number
+        characterId?: string
+        chatId: string
+        metadata: Record<string, unknown>
+      },
       options?: { keepalive?: boolean },
+      rollbackRowMetadata?: (snapshot: typeof rollback) => void,
     ) => {
       recorded.chatUpdates.push({
         chatId,
         patch: cloneJsonValue(patch),
         ...(options?.keepalive ? { keepalive: options.keepalive } : {}),
+      })
+      recorded.chatRollbacks.push(() => {
+        rollbackRowMetadata?.(rollback)
       })
     },
     dispatchUpdateChatFolderRow: (
@@ -77,6 +87,46 @@ vi.mock('../chatCommands', () => {
         db.characters = cloneJsonValue(snapshot.characters)
       }
       chatCommandState.setSelectedCharId?.(snapshot.selectedCharID)
+    },
+    restoreChatRowMetadata: (snapshot: {
+      selectedCharID: number
+      characterId?: string
+      chatId: string
+      metadata: Record<string, unknown>
+    }) => {
+      const db = chatCommandState.getDb?.()
+      if (!db) return
+      const characters = db.characters as
+        | Array<{
+            chaId?: string
+            chats?: Array<Record<string, unknown> & { id?: string }>
+          }>
+        | undefined
+      const character =
+        characters?.find((candidate) => candidate.chaId === snapshot.characterId) ??
+        characters?.[snapshot.selectedCharID]
+      const chat = character?.chats?.find((candidate) => candidate.id === snapshot.chatId)
+      if (!chat) return
+      for (const key of [
+        'name',
+        'note',
+        'sdData',
+        'lastMemory',
+        'suggestMessages',
+        'bindedPersona',
+        'fmIndex',
+        'folderId',
+        'lastDate',
+        'bookmarks',
+        'bookmarkNames',
+        'modules',
+      ]) {
+        if (key in snapshot.metadata) {
+          chat[key] = cloneJsonValue(snapshot.metadata[key])
+        } else {
+          delete chat[key]
+        }
+      }
     },
   }
 })
@@ -118,6 +168,7 @@ beforeEach(() => {
   }
   chatCommandState.setSelectedCharId = (value) => selectedCharID.set(value)
   recorded.chatUpdates.length = 0
+  recorded.chatRollbacks.length = 0
   recorded.folderUpdates.length = 0
 })
 
@@ -183,6 +234,40 @@ describe('watchServerBackedChatMetadata baselines', () => {
     await vi.advanceTimersByTimeAsync(DELAY)
 
     expect(recorded.chatUpdates).toEqual([])
+    stop()
+  })
+
+  it('L26: chat row rollback suppresses watcher echo and resets the restored baseline', async () => {
+    setupChat('Initial')
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.characters[0].chats[0].name = 'Conflict'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.chatUpdates.map(({ chatId, patch }) => ({ chatId, patch }))).toEqual([
+      { chatId: 'chat-1', patch: { name: 'Conflict' } },
+    ])
+
+    recorded.chatRollbacks[0]?.()
+    await Promise.resolve()
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(DBState.db.characters[0].chats[0].name).toBe('Initial')
+    expect(recorded.chatUpdates.map(({ chatId, patch }) => ({ chatId, patch }))).toEqual([
+      { chatId: 'chat-1', patch: { name: 'Conflict' } },
+    ])
+
+    DBState.db.characters[0].chats[0].name = 'User Edit After Rollback'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.chatUpdates.map(({ chatId, patch }) => ({ chatId, patch }))).toEqual([
+      { chatId: 'chat-1', patch: { name: 'Conflict' } },
+      { chatId: 'chat-1', patch: { name: 'User Edit After Rollback' } },
+    ])
     stop()
   })
 

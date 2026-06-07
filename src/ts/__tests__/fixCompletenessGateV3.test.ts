@@ -561,18 +561,46 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     6,
     'Gate the character-draft mirror recomputation (character switch / apply epoch); split the read/seed effect.',
   ),
-  planned(
+  done(
     'L23',
     5,
     '`suppressRollbackDispatch` around both the optimistic write and the rollback in `applyServerBackedSettingsPatch`.',
+    'src/ts/server/settingsBridge.svelte.test.ts',
+    'L23: direct settings patches suppress watcher echoes for optimistic writes and rollback writes',
+    [
+      {
+        testPath: 'src/ts/server/settingsBridge.svelte.test.ts',
+        testName: 'L23: queued settings rollback suppresses watcher echoes for debounced writes',
+      },
+    ],
   ),
-  planned(
+  done(
     'L24',
     5,
     "Suppress the global-lorebook direct dispatchers' rollbacks (route through `rollbackLorebookReplacement`).",
+    'src/ts/server/lorebookBridge.svelte.test.ts',
+    'L24: global lorebook direct rollback parity routes every dispatcher through suppressed helpers',
+    [
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName:
+          'L24: global lorebook rename rollback suppresses watcher echo and keeps later edits live',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName:
+          'L24: global lorebook direct rollback closures restore under an active watcher without echoes',
+      },
+    ],
   ),
   planned('L25', 5, 'Keep the FIRST baseline across coalesced same-item prompt-template edits.'),
-  planned('L26', 5, 'Route the chat-row metadata rollback through the suppressing wrapper.'),
+  done(
+    'L26',
+    5,
+    'Route the chat-row metadata rollback through the suppressing wrapper.',
+    'src/ts/server/chatBridge.svelte.test.ts',
+    'L26: chat row rollback suppresses watcher echo and resets the restored baseline',
+  ),
   planned(
     'L27',
     5,
@@ -1531,6 +1559,9 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L18',
       'L19',
       'L20',
+      'L23',
+      'L24',
+      'L26',
       'L56',
       'K1',
       'K2',
@@ -1542,7 +1573,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L23, L24, L26, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1568,6 +1599,9 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L18',
       'L19',
       'L20',
+      'L23',
+      'L24',
+      'L26',
       'L56',
       'K1',
       'K2',

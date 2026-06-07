@@ -94,6 +94,56 @@ describe('settingsBridge coalescing', () => {
     })
   })
 
+  it('L23: direct settings patches suppress watcher echoes for optimistic writes and rollback writes', async () => {
+    setupSettings({ notification: false })
+    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
+    flushSync()
+
+    applyServerBackedSettingsPatch({ notification: true })
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
+    expect(DBState.db.notification).toBe(true)
+
+    recorded.patches[0].rollback?.()
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(DBState.db.notification).toBe(false)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
+    stop()
+  })
+
+  it('L23: queued settings rollback suppresses watcher echoes for debounced writes', async () => {
+    setupSettings({ notification: false })
+    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
+    flushSync()
+
+    DBState.db.notification = true
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
+
+    recorded.patches[0].rollback?.()
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(DBState.db.notification).toBe(false)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
+
+    DBState.db.notification = true
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
+      { notification: true },
+      { notification: true },
+    ])
+    stop()
+  })
+
   it('coalesces watched settings into one debounced command', async () => {
     setupSettings({
       notification: false,

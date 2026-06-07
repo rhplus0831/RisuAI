@@ -11,17 +11,24 @@ import path from 'node:path'
 // and mock only the command layer + the projection guard. Drive the reactive effect
 // with flushSync() and the debounce with fake timers.
 
-const recorded = vi.hoisted(() => ({ commands: [] as Array<Record<string, unknown>> }))
+const recorded = vi.hoisted(() => ({
+  commands: [] as Array<Record<string, unknown> & { rollback?: () => void }>,
+}))
 const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
   runServerCommand: vi.fn(
-    async (args: { command: (rev: number) => Promise<unknown>; keepalive?: boolean }) => {
+    async (args: {
+      command: (rev: number) => Promise<unknown>
+      rollback?: () => void
+      keepalive?: boolean
+    }) => {
       const { command } = args
       const built = await command(1)
       recorded.commands.push({
         ...(built as Record<string, unknown>),
         ...(args.keepalive ? { keepalive: args.keepalive } : {}),
+        ...(args.rollback ? { rollback: args.rollback } : {}),
       })
       return { status: 'ok', revision: 1 }
     },
@@ -59,9 +66,16 @@ import { applyServerCharacterLorebookProjection } from '../storage/database.svel
 import {
   applyLorebookEntryDraftEdit,
   collectLorebookCollectionSnapshots,
+  currentGlobalLorebookStateSnapshot,
   currentLorebookCollectionScopedSnapshot,
   currentLorebookEntryScopedSnapshot,
+  currentLorebookStateSnapshot,
+  dispatchCreateGlobalLorebook,
+  dispatchDeleteGlobalLorebook,
+  dispatchReorderGlobalLorebooks,
   dispatchReplaceCharacterLorebooks,
+  dispatchSelectGlobalLorebook,
+  dispatchUpdateGlobalLorebook,
   flushPendingLorebookEntryDraftEdit,
   flushPendingServerBackedLorebookPatches,
   markCharacterLorebookHydrated,
@@ -87,8 +101,42 @@ function setupCharacter(globalLore: unknown): void {
   selectedCharID.set(0)
 }
 
+function setupGlobalLorebooks(
+  loreBook: Array<{ id: string; name: string; data: Entry[] }> = [
+    { id: 'g1', name: 'Initial', data: [] },
+  ],
+  loreBookPage = 0,
+): void {
+  ;(DBState as { db: unknown }).db = {
+    characters: [],
+    loreBook,
+    loreBookPage,
+    modules: [],
+  }
+  selectedCharID.set(-1)
+}
+
 function characterReplaceCommands(): Array<Record<string, unknown>> {
   return recorded.commands.filter((c) => c.kind === 'replaceCharacter')
+}
+
+async function flushServerCommandRecording(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+function exportedFunctionSource(source: string, name: string): string {
+  const start = source.indexOf(`export function ${name}`)
+  expect(start).toBeGreaterThanOrEqual(0)
+  const next = source.indexOf('\nexport function ', start + 1)
+  return source.slice(start, next === -1 ? source.length : next)
+}
+
+function localFunctionSource(source: string, name: string): string {
+  const start = source.indexOf(`function ${name}`)
+  expect(start).toBeGreaterThanOrEqual(0)
+  const next = source.indexOf('\nfunction ', start + 1)
+  return source.slice(start, next === -1 ? source.length : next)
 }
 
 beforeEach(() => {
@@ -204,6 +252,184 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     expect(cmds[0].characterId).toBe('c1')
     expect((cmds[0].entries as Entry[]).map((entry) => entry.content)).toEqual(['Server', 'Local'])
     stop()
+  })
+
+  it('L24: global lorebook rename rollback suppresses watcher echo and keeps later edits live', async () => {
+    setupGlobalLorebooks()
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
+    flushSync()
+
+    DBState.db.loreBook[0].name = 'Conflict'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const firstUpdates = recorded.commands.filter((command) => command.kind === 'updateGlobal')
+    expect(firstUpdates).toHaveLength(1)
+    expect(firstUpdates[0].a).toMatchObject({
+      lorebookId: 'g1',
+      patch: { name: 'Conflict' },
+    })
+
+    firstUpdates[0].rollback?.()
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(DBState.db.loreBook[0].name).toBe('Initial')
+    expect(recorded.commands.filter((command) => command.kind === 'updateGlobal')).toHaveLength(1)
+
+    DBState.db.loreBook[0].name = 'User Edit After Rollback'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(
+      recorded.commands
+        .filter((command) => command.kind === 'updateGlobal')
+        .map((command) => (command.a as { patch: { name: string } }).patch),
+    ).toEqual([{ name: 'Conflict' }, { name: 'User Edit After Rollback' }])
+    stop()
+  })
+
+  it('L24: global lorebook direct rollback parity routes every dispatcher through suppressed helpers', () => {
+    const source = readFileSync(
+      path.join(process.cwd(), 'src/ts/server/lorebookBridge.svelte.ts'),
+      'utf8',
+    )
+
+    expect(exportedFunctionSource(source, 'dispatchCreateGlobalLorebook')).toContain(
+      'rollback: () => rollbackServerBackedGlobalLorebooks(previous)',
+    )
+    expect(exportedFunctionSource(source, 'dispatchDeleteGlobalLorebook')).toContain(
+      'rollback: () => rollbackServerBackedGlobalLorebooks(previous)',
+    )
+    expect(exportedFunctionSource(source, 'dispatchSelectGlobalLorebook')).toContain(
+      'rollback: () => rollbackServerBackedGlobalLorebooks(previous)',
+    )
+    expect(exportedFunctionSource(source, 'dispatchUpdateGlobalLorebook')).toContain(
+      'rollback: () => rollbackServerBackedLorebooks(previous)',
+    )
+    expect(exportedFunctionSource(source, 'dispatchReorderGlobalLorebooks')).toContain(
+      'rollback: () => rollbackServerBackedLorebooks(previous)',
+    )
+
+    const globalRollback = localFunctionSource(source, 'rollbackServerBackedGlobalLorebooks')
+    expect(globalRollback).toContain('withSuppressedLorebookWatcher')
+    expect(globalRollback).toContain('restoreGlobalLorebookState(snapshot)')
+
+    const fullRollback = localFunctionSource(source, 'rollbackServerBackedLorebooks')
+    expect(fullRollback).toContain('withSuppressedLorebookWatcher')
+    expect(fullRollback).toContain('restoreLorebookState(snapshot)')
+  })
+
+  it('L24: global lorebook direct rollback closures restore under an active watcher without echoes', async () => {
+    const scenarios: Array<{
+      label: string
+      commandKind: string
+      run: () => void
+      expectRestored: () => void
+    }> = [
+      {
+        label: 'create',
+        commandKind: 'createGlobal',
+        run: () => {
+          setupGlobalLorebooks()
+          const previous = currentGlobalLorebookStateSnapshot()
+          const created = { id: 'g2', name: 'Created', data: [] }
+          DBState.db.loreBook.push(created as never)
+          dispatchCreateGlobalLorebook(created, previous)
+        },
+        expectRestored: () => {
+          expect(DBState.db.loreBook.map((lorebook) => lorebook.id)).toEqual(['g1'])
+        },
+      },
+      {
+        label: 'delete',
+        commandKind: 'deleteGlobal',
+        run: () => {
+          setupGlobalLorebooks([
+            { id: 'g1', name: 'Initial', data: [] },
+            { id: 'g2', name: 'Second', data: [] },
+          ])
+          const previous = currentGlobalLorebookStateSnapshot()
+          DBState.db.loreBook.splice(1, 1)
+          dispatchDeleteGlobalLorebook('g2', previous)
+        },
+        expectRestored: () => {
+          expect(DBState.db.loreBook.map((lorebook) => lorebook.id)).toEqual(['g1', 'g2'])
+        },
+      },
+      {
+        label: 'reorder',
+        commandKind: 'reorderGlobal',
+        run: () => {
+          setupGlobalLorebooks([
+            { id: 'g1', name: 'Initial', data: [] },
+            { id: 'g2', name: 'Second', data: [] },
+          ])
+          const previous = currentLorebookStateSnapshot()
+          DBState.db.loreBook.reverse()
+          dispatchReorderGlobalLorebooks(previous)
+        },
+        expectRestored: () => {
+          expect(DBState.db.loreBook.map((lorebook) => lorebook.id)).toEqual(['g1', 'g2'])
+        },
+      },
+      {
+        label: 'select',
+        commandKind: 'selectGlobal',
+        run: () => {
+          setupGlobalLorebooks(
+            [
+              { id: 'g1', name: 'Initial', data: [] },
+              { id: 'g2', name: 'Second', data: [] },
+            ],
+            0,
+          )
+          const previous = currentGlobalLorebookStateSnapshot()
+          DBState.db.loreBookPage = 1
+          dispatchSelectGlobalLorebook('g2', previous)
+        },
+        expectRestored: () => {
+          expect(DBState.db.loreBookPage).toBe(0)
+        },
+      },
+      {
+        label: 'update',
+        commandKind: 'updateGlobal',
+        run: () => {
+          setupGlobalLorebooks()
+          const previous = currentLorebookStateSnapshot()
+          DBState.db.loreBook[0].name = 'Conflict'
+          dispatchUpdateGlobalLorebook('g1', { name: 'Conflict' }, previous)
+        },
+        expectRestored: () => {
+          expect(DBState.db.loreBook[0].name).toBe('Initial')
+        },
+      },
+    ]
+
+    for (const scenario of scenarios) {
+      recorded.commands.length = 0
+      scenario.run()
+      await flushServerCommandRecording()
+
+      const command = recorded.commands.find((entry) => entry.kind === scenario.commandKind)
+      expect(command?.rollback).toEqual(expect.any(Function))
+
+      const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
+      flushSync()
+      recorded.commands.length = 0
+
+      try {
+        command?.rollback?.()
+        flushSync()
+        await vi.advanceTimersByTimeAsync(DELAY)
+
+        scenario.expectRestored()
+        expect(recorded.commands).toEqual([])
+      } finally {
+        stop()
+      }
+    }
   })
 })
 
