@@ -458,10 +458,26 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L10',
     7,
     'Bump the history-callback memo generation from every chat-var-dirty fold (all three un-bumped sites).',
+    'server/fastify/__tests__/assemble.test.ts',
+    'L10: sticky-lorebook chat-var writes invalidate cached history output',
+    [
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName: 'L10: run-var chat-var-only writes invalidate cached history output',
+      },
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName: 'L10: Lua editRequest chat-var writes invalidate cached history output',
+      },
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName: 'L10: unchanged history references still hit the memo',
+      },
+    ],
   ),
   done(
     'L11',
@@ -1897,6 +1913,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L7',
       'L8',
       'L9',
+      'L10',
       'L11',
       'L12',
       'L13',
@@ -1936,7 +1953,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L6, L7, L8, L9, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L56, K1, K2, and K3 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L56, K1, K2, and K3 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1959,6 +1976,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L7',
       'L8',
       'L9',
+      'L10',
       'L11',
       'L12',
       'L13',

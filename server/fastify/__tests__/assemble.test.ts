@@ -22,6 +22,7 @@ import {
 import { EntityNotFoundError } from '../src/repository.js'
 import {
   assemblePrompt,
+  applyCurrentChatRunVars,
   beginAssembly,
   createEmptyUnformatedSlots,
   fillHistoryAndBias,
@@ -2944,6 +2945,17 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(line, `missing ${label}`).toBeDefined()
     return line!.slice(label.length)
   }
+  const readUserHistory = (state: ReturnType<typeof beginAssembly>): string =>
+    promptVariables.expandVariables('{{userhistory}}', {
+      ...state.ctx,
+      chara: state.currentChar,
+    }).text
+  const firstHistoryData = (history: string): string => {
+    const rows = JSON.parse(history) as string[]
+    expect(rows).toHaveLength(1)
+    const row = JSON.parse(rows[0]) as { data: string }
+    return row.data
+  }
 
   it('evaluates repeated charhistory, userhistory, and lorebook callbacks once per assembly signature', async () => {
     resetAssemblyCbsCallbackMemoInstrumentation()
@@ -3079,5 +3091,169 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(second).toContain('Local one')
     expect(second).toContain('Local two')
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.lorebook).toBe(2)
+  })
+
+  it('L10: sticky-lorebook chat-var writes invalidate cached history output', () => {
+    resetAssemblyCbsCallbackMemoInstrumentation()
+    const db = makeDatabase({
+      username: 'Alex',
+      personaPrompt: '{{userhistory}}',
+      maxContext: 100_000,
+      maxResponse: 50,
+      characters: [
+        makeCharacter({
+          globalLore: [
+            lore({
+              id: 'lore-keep',
+              key: 'cat',
+              alwaysActive: false,
+              content: '@@keep_activate_after_match\nSticky lore.',
+            }),
+          ],
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [
+                msg('user', 'cat marker {{getvar::__internal_ka_lore-keep}}', 'msg-1'),
+              ],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const state = beginAssembly(baseInput({ mode: 'preview', userMessage: undefined }), depsFor(db))
+
+    fillStaticSlots(state)
+    expect(firstHistoryData(state.unformated.personaPrompt[0].content)).toBe('cat marker null')
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(1)
+
+    fillLorebookSlots(state)
+    const second = readUserHistory(state)
+
+    expect(firstHistoryData(second)).toBe('cat marker true')
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(2)
+    expect(db.characters[0].chats[0].scriptstate?.['$__internal_ka_lore-keep']).toBe('true')
+  })
+
+  it('L10: run-var chat-var-only writes invalidate cached history output', () => {
+    resetAssemblyCbsCallbackMemoInstrumentation()
+    const db = makeDatabase({
+      username: 'Alex',
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [
+                msg('user', 'run marker {{getvar::runMemo}}', 'msg-1'),
+                msg('char', '{{mockRunVarWrite}}', 'msg-2'),
+              ],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const state = beginAssembly(baseInput({ mode: 'preview', userMessage: undefined }), depsFor(db))
+
+    expect(firstHistoryData(readUserHistory(state))).toBe('run marker null')
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(1)
+
+    applyCurrentChatRunVars(state, {
+      expandVariablesForRunVar: (text, expandCtx) => {
+        if (text === '{{mockRunVarWrite}}') {
+          const chat = expandCtx.database.characters[0].chats[0]
+          chat.scriptstate ??= {}
+          chat.scriptstate.$runMemo = 'fresh'
+          return { text, dirty: true }
+        }
+        return { text, dirty: false }
+      },
+    })
+    const second = readUserHistory(state)
+
+    expect(firstHistoryData(second)).toBe('run marker fresh')
+    expect(state.messageMutations).toEqual([])
+    expect(state.varChanged).toBe(true)
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(2)
+  })
+
+  it('L10: Lua editRequest chat-var writes invalidate cached history output', async () => {
+    resetAssemblyCbsCallbackMemoInstrumentation()
+    const db = makeDatabase({
+      username: 'Alex',
+      aiModel: 'gpt4',
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      characters: [
+        makeCharacter({
+          triggerscript: [
+            {
+              comment: '',
+              type: 'request',
+              conditions: [],
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: `
+                    listenEdit('editRequest', function(id, data, meta)
+                      setChatVar(id, 'luaMemo', 'fresh')
+                      return data
+                    end)
+                  `,
+                },
+              ],
+            },
+          ] as never,
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [msg('user', 'lua marker {{getvar::luaMemo}}', 'msg-1')],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const state = beginAssembly(baseInput({ mode: 'preview', userMessage: undefined }), depsFor(db))
+    state.unformated.main.push({ role: 'system', content: 'MAIN' })
+
+    expect(firstHistoryData(readUserHistory(state))).toBe('lua marker null')
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(1)
+
+    await renderAndBudget(state)
+    const second = readUserHistory(state)
+
+    expect(state.stopSending).not.toBe(true)
+    expect(firstHistoryData(second)).toBe('lua marker fresh')
+    expect(state.varChanged).toBe(true)
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(2)
+  })
+
+  it('L10: unchanged history references still hit the memo', () => {
+    resetAssemblyCbsCallbackMemoInstrumentation()
+    const db = makeDatabase({
+      username: 'Alex',
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [msg('user', 'steady {{getvar::missing}}', 'msg-1')],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const state = beginAssembly(baseInput({ mode: 'preview', userMessage: undefined }), depsFor(db))
+
+    const first = readUserHistory(state)
+    applyCurrentChatRunVars(state, {
+      expandVariablesForRunVar: (text) => ({ text, dirty: false }),
+    })
+    const second = readUserHistory(state)
+
+    expect(second).toBe(first)
+    expect(firstHistoryData(second)).toBe('steady null')
+    expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(1)
   })
 })

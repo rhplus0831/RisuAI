@@ -605,6 +605,33 @@ function cloneScriptstate(
   return structuredClone(scriptstate ?? {}) as Record<string, string | number | boolean>
 }
 
+function scriptstateEqual(
+  a: Record<string, string | number | boolean>,
+  b: Record<string, string | number | boolean>,
+): boolean {
+  const aKeys = Object.keys(a)
+  const bKeys = Object.keys(b)
+  if (aKeys.length !== bKeys.length) return false
+  for (const key of aKeys) {
+    if (!Object.prototype.hasOwnProperty.call(b, key)) return false
+    if (a[key] !== b[key]) return false
+  }
+  return true
+}
+
+function currentPersistedScriptstateSnapshot(
+  state: AssemblyState,
+): Record<string, string | number | boolean> {
+  return cloneScriptstate(currentPersistedChat(state)?.scriptstate)
+}
+
+function persistedScriptstateChangedSince(
+  state: AssemblyState,
+  before: Record<string, string | number | boolean>,
+): boolean {
+  return !scriptstateEqual(before, currentPersistedScriptstateSnapshot(state))
+}
+
 function equalMessageRows(a: Message, b: Message): boolean {
   if (a === b) return true
   assemblyMessageCaptureInstrumentation.rowStringifies += 2
@@ -932,10 +959,15 @@ function prepareRegenerateTranscript(state: AssemblyState): void {
 
 export { isRisuChatParserFixedPoint as isRunVarParserFixedPoint } from './parserFixedPoint.js'
 
-function applyCurrentChatRunVars(
+export function applyCurrentChatRunVars(
   state: AssemblyState,
-  options: { captureMessageMutation?: boolean } = {},
+  options: {
+    captureMessageMutation?: boolean
+    expandVariablesForRunVar?: typeof expandVariables
+  } = {},
 ): void {
+  const expandRunVar = options.expandVariablesForRunVar ?? expandVariables
+  let beforeScriptstate: Record<string, string | number | boolean> | undefined
   let chatVarDirty = false
   let messageDirty = false
   const messages = (state.currentChat.message ??= [])
@@ -952,7 +984,8 @@ function applyCurrentChatRunVars(
       messageDirty ||= original !== text
       continue
     }
-    const result = expandVariables(text, expandCtx)
+    beforeScriptstate ??= currentPersistedScriptstateSnapshot(state)
+    const result = expandRunVar(text, expandCtx)
     message.data = result.text
     messageDirty ||= original !== result.text
     chatVarDirty ||= result.dirty
@@ -960,6 +993,13 @@ function applyCurrentChatRunVars(
   if (chatVarDirty) {
     state.varChanged = true
     syncWorkingScriptstate(state)
+    if (
+      !messageDirty &&
+      beforeScriptstate &&
+      persistedScriptstateChangedSince(state, beforeScriptstate)
+    ) {
+      bumpHistoryCallbackMemo(state)
+    }
   }
   if (messageDirty) {
     if (options.captureMessageMutation === false) {
@@ -1088,6 +1128,7 @@ export function fillLorebookSlots(state: AssemblyState): void {
   if (stickyChatVarDirty) {
     state.varChanged = true
     syncWorkingScriptstate(state)
+    bumpHistoryCallbackMemo(state)
   }
 
   const { positionParser, depthPrompts } = buildLorebookContext(
@@ -1547,12 +1588,25 @@ function buildLuaEditTriggerContext(state: AssemblyState): {
 function buildLuaEditRequest(state: AssemblyState): {
   editRequest: (rows: OpenAIChat[]) => Promise<OpenAIChat[]>
   varEngine: TriggerVarEngine
+  persistedScriptstateChanged: () => boolean
 } {
   const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
+  let persistedScriptstateChanged = false
   return {
-    editRequest: (rows) =>
-      runLuaEditTrigger(state.currentChar, 'editRequest', rows, undefined, editCtx),
+    editRequest: async (rows) => {
+      const beforeScriptstate = currentPersistedScriptstateSnapshot(state)
+      const result = await runLuaEditTrigger(
+        state.currentChar,
+        'editRequest',
+        rows,
+        undefined,
+        editCtx,
+      )
+      persistedScriptstateChanged ||= persistedScriptstateChangedSince(state, beforeScriptstate)
+      return result
+    },
     varEngine,
+    persistedScriptstateChanged: () => persistedScriptstateChanged,
   }
 }
 
@@ -1604,6 +1658,9 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
   if (lua.varEngine.varChanged) {
     state.varChanged = true
     syncWorkingScriptstate(state)
+    if (lua.persistedScriptstateChanged()) {
+      bumpHistoryCallbackMemo(state)
+    }
   }
 
   const budget = measureAssemblyStage(state, 'budget', () =>
