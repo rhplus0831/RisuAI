@@ -22,13 +22,13 @@ the finding -> phase map is in
 - Phase 4, complete (Themes 3+9: server lifecycle, deadlines,
   transport; M9, L2, L4, L5, L17-L20, L56):
   [`phase-4-server-lifecycle-and-transport.md`](phase-4-server-lifecycle-and-transport.md).
-- Phase 5, pending — NEXT (Themes 4+5: client write-path correctness; M8, L21,
+- Phase 5, complete (Themes 4+5: client write-path correctness; M8, L21,
   L23-L27, L34-L37; v4-L30/v4-L33 proof riders):
   [`phase-5-client-write-path-correctness.md`](phase-5-client-write-path-correctness.md).
-- Phase 6, pending (Theme 6: reactive amplification & render; M6, L22,
+- Phase 6, complete (Theme 6: reactive amplification & render; M6, L22,
   L28-L33; v4-H1/v4-M1/v4-L20/v4-L22 render-window riders):
   [`phase-6-reactive-amplification-and-render.md`](phase-6-reactive-amplification-and-render.md).
-- Phase 7, pending (Themes 1+8 server side: assembly & trigger hot paths;
+- Phase 7, pending — NEXT (Themes 1+8 server side: assembly & trigger hot paths;
   L1, L3, L6-L10, K3; v4-M4/v4-L6/v4-L7 provider/regex riders):
   [`phase-7-assembly-and-trigger-hot-paths.md`](phase-7-assembly-and-trigger-hot-paths.md).
 - Phase 8, pending (Theme 8: client interpreters, plugins, media; M7,
@@ -37,8 +37,8 @@ the finding -> phase map is in
 - Phase 9, pending (verification budgets; the v3 gate, closing run, archive):
   [`phase-9-verification-budgets.md`](phase-9-verification-budgets.md).
 
-Phases 0-4 are complete. Phase 5 is the next ordered batch; Phases 6-8 can
-then land via separate branches, and Phase 9 closes the plan.
+Phases 0-6 are complete. Phase 7 is the next ordered batch; Phase 8 can then
+land by pain, and Phase 9 closes the plan.
 
 ## Slice Rules
 

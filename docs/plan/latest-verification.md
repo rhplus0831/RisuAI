@@ -8,8 +8,9 @@ after each change to a narrowed or bounded path.
 ## Current State
 
 - Plan state: open; Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are
-  complete; the v4-H2 Phase 4.5 hotfix is also complete; Phase 5 is complete;
-  Phase 6 is active. `H1`, `M1-M6`, `M8`, `M9`, `L2`, `L4`, `L5`,
+  complete; the v4-H2 Phase 4.5 hotfix is also complete; Phase 5 and Phase 6
+  are complete. Phase 7 is the next batch. `H1`, `M1-M6`, `M8`, `M9`, `L2`,
+  `L4`, `L5`,
   `L11-L37`, `L56`, `K1`, and `K2` are `DONE` in
   [`active-risk-analysis.md`](active-risk-analysis.md); every other scheduled
   row remains `PENDING`.
@@ -21,13 +22,32 @@ after each change to a narrowed or bounded path.
   `DONE` and all other scheduled v3 IDs registered as `PLANNED`. The latest
   v3 gate command is green in the run below; the v1/v2 archive gates were
   last refreshed during the Phase 5 verification run.
-- Tree: Phase 5 implementation is committed through `68edd23d7`; this
-  working-tree update adds the Phase 6 M6 `catalog-derived-lists` runtime and
-  the L22 `draft-mirror-gating`, L28/L29 `watcher-short-circuits`, L30
-  `parse-memo-key-caching`, L31 `customhtml-template-memo`, and L32/L33
-  `render-cache-hygiene` runtime, tests, and docs proof. The earlier
-  v4-only Phase 6 transcript-window reset and render-parser dependency
-  narrowing proof remains logged below.
+- Tree: Phase 6 implementation is committed through `e665beec1`; this
+  working-tree update refreshes the Phase 6 closeout proof and router docs.
+  Phase 6 includes the v4-only transcript-window reset and render-parser
+  dependency narrowing proofs plus the v3 M6, L22, L28-L33 runtime, tests,
+  gate registrations, and active-risk status flips logged below.
+
+## Phase 6 Verification Refresh (2026-06-07)
+
+Run for the Phase 6 closeout proof. Phase 6 exit criteria are satisfied:
+v4-H1/v4-L20, v4-M1/v4-L22, M6, L22, L28, L29, L30, L31, L32, and L33 have
+focused regression coverage, and v3 rows M6, L22, and L28-L33 are `DONE` in
+the active-risk table and v3 gate. I12 and I18 did not ride Phase 6; I19
+remains documented as intentional no-action context.
+
+- `pnpm exec vitest run src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts src/lib/ChatScreens/Chat.parserDependencies.test.ts src/lib/ChatScreens/BackgroundDom.parserDependencies.test.ts src/lib/Others/GridCatalog.svelte.test.ts src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts src/lib/ChatScreens/ChatBody.parseMemo.test.ts src/lib/ChatScreens/Chat.customHtml.test.ts src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/chatBridge.svelte.test.ts src/ts/server/characterBridge.svelte.test.ts src/ts/process/scripts.regexCache.test.ts src/ts/process/scripts.editdisplay.test.ts src/ts/observer.svelte.test.ts src/ts/__tests__/fixCompletenessGateV3.test.ts`:
+  passed, 14 files / 121 tests. The command emitted the usual
+  Vite/Svelte default-config notice and the existing
+  `src/lib/SideBars/LoreBook/LoreBookData.svelte` `state_referenced_locally`
+  warning.
+- `pnpm test`: passed, 158 files / 1423 tests passed / 4 skipped. The command
+  emitted repeated `ECONNREFUSED 127.0.0.1:3000` diagnostics from network-path
+  tests plus the same Svelte warning, but exited successfully.
+- `pnpm client-thinning:audit`: passed (`Client-thinning audit passed.`).
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: zero errors.
+- Skipped/failed items: none.
 
 ## Phase 6 Render Cache Hygiene (2026-06-07)
 

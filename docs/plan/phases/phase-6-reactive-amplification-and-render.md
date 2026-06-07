@@ -1,6 +1,6 @@
 # Phase 6: Reactive Amplification & Render (Theme 6)
 
-Status: pending.
+Status: complete.
 
 Goal: stop the broad-dependency reactive consumers from doing
 collection-sized work on every guarded projection write (the proxy re-mint,
@@ -76,7 +76,8 @@ Authored under `slices/phase-6-reactive-amplification-and-render/`.
   `src/lib/ChatScreens/Chats.svelte`, `src/lib/ChatScreens/ChatScreen.svelte`,
   `src/lib/Others/BookmarkList.svelte`.
 - v4-M1/v4-L22: `src/lib/ChatScreens/Chat.svelte`
-  (`$effect.pre`, `displaya`, `getCbsCondition`), `src/lib/BackgroundDom.svelte`,
+  (`$effect.pre`, `displaya`, `getCbsCondition`),
+  `src/lib/ChatScreens/BackgroundDom.svelte`,
   `src/lib/ChatScreens/ChatBody.svelte` as the prop-scoped precedent,
   `src/ts/process/postGeneration/streamResponse.ts` as the hot guarded-write
   driver.
@@ -135,27 +136,27 @@ Authored under `slices/phase-6-reactive-amplification-and-render/`.
 
 ## Exit Criteria
 
-- [ ] v4-H1/v4-L20: `loadPages` or equivalent transcript-window state resets
+- [x] v4-H1/v4-L20: `loadPages` or equivalent transcript-window state resets
       or keys on active chat identity; a deep bookmark jump in chat A does not
       mass-mount chat B; screenshot/jump expansion is bounded or transient and
       leaves no standing `Infinity`/whole-transcript window after cleanup.
-- [ ] v4-M1/v4-L22: guarded streaming-frame writes no longer call
+- [x] v4-M1/v4-L22: guarded streaming-frame writes no longer call
       `risuChatParser` for every visible `Chat.svelte` row or re-run
       `BackgroundDom` parsing on unrelated projection writes; parser/render
       call-count tests cover both surfaces.
-- [ ] M6: catalog/mobile lists recompute once per corpus change (probe), not
+- [x] M6: catalog/mobile lists recompute once per corpus change (probe), not
       per render; keyed each in place; helper unit-tested.
-- [ ] L28/L29: a lorebook keystroke re-stringifies only the edited
+- [x] L28/L29: a lorebook keystroke re-stringifies only the edited
       collection; a streaming frame rebuilds no chat-metadata Map; external
       edits to any chat's localLore are still caught (coverage test).
-- [ ] v3-L22: editor keystrokes no longer re-run the pick+clone+stringify; a
+- [x] v3-L22: editor keystrokes no longer re-run the pick+clone+stringify; a
       character switch or server push still re-seeds the draft.
-- [ ] L30/L31: per-message key construction no longer serializes the corpus
+- [x] L30/L31: per-message key construction no longer serializes the corpus
       (probe); customHTML parses the template once per version; rendered
       output byte-identical.
-- [ ] L32/L33: `bestMatchCache` capped and reset with its siblings; BGM
+- [x] L32/L33: `bestMatchCache` capped and reset with its siblings; BGM
       stops on switch and the next chat's BGM starts.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation
@@ -164,13 +165,20 @@ Authored under `slices/phase-6-reactive-amplification-and-render/`.
 pnpm exec vitest run \
   src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts \
   src/lib/ChatScreens/Chat.parserDependencies.test.ts \
-  src/lib/BackgroundDom.parserDependencies.test.ts \
+  src/lib/ChatScreens/BackgroundDom.parserDependencies.test.ts \
   src/lib/Others/GridCatalog.svelte.test.ts \
+  src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts \
   src/lib/ChatScreens/ChatBody.parseMemo.test.ts \
+  src/lib/ChatScreens/Chat.customHtml.test.ts \
   src/ts/server/lorebookBridge.svelte.test.ts \
   src/ts/server/chatBridge.svelte.test.ts \
-  src/ts/server/characterBridge.svelte.test.ts
+  src/ts/server/characterBridge.svelte.test.ts \
+  src/ts/process/scripts.regexCache.test.ts \
+  src/ts/process/scripts.editdisplay.test.ts \
+  src/ts/observer.svelte.test.ts \
+  src/ts/__tests__/fixCompletenessGateV3.test.ts
 pnpm test
-pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
+pnpm client-thinning:audit
 pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```

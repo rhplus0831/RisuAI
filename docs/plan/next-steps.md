@@ -3,82 +3,78 @@
 Date: 2026-06-07
 
 The v3 remediation workstream is open. Phase 0, Phase 1, Phase 2, Phase 3,
-Phase 4, and Phase 5 are complete and recorded in
+Phase 4, Phase 5, and Phase 6 are complete and recorded in
 [`latest-verification.md`](latest-verification.md). The v4-H2 Phase 4.5
 hotfix is complete; use [`v4-integration-brief.md`](v4-integration-brief.md)
 as the post-Phase-4 router for v4 findings that amend the remaining v3 plan.
 
-## Completed Checkpoint: Phase 5
+## Completed Checkpoint: Phase 6
 
-Closed the client write-path correctness batch: pending bridge writes flush on
-unload/teardown; settings, global-lorebook, and chat metadata rollbacks
-suppress watcher echoes; coalesced prompt-template and lorebook edits keep
-first baselines; preset commands have rollbacks; guarded client transcript
-features persist through trusted writes plus scoped commands; global error
-handlers are null-safe. v4-L30 and v4-L33 are recorded as guard-repair proof
-riders only.
+Closed the reactive amplification and render batch: transcript window state
+resets by active chat identity; Chat and BackgroundDom parser dependencies are
+narrowed; catalog/mobile lists use derived keyed helpers; lorebook and
+chat-metadata watchers short-circuit unchanged work; character draft seeding
+is gated; ChatBody parse-key signatures and customHTML templates are memoized
+by real invalidators; `bestMatchCache` is bounded/reset; and stale BGM state
+is cleared on chat/character switch. v4-H1, v4-M1, v4-L20, and v4-L22 are
+recorded as Phase 6 amendment proofs only.
 
-## Next Batch: Phase 6 (Reactive Amplification & Render)
+## Next Batch: Phase 7 (Assembly & Trigger Hot Paths)
 
 Defined in
-[`phases/phase-6-reactive-amplification-and-render.md`](phases/phase-6-reactive-amplification-and-render.md).
+[`phases/phase-7-assembly-and-trigger-hot-paths.md`](phases/phase-7-assembly-and-trigger-hot-paths.md).
 Slices already live under
-`phases/slices/phase-6-reactive-amplification-and-render/`.
+`phases/slices/phase-7-assembly-and-trigger-hot-paths/`.
 
-1. v4-H1/v4-L20 `transcript-window-reset`: key or reset transcript window
-   expansion by active chat identity and keep screenshot/jump expansion
-   bounded or transient.
-2. v4-M1/v4-L22 `render-parser-dependency-narrowing`: stop guarded streaming
-   frame writes from re-parsing every visible row or unrelated background HTML.
-3. M6 (+I12) `catalog-derived-lists`: use derived, keyed catalog/mobile list
-   helpers with render-count proof.
-4. L28/L29 `watcher-short-circuits`: make lorebook and chat-metadata watchers
-   skip collection-sized work on unrelated guarded writes.
-5. v3-L22 `draft-mirror-gating`: split/gate the character-editor draft mirror
-   so keystrokes do not re-run pick+clone+stringify.
-6. L30 `parse-memo-key-caching`: cache corpus-derived parse-key signatures by
-   cheap invalidation tokens.
-7. L31 `customhtml-template-memo`: memoize parsed customHTML templates per
-   template version.
-8. L32/L33 `render-cache-hygiene`: cap/reset `bestMatchCache` and stop stale
-   BGM observers on chat/character switch.
-9. Phase 6 verification refresh: gates, focused render/clone proofs, full
-   validation, and [`latest-verification.md`](latest-verification.md).
+1. L1 `async-asset-reads`: move image-bearing send asset reads off the event
+   loop while preserving request-scoped cache semantics.
+2. L3/K3 `dispatch-clone-narrowing`: avoid dispatch-layer prompt clones and
+   restoration-payload clones when default branches can reuse immutable rows.
+3. v4-M4/v4-L6 `provider-parameter-conventions`: preserve disabled-parameter
+   omission semantics and record the logit-bias pass/drop policy.
+4. L6/L7 `per-assembly-invariants`: hoist per-message asset and lorebook
+   allocation work while keeping activation output identical.
+5. L8 `trigger-clone-narrowing`: skip or row-limit trigger transcript clones
+   only for trigger sets without message-mutating effects.
+6. L9/v4-L7 `user-regex-bounds`: bound user regex execution in trigger,
+   lorebook, and customscript paths without changing legitimate regex output.
+7. L10 `history-memo-chat-var-bumps`: bump the history-callback memo on every
+   chat-var dirty fold.
+8. Phase 7 verification refresh: gates, focused output-identity/count proofs,
+   full validation, and [`latest-verification.md`](latest-verification.md).
 
-Exit: M6, L22, L28-L33 registered with regression tests; v4-H1, v4-M1,
-v4-L20, and v4-L22 recorded as Phase 6 amendment proofs; active-risk rows
-flipped to `DONE` only with matching v3 gate proofs; focused suites, client
-checks, and verification refreshed.
+Exit: L1, L3, L6-L10, K3, and the Phase 7 v4 riders registered with focused
+proofs; active-risk rows flipped to `DONE` only with matching v3 gate proofs;
+server-focused suites, client/server checks, and verification refreshed.
 
 ## Proof History
 
-Phase 5 closed on 2026-06-07 with M8, L21, L23-L27, and L34-L37 registered
-as `DONE`, v4-L30/v4-L33 recorded as proof riders only, the focused Phase 5
-suite green, `pnpm test` green after v2 gate proof-name drift was corrected,
-`pnpm client-thinning:audit` green after its false positive was narrowed to
-the real settings-key registry, and both TypeScript checks green. Keep new
-Phase 6 proof entries in [`latest-verification.md`](latest-verification.md)
-above the Phase 5 entry.
+Phase 6 closed on 2026-06-07 with M6, L22, and L28-L33 registered as `DONE`,
+v4-H1/v4-M1/v4-L20/v4-L22 recorded as Phase 6 amendment proofs only, the
+focused Phase 6 matrix green, `pnpm test` green, `pnpm client-thinning:audit`
+green, and both TypeScript checks green. Keep new Phase 7 proof entries in
+[`latest-verification.md`](latest-verification.md) above the Phase 6 entry.
 
-## After Phase 6
+## After Phase 7
 
-Phases 7-8 may then land independently by pain; Phase 9 closes.
+Phase 8 can then land by pain; Phase 9 closes.
 
 ## Proof Commands
 
 ```bash
 pnpm exec vitest run \
-  src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts \
-  src/lib/ChatScreens/Chat.parserDependencies.test.ts \
-  src/lib/BackgroundDom.parserDependencies.test.ts \
-  src/lib/Others/GridCatalog.svelte.test.ts \
-  src/lib/ChatScreens/ChatBody.parseMemo.test.ts \
-  src/ts/server/lorebookBridge.svelte.test.ts \
-  src/ts/server/chatBridge.svelte.test.ts \
-  src/ts/server/characterBridge.svelte.test.ts
-pnpm test
+  --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/assemble.test.ts \
+  server/fastify/__tests__/lorebook.test.ts \
+  server/fastify/__tests__/triggers.test.ts \
+  server/fastify/__tests__/serverLoadCostHarness.test.ts \
+  server/fastify/__tests__/generation.chat.test.ts \
+  server/fastify/__tests__/openai.test.ts \
+  server/fastify/__tests__/horde.test.ts
+pnpm api:test
 pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
 ## Standing Caveats
