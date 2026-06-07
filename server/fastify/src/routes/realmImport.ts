@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
@@ -25,7 +25,6 @@ import { createCharacterRecord } from '../commands/characters.js'
 import {
   ValidationError,
   addAsset,
-  addAssets,
   assetPath,
   assetsDir,
   characterRowExists,
@@ -56,7 +55,9 @@ const CHARX_CONTENT_TYPES = new Set(['application/charx', 'application/zip'])
 const MAX_CHARX_ASSET_SIZE_BYTES = 50 * 1024 * 1024
 const DEFAULT_REALM_CHARX_EXPANDED_IMPORT_BYTES = 100 * 1024 * 1024
 const REALM_CHARX_DOWNLOAD_CAP_MULTIPLIER = 3
+const DEFAULT_REALM_IMPORT_DEADLINE_MS = 600_000
 const CHARX_STREAM_CHUNK_BYTES = 64 * 1024
+const FETCHED_ASSET_STAGE_PREFIX = 'risu-realm-json-assets-'
 const EXTENSION_CONTENT_TYPES = Object.fromEntries(
   Object.entries(CONTENT_TYPE_EXTENSIONS).map(([contentType, ext]) => [ext, contentType]),
 ) as Record<string, string>
@@ -91,9 +92,21 @@ interface StagedCharxAsset {
 }
 
 interface StagedFetchedAsset {
-  bytes: Buffer
+  byteLength: number
   contentType: string
+  filePath: string
   id: string
+}
+
+interface FetchedAssetBudget {
+  maxAssetBytes: number
+  maxTotalBytes: number
+  totalBytes: number
+}
+
+interface RealmImportAbort {
+  signal: AbortSignal
+  cleanup(): void
 }
 
 type RealmDynamicPayload =
@@ -136,10 +149,22 @@ export function registerRealmImportRoutes(
   authState: AuthState,
   dataDir: string,
   eventSink: CommandEventSink,
-  options: { hubUrl: string; realmUrl?: string; maxExpandedImportBytes?: number },
+  options: {
+    hubUrl: string
+    realmUrl?: string
+    maxExpandedImportBytes?: number
+    deadlineMs?: number
+    maxDynamicJsonBytes?: number
+    maxFetchedAssetBytes?: number
+    maxFetchedAssetTotalBytes?: number
+  },
 ): void {
   const hubUrl = options.hubUrl.replace(/\/+$/, '')
   const realmUrl = (options.realmUrl ?? 'https://realm.risuai.net').replace(/\/+$/, '')
+  const deadlineMs = normalizePositiveInteger(
+    options.deadlineMs,
+    DEFAULT_REALM_IMPORT_DEADLINE_MS,
+  )
 
   app.post(
     '/api/v1/import/realm-character',
@@ -147,6 +172,7 @@ export function registerRealmImportRoutes(
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
 
+      const abort = createRealmImportAbort(req, reply, deadlineMs)
       try {
         const body = (req.body ?? {}) as RealmImportBody
         if (acceptsProgressStream(req.headers.accept)) {
@@ -159,6 +185,10 @@ export function registerRealmImportRoutes(
               hubUrl,
               realmUrl,
               maxExpandedImportBytes: options.maxExpandedImportBytes,
+              maxDynamicJsonBytes: options.maxDynamicJsonBytes,
+              maxFetchedAssetBytes: options.maxFetchedAssetBytes,
+              maxFetchedAssetTotalBytes: options.maxFetchedAssetTotalBytes,
+              signal: abort.signal,
               reportProgress,
             }),
           )
@@ -172,6 +202,10 @@ export function registerRealmImportRoutes(
           hubUrl,
           realmUrl,
           maxExpandedImportBytes: options.maxExpandedImportBytes,
+          maxDynamicJsonBytes: options.maxDynamicJsonBytes,
+          maxFetchedAssetBytes: options.maxFetchedAssetBytes,
+          maxFetchedAssetTotalBytes: options.maxFetchedAssetTotalBytes,
+          signal: abort.signal,
         })
       } catch (err) {
         if (err instanceof RevisionConflictError) {
@@ -195,9 +229,54 @@ export function registerRealmImportRoutes(
           return { error: err.message }
         }
         throw err
+      } finally {
+        abort.cleanup()
       }
     },
   )
+}
+
+function createRealmImportAbort(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  deadlineMs: number,
+): RealmImportAbort {
+  const controller = new AbortController()
+
+  const abortOnce = (reason: UpstreamError): void => {
+    if (!controller.signal.aborted) {
+      controller.abort(reason)
+    }
+  }
+
+  const timer = setTimeout(
+    () => abortOnce(new UpstreamError(`Realm import timed out after ${deadlineMs}ms`, 504)),
+    deadlineMs,
+  )
+  timer.unref?.()
+
+  const onRequestClose = (): void => {
+    if (!req.raw.complete) {
+      abortOnce(new UpstreamError('Realm import aborted by client disconnect', 499))
+    }
+  }
+  const onResponseClose = (): void => {
+    if (!reply.raw.writableEnded) {
+      abortOnce(new UpstreamError('Realm import aborted by client disconnect', 499))
+    }
+  }
+
+  req.raw.once('close', onRequestClose)
+  reply.raw.once('close', onResponseClose)
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timer)
+      req.raw.off('close', onRequestClose)
+      reply.raw.off('close', onResponseClose)
+    },
+  }
 }
 
 async function runRealmImport(args: {
@@ -208,6 +287,10 @@ async function runRealmImport(args: {
   hubUrl: string
   realmUrl: string
   maxExpandedImportBytes?: number
+  maxDynamicJsonBytes?: number
+  maxFetchedAssetBytes?: number
+  maxFetchedAssetTotalBytes?: number
+  signal: AbortSignal
   reportProgress?: RealmImportProgressReporter
 }): Promise<{ revision: number; event: unknown; characterId: string }> {
   const reportProgress = createMonotonicProgressReporter(args.reportProgress)
@@ -227,7 +310,9 @@ async function runRealmImport(args: {
   const dynamic = await fetchRealmDynamicPayload(
     args.realmUrl,
     id,
+    args.signal,
     args.maxExpandedImportBytes,
+    args.maxDynamicJsonBytes,
     (percent) => {
       reportProgress({
         phase: 'download',
@@ -247,6 +332,10 @@ async function runRealmImport(args: {
         dynamicBody: dynamic.body,
         hubUrl: args.hubUrl,
         id,
+        maxExpandedImportBytes: args.maxExpandedImportBytes,
+        maxFetchedAssetBytes: args.maxFetchedAssetBytes,
+        maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
+        signal: args.signal,
         reportProgress,
       })
     }
@@ -260,6 +349,9 @@ async function runRealmImport(args: {
         tempDir: dynamic.tempDir,
         allowLowLevelAccess: args.body.allowLowLevelAccess === true,
         maxExpandedImportBytes: args.maxExpandedImportBytes,
+        maxFetchedAssetBytes: args.maxFetchedAssetBytes,
+        maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
+        signal: args.signal,
         reportProgress,
       })
 
@@ -285,6 +377,10 @@ async function importRealmJsonCard(args: {
   dynamicBody: unknown
   hubUrl: string
   id: string
+  maxExpandedImportBytes?: number
+  maxFetchedAssetBytes?: number
+  maxFetchedAssetTotalBytes?: number
+  signal: AbortSignal
   reportProgress: RealmImportProgressReporter
 }): Promise<{ revision: number; event: unknown; characterId: string }> {
   const payload = readRecord(args.dynamicBody, 'Realm download response')
@@ -299,67 +395,86 @@ async function importRealmJsonCard(args: {
 
   args.reportProgress({ phase: 'assets', message: 'Saving main image', percent: 35 })
   const imgResource = readNonEmptyString(payload.img, 'Realm download response.img')
+  const stageDir = await fs.promises.mkdtemp(path.join(tmpdir(), FETCHED_ASSET_STAGE_PREFIX))
   const stagedAssets: StagedFetchedAsset[] = []
+  const fetchedAssetBudget = createFetchedAssetBudget({
+    maxExpandedImportBytes: args.maxExpandedImportBytes,
+    maxFetchedAssetBytes: args.maxFetchedAssetBytes,
+    maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
+  })
+  let nextAssetIndex = 0
   const stageAsset = async (source: RealmAssetSource): Promise<string> => {
     const staged = await stageFetchedAsset({
       source,
       hubUrl: args.hubUrl,
+      signal: args.signal,
+      stagePath: path.join(stageDir, `${nextAssetIndex++}.asset`),
+      budget: fetchedAssetBudget,
     })
     stagedAssets.push(staged)
     return staged.id
   }
-  const mainImageId = await stageAsset({ kind: 'resource', id: imgResource, fileName: 'realm.png' })
 
-  const assetProgress = createCountingAssetProgress(card, args.reportProgress, 40, 82)
-  args.reportProgress({ phase: 'convert', message: 'Converting character card', percent: 40 })
-  const character = await convertRealmCharacterCard(card, {
-    mainImageId,
-    allowLowLevelAccess: args.body.allowLowLevelAccess === true,
-    storeAsset: async (source) => {
-      const assetId = await stageAsset(source)
-      assetProgress()
-      return assetId
-    },
-  })
-
-  args.reportProgress({ phase: 'assets', message: 'Saving card assets', percent: 82 })
-  const assetResults = persistStagedFetchedAssets({
-    db: args.db,
-    dataDir: args.dataDir,
-    eventSink: args.eventSink,
-    assets: stagedAssets,
-  })
-
-  args.reportProgress({ phase: 'commit', message: 'Saving character', percent: 90 })
-  let result: JsonCommandMutationResult<{ characterId: string }>
   try {
-    result = appendRealmCharacter({
+    const mainImageId = await stageAsset({
+      kind: 'resource',
+      id: imgResource,
+      fileName: 'realm.png',
+    })
+
+    const assetProgress = createCountingAssetProgress(card, args.reportProgress, 40, 82)
+    args.reportProgress({ phase: 'convert', message: 'Converting character card', percent: 40 })
+    const character = await convertRealmCharacterCard(card, {
+      mainImageId,
+      allowLowLevelAccess: args.body.allowLowLevelAccess === true,
+      storeAsset: async (source) => {
+        const assetId = await stageAsset(source)
+        assetProgress()
+        return assetId
+      },
+    })
+
+    args.reportProgress({ phase: 'assets', message: 'Saving card assets', percent: 82 })
+    const assetResults = persistStagedFetchedAssets({
       db: args.db,
       dataDir: args.dataDir,
       eventSink: args.eventSink,
-      character,
+      assets: stagedAssets,
     })
-  } catch (err) {
+
+    args.reportProgress({ phase: 'commit', message: 'Saving character', percent: 90 })
+    let result: JsonCommandMutationResult<{ characterId: string }>
     try {
-      cleanupCreatedAssetResults({
+      result = appendRealmCharacter({
         db: args.db,
         dataDir: args.dataDir,
-        results: assetResults,
+        eventSink: args.eventSink,
+        character,
       })
-    } catch (cleanupErr) {
-      emitProtocolMetric('realm_import_asset_cleanup_failed', {
-        createdAssetCount: assetResults.filter((result) => result.created).length,
-        error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-      })
+    } catch (err) {
+      try {
+        cleanupCreatedAssetResults({
+          db: args.db,
+          dataDir: args.dataDir,
+          results: assetResults,
+        })
+      } catch (cleanupErr) {
+        emitProtocolMetric('realm_import_asset_cleanup_failed', {
+          createdAssetCount: assetResults.filter((result) => result.created).length,
+          error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+        })
+      }
+      throw err
     }
-    throw err
-  }
 
-  args.reportProgress({ phase: 'commit', message: 'Realm import complete', percent: 100 })
-  return {
-    revision: result.revision,
-    event: result.event,
-    characterId: result.extra.characterId,
+    args.reportProgress({ phase: 'commit', message: 'Realm import complete', percent: 100 })
+    return {
+      revision: result.revision,
+      event: result.event,
+      characterId: result.extra.characterId,
+    }
+  } finally {
+    await fs.promises.rm(stageDir, { recursive: true, force: true })
   }
 }
 
@@ -413,17 +528,24 @@ function acceptsProgressStream(accept: unknown): boolean {
 async function fetchRealmDynamicPayload(
   realmUrl: string,
   id: string,
+  signal: AbortSignal,
   maxExpandedImportBytes?: number,
+  maxDynamicJsonBytes?: number,
   reportDownloadProgress?: (percent: number) => void,
 ): Promise<RealmDynamicPayload> {
   const url = `${realmUrl}${REALM_DYNAMIC_PATH}${encodeURIComponent(id)}?cors=true`
-  const controller = new AbortController()
-  const res = await fetch(url, {
-    headers: {
-      'x-risu-api-version': '4',
-    },
-    signal: controller.signal,
-  })
+  let res: Response
+  try {
+    res = await fetch(url, {
+      headers: {
+        'x-risu-api-version': '4',
+      },
+      signal,
+    })
+  } catch (err) {
+    if (signal.aborted) throwRealmImportAbort(signal)
+    throw err
+  }
   if (!res.ok) {
     throw new UpstreamError(`Realm download failed: ${res.status}`, 502)
   }
@@ -435,16 +557,14 @@ async function fetchRealmDynamicPayload(
       ...(await writeRealmDownloadToTempFile(res, {
         maxDownloadBytes: realmCharxDownloadLimit(maxExpandedImportBytes),
         reportDownloadProgress,
-        abortDownload: () => controller.abort(),
+        signal,
       })),
     }
   }
-  let body: unknown
-  try {
-    body = await res.json()
-  } catch {
-    throw new UpstreamError('Realm download returned invalid JSON', 502)
-  }
+  const body = await readRealmDynamicJsonBody(res, {
+    maxBytes: realmDynamicJsonLimit(maxExpandedImportBytes, maxDynamicJsonBytes),
+    signal,
+  })
   return { contentType, body }
 }
 
@@ -453,12 +573,11 @@ async function writeRealmDownloadToTempFile(
   options: {
     maxDownloadBytes: number
     reportDownloadProgress?: (percent: number) => void
-    abortDownload?: () => void
+    signal: AbortSignal
   },
 ): Promise<{ filePath: string; tempDir: string }> {
   const contentLength = readPositiveContentLength(res.headers.get('content-length'))
   if (contentLength !== null && contentLength > options.maxDownloadBytes) {
-    options.abortDownload?.()
     await cancelResponseBody(res)
     throw createRealmCharxDownloadLimitError()
   }
@@ -475,9 +594,12 @@ async function writeRealmDownloadToTempFile(
 
     const byteCounter = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
+        if (options.signal.aborted) {
+          callback(options.signal.reason instanceof Error ? options.signal.reason : new Error())
+          return
+        }
         totalBytes += chunk.byteLength
         if (totalBytes > options.maxDownloadBytes) {
-          options.abortDownload?.()
           callback(createRealmCharxDownloadLimitError())
           return
         }
@@ -493,11 +615,73 @@ async function writeRealmDownloadToTempFile(
       byteCounter,
       fs.createWriteStream(filePath),
     )
+    throwIfRealmImportAborted(options.signal)
     return { filePath, tempDir }
   } catch (err) {
+    await cancelResponseBody(res)
     await fs.promises.rm(tempDir, { recursive: true, force: true })
+    if (options.signal.aborted) throwRealmImportAbort(options.signal)
     throw err
   }
+}
+
+async function readRealmDynamicJsonBody(
+  res: Response,
+  options: { maxBytes: number; signal: AbortSignal },
+): Promise<unknown> {
+  const contentLength = readPositiveContentLength(res.headers.get('content-length'))
+  if (contentLength !== null && contentLength > options.maxBytes) {
+    await cancelResponseBody(res)
+    throw createRealmDynamicJsonLimitError()
+  }
+
+  const bytes = await readBoundedResponseBody(res, {
+    maxBytes: options.maxBytes,
+    signal: options.signal,
+    createLimitError: createRealmDynamicJsonLimitError,
+  })
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes))
+  } catch {
+    throw new UpstreamError('Realm download returned invalid JSON', 502)
+  }
+}
+
+async function readBoundedResponseBody(
+  res: Response,
+  options: {
+    maxBytes: number
+    signal: AbortSignal
+    createLimitError: () => Error
+  },
+): Promise<Uint8Array> {
+  if (!res.body) return new Uint8Array()
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+
+  try {
+    while (true) {
+      throwIfRealmImportAborted(options.signal)
+      const { done, value } = await reader.read()
+      throwIfRealmImportAborted(options.signal)
+      if (done) break
+      if (!value || value.byteLength === 0) continue
+      totalBytes += value.byteLength
+      if (totalBytes > options.maxBytes) {
+        await reader.cancel().catch(() => undefined)
+        throw options.createLimitError()
+      }
+      chunks.push(value)
+    }
+  } catch (err) {
+    if (options.signal.aborted) throwRealmImportAbort(options.signal)
+    throw err
+  } finally {
+    reader.releaseLock()
+  }
+
+  return concatBytes(chunks, totalBytes)
 }
 
 function realmCharxDownloadLimit(maxExpandedImportBytes: number | undefined): number {
@@ -510,8 +694,22 @@ function realmCharxDownloadLimit(maxExpandedImportBytes: number | undefined): nu
   return expandedLimit * REALM_CHARX_DOWNLOAD_CAP_MULTIPLIER
 }
 
+function realmDynamicJsonLimit(
+  maxExpandedImportBytes: number | undefined,
+  maxDynamicJsonBytes: number | undefined,
+): number {
+  return normalizePositiveInteger(
+    maxDynamicJsonBytes,
+    normalizePositiveInteger(maxExpandedImportBytes, DEFAULT_REALM_CHARX_EXPANDED_IMPORT_BYTES),
+  )
+}
+
 function createRealmCharxDownloadLimitError(): UpstreamError {
   return new UpstreamError('Realm charx download exceeds size limit', 413)
+}
+
+function createRealmDynamicJsonLimitError(): UpstreamError {
+  return new UpstreamError('Realm dynamic JSON exceeds size limit', 413)
 }
 
 async function cancelResponseBody(res: Response): Promise<void> {
@@ -536,6 +734,9 @@ async function importRealmCharx(args: {
   tempDir: string
   allowLowLevelAccess: boolean
   maxExpandedImportBytes?: number
+  maxFetchedAssetBytes?: number
+  maxFetchedAssetTotalBytes?: number
+  signal: AbortSignal
   reportProgress?: RealmImportProgressReporter
 }): Promise<JsonCommandMutationResult<{ characterId: string }>> {
   args.reportProgress?.({ phase: 'extract', message: 'Reading character card', percent: 32 })
@@ -595,6 +796,10 @@ async function importRealmCharx(args: {
         eventSink: args.eventSink,
         source,
         hubUrl: '',
+        maxExpandedImportBytes: args.maxExpandedImportBytes,
+        maxFetchedAssetBytes: args.maxFetchedAssetBytes,
+        maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
+        signal: args.signal,
       }),
   })
 
@@ -935,19 +1140,39 @@ function parseJsonBytes(bytes: Uint8Array, label: string): unknown {
 async function stageFetchedAsset(args: {
   source: RealmAssetSource
   hubUrl: string
+  signal: AbortSignal
+  stagePath: string
+  budget: FetchedAssetBudget
 }): Promise<StagedFetchedAsset> {
-  const bytes =
-    args.source.kind === 'bytes'
-      ? (args.source.bytes ?? Buffer.alloc(0))
-      : await fetchHubResource(args.hubUrl, readRealmId(args.source.id))
-  if (bytes.length === 0) {
-    throw new ValidationError('Realm asset payload is empty')
-  }
   const contentType = resolveAssetContentType(args.source)
+  if (args.source.kind === 'bytes') {
+    const bytes = args.source.bytes ?? Buffer.alloc(0)
+    if (bytes.length === 0) {
+      throw new ValidationError('Realm asset payload is empty')
+    }
+    reserveFetchedAssetBytes(args.budget, bytes.length, args.source.fileName)
+    await fs.promises.writeFile(args.stagePath, bytes)
+    return {
+      byteLength: bytes.length,
+      contentType,
+      filePath: args.stagePath,
+      id: createHash('sha256').update(bytes).digest('hex'),
+    }
+  }
+
+  const staged = await fetchHubResourceToTempFile({
+    hubUrl: args.hubUrl,
+    id: readRealmId(args.source.id),
+    filePath: args.stagePath,
+    signal: args.signal,
+    budget: args.budget,
+    label: args.source.fileName ?? args.source.id,
+  })
   return {
-    bytes,
+    byteLength: staged.byteLength,
     contentType,
-    id: createHash('sha256').update(bytes).digest('hex'),
+    filePath: args.stagePath,
+    id: staged.id,
   }
 }
 
@@ -958,9 +1183,77 @@ function persistStagedFetchedAssets(args: {
   assets: readonly StagedFetchedAsset[]
 }): AddAssetResult[] {
   if (args.assets.length === 0) return []
-  const results = addAssets(args.db, args.dataDir, args.assets)
-  emitCreatedAssetEvents(args.eventSink, results)
-  return results
+  for (const asset of args.assets) {
+    if (!CONTENT_TYPE_EXTENSIONS[asset.contentType]) {
+      throw new ValidationError(`Unsupported content-type: ${asset.contentType}`)
+    }
+  }
+
+  const createdResults: AddAssetResult[] = []
+  const results: AddAssetResult[] = []
+  const currentRevision = getSchemaState(args.db).revision
+  const createdFiles: Array<{ file: string; existedBefore: boolean }> = []
+  let transactionOpen = false
+
+  try {
+    fs.mkdirSync(assetsDir(args.dataDir), { recursive: true })
+    for (const asset of args.assets) {
+      const ext = CONTENT_TYPE_EXTENSIONS[asset.contentType]
+      const existing = getAssetMetadataById(args.db, asset.id)
+      if (existing) {
+        const file = assetPath(args.dataDir, existing)
+        if (!fs.existsSync(file)) {
+          fs.copyFileSync(asset.filePath, file)
+        }
+        results.push({ entry: existing, created: false, revision: currentRevision })
+        continue
+      }
+
+      const file = path.join(assetsDir(args.dataDir), `${asset.id}.${ext}`)
+      const existedBefore = fs.existsSync(file)
+      createdFiles.push({ file, existedBefore })
+      fs.copyFileSync(asset.filePath, file)
+      const entry: PersistedAsset = {
+        id: asset.id,
+        ext,
+        size: asset.byteLength,
+        contentType: asset.contentType,
+      }
+      const result = { entry, created: true, revision: currentRevision }
+      createdResults.push(result)
+      results.push(result)
+    }
+
+    if (createdResults.length === 0) {
+      return results
+    }
+
+    args.db.exec('BEGIN IMMEDIATE')
+    transactionOpen = true
+    insertAssetMetadataBatch(
+      args.db,
+      createdResults.map((result) => result.entry),
+    )
+    const event = persistRevisionedCommandEvent(args.db, {
+      ...COMMAND_EVENT_CATALOG.assetCreated,
+      ...(createdResults.length === 1 ? { id: createdResults[0].entry.id } : {}),
+    })
+    args.db.exec('COMMIT')
+    transactionOpen = false
+    const eventResults = results.map((result) => ({ ...result, revision: event.revision, event }))
+    emitCreatedAssetEvents(args.eventSink, eventResults)
+    return eventResults
+  } catch (err) {
+    if (transactionOpen) {
+      args.db.exec('ROLLBACK')
+    }
+    for (const { file, existedBefore } of createdFiles) {
+      if (!existedBefore) {
+        fs.rmSync(file, { force: true })
+      }
+    }
+    throw err
+  }
 }
 
 function cleanupCreatedAssetResults(args: {
@@ -1001,26 +1294,164 @@ async function saveFetchedAsset(args: {
   eventSink: CommandEventSink
   source: RealmAssetSource
   hubUrl: string
+  maxExpandedImportBytes?: number
+  maxFetchedAssetBytes?: number
+  maxFetchedAssetTotalBytes?: number
+  signal: AbortSignal
 }): Promise<string> {
-  const bytes =
-    args.source.kind === 'bytes'
-      ? (args.source.bytes ?? Buffer.alloc(0))
-      : await fetchHubResource(args.hubUrl, readRealmId(args.source.id))
-  if (bytes.length === 0) {
-    throw new ValidationError('Realm asset payload is empty')
+  if (args.source.kind === 'bytes') {
+    const bytes = args.source.bytes ?? Buffer.alloc(0)
+    if (bytes.length === 0) {
+      throw new ValidationError('Realm asset payload is empty')
+    }
+    const contentType = resolveAssetContentType(args.source)
+    const result = addAsset(args.db, args.dataDir, { bytes, contentType })
+    emitAssetEvent(args.eventSink, result)
+    return result.entry.id
   }
-  const contentType = resolveAssetContentType(args.source)
-  const result = addAsset(args.db, args.dataDir, { bytes, contentType })
-  emitAssetEvent(args.eventSink, result)
-  return result.entry.id
+
+  const stageDir = await fs.promises.mkdtemp(path.join(tmpdir(), FETCHED_ASSET_STAGE_PREFIX))
+  try {
+    const staged = await stageFetchedAsset({
+      source: args.source,
+      hubUrl: args.hubUrl,
+      signal: args.signal,
+      stagePath: path.join(stageDir, '0.asset'),
+      budget: createFetchedAssetBudget({
+        maxExpandedImportBytes: args.maxExpandedImportBytes,
+        maxFetchedAssetBytes: args.maxFetchedAssetBytes,
+        maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
+      }),
+    })
+    const results = persistStagedFetchedAssets({
+      db: args.db,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      assets: [staged],
+    })
+    return results[0].entry.id
+  } finally {
+    await fs.promises.rm(stageDir, { recursive: true, force: true })
+  }
 }
 
-async function fetchHubResource(hubUrl: string, id: string): Promise<Buffer> {
-  const res = await fetch(`${hubUrl}/resource/${encodeURIComponent(id)}`)
-  if (!res.ok) {
-    throw new UpstreamError(`Realm resource ${id} failed: ${res.status}`, 502)
+async function fetchHubResourceToTempFile(args: {
+  hubUrl: string
+  id: string
+  filePath: string
+  signal: AbortSignal
+  budget: FetchedAssetBudget
+  label?: string
+}): Promise<{ byteLength: number; id: string }> {
+  let res: Response
+  try {
+    res = await fetch(`${args.hubUrl}/resource/${encodeURIComponent(args.id)}`, {
+      signal: args.signal,
+    })
+  } catch (err) {
+    if (args.signal.aborted) throwRealmImportAbort(args.signal)
+    throw err
   }
-  return Buffer.from(await res.arrayBuffer())
+  if (!res.ok) {
+    throw new UpstreamError(`Realm resource ${args.id} failed: ${res.status}`, 502)
+  }
+
+  const contentLength = readPositiveContentLength(res.headers.get('content-length'))
+  if (contentLength !== null) {
+    if (contentLength > args.budget.maxAssetBytes) {
+      await cancelResponseBody(res)
+      throw createFetchedAssetTooLargeError(args.label)
+    }
+    if (args.budget.totalBytes + contentLength > args.budget.maxTotalBytes) {
+      await cancelResponseBody(res)
+      throw createFetchedAssetTotalLimitError()
+    }
+  }
+
+  const hash = createHash('sha256')
+  let totalBytes = 0
+
+  try {
+    if (!res.body) {
+      await fs.promises.writeFile(args.filePath, Buffer.alloc(0))
+    } else {
+      const byteCounter = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          if (args.signal.aborted) {
+            callback(args.signal.reason instanceof Error ? args.signal.reason : new Error())
+            return
+          }
+          totalBytes += chunk.byteLength
+          if (totalBytes > args.budget.maxAssetBytes) {
+            callback(createFetchedAssetTooLargeError(args.label))
+            return
+          }
+          if (args.budget.totalBytes + totalBytes > args.budget.maxTotalBytes) {
+            callback(createFetchedAssetTotalLimitError())
+            return
+          }
+          hash.update(chunk)
+          callback(null, chunk)
+        },
+      })
+      await pipeline(
+        Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]),
+        byteCounter,
+        fs.createWriteStream(args.filePath),
+      )
+    }
+    throwIfRealmImportAborted(args.signal)
+    if (totalBytes === 0) {
+      throw new ValidationError('Realm asset payload is empty')
+    }
+    args.budget.totalBytes += totalBytes
+    return { byteLength: totalBytes, id: hash.digest('hex') }
+  } catch (err) {
+    await cancelResponseBody(res)
+    await fs.promises.rm(args.filePath, { force: true })
+    if (args.signal.aborted) throwRealmImportAbort(args.signal)
+    throw err
+  }
+}
+
+function createFetchedAssetBudget(args: {
+  maxExpandedImportBytes?: number
+  maxFetchedAssetBytes?: number
+  maxFetchedAssetTotalBytes?: number
+}): FetchedAssetBudget {
+  const maxTotalBytes = normalizePositiveInteger(
+    args.maxFetchedAssetTotalBytes,
+    normalizePositiveInteger(args.maxExpandedImportBytes, DEFAULT_REALM_CHARX_EXPANDED_IMPORT_BYTES),
+  )
+  return {
+    maxAssetBytes: normalizePositiveInteger(args.maxFetchedAssetBytes, MAX_CHARX_ASSET_SIZE_BYTES),
+    maxTotalBytes,
+    totalBytes: 0,
+  }
+}
+
+function reserveFetchedAssetBytes(
+  budget: FetchedAssetBudget,
+  byteLength: number,
+  label?: string,
+): void {
+  if (byteLength > budget.maxAssetBytes) {
+    throw createFetchedAssetTooLargeError(label)
+  }
+  if (budget.totalBytes + byteLength > budget.maxTotalBytes) {
+    throw createFetchedAssetTotalLimitError()
+  }
+  budget.totalBytes += byteLength
+}
+
+function createFetchedAssetTooLargeError(label: string | undefined): ValidationError {
+  return new ValidationError(
+    label ? `Realm fetched asset too large: ${label}` : 'Realm fetched asset too large',
+  )
+}
+
+function createFetchedAssetTotalLimitError(): ValidationError {
+  return new ValidationError('Realm fetched assets exceed size limit')
 }
 
 function emitAssetEvent(eventSink: CommandEventSink, result: AddAssetResult): void {
@@ -1062,6 +1493,23 @@ function readPositiveContentLength(value: string | null): number | null {
   if (!value) return null
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function normalizePositiveInteger(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback
+}
+
+function throwIfRealmImportAborted(signal: AbortSignal): void {
+  if (signal.aborted) throwRealmImportAbort(signal)
+}
+
+function throwRealmImportAbort(signal: AbortSignal): never {
+  if (signal.reason instanceof Error) {
+    throw signal.reason
+  }
+  throw new UpstreamError('Realm import aborted', 499)
 }
 
 function scaleProgress(percent: number, start: number, end: number): number {

@@ -68,6 +68,12 @@ export const REQUEST_RECEIVE_TIMEOUT_MS = 600_000
 export interface BuildAppOptions {
   config?: AppConfig
   generationChat?: GenerationChatRouteOptions
+  realmImport?: {
+    deadlineMs?: number
+    maxDynamicJsonBytes?: number
+    maxFetchedAssetBytes?: number
+    maxFetchedAssetTotalBytes?: number
+  }
   memoryWorker?: false | Omit<MemoryWorkerOptions, 'db'>
   memoryEvents?: MemoryEventSink
   commandEvents?: CommandEventSink
@@ -235,6 +241,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     hubUrl: config.hubUrl,
     realmUrl: config.realmUrl,
     maxExpandedImportBytes: config.bodyLimit,
+    ...opts.realmImport,
   })
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus)

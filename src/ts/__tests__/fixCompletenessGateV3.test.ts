@@ -399,15 +399,45 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L17',
     4,
     'Per-import AbortSignal (client-close + wall-clock) threaded into all realm egress fetches, both route branches.',
+    'server/fastify/__tests__/realmImport.test.ts',
+    'L17: aborts a hung dynamic Realm download at the import deadline',
+    [
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName: 'L17: aborts upstream resource fetch when the SSE client disconnects',
+      },
+    ],
   ),
-  planned(
+  done(
     'L18',
     4,
     'Per-asset + cumulative byte caps for JSON-card staging (charx shape); bound the dynamic `res.json()` body.',
+    'server/fastify/__tests__/realmImport.test.ts',
+    'L18: rejects known-length oversized Realm dynamic JSON before reading the body',
+    [
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName:
+          'L18: aborts unknown-length oversized Realm dynamic JSON once the cap is crossed',
+      },
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName:
+          'L18: rejects JSON-card fetched resources above the per-asset cap before reading the body',
+      },
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName: 'L18: rejects cumulative JSON-card fetched assets and cleans staged files',
+      },
+      {
+        testPath: 'server/fastify/__tests__/realmImport.test.ts',
+        testName: 'L18: keeps valid JSON Realm import output unchanged with disk-staged assets',
+      },
+    ],
   ),
   planned(
     'L19',
@@ -1392,6 +1422,8 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L14',
       'L15',
       'L16',
+      'L17',
+      'L18',
       'L56',
       'K1',
       'K2',
@@ -1403,7 +1435,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L5, L11, L12, L13, L14, L15, L16, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L5, L11, L12, L13, L14, L15, L16, L17, L18, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1423,6 +1455,8 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L14',
       'L15',
       'L16',
+      'L17',
+      'L18',
       'L56',
       'K1',
       'K2',

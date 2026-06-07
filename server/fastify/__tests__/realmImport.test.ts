@@ -7,7 +7,7 @@ import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import * as fflate from 'fflate'
-import { buildApp } from '../src/app.js'
+import { buildApp, type BuildAppOptions } from '../src/app.js'
 import { DatabaseSync } from 'node:sqlite'
 import { getAllAssetMetadata, loadPersisted, type Persisted } from '../src/repository.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
@@ -108,6 +108,33 @@ function newRealmCharxTempDirs(before: Set<string>): string[] {
   return [...after].filter((dir) => !before.has(dir)).sort()
 }
 
+function realmJsonTempDirs(): Set<string> {
+  return new Set(
+    readdirSync(tmpdir())
+      .filter((name) => name.startsWith('risu-realm-json-assets-'))
+      .map((name) => path.join(tmpdir(), name)),
+  )
+}
+
+function newRealmJsonTempDirs(before: Set<string>): string[] {
+  const after = realmJsonTempDirs()
+  return [...after].filter((dir) => !before.has(dir)).sort()
+}
+
+async function waitFor<T>(promise: Promise<T>, label: string, ms = 2000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`Timed out waiting for ${label}`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 const subtle = webcrypto.subtle
 const directRealmImportTestRun = process.env.RISU_DIRECT_REALM_IMPORT_TEST === 'true'
 const directOnlyIt = directRealmImportTestRun ? it : it.skip
@@ -177,7 +204,10 @@ interface Harness {
   dataDir: string
 }
 
-async function startHarness(upstreamUrl: string): Promise<Harness> {
+async function startHarness(
+  upstreamUrl: string,
+  realmImport?: BuildAppOptions['realmImport'],
+): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-realm-import-'))
   const { app } = await buildApp({
@@ -192,6 +222,7 @@ async function startHarness(upstreamUrl: string): Promise<Harness> {
       realmUrl: upstreamUrl,
     },
     assetGc: false,
+    realmImport,
   })
   return { app, dataDir }
 }
@@ -788,7 +819,276 @@ describe('Realm character import route', () => {
     }
   })
 
-  it('keeps valid JSON Realm import output unchanged with batched assets', async () => {
+  it('L17: aborts a hung dynamic Realm download at the import deadline', async () => {
+    await stopHarness(harness)
+    harness = await startHarness(echo.url, { deadlineMs: 30 })
+
+    let resolveUpstreamClosed: () => void = () => undefined
+    const upstreamClosed = new Promise<void>((resolve) => {
+      resolveUpstreamClosed = resolve
+    })
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.flushHeaders()
+        res.on('close', () => resolveUpstreamClosed())
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(504)
+    expect(res.json()).toEqual({ error: 'Realm import timed out after 30ms' })
+    await waitFor(upstreamClosed, 'hung Realm dynamic download to close')
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
+  })
+
+  it('L17: aborts upstream resource fetch when the SSE client disconnects', async () => {
+    await stopHarness(harness)
+    harness = await startHarness(echo.url, { deadlineMs: 5000 })
+
+    let resolveResourceStarted: () => void = () => undefined
+    let resolveResourceClosed: () => void = () => undefined
+    const resourceStarted = new Promise<void>((resolve) => {
+      resolveResourceStarted = resolve
+    })
+    const resourceClosed = new Promise<void>((resolve) => {
+      resolveResourceClosed = resolve
+    })
+
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ card: realmCard(), img: 'main-img' }))
+        return
+      }
+      if (req.url === '/resource/main-img') {
+        res.writeHead(200, { 'content-type': 'image/png' })
+        res.flushHeaders()
+        resolveResourceStarted()
+        res.on('close', () => resolveResourceClosed())
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+    const baseUrl = await harness.app.listen({ host: '127.0.0.1', port: 0 })
+    const clientAbort = new AbortController()
+
+    const response = await fetch(`${baseUrl}/api/v1/import/realm-character`, {
+      method: 'POST',
+      headers: {
+        accept: 'text/event-stream',
+        'content-type': 'application/json',
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+      },
+      body: JSON.stringify({ id: 'realm-id', baseRevision }),
+      signal: clientAbort.signal,
+    })
+    const readBody = response.text().catch((err: unknown) => err)
+    await waitFor(resourceStarted, 'resource fetch to start')
+
+    clientAbort.abort()
+
+    await waitFor(resourceClosed, 'upstream resource fetch to close')
+    await waitFor(readBody, 'client response body to finish after abort')
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
+  })
+
+  it('L18: rejects known-length oversized Realm dynamic JSON before reading the body', async () => {
+    await stopHarness(harness)
+    harness = await startHarness(echo.url, { maxDynamicJsonBytes: 32 })
+
+    let bodyWriteAttempted = false
+    let bodyTimer: ReturnType<typeof setTimeout> | undefined
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, {
+          'content-type': 'application/json',
+          'content-length': '33',
+        })
+        res.flushHeaders()
+        bodyTimer = setTimeout(() => {
+          bodyWriteAttempted = true
+          if (!res.destroyed) {
+            res.end(JSON.stringify({ card: realmCard(), img: 'main-img' }))
+          }
+        }, 50)
+        res.on('close', () => {
+          if (bodyTimer) clearTimeout(bodyTimer)
+        })
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+    if (bodyTimer) clearTimeout(bodyTimer)
+
+    expect(res.statusCode).toBe(413)
+    expect(res.json()).toEqual({ error: 'Realm dynamic JSON exceeds size limit' })
+    expect(bodyWriteAttempted).toBe(false)
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+  })
+
+  it('L18: aborts unknown-length oversized Realm dynamic JSON once the cap is crossed', async () => {
+    await stopHarness(harness)
+    harness = await startHarness(echo.url, { maxDynamicJsonBytes: 32 })
+
+    const chunks = Array.from({ length: 10 }, () => Buffer.alloc(16, 0x61))
+    let chunksAttempted = 0
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.flushHeaders()
+        const timer = setInterval(() => {
+          if (res.destroyed) {
+            clearInterval(timer)
+            return
+          }
+          if (chunksAttempted >= chunks.length) {
+            clearInterval(timer)
+            res.end()
+            return
+          }
+          res.write(chunks[chunksAttempted])
+          chunksAttempted += 1
+        }, 10)
+        res.on('close', () => clearInterval(timer))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(413)
+    expect(res.json()).toEqual({ error: 'Realm dynamic JSON exceeds size limit' })
+    expect(chunksAttempted).toBeLessThan(chunks.length)
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+  })
+
+  it('L18: rejects JSON-card fetched resources above the per-asset cap before reading the body', async () => {
+    await stopHarness(harness)
+    harness = await startHarness(echo.url, {
+      maxFetchedAssetBytes: 8,
+      maxFetchedAssetTotalBytes: 1024,
+    })
+
+    let bodyWriteAttempted = false
+    let bodyTimer: ReturnType<typeof setTimeout> | undefined
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ card: realmCard(), img: 'main-img' }))
+        return
+      }
+      if (req.url === '/resource/main-img') {
+        res.writeHead(200, {
+          'content-type': 'image/png',
+          'content-length': '9',
+        })
+        res.flushHeaders()
+        bodyTimer = setTimeout(() => {
+          bodyWriteAttempted = true
+          if (!res.destroyed) res.end('main data')
+        }, 50)
+        res.on('close', () => {
+          if (bodyTimer) clearTimeout(bodyTimer)
+        })
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+    if (bodyTimer) clearTimeout(bodyTimer)
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'Realm fetched asset too large: realm.png' })
+    expect(bodyWriteAttempted).toBe(false)
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+  })
+
+  it('L18: rejects cumulative JSON-card fetched assets and cleans staged files', async () => {
+    await stopHarness(harness)
+    harness = await startHarness(echo.url, {
+      maxFetchedAssetBytes: 1024,
+      maxFetchedAssetTotalBytes: 24,
+    })
+
+    echo.setResponder((req, res) => {
+      if (respondRealmJsonCard(req, res)) return
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+    const tempDirsBefore = realmJsonTempDirs()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'Realm fetched assets exceed size limit' })
+    expect(newRealmJsonTempDirs(tempDirsBefore)).toEqual([])
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
+  })
+
+  it('L18: keeps valid JSON Realm import output unchanged with disk-staged assets', async () => {
     echo.setResponder((req, res) => {
       if (respondRealmJsonCard(req, res)) return
       res.writeHead(404)
