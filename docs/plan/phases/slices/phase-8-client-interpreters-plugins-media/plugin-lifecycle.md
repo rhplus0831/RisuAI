@@ -1,17 +1,21 @@
 # Slice: Plugin Lifecycle
 
 Phase: [8](../../phase-8-client-interpreters-plugins-media.md). Findings:
-M7, L43, and L44. Client plugin lifecycle and log-hygiene change.
+M7, L43, and L44. v4 amendment: v4-L37 where it matches the plugin-owned
+listener/observer lifecycle invariant. Client plugin lifecycle and
+log-hygiene change.
 
 ## Scope
 
 Make V3 plugin hosts remove their window listeners on unload, reset or dedupe
-custom provider stores on plugin reload, and remove ungated RPC payload logs.
+custom provider stores on plugin reload, remove plugin-registered DOM
+listeners and observers on unload, and remove ungated RPC payload logs.
 
 This slice owns the V3 `SandboxHost` lifecycle, V3 custom-provider store
-reload behavior, and V3 plugin RPC console logging. It may mirror existing V2
-plugin reset patterns. It does not redesign the plugin API, provider
-registration protocol, plugin storage persistence, or MCP plugin tools.
+reload behavior, plugin-owned DOM listener/observer cleanup, and V3 plugin
+RPC console logging. It may mirror existing V2 plugin reset patterns. It does
+not redesign the plugin API, provider registration protocol, plugin storage
+persistence, DPoP/auth storage recovery, or MCP plugin tools.
 
 ## Anchors
 
@@ -21,9 +25,12 @@ registration protocol, plugin storage persistence, or MCP plugin tools.
   guest-to-host RPC handling, and current console logs.
 - `src/ts/plugins/apiV3/v3.svelte.ts`: `executePluginV3`, `unloadV3Plugin`,
   custom provider registration, `customProviderStore`, and
-  `customV3ProviderMetaStore`.
+  `customV3ProviderMetaStore`; v4-L37 `SafeElement.addEventListener`,
+  document listeners, and `SafeMutationObserver`.
 - `src/ts/plugins/plugins.svelte.ts`: `loadV2Plugin` reset block and plugin
   reload/toggle flow.
+- [`../../../../audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4.md):
+  v4-L37.
 - Existing focused tests near `src/ts/plugins/plugins.test.ts`; add V3
   lifecycle tests near the touched modules if needed.
 - `src/ts/__tests__/fixCompletenessGateV3.test.ts` and
@@ -46,10 +53,23 @@ registration protocol, plugin storage persistence, or MCP plugin tools.
 - Remove the ungated `SandboxHost` RPC console logs, or gate them behind an
   explicit debug flag that defaults off. Never log transferables or full RPC
   payloads by default.
+- Track plugin-registered document/window/element listeners and
+  `SafeMutationObserver` instances under the owning plugin or sandbox host.
+  Unload/terminate must remove listeners and disconnect observers exactly
+  once, including failed startup, repeated unload, and reload paths. If a
+  `SafeMutationObserver` API shape changes, keep the guest-facing behavior
+  compatible while adding host-side cleanup ownership.
+- Inventory every plugin cache/store entry, listener, observer, timer, and
+  debug-log site added to this slice. Each live site must be fixed,
+  explicitly no-actioned with reason, or measured/deferred with an owner note
+  in the slice proof.
 - Add focused probes for repeated plugin toggles: zero net window listeners,
-  no duplicate provider entries, and no default RPC payload logs.
+  zero net document listeners and `SafeMutationObserver`s, no duplicate
+  provider entries, and no default RPC payload logs.
 - Register M7, L43, and L44 as `DONE` in the v3 gate and flip only those rows
   in [`../../../active-risk-analysis.md`](../../../active-risk-analysis.md).
+  Record v4-L37 coverage in proof text without adding unrelated v3 status
+  changes.
 
 ## Invariants
 
@@ -58,6 +78,8 @@ registration protocol, plugin storage persistence, or MCP plugin tools.
 - Unloading remains idempotent.
 - Providers from still-loaded plugins must not be removed when another plugin
   unloads.
+- Plugin-owned DOM listeners and observers must be scoped to the plugin that
+  registered them and must not survive unload/reload.
 - Debug logging, if retained, must be opt-in and must avoid transferables and
   multi-MB payloads.
 - V2 plugin reset behavior remains unchanged except for shared helper reuse.
@@ -66,10 +88,14 @@ registration protocol, plugin storage persistence, or MCP plugin tools.
 
 - Repeated V3 plugin load/unload cycles leave zero net `window.message`
   listeners.
+- Repeated V3 plugin load/unload cycles leave zero net guest-registered
+  document listeners and disconnected `SafeMutationObserver`s.
 - Repeated plugin reloads do not duplicate custom provider entries or V3
   provider metadata.
 - Sandbox RPC request/response payload logs are silent by default, and
   transferables are never logged.
+- The slice proof records the plugin cache/listener/observer/timer/debug-log
+  inventory, including any explicit no-action or measured-deferred entries.
 - M7, L43, and L44 are registered as `DONE` in the v3 gate and active-risk
   table, with no unrelated ID status changes.
 

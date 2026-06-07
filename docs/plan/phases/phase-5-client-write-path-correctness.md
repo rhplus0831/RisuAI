@@ -8,6 +8,8 @@ baselines, and has a rollback at all — plus repair of the features the
 read-only projection guard silently broke.
 
 Findings: M8, L21, L23, L24, L25, L26, L27, L34, L35, L36, L37.
+v4 amendments: v4-L30 and v4-L33 ride the guard-repair proof matrix; they do
+not create new v3 active-risk rows.
 Riding informational items: I20 (`@@inject` wrap, same pattern as L34-L36),
 I21 (rides L37's handler hardening), I11 (`[object Object]` coercion, fixed
 inside L34).
@@ -39,14 +41,16 @@ Authored under `slices/phase-5-client-write-path-correctness/`.
   all 8 callers); snapshot `botPresets`/`botPresetsId` plus, for `setPreset`
   callers, the affected scalar settings.
 - [guard-repairs](slices/phase-5-client-write-path-correctness/guard-repairs.md)
-  (L34, L35, L36 + riding I20/I11) — wrap each broken direct write in
-  `withTrustedServerProjectionWrite` AND persist via a scoped command
-  (wrapping alone is session-transient): the IGP append (fixing the
-  `[object Object]` coercion in the same change), the `inlayErrorResponse`
-  error bubble, `sendPofile`'s transcript turns, and the `@@inject` display
-  write (or operate it on a working clone, since display scripts must not
-  persist). Add guard-ENABLED tests — the existing tests run with the guard
-  off, which is how these regressed unnoticed.
+  (L34, L35, L36 + riding I20/I11 + v4-L30/v4-L33) — run a bounded
+  guarded-write / feature-breakage inventory over `DBState.db`,
+  `getDatabase()`, translator preset getters, IGP/inlay/file transcript
+  mutation, display/script injection, and MCP bootstrap/handshake. Every live
+  site is either fixed, explicitly no-actioned with reason, or deferred with an
+  owner. Wrap each broken direct write in `withTrustedServerProjectionWrite`
+  AND persist via a scoped command when the state is durable (wrapping alone is
+  session-transient). Add guard-ENABLED tests for fixed write sites and focused
+  feature-breakage proof for the translator preset getter and partial MCP
+  handshake failure.
 - [error-handler-hardening](slices/phase-5-client-write-path-correctness/error-handler-hardening.md)
   (L37 + riding I21) — null-safe global `error` handler (check
   `event.target`, not `event.error.target`; skip alerting when no usable error
@@ -59,6 +63,9 @@ Authored under `slices/phase-5-client-write-path-correctness/`.
 - [`../audit-stability-and-performance-v3.md`](../audit-stability-and-performance-v3.md) -
   M8, L21, L23-L27, L34-L37 (the verifier corrections name the precise
   trigger paths and the existing suppression/baseline precedents).
+- [`../../audit-stability-and-performance-v4.md`](../../audit-stability-and-performance-v4.md) -
+  v4-L30, v4-L33, and the Phase 5 routing note that folds translator preset
+  and MCP handshake feature breakage into this guard-repair sweep.
 - M8: `src/ts/server/settingsBridge.svelte.ts`, `characterBridge.svelte.ts`,
   `chatBridge.svelte.ts`, `lorebookBridge.svelte.ts` (debounce timers);
   `src/ts/server/commands.ts` (dispatch fetch).
@@ -88,6 +95,15 @@ Authored under `slices/phase-5-client-write-path-correctness/`.
 - I20: `src/ts/process/scripts.ts` (`@@inject` branch).
 - Guard: `src/ts/server/projectionWriteGuard.svelte.ts`; persistence
   pattern `src/ts/process/command.ts` (`mutateCurrentChatMessages`).
+- v4-L30: `src/ts/translator/presets.ts`
+  (`getCurrentTranslatorPresetFromState`), `src/ts/translator/translator.ts`
+  (`getCurrentTranslatorPreset` and `getDatabase()`), and
+  focused tests in `src/ts/translator/presets.test.ts` and
+  `src/ts/translator/translator.cache.test.ts`.
+- v4-L33: `src/ts/process/mcp/mcp.ts` (`initializeMCPs` /
+  `checkHandshake`), `src/ts/process/mcp/googlesearchclient.ts`, and focused
+  MCP tests in `src/ts/process/mcp/mcp.test.ts` and
+  `src/ts/process/mcp/googlesearchclient.test.ts`.
 
 ## Planned Shape
 
@@ -99,6 +115,16 @@ Authored under `slices/phase-5-client-write-path-correctness/`.
 - Guard repairs are two-part by definition: wrap (stops the throw) +
   scoped-command persistence (makes it durable). Tests must run with the
   guard ENABLED.
+- Before editing guard repairs, inventory the bounded surfaces named in the
+  slice. Each live site must be classified as fixed, no-action with reason, or
+  deferred with owner; this prevents an enumerated-site-only repair.
+- v4-L30 closes only when the translator preset read path no longer writes
+  through the read-only projection. Normalize on a clone, or route a durable
+  normalization through a trusted write plus scoped command if persistence is
+  required.
+- v4-L33 closes only when one internal MCP handshake failure is isolated to
+  that client/tool set and does not reject all client-side LLM feature
+  initialization.
 - M8's flush dispatches the pending merged patch exactly once; suppression
   flags and in-flight dedup must hold under the pagehide path.
 
@@ -116,6 +142,16 @@ Authored under `slices/phase-5-client-write-path-correctness/`.
 - [ ] L34/L35/L36 (+I20): each feature works under the enabled guard, its
       write persists across a projection re-stub, and no `TypeError`
       reaches the user; I11's coercion fixed with L34.
+- [ ] Guard inventory: `DBState.db`, `getDatabase()`, translator preset
+      getters, IGP/inlay/file transcript mutation, display/script injection,
+      and MCP bootstrap/handshake have live-site dispositions recorded as
+      fixed, no-action with reason, or deferred with owner.
+- [ ] v4-L30: translator preset lookup used by LLM translate does not write
+      through the read-only projection; focused proof covers the preset and
+      normalization branches.
+- [ ] v4-L33: partial internal MCP handshake failure is surfaced as an
+      unavailable client/tool set and does not reject all LLM feature
+      initialization.
 - [ ] L37 (+I21): null-error events and undefined rejection reasons neither
       throw inside the handlers nor produce useless alerts.
 - [ ] Gates registered; focused suites + TypeScript checks green;
@@ -130,8 +166,12 @@ pnpm exec vitest run \
   src/ts/server/lorebookBridge.svelte.test.ts \
   src/ts/server/characterBridge.svelte.test.ts \
   src/ts/server/promptTemplateBridge.svelte.test.ts \
+  src/ts/translator/presets.test.ts \
+  src/ts/translator/translator.cache.test.ts \
   src/ts/process/__tests__/sendChatErrors.test.ts \
-  src/ts/process/files/multisend.test.ts
+  src/ts/process/files/multisend.test.ts \
+  src/ts/process/mcp/mcp.test.ts \
+  src/ts/process/mcp/googlesearchclient.test.ts
 pnpm test
 pnpm client-thinning:audit
 pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts

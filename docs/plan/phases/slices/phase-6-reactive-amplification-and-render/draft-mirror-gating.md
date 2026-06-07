@@ -1,7 +1,7 @@
 # Slice: Draft Mirror Gating
 
 Phase: [6](../../phase-6-reactive-amplification-and-render.md). Finding:
-L22. Client character draft performance change.
+v3-L22. Client character draft performance change.
 
 ## Scope
 
@@ -17,7 +17,7 @@ or the set of character fields the editor owns.
 ## Anchors
 
 - [`../../../audit-stability-and-performance-v3.md`](../../../audit-stability-and-performance-v3.md)
-  L22 and I19 context.
+  v3-L22 and I19 context.
 - `src/ts/server/characterBridge.svelte.ts`:
   `createServerBackedCharacterDraft`, `pickCharacterFields`,
   `normalizeCharacterDraft`, `snapshotJson`, `cloneJsonValue`,
@@ -46,7 +46,7 @@ or the set of character fields the editor owns.
   clobbered by their own optimistic mirror write.
 - Preserve `previousServerSnapshot` or an equivalent baseline so local
   command dispatch continues to avoid redundant self-reconciliation.
-- Register L22 as `DONE` in the v3 gate and flip only the L22 row in
+- Register v3-L22 as `DONE` in the v3 gate and flip only the L22 row in
   [`../../../active-risk-analysis.md`](../../../active-risk-analysis.md).
 
 ## Invariants
@@ -69,7 +69,7 @@ or the set of character fields the editor owns.
   draft.
 - Local draft edits still produce sanitized character patches and optimistic
   projection updates.
-- L22 is registered as `DONE` in the v3 gate and active-risk table, with no
+- v3-L22 is registered as `DONE` in the v3 gate and active-risk table, with no
   unrelated ID status changes.
 
 ## Validation

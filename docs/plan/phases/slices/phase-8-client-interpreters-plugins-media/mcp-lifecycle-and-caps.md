@@ -1,18 +1,24 @@
 # Slice: MCP Lifecycle And Caps
 
 Phase: [8](../../phase-8-client-interpreters-plugins-media.md). Findings:
-L45, L46, L47, and L48. Client MCP lifecycle and boundedness change.
+L45, L46, L47, and L48. v4 amendment: v4-L35 where it matches the
+filesystem MCP cap invariant. Client MCP lifecycle and boundedness change.
 
 ## Scope
 
 Move MCP tool discovery out of the always-server completion route, dedupe
 concurrent MCP client construction, cap persistent SSE buffers, and bound
-filesystem PDF reads.
+filesystem PDF/base64/search reads.
 
 This slice owns the browser-side request MCP handoff, MCP initialization,
 `MCPClient.connectSSE`, and the filesystem PDF read tool. It does not change
 server completion semantics, MCP tool schemas except for limit honoring, or
 unrelated internal MCP clients.
+
+The v4 routing is intentionally narrow: v4-L35 rides because it is the same
+filesystem MCP cap family as L48. v4-L38 does not ride this slice because
+DPoP keypair persistence and auth recovery are outside MCP/media/plugin
+lifecycle and do not match this slice's abort/cap/log cleanup invariant.
 
 ## Anchors
 
@@ -28,8 +34,10 @@ unrelated internal MCP clients.
 - `src/ts/process/mcp/mcplib.ts`: `MCPClient.connectSSE`, persistent
   post-handshake buffer, deadline and debug-log precedents.
 - `src/ts/process/mcp/filesystemclient.ts`: `readFileAsPDF` and `limit`
-  argument.
+  argument; v4-L35 base64 read and content-search cap siblings.
 - `src/ts/process/dynamicutils/pdf.ts`: `convertPdfToImages` page rendering.
+- [`../../../../audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4.md):
+  v4-L35.
 - Existing focused tests:
   `src/ts/process/mcp/mcplib.test.ts`,
   `src/ts/process/mcp/mcp.test.ts`, and
@@ -56,12 +64,23 @@ unrelated internal MCP clients.
 - Add page and byte caps to filesystem PDF reads, thread an `AbortSignal` into
   PDF rendering, and honor the `limit` argument. The limit should constrain
   the amount of extracted/rendered content returned to MCP callers.
+- Extend the same cap policy to the filesystem MCP base64 and content-search
+  siblings: base64 encoding must not spread a whole `Uint8Array` into
+  `String.fromCharCode`, and content search must enforce a per-file size cap
+  before reading or scanning a file.
+- Inventory every MCP cache, listener, timer, stream buffer, PDF document,
+  and filesystem read path touched by this slice. Each live site must be
+  fixed, explicitly no-actioned with reason, or measured/deferred with an
+  owner note in the slice proof.
 - Add focused coverage for skipped server-route discovery, concurrent
-  first-init dedupe, oversized SSE buffers, PDF page/byte caps, abort, and
+  first-init dedupe, oversized SSE buffers, PDF page/byte caps, base64 reads
+  above the historical spread limit, content-search per-file caps, abort, and
   honored `limit`.
 - Register L45, L46, L47, and L48 as `DONE` in the v3 gate and flip only
   those rows in
   [`../../../active-risk-analysis.md`](../../../active-risk-analysis.md).
+  Record v4-L35 coverage in proof text without adding unrelated v3 status
+  changes.
 
 ## Invariants
 
@@ -73,6 +92,10 @@ unrelated internal MCP clients.
 - SSE buffer caps fail closed without leaving listeners, timers, or network
   streams alive.
 - PDF output remains compatible for files under the caps.
+- Binary-to-base64 conversion must be chunked or streaming-safe for inputs
+  under the configured cap.
+- Filesystem search must not read unbounded file contents from an opt-in MCP
+  module.
 
 ## Done Criteria
 
@@ -83,6 +106,11 @@ unrelated internal MCP clients.
 - A persistent SSE stream without delimiters is capped and fails cleanly.
 - Filesystem PDF reads honor `limit`, enforce page and byte caps, and abort
   promptly when signalled.
+- Filesystem base64 reads handle files above the old spread failure threshold
+  up to the cap, and content search rejects or skips files above the per-file
+  cap with a clear result.
+- The slice proof records the MCP cache/listener/timer/buffer/PDF/read-path
+  inventory, including any explicit no-action or measured-deferred entries.
 - L45-L48 are registered as `DONE` in the v3 gate and active-risk table, with
   no unrelated ID status changes.
 

@@ -6,8 +6,9 @@ all Phase 7 implementation slices. Proof-only slice.
 ## Scope
 
 Re-run the Phase 7 proof set after async asset reads, dispatch clone
-narrowing, per-assembly invariant hoists, trigger clone narrowing, user regex
-bounds, and history memo chat-var bumps land. Record the refreshed results in
+narrowing, provider parameter conventions, per-assembly invariant hoists,
+trigger clone narrowing, user regex bounds, and history memo chat-var bumps
+land. Record the refreshed results in
 [`../../../latest-verification.md`](../../../latest-verification.md).
 
 This slice should not introduce runtime behavior. It may correct
@@ -25,9 +26,10 @@ during verification.
   registrations and proof text once Phase 0 has authored the v3 gate.
 - Focused proof suites from the implementation slices:
   asset async read/count tests, dispatch clone-count tests, restoration
-  payload identity tests, asset table/lorebook allocation probes, trigger
-  clone-count and isolation tests, regex bound tests, and stale chat-var memo
-  regressions.
+  payload identity tests, provider request-body omission tests, logit-bias
+  pass/drop tests, asset table/lorebook allocation probes, trigger clone-count
+  and isolation tests, trigger/imported-regex bound tests, and stale chat-var
+  memo regressions.
 - TypeScript workflow from `AGENTS.md`.
 
 ## Target Shape
@@ -37,6 +39,8 @@ during verification.
   reruns used to explain failures.
 - Confirm the v3 gate has L1, L3, L6, L7, L8, L9, L10, and K3 as `DONE` with
   concrete test paths and test names.
+- Confirm v4-M4, v4-L6, and v4-L7 proof is recorded in the Phase 7 run-log
+  without adding them to the v3 `DONE` gate or flipping unrelated v3 rows.
 - Confirm `active-risk-analysis.md` matches those statuses and has no
   unrelated Phase 7+ status flips.
 - If I5 or I7 landed as riding items, make sure proof text names the coverage
@@ -44,9 +48,11 @@ during verification.
   convention.
 - Confirm the parent Phase 7 exit criteria can be checked against recorded
   proof:
-  zero sync asset reads, zero default dispatch/restoration clones, invariant
-  allocation hoists, trigger clone narrowing per phase, bounded regex failure,
-  fresh history chat-var rendering, and unchanged outputs.
+  zero sync asset reads, zero default dispatch/restoration clones, disabled
+  provider parameter omission, the selected logit-bias pass/drop contract,
+  invariant allocation hoists, trigger clone narrowing per phase, bounded
+  trigger/imported-regex failure, fresh history chat-var rendering, and
+  unchanged outputs.
 - If a proof is skipped or fails, keep that visible in
   `latest-verification.md` and leave the matching parent exit criterion
   incomplete.
@@ -59,6 +65,8 @@ during verification.
 - Run the client-lib TypeScript build before the strict server check.
 - Do not mark an implementation finding `DONE` unless its slice landed with a
   focused regression proof.
+- Do not route v4-L1/v4-L2/v4-L3 or v4-L5 into Phase 7 verification unless they
+  landed as explicitly documented free riders with normal-use evidence.
 - Preserve earlier verification entries; append a new Phase 7 entry.
 - Do not edit runtime code in this verification slice.
 
@@ -70,6 +78,8 @@ during verification.
   explicitly listed.
 - The v3 gate and active-risk table agree for L1, L3, L6, L7, L8, L9, L10,
   and K3.
+- Phase 7 records v4-M4/v4-L6 provider-convention proof and v4-L7
+  imported-regex proof without changing v3 statuses.
 - Focused server prompt, lorebook, trigger, load-cost, gate, API, and
   TypeScript checks are green or failures are documented as blockers.
 
@@ -80,7 +90,10 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts \
   server/fastify/__tests__/assemble.test.ts \
   server/fastify/__tests__/lorebook.test.ts \
   server/fastify/__tests__/triggers.test.ts \
-  server/fastify/__tests__/serverLoadCostHarness.test.ts
+  server/fastify/__tests__/serverLoadCostHarness.test.ts \
+  server/fastify/__tests__/generation.chat.test.ts \
+  server/fastify/__tests__/openai.test.ts \
+  server/fastify/__tests__/horde.test.ts
 pnpm api:test
 pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json

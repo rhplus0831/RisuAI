@@ -44,7 +44,7 @@ first, then [`next-steps.md`](next-steps.md) for the active task batch.
   per-send memory cost (M2, L15, L16, K1) and verification refresh.
 - [Phase 4](phases/phase-4-server-lifecycle-and-transport.md): complete.
   Shutdown, deadlines, cancel, transport (M9, L2, L4, L5, L17-L20, L56).
-- Phase 4.5: complete. V4-H2 proxy `/fetch` framing hotfix; no v3
+- Phase 4.5: complete. v4-H2 proxy `/fetch` framing hotfix; no v3
   active-risk IDs moved.
 - [Phase 5](phases/phase-5-client-write-path-correctness.md): pending — NEXT.
   Bridge state machine, unload flush, guard repairs (M8, L21, L23-L27,

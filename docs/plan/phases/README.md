@@ -23,16 +23,16 @@ the finding -> phase map is in
   transport; M9, L2, L4, L5, L17-L20, L56):
   [`phase-4-server-lifecycle-and-transport.md`](phase-4-server-lifecycle-and-transport.md).
 - Phase 5, pending — NEXT (Themes 4+5: client write-path correctness; M8, L21,
-  L23-L27, L34-L37):
+  L23-L27, L34-L37; v4-L30/v4-L33 proof riders):
   [`phase-5-client-write-path-correctness.md`](phase-5-client-write-path-correctness.md).
 - Phase 6, pending (Theme 6: reactive amplification & render; M6, L22,
-  L28-L33):
+  L28-L33; v4-H1/v4-M1/v4-L20/v4-L22 render-window riders):
   [`phase-6-reactive-amplification-and-render.md`](phase-6-reactive-amplification-and-render.md).
 - Phase 7, pending (Themes 1+8 server side: assembly & trigger hot paths;
-  L1, L3, L6-L10, K3):
+  L1, L3, L6-L10, K3; v4-M4/v4-L6/v4-L7 provider/regex riders):
   [`phase-7-assembly-and-trigger-hot-paths.md`](phase-7-assembly-and-trigger-hot-paths.md).
 - Phase 8, pending (Theme 8: client interpreters, plugins, media; M7,
-  L38-L55, K4):
+  L38-L55, K4; bounded v4 translator/MCP/media/plugin riders):
   [`phase-8-client-interpreters-plugins-media.md`](phase-8-client-interpreters-plugins-media.md).
 - Phase 9, pending (verification budgets; the v3 gate, closing run, archive):
   [`phase-9-verification-budgets.md`](phase-9-verification-budgets.md).

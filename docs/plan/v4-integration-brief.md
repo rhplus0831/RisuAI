@@ -30,8 +30,8 @@ and [`../audit-v4-findings/README.md`](../audit-v4-findings/README.md).
 | Amend Phase 5 | Keep Phase 5 as the next main batch, but amend `guard-repairs` before implementation. Make it a tree-wide guarded-write/feature-breakage sweep instead of only the v3 L34/L35/L36 enumerated sites. Add v4-L30 and v4-L33 to the Phase 5 guard matrix. |
 | Amend Phase 6 | Add the v4 render/window batch: v4-H1 + v4-L20 transcript window reset/screenshot bound, and v4-M1 + v4-L22 render parser dependency narrowing. These are the same broad-projection re-mint consumer family as v3 Phase 6. |
 | Amend Phase 7 | Add provider dispatch convention fixes: v4-M4 and v4-L6, plus v4-L7 as a sibling of v3-L9 user-regex bounds. Treat v4-L5 as a free rider only if the history window is already being touched. |
-| Amend Phase 8 | Add a translator subsystem slice for v4-L24-L29, with v4-L30 fixed earlier in Phase 5 if possible. Add v4-L31, L35-L38 to the existing stage-4/MCP/media/plugin lifecycle batches. |
-| Gate/invariant first | Treat the invariant as an entry condition, not a separate mega-phase. This covers v4-M2, M3, M5, L11-L13, L17-L19, L21, L23, L32, L34, and L36-L38 before they either ride Phases 6-8 or become small closeouts. |
+| Amend Phase 8 | Add a translator subsystem slice for v4-L24 through v4-L29, with v4-L30 fixed earlier in Phase 5 if possible. Add v4-L31 and v4-L35 through v4-L37 to the existing stage-4/MCP/media/plugin lifecycle batches. Keep v4-L38 out unless a storage-persistence owner accepts it separately. |
+| Gate/invariant first | Treat the invariant as an entry condition, not a separate mega-phase. This covers v4-M2, v4-M3, v4-M5, v4-L11 through v4-L13, v4-L17 through v4-L19, v4-L21, v4-L23, v4-L32, v4-L34, and v4-L36 through v4-L38 before they either ride Phases 6-8 or become small closeouts. |
 | Measure-first | v4-L19 JWT mint cost, v4-L21 document-listener fanout, v4-L23 `Intl.DateTimeFormat` churn, v4-L27 deeplX fallback latency, and v4-L34 GraphMem embedding cost need runtime or focused reproduction evidence before being pulled ahead of scheduled H/M work. |
 | Defer/no-action | v4 informational rows remain inventory unless they ride a touched fix. Do not open a new plan just to schedule every low/info row. |
 
@@ -95,23 +95,23 @@ Phase 7:
   assembled biases to providers or drop the dead assembly work.
 - Extend `user-regex-bounds` with v4-L7, since it is the same imported-regex
   event-loop blocking family outside the original v3 trigger-effect sites.
-- Treat v4-L1/L2/L3 as send-path polish after the H/M batch, unless they
+- Treat v4-L1/v4-L2/v4-L3 as send-path polish after the H/M batch, unless they
   reproduce in normal use before then.
 
 Phase 8:
 
-- Add a translator slice for v4-L24-L29. Keep L30 in Phase 5 because it is a
+- Add a translator slice for v4-L24 through v4-L29. Keep v4-L30 in Phase 5 because it is a
   guard break, but the rest belongs with client subsystem hygiene: output
   memo, compiled-regex memo, cache quota/LRU, deeplX fallback behavior, and
   `combineTranslation` call fanout.
-- Extend existing MCP/media/plugin slices with v4-L31 and L35-L38 after the
+- Extend existing MCP/media/plugin slices with v4-L31 and v4-L35 through v4-L37 after the
   matching abort/cap/lifecycle invariant is named. Do not expand Phase 8 to
   every optional subsystem low unless a listener/cache/abort/cap invariant
   covers the family.
 
 Memory closeout:
 
-- v4-M2 plus L11-L13 do not fit Phases 5-8 cleanly because Phase 3 is already
+- v4-M2 plus v4-L11 through v4-L13 do not fit Phases 5-8 cleanly because Phase 3 is already
   closed. Keep them as a small gated closeout after the H2 hotfix and before
   or after Phase 5 based on owner priority. The key is the invariant, not the
   exact phase number.
@@ -146,7 +146,7 @@ Memory closeout:
 
 1. Amend Phase 5's guard-repair slice as described above.
 2. Open Phase 5.
-3. After Phase 5, start Phase 6 with v4-H1/M1 rather than lower-impact render
+3. After Phase 5, start Phase 6 with v4-H1/v4-M1 rather than lower-impact render
    lows.
 
 This keeps v3 continuous while preventing v4 from becoming another broad

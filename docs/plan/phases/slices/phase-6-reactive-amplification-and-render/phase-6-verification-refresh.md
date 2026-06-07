@@ -5,9 +5,10 @@ all Phase 6 implementation slices. Proof-only slice.
 
 ## Scope
 
-Re-run the Phase 6 proof set after catalog derived lists, watcher
-short-circuits, draft mirror gating, parse-key caching, customHTML template
-memoization, and render cache hygiene land. Record the refreshed results in
+Re-run the Phase 6 proof set after transcript window reset, render parser
+dependency narrowing, catalog derived lists, watcher short-circuits, draft
+mirror gating, parse-key caching, customHTML template memoization, and render
+cache hygiene land. Record the refreshed results in
 [`../../../latest-verification.md`](../../../latest-verification.md).
 
 This slice should not introduce runtime behavior. It may correct
@@ -19,15 +20,17 @@ during verification.
 - [`../../phase-6-reactive-amplification-and-render.md`](../../phase-6-reactive-amplification-and-render.md):
   Phase 6 exit criteria and validation list.
 - `docs/plan/latest-verification.md`.
-- `docs/plan/active-risk-analysis.md`: M6, L22, L28, L29, L30, L31, L32,
-  L33, and any landed riding notes for I12/I18.
+- `docs/plan/active-risk-analysis.md`: v3 rows M6, L22, L28, L29, L30, L31,
+  L32, L33, and any landed riding notes for I12/I18.
 - `src/ts/__tests__/fixCompletenessGateV3.test.ts`: Phase 6 `DONE`
   registrations and proof text once Phase 0 has authored the gate.
 - Focused proof suites from the implementation slices:
-  catalog/mobile derived lists, ModuleChatMenu if landed, lorebook watcher
-  lazy snapshots, chat-metadata short-circuit, character draft mirror gating,
-  ChatBody parse-key caching, customHTML template memoization,
-  script-cache hygiene, and BGM reset behavior.
+  transcript window reset/screenshot bound, Chat parser dependency narrowing,
+  BackgroundDom parser dependency narrowing, catalog/mobile derived lists,
+  ModuleChatMenu if landed, lorebook watcher lazy snapshots,
+  chat-metadata short-circuit, character draft mirror gating, ChatBody
+  parse-key caching, customHTML template memoization, script-cache hygiene,
+  and BGM reset behavior.
 - TypeScript workflow from `AGENTS.md`.
 
 ## Target Shape
@@ -35,8 +38,9 @@ during verification.
 - Add a dated Phase 6 run-log entry to `latest-verification.md`.
 - Record exact commands run, pass/fail outcomes, and any focused diagnostic
   reruns used to explain failures.
-- Confirm the v3 gate has M6, L22, L28, L29, L30, L31, L32, and L33 as
-  `DONE` with concrete test paths and test names.
+- Confirm the v3 gate has v3 rows M6, L22, L28, L29, L30, L31, L32, and L33 as
+  `DONE` with concrete test paths and test names. v4-H1, v4-M1, v4-L20, and
+  v4-L22 are proof-only in this plan and must not be added as v3 `DONE` rows.
 - Confirm `active-risk-analysis.md` matches those statuses and has no
   unrelated Phase 6+ status flips.
 - Confirm I19 remains documented as intentional no-action context.
@@ -45,9 +49,10 @@ during verification.
   informational-item convention.
 - Confirm the parent Phase 6 exit criteria can be checked against recorded
   proof:
-  catalog recompute counts, watcher stringify/map counts, draft mirror seed
-  counts, parse/template parse counts, bounded/reset script cache, and BGM
-  switch behavior.
+  transcript window reset and screenshot cleanup, Chat/BackgroundDom
+  parser-count guards, catalog recompute counts, watcher stringify/map
+  counts, draft mirror seed counts, parse/template parse counts,
+  bounded/reset script cache, and BGM switch behavior.
 - If a proof is skipped or fails, keep that visible in
   `latest-verification.md` and leave the matching parent exit criterion
   incomplete.
@@ -69,8 +74,8 @@ during verification.
   outcomes.
 - Phase 6 parent exit criteria are satisfied or the remaining gaps are
   explicitly listed.
-- The v3 gate and active-risk table agree for M6, L22, L28, L29, L30, L31,
-  L32, and L33.
+- The v3 gate and active-risk table agree for v3 rows M6, L22, L28, L29, L30,
+  L31, L32, and L33.
 - Focused UI, bridge, render, script, observer, gate, and TypeScript checks
   are green or failures are documented as blockers.
 
@@ -78,6 +83,9 @@ during verification.
 
 ```bash
 pnpm exec vitest run \
+  src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts \
+  src/lib/ChatScreens/Chat.parserDependencies.test.ts \
+  src/lib/BackgroundDom.parserDependencies.test.ts \
   src/lib/Others/GridCatalog.svelte.test.ts \
   src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts \
   src/lib/ChatScreens/ChatBody.parseMemo.test.ts \

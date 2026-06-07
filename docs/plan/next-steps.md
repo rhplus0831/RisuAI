@@ -32,12 +32,11 @@ Slices already live under
    coalesced prompt-template and lorebook entry edits.
 4. L21 `preset-rollback`: add rollback coverage to `runPresetCommand`,
    including preset selection and copied scalar settings.
-5. L34/L35/L36 `guard-repairs`: fix guarded projection writes for IGP,
-   send-error inlays, `.po` file attach, and riding display-script injection
-   / coercion items. Per
-   [`v4-integration-brief.md`](v4-integration-brief.md), amend this slice into
-   a tree-wide guarded-write / feature-breakage sweep and add v4-L30 and
-   v4-L33 to the guard-enabled test matrix.
+5. L34/L35/L36 `guard-repairs`: follow the amended tree-wide guarded-write /
+   feature-breakage criteria in the Phase 5 docs. The bounded inventory covers
+   IGP, send-error inlays, `.po` file attach, display-script injection /
+   coercion, v4-L30 translator preset lookup, and v4-L33 partial MCP handshake
+   failure.
 6. L37 `error-handler-hardening`: make global error/rejection handlers and
    `alertError` null-safe.
 7. Phase 5 verification refresh: gates, focused proofs, full validation, and
@@ -70,8 +69,12 @@ pnpm exec vitest run \
   src/ts/server/lorebookBridge.svelte.test.ts \
   src/ts/server/characterBridge.svelte.test.ts \
   src/ts/server/promptTemplateBridge.svelte.test.ts \
+  src/ts/translator/presets.test.ts \
+  src/ts/translator/translator.cache.test.ts \
   src/ts/process/__tests__/sendChatErrors.test.ts \
-  src/ts/process/files/multisend.test.ts
+  src/ts/process/files/multisend.test.ts \
+  src/ts/process/mcp/mcp.test.ts \
+  src/ts/process/mcp/googlesearchclient.test.ts
 pnpm test
 pnpm client-thinning:audit
 pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
