@@ -2,8 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import { buildApp } from '../src/app.js'
 import type { FastifyInstance } from 'fastify'
+
+const STATIC_APP_JS =
+  'console.log("app")\n' +
+  `globalThis.__STATIC_COMPRESSION_FIXTURE__ = ${JSON.stringify('static chunk '.repeat(300))}\n`
 
 interface Harness {
   app: FastifyInstance
@@ -22,7 +27,7 @@ async function startHarness(opts: { withStatic: boolean }): Promise<Harness> {
       '<!doctype html><html><head lang="en"><title>spa</title></head><body></body></html>',
     )
     mkdirSync(path.join(staticRoot, 'assets'))
-    writeFileSync(path.join(staticRoot, 'assets', 'app.js'), 'console.log("app")')
+    writeFileSync(path.join(staticRoot, 'assets', 'app.js'), STATIC_APP_JS)
   }
   const { app } = await buildApp({
     config: {
@@ -79,6 +84,36 @@ describe('Phase 2E static serving', () => {
       const res = await harness.app.inject({ method: 'GET', url: '/assets/app.js' })
       expect(res.statusCode).toBe(200)
       expect(res.body).toContain('console.log("app")')
+    })
+
+    it('L19: gzip-compresses large static assets without changing the bytes', async () => {
+      const uncompressed = await harness.app.inject({ method: 'GET', url: '/assets/app.js' })
+      expect(uncompressed.statusCode).toBe(200)
+      expect(uncompressed.headers['content-encoding']).toBeUndefined()
+      expect(uncompressed.body).toBe(STATIC_APP_JS)
+
+      const compressed = await harness.app.inject({
+        method: 'GET',
+        url: '/assets/app.js',
+        headers: { 'accept-encoding': 'gzip' },
+      })
+      expect(compressed.statusCode).toBe(200)
+      expect(compressed.headers['content-encoding']).toBe('gzip')
+      const compressedBytes = Buffer.from(compressed.rawPayload)
+      expect(gunzipSync(compressedBytes).toString('utf8')).toBe(STATIC_APP_JS)
+      expect(compressedBytes.length).toBeLessThan(Buffer.byteLength(STATIC_APP_JS) * 0.7)
+    })
+
+    it('L19: leaves small API responses below the compression threshold uncompressed', async () => {
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/health',
+        headers: { 'accept-encoding': 'gzip' },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-encoding']).toBeUndefined()
+      expect(res.json().status).toBe('ok')
+      expect(Buffer.byteLength(res.body)).toBeLessThan(1024)
     })
 
     it('falls back to index.html for unknown SPA routes', async () => {

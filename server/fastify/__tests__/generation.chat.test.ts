@@ -703,6 +703,24 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(events.at(-1)?.type).toBe('done')
   })
 
+  it('L19: leaves chat SSE uncompressed when gzip is requested', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion, 'accept-encoding': 'gzip' },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('text/event-stream')
+    expect(res.headers['content-encoding']).toBeUndefined()
+
+    const events = parseEvents(res.body)
+    expect(events.at(-1)?.type).toBe('done')
+  })
+
   it('emits an info event with token counts and the response budget', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)

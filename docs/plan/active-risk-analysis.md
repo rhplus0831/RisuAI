@@ -94,7 +94,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L16 | [3](phases/phase-3-memory-subsystem.md)                     | Arm a default deadline on the already-threaded memory-fetch AbortController (clear in finally). | DONE |
 | L17 | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Per-import AbortSignal (client-close + wall-clock) threaded into all realm egress fetches, both route branches. | DONE |
 | L18 | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Per-asset + cumulative byte caps for JSON-card staging (charx shape); bound the dynamic `res.json()` body. | DONE |
-| L19 | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Register response compression (`@fastify/compress` or onSend gzip) with a sane threshold, default ON. | PENDING |
+| L19 | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Register response compression (`@fastify/compress` or onSend gzip) with a sane threshold, default ON. | DONE |
 | L20 | [4](phases/phase-4-server-lifecycle-and-transport.md)       | `maxAge: '1y', immutable: true` for the hashed SPA chunks (index.html stays uncached). | PENDING |
 | L21 | [5](phases/phase-5-client-write-path-correctness.md)        | Add a rollback parameter to `runPresetCommand`; snapshot `botPresets`/`botPresetsId` + the `setPreset` scalar settings. | PENDING |
 | L22 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Gate the character-draft mirror recomputation (character switch / apply epoch); split the read/seed effect. | PENDING |

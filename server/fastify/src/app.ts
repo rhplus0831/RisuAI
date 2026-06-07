@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
+import fastifyCompress from '@fastify/compress'
 import fastifyMultipart from '@fastify/multipart'
 import rateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
@@ -101,6 +102,12 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     // and slow generations are unaffected; multi-GB backup uploads on a LAN
     // still fit comfortably.
     requestTimeout: REQUEST_RECEIVE_TIMEOUT_MS,
+  })
+
+  await app.register(fastifyCompress, {
+    global: true,
+    globalDecompression: false,
+    threshold: 1024,
   })
 
   await app.register(rateLimit, {

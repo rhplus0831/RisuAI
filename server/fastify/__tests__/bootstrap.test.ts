@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
+import { gunzipSync } from 'node:zlib'
 import { buildApp } from '../src/app.js'
 import { CURRENT_SCHEMA_VERSION, openDatabase } from '../src/db.js'
 import { loadPersisted } from '../src/repository.js'
@@ -196,6 +197,49 @@ describe('Phase 2A bootstrap + import', () => {
     expect(bootstrap.json().schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(bootstrap.json().assetBaseUrl).toBe('/api/v1/assets')
     expectNormalizedAdaDatabase(bootstrap.json().database, { greeting: 'hi' })
+  })
+
+  it('L19: gzip-compresses large bootstrap JSON without changing the body', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const sample = {
+      greeting: 'hi',
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          desc: 'Large bootstrap card text. '.repeat(400),
+          firstMessage: 'Hello from a compressible card. '.repeat(160),
+          chats: [],
+        },
+      ],
+    }
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: sample },
+    })
+    expect(imported.statusCode).toBe(200)
+
+    const uncompressed = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(uncompressed.statusCode).toBe(200)
+    expect(uncompressed.headers['content-encoding']).toBeUndefined()
+
+    const compressed = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'accept-encoding': 'gzip' },
+    })
+    expect(compressed.statusCode).toBe(200)
+    expect(compressed.headers['content-encoding']).toBe('gzip')
+    const compressedBytes = Buffer.from(compressed.rawPayload)
+    const uncompressedBytes = Buffer.from(uncompressed.rawPayload)
+    expect(gunzipSync(compressedBytes).toString('utf8')).toBe(uncompressed.body)
+    expect(compressedBytes.length).toBeLessThan(uncompressedBytes.length * 0.7)
   })
 
   it('stores imported chat messages in SQLite, message-free on disk, hydrated over the wire', async () => {

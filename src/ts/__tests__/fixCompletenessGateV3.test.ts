@@ -445,10 +445,26 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L19',
     4,
     'Register response compression (`@fastify/compress` or onSend gzip) with a sane threshold, default ON.',
+    'server/fastify/__tests__/bootstrap.test.ts',
+    'L19: gzip-compresses large bootstrap JSON without changing the body',
+    [
+      {
+        testPath: 'server/fastify/__tests__/static.test.ts',
+        testName: 'L19: gzip-compresses large static assets without changing the bytes',
+      },
+      {
+        testPath: 'server/fastify/__tests__/static.test.ts',
+        testName: 'L19: leaves small API responses below the compression threshold uncompressed',
+      },
+      {
+        testPath: 'server/fastify/__tests__/generation.chat.test.ts',
+        testName: 'L19: leaves chat SSE uncompressed when gzip is requested',
+      },
+    ],
   ),
   planned(
     'L20',
@@ -1431,6 +1447,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L16',
       'L17',
       'L18',
+      'L19',
       'L56',
       'K1',
       'K2',
@@ -1442,7 +1459,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1465,6 +1482,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L16',
       'L17',
       'L18',
+      'L19',
       'L56',
       'K1',
       'K2',
