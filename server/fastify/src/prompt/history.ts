@@ -15,6 +15,8 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { runStartTrigger, type TriggerRunResult } from './triggers.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 
+type MaybePromise<T> = T | Promise<T>
+
 /**
  * History walk ported from the SPA's `buildHistoryWindow.ts`,
  * `formatHistoryMessage.ts`, and `exampleMessages.ts`.
@@ -106,11 +108,11 @@ import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 
 export interface AssetLookup {
   /** Resolves an inlay id from `{{inlay/inlayed/inlayeddata::id}}`. */
-  getInlay?(id: string): MultiModal | undefined
+  getInlay?(id: string): MaybePromise<MultiModal | undefined>
   /** Resolves an `{{asset_prompt::name}}` against char + module assets. */
-  getAsset?(name: string): MultiModal | undefined
+  getAsset?(name: string): MaybePromise<MultiModal | undefined>
   /** Resolves the `{{asset_prompt::icon}}` fallback. */
-  getCharIcon?(): MultiModal | undefined
+  getCharIcon?(): MaybePromise<MultiModal | undefined>
 }
 
 export const NO_ASSETS: AssetLookup = {}
@@ -223,11 +225,11 @@ function extractThoughts(
   return { content: stripped, thoughts }
 }
 
-function processInlays(
+async function processInlays(
   text: string,
   role: Message['role'],
   lookup: AssetLookup,
-): { text: string; multimodals: MultiModal[] } {
+): Promise<{ text: string; multimodals: MultiModal[] }> {
   let formatted = text
   const multimodals: MultiModal[] = []
 
@@ -238,14 +240,14 @@ function processInlays(
       return ''
     })
     for (const id of ids) {
-      const resolved = lookup.getInlay?.(id)
+      const resolved = await lookup.getInlay?.(id)
       if (resolved) pushMultimodal(multimodals, resolved)
     }
   } else {
     const matches = Array.from(formatted.matchAll(INLAY_RE))
     for (const match of matches) {
       const id = match[2]
-      const resolved = lookup.getInlay?.(id)
+      const resolved = await lookup.getInlay?.(id)
       if (resolved) pushMultimodal(multimodals, resolved)
       formatted = formatted.replace(match[0], '')
     }
@@ -254,25 +256,27 @@ function processInlays(
   return { text: formatted, multimodals }
 }
 
-function processAssetPrompts(
+async function processAssetPrompts(
   text: string,
   currentChar: character,
   moduleAssets: [string, string, string][],
   lookup: AssetLookup,
-): { text: string; multimodals: MultiModal[] } {
+): Promise<{ text: string; multimodals: MultiModal[] }> {
   const multimodals: MultiModal[] = []
   const assetTable = (currentChar.additionalAssets ?? []).concat(moduleAssets)
-  const formatted = text.replace(ASSET_PROMPT_RE, (_match, name: string) => {
+  const matches = Array.from(text.matchAll(ASSET_PROMPT_RE))
+  for (const match of matches) {
+    const name = match[1]
     const asset = assetTable.find((v) => v[0] === name)
     if (asset) {
-      const resolved = lookup.getAsset?.(name)
+      const resolved = await lookup.getAsset?.(name)
       if (resolved) multimodals.push(resolved)
     } else if (name === 'icon') {
-      const resolved = lookup.getCharIcon?.()
+      const resolved = await lookup.getCharIcon?.()
       if (resolved) multimodals.push(resolved)
     }
-    return ''
-  })
+  }
+  const formatted = text.replace(ASSET_PROMPT_RE, '')
   return { text: formatted, multimodals }
 }
 
@@ -319,7 +323,7 @@ async function formatHistoryMessage(
 
   const multimodals: MultiModal[] = []
 
-  const inlayResult = processInlays(formatted, msg.role, assetLookup)
+  const inlayResult = await processInlays(formatted, msg.role, assetLookup)
   formatted = inlayResult.text
   for (const m of inlayResult.multimodals) pushMultimodal(multimodals, m)
 
@@ -335,7 +339,12 @@ async function formatHistoryMessage(
   )
   formatted = postThoughts
 
-  const assetResult = processAssetPrompts(formatted, currentChar, moduleAssets, assetLookup)
+  const assetResult = await processAssetPrompts(
+    formatted,
+    currentChar,
+    moduleAssets,
+    assetLookup,
+  )
   formatted = assetResult.text
   for (const m of assetResult.multimodals) pushMultimodal(multimodals, m)
 

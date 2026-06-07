@@ -36,6 +36,8 @@ import {
   type AssembleInput,
 } from '../src/prompt/assemble.js'
 import { applyDepthPrompts, buildHistoryWindow } from '../src/prompt/history.js'
+import { buildAssetLookup } from '../src/prompt/assetLookup.js'
+import { createRequestScopedStoredAssetResolver } from '../src/routes/generationChat.js'
 import type { LoreEntryActive, LorebookActivationReport } from '../src/prompt/lorebook.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import * as promptVariables from '../src/prompt/variables.js'
@@ -121,6 +123,68 @@ const baseInput = (overrides: Partial<AssembleInput> = {}): AssembleInput => ({
   mode: 'send',
   userMessage: 'hi',
   ...overrides,
+})
+
+describe('Phase 7 L1 async asset reads', () => {
+  it('L1: repeated asset prompt refs share one async stored-asset read during assembly', async () => {
+    const assetId = 'c'.repeat(64)
+    const reads: string[] = []
+    const resolveStoredAsset = createRequestScopedStoredAssetResolver(
+      null as never,
+      '/data',
+      async (_db, _dataDir, id, purpose) => {
+        await Promise.resolve()
+        reads.push(`${purpose}:${id}`)
+        return { type: 'image', base64: `data:${purpose}:${id}` }
+      },
+    )
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          additionalAssets: [['hero', assetId, '']],
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [
+                {
+                  role: 'user',
+                  data: 'show {{asset_prompt::hero}} and {{asset_prompt::hero}}',
+                  chatId: 'repeated-asset-row',
+                } as Message,
+              ],
+            }),
+          ],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+
+    const currentChar = db.characters[0]
+    const currentChat = currentChar.chats[0]
+    const history = await buildHistoryWindow(
+      { database: db },
+      currentChar,
+      currentChat,
+      false,
+      buildAssetLookup({
+        database: db,
+        currentChar,
+        currentChat,
+        inlayAssets: undefined,
+        resolveStoredAsset,
+      }),
+    )
+
+    const row = history.messages.find((entry) => entry.memo === 'repeated-asset-row')
+    expect(row?.content).toBe('show  and ')
+    expect(row?.multimodals).toEqual([
+      { type: 'image', base64: `data:asset_prompt:${assetId}` },
+      { type: 'image', base64: `data:asset_prompt:${assetId}` },
+    ])
+    expect(reads).toEqual([`asset_prompt:${assetId}`])
+  })
 })
 
 const startTrigger = (effect: unknown[]): never =>

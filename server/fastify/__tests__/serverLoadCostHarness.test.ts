@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import fs, { mkdtempSync, rmSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -903,6 +903,59 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(editinputRun.result.body).toContain('HELLO')
     expect(editinputRun.corpusLoadCount).toBe(plainRun.corpusLoadCount)
     expect(editinputRun.loadCountByTable).toEqual(plainRun.loadCountByTable)
+  })
+
+  it('L1: image-bearing chat send performs zero assembly-time readFileSync asset reads', async () => {
+    const fixture = buildLargeCorpusFixture({ hotChatMessageCount: 1 })
+    const database = promptReadyLargeCorpusDatabase(fixture)
+    const assetBytes = Buffer.from('l1-image-bytes')
+    const upload = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'risu-auth': assertion, 'content-type': 'image/png' },
+      payload: assetBytes,
+    })
+    expect(upload.statusCode).toBe(201)
+    const assetId = upload.json().assetId as string
+
+    const hotCharacter = (database.characters as Array<Record<string, unknown>>).find(
+      (character) => character.chaId === fixture.hot.characterId,
+    )
+    if (!hotCharacter) throw new Error('large-corpus hot character missing')
+    hotCharacter.additionalAssets = [['hero', assetId, '']]
+    const hotChat = (hotCharacter.chats as Array<Record<string, unknown>>).find(
+      (chat) => chat.id === fixture.hot.chatId,
+    )
+    if (!hotChat) throw new Error('large-corpus hot chat missing')
+    hotChat.message = [
+      {
+        role: 'user',
+        data: 'look {{asset_prompt::hero}}',
+        chatId: 'l1-image-row',
+      },
+    ]
+    await importDatabase(database)
+
+    const assetFile = path.join(harness.dataDir, 'assets', `${assetId}.png`)
+    const readFileSyncSpy = vi.spyOn(fs, 'readFileSync')
+    try {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          chatId: fixture.hot.chatId,
+          characterId: fixture.hot.characterId,
+          mode: 'send',
+          userMessage: 'hi',
+        },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.body).toContain(`data:image/png;base64,${assetBytes.toString('base64')}`)
+      expect(readFileSyncSpy.mock.calls.filter(([file]) => file === assetFile)).toHaveLength(0)
+    } finally {
+      readFileSyncSpy.mockRestore()
+    }
   })
 
   it('L20: prompt memory cleanup and selection share one summary payload read', async () => {

@@ -321,10 +321,18 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L1',
     7,
     'Read assembly asset bytes off the event loop (async pre-resolve or async resolver contract).',
+    'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+    'L1: image-bearing chat send performs zero assembly-time readFileSync asset reads',
+    [
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName: 'L1: repeated asset prompt refs share one async stored-asset read during assembly',
+      },
+    ],
   ),
   done(
     'L2',
@@ -1801,6 +1809,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M6',
       'M8',
       'M9',
+      'L1',
       'L2',
       'L4',
       'L5',
@@ -1842,7 +1851,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1856,6 +1865,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M6',
       'M8',
       'M9',
+      'L1',
       'L2',
       'L4',
       'L5',

@@ -76,7 +76,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 
 | ID  | Phase                                                      | Target fix                                                                 | Status  |
 | --- | ----------------------------------------------------------- | ---------------------------------------------------------------------------- | ------- |
-| L1  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Read assembly asset bytes off the event loop (async pre-resolve or async resolver contract). | PENDING |
+| L1  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Read assembly asset bytes off the event loop (async pre-resolve or async resolver contract). | DONE |
 | L2  | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Thread `RequestAbort.refresh` into `pipeStream` on activity frames (mirror `streamAssembly`). | DONE |
 | L3  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Compute reformat flags first; return `rows` unchanged when no branch applies (or clone lazily per branch). | PENDING |
 | L4  | [4](phases/phase-4-server-lifecycle-and-transport.md)       | `AbortSignal.timeout` on the fire-and-forget Horde DELETE.                  | DONE |

@@ -409,7 +409,7 @@ describe('H1 provider transport abort contract', () => {
 })
 
 describe('per-generation stored asset cache', () => {
-  it('caches stored asset reads by normalized asset id and purpose', () => {
+  it('caches stored asset reads by normalized asset id and purpose', async () => {
     const assetId = 'a'.repeat(64)
     const reads: string[] = []
     const resolver = createRequestScopedStoredAssetResolver(
@@ -424,18 +424,18 @@ describe('per-generation stored asset cache', () => {
       },
     )
 
-    const first = resolver(assetId, 'asset_prompt')
-    const second = resolver(`assets/${assetId}.png`, 'asset_prompt')
+    const first = await resolver(assetId, 'asset_prompt')
+    const second = await resolver(`assets/${assetId}.png`, 'asset_prompt')
     expect(second).toEqual(first)
     expect(second).not.toBe(first)
-    expect(resolver(assetId, 'inlay')).toEqual({
+    await expect(resolver(assetId, 'inlay')).resolves.toEqual({
       type: 'audio',
       base64: `data:inlay:${assetId}`,
     })
     expect(reads).toEqual([`asset_prompt:${assetId}`, `inlay:${assetId}`])
   })
 
-  it('caches missing assets only for one request-scoped resolver', () => {
+  it('caches missing assets only for one request-scoped resolver', async () => {
     const assetId = 'b'.repeat(64)
     const reads: string[] = []
     const makeResolver = () =>
@@ -445,11 +445,11 @@ describe('per-generation stored asset cache', () => {
       })
 
     const firstResolver = makeResolver()
-    expect(firstResolver(assetId, 'asset_prompt')).toBeUndefined()
-    expect(firstResolver(`assets/${assetId}.webp`, 'asset_prompt')).toBeUndefined()
+    await expect(firstResolver(assetId, 'asset_prompt')).resolves.toBeUndefined()
+    await expect(firstResolver(`assets/${assetId}.webp`, 'asset_prompt')).resolves.toBeUndefined()
 
     const secondResolver = makeResolver()
-    expect(secondResolver(assetId, 'asset_prompt')).toBeUndefined()
+    await expect(secondResolver(assetId, 'asset_prompt')).resolves.toBeUndefined()
 
     expect(reads).toEqual([`asset_prompt:${assetId}`, `asset_prompt:${assetId}`])
   })

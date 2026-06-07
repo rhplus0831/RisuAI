@@ -39,7 +39,7 @@ export type StoredAssetPurpose = 'asset_prompt' | 'inlay'
 export type ResolveStoredAsset = (
   reference: string,
   purpose: StoredAssetPurpose,
-) => MultiModal | undefined
+) => Promise<MultiModal | undefined>
 
 function isMultiModalType(value: unknown): value is MultiModal['type'] {
   return value === 'image' || value === 'video' || value === 'audio' || value === 'signature'
@@ -108,9 +108,11 @@ export function buildAssetLookup(args: {
   const assetTable = (args.currentChar.additionalAssets ?? []).concat(moduleAssets)
   const resolve = args.resolveStoredAsset
   return {
-    getInlay: (id) => {
+    getInlay: async (id) => {
       const ref = requestInlayRefs.get(id)
-      const resolved = resolve?.(ref?.assetId ?? id, 'inlay') ?? requestInlays.get(id)
+      const resolved = resolve
+        ? ((await resolve(ref?.assetId ?? id, 'inlay')) ?? requestInlays.get(id))
+        : requestInlays.get(id)
       if (!resolved || !ref) return resolved
       return {
         ...resolved,
@@ -118,11 +120,11 @@ export function buildAssetLookup(args: {
         ...(typeof ref.height === 'number' ? { height: ref.height } : {}),
       }
     },
-    getAsset: (name) => {
+    getAsset: async (name) => {
       const asset = assetTable.find((entry) => entry[0] === name)
-      return asset && resolve ? resolve(asset[1], 'asset_prompt') : undefined
+      return asset && resolve ? await resolve(asset[1], 'asset_prompt') : undefined
     },
-    getCharIcon: () =>
-      resolve ? resolve(args.currentChar.image ?? '', 'asset_prompt') : undefined,
+    getCharIcon: async () =>
+      resolve ? await resolve(args.currentChar.image ?? '', 'asset_prompt') : undefined,
   }
 }

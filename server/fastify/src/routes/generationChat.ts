@@ -296,23 +296,36 @@ type StoredAssetReader = (
   dataDir: string,
   id: string,
   purpose: StoredAssetPurpose,
-) => MultiModal | undefined
+) => MultiModal | undefined | Promise<MultiModal | undefined>
 
 function cloneStoredAssetResult(result: MultiModal | undefined): MultiModal | undefined {
   return result ? { ...result } : undefined
 }
 
-function readStoredAsset(
+async function readAssetBytes(file: string): Promise<Buffer | undefined> {
+  try {
+    return await fs.promises.readFile(file)
+  } catch (err) {
+    const code =
+      err && typeof err === 'object' && 'code' in err
+        ? (err as { code?: unknown }).code
+        : undefined
+    if (code === 'ENOENT' || code === 'ENOTDIR') return undefined
+    throw err
+  }
+}
+
+async function readStoredAsset(
   db: DatabaseSync,
   dataDir: string,
   id: string,
   purpose: StoredAssetPurpose,
-): MultiModal | undefined {
+): Promise<MultiModal | undefined> {
   const entry = assetById(db, id)
   if (!entry) return undefined
   const file = assetPath(dataDir, entry)
-  if (!fs.existsSync(file)) return undefined
-  const bytes = fs.readFileSync(file)
+  const bytes = await readAssetBytes(file)
+  if (!bytes) return undefined
   if (purpose === 'asset_prompt') {
     return { type: 'image', base64: `data:image/png;base64,${bytes.toString('base64')}` }
   }
@@ -329,16 +342,20 @@ export function createRequestScopedStoredAssetResolver(
   dataDir: string,
   read: StoredAssetReader = readStoredAsset,
 ): ResolveStoredAsset {
-  const cache = new Map<string, MultiModal | undefined>()
-  return (reference, purpose) => {
+  const cache = new Map<string, Promise<MultiModal | undefined>>()
+  return async (reference, purpose) => {
     const id = assetIdFromReference(reference)
     if (!id) return undefined
     const cacheKey = `${purpose}:${id}`
-    if (cache.has(cacheKey)) {
-      return cloneStoredAssetResult(cache.get(cacheKey))
+    let pending = cache.get(cacheKey)
+    if (!pending) {
+      pending = Promise.resolve(read(db, dataDir, id, purpose)).catch((err) => {
+        cache.delete(cacheKey)
+        throw err
+      })
+      cache.set(cacheKey, pending)
     }
-    const resolved = read(db, dataDir, id, purpose)
-    cache.set(cacheKey, resolved)
+    const resolved = await pending
     return cloneStoredAssetResult(resolved)
   }
 }
