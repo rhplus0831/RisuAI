@@ -109,8 +109,8 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
         charemotions,
       })
       return { status: 'done' }
-    } else if (currentChar.viewScreen === 'imggen') {
-      await runImggenStableDiff({ currentChar, selectedChar, selectedChat })
+    } else if (currentChar.viewScreen === 'imggen' && abortSignal.aborted === false) {
+      await runImggenStableDiff({ currentChar, selectedChar, selectedChat, abortSignal })
     }
   }
 

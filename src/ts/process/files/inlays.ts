@@ -29,6 +29,8 @@ const inlayAudioExts = ['wav', 'mp3', 'ogg', 'flac']
 
 const inlayVideoExts = ['webm', 'mp4', 'mkv']
 
+export const MAX_INLAY_SOURCE_PIXELS = 16 * 1024 * 1024
+
 const inlayStorage = localforage.createInstance({
   name: 'inlay',
   storeName: 'inlay',
@@ -106,6 +108,12 @@ function hasLoadedImageDimensions(imgObj: HTMLImageElement) {
   return width > 0 && height > 0
 }
 
+function assertInlayImageDecodeBudget(width: number, height: number) {
+  if (width * height > MAX_INLAY_SOURCE_PIXELS) {
+    throw new Error('Inlay image is too large to process safely')
+  }
+}
+
 function imageLoadError(error?: unknown) {
   if (error instanceof Error) return error
   return new Error('Inlay image failed to load')
@@ -170,12 +178,18 @@ export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
   const imgObj = new Image()
 
   if (extention && inlayImageExts.includes(extention)) {
-    imgObj.src = URL.createObjectURL(new Blob([asBuffer(img.data)], { type: `image/${extention}` }))
-
-    return await writeInlayImage(imgObj, {
-      name: img.name,
-      ext: extention,
-    })
+    const imgURL = URL.createObjectURL(
+      new Blob([asBuffer(img.data)], { type: `image/${extention}` }),
+    )
+    try {
+      imgObj.src = imgURL
+      return await writeInlayImage(imgObj, {
+        name: img.name,
+        ext: extention,
+      })
+    } finally {
+      URL.revokeObjectURL(imgURL)
+    }
   }
 
   if (extention && inlayAudioExts.includes(extention)) {
@@ -213,6 +227,7 @@ export async function writeInlayImage(
   const ctx = canvas.getContext('2d')
   await waitForInlayImageLoad(imgObj)
   ;({ height: drawHeight, width: drawWidth } = getLoadedImageDimensions(imgObj))
+  assertInlayImageDecodeBudget(drawWidth, drawHeight)
 
   //resize image to fit inlay, if total pixels exceed 1024*1024
   const maxPixels = 1024 * 1024
@@ -456,15 +471,21 @@ export async function reencodeImage(img: Uint8Array) {
   }
   const canvas = document.createElement('canvas')
   const imgObj = new Image()
-  imgObj.src = URL.createObjectURL(new Blob([asBuffer(img)], { type: `image/png` }))
-  await imgObj.decode()
-  let drawHeight = imgObj.height
-  let drawWidth = imgObj.width
-  canvas.width = drawWidth
-  canvas.height = drawHeight
-  const ctx = canvas.getContext('2d')
-  ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight)
-  const b64 = canvas.toDataURL('image/png').split(',')[1]
-  const b = Buffer.from(b64, 'base64')
-  return b
+  const imgURL = URL.createObjectURL(new Blob([asBuffer(img)], { type: `image/png` }))
+  try {
+    imgObj.src = imgURL
+    await imgObj.decode()
+    let drawHeight = imgObj.height
+    let drawWidth = imgObj.width
+    assertInlayImageDecodeBudget(drawWidth, drawHeight)
+    canvas.width = drawWidth
+    canvas.height = drawHeight
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight)
+    const b64 = canvas.toDataURL('image/png').split(',')[1]
+    const b = Buffer.from(b64, 'base64')
+    return b
+  } finally {
+    URL.revokeObjectURL(imgURL)
+  }
 }

@@ -13,6 +13,7 @@
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import sendSound from '../../etc/send.mp3'
+  import { decodeAudioFileWithTemporaryContext, probeVideoDuration } from './subtitleMedia'
 
   let LLMModePrompt =
     "Transcribe and create a caption and timestamp of it, according to the user's audio or video input. inside a markdown code block. (prefix ```webvtt / postfix ```)\n\nFormat\n```\n[TIME] CONTENT\n```\n\nExample\n```\n[00:00] Hildy!\n[00:01] How are you?\n[00:03] Tell me, is the lord of the universe in?\n[00:07] Somebody must've stolen the crown jewels\n```\n\nStep 2. Generate another subtitle, this time, as a translation to {{slot}}, with same format with Step 1., using step 1 as ref.\n\n The translation must be in natural {{slot}}.\n\n Now, start (Hint: media length is {{slot::time}})"
@@ -66,19 +67,23 @@
 
     if (prompt.includes('{{slot::time}}')) {
       const video = document.createElement('video')
-      video.src = fileB64
-      video.preload = 'metadata'
-      video.muted = true
-      await video.play()
-      const d = video.duration
-      console.log(d)
+      let d = Number.NaN
+      try {
+        video.src = fileB64
+        video.preload = 'metadata'
+        video.muted = true
+        await video.play()
+        d = video.duration
+      } finally {
+        video.pause()
+        video.remove()
+        video.src = ''
+      }
       if (isNaN(d)) {
         time = 'unknown'
       } else {
         time = `${Math.floor(d / 60)}:${Math.floor(d % 60)}`
       }
-      video.pause()
-      video.remove()
     }
 
     const v = await requestChatData(
@@ -164,25 +169,15 @@
     if (videos.includes(ext)) {
       //check duration
       let duration = 0
-      {
-        const video = document.createElement('video')
-        video.src = URL.createObjectURL(file)
-        video.preload = 'metadata'
-        video.muted = true
-        await video.play()
-        const d = video.duration
-        if (isNaN(d)) {
-          alertError('This video does not have a duration')
-          return
-        }
-        video.pause()
-        video.remove()
-        duration = d
+      const d = await probeVideoDuration(file)
+      if (isNaN(d)) {
+        alertError('This video does not have a duration')
+        return
       }
+      duration = d
 
       outputText = 'Converting video to audio...\n\n'
-      const audioContext = new AudioContext()
-      const audioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer())
+      const audioBuffer = await decodeAudioFileWithTemporaryContext(file)
 
       const [left, right] = [audioBuffer.getChannelData(0), audioBuffer.getChannelData(1)]
 
@@ -256,8 +251,7 @@
           },
         )
 
-        const audioContext = new AudioContext()
-        const audioBuffer = await audioContext.decodeAudioData(await requestFile.arrayBuffer())
+        const audioBuffer = await decodeAudioFileWithTemporaryContext(requestFile)
         const combined = new Float32Array(audioBuffer.getChannelData(0).length)
         for (let j = 0; j < audioBuffer.getChannelData(0).length; j++) {
           for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
@@ -290,7 +284,6 @@
           outputText += `${chunk.timestamp[0]} --> ${chunk.timestamp[1]}\n${chunk.text}\n\n`
         }
 
-        console.log(outputText)
       } catch (error) {
         alertError(JSON.stringify(error))
         outputText = ''
@@ -337,8 +330,6 @@
       alertError(v.result)
       return
     }
-
-    console.log('Reading...')
 
     const reader = v.result.getReader()
 

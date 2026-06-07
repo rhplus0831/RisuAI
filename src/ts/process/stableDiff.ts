@@ -9,7 +9,89 @@ import { processZip } from './processzip'
 import { keiServerURL } from '../kei/kei'
 import random from 'lodash/random'
 
-export async function stableDiff(currentChar: character, prompt: string) {
+interface ImageGenerationOptions {
+  signal?: AbortSignal
+}
+
+const REFERENCE_IMAGE_LOAD_TIMEOUT_MS = 10_000
+
+function isImageGenerationAborted(signal?: AbortSignal): boolean {
+  return signal?.aborted === true
+}
+
+function mediaAbortError(): Error {
+  if (typeof DOMException !== 'undefined') {
+    return new DOMException('Image generation aborted', 'AbortError')
+  }
+  const error = new Error('Image generation aborted')
+  error.name = 'AbortError'
+  return error
+}
+
+async function waitForPollInterval(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (isImageGenerationAborted(signal)) return false
+  return new Promise<boolean>((resolve) => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        timeoutId = null
+      }
+      signal?.removeEventListener('abort', onAbort)
+    }
+    const onAbort = () => {
+      cleanup()
+      resolve(false)
+    }
+    timeoutId = setTimeout(() => {
+      cleanup()
+      resolve(true)
+    }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+export async function loadStableDiffReferenceImageForTests(
+  imageObj: HTMLImageElement,
+  src: string,
+  options: ImageGenerationOptions & { timeoutMs?: number } = {},
+): Promise<void> {
+  if (isImageGenerationAborted(options.signal)) {
+    throw mediaAbortError()
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    const timeoutId = setTimeout(() => {
+      settle(() => reject(new Error('Reference image load timed out')))
+    }, options.timeoutMs ?? REFERENCE_IMAGE_LOAD_TIMEOUT_MS)
+
+    const cleanup = () => {
+      clearTimeout(timeoutId)
+      imageObj.onload = null
+      imageObj.onerror = null
+      options.signal?.removeEventListener('abort', onAbort)
+    }
+    const settle = (finish: () => void) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      finish()
+    }
+    const onAbort = () => settle(() => reject(mediaAbortError()))
+
+    imageObj.onload = () => settle(resolve)
+    imageObj.onerror = () => settle(() => reject(new Error('Reference image failed to load')))
+    options.signal?.addEventListener('abort', onAbort, { once: true })
+    imageObj.src = src
+  })
+}
+
+export async function stableDiff(
+  currentChar: character,
+  prompt: string,
+  options: ImageGenerationOptions = {},
+) {
   let db = getDatabase()
 
   if (db.sdProvider === '') {
@@ -41,7 +123,12 @@ export async function stableDiff(currentChar: character, prompt: string) {
       noMultiGen: true,
     },
     'submodel',
+    options.signal,
   )
+
+  if (isImageGenerationAborted(options.signal)) {
+    return false
+  }
 
   if (rq.type === 'fail') {
     alertError(rq.result)
@@ -57,7 +144,7 @@ export async function stableDiff(currentChar: character, prompt: string) {
   const genPrompt = currentChar.newGenData.prompt.replaceAll('{{slot}}', r)
   const neg = currentChar.newGenData.negative
 
-  return await generateAIImage(genPrompt, currentChar, neg, '')
+  return await generateAIImage(genPrompt, currentChar, neg, '', options)
 }
 
 export async function generateAIImage(
@@ -65,9 +152,13 @@ export async function generateAIImage(
   currentChar: character,
   neg: string,
   returnSdData: string,
+  options: ImageGenerationOptions = {},
 ): Promise<string | false> {
   const db = getDatabase()
-  console.log(db.sdProvider)
+  if (isImageGenerationAborted(options.signal)) {
+    return false
+  }
+
   if (db.sdProvider === 'webui') {
     const uri = new URL(db.webUiUrl)
     uri.pathname = '/sdapi/v1/txt2img'
@@ -90,7 +181,12 @@ export async function generateAIImage(
         headers: {
           'Content-Type': 'application/json',
         },
+        abortSignal: options.signal,
       })
+
+      if (isImageGenerationAborted(options.signal)) {
+        return false
+      }
 
       if (returnSdData === 'inlay') {
         if (da.ok) {
@@ -102,7 +198,6 @@ export async function generateAIImage(
       } else if (da.ok) {
         let charemotions = get(CharEmotion)
         const img = `data:image/png;base64,${da.data.images[0]}`
-        console.log(img)
         const emos: [string, string, number][] = [[img, img, Date.now()]]
         charemotions[currentChar.chaId] = emos
         CharEmotion.set(charemotions)
@@ -303,10 +398,12 @@ export async function generateAIImage(
         const ctx = canvas.getContext('2d')
         const imageObj = new Image()
 
-        await new Promise<void>((resolve) => {
-          imageObj.onload = () => resolve()
-          imageObj.src = `data:image/png;base64,${base64img}`
+        await loadStableDiffReferenceImageForTests(imageObj, `data:image/png;base64,${base64img}`, {
+          signal: options.signal,
         })
+        if (isImageGenerationAborted(options.signal)) {
+          return false
+        }
 
         canvas.width = 1472
         canvas.height = 1472
@@ -332,7 +429,8 @@ export async function generateAIImage(
           base64img = Buffer.from(arrayBuffer).toString('base64')
         }
       } catch (error) {
-        console.warn('Image resize failed, using original:', error)
+        alertError(`Reference image failed to load: ${error}`)
+        return false
       }
 
       if (base64img) {
@@ -373,16 +471,16 @@ export async function generateAIImage(
         reqlist.body.parameters.strength = db.NAIImgConfig.strength || 0.7
         reqlist.body.parameters.noise = db.NAIImgConfig.noise || 0
       }
-
-      console.log({ img2img: reqlist })
     } else {
       reqlist = commonReq
       reqlist.body.action = 'generate'
-
-      console.log({ nothing: reqlist })
     }
     try {
-      const da = await globalFetch(db.NAIImgUrl, reqlist)
+      const da = await globalFetch(db.NAIImgUrl, { ...reqlist, abortSignal: options.signal })
+
+      if (isImageGenerationAborted(options.signal)) {
+        return false
+      }
 
       if (returnSdData === 'inlay') {
         if (da.ok) {
@@ -421,9 +519,12 @@ export async function generateAIImage(
       headers: {
         Authorization: 'Bearer ' + db.openAIKey,
       },
+      abortSignal: options.signal,
     })
 
-    console.log(da)
+    if (isImageGenerationAborted(options.signal)) {
+      return false
+    }
 
     if (returnSdData === 'inlay') {
       let res = da?.data?.data?.[0]?.b64_json
@@ -474,7 +575,12 @@ export async function generateAIImage(
         accept: 'image/*',
       },
       method: 'POST',
+      signal: options.signal,
     })
+
+    if (isImageGenerationAborted(options.signal)) {
+      return false
+    }
 
     const res = await da.arrayBuffer()
     if (!da.ok) {
@@ -513,10 +619,8 @@ export async function generateAIImage(
     }
 
     const fetchWrapper = async (url: string, options = {}) => {
-      console.log(url)
       const response = await globalFetch(url, options)
       if (!response.ok) {
-        console.log(JSON.stringify(response.data))
         throw new Error(JSON.stringify(response.data))
       }
       return response.data
@@ -553,30 +657,36 @@ export async function generateAIImage(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: { prompt: prompt },
+        abortSignal: options.signal,
       })
-      console.log(`prompt id: ${id}`)
 
       let item
 
       const startTime = Date.now()
       const timeout = db.comfyConfig.timeout * 1000
       while (
+        !isImageGenerationAborted(options.signal) &&
         !(item = (
           await (
             await fetchNative(createUrl('/history'), {
               headers: { 'Content-Type': 'application/json' },
               method: 'GET',
+              signal: options.signal,
             })
           ).json()
         )[id])
       ) {
-        console.log('Checking /history...')
         if (Date.now() - startTime >= timeout) {
           alertError('Error: Image generation took longer than expected.')
           return false
         }
-        await new Promise((r) => setTimeout(r, 1000))
+        if (!(await waitForPollInterval(1000, options.signal))) {
+          return false
+        }
       } // Check history until the generation is complete.
+      if (isImageGenerationAborted(options.signal)) {
+        return false
+      }
       const genImgInfo = Object.values(item.outputs).flatMap((output: any) => output.images)[0]
 
       const imgResponse = await fetchNative(
@@ -588,8 +698,12 @@ export async function generateAIImage(
         {
           headers: { 'Content-Type': 'application/json' },
           method: 'GET',
+          signal: options.signal,
         },
       )
+      if (isImageGenerationAborted(options.signal)) {
+        return false
+      }
       const img64 = Buffer.from(await imgResponse.arrayBuffer()).toString('base64')
 
       if (returnSdData === 'inlay') {
@@ -618,7 +732,12 @@ export async function generateAIImage(
       headers: {
         'x-api-key': auth,
       },
+      abortSignal: options.signal,
     })
+
+    if (isImageGenerationAborted(options.signal)) {
+      return false
+    }
 
     if (!da.ok || !da.data.success) {
       alertError(Buffer.from(da.data.message || da.data).toString())
@@ -674,7 +793,12 @@ export async function generateAIImage(
       },
       method: 'POST',
       body: body,
+      abortSignal: options.signal,
     })
+
+    if (isImageGenerationAborted(options.signal)) {
+      return false
+    }
 
     if (!res.ok) {
       alertError(JSON.stringify(res.data))
@@ -730,7 +854,12 @@ export async function generateAIImage(
       },
       method: 'POST',
       body: body,
+      abortSignal: options.signal,
     })
+
+    if (isImageGenerationAborted(options.signal)) {
+      return false
+    }
 
     if (!res.ok) {
       alertError(JSON.stringify(res.data))
@@ -776,7 +905,12 @@ export async function generateAIImage(
     const da = await globalFetch(config.url, {
       body: body,
       headers: headers,
+      abortSignal: options.signal,
     })
+
+    if (isImageGenerationAborted(options.signal)) {
+      return false
+    }
 
     if (returnSdData === 'inlay') {
       let res = da?.data?.data?.[0]?.b64_json
@@ -855,7 +989,11 @@ export async function generateAIImage(
           'Content-Type': 'application/json',
           Authorization: 'Bearer ' + config.key,
         },
+        abortSignal: options.signal,
       })
+      if (isImageGenerationAborted(options.signal)) {
+        return false
+      }
       let requestId: string
       if (requestResponse.ok) {
         /*
@@ -881,6 +1019,9 @@ export async function generateAIImage(
       const MAX_WAIT_TIME = 10 * 60 * 1000 // 10 minutes absolute timeout
       const startTime = Date.now()
       while (true) {
+        if (isImageGenerationAborted(options.signal)) {
+          return false
+        }
         const elapsedTime = Date.now() - startTime
         if (elapsedTime > MAX_WAIT_TIME) {
           alertError(`Task timeout after ${MAX_WAIT_TIME / 1000}s`)
@@ -891,7 +1032,11 @@ export async function generateAIImage(
           headers: {
             Authorization: 'Bearer ' + config.key,
           },
+          abortSignal: options.signal,
         })
+        if (isImageGenerationAborted(options.signal)) {
+          return false
+        }
         if (taskResponse.ok) {
           /*
            * monitor response:
@@ -912,7 +1057,9 @@ export async function generateAIImage(
             break
           }
           // else keep loop
-          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL))
+          if (!(await waitForPollInterval(POLL_INTERVAL, options.signal))) {
+            return false
+          }
         } else {
           alertError(JSON.stringify(taskResponse.data))
           break
@@ -930,7 +1077,11 @@ export async function generateAIImage(
           Authorization: 'Bearer ' + config.key,
         },
         rawResponse: true,
+        abortSignal: options.signal,
       })
+      if (isImageGenerationAborted(options.signal)) {
+        return false
+      }
       if (resultResponse.ok) {
         // mime-type: jpeg (default), png, webp
         const contentType = resultResponse.headers?.['content-type'] || 'image/jpeg'

@@ -3,6 +3,7 @@ import type { character } from '../../storage/database.svelte'
 import { stableDiff } from '../stableDiff'
 
 export interface RunImggenStableDiffOptions {
+  abortSignal?: AbortSignal
   currentChar: character
   selectedChar: number
   selectedChat: number
@@ -20,6 +21,11 @@ export async function runImggenStableDiff(
       msgStr = `user: ${msgs[i].data.replace(/\n/g, ' ')} \n` + msgStr
       break
     }
+  }
+  if (opts.abortSignal?.aborted) return
+  if (opts.abortSignal) {
+    await stableDiff(opts.currentChar, msgStr, { signal: opts.abortSignal })
+    return
   }
   await stableDiff(opts.currentChar, msgStr)
 }

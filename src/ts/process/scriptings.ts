@@ -422,16 +422,21 @@ export async function runScripted(
           const img = await readImage(character.image)
           const imgObj = new Image()
           const extention = character.image.split('.').at(-1)
-
-          imgObj.src = URL.createObjectURL(
+          const imgURL = URL.createObjectURL(
             new Blob([asBuffer(img)], { type: `image/${extention}` }),
           )
 
-          const imgid = await writeInlayImage(imgObj, {
-            name: character.image,
-            ext: extention,
-            id: character.image,
-          })
+          let imgid: string | null = null
+          try {
+            imgObj.src = imgURL
+            imgid = await writeInlayImage(imgObj, {
+              name: character.image,
+              ext: extention,
+              id: character.image,
+            })
+          } finally {
+            URL.revokeObjectURL(imgURL)
+          }
 
           if (imgid) {
             return `{{inlayed::${imgid}}}`
@@ -455,12 +460,17 @@ export async function runScripted(
           const img = await readImage(icon)
           const imgObj = new Image()
           const extention = icon.split('.').at(-1)
-
-          imgObj.src = URL.createObjectURL(
+          const imgURL = URL.createObjectURL(
             new Blob([asBuffer(img)], { type: `image/${extention}` }),
           )
 
-          const imgid = await writeInlayImage(imgObj, { name: icon, ext: extention, id: icon })
+          let imgid: string | null = null
+          try {
+            imgObj.src = imgURL
+            imgid = await writeInlayImage(imgObj, { name: icon, ext: extention, id: icon })
+          } finally {
+            URL.revokeObjectURL(imgURL)
+          }
 
           if (imgid) {
             return `{{inlayed::${imgid}}}`

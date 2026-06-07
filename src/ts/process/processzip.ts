@@ -88,16 +88,20 @@ export class CharXWriter {
     const imgBlob = new Blob([asBuffer(img)], { type: 'image/jpeg' })
     const imgURL = URL.createObjectURL(imgBlob)
     const imgElement = document.createElement('img')
-    imgElement.src = imgURL
-    await imgElement.decode()
-    canvas.width = imgElement.width
-    canvas.height = imgElement.height
-    ctx.drawImage(imgElement, 0, 0)
-    const blob = await new Promise((res: BlobCallback, rej) => {
-      canvas.toBlob(res, 'image/jpeg')
-    })
-    const buf = await blob.arrayBuffer()
-    this.apb.append(new Uint8Array(buf))
+    try {
+      imgElement.src = imgURL
+      await imgElement.decode()
+      canvas.width = imgElement.width
+      canvas.height = imgElement.height
+      ctx.drawImage(imgElement, 0, 0)
+      const blob = await new Promise((res: BlobCallback) => {
+        canvas.toBlob(res, 'image/jpeg')
+      })
+      const buf = await blob.arrayBuffer()
+      this.apb.append(new Uint8Array(buf))
+    } finally {
+      URL.revokeObjectURL(imgURL)
+    }
   }
 
   async write(

@@ -1105,20 +1105,81 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'src/ts/process/files/multisend.test.ts',
     'L49: awaits async text ingestion so .txt content reaches the File block',
   ),
-  planned('L50', 8, 'Remove the image-generation payload logs (incl. the comfy poll-loop log).'),
-  planned(
+  done(
+    'L50',
+    8,
+    'Remove the image-generation payload logs (incl. the comfy poll-loop log).',
+    'src/ts/process/stableDiff.test.ts',
+    'L50: image generation providers do not console-log payloads or poll bodies',
+    [
+      {
+        testPath: 'src/ts/process/tts.test.ts',
+        testName:
+          'L50/I16: GPT-SoVITS and FishSpeech do not console-log request or response bodies',
+      },
+    ],
+  ),
+  done(
     'L51',
     8,
     'Revoke object URLs in `finally` at the image-processing sites (incl. the `scriptings.ts` siblings).',
+    'src/ts/process/files/tests/inlays.test.ts',
+    'L51: revokes the temporary image object URL after upload',
+    [
+      {
+        testPath: 'src/ts/process/files/tests/inlays.test.ts',
+        testName: 'L51/v4-L36: revokes the object URL when decode fails',
+      },
+      {
+        testPath: 'src/ts/process/processzip.test.ts',
+        testName: 'L51: writeJpeg revokes the temporary object URL after decode and append',
+      },
+      {
+        testPath: 'src/ts/process/scriptings.test.ts',
+        testName: 'L51: getPersonaImageMain revokes its object URL when inlay writing fails',
+      },
+    ],
   ),
-  planned(
+  done(
     'L52',
     8,
     'Shared/closed AudioContext for `runVITS` (mirror `getNetworkAudioContext`); add the missing decode error callback.',
+    'src/ts/process/transformers.test.ts',
+    'L52: repeated VITS calls reuse one AudioContext and release ended sources',
+    [
+      {
+        testPath: 'src/ts/process/transformers.test.ts',
+        testName: 'L52: decodeAudioData errors reject through the callback path',
+      },
+    ],
   ),
-  planned('L53', 8, 'Dispose the old VITS synthesizer before replacing (mirror the extractor).'),
-  planned('L54', 8, '`await pdf.destroy()` in a `finally` after PDF conversion.'),
-  planned('L55', 8, 'Close the whisper-mode AudioContexts and revoke the probe-video URL.'),
+  done(
+    'L53',
+    8,
+    'Dispose the old VITS synthesizer before replacing (mirror the extractor).',
+    'src/ts/process/transformers.test.ts',
+    'L53: switching VITS models disposes the old synthesizer before replacing it',
+  ),
+  done(
+    'L54',
+    8,
+    '`await pdf.destroy()` in a `finally` after PDF conversion.',
+    'src/ts/process/dynamicutils/pdf.test.ts',
+    'L54: awaits pdf.destroy() in finally after conversion',
+  ),
+  done(
+    'L55',
+    8,
+    'Close the whisper-mode AudioContexts and revoke the probe-video URL.',
+    'src/lib/Playground/PlaygroundSubtitle.test.ts',
+    'L55: probeVideoDuration revokes the probe object URL after metadata probing',
+    [
+      {
+        testPath: 'src/lib/Playground/PlaygroundSubtitle.test.ts',
+        testName: 'L55: temporary whisper AudioContexts close after decode success and failure',
+      },
+    ],
+  ),
   done(
     'L56',
     4,
@@ -1199,10 +1260,12 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'K4',
     8,
     '`onerror` + timeout for the stableDiff reference-image load (v2-L49 propagation).',
+    'src/ts/process/stableDiff.test.ts',
+    'K4: reference image loading rejects onerror and timeout instead of hanging',
   ),
 ]
 
@@ -1361,6 +1424,61 @@ const GUARD_REPAIR_INVENTORY_PROOF: GuardRepairInventoryProof[] = [
     disposition: 'fixed',
     proof:
       'initializeMCPs isolates internal checkHandshake failures per client/tool set so a failing internal client is unavailable to diagnostics without rejecting every client-side LLM tool initialization.',
+  },
+]
+
+const REQUIRED_MEDIA_CLEANUP_INVENTORY_SURFACES = [
+  'image-generation logs and poll timers',
+  'TTS and translator riding logs',
+  'image-processing object URLs',
+  'VITS audio context and synthesizer',
+  'PDF document lifecycle',
+  'subtitle whisper media resources',
+  'inlay decode caps',
+]
+
+const MEDIA_CLEANUP_INVENTORY_PROOF: GuardRepairInventoryProof[] = [
+  {
+    surface: 'image-generation logs and poll timers',
+    disposition: 'fixed',
+    proof:
+      'stableDiff image-generation paths no longer console-log provider payloads or comfy poll-loop bodies; stage-4 imggen passes the live AbortSignal and comfy/wavespeed poll sleeps clear on abort, recording v4-L31 as a Phase 8 rider only.',
+  },
+  {
+    surface: 'TTS and translator riding logs',
+    disposition: 'fixed',
+    proof:
+      'GPT-SoVITS, FishSpeech, and ElevenLabs voice-list body logs are removed for I16; the LLM translatorNote log was already removed in the Phase 8 translator hygiene slice, so I17 remains an informational rider with no scheduled status row.',
+  },
+  {
+    surface: 'image-processing object URLs',
+    disposition: 'fixed',
+    proof:
+      'postInlayAsset, reencodeImage, CharXWriter.writeJpeg, and scripting persona/character image helpers now revoke temporary object URLs in finally blocks on both success and failure.',
+  },
+  {
+    surface: 'VITS audio context and synthesizer',
+    disposition: 'fixed',
+    proof:
+      'runVITS reuses a shared AudioContext, rejects decodeAudioData failures through the error callback, releases ended sources, and disposes the old synthesizer before loading a replacement model.',
+  },
+  {
+    surface: 'PDF document lifecycle',
+    disposition: 'fixed',
+    proof:
+      'convertPdfToImages awaits pdf.destroy() in finally after successful conversion, errors, and abort-triggered cleanup, while the earlier L48 PDF input/page/output caps remain intact.',
+  },
+  {
+    surface: 'subtitle whisper media resources',
+    disposition: 'fixed',
+    proof:
+      'Playground subtitle video probing revokes the probe URL and removes the element; whisper-local audio decode uses temporary AudioContexts that close after decode success or failure.',
+  },
+  {
+    surface: 'inlay decode caps',
+    disposition: 'fixed',
+    proof:
+      'writeInlayImage and reencodeImage reject oversized source images before canvas work, recording v4-L36 model/proxy image decode caps as a Phase 8 rider only.',
   },
 ]
 
@@ -1956,7 +2074,7 @@ Mentions v2-L12 and v1-L4 in prose only.
 
     expect(rows).toHaveLength(4)
     expect(rows.map((row) => row.id)).toEqual(rangeIds('K', 4))
-    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'DONE', 'PENDING'])
+    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'DONE', 'DONE'])
     expect(rows[0].targetFix).toContain('v2-R5 re-open')
     expect(allAuditIds(overlapEvidenceUniverse)).toEqual([])
   })
@@ -2063,11 +2181,19 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L47',
       'L48',
       'L49',
+      'L50',
+      'L51',
+      'L52',
+      'L53',
+      'L54',
+      'L55',
       'L56',
       'K1',
       'K2',
       'K3',
+      'K4',
     ])
+    expect(plannedEntries).toEqual([])
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
     expect(doneEntries.every(hasProofFields)).toBe(true)
     for (const entry of plannedEntries) {
@@ -2075,7 +2201,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1-M9, L1-L49, L56, K1, K2, and K3 marked DONE', () => {
+  it('keeps the live registry green with every scheduled v3 id marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -2139,10 +2265,17 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L47',
       'L48',
       'L49',
+      'L50',
+      'L51',
+      'L52',
+      'L53',
+      'L54',
+      'L55',
       'L56',
       'K1',
       'K2',
       'K3',
+      'K4',
     ])
     expect(collectGateProblems()).toEqual([])
   })
@@ -2167,6 +2300,26 @@ describe('v3 fix-completeness gate routing registry', () => {
     expect(proofText).toContain('checkHandshake failures per client/tool set')
   })
 
+  it('records Phase 8 media cleanup inventory and rider dispositions', () => {
+    expect(MEDIA_CLEANUP_INVENTORY_PROOF.map((entry) => entry.surface)).toEqual(
+      REQUIRED_MEDIA_CLEANUP_INVENTORY_SURFACES,
+    )
+    expect(new Set(MEDIA_CLEANUP_INVENTORY_PROOF.map((entry) => entry.surface)).size).toBe(
+      REQUIRED_MEDIA_CLEANUP_INVENTORY_SURFACES.length,
+    )
+    for (const entry of MEDIA_CLEANUP_INVENTORY_PROOF) {
+      expect(['fixed', 'no-action', 'deferred']).toContain(entry.disposition)
+      expect(reasonIsSubstantive(entry.proof)).toBe(true)
+    }
+
+    const proofText = MEDIA_CLEANUP_INVENTORY_PROOF.map((entry) => entry.proof).join('\n')
+    expect(proofText).toContain('I16')
+    expect(proofText).toContain('I17')
+    expect(proofText).toContain('v4-L31')
+    expect(proofText).toContain('v4-L36')
+    expect(proofText).toContain('finally')
+  })
+
   it('records legacy gated and owner-decision context only as explanatory context', () => {
     const registeredIds = [
       ...SCHEDULED_FIXES.map((entry) => entry.id),
@@ -2183,17 +2336,25 @@ describe('v3 fix-completeness gate routing registry', () => {
   })
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
+    const l50 = SCHEDULED_FIXES.find((entry) => entry.id === 'L50')
+    if (!l50) throw new Error('L50 registry entry not found')
+    const pendingRiskText = replaceRiskRow(
+      readDoc(RISK_DOC),
+      'L50',
+      `| L50 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l50.fix} | PENDING |`,
+    )
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
       entry.id === 'L50'
         ? {
             ...entry,
+            status: 'PLANNED' as const,
             testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
             testName: 'premature v3 proof',
           }
         : entry,
     )
 
-    expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
+    expect(collectGateProblems({ scheduled: withPrematureProof, riskText: pendingRiskText })).toContain(
       'L50: PLANNED entries must not claim proof fields',
     )
   })
@@ -2202,13 +2363,18 @@ describe('v3 fix-completeness gate routing registry', () => {
     const l50 = SCHEDULED_FIXES.find((entry) => entry.id === 'L50')
     if (!l50) throw new Error('L50 registry entry not found')
 
-    const withDoneDocRow = replaceRiskRow(
-      readDoc(RISK_DOC),
-      'L50',
-      `| L50 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l50.fix} | DONE |`,
+    const withPlannedRegistry = SCHEDULED_FIXES.map((entry) =>
+      entry.id === 'L50'
+        ? {
+            id: entry.id,
+            phase: entry.phase,
+            fix: entry.fix,
+            status: 'PLANNED' as const,
+          }
+        : entry,
     )
 
-    expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
+    expect(collectGateProblems({ scheduled: withPlannedRegistry })).toContain(
       'L50: status mismatch (registry PLANNED, docs DONE)',
     )
   })
@@ -2216,21 +2382,18 @@ describe('v3 fix-completeness gate routing registry', () => {
   it('rejects DONE registry entries without a registered test path and test name', () => {
     const l50 = SCHEDULED_FIXES.find((entry) => entry.id === 'L50')
     if (!l50) throw new Error('L50 registry entry not found')
-    const riskText = replaceRiskRow(
-      readDoc(RISK_DOC),
-      'L50',
-      `| L50 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l50.fix} | DONE |`,
-    )
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
       entry.id === 'L50'
         ? {
-            ...entry,
+            id: entry.id,
+            phase: entry.phase,
+            fix: entry.fix,
             status: 'DONE' as const,
           }
         : entry,
     )
 
-    expect(collectGateProblems({ scheduled: syntheticDone, riskText })).toEqual(
+    expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
         'L50: DONE without a registered testPath',
         'L50: DONE without a registered testName',

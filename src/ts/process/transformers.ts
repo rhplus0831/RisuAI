@@ -118,6 +118,40 @@ export const runImageEmbedding = async (dataurl: string) => {
 
 let synthesizer: TextToAudioPipeline = null
 let lastSynth: string = null
+let vitsAudioContext: AudioContext | null = null
+
+async function getVitsAudioContext(): Promise<AudioContext> {
+  if (!vitsAudioContext || vitsAudioContext.state === 'closed') {
+    vitsAudioContext = new AudioContext()
+  }
+
+  if (vitsAudioContext.state === 'suspended') {
+    await vitsAudioContext.resume()
+  }
+
+  return vitsAudioContext
+}
+
+async function replaceVitsSynthesizer(nextSynthKey: string, createSynthesizer: () => Promise<TextToAudioPipeline>) {
+  if (synthesizer && lastSynth !== nextSynthKey) {
+    await synthesizer.dispose?.()
+    synthesizer = null
+  }
+  if (!synthesizer) {
+    synthesizer = await createSynthesizer()
+    lastSynth = nextSynthKey
+  }
+}
+
+function decodeVitsAudio(audioContext: AudioContext, audio: ArrayBuffer): Promise<AudioBuffer> {
+  return new Promise<AudioBuffer>((resolve, reject) => {
+    audioContext.decodeAudioData(
+      audio,
+      resolve,
+      (error) => reject(error ?? new Error('VITS audio decode failed')),
+    )
+  })
+}
 
 export interface OnnxModelFiles {
   files: { [key: string]: string }
@@ -136,10 +170,9 @@ export const runVITS = async (
     return
   }
   if (typeof modelData === 'string') {
-    if (!synthesizer || lastSynth !== modelData) {
-      lastSynth = modelData
-      synthesizer = await pipeline<'text-to-speech'>('text-to-speech', modelData)
-    }
+    await replaceVitsSynthesizer(modelData, () =>
+      pipeline<'text-to-speech'>('text-to-speech', modelData),
+    )
   } else {
     if (!synthesizer || lastSynth !== modelData.id) {
       const files = modelData.files
@@ -149,20 +182,24 @@ export const runVITS = async (
         tfMap[fileURL] = files[key]
         tfMap[location.origin + fileURL] = files[key]
       }
-      lastSynth = modelData.id
-      synthesizer = await pipeline<'text-to-speech'>('text-to-speech', modelData.id)
     }
+    await replaceVitsSynthesizer(modelData.id, () =>
+      pipeline<'text-to-speech'>('text-to-speech', modelData.id),
+    )
   }
   let out = await synthesizer(text, {})
   const wav = new WaveFile()
   wav.fromScratch(1, out.sampling_rate, '32f', out.audio)
-  const audioContext = new AudioContext()
-  audioContext.decodeAudioData(asBuffer(wav.toBuffer().buffer), (decodedData) => {
-    const sourceNode = audioContext.createBufferSource()
-    sourceNode.buffer = decodedData
-    sourceNode.connect(audioContext.destination)
-    sourceNode.start()
-  })
+  const audioContext = await getVitsAudioContext()
+  const decodedData = await decodeVitsAudio(audioContext, asBuffer(wav.toBuffer().buffer))
+  const sourceNode = audioContext.createBufferSource()
+  sourceNode.buffer = decodedData
+  sourceNode.connect(audioContext.destination)
+  sourceNode.onended = () => {
+    sourceNode.onended = null
+    sourceNode.disconnect()
+  }
+  sourceNode.start()
 }
 
 export const registerOnnxModel = async (): Promise<OnnxModelFiles> => {

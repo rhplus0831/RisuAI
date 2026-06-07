@@ -101,7 +101,7 @@ vi.mock('../util', () => ({
   asBuffer: (data: Uint8Array) => data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
 }))
 
-import { CharXImporter } from './processzip'
+import { CharXImporter, CharXWriter } from './processzip'
 
 const encoder = new TextEncoder()
 
@@ -333,5 +333,47 @@ describe('CharXImporter stream caps', () => {
       'assets/main.png': 'saved-0-4-1',
       'assets/voice.bin': 'saved-1-3-9',
     })
+  })
+})
+
+describe('CharXWriter media cleanup', () => {
+  it('L51: writeJpeg revokes the temporary object URL after decode and append', async () => {
+    const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:charx-jpeg')
+    const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const originalCreateElement = document.createElement.bind(document)
+    const drawImage = vi.fn()
+    const createElement = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'canvas') {
+        return {
+          getContext: () => ({ drawImage }),
+          toBlob: (cb: BlobCallback) => cb(new Blob(['jpeg-out'], { type: 'image/jpeg' })),
+        } as unknown as HTMLCanvasElement
+      }
+      if (tag === 'img') {
+        return {
+          decode: vi.fn(async () => {}),
+          height: 24,
+          src: '',
+          width: 32,
+        } as unknown as HTMLImageElement
+      }
+      return originalCreateElement(tag)
+    })
+    const writer = new CharXWriter({
+      close: vi.fn(async () => {}),
+      write: vi.fn(async () => {}),
+    })
+
+    try {
+      await writer.writeJpeg(new Uint8Array([1, 2, 3]))
+
+      expect(drawImage).toHaveBeenCalledTimes(1)
+      expect(createUrl).toHaveBeenCalledTimes(1)
+      expect(revokeUrl).toHaveBeenCalledWith('blob:charx-jpeg')
+    } finally {
+      createElement.mockRestore()
+      createUrl.mockRestore()
+      revokeUrl.mockRestore()
+    }
   })
 })

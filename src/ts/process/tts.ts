@@ -431,7 +431,6 @@ export async function sayTTS(character: character, text: string) {
         }
 
         if (character.gptSoVitsConfig.use_auto_path) {
-          console.log('auto')
           const path = await globalFetch(`${character.gptSoVitsConfig.url}/get_path`, {
             method: 'GET',
             headers: {
@@ -440,7 +439,6 @@ export async function sayTTS(character: character, text: string) {
             rawResponse: false,
             plainFetchDeforce: true,
           })
-          console.log(path)
           if (path.ok) {
             body.ref_audio_path =
               path.data.message +
@@ -455,7 +453,6 @@ export async function sayTTS(character: character, text: string) {
             '/public/audio/' +
             character.gptSoVitsConfig.ref_audio_data.fileName
         }
-        console.log(body)
 
         const response = await globalFetch(`${character.gptSoVitsConfig.url}/tts`, {
           method: 'POST',
@@ -465,7 +462,6 @@ export async function sayTTS(character: character, text: string) {
           body: body,
           rawResponse: true,
         })
-        console.log(response)
 
         if (response.ok) {
           const mimeType = 'audio/wav'
@@ -516,8 +512,6 @@ export async function sayTTS(character: character, text: string) {
           mp3_bitrate: 192,
         }
 
-        console.log(body)
-
         const response = await globalFetch(`https://api.fish.audio/v1/tts`, {
           method: 'POST',
           headers: {
@@ -527,7 +521,6 @@ export async function sayTTS(character: character, text: string) {
           body: body,
           rawResponse: true,
         })
-        console.log(response)
 
         if (response.ok) {
           await playAudio(response.data.buffer, 'audio/mpeg', {
@@ -584,7 +577,6 @@ export async function getElevenTTSVoices() {
   })
   const res = await data.json()
 
-  console.log(res)
   return res.voices
 }
 

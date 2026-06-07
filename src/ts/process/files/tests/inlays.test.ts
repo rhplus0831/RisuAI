@@ -5,11 +5,14 @@ import {
   getInlayAsset,
   getInlayAssetBlob,
   listInlayAssets,
+  MAX_INLAY_SOURCE_PIXELS,
   postInlayAsset,
+  reencodeImage,
   removeInlayAsset,
   setInlayAsset,
   writeInlayImage,
 } from '../inlays'
+import { getImageType } from 'src/ts/media'
 
 //#region module mocks
 
@@ -127,6 +130,28 @@ function makeImage(
   Object.defineProperty(img, 'complete', { get: () => options.complete ?? true })
   Object.defineProperty(img, 'decode', { value: decode })
   return img
+}
+
+class FakeLoadedImage extends EventTarget {
+  complete = true
+  height = 24
+  naturalHeight = 24
+  naturalWidth = 32
+  width = 32
+  decode = vi.fn(async () => {})
+  src = ''
+}
+
+class FakeBrokenImage extends EventTarget {
+  complete = false
+  height = 0
+  naturalHeight = 0
+  naturalWidth = 0
+  width = 0
+  decode = vi.fn(async () => {
+    throw new Error('decode failed')
+  })
+  src = ''
 }
 
 beforeEach(() => {
@@ -437,6 +462,27 @@ describe('postInlayAsset', () => {
       }),
     )
   })
+
+  test('L51: revokes the temporary image object URL after upload', async () => {
+    vi.stubGlobal('Image', FakeLoadedImage)
+    const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:inlay-upload')
+    const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    try {
+      const result = await postInlayAsset({
+        name: 'photo.jpg',
+        data: new Uint8Array([0xff, 0xd8, 0xff]),
+      })
+
+      expect(result).not.toBeNull()
+      expect(createUrl).toHaveBeenCalledTimes(1)
+      expect(revokeUrl).toHaveBeenCalledWith('blob:inlay-upload')
+    } finally {
+      createUrl.mockRestore()
+      revokeUrl.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
 })
 
 describe('writeInlayImage', () => {
@@ -546,8 +592,8 @@ describe('writeInlayImage', () => {
   test('output pixels never exceed 1024 * 1024', async () => {
     await fc.assert(
       fc.asyncProperty(
-        fc.integer({ min: 1, max: 10000 }),
-        fc.integer({ min: 1, max: 10000 }),
+        fc.integer({ min: 1, max: 4096 }),
+        fc.integer({ min: 1, max: 4096 }),
         async (w, h) => {
           store.clear()
           serverAssetStore.clear()
@@ -566,8 +612,8 @@ describe('writeInlayImage', () => {
   test('preserves aspect ratio when downscaling', async () => {
     await fc.assert(
       fc.asyncProperty(
-        fc.integer({ min: 1025, max: 10000 }),
-        fc.integer({ min: 1025, max: 10000 }),
+        fc.integer({ min: 1025, max: 4096 }),
+        fc.integer({ min: 1025, max: 4096 }),
         async (w, h) => {
           store.clear()
           serverAssetStore.clear()
@@ -602,6 +648,36 @@ describe('writeInlayImage', () => {
         },
       ),
     )
+  })
+
+  test('v4-L36: rejects oversized source images before canvas work', async () => {
+    const edge = Math.ceil(Math.sqrt(MAX_INLAY_SOURCE_PIXELS)) + 1
+    const imgObj = makeImage(edge, edge)
+
+    await expect(writeInlayImage(imgObj)).rejects.toThrow(
+      'Inlay image is too large to process safely',
+    )
+    expect(fakeCtx.drawImage).not.toHaveBeenCalled()
+    expect(serverAssetStore.size).toBe(0)
+  })
+})
+
+describe('reencodeImage', () => {
+  test('L51/v4-L36: revokes the object URL when decode fails', async () => {
+    vi.mocked(getImageType).mockReturnValue('JPEG')
+    vi.stubGlobal('Image', FakeBrokenImage)
+    const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:reencode')
+    const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    try {
+      await expect(reencodeImage(new Uint8Array([1, 2, 3]))).rejects.toThrow('decode failed')
+      expect(createUrl).toHaveBeenCalledTimes(1)
+      expect(revokeUrl).toHaveBeenCalledWith('blob:reencode')
+    } finally {
+      createUrl.mockRestore()
+      revokeUrl.mockRestore()
+      vi.unstubAllGlobals()
+    }
   })
 })
 

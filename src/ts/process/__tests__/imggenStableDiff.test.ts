@@ -101,4 +101,30 @@ describe('runImggenStableDiff', () => {
     await runImggenStableDiff({ currentChar: char, selectedChar: 0, selectedChat: 0 })
     expect(stableDiffSpy).toHaveBeenCalledWith(char, '')
   })
+
+  it('v4-L31: passes the stage abort signal into stableDiff', async () => {
+    const char = makeChar()
+    const abortSignal = new AbortController().signal
+    seed(char)
+
+    await runImggenStableDiff({ currentChar: char, selectedChar: 0, selectedChat: 0, abortSignal })
+
+    expect(stableDiffSpy).toHaveBeenCalledWith(char, '', { signal: abortSignal })
+  })
+
+  it('v4-L31: skips stableDiff when the stage abort signal is already aborted', async () => {
+    const char = makeChar()
+    const controller = new AbortController()
+    controller.abort()
+    seed(char)
+
+    await runImggenStableDiff({
+      currentChar: char,
+      selectedChar: 0,
+      selectedChat: 0,
+      abortSignal: controller.signal,
+    })
+
+    expect(stableDiffSpy).not.toHaveBeenCalled()
+  })
 })

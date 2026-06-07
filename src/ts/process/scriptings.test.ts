@@ -99,10 +99,65 @@ const luaMock = vi.hoisted(() => {
   }
 })
 
+const mediaMock = vi.hoisted(() => ({
+  fetchNative: vi.fn(),
+  getInlayAsset: vi.fn(),
+  getPersonaPrompt: vi.fn(() => ''),
+  getUserIcon: vi.fn(() => 'persona.png'),
+  getUserName: vi.fn(() => 'User'),
+  readImage: vi.fn(async () => new Uint8Array([1, 2, 3])),
+  writeInlayImage: vi.fn(async () => 'inlay-id'),
+}))
+
 vi.mock('wasmoon', () => ({
   LuaFactory: luaMock.LuaFactory,
   LuaEngine: luaMock.LuaEngine,
 }))
+
+vi.mock('../globalApi.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('../globalApi.svelte')>()
+  return {
+    ...actual,
+    fetchNative: mediaMock.fetchNative,
+    readImage: mediaMock.readImage,
+  }
+})
+
+vi.mock('src/ts/globalApi.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/globalApi.svelte')>()
+  return {
+    ...actual,
+    fetchNative: mediaMock.fetchNative,
+    readImage: mediaMock.readImage,
+  }
+})
+
+vi.mock('./files/inlays', () => ({
+  getInlayAsset: mediaMock.getInlayAsset,
+  writeInlayImage: mediaMock.writeInlayImage,
+}))
+
+vi.mock('../util', async (importActual) => {
+  const actual = await importActual<typeof import('../util')>()
+  return {
+    ...actual,
+    getPersonaPrompt: mediaMock.getPersonaPrompt,
+    getUserIcon: mediaMock.getUserIcon,
+    getUserName: mediaMock.getUserName,
+  }
+})
+
+vi.mock('src/ts/util', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/util')>()
+  return {
+    ...actual,
+    asBuffer: (data: Uint8Array) =>
+      data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+    getPersonaPrompt: mediaMock.getPersonaPrompt,
+    getUserIcon: mediaMock.getUserIcon,
+    getUserName: mediaMock.getUserName,
+  }
+})
 
 vi.mock('./modules', async (importActual) => {
   const actual = await importActual<typeof import('./modules')>()
@@ -149,6 +204,13 @@ function makeCharacter(chat: Chat): character {
 beforeEach(() => {
   resetScriptingEngineCacheForTests()
   luaMock.reset()
+  mediaMock.fetchNative.mockReset()
+  mediaMock.getInlayAsset.mockReset()
+  mediaMock.getPersonaPrompt.mockReturnValue('')
+  mediaMock.getUserIcon.mockReturnValue('persona.png')
+  mediaMock.getUserName.mockReturnValue('User')
+  mediaMock.readImage.mockResolvedValue(new Uint8Array([1, 2, 3]))
+  mediaMock.writeInlayImage.mockResolvedValue('inlay-id')
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch,
@@ -161,6 +223,35 @@ afterEach(() => {
   resetScriptingEngineCacheForTests()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+})
+
+describe('client scripting media cleanup (L51)', () => {
+  it('L51: getPersonaImageMain revokes its object URL when inlay writing fails', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    mediaMock.writeInlayImage.mockRejectedValueOnce(new Error('inlay failed'))
+    const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:persona-image')
+    const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    try {
+      await runScripted('return "api"', {
+        char,
+        chat,
+        mode: 'editDisplay',
+        data: 'body',
+      })
+      const getPersonaImageMain = luaMock.engines[0].hostFns.get('getPersonaImageMain')
+
+      await expect(getPersonaImageMain?.('access-key')).resolves.toBe('')
+      expect(mediaMock.readImage).toHaveBeenCalledWith('persona.png')
+      expect(mediaMock.writeInlayImage).toHaveBeenCalledTimes(1)
+      expect(createUrl).toHaveBeenCalledTimes(1)
+      expect(revokeUrl).toHaveBeenCalledWith('blob:persona-image')
+    } finally {
+      createUrl.mockRestore()
+      revokeUrl.mockRestore()
+    }
+  })
 })
 
 describe('client scripting Lua budgets and cache (L39-L41)', () => {

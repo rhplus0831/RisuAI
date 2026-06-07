@@ -16,8 +16,7 @@ prior-audit finding IDs are referenced as `v1-*` / `v2-*`.
 
 - Confirmed findings: 89 total: 1 high, 9 medium, 56 low, 23 informational.
 - Scheduled: H1, M1-M9, L1-L56, and the known-overlap residuals K1-K4.
-  `H1`, `M1-M9`, `L1-L49`, `L56`, and `K1-K3` are `DONE`;
-  `L50-L55` and `K4` remain `PENDING`.
+  `H1`, `M1-M9`, `L1-L56`, and `K1-K4` are `DONE`.
 - Gated items: unchanged from v2 — `v2-L12`, plus the v1 carry-overs (v1-L4,
   v1-L7, v1-L26, v1-U2) and the `../archive/leftover.md` evidence gates. The
   v3 audit re-confirmed and respected all of them.
@@ -126,12 +125,12 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L47 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Size-cap the persistent `connectSSE` buffer (abort + destroy past a few MB without a delimiter). | DONE |
 | L48 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Page/byte caps + AbortSignal + honor the `limit` argument in the MCP PDF read. | DONE |
 | L49 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | `await hypa.addText(...)` at the three file-attach builders.                 | DONE |
-| L50 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Remove the image-generation payload logs (incl. the comfy poll-loop log).    | PENDING |
-| L51 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Revoke object URLs in `finally` at the image-processing sites (incl. the `scriptings.ts` siblings). | PENDING |
-| L52 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Shared/closed AudioContext for `runVITS` (mirror `getNetworkAudioContext`); add the missing decode error callback. | PENDING |
-| L53 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Dispose the old VITS synthesizer before replacing (mirror the extractor).    | PENDING |
-| L54 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | `await pdf.destroy()` in a `finally` after PDF conversion.                   | PENDING |
-| L55 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Close the whisper-mode AudioContexts and revoke the probe-video URL.         | PENDING |
+| L50 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Remove the image-generation payload logs (incl. the comfy poll-loop log).    | DONE |
+| L51 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Revoke object URLs in `finally` at the image-processing sites (incl. the `scriptings.ts` siblings). | DONE |
+| L52 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Shared/closed AudioContext for `runVITS` (mirror `getNetworkAudioContext`); add the missing decode error callback. | DONE |
+| L53 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Dispose the old VITS synthesizer before replacing (mirror the extractor).    | DONE |
+| L54 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | `await pdf.destroy()` in a `finally` after PDF conversion.                   | DONE |
+| L55 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Close the whisper-mode AudioContexts and revoke the probe-video URL.         | DONE |
 | L56 | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Keep the proxy-stream abort listener attached for the whole stream; issue the job DELETE from `closeAndEnd` when no terminal frame arrived. | DONE |
 
 ### Known-Overlap Residuals (scheduled)
@@ -144,7 +143,7 @@ prior IDs stay closed in their archives, these rows own the remaining gap.
 | K1  | [3](phases/phase-3-memory-subsystem.md)                     | Skip/lazy the embedding `vector_blob` decode when no valid query vectors exist (v2-R5 re-open: the dismissal covered the math, not the decode). | DONE |
 | K2  | [2](phases/phase-2-command-surface-scoping.md)              | Drop the redundant in-handler auth verify on the proxy/hub routes (v2-L16 propagation). | DONE |
 | K3  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Return the provably-immutable `initialMessages` restoration payload by reference (v2-M1 ring). | DONE |
-| K4  | [8](phases/phase-8-client-interpreters-plugins-media.md)    | `onerror` + timeout for the stableDiff reference-image load (v2-L49 propagation). | PENDING |
+| K4  | [8](phases/phase-8-client-interpreters-plugins-media.md)    | `onerror` + timeout for the stableDiff reference-image load (v2-L49 propagation). | DONE |
 
 ### Informational
 
@@ -170,8 +169,8 @@ the touching slice is already there; none is required.
 | I13 | no action | Code-block download object URL never revoked. |
 | I14 | no action | BotSettings preset-icon object URL never revoked. |
 | I15 | no action | `hypaVector` IndexedDB embedding cache grows without eviction (intentional disk cache). |
-| I16 | no action | GPT-SoVITS/FishSpeech TTS log full bodies; may ride Phase 8's L50 log sweep if free. |
-| I17 | no action | LLM translator logs `translatorNote` per cache-missed call; may ride Phase 8's L50 sweep if free. |
+| I16 | no action | GPT-SoVITS/FishSpeech TTS body logs rode Phase 8's L50 log sweep; no separate scheduled row. |
+| I17 | no action | LLM translator `translatorNote` logs rode Phase 8's translator hygiene/log sweep; no separate scheduled row. |
 | I18 | no action | `templateCheck` re-scans per guarded write while Prompt Settings is open (v2-M13 deferred); may ride Phase 6 if free. |
 | I19 | no action | `DBState.db` proxy re-mint per guarded write is the deliberate design; fix consumers (Phase 6), not the guard. |
 | I20 | no action | `@@inject` display action silent no-op under the guard; rides Phase 5's guard-repair batch (same wrap pattern as L34-L36). |

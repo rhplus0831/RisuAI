@@ -12,7 +12,7 @@ const fakes = vi.hoisted(() => ({
   },
   embedding: { calls: 0 },
   llm: { calls: 0 },
-  imggen: { calls: 0 },
+  imggen: { calls: [] as unknown[] },
   finalize: { calls: [] as { stage4Duration: number; finalized: boolean }[] },
 }))
 
@@ -55,8 +55,8 @@ vi.mock('../postGeneration/emotionFallbackLlm', () => ({
 }))
 
 vi.mock('../postGeneration/imggenStableDiff', () => ({
-  runImggenStableDiff: async () => {
-    fakes.imggen.calls++
+  runImggenStableDiff: async (opts: unknown) => {
+    fakes.imggen.calls.push(opts)
   },
 }))
 
@@ -181,7 +181,7 @@ beforeEach(() => {
   fakes.loadEmotion.calls = 0
   fakes.embedding.calls = 0
   fakes.llm.calls = 0
-  fakes.imggen.calls = 0
+  fakes.imggen.calls = []
   fakes.finalize.calls = []
 })
 
@@ -212,7 +212,7 @@ describe('runStage4 - resend handoff', () => {
     expect(fakes.applyEmotion.calls).toBe(0)
     expect(fakes.llm.calls).toBe(0)
     expect(fakes.embedding.calls).toBe(0)
-    expect(fakes.imggen.calls).toBe(0)
+    expect(fakes.imggen.calls).toHaveLength(0)
   })
 })
 
@@ -327,7 +327,29 @@ describe('runStage4 - imggen routing', () => {
     const result = await runStage4(args)
 
     expect(result).toEqual({ status: 'done' })
-    expect(fakes.imggen.calls).toBe(1)
+    expect(fakes.imggen.calls).toHaveLength(1)
+    expect(fakes.imggen.calls[0]).toMatchObject({
+      abortSignal: args.abortSignal,
+      currentChar: args.currentChar,
+      selectedChar: 0,
+      selectedChat: 0,
+    })
+    expect(fakes.finalize.calls).toHaveLength(1)
+  })
+
+  it('v4-L31: skips imggen post-generation work when already aborted', async () => {
+    seedDb()
+    const ac = new AbortController()
+    ac.abort()
+    const { args } = baseArgs({
+      abortSignal: ac.signal,
+      currentChar: makeChar({ viewScreen: 'imggen' }),
+    })
+
+    const result = await runStage4(args)
+
+    expect(result).toEqual({ status: 'done' })
+    expect(fakes.imggen.calls).toHaveLength(0)
     expect(fakes.finalize.calls).toHaveLength(1)
   })
 })
@@ -344,7 +366,7 @@ describe('runStage4 - inlayViewScreen short-circuit', () => {
     expect(result).toEqual({ status: 'done' })
     expect(fakes.llm.calls).toBe(0)
     expect(fakes.embedding.calls).toBe(0)
-    expect(fakes.imggen.calls).toBe(0)
+    expect(fakes.imggen.calls).toHaveLength(0)
     expect(fakes.finalize.calls).toHaveLength(1)
   })
 })

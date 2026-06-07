@@ -178,6 +178,19 @@ function makeGptSoVitsCharacter(volume = 0.5): character {
   })
 }
 
+function makeFishSpeechCharacter(): character {
+  return makeCharacter({
+    ttsMode: 'fishspeech',
+    fishSpeechConfig: {
+      chunk_length: 200,
+      model: {
+        _id: 'fish-voice',
+      },
+      normalize: true,
+    },
+  })
+}
+
 async function importTTS() {
   return import('./tts')
 }
@@ -267,6 +280,36 @@ describe('sayTTS AudioContext lifecycle', () => {
     context.sources[0].onended?.()
     expect(context.sources[0].disconnect).toHaveBeenCalledTimes(1)
     expect(context.gains[0].disconnect).toHaveBeenCalledTimes(1)
+  })
+
+  it('L50/I16: GPT-SoVITS and FishSpeech do not console-log request or response bodies', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    testState.db.fishSpeechKey = 'fish-key'
+    testState.globalFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          buffer: new Uint8Array([3, 2, 1]).buffer,
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          buffer: new Uint8Array([6, 5, 4]).buffer,
+        },
+      })
+    const { sayTTS } = await importTTS()
+
+    try {
+      await sayTTS(makeGptSoVitsCharacter(1), 'hello')
+      await sayTTS(makeFishSpeechCharacter(), 'again')
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
+
+    expect(testState.globalFetch).toHaveBeenCalledTimes(2)
+    expect(StubAudioContext.instances).toHaveLength(1)
   })
 
   it('M18: stopTTS stops the active source and clears stale playback refs', async () => {
