@@ -668,15 +668,35 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L28',
     6,
     'Reference-keyed lazy `localLore` snapshots in the character-scope watcher (keep full rollback coverage).',
+    'src/ts/server/lorebookBridge.svelte.test.ts',
+    'L28: unchanged selected-character chat localLore references reuse cached snapshots',
+    [
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'L28: replacing one localLore array stringifies only that chat',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'L28: character-scoped watcher dispatches a non-open chat localLore replacement',
+      },
+    ],
   ),
-  planned(
+  done(
     'L29',
     6,
     "Cheap short-circuit before the chat-metadata watcher's per-chat scalar Map rebuild.",
+    'src/ts/server/chatBridge.svelte.test.ts',
+    'L29: message-only guarded writes reuse scalar maps and queue no patches',
+    [
+      {
+        testPath: 'src/ts/server/chatBridge.svelte.test.ts',
+        testName: 'L29: real chat and folder scalar edits still dispatch after a no-change fire',
+      },
+    ],
   ),
   planned(
     'L30',
@@ -1752,6 +1772,8 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L25',
       'L26',
       'L27',
+      'L28',
+      'L29',
       'L34',
       'L35',
       'L36',
@@ -1767,7 +1789,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L23, L24, L25, L26, L27, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L23, L24, L25, L26, L27, L28, L29, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1800,6 +1822,8 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L25',
       'L26',
       'L27',
+      'L28',
+      'L29',
       'L34',
       'L35',
       'L36',

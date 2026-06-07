@@ -66,6 +66,13 @@ const flushedEntryEditSnapshots = new Map<string, string>()
 const flushedEntryEditClearSnapshots = new Map<string, string>()
 let suppressRollbackDispatch = false
 
+interface LocalLoreSnapshotCacheEntry {
+  entries: loreBook[]
+  snapshot: string
+}
+
+const characterScopeLocalLoreSnapshots = new Map<string, LocalLoreSnapshotCacheEntry>()
+
 // Mirror of the selected character id as $state so a `character`-scoped watcher
 // re-runs (and re-subscribes to the newly selected character's lore) when the
 // user switches characters while the panel stays mounted. A bare
@@ -939,7 +946,9 @@ export function collectLorebookCollectionSnapshots(scope: LorebookWatchScope): M
     // bare get()) re-runs the effect on a character switch, so the first edit to
     // the newly selected character is never dropped.
     const character = DBState.db.characters?.[selectedCharMirror]
-    if (character) collectCharacterLorebookSnapshots(snapshots, character)
+    if (character) {
+      collectCharacterLorebookSnapshots(snapshots, character, characterScopeLocalLoreSnapshots)
+    }
   }
 
   if (scope.kind === 'all') {
@@ -959,6 +968,7 @@ export function collectLorebookCollectionSnapshots(scope: LorebookWatchScope): M
 function collectCharacterLorebookSnapshots(
   snapshots: Map<string, string>,
   character: character,
+  localLoreCache?: Map<string, LocalLoreSnapshotCacheEntry>,
 ): void {
   // Snapshot a character's globalLore ONLY when it is hydrated; a stubbed /
   // not-yet-hydrated character is never tracked, so a re-stub can't be diffed into
@@ -966,9 +976,36 @@ function collectCharacterLorebookSnapshots(
   if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
     snapshots.set(`character:${character.chaId}`, snapshotJson(character.globalLore ?? []))
   }
+  const liveChatIds = localLoreCache ? new Set<string>() : null
   for (const chat of character.chats ?? []) {
-    if (chat.id) snapshots.set(`chat:${chat.id}`, snapshotJson(chat.localLore ?? []))
+    if (!chat.id) continue
+    liveChatIds?.add(chat.id)
+    snapshots.set(
+      `chat:${chat.id}`,
+      snapshotChatLocalLore(chat.id, chat.localLore ?? [], localLoreCache),
+    )
   }
+  if (localLoreCache && liveChatIds) {
+    for (const chatId of localLoreCache.keys()) {
+      if (!liveChatIds.has(chatId)) localLoreCache.delete(chatId)
+    }
+  }
+}
+
+function snapshotChatLocalLore(
+  chatId: string,
+  localLore: loreBook[],
+  localLoreCache?: Map<string, LocalLoreSnapshotCacheEntry>,
+): string {
+  if (!localLoreCache) return snapshotJson(localLore)
+  const key = `chat:${chatId}`
+  const shouldRefreshEntryEditSnapshot =
+    pendingEntryEditKeys.has(key) || flushedEntryEditSnapshots.has(key)
+  const cached = localLoreCache.get(chatId)
+  if (!shouldRefreshEntryEditSnapshot && cached?.entries === localLore) return cached.snapshot
+  const snapshot = snapshotJson(localLore)
+  localLoreCache.set(chatId, { entries: localLore, snapshot })
+  return snapshot
 }
 
 function collectModuleLorebookSnapshot(snapshots: Map<string, string>, module: RisuModule): void {

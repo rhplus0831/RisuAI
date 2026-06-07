@@ -460,6 +460,34 @@ function setupMultiCollectionDb(): void {
   selectedCharID.set(0)
 }
 
+function setupSelectedCharacterLocalLoreCacheDb(): void {
+  ;(DBState as { db: unknown }).db = {
+    loreBook: [],
+    loreBookPage: 0,
+    characters: [
+      {
+        chaId: 'cache-char',
+        chatPage: 0,
+        globalLore: [{ key: 'stubbed-global', content: 'Not hydrated', id: 'stubbed-global-1' }],
+        chats: [
+          {
+            id: 'open-chat',
+            name: 'Open Chat',
+            localLore: [{ key: 'open', content: 'Open lore', id: 'open-lore-1' }],
+          },
+          {
+            id: 'closed-chat',
+            name: 'Closed Chat',
+            localLore: [{ key: 'closed', content: 'Closed lore', id: 'closed-lore-1' }],
+          },
+        ],
+      },
+    ],
+    modules: [],
+  }
+  selectedCharID.set(0)
+}
+
 function stripIdsForScopedEnsureRegression(): void {
   const db = DBState.db as any
   delete db.loreBook[0].id
@@ -477,6 +505,10 @@ function chatReplaceChatIds(): string[] {
   return recorded.commands
     .filter((c) => c.kind === 'replaceChat')
     .map((c) => (c.a as { chatId?: string }).chatId ?? '')
+}
+
+function chatReplaceCommands(): Array<Record<string, unknown> & { a?: unknown }> {
+  return recorded.commands.filter((c) => c.kind === 'replaceChat')
 }
 
 function moduleReplaceCommands(): Array<Record<string, unknown>> {
@@ -686,9 +718,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     const cmds = characterReplaceCommands()
     expect(cmds).toHaveLength(1)
     expect(cmds[0].keepalive).toBeUndefined()
-    expect((cmds[0].entries as Entry[]).map((entry) => entry.content).at(-1)).toBe(
-      'Teardown lore',
-    )
+    expect((cmds[0].entries as Entry[]).map((entry) => entry.content).at(-1)).toBe('Teardown lore')
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(characterReplaceCommands()).toHaveLength(1)
@@ -811,13 +841,19 @@ describe('K4 lorebook editor entry draft scope', () => {
     applyLorebookEntryDraftEdit(
       scope,
       2,
-      { ...(DBState.db.characters[0].globalLore as Entry[])[2], content: 'draft first entry' } as any,
+      {
+        ...(DBState.db.characters[0].globalLore as Entry[])[2],
+        content: 'draft first entry',
+      } as any,
       DELAY,
     )
     applyLorebookEntryDraftEdit(
       scope,
       4,
-      { ...(DBState.db.characters[0].globalLore as Entry[])[4], content: 'draft second entry' } as any,
+      {
+        ...(DBState.db.characters[0].globalLore as Entry[])[4],
+        content: 'draft second entry',
+      } as any,
       DELAY,
     )
 
@@ -946,10 +982,66 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     )
 
     // The whole-DB scan stringifies every character + chat + module + global; the
-    // character scope stringifies only the selected character's two entries.
+    // character scope stringifies the hydrated character globalLore and reuses
+    // the selected chat's cached localLore snapshot.
     expect(scoped.result.size).toBe(2)
     expect(scoped.jsonCloneCount).toBeLessThan(whole.jsonCloneCount)
-    expect(scoped.jsonCloneCount).toBe(2)
+    expect(scoped.jsonCloneCount).toBe(1)
+    stop()
+  })
+
+  it('L28: unchanged selected-character chat localLore references reuse cached snapshots', () => {
+    setupSelectedCharacterLocalLoreCacheDb()
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    const reused = withCloneInstrumentation(() =>
+      collectLorebookCollectionSnapshots({ kind: 'character' }),
+    )
+
+    expect([...reused.result.keys()].sort()).toEqual(['chat:closed-chat', 'chat:open-chat'])
+    expect(reused.jsonCloneCount).toBe(0)
+    stop()
+  })
+
+  it('L28: replacing one localLore array stringifies only that chat', () => {
+    setupSelectedCharacterLocalLoreCacheDb()
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+    const before = collectLorebookCollectionSnapshots({ kind: 'character' })
+
+    const closedChat = DBState.db.characters[0].chats[1]
+    closedChat.localLore = [
+      ...(closedChat.localLore as Entry[]),
+      { key: 'closed-new', content: 'Closed replacement', id: 'closed-lore-2' },
+    ] as never
+
+    const changed = withCloneInstrumentation(() =>
+      collectLorebookCollectionSnapshots({ kind: 'character' }),
+    )
+
+    expect(changed.jsonCloneCount).toBe(1)
+    expect(changed.result.get('chat:open-chat')).toBe(before.get('chat:open-chat'))
+    expect(changed.result.get('chat:closed-chat')).not.toBe(before.get('chat:closed-chat'))
+    stop()
+  })
+
+  it('L28: prunes disappeared chat ids from the localLore snapshot cache', () => {
+    setupSelectedCharacterLocalLoreCacheDb()
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    const removedChat = DBState.db.characters[0].chats[1]
+    DBState.db.characters[0].chats = [DBState.db.characters[0].chats[0]] as never
+    collectLorebookCollectionSnapshots({ kind: 'character' })
+    DBState.db.characters[0].chats = [DBState.db.characters[0].chats[0], removedChat] as never
+
+    const reappeared = withCloneInstrumentation(() =>
+      collectLorebookCollectionSnapshots({ kind: 'character' }),
+    )
+
+    expect(reappeared.jsonCloneCount).toBe(1)
+    expect([...reappeared.result.keys()].sort()).toEqual(['chat:closed-chat', 'chat:open-chat'])
     stop()
   })
 
@@ -1027,17 +1119,87 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
 
     // A sibling character's chat edit is out of scope → never dispatched.
     recorded.commands.length = 0
-    ;(DBState.db.characters[1].chats[0].localLore as Entry[]).push({ key: 'x', content: 'X' })
+    DBState.db.characters[1].chats[0].localLore = [
+      ...(DBState.db.characters[1].chats[0].localLore as Entry[]),
+      { key: 'x', content: 'X' },
+    ] as never
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(chatReplaceChatIds()).not.toContain('c1chat')
 
     // The selected character's own chat edit IS dispatched.
     recorded.commands.length = 0
-    ;(DBState.db.characters[0].chats[0].localLore as Entry[]).push({ key: 'y', content: 'Y' })
+    DBState.db.characters[0].chats[0].localLore = [
+      ...(DBState.db.characters[0].chats[0].localLore as Entry[]),
+      { key: 'y', content: 'Y' },
+    ] as never
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(chatReplaceChatIds()).toContain('c0chat')
+    stop()
+  })
+
+  it('L28: character-scoped watcher dispatches a non-open chat localLore replacement', async () => {
+    setupSelectedCharacterLocalLoreCacheDb()
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    recorded.commands.length = 0
+    const closedChat = DBState.db.characters[0].chats[1]
+    closedChat.localLore = [
+      ...(closedChat.localLore as Entry[]),
+      { key: 'closed-dispatch', content: 'Non-open replacement', id: 'closed-lore-2' },
+    ] as never
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = chatReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect((cmds[0].a as { chatId?: string }).chatId).toBe('closed-chat')
+    expect(
+      ((cmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content),
+    ).toEqual(['Closed lore', 'Non-open replacement'])
+    stop()
+  })
+
+  it('L28: flushed direct chat entry edits advance the character-scope localLore cache baseline', async () => {
+    setupSelectedCharacterLocalLoreCacheDb()
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    const closedChat = DBState.db.characters[0].chats[1]
+    applyLorebookEntryDraftEdit(
+      { kind: 'chat', chatId: 'closed-chat' },
+      0,
+      { ...(closedChat.localLore as Entry[])[0], content: 'Draft B' } as any,
+      DELAY * 10,
+    )
+    flushPendingLorebookEntryDraftEdit({ kind: 'chat', chatId: 'closed-chat' })
+    await vi.advanceTimersByTimeAsync(0)
+    flushSync()
+
+    const directCmds = chatReplaceCommands()
+    expect(directCmds).toHaveLength(1)
+    expect(
+      ((directCmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content),
+    ).toEqual(['Draft B'])
+
+    recorded.commands.length = 0
+    closedChat.localLore = [
+      ...(closedChat.localLore as Entry[]),
+      { key: 'queued-c', content: 'Queued C', id: 'queued-c-id' },
+    ] as never
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = chatReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect(
+      ((cmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content),
+    ).toEqual(['Draft B', 'Queued C'])
+
+    cmds[0].rollback?.()
+    expect((closedChat.localLore as Entry[]).map((entry) => entry.content)).toEqual(['Draft B'])
     stop()
   })
 

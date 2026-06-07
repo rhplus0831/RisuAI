@@ -18,7 +18,7 @@ import {
   type ServerCommandTransportOptions,
 } from './commands'
 import { DBState, selectedCharID } from '../stores.svelte'
-import type { ChatFolder } from '../storage/database.svelte'
+import type { Chat, ChatFolder } from '../storage/database.svelte'
 import { getServerProjectionApplyEpoch } from './projectionWriteGuard.svelte'
 
 interface PendingChatPatch {
@@ -46,6 +46,13 @@ export interface WatchServerBackedChatMetadataOptions {
   delayMs?: number
 }
 
+export interface ChatMetadataBaselines {
+  selectedChar: number
+  characterId: string | undefined
+  chats: Map<string, ChatSnapshot>
+  folders: Map<string, ChatFolderSnapshot>
+}
+
 export function watchServerBackedChatMetadata(
   options: WatchServerBackedChatMetadataOptions = {},
 ): () => void {
@@ -67,12 +74,16 @@ export function watchServerBackedChatMetadata(
   let initialized = false
   let previousChats = new Map<string, ChatSnapshot>()
   let previousFolders = new Map<string, ChatFolderSnapshot>()
+  let previousSelectedChar = get(selectedCharID)
+  let previousCharacterId = DBState.db.characters?.[previousSelectedChar]?.chaId
   let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
   resetActiveChatMetadataBaselines = () => {
     const current = currentChatMetadataBaselines()
     previousChats = current.chats
     previousFolders = current.folders
+    previousSelectedChar = current.selectedChar
+    previousCharacterId = current.characterId
     previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
     initialized = true
   }
@@ -80,7 +91,12 @@ export function watchServerBackedChatMetadata(
   activeStop = $effect.root(() => {
     $effect(() => {
       const projectionApplyEpoch = getServerProjectionApplyEpoch()
-      const current = currentChatMetadataBaselines()
+      const current = currentChatMetadataBaselines({
+        selectedChar: previousSelectedChar,
+        characterId: previousCharacterId,
+        chats: previousChats,
+        folders: previousFolders,
+      })
 
       if (
         suppressRollbackDispatch ||
@@ -91,12 +107,19 @@ export function watchServerBackedChatMetadata(
         previousProjectionApplyEpoch = projectionApplyEpoch
         previousChats = current.chats
         previousFolders = current.folders
+        previousSelectedChar = current.selectedChar
+        previousCharacterId = current.characterId
+        return
+      }
+
+      if (current.chats === previousChats && current.folders === previousFolders) {
         return
       }
 
       for (const [chatId, currentChat] of current.chats) {
         const previous = previousChats.get(chatId)
         if (!previous) continue
+        if (previous === currentChat) continue
         const patch = changedFields(previous, currentChat)
         if (Object.keys(patch).length > 0) {
           // Capture the rollback lazily, only when there is a real change: the
@@ -115,6 +138,7 @@ export function watchServerBackedChatMetadata(
       for (const [folderId, currentFolder] of current.folders) {
         const previous = previousFolders.get(folderId)
         if (!previous) continue
+        if (previous === currentFolder) continue
         const patch = changedFields(previous, currentFolder)
         if (Object.keys(patch).length > 0) {
           const rollback: ChatFolderRowMetadataSnapshot = {
@@ -129,6 +153,8 @@ export function watchServerBackedChatMetadata(
 
       previousChats = current.chats
       previousFolders = current.folders
+      previousSelectedChar = current.selectedChar
+      previousCharacterId = current.characterId
     })
   })
 
@@ -264,28 +290,108 @@ function scalarChatFolderMetadata(folder: ChatFolder): ChatFolderSnapshot {
   }
 }
 
-function currentChatMetadataBaselines(): {
-  selectedChar: number
-  characterId: string | undefined
-  chats: Map<string, ChatSnapshot>
-  folders: Map<string, ChatFolderSnapshot>
-} {
+export function currentChatMetadataBaselines(
+  previous?: ChatMetadataBaselines,
+): ChatMetadataBaselines {
   const selectedChar = get(selectedCharID)
   const character = DBState.db.characters?.[selectedChar]
+  const characterId = character?.chaId
+  const chats = (character?.chats ?? []).filter(hasStringId)
+  const folders = (character?.chatFolders ?? []).filter(hasStringId)
+  if (!previous || previous.selectedChar !== selectedChar || previous.characterId !== characterId) {
+    return {
+      selectedChar,
+      characterId,
+      chats: new Map<string, ChatSnapshot>(
+        chats.map((chat): [string, ChatSnapshot] => [
+          chat.id,
+          scalarChatMetadata(chat as unknown as ChatSnapshot),
+        ]),
+      ),
+      folders: new Map<string, ChatFolderSnapshot>(
+        folders.map((folder): [string, ChatFolderSnapshot] => [
+          folder.id,
+          scalarChatFolderMetadata(folder as unknown as ChatFolder),
+        ]),
+      ),
+    }
+  }
+
   return {
     selectedChar,
-    characterId: character?.chaId,
-    chats: new Map(
-      (character?.chats ?? [])
-        .filter((chat) => typeof chat.id === 'string' && chat.id)
-        .map((chat) => [chat.id as string, scalarChatMetadata(chat as unknown as ChatSnapshot)]),
-    ),
-    folders: new Map(
-      (character?.chatFolders ?? [])
-        .filter((folder) => typeof folder.id === 'string' && folder.id)
-        .map((folder) => [folder.id, scalarChatFolderMetadata(folder as unknown as ChatFolder)]),
-    ),
+    characterId,
+    chats: reconcileChatMetadataMap(previous.chats, chats),
+    folders: reconcileFolderMetadataMap(previous.folders, folders),
   }
+}
+
+function hasStringId<T extends { id?: unknown }>(row: T): row is T & { id: string } {
+  return typeof row.id === 'string' && row.id.length > 0
+}
+
+function reconcileChatMetadataMap(
+  previous: Map<string, ChatSnapshot>,
+  chats: Array<Chat & { id: string }>,
+): Map<string, ChatSnapshot> {
+  let next: Map<string, ChatSnapshot> | null = null
+  const liveIds = new Set<string>()
+  for (const chat of chats) {
+    liveIds.add(chat.id)
+    const previousSnapshot = previous.get(chat.id)
+    if (previousSnapshot && chatMetadataMatches(previousSnapshot, chat)) continue
+    next ??= new Map(previous)
+    next.set(chat.id, scalarChatMetadata(chat as unknown as ChatSnapshot))
+  }
+  if (liveIds.size !== previous.size) {
+    next ??= new Map(previous)
+    for (const chatId of previous.keys()) {
+      if (!liveIds.has(chatId)) next.delete(chatId)
+    }
+  }
+  return next ?? previous
+}
+
+function reconcileFolderMetadataMap(
+  previous: Map<string, ChatFolderSnapshot>,
+  folders: Array<ChatFolder & { id: string }>,
+): Map<string, ChatFolderSnapshot> {
+  let next: Map<string, ChatFolderSnapshot> | null = null
+  const liveIds = new Set<string>()
+  for (const folder of folders) {
+    liveIds.add(folder.id)
+    const previousSnapshot = previous.get(folder.id)
+    if (previousSnapshot && folderMetadataMatches(previousSnapshot, folder)) continue
+    next ??= new Map(previous)
+    next.set(folder.id, scalarChatFolderMetadata(folder as unknown as ChatFolder))
+  }
+  if (liveIds.size !== previous.size) {
+    next ??= new Map(previous)
+    for (const folderId of previous.keys()) {
+      if (!liveIds.has(folderId)) next.delete(folderId)
+    }
+  }
+  return next ?? previous
+}
+
+function chatMetadataMatches(previous: ChatSnapshot, chat: Chat): boolean {
+  const row = chat as unknown as Record<string, unknown>
+  for (const key of CHAT_PATCH_ALLOWED_KEYS) {
+    const currentValue = row[key]
+    if (currentValue === undefined) {
+      if (key in previous) return false
+      continue
+    }
+    if (snapshotJson(previous[key]) !== snapshotJson(currentValue)) return false
+  }
+  return true
+}
+
+function folderMetadataMatches(previous: ChatFolderSnapshot, folder: ChatFolder): boolean {
+  return (
+    snapshotJson(previous.name) === snapshotJson(folder.name) &&
+    snapshotJson(previous.color) === snapshotJson(folder.color) &&
+    snapshotJson(previous.folded) === snapshotJson(folder.folded)
+  )
 }
 
 function changedFields<T extends Record<string, unknown>>(previous: T, current: T): T {

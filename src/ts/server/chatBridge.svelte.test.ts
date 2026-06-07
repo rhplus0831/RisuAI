@@ -134,6 +134,7 @@ vi.mock('../chatCommands', () => {
 import { DBState, selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
+  currentChatMetadataBaselines,
   flushPendingServerBackedChatPatches,
   rollbackServerBackedChatMetadata,
   watchServerBackedChatMetadata,
@@ -304,12 +305,8 @@ describe('watchServerBackedChatMetadata baselines', () => {
     flushSync()
     stop()
 
-    expect(recorded.chatUpdates).toEqual([
-      { chatId: 'chat-1', patch: { name: 'Teardown Chat' } },
-    ])
-    expect(recorded.folderUpdates).toEqual([
-      { folderId: 'folder-1', patch: { folded: true } },
-    ])
+    expect(recorded.chatUpdates).toEqual([{ chatId: 'chat-1', patch: { name: 'Teardown Chat' } }])
+    expect(recorded.folderUpdates).toEqual([{ folderId: 'folder-1', patch: { folded: true } }])
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(recorded.chatUpdates).toHaveLength(1)
@@ -392,6 +389,48 @@ describe('watchServerBackedChatMetadata clone cost (Phase 2)', () => {
 
     expect(instrumented.maxClonedSize).toBeLessThan(BIG_BODY.length)
     expect(recorded.chatUpdates).toEqual([])
+    stop()
+  })
+})
+
+describe('watchServerBackedChatMetadata no-change short-circuit (Phase 6)', () => {
+  it('L29: message-only guarded writes reuse scalar maps and queue no patches', async () => {
+    setupHydratedChat()
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+    const baseline = currentChatMetadataBaselines()
+
+    DBState.db.characters[0].chats[0].message[0].data = 'streaming frame'
+    ;(DBState as { db: unknown }).db = { ...DBState.db }
+
+    const afterMessageOnly = currentChatMetadataBaselines(baseline)
+    expect(afterMessageOnly.chats).toBe(baseline.chats)
+    expect(afterMessageOnly.folders).toBe(baseline.folders)
+
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.chatUpdates).toEqual([])
+    expect(recorded.folderUpdates).toEqual([])
+    stop()
+  })
+
+  it('L29: real chat and folder scalar edits still dispatch after a no-change fire', async () => {
+    setupChat()
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+    ;(DBState as { db: unknown }).db = { ...DBState.db }
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.chatUpdates).toEqual([])
+    expect(recorded.folderUpdates).toEqual([])
+
+    DBState.db.characters[0].chats[0].note = 'Edited note'
+    DBState.db.characters[0].chatFolders[0].color = '#000'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.chatUpdates).toEqual([{ chatId: 'chat-1', patch: { note: 'Edited note' } }])
+    expect(recorded.folderUpdates).toEqual([{ folderId: 'folder-1', patch: { color: '#000' } }])
     stop()
   })
 })
