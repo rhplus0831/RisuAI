@@ -593,7 +593,13 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L25', 5, 'Keep the FIRST baseline across coalesced same-item prompt-template edits.'),
+  done(
+    'L25',
+    5,
+    'Keep the FIRST baseline across coalesced same-item prompt-template edits.',
+    'src/ts/server/promptTemplateBridge.svelte.test.ts',
+    'L25: coalesced prompt item rollback restores the first pre-edit item',
+  ),
   done(
     'L26',
     5,
@@ -601,10 +607,18 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'src/ts/server/chatBridge.svelte.test.ts',
     'L26: chat row rollback suppresses watcher echo and resets the restored baseline',
   ),
-  planned(
+  done(
     'L27',
     5,
     'Promote the pending entry snapshot to a collection snapshot when a second entry edit lands in the same debounce window.',
+    'src/ts/server/lorebookBridge.svelte.test.ts',
+    'L27: coalesced entry-draft rollback restores the first pre-edit collection',
+    [
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName: 'K4: a single typing draft clones only the edited entry before debounce settle',
+      },
+    ],
   ),
   planned(
     'L28',
@@ -1561,7 +1575,9 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L20',
       'L23',
       'L24',
+      'L25',
       'L26',
+      'L27',
       'L56',
       'K1',
       'K2',
@@ -1573,7 +1589,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L23, L24, L26, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L23, L24, L25, L26, L27, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1601,7 +1617,9 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L20',
       'L23',
       'L24',
+      'L25',
       'L26',
+      'L27',
       'L56',
       'K1',
       'K2',

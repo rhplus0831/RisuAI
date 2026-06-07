@@ -377,6 +377,49 @@ export function currentLorebookEntryScopedSnapshot(
   }
 }
 
+function entryDraftRollbackSnapshot(
+  scope: DiscreteLorebookEditScope,
+  existing: PendingCollectionReplacement | undefined,
+  index: number,
+): LorebookReplacementSnapshot {
+  if (!existing) return currentLorebookEntryScopedSnapshot(scope, index)
+  if (existing.source === 'collection' || !isLorebookEntryStateSnapshot(existing.previous)) {
+    return existing.previous
+  }
+  return promoteEntryRollbackToCollectionSnapshot(scope, existing.previous)
+}
+
+function promoteEntryRollbackToCollectionSnapshot(
+  scope: DiscreteLorebookEditScope,
+  entrySnapshot: LorebookEntryStateSnapshot,
+): LorebookStateSnapshot {
+  const collectionSnapshot = currentLorebookCollectionScopedSnapshot(scope)
+  if (!Array.isArray(collectionSnapshot.scopedValue)) return collectionSnapshot
+
+  const entries = collectionSnapshot.scopedValue as loreBook[]
+  const index =
+    entrySnapshot.entryId && entrySnapshot.entryId.trim()
+      ? entries.findIndex((entry) => entry.id === entrySnapshot.entryId)
+      : -1
+  const restoreIndex = index >= 0 ? index : entrySnapshot.index
+
+  if (!entrySnapshot.previousEntry) {
+    if (restoreIndex >= 0 && restoreIndex < entries.length) {
+      entries.splice(restoreIndex, 1)
+    }
+    return collectionSnapshot
+  }
+
+  const previous = cloneJsonValue(entrySnapshot.previousEntry)
+  const current = entries[restoreIndex]
+  if (current) {
+    replaceLorebookEntryInPlace(current, previous)
+  } else {
+    entries.splice(Math.max(0, Math.min(restoreIndex, entries.length)), 0, previous)
+  }
+  return collectionSnapshot
+}
+
 export function applyLorebookEntryDraftEdit(
   scope: DiscreteLorebookEditScope,
   index: number,
@@ -393,10 +436,7 @@ export function applyLorebookEntryDraftEdit(
 
   const key = lorebookCollectionScopeKey(scope)
   const existing = pendingReplacements.get(key)
-  const previous =
-    existing?.source === 'collection' || existing?.source === 'entry'
-      ? existing.previous
-      : currentLorebookEntryScopedSnapshot(scope, index)
+  const previous = entryDraftRollbackSnapshot(scope, existing, index)
 
   let entries: loreBook[] | null = null
   withTrustedServerProjectionWrite(() => {
@@ -951,7 +991,8 @@ function queueReplacement(
   if (existing?.timer) clearTimeout(existing.timer)
 
   const useExisting =
-    existing?.source === 'collection' || (existing?.source === 'entry' && source === 'entry')
+    existing?.source === 'collection' ||
+    (existing?.source === 'entry' && source === 'entry' && isLorebookEntryStateSnapshot(previous))
   const effectivePrevious = useExisting ? existing.previous : previous
   const effectiveSource = existing?.source === 'collection' ? 'collection' : source
 

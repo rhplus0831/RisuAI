@@ -129,7 +129,7 @@ export function queuePromptItemProjectionUpdate(
   if (existing?.timer) clearTimeout(existing.timer)
   const pending: PendingPromptItemUpdate = {
     itemId,
-    previousItem: cloneJsonValue(previousItem),
+    previousItem: cloneJsonValue(existing?.previousItem ?? previousItem),
     attemptedItem,
     binding,
     timer: null,

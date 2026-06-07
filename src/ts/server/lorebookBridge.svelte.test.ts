@@ -116,7 +116,7 @@ function setupGlobalLorebooks(
   selectedCharID.set(-1)
 }
 
-function characterReplaceCommands(): Array<Record<string, unknown>> {
+function characterReplaceCommands(): Array<Record<string, unknown> & { rollback?: () => void }> {
   return recorded.commands.filter((c) => c.kind === 'replaceCharacter')
 }
 
@@ -577,7 +577,7 @@ function setupK4ModuleDb(): void {
 }
 
 describe('K4 lorebook editor entry draft scope', () => {
-  it('K4: typing drafts clone only the edited entry before debounce settle', () => {
+  it('K4: a single typing draft clones only the edited entry before debounce settle', () => {
     setupK4EditorDb()
     const collectionSize = JSON.stringify(DBState.db.characters[0].globalLore).length
 
@@ -585,7 +585,6 @@ describe('K4 lorebook editor entry draft scope', () => {
       ...(DBState.db.characters[0].globalLore as Entry[])[7],
       content: 'draft one',
     } as Entry
-    const secondDraft = { ...firstDraft, content: 'draft two' } as Entry
 
     const first = withCloneInstrumentation(() =>
       applyLorebookEntryDraftEdit(
@@ -595,19 +594,9 @@ describe('K4 lorebook editor entry draft scope', () => {
         DELAY,
       ),
     )
-    const second = withCloneInstrumentation(() =>
-      applyLorebookEntryDraftEdit(
-        { kind: 'character', characterId: 'c-k4' },
-        7,
-        secondDraft as any,
-        DELAY,
-      ),
-    )
 
     expect(first.result).toBe(true)
-    expect(second.result).toBe(true)
     expect(first.maxClonedSize).toBeLessThan(collectionSize)
-    expect(second.maxClonedSize).toBeLessThan(collectionSize)
     expect(recorded.commands).toHaveLength(0)
   })
 
@@ -810,6 +799,43 @@ describe('K4 lorebook editor entry draft scope', () => {
       'same collection sibling edit',
     )
     expect((DBState.db.characters[1].globalLore as Entry[])[0].content).toBe('other character edit')
+  })
+
+  it('L27: coalesced entry-draft rollback restores the first pre-edit collection', async () => {
+    setupK4EditorDb()
+    const scope = { kind: 'character', characterId: 'c-k4' } as const
+    const originalContents = (DBState.db.characters[0].globalLore as Entry[]).map(
+      (entry) => entry.content,
+    )
+
+    applyLorebookEntryDraftEdit(
+      scope,
+      2,
+      { ...(DBState.db.characters[0].globalLore as Entry[])[2], content: 'draft first entry' } as any,
+      DELAY,
+    )
+    applyLorebookEntryDraftEdit(
+      scope,
+      4,
+      { ...(DBState.db.characters[0].globalLore as Entry[])[4], content: 'draft second entry' } as any,
+      DELAY,
+    )
+
+    expect((DBState.db.characters[0].globalLore as Entry[])[2].content).toBe('draft first entry')
+    expect((DBState.db.characters[0].globalLore as Entry[])[4].content).toBe('draft second entry')
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = characterReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect((cmds[0].entries as Entry[])[2].content).toBe('draft first entry')
+    expect((cmds[0].entries as Entry[])[4].content).toBe('draft second entry')
+
+    cmds[0].rollback?.()
+
+    expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.content)).toEqual(
+      originalContents,
+    )
   })
 
   it('K4: collection operations still use collection-level replacement rollback', async () => {

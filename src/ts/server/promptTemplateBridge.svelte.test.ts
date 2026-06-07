@@ -204,6 +204,36 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(commandState.commands).toHaveLength(1)
   })
 
+  it('L25: coalesced prompt item rollback restores the first pre-edit item', async () => {
+    seedTemplate()
+    let draftItems = draftCopy()
+    const binding: PromptTemplateDraftBinding = {
+      getItems: () => draftItems,
+      setItems: (items) => {
+        draftItems = items
+      },
+    }
+
+    draftItems[0] = item('p-0', 'draft one')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500)
+    draftItems[0] = item('p-0', 'draft two')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'draft one'), 500)
+
+    await vi.advanceTimersByTimeAsync(500)
+    expect(commandState.commands).toHaveLength(1)
+    expect(commandState.commands[0].built).toEqual({
+      kind: 'updatePromptItem',
+      baseRevision: 1,
+      itemId: 'p-0',
+      patch: item('p-0', 'draft two'),
+    })
+
+    commandState.commands[0].rollback?.()
+
+    expect(textOf(draftItems[0])).toBe('small')
+    expect(textOf((DBState.db.promptTemplate as PromptItem[])[0])).toBe('small')
+  })
+
   it('M8: PromptSettings component teardown flushes pending prompt-template patches', async () => {
     seedTemplate()
     let draftItems = draftCopy()
