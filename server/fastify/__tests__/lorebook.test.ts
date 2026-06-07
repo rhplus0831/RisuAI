@@ -103,9 +103,7 @@ describe('Phase 7-7a activateLorebook — sources', () => {
     const report = activateLorebook({
       database: makeDb(),
       currentChar: makeChar({
-        globalLore: [
-          makeLore({ comment: 'World info', content: 'Quiet seaside village.' }),
-        ],
+        globalLore: [makeLore({ comment: 'World info', content: 'Quiet seaside village.' })],
       }),
       currentChat: makeChat(),
     })
@@ -430,6 +428,56 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     expect(report.actives).toHaveLength(1)
   })
 
+  it('L9/v4-L7: valid imported lorebook useRegex output remains unchanged under bounds', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            useRegex: true,
+            key: '/cat\\s+(?:under|beside)\\s+sun/i',
+            comment: 'regex lore',
+            content: 'Sunlit cats.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'The CAT under SUN naps.' })],
+      }),
+    })
+
+    expect(report.actives.map((entry) => entry.prompt)).toEqual(['Sunlit cats.'])
+    expect(report.matchLog).toEqual([
+      {
+        activated: '/cat\\s+(?:under|beside)\\s+sun/i',
+        prompt: '\x01{{user}}:The CAT under SUN naps.\x01',
+        source: 'message 0 by user',
+      },
+    ])
+  })
+
+  it('L9/v4-L7: imported lorebook useRegex rejects unsafe keys before search', () => {
+    expect(() =>
+      activateLorebook({
+        database: makeDb(),
+        currentChar: makeChar({
+          globalLore: [
+            makeLore({
+              alwaysActive: false,
+              useRegex: true,
+              key: '/(a+)+$/',
+              content: 'Never reaches search.',
+            }),
+          ],
+        }),
+        currentChat: makeChat({
+          message: [makeMessage({ data: 'a'.repeat(32) + '!' })],
+        }),
+      }),
+    ).toThrow(/bounded regex rejected: lorebook useRegex key: complexity screen/)
+  })
+
   it('requires both `key` and `secondkey` when selective is true', () => {
     const baseLore = makeLore({
       alwaysActive: false,
@@ -466,9 +514,7 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     const report = activateLorebook({
       database: db,
       currentChar: makeChar({
-        globalLore: [
-          makeLore({ alwaysActive: false, key: 'cat', content: 'Cat body.' }),
-        ],
+        globalLore: [makeLore({ alwaysActive: false, key: 'cat', content: 'Cat body.' })],
       }),
       currentChat: makeChat({ message: messages }),
     })
@@ -659,9 +705,7 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     const always = activateLorebook({
       database: makeDb(),
       currentChar: makeChar({
-        globalLore: [
-          makeLore({ content: '@@probability 100\nAlways.' }),
-        ],
+        globalLore: [makeLore({ content: '@@probability 100\nAlways.' })],
       }),
       currentChat: makeChat(),
     })
@@ -670,9 +714,7 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     const never = activateLorebook({
       database: makeDb(),
       currentChar: makeChar({
-        globalLore: [
-          makeLore({ content: '@@probability 0\nNever.' }),
-        ],
+        globalLore: [makeLore({ content: '@@probability 0\nNever.' })],
       }),
       currentChat: makeChat(),
     })
@@ -816,9 +858,7 @@ describe('Phase 7-7c activateLorebook — recursion', () => {
     })
     const sources = report.actives.map((a) => a.source).sort()
     expect(sources).toEqual(['A', 'B'])
-    expect(report.matchLog.find((m) => m.activated === 'dog')?.source).toBe(
-      'lorebook A',
-    )
+    expect(report.matchLog.find((m) => m.activated === 'dog')?.source).toBe('lorebook A')
   })
 
   it('deep chain A -> B -> C activates all three across three passes', () => {
@@ -873,10 +913,7 @@ describe('Phase 7-7c activateLorebook — recursion', () => {
       }),
       currentChat: makeChat({ message: [] }),
     })
-    expect(report.actives.map((a) => a.source).sort()).toEqual([
-      'Always',
-      'Followup',
-    ])
+    expect(report.actives.map((a) => a.source).sort()).toEqual(['Always', 'Followup'])
   })
 
   it('global loreSettings.recursiveScanning=false suppresses the chain', () => {
@@ -1078,12 +1115,8 @@ describe('Phase 7-7e getDepthPrompts', () => {
 
 describe('Phase 7-7e resolvePosition', () => {
   it('substitutes {{position::name}} with the matching pt_<name> body', () => {
-    const r = makeReport([
-      makeActive({ pos: 'pt_slot', prompt: 'SLOT VALUE' }),
-    ])
-    expect(resolvePosition('before {{position::slot}} after', r)).toBe(
-      'before SLOT VALUE after',
-    )
+    const r = makeReport([makeActive({ pos: 'pt_slot', prompt: 'SLOT VALUE' })])
+    expect(resolvePosition('before {{position::slot}} after', r)).toBe('before SLOT VALUE after')
   })
 
   it('joins multiple pt_<name> matches with newlines', () => {
@@ -1106,16 +1139,12 @@ describe('Phase 7-7e resolvePosition', () => {
 
   it('strips unresolved markers after the nesting cap', () => {
     // pt_loop references itself; after 5 passes the marker is stripped.
-    const r = makeReport([
-      makeActive({ pos: 'pt_loop', prompt: '{{position::loop}}' }),
-    ])
+    const r = makeReport([makeActive({ pos: 'pt_loop', prompt: '{{position::loop}}' })])
     expect(resolvePosition('{{position::loop}}', r)).toBe('')
   })
 
   it('strips markers with no matching pt_ entry', () => {
-    expect(resolvePosition('a {{position::missing}} b', makeReport([]))).toBe(
-      'a  b',
-    )
+    expect(resolvePosition('a {{position::missing}} b', makeReport([]))).toBe('a  b')
   })
 })
 
@@ -1494,10 +1523,7 @@ describe('L5 lorebook search normalization', () => {
     resetLorebookSearchNormalizationInstrumentation()
     const messages = Array.from({ length: 6 }, (_, i) =>
       makeMessage({
-        data:
-          i === 5
-            ? 'Alpha {{comment:hidden}} seed with filler.'
-            : `filler ${i} {{//ignored}}`,
+        data: i === 5 ? 'Alpha {{comment:hidden}} seed with filler.' : `filler ${i} {{//ignored}}`,
         chatId: `l5-m-${i}`,
       }),
     )
@@ -1536,11 +1562,7 @@ describe('L5 lorebook search normalization', () => {
     })
 
     expect(report.actives.map((a) => a.source).sort()).toEqual(['A', 'B', 'C'])
-    expect(report.matchLog.map((entry) => entry.activated)).toEqual([
-      'alpha',
-      'bravo',
-      'charlie',
-    ])
+    expect(report.matchLog.map((entry) => entry.activated)).toEqual(['alpha', 'bravo', 'charlie'])
     expect(getLorebookSearchNormalizationInstrumentation()).toEqual({
       baseMessageNormalizations: messages.length,
       recursivePromptNormalizations: 3,
@@ -1592,11 +1614,7 @@ describe('Phase 7 L7 lorebook search entry lists', () => {
     })
 
     expect(report.actives.map((a) => a.source).sort()).toEqual(['A', 'B', 'C'])
-    expect(report.matchLog.map((entry) => entry.activated)).toEqual([
-      'alpha',
-      'bravo',
-      'charlie',
-    ])
+    expect(report.matchLog.map((entry) => entry.activated)).toEqual(['alpha', 'bravo', 'charlie'])
     expect(getLorebookSearchEntryListInstrumentation()).toEqual({
       searchMatchCalls: 5,
       depthSliceBuilds: 1,

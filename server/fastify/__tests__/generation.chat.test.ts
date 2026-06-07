@@ -1599,6 +1599,120 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     ])
   })
 
+  it('L9/v4-L7: unsafe imported regex stops before provider dispatch and assistant persistence', async () => {
+    let providerCalls = 0
+    await restartHarness({
+      dispatchProvider: () => {
+        providerCalls++
+        async function* source(): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'should not dispatch' }
+          yield { kind: 'done', finishReason: 'stop' }
+        }
+        return source()
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      aiModel: string
+      characters: Array<
+        (typeof fixtureDatabase.characters)[number] & {
+          globalLore?: unknown
+          chats: Array<(typeof fixtureDatabase.characters)[number]['chats'][number]>
+        }
+      >
+    }
+    db.aiModel = 'echo_model'
+    db.characters[0].globalLore = [
+      {
+        key: '/(a+)+$/',
+        secondkey: '',
+        insertorder: 100,
+        comment: 'unsafe regex lore',
+        content: 'Never dispatches.',
+        mode: 'normal',
+        alwaysActive: false,
+        selective: false,
+        useRegex: true,
+      },
+    ]
+    db.characters[0].chats = [
+      {
+        ...db.characters[0].chats[0],
+        message: [{ role: 'user', data: 'a'.repeat(32) + '!', chatId: 'seed-user' }] as never,
+      },
+    ]
+    await seedDatabase(harness.app, assertion, db)
+
+    const events = await sendBase(assertion)
+
+    expect(events.map((e) => e.type)).toEqual(['stage', 'stage', 'stage', 'error', 'done'])
+    expect(events.find((e) => e.type === 'prompt')).toBeUndefined()
+    expect(events.find((e) => e.type === 'info')).toBeUndefined()
+    expect(String(events.find((e) => e.type === 'error')?.data.error)).toMatch(
+      /bounded regex rejected: lorebook useRegex key: complexity screen/,
+    )
+    expect(providerCalls).toBe(0)
+    const persisted = await persistedMessages(assertion)
+    expect(persisted.map((m) => ({ role: m.role, data: m.data }))).toEqual([
+      { role: 'user', data: 'a'.repeat(32) + '!' },
+    ])
+  })
+
+  it('L9/v4-L7: valid imported lorebook and customscript regexes preserve generation output', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      aiModel: string
+      echoMessage: string
+      echoDelay: number
+      characters: Array<
+        (typeof fixtureDatabase.characters)[number] & {
+          customscript?: unknown
+          globalLore?: unknown
+        }
+      >
+    }
+    db.aiModel = 'echo_model'
+    db.echoMessage = 'server echo reply'
+    db.echoDelay = 0
+    db.characters[0].customscript = [
+      { in: 'h(i)', out: 'H$1', type: 'editinput', flag: '', ableFlag: false },
+    ]
+    db.characters[0].globalLore = [
+      {
+        key: '/^Hi$/i',
+        secondkey: '',
+        insertorder: 100,
+        comment: 'valid regex lore',
+        content: 'Bounded regex lore body.',
+        mode: 'normal',
+        alwaysActive: false,
+        selective: false,
+        useRegex: true,
+      },
+    ]
+    await seedDatabase(harness.app, assertion, db)
+
+    const events = await sendBase(assertion)
+
+    const prompt = events.find((e) => e.type === 'prompt')!
+    const activation = prompt.data.lorebookActivation as {
+      actives?: Array<{ prompt: string; source: string }>
+    }
+    expect(activation.actives).toEqual([
+      expect.objectContaining({
+        prompt: 'Bounded regex lore body.',
+        source: 'valid regex lore',
+      }),
+    ])
+    expect(events.at(-2)).toEqual({ type: 'token', data: { content: 'server echo reply' } })
+    expect(events.at(-1)?.data).toMatchObject({ result: 'server echo reply' })
+    const persisted = await persistedMessages(assertion)
+    expect(persisted.map((m) => ({ role: m.role, data: m.data }))).toEqual([
+      { role: 'user', data: 'Hi' },
+      { role: 'char', data: 'server echo reply' },
+    ])
+  })
+
   it('leaves a plain send transcript to the browser (no route message write) (slice 3b-4)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     // No input trigger / editinput → `submitTranscriptChanged` is false, so the

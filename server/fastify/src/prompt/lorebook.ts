@@ -9,6 +9,7 @@ import type {
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { pickHashRand } from '../../../../src/ts/util/loreHash'
 import { getActiveModules } from './modules.js'
+import { compileBoundedRegex, isBoundedRegexError, testBoundedRegex } from './boundedRegex.js'
 import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 
@@ -299,8 +300,7 @@ function buildSearchableCorpus(
         kind: 'base',
       }) as SearchableMessageBase
     }
-    const speakerName =
-      msg.name ?? findCharByChaId(database, msg.saying)?.name ?? currentChar.name
+    const speakerName = msg.name ?? findCharByChaId(database, msg.saying)?.name ?? currentChar.name
     return normalizeSearchableBase({
       prompt: `\x01{{${speakerName}}}:` + msg.data + '\x01',
       data: msg.data,
@@ -367,7 +367,10 @@ function visitSearchEntries(
  * entry keys once per pass, and the regex path used to compile
  * `new RegExp(pattern, flags)` per message × per key × per pass. Compile
  * once, memoized by the raw key string; `lastIndex` resets on retrieval so
- * a cached global/sticky regex behaves exactly like a fresh compile.
+ * a cached global/sticky regex behaves exactly like a fresh compile. The
+ * bounded-regex helper runs before cache insertion; JS RegExp execution is
+ * synchronous and cannot be interrupted once started, so unsafe imported keys
+ * must fail before `test()` receives card/chat text.
  * Malformed keys (no leading `/`, no closing `/`, bad pattern) cache `null`
  * — the caller returns false for the whole query, matching the SPA
  * (`lorebook.svelte.ts:155`). Bounded like the SPA's `getCompiledRegex`
@@ -383,8 +386,13 @@ function getCompiledLoreKeyRegex(regexString: string): RegExp | null {
       cached = null
     } else {
       try {
-        cached = new RegExp(regexString.slice(1, flagsIdx), regexString.slice(flagsIdx + 1))
-      } catch {
+        cached = compileBoundedRegex(
+          regexString.slice(1, flagsIdx),
+          regexString.slice(flagsIdx + 1),
+          'lorebook useRegex key',
+        )
+      } catch (err) {
+        if (isBoundedRegexError(err)) throw err
         cached = null
       }
     }
@@ -425,9 +433,7 @@ function searchMatch(
   if (trimmedKeys.length === 0) return false
 
   const baseEntries = baseSearchEntriesForDepth(corpus, arg.searchDepth)
-  const recursiveEntries = arg.dontSearchWhenRecursive
-    ? NO_SEARCH_ENTRIES
-    : corpus.recursiveEntries
+  const recursiveEntries = arg.dontSearchWhenRecursive ? NO_SEARCH_ENTRIES : corpus.recursiveEntries
 
   if (arg.regex) {
     let malformedRegex = false
@@ -440,7 +446,7 @@ function searchMatch(
           malformedRegex = true
           return true
         }
-        if (r.test(m.data)) {
+        if (testBoundedRegex(r, m.data, 'lorebook useRegex search text')) {
           matchLog.push({ prompt: m.prompt, source: m.source, activated: regexString })
           return true
         }
@@ -951,11 +957,7 @@ export function buildLorebookContext(
   for (const lore of report.actives) {
     if (lore.pos === '' && lore.inject === null) {
       unformated.lorebook.push(toRow(lore))
-    } else if (
-      lore.pos === 'after_desc' ||
-      lore.pos === 'personality' ||
-      lore.pos === 'scenario'
-    ) {
+    } else if (lore.pos === 'after_desc' || lore.pos === 'personality' || lore.pos === 'scenario') {
       unformated.description.push(toRow(lore))
     } else if (lore.pos === 'before_desc') {
       unformated.description.unshift(toRow(lore))

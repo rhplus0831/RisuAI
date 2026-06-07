@@ -114,6 +114,23 @@ regex results below the selected caps.
 - L9 is registered as `DONE` in the v3 gate and active-risk table, with no
   unrelated ID status changes.
 
+## Implementation Proof
+
+- Shared helper: `server/fastify/src/prompt/boundedRegex.ts` enforces pattern,
+  haystack, and replacement caps and rejects nested unbounded quantifier shapes
+  before execution. One JavaScript `RegExp` call remains synchronous and
+  non-interruptible once started; this slice protects the server by screening
+  and capping before `test`, `split`, `match`, `matchAll`, or `replace`.
+- v3 L9 trigger proof: `server/fastify/__tests__/triggers.test.ts` covers valid
+  V2 regex behavior, pattern/haystack/replacement caps, catastrophic-shape
+  rejection, and condition-time regex rejection.
+- v4-L7 imported-regex proof: `server/fastify/__tests__/lorebook.test.ts`,
+  `server/fastify/__tests__/assemble.test.ts`, and
+  `server/fastify/__tests__/generation.chat.test.ts` cover imported lorebook
+  `useRegex`, customscript `script.in`, and route-level no-dispatch/no-assistant
+  persistence. v4-L7 rides this L9 implementation and does not add a separate
+  v3 active-risk row.
+
 ## Validation
 
 ```bash

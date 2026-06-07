@@ -1,8 +1,4 @@
-import type {
-  Chat,
-  Database,
-  character,
-} from '../../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import type {
   additonalSysPrompt,
@@ -11,6 +7,7 @@ import type {
 } from '../../../../src/ts/process/triggers'
 import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 import { getActiveModules, getModuleTriggers } from './modules.js'
+import { compileBoundedRegex, testBoundedRegex } from './boundedRegex.js'
 import { encodingForModel, tokenize } from './tokens.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
 import { applyV2DataEffect } from './triggerDataEffects.js'
@@ -108,13 +105,7 @@ import {
  */
 
 /** SPA `triggerMode` (`src/ts/process/triggers.ts:222`, unexported). */
-export type TriggerMode =
-  | 'start'
-  | 'manual'
-  | 'output'
-  | 'input'
-  | 'display'
-  | 'request'
+export type TriggerMode = 'start' | 'manual' | 'output' | 'input' | 'display' | 'request'
 
 /**
  * Arguments handed to the {@link TriggerRunContext.runLua} VM seam for a
@@ -465,11 +456,7 @@ export const DEFAULT_TRIGGER_MAX_EFFECT_STEPS = 100_000
 export const DEFAULT_TRIGGER_MAX_LOOP_BACK_EDGES = 10_000
 export const DEFAULT_TRIGGER_MAX_RECURSION_DEPTH = 10
 
-type TriggerBudgetStopReason =
-  | 'aborted'
-  | 'wallClock'
-  | 'effectSteps'
-  | 'loopBackEdges'
+type TriggerBudgetStopReason = 'aborted' | 'wallClock' | 'effectSteps' | 'loopBackEdges'
 
 export interface TriggerExecutionBudget {
   startedAtMs: number
@@ -503,8 +490,7 @@ export function createTriggerExecutionBudget(
     maxEffectSteps: opts.maxEffectSteps ?? DEFAULT_TRIGGER_MAX_EFFECT_STEPS,
     loopBackEdges: 0,
     maxLoopBackEdges: opts.maxLoopBackEdges ?? DEFAULT_TRIGGER_MAX_LOOP_BACK_EDGES,
-    maxRecursionDepth:
-      opts.maxRecursionDepth ?? DEFAULT_TRIGGER_MAX_RECURSION_DEPTH,
+    maxRecursionDepth: opts.maxRecursionDepth ?? DEFAULT_TRIGGER_MAX_RECURSION_DEPTH,
     now,
   }
 }
@@ -611,10 +597,7 @@ function chargeTriggerLoopBack(
  * objects are never mutated across requests. `getModuleTriggers`
  * (7-9a) already clones the module side.
  */
-export function collectTriggers(
-  char: character,
-  modules: RisuModule[],
-): triggerscript[] {
+export function collectTriggers(char: character, modules: RisuModule[]): triggerscript[] {
   const characterLowLevelAccess = char.lowLevelAccess ?? false
   const own: triggerscript[] = (char.triggerscript ?? []).map((v) => ({
     ...v,
@@ -667,11 +650,7 @@ export function evaluateConditions(
 ): boolean {
   for (const condition of conditions) {
     let pass = true
-    if (
-      condition.type === 'var' ||
-      condition.type === 'chatindex' ||
-      condition.type === 'value'
-    ) {
+    if (condition.type === 'var' || condition.type === 'chatindex' || condition.type === 'value') {
       let varValue: string | null =
         condition.type === 'var'
           ? (engine.getVar(condition.var) ?? 'null')
@@ -742,10 +721,9 @@ export function evaluateConditions(
               .map((v) => v.data)
               .join(' ')
         const regex = triggerCache
-          ? getCachedTriggerRegex(triggerCache, val, '')
-          : new RegExp(val)
-        regex.lastIndex = 0
-        pass = regex.test(da)
+          ? getCachedTriggerRegex(triggerCache, val, '', 'trigger condition regex pattern')
+          : compileBoundedRegex(val, '', 'trigger condition regex pattern')
+        pass = testBoundedRegex(regex, da, 'trigger condition regex transcript')
       }
     }
     if (!pass) {
@@ -781,17 +759,14 @@ export async function runTrigger(
   mode: TriggerMode,
   arg: TriggerRunArg,
 ): Promise<TriggerRunResult | null> {
-  const budget =
-    arg.triggerBudget ?? ctx.triggerBudget ?? createTriggerExecutionBudget()
+  const budget = arg.triggerBudget ?? ctx.triggerBudget ?? createTriggerExecutionBudget()
   let recursiveCount = arg.recursiveCount ?? 0
   const triggers = collectTriggers(char, ctx.modules)
   if (triggers.length === 0) {
     return null
   }
   const triggerCache = arg.triggerCache ?? createTriggerRunCache()
-  const selected = triggers.filter((trigger) =>
-    matchesTrigger(trigger, mode, arg.manualName),
-  )
+  const selected = triggers.filter((trigger) => matchesTrigger(trigger, mode, arg.manualName))
   const needsPrivateTranscript =
     !arg.displayMode && selectedTriggersMayMutateMessages(selected, mode)
   const workingChar = arg.displayMode ? char : cloneTriggerCharacterEnvelope(char)
@@ -801,12 +776,7 @@ export async function runTrigger(
   let additonalSysPrompt = arg.additonalSysPrompt ?? emptySysPrompt()
   let chat = arg.displayMode
     ? sourceChat
-    : cloneTriggerChatForRun(
-        sourceChat,
-        mode,
-        needsPrivateTranscript,
-        selected.length > 0,
-      )
+    : cloneTriggerChatForRun(sourceChat, mode, needsPrivateTranscript, selected.length > 0)
 
   const defaultVariables = parseKeyValue(workingChar.defaultVariables ?? '').concat(
     parseKeyValue(ctx.database.templateDefaultVariables ?? ''),
@@ -842,10 +812,8 @@ export async function runTrigger(
     let tokens = 0
     const encoding = encodingForModel(ctx.model)
     if (additonalSysPrompt.start) tokens += tokenize(additonalSysPrompt.start, encoding)
-    if (additonalSysPrompt.historyend)
-      tokens += tokenize(additonalSysPrompt.historyend, encoding)
-    if (additonalSysPrompt.promptend)
-      tokens += tokenize(additonalSysPrompt.promptend, encoding)
+    if (additonalSysPrompt.historyend) tokens += tokenize(additonalSysPrompt.historyend, encoding)
+    if (additonalSysPrompt.promptend) tokens += tokenize(additonalSysPrompt.promptend, encoding)
 
     return {
       additonalSysPrompt,
@@ -863,15 +831,7 @@ export async function runTrigger(
     if (shouldStopTriggerExecution(ctx, budget, 'before trigger conditions')) {
       return buildResult()
     }
-    if (
-      !evaluateConditions(
-        trigger.conditions ?? [],
-        engine,
-        chat,
-        expand,
-        triggerCache,
-      )
-    ) {
+    if (!evaluateConditions(trigger.conditions ?? [], engine, chat, expand, triggerCache)) {
       continue
     }
 
@@ -903,12 +863,7 @@ export async function runTrigger(
       if (mode === 'request' && !requestAllowList.includes(effect.type)) {
         continue
       }
-      if (
-        effect &&
-        'indent' in effect &&
-        typeof effect.indent === 'number' &&
-        effect.indent >= 0
-      ) {
+      if (effect && 'indent' in effect && typeof effect.indent === 'number' && effect.indent >= 0) {
         engine.setIndent(effect.indent)
       } else if (!effect || !('indent' in effect)) {
         engine.setIndent(0)
@@ -1166,10 +1121,7 @@ export async function runTrigger(
             const originalIndex = index
             for (; index >= 0; index--) {
               const ef = effects[index]
-              if (
-                (ef.type === 'v2Loop' || ef.type === 'v2LoopNTimes') &&
-                indent === ef.indent
-              ) {
+              if ((ef.type === 'v2Loop' || ef.type === 'v2LoopNTimes') && indent === ef.indent) {
                 if (ef.type === 'v2LoopNTimes') {
                   const loopValue = resolve(ef.value, ef.valueType === 'value')
                   let valueNum = Number(loopValue)

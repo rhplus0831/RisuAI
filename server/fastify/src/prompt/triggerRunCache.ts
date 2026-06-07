@@ -1,4 +1,5 @@
 import type { Chat } from '../../../../src/ts/storage/database.svelte'
+import { compileBoundedRegex } from './boundedRegex.js'
 
 const DEFAULT_REGEX_CACHE_LIMIT = 1_000
 
@@ -20,9 +21,7 @@ export interface TriggerRunCache {
   regexLimit: number
 }
 
-export function createTriggerRunCache(
-  opts: { regexLimit?: number } = {},
-): TriggerRunCache {
+export function createTriggerRunCache(opts: { regexLimit?: number } = {}): TriggerRunCache {
   return {
     transcriptGeneration: 0,
     transcriptByMessages: new WeakMap(),
@@ -35,11 +34,7 @@ export function invalidateTriggerTranscriptCache(cache: TriggerRunCache): void {
   cache.transcriptGeneration++
 }
 
-function getTranscriptEntry(
-  cache: TriggerRunCache,
-  chat: Chat,
-  depth: number,
-): TranscriptEntry {
+function getTranscriptEntry(cache: TriggerRunCache, chat: Chat, depth: number): TranscriptEntry {
   let bucket = cache.transcriptByMessages.get(chat.message)
   if (!bucket || bucket.generation !== cache.transcriptGeneration) {
     bucket = {
@@ -62,11 +57,7 @@ function getTranscriptEntry(
   return entry
 }
 
-export function getRecentTranscriptRaw(
-  cache: TriggerRunCache,
-  chat: Chat,
-  depth: number,
-): string {
+export function getRecentTranscriptRaw(cache: TriggerRunCache, chat: Chat, depth: number): string {
   return getTranscriptEntry(cache, chat, depth).raw
 }
 
@@ -94,11 +85,12 @@ export function getCachedTriggerRegex(
   cache: TriggerRunCache,
   pattern: string,
   flags: string,
+  context = 'trigger regex',
 ): RegExp {
   const key = `${flags}\u0000${pattern}`
   let regex = cache.regexes.get(key)
   if (!regex) {
-    regex = new RegExp(pattern, flags)
+    regex = compileBoundedRegex(pattern, flags, context)
     cache.regexes.set(key, regex)
     if (cache.regexes.size > cache.regexLimit) {
       const oldestKey = cache.regexes.keys().next().value
@@ -114,11 +106,12 @@ export function getCachedTriggerRegex(
 export function getCachedRegexDelimiter(
   cache: TriggerRunCache,
   delimiter: string,
+  context = 'trigger regex delimiter',
 ): RegExp {
   const regexMatch = delimiter.match(/^\/(.+)\/([gimuy]*)$/)
   if (regexMatch) {
     const [, pattern, flags] = regexMatch
-    return getCachedTriggerRegex(cache, pattern, flags)
+    return getCachedTriggerRegex(cache, pattern, flags, context)
   }
-  return getCachedTriggerRegex(cache, delimiter, '')
+  return getCachedTriggerRegex(cache, delimiter, '', context)
 }

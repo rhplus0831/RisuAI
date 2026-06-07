@@ -387,19 +387,22 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
         { role: 'assistant', content: 'prefill' },
       ],
     },
-  ])('L3: preserves byte-identical output and isolation for $name', ({ db, flags, rows, expected }) => {
-    resetChatDispatchReformatInstrumentation()
-    const sourceRows = rows as OpenAIChat[]
-    const originalRows = structuredClone(sourceRows)
+  ])(
+    'L3: preserves byte-identical output and isolation for $name',
+    ({ db, flags, rows, expected }) => {
+      resetChatDispatchReformatInstrumentation()
+      const sourceRows = rows as OpenAIChat[]
+      const originalRows = structuredClone(sourceRows)
 
-    const result = reformatMessages(db, sourceRows, flags)
+      const result = reformatMessages(db, sourceRows, flags)
 
-    expect(result).not.toBe(sourceRows)
-    expect(JSON.stringify(result)).toBe(JSON.stringify(expected))
-    expect(sourceRows).toEqual(originalRows)
-    expect(result.some((row) => sourceRows.includes(row))).toBe(false)
-    expect(getChatDispatchReformatInstrumentation().fullPromptClones).toBe(1)
-  })
+      expect(result).not.toBe(sourceRows)
+      expect(JSON.stringify(result)).toBe(JSON.stringify(expected))
+      expect(sourceRows).toEqual(originalRows)
+      expect(result.some((row) => sourceRows.includes(row))).toBe(false)
+      expect(getChatDispatchReformatInstrumentation().fullPromptClones).toBe(1)
+    },
+  )
 
   it('K3: returns immutable initial restoration messages by reference and clones scriptstate', () => {
     const initialMessages = freezeDeep([
@@ -2345,18 +2348,13 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
             comment: '',
             type: 'output',
             conditions: [],
-            effect: [
-              { type: 'v2GetMessageCount', outputVar: 'l8OutputCount', indent: 0 },
-            ],
+            effect: [{ type: 'v2GetMessageCount', outputVar: 'l8OutputCount', indent: 0 }],
           },
         ] as never,
       },
     })
 
-    const assembled = await assemblePrompt(
-      baseInput({ userMessage: 'new user' }),
-      depsFor(db),
-    )
+    const assembled = await assemblePrompt(baseInput({ userMessage: 'new user' }), depsFor(db))
     expect(assembled.stopSending).toBe(false)
     expect(assembled.mutations?.chatVarMutations).toEqual([
       { key: '$l8Input', before: null, after: '1' },
@@ -2454,6 +2452,43 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     ).toEqual([{ role: 'user', data: 'HELLO' }])
     expect(result.restoration?.messages).toEqual([])
     expectNoFullTranscriptStringify()
+  })
+
+  it('L9/v4-L7: valid customscript script.in output remains unchanged under bounds', async () => {
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'hi' }),
+      depsFor(
+        m1Db([], {
+          char: {
+            customscript: [
+              { in: 'h(i)', out: 'H$1', type: 'editinput', flag: '', ableFlag: false },
+            ] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(
+      result.submitMessages?.map((message) => ({ role: message.role, data: message.data })),
+    ).toEqual([{ role: 'user', data: 'Hi' }])
+  })
+
+  it('L9/v4-L7: customscript script.in rejects unsafe imported regex during assembly', async () => {
+    await expect(
+      assemblePrompt(
+        baseInput({ userMessage: 'a'.repeat(32) + '!' }),
+        depsFor(
+          m1Db([], {
+            char: {
+              customscript: [
+                { in: '(a+)+$', out: 'blocked', type: 'editinput', flag: '', ableFlag: false },
+              ] as never,
+            },
+          }),
+        ),
+      ),
+    ).rejects.toThrow(/bounded regex rejected: customscript script\.in pattern: complexity screen/)
   })
 
   it('captures start-trigger chat edits once and preserves stop/error restoration baseline', async () => {

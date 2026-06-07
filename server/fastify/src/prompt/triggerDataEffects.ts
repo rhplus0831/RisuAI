@@ -1,11 +1,15 @@
-import type {
-  Chat,
-  character,
-} from '../../../../src/ts/storage/database.svelte'
+import type { Chat, character } from '../../../../src/ts/storage/database.svelte'
 import type { triggerEffect } from '../../../../src/ts/process/triggers'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { calcString } from '../../../../src/ts/process/infunctions'
 import { encodingForModel, tokenize } from './tokens.js'
+import {
+  assertBoundedRegexHaystack,
+  assertBoundedRegexReplacement,
+  compileBoundedRegex,
+  isBoundedRegexError,
+  testBoundedRegex,
+} from './boundedRegex.js'
 import type { TriggerVarEngine } from './triggerVars.js'
 import {
   getCachedRegexDelimiter,
@@ -80,10 +84,7 @@ export interface V2DataEffectDeps {
   triggerCache?: TriggerRunCache
 }
 
-export function applyV2DataEffect(
-  effect: triggerEffect,
-  deps: V2DataEffectDeps,
-): boolean {
+export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps): boolean {
   const { engine, expand, chat, char } = deps
   const resolve = (raw: string, isValue: boolean): string =>
     isValue ? expand(raw) : engine.getVar(expand(raw))
@@ -91,10 +92,7 @@ export function applyV2DataEffect(
   switch (effect.type) {
     // ---- Message readers ----
     case 'v2GetLastMessage': {
-      engine.setVar(
-        expand(effect.outputVar),
-        chat.message[chat.message.length - 1]?.data ?? 'null',
-      )
+      engine.setVar(expand(effect.outputVar), chat.message[chat.message.length - 1]?.data ?? 'null')
       return true
     }
     case 'v2GetMessageAtIndex': {
@@ -175,18 +173,24 @@ export function applyV2DataEffect(
       if (effect.delimiterType === 'regex') {
         try {
           const regex = deps.triggerCache
-            ? getCachedRegexDelimiter(deps.triggerCache, delimiter)
+            ? getCachedRegexDelimiter(
+                deps.triggerCache,
+                delimiter,
+                'trigger v2SplitString delimiter',
+              )
             : (() => {
                 const regexMatch = delimiter.match(/^\/(.+)\/([gimuy]*)$/)
                 if (regexMatch) {
                   const [, pattern, flags] = regexMatch
-                  return new RegExp(pattern, flags)
+                  return compileBoundedRegex(pattern, flags, 'trigger v2SplitString delimiter')
                 }
-                return new RegExp(delimiter)
+                return compileBoundedRegex(delimiter, '', 'trigger v2SplitString delimiter')
               })()
           regex.lastIndex = 0
+          assertBoundedRegexHaystack(source, 'trigger v2SplitString source')
           result = source.split(regex)
-        } catch {
+        } catch (err) {
+          if (isBoundedRegexError(err)) throw err
           result = [source]
         }
       } else {
@@ -206,15 +210,20 @@ export function applyV2DataEffect(
         const source = resolve(effect.source, effect.sourceType === 'value')
         const regexPattern = resolve(effect.regex, effect.regexType === 'value')
         const resultFormat = resolve(effect.result, effect.resultType === 'value')
-        const replacement = resolve(
-          effect.replacement,
-          effect.replacementType === 'value',
-        )
+        const replacement = resolve(effect.replacement, effect.replacementType === 'value')
         const flags = resolve(effect.flags, effect.flagsType === 'value')
         const regex = deps.triggerCache
-          ? getCachedTriggerRegex(deps.triggerCache, regexPattern, flags)
-          : new RegExp(regexPattern, flags)
+          ? getCachedTriggerRegex(
+              deps.triggerCache,
+              regexPattern,
+              flags,
+              'trigger v2ReplaceString pattern',
+            )
+          : compileBoundedRegex(regexPattern, flags, 'trigger v2ReplaceString pattern')
         regex.lastIndex = 0
+        assertBoundedRegexHaystack(source, 'trigger v2ReplaceString source')
+        assertBoundedRegexReplacement(resultFormat, 'trigger v2ReplaceString result template')
+        assertBoundedRegexReplacement(replacement, 'trigger v2ReplaceString replacement')
         const result = source.replace(regex, (...args) => {
           const match = args[0] as string
           const groups = args.slice(1, -2) as string[]
@@ -238,7 +247,8 @@ export function applyV2DataEffect(
             .replace(/\$\$/g, '$')
         })
         engine.setVar(expand(effect.outputVar), result)
-      } catch {
+      } catch (err) {
+        if (isBoundedRegexError(err)) throw err
         engine.setVar(
           expand(effect.outputVar),
           resolve(effect.source, effect.sourceType === 'value'),
@@ -536,11 +546,19 @@ export function applyV2DataEffect(
         const regexPattern = resolve(effect.regex, effect.regexType === 'value')
         const flags = resolve(effect.flags, effect.flagsType === 'value')
         const regex = deps.triggerCache
-          ? getCachedTriggerRegex(deps.triggerCache, regexPattern, flags)
-          : new RegExp(regexPattern, flags)
-        regex.lastIndex = 0
-        engine.setVar(outVar, regex.test(value) ? '1' : '0')
-      } catch {
+          ? getCachedTriggerRegex(
+              deps.triggerCache,
+              regexPattern,
+              flags,
+              'trigger v2RegexTest pattern',
+            )
+          : compileBoundedRegex(regexPattern, flags, 'trigger v2RegexTest pattern')
+        engine.setVar(
+          outVar,
+          testBoundedRegex(regex, value, 'trigger v2RegexTest value') ? '1' : '0',
+        )
+      } catch (err) {
+        if (isBoundedRegexError(err)) throw err
         engine.setVar(outVar, '0')
       }
       return true
@@ -565,9 +583,7 @@ export function applyV2DataEffect(
               .includes(value)
       } else if (effect.condition === 'loose') {
         pass = deps.triggerCache
-          ? getRecentTranscriptLower(deps.triggerCache, chat, depth).includes(
-              value.toLowerCase(),
-            )
+          ? getRecentTranscriptLower(deps.triggerCache, chat, depth).includes(value.toLowerCase())
           : chat.message
               .slice(0 - depth)
               .map((v) => v.data)
@@ -582,10 +598,9 @@ export function applyV2DataEffect(
               .map((v) => v.data)
               .join(' ')
         const regex = deps.triggerCache
-          ? getCachedTriggerRegex(deps.triggerCache, value, '')
-          : new RegExp(value)
-        regex.lastIndex = 0
-        pass = regex.test(da)
+          ? getCachedTriggerRegex(deps.triggerCache, value, '', 'trigger v2QuickSearchChat pattern')
+          : compileBoundedRegex(value, '', 'trigger v2QuickSearchChat pattern')
+        pass = testBoundedRegex(regex, da, 'trigger v2QuickSearchChat transcript')
       }
       engine.setVar(outVar, pass ? '1' : '0')
       return true

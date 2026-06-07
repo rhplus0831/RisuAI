@@ -6,6 +6,13 @@ import type {
 } from '../../../../src/ts/storage/database.svelte'
 import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
 import type { RisuModule } from '../../../../src/ts/process/modules'
+import {
+  assertBoundedRegexHaystack,
+  assertBoundedRegexReplacement,
+  compileBoundedRegex,
+  isBoundedRegexError,
+  testBoundedRegex,
+} from './boundedRegex.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { getActiveModules, getModuleRegexScripts } from './modules.js'
 
@@ -72,7 +79,9 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  *
  * Errors from a single bad regex are swallowed (mirrors the SPA's
  * try/catch at scripts.ts:372-376); the rest of the script list still
- * runs.
+ * runs. Bounded-regex rejections are intentionally not swallowed: one JS
+ * RegExp operation is synchronous and non-interruptible after it begins, so
+ * unsafe imported patterns/haystacks must fail before provider dispatch.
  */
 
 export type ScriptMode = 'editinput' | 'editoutput' | 'editprocess' | 'editdisplay'
@@ -171,7 +180,10 @@ function substituteMatch(template: string, matched: RegExpMatchArray): string {
     .replace(/\$\&/g, matched[0])
     .replace(/(?<!\$)\$<([^>]+)>/g, (v) => {
       const groupName = parseInt(v.substring(2, v.length - 1))
-      if (matched.groups && (matched.groups as Record<string, string>)[groupName as unknown as string]) {
+      if (
+        matched.groups &&
+        (matched.groups as Record<string, string>)[groupName as unknown as string]
+      ) {
         return (matched.groups as Record<string, string>)[groupName as unknown as string]
       }
       return v
@@ -185,16 +197,15 @@ function applyMove(
   outScript: string,
   toTop: boolean,
 ): string {
+  assertBoundedRegexHaystack(data, 'customscript move source')
+  assertBoundedRegexReplacement(outScript, 'customscript move replacement')
+  reg.lastIndex = 0
   const isGlobal = flag.includes('g')
-  const matchAll = isGlobal
-    ? Array.from(data.matchAll(reg))
-    : [data.match(reg)]
+  const matchAll = isGlobal ? Array.from(data.matchAll(reg)) : [data.match(reg)]
   let next = data.replace(reg, '')
   for (const matched of matchAll) {
     if (!matched) continue
-    const template = outScript
-      .replace('@@move_top ', '')
-      .replace('@@move_bottom ', '')
+    const template = outScript.replace('@@move_top ', '').replace('@@move_bottom ', '')
     const out = substituteMatch(template, matched as RegExpMatchArray)
     next = toTop ? out + '\n' + next : next + '\n' + out
   }
@@ -207,6 +218,7 @@ function applyInject(
   data: string,
   reg: RegExp,
 ): string {
+  assertBoundedRegexHaystack(data, 'customscript inject source')
   if (!currentChat || chatID < 0) return data
   const target = currentChat.message?.[chatID]
   if (!target) return data
@@ -233,8 +245,8 @@ function applyRepeatBack(
   const fmIndex = currentChat.fmIndex ?? -1
   let lastChat =
     fmIndex === -1
-      ? currentChar.firstMessage ?? ''
-      : currentChar.alternateGreetings?.[fmIndex] ?? ''
+      ? (currentChar.firstMessage ?? '')
+      : (currentChar.alternateGreetings?.[fmIndex] ?? '')
 
   let pointer = chatID - 1
   while (pointer >= 0) {
@@ -245,6 +257,8 @@ function applyRepeatBack(
     pointer--
   }
 
+  assertBoundedRegexHaystack(lastChat, 'customscript repeat_back source')
+  reg.lastIndex = 0
   const r = lastChat.match(reg)
   // SPA accesses r[0] without a null check (would throw on no-match); we
   // guard so the chain stays alive.
@@ -282,14 +296,10 @@ function prepareOne(parsed: ParsedScript): PreparedScript {
   }
 
   // outScript preparation
-  let outScript = (script.out ?? '')
-    .replaceAll('$n', '\n')
-    .replace(DATA_RE, '$&')
+  let outScript = (script.out ?? '').replaceAll('$n', '\n').replace(DATA_RE, '$&')
 
-  const isMoveTop =
-    outScript.startsWith('@@move_top') || actions.includes('move_top')
-  const isMoveBottom =
-    outScript.startsWith('@@move_bottom') || actions.includes('move_bottom')
+  const isMoveTop = outScript.startsWith('@@move_top') || actions.includes('move_top')
+  const isMoveBottom = outScript.startsWith('@@move_bottom') || actions.includes('move_bottom')
 
   if (isMoveTop || isMoveBottom) {
     // SPA "temperary fix" at scripts.ts:191-193 — force non-global so
@@ -307,8 +317,9 @@ function prepareOne(parsed: ParsedScript): PreparedScript {
   let reg: RegExp | null = null
   if (!isCbs && script.in) {
     try {
-      reg = new RegExp(script.in, flag)
-    } catch {
+      reg = compileBoundedRegex(script.in, flag, 'customscript script.in pattern')
+    } catch (err) {
+      if (isBoundedRegexError(err)) throw err
       // Formerly thrown per message inside applyOne and swallowed by
       // processScript's per-script catch; the apply stays a no-op.
     }
@@ -347,7 +358,7 @@ function applyOne(
     // `cbs` action: pre-expand the input regex source (scripts.ts:211-213).
     // Per-message by design — the expansion depends on cbsConditions.
     const regexIn = expandVariables(script.in, { ...ctx, cbsConditions }).text
-    reg = new RegExp(regexIn, flag)
+    reg = compileBoundedRegex(regexIn, flag, 'customscript cbs script.in pattern')
   } else {
     if (!prepared.reg) return data
     reg = prepared.reg
@@ -358,7 +369,9 @@ function applyOne(
 
   const isAction = outScript.startsWith('@@') || actions.length > 0
   if (isAction) {
-    const matched = reg.test(data)
+    assertBoundedRegexHaystack(data, 'customscript action source')
+    assertBoundedRegexReplacement(outScript, 'customscript action replacement')
+    const matched = testBoundedRegex(reg, data, 'customscript action source')
     // reg.test() advances `lastIndex` when the regex is global; both
     // matchAll() and a sticky-style match would then start past the
     // first hit. The SPA shares this bug (scripts.ts:216 then 254).
@@ -373,19 +386,20 @@ function applyOne(
         return applyMove(data, reg, flag, outScript, isMoveTop)
       }
       // Unknown @@ prefix or arbitrary action: fall through to plain replace.
+      assertBoundedRegexHaystack(data, 'customscript action replace source')
+      assertBoundedRegexReplacement(outScript, 'customscript action replace replacement')
       const replaced = data.replace(reg, outScript)
       return expandVariables(replaced, { ...ctx, cbsConditions }).text
     }
     // No match: only @@repeat_back / the 'repeat_back' action fires.
-    if (
-      outScript.startsWith('@@repeat_back') ||
-      actions.includes('repeat_back')
-    ) {
+    if (outScript.startsWith('@@repeat_back') || actions.includes('repeat_back')) {
       return applyRepeatBack(char, currentChat, chatID, data, reg, outScript)
     }
     return data
   }
 
+  assertBoundedRegexHaystack(data, 'customscript replace source')
+  assertBoundedRegexReplacement(outScript, 'customscript replace replacement')
   const replaced = data.replace(reg, outScript)
   return expandVariables(replaced, { ...ctx, cbsConditions }).text
 }
@@ -457,16 +471,9 @@ export function processScript(
   for (const p of prepared) {
     if (p.script.type !== mode) continue
     try {
-      current = applyOne(
-        ctx,
-        char,
-        current,
-        p,
-        cbsConditions,
-        chatID,
-        currentChat,
-      )
-    } catch {
+      current = applyOne(ctx, char, current, p, cbsConditions, chatID, currentChat)
+    } catch (err) {
+      if (isBoundedRegexError(err)) throw err
       // Mirror SPA behavior: one bad regex should not stop the rest of the chain.
     }
   }

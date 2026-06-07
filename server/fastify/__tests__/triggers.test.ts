@@ -1,9 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type {
-  Chat,
-  Database,
-  character,
-} from '../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../src/ts/process/modules'
 import type { triggerCondition, triggerscript } from '../../../src/ts/process/triggers'
 import { getModuleTriggers } from '../src/prompt/modules.js'
@@ -21,6 +17,7 @@ import {
 import { createTriggerVarEngine } from '../src/prompt/triggerVars.js'
 import { applyV2DataEffect } from '../src/prompt/triggerDataEffects.js'
 import { createTriggerRunCache } from '../src/prompt/triggerRunCache.js'
+import { BOUNDED_REGEX_LIMITS } from '../src/prompt/boundedRegex.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 
 beforeAll(() => {
@@ -334,9 +331,7 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
       expect(result?.chat.scriptstate?.['$messageCount']).toBe('2')
       expect(chat.scriptstate?.['$messageCount']).toBeUndefined()
       expect(getTriggerCloneInstrumentation().fullTranscriptClones[mode]).toBe(0)
-      expect(
-        getTriggerCloneInstrumentation().messageSharingEnvelopeClones[mode],
-      ).toBe(1)
+      expect(getTriggerCloneInstrumentation().messageSharingEnvelopeClones[mode]).toBe(1)
     },
   )
 
@@ -357,19 +352,14 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
 
     expect(result?.chat).not.toBe(chat)
     expect(result?.chat.message).not.toBe(chat.message)
-    expect(result?.chat.message.map((message) => message.data)).toEqual([
-      'edited',
-      'added',
-    ])
+    expect(result?.chat.message.map((message) => message.data)).toEqual(['edited', 'added'])
     expect(chat.message.map((message) => message.data)).toEqual(['original'])
     expect(getTriggerCloneInstrumentation().fullTranscriptClones.output).toBe(1)
   })
 
   it('L8: triggerlua uses a private transcript because host functions can mutate chat', async () => {
     const char = makeChar({
-      triggerscript: [
-        triggerWithEffects([eff({ type: 'triggerlua', code: 'mutate()' })]),
-      ],
+      triggerscript: [triggerWithEffects([eff({ type: 'triggerlua', code: 'mutate()' })])],
     })
     const chat = makeChat({
       message: [{ role: 'user', data: 'original' }] as never,
@@ -407,9 +397,7 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
     expect(result?.chat).toBe(chat)
     expect(chat.message.map((message) => message.data)).toEqual(['shown'])
     expect(getTriggerCloneInstrumentation().fullTranscriptClones.display).toBe(0)
-    expect(
-      getTriggerCloneInstrumentation().messageSharingEnvelopeClones.display,
-    ).toBe(0)
+    expect(getTriggerCloneInstrumentation().messageSharingEnvelopeClones.display).toBe(0)
   })
 })
 
@@ -431,7 +419,9 @@ function makeEngine(
   } = {},
 ): ReturnType<typeof createTriggerVarEngine> & EngineSetup {
   // dbChat is the persisted chat; workingChat is the clone runTrigger makes.
-  const dbChat = makeChat({ scriptstate: { ...(opts.scriptstate ?? {}) } as Record<string, string | number | boolean> })
+  const dbChat = makeChat({
+    scriptstate: { ...(opts.scriptstate ?? {}) } as Record<string, string | number | boolean>,
+  })
   const char = makeChar({ chats: [dbChat] })
   const db = makeDb({ characters: [char] })
   const workingChat = structuredClone(dbChat)
@@ -465,9 +455,7 @@ describe('Phase 7-9b trigger var engine', () => {
     expect(engine.workingChat.scriptstate?.['$hp']).toBe('5')
     expect(engine.varChanged).toBe(true)
     // The persisted db chat now shares the working chat's scriptstate object.
-    expect(engine.db.characters[0].chats[0].scriptstate).toBe(
-      engine.workingChat.scriptstate,
-    )
+    expect(engine.db.characters[0].chats[0].scriptstate).toBe(engine.workingChat.scriptstate)
   })
 
   it('local variables shadow scriptstate and stay local on write', () => {
@@ -700,9 +688,7 @@ describe('Phase 7-9c deterministic V1 effects', () => {
 
   it('cutchat slices the message list', async () => {
     const char = makeChar({
-      triggerscript: [
-        triggerWithEffects([eff({ type: 'cutchat', start: '1', end: '3' })]),
-      ],
+      triggerscript: [triggerWithEffects([eff({ type: 'cutchat', start: '1', end: '3' })])],
     })
     const chat = makeChat({
       message: [
@@ -766,8 +752,22 @@ describe('Phase 7-9c deterministic V1 effects', () => {
 describe('Phase 7-9d-i V2 control flow', () => {
   it('runs the if body when the condition passes and skips it when it fails', async () => {
     const effects = [
-      eff({ type: 'v2If', condition: '=', source: 'x', targetType: 'value', target: '1', indent: 0 }),
-      eff({ type: 'v2SetVar', operator: '=', var: 'hit', valueType: 'value', value: 'yes', indent: 1 }),
+      eff({
+        type: 'v2If',
+        condition: '=',
+        source: 'x',
+        targetType: 'value',
+        target: '1',
+        indent: 0,
+      }),
+      eff({
+        type: 'v2SetVar',
+        operator: '=',
+        var: 'hit',
+        valueType: 'value',
+        value: 'yes',
+        indent: 1,
+      }),
       eff({ type: 'v2EndIndent', indent: 1 }),
     ]
     const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
@@ -785,11 +785,32 @@ describe('Phase 7-9d-i V2 control flow', () => {
 
   it('selects the else branch when the if is false', async () => {
     const effects = [
-      eff({ type: 'v2If', condition: '=', source: 'x', targetType: 'value', target: '1', indent: 0 }),
-      eff({ type: 'v2SetVar', operator: '=', var: 'branch', valueType: 'value', value: 'if', indent: 1 }),
+      eff({
+        type: 'v2If',
+        condition: '=',
+        source: 'x',
+        targetType: 'value',
+        target: '1',
+        indent: 0,
+      }),
+      eff({
+        type: 'v2SetVar',
+        operator: '=',
+        var: 'branch',
+        valueType: 'value',
+        value: 'if',
+        indent: 1,
+      }),
       eff({ type: 'v2EndIndent', indent: 1 }),
       eff({ type: 'v2Else', indent: 0 }),
-      eff({ type: 'v2SetVar', operator: '=', var: 'branch', valueType: 'value', value: 'else', indent: 1 }),
+      eff({
+        type: 'v2SetVar',
+        operator: '=',
+        var: 'branch',
+        valueType: 'value',
+        value: 'else',
+        indent: 1,
+      }),
       eff({ type: 'v2EndIndent', indent: 1 }),
     ]
     const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
@@ -808,7 +829,14 @@ describe('Phase 7-9d-i V2 control flow', () => {
   it('runs a counted loop N times', async () => {
     const effects = [
       eff({ type: 'v2LoopNTimes', valueType: 'value', value: '3', indent: 0 }),
-      eff({ type: 'v2SetVar', operator: '+=', var: 'count', valueType: 'value', value: '1', indent: 1 }),
+      eff({
+        type: 'v2SetVar',
+        operator: '+=',
+        var: 'count',
+        valueType: 'value',
+        value: '1',
+        indent: 1,
+      }),
       eff({ type: 'v2EndIndent', indent: 1, endOfLoop: true }),
     ]
     const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
@@ -819,7 +847,14 @@ describe('Phase 7-9d-i V2 control flow', () => {
   it('v2BreakLoop exits the loop early', async () => {
     const effects = [
       eff({ type: 'v2LoopNTimes', valueType: 'value', value: '5', indent: 0 }),
-      eff({ type: 'v2SetVar', operator: '+=', var: 'count', valueType: 'value', value: '1', indent: 1 }),
+      eff({
+        type: 'v2SetVar',
+        operator: '+=',
+        var: 'count',
+        valueType: 'value',
+        value: '1',
+        indent: 1,
+      }),
       eff({ type: 'v2BreakLoop', indent: 1 }),
       eff({ type: 'v2EndIndent', indent: 1, endOfLoop: true }),
     ]
@@ -830,7 +865,14 @@ describe('Phase 7-9d-i V2 control flow', () => {
 
   it('v2SetVar applies the %= operator', async () => {
     const effects = [
-      eff({ type: 'v2SetVar', operator: '%=', var: 'm', valueType: 'value', value: '3', indent: 0 }),
+      eff({
+        type: 'v2SetVar',
+        operator: '%=',
+        var: 'm',
+        valueType: 'value',
+        value: '3',
+        indent: 0,
+      }),
     ]
     const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
     const result = await runTrigger(ctx, char, 'output', {
@@ -841,11 +883,38 @@ describe('Phase 7-9d-i V2 control flow', () => {
 
   it('clears local vars declared inside a block at v2EndIndent', async () => {
     const effects = [
-      eff({ type: 'v2If', condition: '=', source: 'x', targetType: 'value', target: '1', indent: 0 }),
-      eff({ type: 'v2DeclareLocalVar', var: 'loc', valueType: 'value', value: 'inside', indent: 1 }),
-      eff({ type: 'v2SetVar', operator: '=', var: 'captured', valueType: 'var', value: 'loc', indent: 1 }),
+      eff({
+        type: 'v2If',
+        condition: '=',
+        source: 'x',
+        targetType: 'value',
+        target: '1',
+        indent: 0,
+      }),
+      eff({
+        type: 'v2DeclareLocalVar',
+        var: 'loc',
+        valueType: 'value',
+        value: 'inside',
+        indent: 1,
+      }),
+      eff({
+        type: 'v2SetVar',
+        operator: '=',
+        var: 'captured',
+        valueType: 'var',
+        value: 'loc',
+        indent: 1,
+      }),
       eff({ type: 'v2EndIndent', indent: 1 }),
-      eff({ type: 'v2SetVar', operator: '=', var: 'after', valueType: 'var', value: 'loc', indent: 0 }),
+      eff({
+        type: 'v2SetVar',
+        operator: '=',
+        var: 'after',
+        valueType: 'var',
+        value: 'loc',
+        indent: 0,
+      }),
     ]
     const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
     const result = await runTrigger(ctx, char, 'output', {
@@ -871,7 +940,16 @@ describe('Phase 7-9d-i V2 control flow', () => {
     const sub = makeTrigger({
       comment: 'sub',
       type: 'manual',
-      effect: [eff({ type: 'v2SetVar', operator: '=', var: 'hp', valueType: 'value', value: '42', indent: 0 })],
+      effect: [
+        eff({
+          type: 'v2SetVar',
+          operator: '=',
+          var: 'hp',
+          valueType: 'value',
+          value: '42',
+          indent: 0,
+        }),
+      ],
     })
     const outer = triggerWithEffects([eff({ type: 'v2RunTrigger', target: 'sub', indent: 0 })])
     const char = makeChar({ triggerscript: [outer, sub] })
@@ -884,7 +962,13 @@ describe('Phase 7-9d-i V2 control flow', () => {
     const effects = [
       eff({ type: 'v2SystemPrompt', location: 'start', valueType: 'value', value: 'sys' }),
       eff({ type: 'v2Impersonate', role: 'user', valueType: 'value', value: 'hi' }),
-      eff({ type: 'v2ModifyChat', indexType: 'value', index: '0', valueType: 'value', value: 'edited' }),
+      eff({
+        type: 'v2ModifyChat',
+        indexType: 'value',
+        index: '0',
+        valueType: 'value',
+        value: 'edited',
+      }),
     ]
     const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
     const chat = makeChat({ message: [{ role: 'char', data: 'orig' }] as never })
@@ -906,7 +990,14 @@ describe('H1 trigger budget and abort', () => {
       })
       const effects = [
         eff({ type: 'v2Loop', indent: 0 }),
-        eff({ type: 'v2SetVar', operator: '+=', var: 'count', valueType: 'value', value: '1', indent: 1 }),
+        eff({
+          type: 'v2SetVar',
+          operator: '+=',
+          var: 'count',
+          valueType: 'value',
+          value: '1',
+          indent: 1,
+        }),
         eff({ type: 'v2EndIndent', indent: 1, endOfLoop: true }),
       ]
       const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
@@ -920,9 +1011,7 @@ describe('H1 trigger budget and abort', () => {
       expect(budget.stoppedReason).toBe('loopBackEdges')
       expect(Number(result?.chat.scriptstate?.['$count'])).toBeGreaterThan(0)
       expect(Number(result?.chat.scriptstate?.['$count'])).toBeLessThanOrEqual(6)
-      expect(debug).toHaveBeenCalledWith(
-        expect.stringContaining('loopBackEdges'),
-      )
+      expect(debug).toHaveBeenCalledWith(expect.stringContaining('loopBackEdges'))
     } finally {
       debug.mockRestore()
     }
@@ -938,7 +1027,14 @@ describe('H1 trigger budget and abort', () => {
       })
       const effects = [
         eff({ type: 'v2LoopNTimes', valueType: 'value', value: '1000000', indent: 0 }),
-        eff({ type: 'v2SetVar', operator: '+=', var: 'count', valueType: 'value', value: '1', indent: 1 }),
+        eff({
+          type: 'v2SetVar',
+          operator: '+=',
+          var: 'count',
+          valueType: 'value',
+          value: '1',
+          indent: 1,
+        }),
         eff({ type: 'v2EndIndent', indent: 1, endOfLoop: true }),
       ]
       const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
@@ -952,9 +1048,7 @@ describe('H1 trigger budget and abort', () => {
       expect(budget.stoppedReason).toBe('loopBackEdges')
       expect(Number(result?.chat.scriptstate?.['$count'])).toBeGreaterThan(0)
       expect(Number(result?.chat.scriptstate?.['$count'])).toBeLessThanOrEqual(5)
-      expect(debug).toHaveBeenCalledWith(
-        expect.stringContaining('loopBackEdges'),
-      )
+      expect(debug).toHaveBeenCalledWith(expect.stringContaining('loopBackEdges'))
     } finally {
       debug.mockRestore()
     }
@@ -995,7 +1089,14 @@ describe('H1 trigger budget and abort', () => {
       })
       const effects = [
         eff({ type: 'v2Loop', indent: 0 }),
-        eff({ type: 'v2SetVar', operator: '+=', var: 'count', valueType: 'value', value: '1', indent: 1 }),
+        eff({
+          type: 'v2SetVar',
+          operator: '+=',
+          var: 'count',
+          valueType: 'value',
+          value: '1',
+          indent: 1,
+        }),
         eff({ type: 'v2EndIndent', indent: 1, endOfLoop: true }),
       ]
       const char = makeChar({ triggerscript: [triggerWithEffects(effects)] })
@@ -1263,6 +1364,183 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     expect(result?.chat.scriptstate?.['$replace']).toBe('abc')
     expect(result?.chat.scriptstate?.['$split']).toBe('["a[b"]')
   })
+
+  it('L9: preserves valid trigger regex behavior under bounds', async () => {
+    const char = makeChar({
+      triggerscript: [
+        makeTrigger({
+          type: 'output',
+          conditions: [cond({ type: 'exists', value: 'quick\\s+fox', type2: 'regex', depth: 2 })],
+          effect: [
+            eff({
+              type: 'v2SplitString',
+              sourceType: 'value',
+              source: 'red,green;blue',
+              delimiterType: 'regex',
+              delimiter: '/[,;]/g',
+              outputVar: 'split',
+            }),
+            eff({
+              type: 'v2ReplaceString',
+              sourceType: 'value',
+              source: 'cat-12 dog-34',
+              regexType: 'value',
+              regex: '(cat|dog)-(\\d+)',
+              resultType: 'value',
+              result: '$2:$1',
+              replacementType: 'value',
+              replacement: '',
+              flagsType: 'value',
+              flags: 'g',
+              outputVar: 'replace',
+            }),
+            eff({
+              type: 'v2RegexTest',
+              valueType: 'value',
+              value: 'room 42',
+              regexType: 'value',
+              regex: 'room\\s+(\\d+)',
+              flagsType: 'value',
+              flags: '',
+              outputVar: 'test',
+            }),
+            eff({
+              type: 'v2QuickSearchChat',
+              valueType: 'value',
+              value: 'quick\\s+fox',
+              depthType: 'value',
+              depth: '2',
+              condition: 'regex',
+              outputVar: 'quick',
+            }),
+          ],
+        }),
+      ],
+    })
+    const chat = makeChat({
+      message: [
+        { role: 'user', data: 'filler' },
+        { role: 'char', data: 'the quick fox jumps' },
+      ] as never,
+    })
+
+    const result = await runTrigger(ctx, char, 'output', { chat })
+
+    expect(result?.chat.scriptstate).toMatchObject({
+      $split: '["red","green","blue"]',
+      $replace: '12:cat 34:dog',
+      $test: '1',
+      $quick: '1',
+    })
+  })
+
+  it('L9: rejects unsafe trigger regexes before synchronous execution', async () => {
+    const unsafeTrigger = (effect: triggerscript['effect'][number]) =>
+      makeChar({ triggerscript: [triggerWithEffects([effect])] })
+
+    await expect(
+      runTrigger(
+        ctx,
+        unsafeTrigger(
+          eff({
+            type: 'v2RegexTest',
+            valueType: 'value',
+            value: 'a'.repeat(32) + '!',
+            regexType: 'value',
+            regex: '(a+)+$',
+            flagsType: 'value',
+            flags: '',
+            outputVar: 'out',
+          }),
+        ),
+        'output',
+        { chat: makeChat() },
+      ),
+    ).rejects.toThrow(/bounded regex rejected: trigger v2RegexTest pattern: complexity screen/)
+
+    await expect(
+      runTrigger(
+        ctx,
+        unsafeTrigger(
+          eff({
+            type: 'v2RegexTest',
+            valueType: 'value',
+            value: 'x',
+            regexType: 'value',
+            regex: 'x'.repeat(BOUNDED_REGEX_LIMITS.pattern + 1),
+            flagsType: 'value',
+            flags: '',
+            outputVar: 'out',
+          }),
+        ),
+        'output',
+        { chat: makeChat() },
+      ),
+    ).rejects.toThrow(/pattern length/)
+
+    await expect(
+      runTrigger(
+        ctx,
+        unsafeTrigger(
+          eff({
+            type: 'v2RegexTest',
+            valueType: 'value',
+            value: 'x'.repeat(BOUNDED_REGEX_LIMITS.haystack + 1),
+            regexType: 'value',
+            regex: 'x',
+            flagsType: 'value',
+            flags: '',
+            outputVar: 'out',
+          }),
+        ),
+        'output',
+        { chat: makeChat() },
+      ),
+    ).rejects.toThrow(/haystack length/)
+
+    await expect(
+      runTrigger(
+        ctx,
+        unsafeTrigger(
+          eff({
+            type: 'v2ReplaceString',
+            sourceType: 'value',
+            source: 'x',
+            regexType: 'value',
+            regex: 'x',
+            resultType: 'value',
+            result: '$0',
+            replacementType: 'value',
+            replacement: 'r'.repeat(BOUNDED_REGEX_LIMITS.replacement + 1),
+            flagsType: 'value',
+            flags: '',
+            outputVar: 'out',
+          }),
+        ),
+        'output',
+        { chat: makeChat() },
+      ),
+    ).rejects.toThrow(/replacement length/)
+  })
+
+  it('L9: rejects unsafe trigger condition regex before execution', async () => {
+    const char = makeChar({
+      triggerscript: [
+        makeTrigger({
+          type: 'output',
+          conditions: [cond({ type: 'exists', value: '(a+)+$', type2: 'regex', depth: 1 })],
+          effect: [eff({ type: 'setvar', operator: '=', var: 'hit', value: '1' })],
+        }),
+      ],
+    })
+    const chat = makeChat({
+      message: [{ role: 'user', data: 'a'.repeat(32) + '!' }] as never,
+    })
+
+    await expect(runTrigger(ctx, char, 'output', { chat })).rejects.toThrow(
+      /bounded regex rejected: trigger condition regex pattern: complexity screen/,
+    )
+  })
 })
 
 describe('Phase 7-9d-ii V2 safe data helpers', () => {
@@ -1308,9 +1586,31 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
       triggerscript: [
         triggerWithEffects([
           eff({ type: 'v2MakeDictVar', var: 'd' }),
-          eff({ type: 'v2SetDictVar', varType: 'var', var: 'd', keyType: 'value', key: 'k', valueType: 'value', value: 'v' }),
-          eff({ type: 'v2GetDictVar', varType: 'var', var: 'd', keyType: 'value', key: 'k', outputVar: 'got' }),
-          eff({ type: 'v2HasDictKey', varType: 'var', var: 'd', keyType: 'value', key: 'k', outputVar: 'has' }),
+          eff({
+            type: 'v2SetDictVar',
+            varType: 'var',
+            var: 'd',
+            keyType: 'value',
+            key: 'k',
+            valueType: 'value',
+            value: 'v',
+          }),
+          eff({
+            type: 'v2GetDictVar',
+            varType: 'var',
+            var: 'd',
+            keyType: 'value',
+            key: 'k',
+            outputVar: 'got',
+          }),
+          eff({
+            type: 'v2HasDictKey',
+            varType: 'var',
+            var: 'd',
+            keyType: 'value',
+            key: 'k',
+            outputVar: 'has',
+          }),
         ]),
       ],
     })
@@ -1323,7 +1623,12 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
-          eff({ type: 'v2Calculate', expressionType: 'value', expression: '($a + 2) * 3', outputVar: 'calc' }),
+          eff({
+            type: 'v2Calculate',
+            expressionType: 'value',
+            expression: '($a + 2) * 3',
+            outputVar: 'calc',
+          }),
         ]),
       ],
     })
@@ -1337,7 +1642,12 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
-          eff({ type: 'v2Tokenize', valueType: 'value', value: 'hello world foo bar', outputVar: 'tok' }),
+          eff({
+            type: 'v2Tokenize',
+            valueType: 'value',
+            value: 'hello world foo bar',
+            outputVar: 'tok',
+          }),
         ]),
       ],
     })
@@ -1349,8 +1659,26 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
-          eff({ type: 'v2RegexTest', valueType: 'value', value: 'hello', regexType: 'value', regex: '^h', flagsType: 'value', flags: '', outputVar: 'hit' }),
-          eff({ type: 'v2RegexTest', valueType: 'value', value: 'hello', regexType: 'value', regex: '^z', flagsType: 'value', flags: '', outputVar: 'miss' }),
+          eff({
+            type: 'v2RegexTest',
+            valueType: 'value',
+            value: 'hello',
+            regexType: 'value',
+            regex: '^h',
+            flagsType: 'value',
+            flags: '',
+            outputVar: 'hit',
+          }),
+          eff({
+            type: 'v2RegexTest',
+            valueType: 'value',
+            value: 'hello',
+            regexType: 'value',
+            regex: '^z',
+            flagsType: 'value',
+            flags: '',
+            outputVar: 'miss',
+          }),
         ]),
       ],
     })
@@ -1363,7 +1691,15 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
-          eff({ type: 'v2QuickSearchChat', valueType: 'value', value: 'quick', depthType: 'value', depth: '1', condition: 'strict', outputVar: 'qs' }),
+          eff({
+            type: 'v2QuickSearchChat',
+            valueType: 'value',
+            value: 'quick',
+            depthType: 'value',
+            depth: '1',
+            condition: 'strict',
+            outputVar: 'qs',
+          }),
         ]),
       ],
     })
@@ -1374,9 +1710,7 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
 
   it('reads the last message', async () => {
     const char = makeChar({
-      triggerscript: [
-        triggerWithEffects([eff({ type: 'v2GetLastMessage', outputVar: 'last' })]),
-      ],
+      triggerscript: [triggerWithEffects([eff({ type: 'v2GetLastMessage', outputVar: 'last' })])],
     })
     const chat = makeChat({
       message: [
@@ -1393,7 +1727,14 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
       triggerscript: [
         triggerWithEffects([
           eff({ type: 'v2MakeArrayVar', var: '[]' }),
-          eff({ type: 'v2SetVar', operator: '=', var: 'after', valueType: 'value', value: 'ok', indent: 0 }),
+          eff({
+            type: 'v2SetVar',
+            operator: '=',
+            var: 'after',
+            valueType: 'value',
+            value: 'ok',
+            indent: 0,
+          }),
         ]),
       ],
     })
@@ -1433,10 +1774,36 @@ describe('Phase 7-9e request/display state adapters', () => {
         triggerWithEffects(
           [
             eff({ type: 'v2GetRequestStateLength', outputVar: 'len', indent: 0 }),
-            eff({ type: 'v2GetRequestState', indexType: 'value', index: '0', outputVar: 'c0', indent: 0 }),
-            eff({ type: 'v2GetRequestStateRole', indexType: 'value', index: '0', outputVar: 'r0', indent: 0 }),
-            eff({ type: 'v2SetRequestState', indexType: 'value', index: '1', valueType: 'value', value: 'changed', indent: 0 }),
-            eff({ type: 'v2SetRequestStateRole', indexType: 'value', index: '0', valueType: 'value', value: 'system', indent: 0 }),
+            eff({
+              type: 'v2GetRequestState',
+              indexType: 'value',
+              index: '0',
+              outputVar: 'c0',
+              indent: 0,
+            }),
+            eff({
+              type: 'v2GetRequestStateRole',
+              indexType: 'value',
+              index: '0',
+              outputVar: 'r0',
+              indent: 0,
+            }),
+            eff({
+              type: 'v2SetRequestState',
+              indexType: 'value',
+              index: '1',
+              valueType: 'value',
+              value: 'changed',
+              indent: 0,
+            }),
+            eff({
+              type: 'v2SetRequestStateRole',
+              indexType: 'value',
+              index: '0',
+              valueType: 'value',
+              value: 'system',
+              indent: 0,
+            }),
           ],
           { type: 'request' },
         ),
@@ -1466,7 +1833,14 @@ describe('Phase 7-9e request/display state adapters', () => {
       triggerscript: [
         triggerWithEffects(
           [
-            eff({ type: 'v2SetRequestStateRole', indexType: 'value', index: '0', valueType: 'value', value: 'bogus', indent: 0 }),
+            eff({
+              type: 'v2SetRequestStateRole',
+              indexType: 'value',
+              index: '0',
+              valueType: 'value',
+              value: 'bogus',
+              indent: 0,
+            }),
           ],
           { type: 'request' },
         ),
@@ -1489,7 +1863,14 @@ describe('Phase 7-9e request/display state adapters', () => {
         triggerWithEffects(
           [
             eff({ type: 'v2GetLastMessage', outputVar: 'skipped', indent: 0 }),
-            eff({ type: 'v2SetVar', operator: '=', var: 'ran', valueType: 'value', value: 'yes', indent: 0 }),
+            eff({
+              type: 'v2SetVar',
+              operator: '=',
+              var: 'ran',
+              valueType: 'value',
+              value: 'yes',
+              indent: 0,
+            }),
           ],
           { type: 'display' },
         ),
