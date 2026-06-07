@@ -373,12 +373,18 @@ function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void 
   reply.raw.write(`event: ${event}\ndata: ${data}\n\n`)
 }
 
+function isCompletionDeadlineActivityFrame(frame: CompletionStreamFrame): boolean {
+  if (frame.kind !== 'token') return false
+  return typeof frame.content === 'string' && frame.content.length > 0
+}
+
 // Disconnect + generous-deadline abort plumbing (audit M8) shared with the
 // chat route; see `requestAbort.ts`.
 
-async function pipeStream(
+export async function pipeStream(
   reply: FastifyReply,
   frames: AsyncIterable<CompletionStreamFrame>,
+  refreshDeadline?: () => void,
 ): Promise<void> {
   reply.raw.writeHead(200, {
     'content-type': 'text/event-stream',
@@ -388,6 +394,9 @@ async function pipeStream(
   try {
     for await (const frame of frames) {
       writeSseChunk(reply, frame)
+      if (refreshDeadline && isCompletionDeadlineActivityFrame(frame)) {
+        refreshDeadline()
+      }
     }
   } finally {
     reply.raw.end()
@@ -418,14 +427,14 @@ async function handleEchoStreaming(
   reply: FastifyReply,
   options: EchoOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req)
   try {
     const echo = resolveEchoRequest({
       message: options.message,
       delayMs: options.delayMs,
       signal,
     })
-    await pipeStream(reply, runEchoStream(echo))
+    await pipeStream(reply, runEchoStream(echo), refresh)
   } finally {
     cleanup()
   }
@@ -530,7 +539,7 @@ async function handleAnthropicStreaming(
   messages: unknown[],
   options: AnthropicOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req)
   try {
     const ap = coerceAnthropicAdditionalParams(options)
     if (ap.ok === false) {
@@ -553,7 +562,7 @@ async function handleAnthropicStreaming(
       badRequest(reply, 'options.anthropic.apiKey is required')
       return
     }
-    await pipeStream(reply, runAnthropicStream(resolved))
+    await pipeStream(reply, runAnthropicStream(resolved), refresh)
   } finally {
     cleanup()
   }
@@ -675,7 +684,7 @@ async function handleOllamaStreaming(
   messages: unknown[],
   options: OllamaOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req)
   try {
     const resolved = resolveOllamaRequest({
       model,
@@ -693,7 +702,7 @@ async function handleOllamaStreaming(
       badRequest(reply, 'options.ollama.baseUrl is required (and messages must be non-empty)')
       return
     }
-    await pipeStream(reply, runOllamaStream(resolved))
+    await pipeStream(reply, runOllamaStream(resolved), refresh)
   } finally {
     cleanup()
   }
@@ -926,7 +935,7 @@ async function handleGeminiStreaming(
   messages: unknown[],
   options: GeminiOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req)
   try {
     const vertex = coerceVertexAuth(options.vertex)
     let vertexAuth: VertexAuthCoerced | undefined
@@ -956,7 +965,7 @@ async function handleGeminiStreaming(
       )
       return
     }
-    await pipeStream(reply, runGeminiStream(resolved))
+    await pipeStream(reply, runGeminiStream(resolved), refresh)
   } finally {
     cleanup()
   }
@@ -1069,7 +1078,7 @@ async function handleMistralStreaming(
   messages: unknown[],
   options: MistralOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req)
   try {
     const ap = coerceMistralAdditionalParams(options)
     if (ap.ok === false) {
@@ -1095,7 +1104,7 @@ async function handleMistralStreaming(
       badRequest(reply, 'options.mistral.apiKey is required')
       return
     }
-    await pipeStream(reply, runMistralStream(resolved))
+    await pipeStream(reply, runMistralStream(resolved), refresh)
   } finally {
     cleanup()
   }
@@ -1154,7 +1163,7 @@ async function handleOpenAICompatibleStreaming(
   messages: unknown[],
   variant: OpenAICompatibleVariant,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req)
   try {
     const resolved = resolveOpenAIRequest({
       model,
@@ -1172,7 +1181,7 @@ async function handleOpenAICompatibleStreaming(
       badRequest(reply, 'apiKey is required')
       return
     }
-    await pipeStream(reply, runOpenAIStream(resolved))
+    await pipeStream(reply, runOpenAIStream(resolved), refresh)
   } finally {
     cleanup()
   }
@@ -1259,7 +1268,7 @@ async function handleServerIntentCompletion(
     return badRequest(reply, 'database is not initialized')
   }
 
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req)
   try {
     const database = buildCompletionDatabase(settingsToCompletionDatabase(settings), body)
     const frames = await dispatchChatProvider({
@@ -1270,7 +1279,7 @@ async function handleServerIntentCompletion(
     })
 
     if (body.stream === true) {
-      await pipeStream(reply, frames)
+      await pipeStream(reply, frames, refresh)
       return
     }
 

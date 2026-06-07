@@ -203,6 +203,24 @@ describe('JobRegistry buffering and lifecycle', () => {
     expect(isStreamDeadlineActivityFrame('event: token\ndata: {"content":""}\n\n')).toBe(false)
     expect(isStreamDeadlineActivityFrame('event: done\ndata: {}\n\n')).toBe(false)
     expect(isStreamDeadlineActivityFrame(': heartbeat\n\n')).toBe(false)
+    expect(
+      isStreamDeadlineActivityFrame(
+        JSON.stringify({ type: 'upstream_headers', status: 200, headers: {} }),
+      ),
+    ).toBe(true)
+    expect(
+      isStreamDeadlineActivityFrame(JSON.stringify({ type: 'chunk', dataBase64: 'AAAA' })),
+    ).toBe(true)
+    expect(
+      isStreamDeadlineActivityFrame(JSON.stringify({ type: 'chunk', dataBase64: '' })),
+    ).toBe(false)
+    expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'ping', ts: 1 }))).toBe(false)
+    expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'done' }))).toBe(false)
+    expect(
+      isStreamDeadlineActivityFrame(
+        JSON.stringify({ type: 'error', status: 504, message: 'nope' }),
+      ),
+    ).toBe(false)
   })
 
   it('buffers events when no client is attached, then flushes on attach', () => {
@@ -369,6 +387,57 @@ describe('JobRegistry buffering and lifecycle', () => {
 
     vi.advanceTimersByTime(101)
     reg.tickGc()
+    expect(job.abortController.signal.aborted).toBe(true)
+  })
+
+  it('L5: active proxy stream jobs extend deadlineAt on JSON activity', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(4_000_000)
+    const reg = new JobRegistry()
+    const job = reg.create({
+      timeoutMs: 1_000,
+      heartbeatSec: 10,
+      slidingDeadline: true,
+    })
+    expect(job.deadlineAt).toBe(4_001_000)
+
+    vi.advanceTimersByTime(900)
+    reg.pushEvent(job, { type: 'upstream_headers', status: 200, headers: {} })
+    expect(job.deadlineAt).toBe(4_001_900)
+
+    vi.advanceTimersByTime(900)
+    reg.tickGc()
+    expect(job.abortController.signal.aborted).toBe(false)
+    reg.pushEvent(job, { type: 'chunk', dataBase64: 'AAAA' })
+    expect(job.deadlineAt).toBe(4_002_800)
+
+    const refreshedDeadline = job.deadlineAt
+    reg.pushEvent(job, { type: 'ping', ts: Date.now() })
+    reg.pushEvent(job, { type: 'done' })
+    reg.pushEvent(job, { type: 'error', status: 504, message: 'late failure' })
+    expect(job.deadlineAt).toBe(refreshedDeadline)
+
+    vi.advanceTimersByTime(999)
+    reg.tickGc()
+    expect(job.abortController.signal.aborted).toBe(false)
+    vi.advanceTimersByTime(1)
+    reg.tickGc()
+    expect(job.abortController.signal.aborted).toBe(true)
+  })
+
+  it('L5: silent proxy stream jobs abort at the bounded deadline', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(5_000_000)
+    const reg = new JobRegistry()
+    const job = reg.create({
+      timeoutMs: 1_000,
+      heartbeatSec: 10,
+      slidingDeadline: true,
+    })
+
+    vi.advanceTimersByTime(1_001)
+    reg.tickGc()
+
     expect(job.abortController.signal.aborted).toBe(true)
   })
 

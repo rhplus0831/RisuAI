@@ -1,12 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
 import { writePersistedWithMessages } from '../src/repository.js'
+import { attachAbort } from '../src/requestAbort.js'
+import { pipeStream } from '../src/routes/generation.js'
+import type { CompletionStreamFrame } from '../src/generation/frames.js'
 
 const subtle = webcrypto.subtle
 
@@ -91,6 +95,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.useRealTimers()
   if (originalFetch) {
     globalThis.fetch = originalFetch
   }
@@ -125,6 +130,57 @@ function writeDatabase(database: Record<string, unknown>): void {
   } finally {
     db.close()
   }
+}
+
+interface FakeRawReply {
+  statusCode: number
+  headers: Record<string, string>
+  chunks: string[]
+  ended: boolean
+  writeHead(statusCode: number, headers: Record<string, string>): void
+  write(chunk: string): void
+  end(): void
+}
+
+function fakeReply(): { reply: FastifyReply; raw: FakeRawReply } {
+  const raw: FakeRawReply = {
+    statusCode: 0,
+    headers: {},
+    chunks: [],
+    ended: false,
+    writeHead(statusCode, headers) {
+      this.statusCode = statusCode
+      this.headers = headers
+    },
+    write(chunk) {
+      this.chunks.push(chunk)
+    },
+    end() {
+      this.ended = true
+    },
+  }
+  return { reply: { raw } as unknown as FastifyReply, raw }
+}
+
+function fakeAbortReq(): {
+  raw: EventEmitter & { on: EventEmitter['on']; off: EventEmitter['off'] }
+} {
+  return { raw: new EventEmitter() }
+}
+
+function waitForFrame(ms: number, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve(true)
+    }, ms)
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      resolve(false)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 describe('Phase 6-1 POST /api/v1/generate/completion', () => {
@@ -585,6 +641,89 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
         `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'lo' })}\n\n` +
         `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
     )
+  })
+
+  it('L2: active streaming completion survives past the original deadline', async () => {
+    vi.useFakeTimers()
+    const req = fakeAbortReq()
+    const { reply, raw } = fakeReply()
+    const { signal, refresh, cleanup } = attachAbort(req, { deadlineMs: 100 })
+    let settled = false
+
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      if (await waitForFrame(90, signal)) yield { kind: 'token', content: 'a' }
+      if (await waitForFrame(90, signal)) yield { kind: 'token', content: 'b' }
+      if (!signal.aborted) yield { kind: 'done', finishReason: 'stop' }
+    }
+
+    const run = pipeStream(reply, frames(), refresh).then(() => {
+      settled = true
+    })
+
+    await vi.advanceTimersByTimeAsync(90)
+    expect(signal.aborted).toBe(false)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(11)
+    expect(signal.aborted).toBe(false)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(79)
+    await run
+
+    expect(raw.ended).toBe(true)
+    expect(raw.chunks.join('')).toBe(
+      `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'a' })}\n\n` +
+        `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: 'b' })}\n\n` +
+        `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
+    )
+    cleanup()
+  })
+
+  it('L2: idle streaming completion aborts at the bounded deadline', async () => {
+    vi.useFakeTimers()
+    const req = fakeAbortReq()
+    const { reply, raw } = fakeReply()
+    const { signal, refresh, cleanup } = attachAbort(req, { deadlineMs: 100 })
+
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      if (await waitForFrame(200, signal)) yield { kind: 'token', content: 'late' }
+    }
+
+    const run = pipeStream(reply, frames(), refresh)
+    await vi.advanceTimersByTimeAsync(99)
+    expect(signal.aborted).toBe(false)
+    expect(raw.ended).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await run
+
+    expect(signal.aborted).toBe(true)
+    expect(raw.ended).toBe(true)
+    expect(raw.chunks).toEqual([])
+    cleanup()
+  })
+
+  it('L2: empty streaming completion tokens do not refresh the deadline', async () => {
+    vi.useFakeTimers()
+    const req = fakeAbortReq()
+    const { reply, raw } = fakeReply()
+    const { signal, refresh, cleanup } = attachAbort(req, { deadlineMs: 100 })
+
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      if (await waitForFrame(90, signal)) yield { kind: 'token', content: '' }
+      if (await waitForFrame(20, signal)) yield { kind: 'token', content: 'late' }
+    }
+
+    const run = pipeStream(reply, frames(), refresh)
+    await vi.advanceTimersByTimeAsync(90)
+    expect(signal.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(20)
+    await run
+
+    expect(signal.aborted).toBe(true)
+    expect(raw.ended).toBe(true)
+    expect(raw.chunks.join('')).toBe(
+      `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: '' })}\n\n`,
+    )
+    cleanup()
   })
 
   it('streaming relays CRLF-delimited upstream SSE deltas through the normalized envelope', async () => {

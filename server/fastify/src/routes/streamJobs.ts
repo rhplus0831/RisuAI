@@ -164,6 +164,7 @@ export function registerStreamJobRoutes(
       const job = registry.create({
         timeoutMs: body.timeoutMs,
         heartbeatSec: body.heartbeatSec,
+        slidingDeadline: true,
       })
 
       void runStreamJob(registry, job, {

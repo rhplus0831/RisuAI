@@ -251,10 +251,18 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     7,
     'Read assembly asset bytes off the event loop (async pre-resolve or async resolver contract).',
   ),
-  planned(
+  done(
     'L2',
     4,
     'Thread `RequestAbort.refresh` into `pipeStream` on activity frames (mirror `streamAssembly`).',
+    'server/fastify/__tests__/generation.completion.test.ts',
+    'L2: active streaming completion survives past the original deadline',
+    [
+      {
+        testPath: 'server/fastify/__tests__/generation.completion.test.ts',
+        testName: 'L2: idle streaming completion aborts at the bounded deadline',
+      },
+    ],
   ),
   planned(
     'L3',
@@ -262,10 +270,18 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'Compute reformat flags first; return `rows` unchanged when no branch applies (or clone lazily per branch).',
   ),
   planned('L4', 4, '`AbortSignal.timeout` on the fire-and-forget Horde DELETE.'),
-  planned(
+  done(
     'L5',
     4,
     'Create proxy stream jobs with `slidingDeadline: true` (activity detection already exists in `pushRaw`).',
+    'server/fastify/__tests__/streamJobs.test.ts',
+    'L5: active proxy stream jobs extend deadlineAt on JSON activity',
+    [
+      {
+        testPath: 'server/fastify/__tests__/streamJobs.test.ts',
+        testName: 'L5: silent proxy stream jobs abort at the bounded deadline',
+      },
+    ],
   ),
   planned(
     'L6',
@@ -1348,6 +1364,8 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M4',
       'M5',
       'M9',
+      'L2',
+      'L5',
       'L11',
       'L12',
       'L13',
@@ -1364,7 +1382,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L11, L12, L13, L14, L15, L16, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L5, L11, L12, L13, L14, L15, L16, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1376,6 +1394,8 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M4',
       'M5',
       'M9',
+      'L2',
+      'L5',
       'L11',
       'L12',
       'L13',

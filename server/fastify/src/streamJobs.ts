@@ -184,9 +184,42 @@ function serializedSseData(text: string): unknown {
   }
 }
 
+function serializedJsonEventType(text: string): string | undefined {
+  try {
+    const parsed = JSON.parse(text) as unknown
+    if (!parsed || typeof parsed !== 'object') return undefined
+    const type = (parsed as { type?: unknown }).type
+    return typeof type === 'string' ? type : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function serializedJsonEventData(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+function isJsonStreamDeadlineActivityFrame(text: string): boolean {
+  const type = serializedJsonEventType(text)
+  if (!type || type === 'done' || type === 'error' || type === 'ping') return false
+  if (type === 'upstream_headers' || type === 'progress' || type === 'info' || type === 'live') {
+    return true
+  }
+  if (type !== 'chunk') return false
+  const data = serializedJsonEventData(text)
+  if (!data || typeof data !== 'object') return false
+  const dataBase64 = (data as { dataBase64?: unknown }).dataBase64
+  return typeof dataBase64 === 'string' && dataBase64.length > 0
+}
+
 export function isStreamDeadlineActivityFrame(text: string): boolean {
   const type = serializedSseEventType(text)
-  if (!type || type === 'done' || type === 'error') return false
+  if (!type) return isJsonStreamDeadlineActivityFrame(text)
+  if (type === 'done' || type === 'error') return false
   if (type !== 'token') return true
   const data = serializedSseData(text)
   if (!data || typeof data !== 'object') return false
