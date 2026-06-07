@@ -7,6 +7,22 @@ let domObserver: MutationObserver | null = null
 let observedBody: HTMLElement | null = null
 let bodyRetryTimer: ReturnType<typeof setTimeout> | null = null
 
+function stopCurrentBgm() {
+  const current = bgmElement
+  if (!current) {
+    return
+  }
+
+  bgmElement = null
+  current.pause()
+  current.remove()
+}
+
+export function resetBgmObserverForChatSwitch() {
+  stopCurrentBgm()
+  observedControlNodes = new WeakSet()
+}
+
 function nodeObserve(node: HTMLElement) {
   const hlLang = node.getAttribute('x-hl-lang')
   const ctrlName = node.getAttribute('risu-ctrl')
@@ -82,13 +98,16 @@ function nodeObserve(node: HTMLElement) {
         observedControlNodes.add(node)
         const volume = split[1] === 'auto' ? 0.5 : parseFloat(split[1])
         if (!bgmElement) {
-          bgmElement = new Audio(split[2])
-          bgmElement.volume = volume
-          bgmElement.addEventListener('ended', () => {
-            bgmElement.remove()
-            bgmElement = null
+          const audio = new Audio(split[2])
+          bgmElement = audio
+          audio.volume = volume
+          audio.addEventListener('ended', () => {
+            audio.remove()
+            if (bgmElement === audio) {
+              bgmElement = null
+            }
           })
-          bgmElement.play()
+          audio.play()
         }
         break
       }
@@ -163,12 +182,16 @@ export function _resetDomObserverForTesting() {
   observedBody = null
   observedCodeBlocks = new WeakSet()
   observedControlNodes = new WeakSet()
-  bgmElement = null
+  stopCurrentBgm()
 
   if (bodyRetryTimer !== null) {
     clearTimeout(bodyRetryTimer)
     bodyRetryTimer = null
   }
+}
+
+export function _getBgmElementForTesting() {
+  return bgmElement
 }
 
 let claudeObserverRunning = false

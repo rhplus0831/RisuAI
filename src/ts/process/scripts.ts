@@ -83,6 +83,8 @@ export async function importRegex(o?: customscript[]): Promise<customscript[]> {
   return o
 }
 
+const BEST_MATCH_CACHE_LIMIT = 1000
+
 let bestMatchCache = new Map<string, string>()
 let processScriptCache = new Map<string, string>()
 
@@ -115,6 +117,40 @@ function getScriptCache(hash: string) {
   return processScriptCache.get(hash)
 }
 
+function cacheBestMatch(cacheKey: string, bestMatch: string) {
+  bestMatchCache.delete(cacheKey)
+  bestMatchCache.set(cacheKey, bestMatch)
+
+  if (bestMatchCache.size > BEST_MATCH_CACHE_LIMIT) {
+    const oldestKey = bestMatchCache.keys().next().value
+    if (oldestKey !== undefined) {
+      bestMatchCache.delete(oldestKey)
+    }
+  }
+}
+
+function getBestMatch(cacheKey: string) {
+  const cached = bestMatchCache.get(cacheKey)
+  if (cached !== undefined) {
+    bestMatchCache.delete(cacheKey)
+    bestMatchCache.set(cacheKey, cached)
+  }
+  return cached
+}
+
+// Exported for the best-match cache regression tests; not part of the public API.
+export function cacheBestMatchForTesting(cacheKey: string, bestMatch: string) {
+  cacheBestMatch(cacheKey, bestMatch)
+}
+
+export function getBestMatchForTesting(cacheKey: string) {
+  return getBestMatch(cacheKey)
+}
+
+export function getBestMatchCacheSizeForTesting() {
+  return bestMatchCache.size
+}
+
 // Regex-script sources are constant across the per-token streaming re-runs that
 // miss the script cache, so compiling `new RegExp(source, flag)` on every
 // `executeScript` is pure waste. Memoize the compiled regex keyed by its source
@@ -139,6 +175,7 @@ export function getCompiledRegex(source: string, flag: string): RegExp {
 }
 
 export function resetScriptCache() {
+  bestMatchCache = new Map()
   processScriptCache = new Map()
   compiledRegexCache = new Map()
 }
@@ -434,14 +471,15 @@ export async function processScriptFull(
       const assetName = match[2]
       const cacheKey = char.chaId + '::' + assetName
       if (type !== 'emotion' && type !== 'source') {
-        if (bestMatchCache.has(cacheKey)) {
-          data = data.replaceAll(match[0], `{{${type}::${bestMatchCache.get(cacheKey)}}}`)
+        const cachedBestMatch = getBestMatch(cacheKey)
+        if (cachedBestMatch !== undefined) {
+          data = data.replaceAll(match[0], `{{${type}::${cachedBestMatch}}}`)
         } else if (!assetNames.includes(assetName)) {
           const searched = await processer.similaritySearch(assetName)
           const bestMatch = searched[0]
           if (bestMatch) {
             data = data.replaceAll(match[0], `{{${type}::${bestMatch}}}`)
-            bestMatchCache.set(cacheKey, bestMatch)
+            cacheBestMatch(cacheKey, bestMatch)
           }
         }
       }

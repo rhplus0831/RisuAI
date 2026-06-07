@@ -10,24 +10,39 @@ after each change to a narrowed or bounded path.
 - Plan state: open; Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are
   complete; the v4-H2 Phase 4.5 hotfix is also complete; Phase 5 is complete;
   Phase 6 is active. `H1`, `M1-M6`, `M8`, `M9`, `L2`, `L4`, `L5`,
-  `L11-L31`, `L34-L37`, `L56`, `K1`, and `K2` are `DONE` in
+  `L11-L37`, `L56`, `K1`, and `K2` are `DONE` in
   [`active-risk-analysis.md`](active-risk-analysis.md); every other scheduled
   row remains `PENDING`.
 - Gate state: the v1 gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
   and the v2 gate (`fixCompletenessGateV2.test.ts`) remain live against their
   archives. The v3 gate (`fixCompletenessGateV3.test.ts`) is live against
   `docs/plan/`, with `H1`, `M1-M6`, `M8`, `M9`, `L2`, `L4`, `L5`,
-  `L11-L31`, `L34-L37`, `L56`, `K1`, and `K2` registered as
+  `L11-L37`, `L56`, `K1`, and `K2` registered as
   `DONE` and all other scheduled v3 IDs registered as `PLANNED`. The latest
   v3 gate command is green in the run below; the v1/v2 archive gates were
   last refreshed during the Phase 5 verification run.
 - Tree: Phase 5 implementation is committed through `68edd23d7`; this
   working-tree update adds the Phase 6 M6 `catalog-derived-lists` runtime and
   the L22 `draft-mirror-gating`, L28/L29 `watcher-short-circuits`, L30
-  `parse-memo-key-caching`, and L31 `customhtml-template-memo` runtime, tests,
-  and docs proof. The earlier
+  `parse-memo-key-caching`, L31 `customhtml-template-memo`, and L32/L33
+  `render-cache-hygiene` runtime, tests, and docs proof. The earlier
   v4-only Phase 6 transcript-window reset and render-parser dependency
   narrowing proof remains logged below.
+
+## Phase 6 Render Cache Hygiene (2026-06-07)
+
+Run for the Phase 6 L32/L33 `render-cache-hygiene` slice. L32 and L33 moved
+to `DONE` in the active-risk table and v3 gate.
+
+- `pnpm exec vitest run src/ts/process/scripts.regexCache.test.ts src/ts/process/scripts.editdisplay.test.ts src/ts/observer.svelte.test.ts src/ts/__tests__/fixCompletenessGateV3.test.ts`:
+  passed after this slice's implementation. The proof covers the
+  `bestMatchCache` LRU cap and eviction behavior, `resetScriptCache()` clearing
+  best-match entries with the other script caches, BGM chat-switch cleanup
+  pausing/removing the current audio and nulling the live element, and a later
+  BGM control attaching cleanly.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- `git diff --check`: passed with no output.
+- Skipped/failed items: no remaining failed commands.
 
 ## Phase 6 CustomHTML Template Memo (2026-06-07)
 

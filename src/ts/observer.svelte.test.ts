@@ -4,7 +4,12 @@ vi.mock('./globalApi.svelte', () => ({
   globalFetch: vi.fn(),
 }))
 
-import { _resetDomObserverForTesting, startObserveDom } from './observer.svelte'
+import {
+  _getBgmElementForTesting,
+  _resetDomObserverForTesting,
+  resetBgmObserverForChatSwitch,
+  startObserveDom,
+} from './observer.svelte'
 
 async function flushMutationObserver() {
   await Promise.resolve()
@@ -149,6 +154,7 @@ describe('startObserveDom', () => {
   it('M14: processes each BGM control node once even after repeated scans', () => {
     let endedListener: (() => void) | null = null
     const play = vi.fn()
+    const pause = vi.fn()
     const remove = vi.fn()
     const audioInstances: Array<{ src: string; volume: number }> = []
     const AudioMock = vi.fn(function (
@@ -157,6 +163,7 @@ describe('startObserveDom', () => {
         volume: number
         addEventListener: (name: string, listener: EventListener) => void
         play: () => void
+        pause: () => void
         remove: () => void
       },
       src: string,
@@ -169,6 +176,7 @@ describe('startObserveDom', () => {
         }
       }
       this.play = play
+      this.pause = pause
       this.remove = remove
       audioInstances.push(this)
     })
@@ -190,5 +198,59 @@ describe('startObserveDom', () => {
 
     expect(remove).toHaveBeenCalledTimes(1)
     expect(AudioMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('L33: chat switch cleanup pauses current BGM and lets the next control attach', async () => {
+    const play = vi.fn()
+    const pause = vi.fn()
+    const remove = vi.fn()
+    const audioInstances: Array<{ src: string; volume: number }> = []
+    const AudioMock = vi.fn(function (
+      this: {
+        src: string
+        volume: number
+        addEventListener: (name: string, listener: EventListener) => void
+        play: () => void
+        pause: () => void
+        remove: () => void
+      },
+      src: string,
+    ) {
+      this.src = src
+      this.volume = 0
+      this.addEventListener = () => {}
+      this.play = play
+      this.pause = pause
+      this.remove = remove
+      audioInstances.push(this)
+    })
+    vi.stubGlobal('Audio', AudioMock)
+
+    const firstCtrl = document.createElement('div')
+    firstCtrl.setAttribute('risu-ctrl', 'bgm___0.25___/old-bgm.mp3')
+    document.body.appendChild(firstCtrl)
+
+    startObserveDom()
+
+    expect(AudioMock).toHaveBeenCalledTimes(1)
+    expect(audioInstances[0]).toMatchObject({ src: '/old-bgm.mp3', volume: 0.25 })
+    expect(_getBgmElementForTesting()).toBe(audioInstances[0])
+
+    resetBgmObserverForChatSwitch()
+
+    expect(pause).toHaveBeenCalledTimes(1)
+    expect(remove).toHaveBeenCalledTimes(1)
+    expect(_getBgmElementForTesting()).toBeNull()
+
+    document.body.textContent = ''
+    const nextCtrl = document.createElement('div')
+    nextCtrl.setAttribute('risu-ctrl', 'bgm___auto___/new-bgm.mp3')
+    document.body.appendChild(nextCtrl)
+    await flushMutationObserver()
+
+    expect(AudioMock).toHaveBeenCalledTimes(2)
+    expect(audioInstances[1]).toMatchObject({ src: '/new-bgm.mp3', volume: 0.5 })
+    expect(play).toHaveBeenCalledTimes(2)
+    expect(_getBgmElementForTesting()).toBe(audioInstances[1])
   })
 })

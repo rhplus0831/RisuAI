@@ -107,8 +107,8 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L29 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Cheap short-circuit before the chat-metadata watcher's per-chat scalar Map rebuild. | DONE |
 | L30 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Cache the corpus-derived parse-memo key signature by its cheap invalidation tokens; build the detection key once per message. | DONE |
 | L31 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Memoize the parsed customHTML GUI template per template version, shared across messages. | DONE |
-| L32 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Cap `bestMatchCache` and reset it in `resetScriptCache()`.                  | PENDING |
-| L33 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Stop/null `bgmElement` on chat/character switch; clear stale observed bgm nodes. | PENDING |
+| L32 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Cap `bestMatchCache` and reset it in `resetScriptCache()`.                  | DONE |
+| L33 | [6](phases/phase-6-reactive-amplification-and-render.md)    | Stop/null `bgmElement` on chat/character switch; clear stale observed bgm nodes. | DONE |
 | L34 | [5](phases/phase-5-client-write-path-correctness.md)        | Wrap the IGP append in the trusted write + persist via a scoped chat command (fix the I11 `[object Object]` coercion in the same change). | DONE |
 | L35 | [5](phases/phase-5-client-write-path-correctness.md)        | Wrap + dispatch a scoped command for the inlay error bubble; add a guard-enabled test. | DONE |
 | L36 | [5](phases/phase-5-client-write-path-correctness.md)        | Route `sendPofile` transcript mutations through the trusted write + scoped messages command; absorb picker cancel/error and `.po` processing failures at the `postChatFile` boundary. | DONE |

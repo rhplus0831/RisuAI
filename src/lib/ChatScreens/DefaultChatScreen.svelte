@@ -55,6 +55,7 @@
   import sendSound from '../../etc/send.mp3'
   import CreatorQuote from './CreatorQuote.svelte'
   import { stopTTS } from 'src/ts/process/tts'
+  import { resetBgmObserverForChatSwitch } from 'src/ts/observer.svelte'
   import MainMenu from '../UI/MainMenu.svelte'
   import AssetInput from './AssetInput.svelte'
   import {
@@ -118,6 +119,7 @@
   let isScrollingToMessage = $state(false)
   let scrollToMessageRunId = 0
   let activeTranscriptWindowIdentity: string | null = $state(null)
+  let activeBgmObserverIdentity: string | null = $state(null)
   let {
     openModuleList = $bindable(false),
     openChatList = $bindable(false),
@@ -173,6 +175,19 @@
 
     if (previousIdentity !== null) {
       resetTranscriptWindowForChatSwitch()
+    }
+  })
+
+  $effect.pre(() => {
+    const nextIdentity = getActiveTranscriptWindowIdentity()
+    if (activeBgmObserverIdentity === nextIdentity) {
+      return
+    }
+
+    const previousIdentity = activeBgmObserverIdentity
+    activeBgmObserverIdentity = nextIdentity
+    if (previousIdentity !== null) {
+      resetBgmObserverForChatSwitch()
     }
   })
 
@@ -687,13 +702,7 @@
           fill="none"
           viewBox="0 0 24 24"
         >
-          <circle
-            class="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            stroke-width="4"
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
           ></circle>
           <path
             class="opacity-75"

@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 // Initialize the shared stores before importing the script cache helpers.
 import '../stores.svelte'
-import { getCompiledRegex, resetScriptCache } from './scripts'
+import {
+  cacheBestMatchForTesting,
+  getBestMatchCacheSizeForTesting,
+  getBestMatchForTesting,
+  getCompiledRegex,
+  resetScriptCache,
+} from './scripts'
 
 describe('compiled regex memoization (Phase 7)', () => {
   beforeEach(() => {
@@ -44,5 +50,30 @@ describe('compiled regex memoization (Phase 7)', () => {
     const before = getCompiledRegex('z', 'g')
     resetScriptCache()
     expect(getCompiledRegex('z', 'g')).not.toBe(before)
+  })
+
+  it('L32: bestMatchCache is capped and evicts the least recently used match', () => {
+    for (let i = 0; i < 1000; i += 1) {
+      cacheBestMatchForTesting(`asset-${i}`, `match-${i}`)
+    }
+    expect(getBestMatchCacheSizeForTesting()).toBe(1000)
+
+    expect(getBestMatchForTesting('asset-0')).toBe('match-0')
+    cacheBestMatchForTesting('asset-1000', 'match-1000')
+
+    expect(getBestMatchCacheSizeForTesting()).toBe(1000)
+    expect(getBestMatchForTesting('asset-0')).toBe('match-0')
+    expect(getBestMatchForTesting('asset-1')).toBeUndefined()
+    expect(getBestMatchForTesting('asset-1000')).toBe('match-1000')
+  })
+
+  it('L32: resetScriptCache clears bestMatchCache with the script caches', () => {
+    cacheBestMatchForTesting('asset-reset', 'match-reset')
+    expect(getBestMatchCacheSizeForTesting()).toBe(1)
+
+    resetScriptCache()
+
+    expect(getBestMatchCacheSizeForTesting()).toBe(0)
+    expect(getBestMatchForTesting('asset-reset')).toBeUndefined()
   })
 })
