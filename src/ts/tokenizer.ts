@@ -17,6 +17,7 @@ import type { GemmaTokenizer } from '@huggingface/transformers'
 import { LRUMap } from 'mnemonist'
 
 const MAX_CACHE_SIZE = 1500
+export const GOOGLE_CLOUD_TOKENIZED_CACHE_LIMIT = MAX_CACHE_SIZE
 
 const encodeCache = new LRUMap<string, number[] | Uint32Array | Int32Array>(MAX_CACHE_SIZE)
 
@@ -271,15 +272,20 @@ let tokenizersTokenizer: Tokenizer = null
 let tokenizersType: tokenizerType = null
 let lastTikModel = 'cl100k_base'
 
-let googleCloudTokenizedCache = new Map<string, number>()
+const googleCloudTokenizedCache = new LRUMap<string, number>(GOOGLE_CLOUD_TOKENIZED_CACHE_LIMIT)
+
+function getGoogleCloudTokenizedCacheKey(text: string, aiModel: string, internalID: string): string {
+  return JSON.stringify(['googleCloud', aiModel, internalID, text])
+}
 
 async function tokenizeGoogleCloud(text: string) {
   const db = getDatabase()
   const model = getModelInfo(db.aiModel)
-  const cacheKey = text + model.internalID
+  const cacheKey = getGoogleCloudTokenizedCacheKey(text, db.aiModel, model.internalID)
 
-  if (googleCloudTokenizedCache.has(cacheKey)) {
-    const count = googleCloudTokenizedCache.get(cacheKey) ?? 0
+  const cachedCount = googleCloudTokenizedCache.get(cacheKey)
+  if (cachedCount !== undefined) {
+    const count = cachedCount
     return new Uint32Array(count)
   }
 

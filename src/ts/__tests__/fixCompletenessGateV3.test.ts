@@ -992,7 +992,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned('L42', 8, 'LRU-bound `googleCloudTokenizedCache` (or fold into `encodeCache`).'),
+  done(
+    'L42',
+    8,
+    'LRU-bound `googleCloudTokenizedCache` (or fold into `encodeCache`).',
+    'src/ts/tokenizer.test.ts',
+    'L42: GoogleCloud token cache evicts oldest entries and refills with the same count',
+    [
+      {
+        testPath: 'src/ts/tokenizer.test.ts',
+        testName: 'L42: GoogleCloud token counts hit the bounded cache for repeated text',
+      },
+      {
+        testPath: 'src/ts/tokenizer.test.ts',
+        testName: 'L42: GoogleCloud cache keys keep model and text boundaries collision-safe',
+      },
+    ],
+  ),
   planned(
     'L43',
     8,
@@ -1969,6 +1985,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L39',
       'L40',
       'L41',
+      'L42',
       'L56',
       'K1',
       'K2',
@@ -1981,7 +1998,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L38, L39, L40, L41, L56, K1, K2, and K3 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L38, L39, L40, L41, L42, L56, K1, K2, and K3 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -2036,6 +2053,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L39',
       'L40',
       'L41',
+      'L42',
       'L56',
       'K1',
       'K2',
