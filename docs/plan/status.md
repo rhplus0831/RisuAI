@@ -1,6 +1,6 @@
 # Stability And Performance Remediation Status (V3)
 
-Date: 2026-06-07
+Date: 2026-06-08
 
 This is the entry router for the open v3 remediation workstream. Read this
 first, then [`next-steps.md`](next-steps.md) for the active task batch.
@@ -8,14 +8,13 @@ first, then [`next-steps.md`](next-steps.md) for the active task batch.
 ## Snapshot
 
 - Plan state: OPEN. Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, Phase 5,
-  Phase 6, and Phase 7 are complete; the v4-H2 Phase 4.5 proxy/transport
-  hotfix is complete; Phase 8 is the next batch.
+  Phase 6, Phase 7, and Phase 8 are complete; the v4-H2 Phase 4.5
+  proxy/transport hotfix is complete; Phase 9 is the next batch.
 - Findings covered: 89 confirmed v3 audit findings (1 high, 9 medium, 56 low,
   23 informational) plus the K1-K4 known-overlap residuals/re-opens.
-- Scheduled IDs: H1, M1-M9, L1-L56, and K1-K4. `H1`, `M1-M6`, `M8`, `M9`,
-  `L1-L37`, `L56`, and `K1-K3` are `DONE` in
-  [`active-risk-analysis.md`](active-risk-analysis.md); `M7`, `L38-L55`, and
-  `K4` remain `PENDING`.
+- Scheduled IDs: H1, M1-M9, L1-L56, and K1-K4. `H1`, `M1-M9`, `L1-L56`,
+  and `K1-K4` are `DONE` in
+  [`active-risk-analysis.md`](active-risk-analysis.md).
 - Gated IDs: unchanged from the v2 closeout — `v2-L12`, the v1 carry-overs
   (v1-L4, v1-L7, v1-L26, v1-U2), and the
   [`../archive/leftover.md`](../archive/leftover.md) evidence gates. I1-I23
@@ -25,9 +24,9 @@ first, then [`next-steps.md`](next-steps.md) for the active task batch.
   `src/ts/__tests__/fixCompletenessGateV2.test.ts` stays live against the
   archived v2 docs, and
   `src/ts/__tests__/fixCompletenessGateV3.test.ts` stays live against this
-  plan. The Phase 7 run keeps the active v3 gate green; see
+  plan. The Phase 8 run keeps the active v3 gate green; see
   [`latest-verification.md`](latest-verification.md).
-- Current proof: Phase 7 verification refresh on 2026-06-07. See
+- Current proof: Phase 8 verification refresh on 2026-06-08. See
   [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
@@ -54,10 +53,9 @@ first, then [`next-steps.md`](next-steps.md) for the active task batch.
 - [Phase 7](phases/phase-7-assembly-and-trigger-hot-paths.md): complete.
   Server assembly/trigger hot paths (L1, L3, L6-L10, K3) plus
   v4-M4/v4-L6/v4-L7 proof riders only.
-- [Phase 8](phases/phase-8-client-interpreters-plugins-media.md): pending —
-  NEXT.
+- [Phase 8](phases/phase-8-client-interpreters-plugins-media.md): complete.
   Client interpreters, plugins, MCP, media (M7, L38-L55, K4).
-- [Phase 9](phases/phase-9-verification-budgets.md): pending. v3 gate
+- [Phase 9](phases/phase-9-verification-budgets.md): pending — NEXT. v3 gate
   completeness, closing verification run, archive move, gate repoint.
 
 ## Maintenance Rules

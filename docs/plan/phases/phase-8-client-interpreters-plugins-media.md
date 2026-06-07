@@ -1,6 +1,6 @@
 # Phase 8: Client Interpreters, Plugins & Media (Theme 8)
 
-Status: pending.
+Status: complete.
 
 Goal: the hygiene ring 3 — port the server's execution budgets to the client
 interpreters, fix the plugin/MCP lifecycle leaks and caps, and clear the
@@ -15,7 +15,7 @@ storage-persistence owner accepts it with a measure/defer note.
 Riding informational items: I16/I17 (TTS + LLM-translator logs, same sweep
 as L50) — land if free.
 
-## Planned Slices
+## Completed Slices
 
 Authored under `slices/phase-8-client-interpreters-plugins-media/`.
 
@@ -117,35 +117,35 @@ Authored under `slices/phase-8-client-interpreters-plugins-media/`.
 
 ## Exit Criteria
 
-- [ ] L38/L39: a never-terminating manual trigger loop and a
+- [x] L38/L39: a never-terminating manual trigger loop and a
       `while true do end` Lua body both terminate within the budget with a
       surfaced error; cancel aborts a running manual trigger.
-- [ ] L40/L41: alternating distinct Lua trigger bodies reuses warm engines
+- [x] L40/L41: alternating distinct Lua trigger bodies reuses warm engines
       (boot-count probe); the editDisplay id set stays bounded across runs.
-- [ ] v4-L24 through v4-L29: translator output and regex work are memoized under stable
+- [x] v4-L24 through v4-L29: translator output and regex work are memoized under stable
       invalidation keys; LLM translation cache growth/quota errors are
       bounded and surfaced once; deeplX fallback fanout is measured or
       guarded; `combineTranslation` avoids per-line network/script fanout.
       v4-L30 is recorded as Phase 5-owned, not Phase 8-owned.
-- [ ] M7/L43: repeated plugin toggles add zero net window listeners and zero
+- [x] M7/L43: repeated plugin toggles add zero net window listeners and zero
       duplicate provider entries (count probes), including V3 guest document
       listeners and `SafeMutationObserver`s from v4-L37.
-- [ ] L44-L48: logs gated; tool discovery skipped on the server route;
+- [x] L44-L48: logs gated; tool discovery skipped on the server route;
       concurrent first-init constructs one client; oversized SSE/PDF inputs
       bounded with clean failures; v4-L35 filesystem base64 and content
       search reads use chunked/capped paths with clean errors.
-- [ ] L49: attached `.txt` content reliably present in the prompt block
+- [x] L49: attached `.txt` content reliably present in the prompt block
       (deterministic test, real async `addText`).
-- [ ] L50-L55/K4: zero payload logs on imggen sends; object-URL/AudioContext/
+- [x] L50-L55/K4: zero payload logs on imggen sends; object-URL/AudioContext/
       pdf.js/synthesizer teardown verified per site; corrupt stableDiff
       reference image fails fast instead of hanging; v4-L31 imggen
       post-generation caption/poll work is abortable when included; v4-L36
       model/proxy image decode has byte/dimension caps before downscaling.
-- [ ] v4 inventory notes list every translator/MCP/media/plugin cache,
+- [x] v4 inventory notes list every translator/MCP/media/plugin cache,
       listener, timer, blob URL, audio context, and debug log added to this
       phase as fixed, no-actioned with reason, or measured/deferred. v4-L38
       stays out unless a storage-persistence owner is explicitly added.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation
@@ -157,6 +157,8 @@ pnpm exec vitest run \
   src/ts/process/files/multisend.test.ts \
   src/ts/translator/translator.cache.test.ts \
   src/ts/translator/translator.html.test.ts \
+  src/ts/process/__tests__/runStage4.test.ts \
+  src/ts/process/stableDiff.test.ts \
   src/ts/process/tts.test.ts \
   src/ts/process/processzip.test.ts
 pnpm test

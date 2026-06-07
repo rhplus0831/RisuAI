@@ -1,82 +1,68 @@
 # Next Steps
 
-Date: 2026-06-07
+Date: 2026-06-08
 
 The v3 remediation workstream is open. Phase 0, Phase 1, Phase 2, Phase 3,
-Phase 4, Phase 5, Phase 6, and Phase 7 are complete and recorded in
+Phase 4, Phase 5, Phase 6, Phase 7, and Phase 8 are complete and recorded in
 [`latest-verification.md`](latest-verification.md). The v4-H2 Phase 4.5
 hotfix is complete; use [`v4-integration-brief.md`](v4-integration-brief.md)
 as the post-Phase-4 router for v4 findings that amend the remaining v3 plan.
 
-## Completed Checkpoint: Phase 7
+## Completed Checkpoint: Phase 8
 
-Closed the server assembly and trigger hot-path batch: stored asset bytes are
-resolved asynchronously with request-scoped cache semantics; default dispatch
-and restoration paths avoid redundant prompt clones; provider disabled
-parameters keep the SPA omission convention; logit-bias pass/drop policy is
-recorded; per-assembly asset/lorebook invariants are hoisted; non-mutating
-trigger phases avoid transcript clones while mutating phases stay isolated;
-trigger/imported regex execution is bounded; and chat-var writes invalidate
-the history memo. `L1`, `L3`, `L6-L10`, and `K3` are `DONE`. v4-M4, v4-L6,
-and v4-L7 are Phase 7 proof riders only, not v3 `DONE` IDs.
+Closed the client interpreters, plugin/MCP lifecycle, files, and media batch:
+manual trigger and client Lua execution are budgeted; Lua/access-key and
+Google-token caches are bounded; translator cache/memo/fanout work is covered
+as v4 proof riders; plugin cleanup/provider/listener lifecycles are paired;
+MCP initialization and filesystem reads are lazy, deduped, capped, and
+abortable; file attachments await text ingestion deterministically; and media
+payload logs plus object URL, AudioContext, synthesizer, pdf.js, whisper, and
+stableDiff cleanup are covered. `M7`, `L38-L55`, and `K4` are `DONE`.
+v4-L24 through v4-L29, v4-L31, and v4-L35 through v4-L37 are Phase 8 proof
+riders only, not v3 `DONE` IDs. v4-L30 remains Phase 5-owned, and v4-L38
+stays out of Phase 8 without a separate auth-storage owner.
 
-## Next Batch: Phase 8 (Client Interpreters, Plugins & Media)
+## Next Batch: Phase 9 (Verification Budgets)
 
 Defined in
-[`phases/phase-8-client-interpreters-plugins-media.md`](phases/phase-8-client-interpreters-plugins-media.md).
-Slices already live under
-`phases/slices/phase-8-client-interpreters-plugins-media/`.
+[`phases/phase-9-verification-budgets.md`](phases/phase-9-verification-budgets.md).
+Slices already live under `phases/slices/phase-9-verification-budgets/`.
 
-1. L38-L41 `client-interpreter-budgets`: port server trigger/Lua execution
-   budgets to client manual trigger paths and keep editDisplay access ids
-   bounded.
-2. L42 `tokenizer-and-cache-caps`: bound the Google tokenization cache.
-3. v4-L24 through v4-L29 `translator-subsystem-hygiene`: memoize/bound
-   translator work and keep v4-L30 owned by Phase 5.
-4. M7/L43/L44 `plugin-lifecycle`: pair plugin cleanup, provider-store reset,
-   guest listener/observer teardown, and RPC log gating.
-5. L45-L48 `mcp-lifecycle-and-caps`: lazy/deduped MCP setup plus SSE/PDF read
-   caps and aborts.
-6. L49 `file-attach-await`: await Hypa text extraction before prompt assembly.
-7. L50-L55/K4 `media-leaks-and-logs`: remove payload logs and prove object
-   URL, AudioContext, synthesizer, pdf.js, whisper, and stableDiff cleanup.
-8. Phase 8 verification refresh: gates, focused lifecycle/cap proofs, full
-   validation, and [`latest-verification.md`](latest-verification.md).
+1. `registry-sweep`: prove every scheduled ID (`H1`, `M1-M9`, `L1-L56`,
+   `K1-K4`) is `DONE` or explicitly re-gated with owner sign-off, with no
+   gate/risk/audit drift.
+2. `gate-self-proof-freeze`: keep the v3 negative self-proofs alive and
+   confirm the v1/v2 gates stay frozen against their archives.
+3. `closing-proof`: run the full closeout command set and record the final
+   proof log.
+4. `archive-and-repoint`: archive the closed v3 plan, repoint the v3 gate,
+   and update navigation docs.
 
-Exit: M7, L38-L55, K4, and bounded Phase 8 v4 riders registered with focused
-proofs; active-risk rows flipped to `DONE` only with matching v3 gate proofs;
-client-focused suites, audits, the client-lib TypeScript check, and
-verification refreshed.
+Exit: all scheduled v3 rows closed or explicitly re-gated, all three gates
+green, full client/server/audit/TypeScript proof recorded, v3 plan archived,
+and navigation repointed.
 
 ## Proof History
 
-Phase 7 closed on 2026-06-07 with L1, L3, L6-L10, and K3 registered as
-`DONE`, v4-M4/v4-L6/v4-L7 recorded as Phase 7 proof riders only, the focused
-server matrix green, `pnpm api:test` green, the v3 gate green, and both
-TypeScript checks green. Keep new Phase 8 proof entries in
-[`latest-verification.md`](latest-verification.md) above the Phase 7 entry.
-
-## After Phase 8
-
-Phase 9 closes the plan.
+Phase 8 closed on 2026-06-08 with M7, L38-L55, and K4 registered as `DONE`,
+v4-L24 through v4-L29, v4-L31, and v4-L35 through v4-L37 recorded as Phase 8
+proof riders only, the focused client lifecycle/cap matrix green,
+`pnpm test` green, `pnpm client-thinning:audit` green, the v3 gate green, and
+the client-lib TypeScript check green. Keep new Phase 9 proof entries in
+[`latest-verification.md`](latest-verification.md) above the Phase 8 entry.
 
 ## Proof Commands
 
 ```bash
 pnpm exec vitest run \
-  src/ts/process/mcp/mcplib.test.ts \
-  src/ts/process/mcp/mcp.test.ts \
-  src/ts/process/files/multisend.test.ts \
-  src/ts/translator/translator.html.test.ts \
-  src/ts/translator/translator.cache.test.ts \
-  src/ts/process/postGeneration/runStage4.test.ts \
-  src/ts/process/stableDiff.test.ts \
-  src/ts/process/tts.test.ts \
-  src/ts/process/processzip.test.ts
+  src/ts/__tests__/fixCompletenessGate.test.ts \
+  src/ts/__tests__/fixCompletenessGateV2.test.ts \
+  src/ts/__tests__/fixCompletenessGateV3.test.ts
 pnpm test
+pnpm api:test
 pnpm client-thinning:audit
-pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
 ## Standing Caveats

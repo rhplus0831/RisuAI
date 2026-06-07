@@ -1,6 +1,6 @@
 # Latest Verification
 
-Date: 2026-06-07
+Date: 2026-06-08
 
 This is the maintained proof-command log for the v3 workstream. Update it
 after each change to a narrowed or bounded path.
@@ -8,23 +8,62 @@ after each change to a narrowed or bounded path.
 ## Current State
 
 - Plan state: open; Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, Phase 5,
-  Phase 6, and Phase 7 are complete; the v4-H2 Phase 4.5 hotfix is also
-  complete. Phase 8 is the next batch. `H1`, `M1-M6`, `M8`, `M9`,
-  `L1-L37`, `L56`, and `K1-K3` are `DONE` in
-  [`active-risk-analysis.md`](active-risk-analysis.md); `M7`, `L38-L55`, and
-  `K4` remain `PENDING`.
+  Phase 6, Phase 7, and Phase 8 are complete; the v4-H2 Phase 4.5 hotfix is
+  also complete. Phase 9 is the next batch. `H1`, `M1-M9`, `L1-L56`, and
+  `K1-K4` are `DONE` in
+  [`active-risk-analysis.md`](active-risk-analysis.md).
 - Gate state: the v1 gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
   and the v2 gate (`fixCompletenessGateV2.test.ts`) remain live against their
   archives. The v3 gate (`fixCompletenessGateV3.test.ts`) is live against
-  `docs/plan/`, with `H1`, `M1-M6`, `M8`, `M9`, `L1-L37`, `L56`, and
-  `K1-K3` registered as `DONE` and all other scheduled v3 IDs registered as
-  `PLANNED`. The latest v3 gate command is green in the run below; the v1/v2
-  archive gates were last refreshed during the Phase 5 verification run.
-- Tree: Phase 7 implementation is committed through `93dc9cef1`; this
-  working-tree update refreshes the Phase 7 closeout proof and router docs.
-  Phase 7 includes the v3 L1, L3, L6-L10, and K3 runtime, tests, gate
-  registrations, and active-risk status flips plus v4-M4/v4-L6/v4-L7 proof
-  riders only.
+  `docs/plan/`, with every scheduled v3 ID (`H1`, `M1-M9`, `L1-L56`,
+  `K1-K4`) registered as `DONE`. The latest v3 gate command is green in the
+  run below; the v1/v2 archive gates were last refreshed during the Phase 5
+  verification run.
+- Tree: Phase 8 implementation is committed through `2a1b84fe4`; this
+  working-tree update refreshes the Phase 8 closeout proof and router docs.
+  Phase 8 includes the v3 M7, L38-L55, and K4 runtime, tests, gate
+  registrations, and active-risk status flips plus v4-L24 through v4-L29,
+  v4-L31, v4-L35, v4-L36, and v4-L37 proof riders only. `v4-L30` remains
+  Phase 5-owned, and `v4-L38` remains outside Phase 8 without a separate
+  storage-persistence owner.
+
+## Phase 8 Verification Refresh (2026-06-08)
+
+Run after the Phase 8 implementation commits landed:
+`72889afa9` (L38-L41), `b9f619e79` (L42), `92635146c` (v4-L24 through
+v4-L29 proof rider), `014d60b5b` (M7/L43/L44 plus v4-L37 proof rider),
+`7724a5fac` (L45-L48 plus v4-L35 proof rider), `3a92c05a7` (L49), and
+`2a1b84fe4` (L50-L55/K4 plus I16/I17 and v4-L31/v4-L36 proof riders).
+
+Phase 8 exit criteria are satisfied. `M7`, `L38-L55`, and `K4` are `DONE` in
+the active-risk table and v3 gate. The translator, MCP, media, and plugin v4
+amendments are recorded as Phase 8 proof riders only, not v3 `DONE` IDs:
+translator cache/memo/fanout coverage for v4-L24 through v4-L29, abortable
+imggen post-generation coverage for v4-L31, filesystem read/base64/search cap
+coverage for v4-L35, inlay/model/proxy image decode cap coverage for v4-L36,
+and plugin listener/observer cleanup coverage for v4-L37. `v4-L30` stays
+Phase 5-owned, and `v4-L38` stays out of Phase 8. Inventory notes classify the
+added translator/MCP/media/plugin cache, listener, timer, blob URL, audio
+context, and debug-log sites as fixed or explicitly routed.
+
+- `pnpm exec vitest run src/ts/process/triggers.clientBudget.test.ts src/ts/process/scriptings.test.ts src/ts/tokenizer.test.ts src/ts/translator/translator.html.test.ts src/ts/translator/translator.cache.test.ts src/ts/plugins/apiV3/factory.test.ts src/ts/plugins/apiV3/v3.svelte.test.ts src/ts/process/mcp/mcplib.test.ts src/ts/process/mcp/mcp.test.ts src/ts/process/mcp/filesystemclient.test.ts src/ts/process/files/multisend.test.ts src/ts/process/files/tests/inlays.test.ts src/ts/process/__tests__/runStage4.test.ts src/ts/process/__tests__/imggenStableDiff.test.ts src/ts/process/stableDiff.test.ts src/ts/process/tts.test.ts src/ts/process/processzip.test.ts src/ts/process/transformers.test.ts src/ts/process/dynamicutils/pdf.test.ts src/lib/Playground/PlaygroundSubtitle.test.ts`:
+  passed, 20 files / 143 tests. The run used the repo-local
+  `src/ts/process/__tests__/runStage4.test.ts` path instead of the obsolete
+  `src/ts/process/postGeneration/runStage4.test.ts` path named in the slice
+  validation list. The command emitted the usual Vite/Svelte default-config
+  notice.
+- `pnpm test`: passed, 168 files / 1480 tests passed / 4 skipped. The command
+  emitted the existing `ECONNREFUSED 127.0.0.1:3000` diagnostics from
+  network-path tests plus the existing
+  `src/lib/SideBars/LoreBook/LoreBookData.svelte` `state_referenced_locally`
+  warning, but exited successfully.
+- `pnpm client-thinning:audit`: passed (`Client-thinning audit passed.`).
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts`:
+  passed, 1 file / 26 tests, exited 0. The command emitted the usual
+  Vite/Svelte default-config notice.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- `git diff --check`: clean before and after the docs refresh.
+- Skipped/failed items: none.
 
 ## Phase 7 Verification Refresh (2026-06-07)
 
