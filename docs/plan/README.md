@@ -160,3 +160,6 @@ Reuse these already-landed patterns:
 
 Each slice narrows the hot path, keeps the broad path for true full-corpus
 consumers, and adds a regression test.
+
+## Small note
+- `docs/audit-stability-and-performance-v4.md` is a new audit report that is unrelated to the current plan.
