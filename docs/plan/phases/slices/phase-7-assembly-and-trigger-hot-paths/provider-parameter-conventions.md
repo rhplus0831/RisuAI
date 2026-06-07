@@ -52,6 +52,10 @@ provider-specific optional parameters. It also does not change UI settings or
   Active Horde values must continue to reach the adapter using the existing
   `top_k`/`top_p` wire names. Empty or undefined sampler values remain
   omitted.
+- Implementation note: the v4 rider chooses the explicit logit-bias **drop**
+  contract for the current server path. Server assembly does not compute or emit
+  `biases`, and provider bodies do not include `biases`/`logit_bias`, until a
+  future provider-support slice threads tokenized bias rows intentionally.
 - Keep the rule reusable for future forwarded sampler parameters so the next
   server dispatch field cannot reintroduce the sentinel drift.
 - Decide the logit-bias contract before implementation:

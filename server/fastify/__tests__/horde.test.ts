@@ -55,6 +55,20 @@ describe('resolveHordeRequest', () => {
     })
     expect(r?.apiKey).toBe('my-key')
   })
+
+  it('keeps active sampler fields verbatim', () => {
+    const r = resolveHordeRequest({
+      prompt: 'hi',
+      model: 'auto',
+      temperature: 0.8,
+      topK: 40,
+      topP: 0.9,
+      signal: new AbortController().signal,
+    })
+    expect(r?.temperature).toBe(0.8)
+    expect(r?.topK).toBe(40)
+    expect(r?.topP).toBe(0.9)
+  })
 })
 
 describe('runHorde', () => {
@@ -88,6 +102,8 @@ describe('runHorde', () => {
       maxTokens: 256,
       maxContextLength: 4100,
       temperature: 0.7,
+      topK: 40,
+      topP: 0.9,
       pollIntervalMs: 1000,
       signal: new AbortController().signal,
     })!
@@ -107,6 +123,8 @@ describe('runHorde', () => {
       max_length: 256,
       max_context_length: 4100,
       temperature: 0.7,
+      top_k: 40,
+      top_p: 0.9,
     })
     expect(submitted.models).toEqual([
       'koboldcpp/Mistral-7B',
@@ -137,6 +155,33 @@ describe('runHorde', () => {
     await p
     const sent = JSON.parse(captured!.init!.body as string)
     expect(sent.models).toBeUndefined()
+  })
+
+  it('omits absent sampler fields from the async payload', async () => {
+    let captured: { init?: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/async')) {
+        captured = { init }
+        return jsonResp({ id: 'job-omitted' }, 202)
+      }
+      return jsonResp({ done: true, generations: [{ text: 'x' }] })
+    })
+
+    const resolved = resolveHordeRequest({
+      prompt: 'hi',
+      model: 'auto',
+      pollIntervalMs: 1,
+      signal: new AbortController().signal,
+    })!
+    const p = runHorde(resolved)
+    await vi.advanceTimersByTimeAsync(5)
+    await p
+    const sent = JSON.parse(captured!.init!.body as string)
+    expect(sent.params.temperature).toBeUndefined()
+    expect(sent.params.top_k).toBeUndefined()
+    expect(sent.params.top_p).toBeUndefined()
+    expect(sent.params.logit_bias).toBeUndefined()
+    expect(sent.params.biases).toBeUndefined()
   })
 
   it('returns fail when async submit returns non-202', async () => {

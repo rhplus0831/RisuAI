@@ -749,7 +749,7 @@ describe('Phase 7-11d fillHistoryAndBias', () => {
     expect(state.currentChat.id).toBe('chat-1')
   })
 
-  it('parses bias rows: unescape + variable-expand, weights preserved', async () => {
+  it('does not emit unsupported logit-bias rows', async () => {
     const db = makeDatabase({
       bias: [['line1\\nline2', 10]],
       characters: [
@@ -763,11 +763,7 @@ describe('Phase 7-11d fillHistoryAndBias', () => {
     } as Partial<Database>)
 
     const state = await run(db)
-    // db.bias first, then per-character bias; `\n` unescaped, `{{char}}` expanded.
-    expect(state.biases).toEqual([
-      ['line1\nline2', 10],
-      ['Tess-bias', 2],
-    ])
+    expect('biases' in state).toBe(false)
   })
 
   it('short-circuits on a stopSending start trigger', async () => {
@@ -784,9 +780,9 @@ describe('Phase 7-11d fillHistoryAndBias', () => {
 
     const state = await run(db)
     expect(state.stopSending).toBe(true)
-    // Incomplete history + bias are not captured on abort.
+    // Incomplete history is not captured on abort.
     expect(state.historyMessages).toBeUndefined()
-    expect(state.biases).toBeUndefined()
+    expect('biases' in state).toBe(false)
     // The trigger still ran, so its result is threaded out.
     expect(state.triggerResult).not.toBeNull()
     expect(state.triggerResult?.stopSending).toBe(true)
@@ -1781,7 +1777,8 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     expect(typeof result.inputTokens).toBe('number')
     expect(typeof result.outputTokens).toBe('number')
     expect(result.formated?.length).toBeGreaterThan(0)
-    expect(Array.isArray(result.biases)).toBe(true)
+    expect('biases' in result).toBe(false)
+    expect('biases' in result.prompt!).toBe(false)
     // The lorebook activation report rides along on the prompt event.
     expect(result.prompt?.lorebookActivation).toBeDefined()
   })

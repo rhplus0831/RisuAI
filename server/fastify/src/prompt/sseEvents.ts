@@ -43,8 +43,6 @@ export interface PromptEvent {
    * multimodal content). Additive — the SSE contract stays append-only.
    */
   formated?: OpenAIChat[]
-  /** Logit-bias rows for dispatch (7-12b). */
-  biases?: [string, number][]
 }
 
 export interface InfoEvent {

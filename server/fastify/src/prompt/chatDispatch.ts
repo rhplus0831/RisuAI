@@ -77,6 +77,7 @@ interface OpenAICompatibleVariant {
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
 const NANOGPT_SUBSCRIPTION_BASE_URL = 'https://nano-gpt.com/api/subscription/v1'
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+const DISABLED_SAMPLER_SENTINEL = -1000
 
 const DEFAULT_OPENAI_FLAGS = [LLMFlags.hasFullSystemPrompt, LLMFlags.hasStreaming]
 const FIRST_SYSTEM_FLAGS = [LLMFlags.hasFirstSystemPrompt]
@@ -113,6 +114,15 @@ function asString(value: unknown): string | undefined {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function normalizeDispatchSampler(
+  value: unknown,
+  options: { scale?: number } = {},
+): number | undefined {
+  const numeric = asNumber(value)
+  if (numeric === undefined || numeric === DISABLED_SAMPLER_SENTINEL) return undefined
+  return options.scale ? numeric / options.scale : numeric
 }
 
 function additionalParams(value: unknown): Array<[string, string]> | undefined {
@@ -738,7 +748,7 @@ export async function dispatchChatProvider(
   const model = resolveProviderModel(db, info, provider)
   const messages = reformatMessages(db, args.formated, info.flags)
   const maxTokens = outputTokens ?? db.maxResponse
-  const temperature = typeof db.temperature === 'number' ? db.temperature / 100 : undefined
+  const temperature = normalizeDispatchSampler(db.temperature, { scale: 100 })
   const stream = db.useStreaming === true
 
   if (provider === 'echo') {
@@ -1076,8 +1086,8 @@ export async function dispatchChatProvider(
       maxTokens,
       maxContextLength: typeof db.maxContext === 'number' ? db.maxContext + 100 : undefined,
       temperature,
-      topK: db.top_k,
-      topP: db.top_p,
+      topK: normalizeDispatchSampler(db.top_k),
+      topP: normalizeDispatchSampler(db.top_p),
       signal,
     })
     if (!request) throw new Error('options.horde.prompt is required')

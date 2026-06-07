@@ -147,6 +147,26 @@ describe('runOpenAI (non-streaming)', () => {
     })
   })
 
+  it('omits absent temperature and unsupported bias fields from the request body', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+    await runOpenAI({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })
+
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.temperature).toBeUndefined()
+    expect(sent.logit_bias).toBeUndefined()
+    expect(sent.biases).toBeUndefined()
+  })
+
   it('merges extraHeaders into the upstream request', async () => {
     let capturedHeaders: Record<string, string> = {}
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {

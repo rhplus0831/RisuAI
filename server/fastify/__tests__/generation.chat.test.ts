@@ -119,6 +119,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.unstubAllGlobals()
   await stopHarness(harness)
 })
 
@@ -679,15 +680,15 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const prompt = events.find((e) => e.type === 'prompt')!
     expect(Array.isArray(prompt.data.messages)).toBe(true)
     expect((prompt.data.messages as unknown[]).length).toBeGreaterThan(0)
-    // The prompt event also carries full OpenAIChat rows + biases so the browser
-    // adapter can drive a preview / dispatch. `formated` preserves the
+    // The prompt event also carries full OpenAIChat rows so preview clients can
+    // inspect the dispatch payload. `formated` preserves the
     // `role`/`content` of the lossy `messages` projection.
     const formated = prompt.data.formated as Array<{ role: string; content: unknown }>
     expect(Array.isArray(formated)).toBe(true)
     expect(formated.map((r) => ({ role: r.role, content: r.content }))).toEqual(
       prompt.data.messages,
     )
-    expect(Array.isArray(prompt.data.biases)).toBe(true)
+    expect((prompt.data as Record<string, unknown>).biases).toBeUndefined()
     const messagePatch = events.find((e) => e.type === 'message_patch')
     expect(messagePatch?.data.patch).toMatchObject({
       chatId: 'chat-1',
@@ -2922,10 +2923,153 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(Array.isArray(body.messages)).toBe(true)
     expect(body.messages.length).toBeGreaterThan(0)
     expect(body.promptInfo).toBeDefined()
-    // Full rows + biases ride on the JSON payload too.
+    // Full rows ride on the JSON payload too.
     expect(Array.isArray(body.formated)).toBe(true)
     expect(body.formated.length).toBe(body.messages.length)
-    expect(Array.isArray(body.biases)).toBe(true)
+    expect((body as Record<string, unknown>).biases).toBeUndefined()
+  })
+
+  it('omits disabled temperature and unsupported bias fields from default OpenAI dispatch', async () => {
+    const captured: Array<{ url: string; body: Record<string, unknown> }> = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      captured.push({
+        url,
+        body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
+      })
+      return new Response(
+        JSON.stringify({
+          model: 'gpt-5.4',
+          choices: [{ message: { content: 'openai reply' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'gpt-5.4',
+      openAIKey: 'sk-test',
+      temperature: -1000,
+      bias: [['forbidden', -100]],
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          bias: [['{{char}}', 50]],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const providerBody = captured.find((call) => call.url.endsWith('/chat/completions'))?.body
+    expect(providerBody).toBeDefined()
+    expect(providerBody?.temperature).toBeUndefined()
+    expect(providerBody?.logit_bias).toBeUndefined()
+    expect(providerBody?.biases).toBeUndefined()
+
+    const prompt = parseEvents(res.body).find((e) => e.type === 'prompt')
+    expect(prompt).toBeDefined()
+    expect((prompt!.data as Record<string, unknown>).biases).toBeUndefined()
+  })
+
+  it('preserves active temperature in default OpenAI dispatch', async () => {
+    let providerBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+      providerBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'gpt-5.4',
+      openAIKey: 'sk-test',
+      temperature: 80,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(providerBody?.temperature).toBe(0.8)
+  })
+
+  it('omits disabled Horde sampler fields and preserves active Horde sampler fields', async () => {
+    const submitBodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/generate/text/async')) {
+        submitBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>)
+        return new Response(JSON.stringify({ id: `job-${submitBodies.length}` }), {
+          status: 202,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (url.endsWith('/generate/text/status/job-1')) {
+        return new Response(
+          JSON.stringify({ done: true, generations: [{ text: 'disabled response' }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      if (url.endsWith('/generate/text/status/job-2')) {
+        return new Response(
+          JSON.stringify({ done: true, generations: [{ text: 'active response' }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      throw new Error(`unexpected Horde URL: ${url}`)
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'horde:::koboldcpp/Mistral-7B',
+      instructChatTemplate: 'chatml',
+      temperature: -1000,
+      top_k: -1000,
+      top_p: -1000,
+    })
+
+    const disabled = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(disabled.statusCode).toBe(200)
+    const disabledParams = submitBodies[0]?.params as Record<string, unknown>
+    expect(disabledParams.temperature).toBeUndefined()
+    expect(disabledParams.top_k).toBeUndefined()
+    expect(disabledParams.top_p).toBeUndefined()
+
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'horde:::koboldcpp/Mistral-7B',
+      instructChatTemplate: 'chatml',
+      temperature: 80,
+      top_k: 40,
+      top_p: 0.9,
+    })
+    const active = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(active.statusCode).toBe(200)
+    const activeParams = submitBodies[1]?.params as Record<string, unknown>
+    expect(activeParams.temperature).toBe(0.8)
+    expect(activeParams.top_k).toBe(40)
+    expect(activeParams.top_p).toBe(0.9)
   })
 
   it('returns 404 (not an SSE error) when the character is unknown', async () => {

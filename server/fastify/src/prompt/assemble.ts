@@ -97,7 +97,7 @@ import {
  *
  * The assembler resolves the persisted database, selected character, and chat;
  * builds the template slots and expansion context; fills static/plain sections;
- * activates lorebooks; runs token preflight; builds history and bias rows;
+ * activates lorebooks; runs token preflight; builds history rows;
  * bridges history through memory; applies depth prompts and start-trigger
  * system prompts; renders the final prompt; and performs the final budget trim.
  * It returns either a dispatch-ready `AssembleResult` or a structured
@@ -322,8 +322,6 @@ export interface AssembleResult {
   prompt?: Omit<PromptEvent, 'type'>
   /** The budgeted flat prompt (full `OpenAIChat` rows) for dispatch. */
   formated?: OpenAIChat[]
-  /** Logit-bias rows for dispatch. */
-  biases?: [string, number][]
   /** Final input token count from `finalizeRequestBudget`. */
   inputTokens?: number
   /** Clamped response budget from `finalizeRequestBudget`. */
@@ -412,7 +410,7 @@ export interface AssemblyState {
   memoryCardUsed?: boolean
   /** From `preflightTemplateTokens`: the template contains a `cache` card. */
   hasCachePoint?: boolean
-  // --- History window + bias rows (set by `fillHistoryAndBias`) ---
+  // --- History window (set by `fillHistoryAndBias`) ---
   /**
    * The flattened history rows from `buildHistoryWindow`. Captured here only;
    * the memory window pushes them into `unformated.chats`.
@@ -434,8 +432,6 @@ export interface AssemblyState {
    * persists the database when true.
    */
   varChanged?: boolean
-  /** Bias rows: `db.bias ∪ char.bias`, unescaped + variable-expanded. */
-  biases?: [string, number][]
   // --- Memory bridge (set by `fillMemoryAndPostHistory`) ---
   /**
    * Memory-card rows split out of the history by the memory window and fed to
@@ -1125,9 +1121,9 @@ export function fillLorebookSlots(state: AssemblyState): void {
 }
 
 /**
- * Run the async history window and collect the bias rows,
+ * Run the async history window,
  * mutating `state` in place. Mirrors `index.svelte.ts:227-241` (history)
- * and `:265-273` (bias). Runs after `fillLorebookSlots` so `state.report`
+ * and related history-side effects. Runs after `fillLorebookSlots` so `state.report`
  * feeds the depth-prompt token preflight inside `buildHistoryWindow`.
  *
  * The start trigger inside `buildHistoryWindow` may mutate the chat, so
@@ -1135,7 +1131,7 @@ export function fillLorebookSlots(state: AssemblyState): void {
  * threaded back regardless of outcome — the route persists when
  * `varChanged` is true. On `stopSending` the function short-circuits
  * (matching the SPA's `return false` at `:236-238`): the history rows are
- * incomplete, so they are not captured and the bias rows are skipped.
+ * incomplete, so they are not captured.
  *
  * Boundary: the history rows are only captured on `state.historyMessages` here.
  * The memory window pushes them into `unformated.chats`
@@ -1188,18 +1184,8 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
     captureMessageReplacement(state, 'start_trigger')
   }
 
-  // Bias rows (SPA `index.svelte.ts:265-273`): merge the global + per-
-  // character bias lists, unescape `\n` / `\r` / `\\`, then variable-
-  // expand each key against the current character while keeping its
-  // numeric weight.
-  const biasSource = (db.bias ?? []).concat(currentChar.bias ?? [])
-  state.biases = biasSource.map(([key, weight]): [string, number] => [
-    expandVariables(key.replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'), {
-      ...ctx,
-      chara: currentChar,
-    }).text,
-    weight,
-  ])
+  // The server dispatch path currently has no provider-level logit-bias
+  // contract, so assembly intentionally does not compute or emit bias rows.
 }
 
 /**
@@ -1719,13 +1705,11 @@ export async function assemblePrompt(
         outputTokens: state.outputTokens,
       },
       lorebookActivation: state.report,
-      // Carry the full rows + biases on the wire so the browser adapter can
-      // drive a preview / dispatch, not just the lossy `messages` projection.
+      // Carry the full rows on the wire so preview clients can inspect the
+      // dispatch payload, not just the lossy `messages` projection.
       formated,
-      biases: state.biases,
     },
     formated,
-    biases: state.biases,
     inputTokens: state.inputTokens,
     outputTokens: state.outputTokens,
     mutations: buildMutationPayload(state),
