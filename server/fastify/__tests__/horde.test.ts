@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { resolveHordeRequest, runHorde } from '../src/generation/horde.js'
+import {
+  HORDE_DELETE_CLEANUP_TIMEOUT_MS,
+  resolveHordeRequest,
+  runHorde,
+} from '../src/generation/horde.js'
 
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.useRealTimers()
 })
@@ -254,6 +259,51 @@ describe('runHorde', () => {
     const r = await p
     expect(r).toEqual({ type: 'fail', result: 'horde job timed out' })
     expect(calls).toContain('DELETE https://stablehorde.net/api/v2/generate/text/status/job-t')
+  })
+
+  it('L4: bounds a hung cleanup DELETE with its own abort signal', async () => {
+    const deleteSignals: AbortSignal[] = []
+    let deleteAborted: Promise<void> = Promise.resolve()
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), ms)
+      timeout.unref?.()
+      return controller.signal
+    })
+
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/async')) return jsonResp({ id: 'job-hung-delete' }, 202)
+      if (init?.method === 'DELETE' && init.signal instanceof AbortSignal) {
+        const deleteSignal = init.signal
+        deleteSignals.push(deleteSignal)
+        deleteAborted = new Promise<void>((resolve) => {
+          deleteSignal.addEventListener('abort', () => resolve(), { once: true })
+        })
+        return new Promise<Response>(() => {})
+      }
+      return jsonResp({ done: false })
+    })
+
+    const resolved = resolveHordeRequest({
+      prompt: 'hi',
+      model: 'auto',
+      pollIntervalMs: 100,
+      timeoutMs: 250,
+      signal: new AbortController().signal,
+    })!
+    const p = runHorde(resolved)
+    for (let i = 0; i < 5; i++) await vi.advanceTimersByTimeAsync(100)
+
+    expect(await p).toEqual({ type: 'fail', result: 'horde job timed out' })
+    expect(timeoutSpy).toHaveBeenCalledWith(HORDE_DELETE_CLEANUP_TIMEOUT_MS)
+    expect(deleteSignals).toHaveLength(1)
+    const deleteSignal = deleteSignals[0]!
+    expect(deleteSignal).toBeInstanceOf(AbortSignal)
+    expect(deleteSignal.aborted).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(HORDE_DELETE_CLEANUP_TIMEOUT_MS)
+    await deleteAborted
+    expect(deleteSignal.aborted).toBe(true)
   })
 
   it('returns aborted=true immediately when signal is pre-aborted', async () => {

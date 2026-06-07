@@ -30,6 +30,7 @@ const HORDE_BASE_URL = 'https://stablehorde.net/api/v2'
 const DEFAULT_POLL_INTERVAL_MS = 2000
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000
 const DEFAULT_ANON_KEY = '0000000000'
+export const HORDE_DELETE_CLEANUP_TIMEOUT_MS = 10_000
 
 export interface HordeRequest {
   prompt: string
@@ -170,14 +171,39 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
+function createCleanupDeleteSignal(): { signal: AbortSignal; cleanup: () => void } {
+  if (typeof AbortSignal.timeout === 'function') {
+    return {
+      signal: AbortSignal.timeout(HORDE_DELETE_CLEANUP_TIMEOUT_MS),
+      cleanup: () => {},
+    }
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), HORDE_DELETE_CLEANUP_TIMEOUT_MS)
+  timeout.unref?.()
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timeout),
+  }
+}
+
 function fireDeleteJob(jobId: string, apiKey: string): void {
   // Fire-and-forget; we're already aborting or shutting down.
-  fetch(`${HORDE_BASE_URL}/generate/text/status/${encodeURIComponent(jobId)}`, {
-    method: 'DELETE',
-    headers: { apikey: apiKey },
-  }).catch(() => {
-    // ignore; the worker may have already finished
-  })
+  const cleanupDelete = createCleanupDeleteSignal()
+  try {
+    fetch(`${HORDE_BASE_URL}/generate/text/status/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+      headers: { apikey: apiKey },
+      signal: cleanupDelete.signal,
+    })
+      .catch(() => {
+        // ignore; the worker may have already finished
+      })
+      .finally(cleanupDelete.cleanup)
+  } catch {
+    cleanupDelete.cleanup()
+  }
 }
 
 export async function runHorde(req: HordeRequest): Promise<CompletionResult> {

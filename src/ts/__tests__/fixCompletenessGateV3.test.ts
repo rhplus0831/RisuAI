@@ -269,7 +269,13 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     7,
     'Compute reformat flags first; return `rows` unchanged when no branch applies (or clone lazily per branch).',
   ),
-  planned('L4', 4, '`AbortSignal.timeout` on the fire-and-forget Horde DELETE.'),
+  done(
+    'L4',
+    4,
+    '`AbortSignal.timeout` on the fire-and-forget Horde DELETE.',
+    'server/fastify/__tests__/horde.test.ts',
+    'L4: bounds a hung cleanup DELETE with its own abort signal',
+  ),
   done(
     'L5',
     4,
@@ -1415,6 +1421,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M5',
       'M9',
       'L2',
+      'L4',
       'L5',
       'L11',
       'L12',
@@ -1435,7 +1442,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L5, L11, L12, L13, L14, L15, L16, L17, L18, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1448,6 +1455,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M5',
       'M9',
       'L2',
+      'L4',
       'L5',
       'L11',
       'L12',
