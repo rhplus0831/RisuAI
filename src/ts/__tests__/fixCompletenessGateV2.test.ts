@@ -909,7 +909,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/realmImport.test.ts',
-        testName: 'keeps valid JSON Realm import output unchanged with batched assets',
+        testName: 'L18: keeps valid JSON Realm import output unchanged with disk-staged assets',
       },
     ],
   ),
@@ -1582,7 +1582,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     4,
     'Debounce/scope the lorebook editor per-keystroke collection clone (v1-L32 residual).',
     'src/ts/server/lorebookBridge.svelte.test.ts',
-    'K4: typing drafts clone only the edited entry before debounce settle',
+    'K4: a single typing draft clones only the edited entry before debounce settle',
     [
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',

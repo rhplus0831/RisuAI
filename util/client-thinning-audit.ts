@@ -205,6 +205,25 @@ function objectLiteralStringKeys(sourceFile: SourceFile, name: string): string[]
   })
 }
 
+function objectLiteralArrayStringValues(sourceFile: SourceFile, name: string): string[] {
+  const initializer = sourceFile.getVariableDeclaration(name)?.getInitializer()
+  const object = initializer?.asKind(SyntaxKind.ObjectLiteralExpression)
+  if (!object) return []
+  return object.getProperties().flatMap((property) => {
+    if (!Node.isPropertyAssignment(property)) return []
+    let propertyValue = property.getInitializer()
+    while (propertyValue && Node.isAsExpression(propertyValue)) {
+      propertyValue = propertyValue.getExpression()
+    }
+    const array = propertyValue?.asKind(SyntaxKind.ArrayLiteralExpression)
+    if (!array) return []
+    return array
+      .getElements()
+      .map((element) => element.asKind(SyntaxKind.StringLiteral)?.getLiteralText())
+      .filter((value): value is string => typeof value === 'string')
+  })
+}
+
 function getFunctionBodyText(sourceFile: SourceFile, name: string): string {
   return sourceFile.getFunction(name)?.getBodyText() ?? ''
 }
@@ -556,7 +575,7 @@ function checkStableIdCommandPaths(): void {
 
   const clientCommands = source('src/ts/server/commands.ts')
   const promptSettingKeys = getStringArray(prompts, 'PROMPT_SETTINGS_KEYS')
-  const serverSettingsKeys = text('server/fastify/src/routes/commands.ts')
+  const serverSettingsKeys = objectLiteralArrayStringValues(serverCommands, 'SETTINGS_GROUP_KEYS')
   const clientSettingsKeys = objectLiteralStringKeys(clientCommands, 'SERVER_SETTINGS_GROUP_BY_KEY')
   for (const key of ['promptTemplate']) {
     if (promptSettingKeys.includes(key)) {
@@ -566,7 +585,7 @@ function checkStableIdCommandPaths(): void {
         prompts.getVariableDeclaration('PROMPT_SETTINGS_KEYS'),
       )
     }
-    if (serverSettingsKeys.includes(`'${key}'`) || serverSettingsKeys.includes(`"${key}"`)) {
+    if (serverSettingsKeys.includes(key)) {
       fail(check, `${key} must not be writable through generic settings commands.`, serverCommands)
     }
     if (clientSettingsKeys.includes(key)) {

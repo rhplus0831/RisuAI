@@ -7,13 +7,14 @@ first, then [`next-steps.md`](next-steps.md) for the active task batch.
 
 ## Snapshot
 
-- Plan state: OPEN. Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are
-  complete; the v4-H2 Phase 4.5 proxy/transport hotfix is complete; Phase 5
-  is the next batch.
+- Plan state: OPEN. Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, and Phase 5
+  are complete; the v4-H2 Phase 4.5 proxy/transport hotfix is complete;
+  Phase 6 is the next batch.
 - Findings covered: 89 confirmed v3 audit findings (1 high, 9 medium, 56 low,
   23 informational) plus the K1-K4 known-overlap residuals/re-opens.
-- Scheduled IDs: H1, M1-M9, L1-L56, and K1-K4. `H1`, `M1-M5`, `M9`, `L2`,
-  `L4`, `L5`, `L11-L20`, `L56`, `K1`, and `K2` are `DONE` in
+- Scheduled IDs: H1, M1-M9, L1-L56, and K1-K4. `H1`, `M1-M5`, `M8`, `M9`,
+  `L2`, `L4`, `L5`, `L11-L21`, `L23-L27`, `L34-L37`, `L56`, `K1`, and `K2`
+  are `DONE` in
   [`active-risk-analysis.md`](active-risk-analysis.md); every other scheduled
   row remains `PENDING`.
 - Gated IDs: unchanged from the v2 closeout — `v2-L12`, the v1 carry-overs
@@ -25,9 +26,9 @@ first, then [`next-steps.md`](next-steps.md) for the active task batch.
   `src/ts/__tests__/fixCompletenessGateV2.test.ts` stays live against the
   archived v2 docs, and
   `src/ts/__tests__/fixCompletenessGateV3.test.ts` stays live against this
-  plan. The Phase 4 run keeps the active v3 gate green; see
+  plan. The Phase 5 run keeps the active v3 gate green; see
   [`latest-verification.md`](latest-verification.md).
-- Current proof: Phase 4.5 v4-H2 verification refresh on 2026-06-07. See
+- Current proof: Phase 5 verification refresh on 2026-06-07. See
   [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
@@ -46,10 +47,10 @@ first, then [`next-steps.md`](next-steps.md) for the active task batch.
   Shutdown, deadlines, cancel, transport (M9, L2, L4, L5, L17-L20, L56).
 - Phase 4.5: complete. v4-H2 proxy `/fetch` framing hotfix; no v3
   active-risk IDs moved.
-- [Phase 5](phases/phase-5-client-write-path-correctness.md): pending — NEXT.
+- [Phase 5](phases/phase-5-client-write-path-correctness.md): complete.
   Bridge state machine, unload flush, guard repairs (M8, L21, L23-L27,
   L34-L37).
-- [Phase 6](phases/phase-6-reactive-amplification-and-render.md): pending.
+- [Phase 6](phases/phase-6-reactive-amplification-and-render.md): pending — NEXT.
   Reactive amplification + render costs (M6, L22, L28-L33).
 - [Phase 7](phases/phase-7-assembly-and-trigger-hot-paths.md): pending.
   Server assembly/trigger hot paths (L1, L3, L6-L10, K3).

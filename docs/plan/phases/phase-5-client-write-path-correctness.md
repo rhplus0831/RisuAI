@@ -1,6 +1,6 @@
 # Phase 5: Client Write-Path Correctness (Themes 4+5)
 
-Status: pending.
+Status: complete.
 
 Goal: one invariant pass over the optimistic-write state machine — every
 bridge flushes on unload, suppresses its own rollbacks, keeps true first
@@ -14,7 +14,7 @@ Riding informational items: I20 (`@@inject` wrap, same pattern as L34-L36),
 I21 (rides L37's handler hardening), I11 (`[object Object]` coercion, fixed
 inside L34).
 
-## Planned Slices
+## Completed Slices
 
 Authored under `slices/phase-5-client-write-path-correctness/`.
 
@@ -130,31 +130,31 @@ Authored under `slices/phase-5-client-write-path-correctness/`.
 
 ## Exit Criteria
 
-- [ ] M8: a type-then-close within the debounce window persists the last
+- [x] M8: a type-then-close within the debounce window persists the last
       edit (keepalive verified); unmount flush covered; no double dispatch.
-- [ ] L23/L24/L26: theme/color changes dispatch exactly one command; a
+- [x] L23/L24/L26: theme/color changes dispatch exactly one command; a
       conflicted rollback dispatches nothing; sibling-parity test asserts
       every bridge rollback path sets the suppression flag.
-- [ ] L25/L27: coalesced edits roll back to the true pre-edit baseline /
+- [x] L25/L27: coalesced edits roll back to the true pre-edit baseline /
       full collection; mid-typing baselines never restored.
-- [ ] L21: a failed preset command restores `botPresets`/`botPresetsId` and
+- [x] L21: a failed preset command restores `botPresets`/`botPresetsId` and
       the `setPreset` scalars.
-- [ ] L34/L35/L36 (+I20): each feature works under the enabled guard, its
+- [x] L34/L35/L36 (+I20): each feature works under the enabled guard, its
       write persists across a projection re-stub, and no `TypeError`
       reaches the user; I11's coercion fixed with L34.
-- [ ] Guard inventory: `DBState.db`, `getDatabase()`, translator preset
+- [x] Guard inventory: `DBState.db`, `getDatabase()`, translator preset
       getters, IGP/inlay/file transcript mutation, display/script injection,
       and MCP bootstrap/handshake have live-site dispositions recorded as
       fixed, no-action with reason, or deferred with owner.
-- [ ] v4-L30: translator preset lookup used by LLM translate does not write
+- [x] v4-L30: translator preset lookup used by LLM translate does not write
       through the read-only projection; focused proof covers the preset and
       normalization branches.
-- [ ] v4-L33: partial internal MCP handshake failure is surfaced as an
+- [x] v4-L33: partial internal MCP handshake failure is surfaced as an
       unavailable client/tool set and does not reject all LLM feature
       initialization.
-- [ ] L37 (+I21): null-error events and undefined rejection reasons neither
+- [x] L37 (+I21): null-error events and undefined rejection reasons neither
       throw inside the handlers nor produce useless alerts.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation
@@ -166,14 +166,23 @@ pnpm exec vitest run \
   src/ts/server/lorebookBridge.svelte.test.ts \
   src/ts/server/characterBridge.svelte.test.ts \
   src/ts/server/promptTemplateBridge.svelte.test.ts \
+  src/ts/server/scriptDefinitionBridge.svelte.test.ts \
+  src/ts/storage/database.svelte.test.ts \
+  src/ts/storage/database.importPreset.test.ts \
   src/ts/translator/presets.test.ts \
   src/ts/translator/translator.cache.test.ts \
+  src/ts/process/__tests__/igp.test.ts \
   src/ts/process/__tests__/sendChatErrors.test.ts \
   src/ts/process/files/multisend.test.ts \
+  src/ts/process/scripts.editdisplay.test.ts \
+  src/ts/process/__tests__/command.projectionGuard.test.ts \
   src/ts/process/mcp/mcp.test.ts \
-  src/ts/process/mcp/googlesearchclient.test.ts
+  src/ts/process/mcp/googlesearchclient.test.ts \
+  src/ts/bootstrap.test.ts \
+  src/ts/alert.test.ts \
+  src/ts/__tests__/fixCompletenessGateV3.test.ts
 pnpm test
 pnpm client-thinning:audit
-pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```

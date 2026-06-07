@@ -8,20 +8,89 @@ after each change to a narrowed or bounded path.
 ## Current State
 
 - Plan state: open; Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are
-  complete; the v4-H2 Phase 4.5 hotfix is also complete; Phase 5 is the next
-  batch. `H1`, `M1-M5`, `M9`, `L2`, `L4`, `L5`, `L11-L20`, `L56`, `K1`, and
-  `K2` are `DONE` in [`active-risk-analysis.md`](active-risk-analysis.md);
-  every other scheduled row remains `PENDING`.
+  complete; the v4-H2 Phase 4.5 hotfix is also complete; Phase 5 is complete;
+  Phase 6 is the next batch. `H1`, `M1-M5`, `M8`, `M9`, `L2`, `L4`, `L5`,
+  `L11-L21`, `L23-L27`, `L34-L37`, `L56`, `K1`, and `K2` are `DONE` in
+  [`active-risk-analysis.md`](active-risk-analysis.md); every other scheduled
+  row remains `PENDING`.
 - Gate state: the v1 gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
   and the v2 gate (`fixCompletenessGateV2.test.ts`) remain live against their
   archives. The v3 gate (`fixCompletenessGateV3.test.ts`) is live against
-  `docs/plan/`, with `H1`, `M1-M5`, `M9`, `L2`, `L4`, `L5`, `L11-L20`,
-  `L56`, `K1`, and `K2` registered as `DONE` and all other scheduled v3 IDs
-  registered as `PLANNED`. The Phase 4 v3 gate command is green; the v1/v2
-  archive gates were last refreshed in the Phase 2 verification run below.
-- Tree: Phase 4 implementation is committed through `3d1777616`; Phase 4.5
-  closes v4-H2 as a focused proxy/transport hotfix and does not move any v3
-  active-risk IDs.
+  `docs/plan/`, with `H1`, `M1-M5`, `M8`, `M9`, `L2`, `L4`, `L5`,
+  `L11-L21`, `L23-L27`, `L34-L37`, `L56`, `K1`, and `K2` registered as
+  `DONE` and all other scheduled v3 IDs registered as `PLANNED`. The Phase 5
+  v3 gate command is green; the v1/v2 archive gates were refreshed during the
+  Phase 5 verification run below.
+- Tree: Phase 5 implementation is committed through `68edd23d7`; this
+  verification-refresh adjusted documentation/test/audit-tooling only and did
+  not change runtime code.
+
+## Phase 5 Verification Refresh (2026-06-07)
+
+Run after the Phase 5 implementation commits landed:
+`cb9864493` (M8), `a1a10e2e3` (L23/L24/L26), `6be6c9384`
+(L25/L27), `2cab1eec4` (L21), `8640c5a8e` (L34/L35/L36 plus
+v4-L30/v4-L33 riders), and `68edd23d7` (L37).
+
+- `pnpm exec vitest run src/ts/server/settingsBridge.svelte.test.ts src/ts/server/chatBridge.svelte.test.ts src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/characterBridge.svelte.test.ts src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/server/scriptDefinitionBridge.svelte.test.ts src/ts/storage/database.svelte.test.ts src/ts/storage/database.importPreset.test.ts src/ts/translator/presets.test.ts src/ts/translator/translator.cache.test.ts src/ts/process/__tests__/igp.test.ts src/ts/process/__tests__/sendChatErrors.test.ts src/ts/process/files/multisend.test.ts src/ts/process/scripts.editdisplay.test.ts src/ts/process/__tests__/command.projectionGuard.test.ts src/ts/process/mcp/mcp.test.ts src/ts/process/mcp/googlesearchclient.test.ts src/ts/bootstrap.test.ts src/ts/alert.test.ts src/ts/__tests__/fixCompletenessGateV3.test.ts`:
+  passed, 20 files / 218 tests, duration 20.56s. The command emitted the
+  usual Vite/Svelte default-config notice. The v3 gate and active-risk map
+  agree that `M8`, `L21`, `L23`, `L24`, `L25`, `L26`, `L27`, `L34`, `L35`,
+  `L36`, and `L37` are `DONE`; `v4-L30` and `v4-L33` are recorded only as
+  Phase 5 guard-repair proof riders.
+- Phase 5 bridge/preset proofs: M8 proves pending bridge writes flush on
+  `pagehide`, `visibilitychange(hidden)`, direct flush hooks, and watcher /
+  component teardown without double-dispatch. L23/L24/L26 prove rollback
+  suppression for settings, global-lorebook, and chat-row metadata paths,
+  including sibling rollback parity. L25/L27 prove coalesced prompt-template
+  and lorebook entry edits roll back to the first pre-edit baseline. L21
+  proves failed preset commands restore `botPresets`, `botPresetsId`, ids, and
+  `setPreset`-copied scalar settings.
+- Phase 5 guard/error proofs: L34/L35/L36 prove IGP, send-error inlays, and
+  `.po` transcript writes work with the projection guard enabled and persist
+  through scoped current-chat message commands; I20 rides as display-only
+  trusted projection write coverage and I11's object coercion is fixed in the
+  IGP path. The guard inventory records dispositions for `DBState.db`,
+  `getDatabase()`, translator preset getters, IGP/inlay/file transcript
+  mutation, display/script injection, and MCP bootstrap/handshake. v4-L30
+  proves LLM translator preset lookup uses snapshot reads without writing
+  through a read-only projection. v4-L33 proves one internal MCP handshake
+  failure is isolated to that client/tool set and does not reject all client
+  LLM feature initialization. L37/I21 prove null-safe global error/rejection
+  handlers and robust `alertError` coercion.
+- First `pnpm test`: failed, 1 failed / 153 passed files; 1 failed / 1392
+  passed / 4 skipped tests, duration 59.64s. The failure was confined to the
+  archived v2 completeness gate proof-name drift:
+  `L23: test "server/fastify/__tests__/realmImport.test.ts" does not contain
+  "keeps valid JSON Realm import output unchanged with batched assets"` and
+  `K4: test "src/ts/server/lorebookBridge.svelte.test.ts" does not contain
+  "K4: typing drafts clone only the edited entry before debounce settle"`.
+  The run also emitted repeated `ECONNREFUSED 127.0.0.1:3000` lines and the
+  existing Svelte `state_referenced_locally` warning for
+  `src/lib/SideBars/LoreBook/LoreBookData.svelte`.
+- Diagnostic `pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV2.test.ts`
+  after refreshing the archived-gate proof names: passed, 1 file / 18 tests,
+  duration 728ms. The command emitted the usual Vite/Svelte default-config
+  notice.
+- Rerun `pnpm test`: passed, 154 files / 1393 passed / 4 skipped tests,
+  duration 57.25s. The run emitted the same repeated
+  `ECONNREFUSED 127.0.0.1:3000` lines and the existing Svelte
+  `state_referenced_locally` warning.
+- First `pnpm client-thinning:audit`: failed with
+  `[EC4 stable command ids] promptTemplate must not be writable through
+  generic settings commands. (server/fastify/src/routes/commands.ts:1)`.
+  Diagnostic inspection showed this was an audit false positive from scanning
+  the whole route file and seeing preset-specific `promptTemplate` support;
+  the audit now checks the actual generic `SETTINGS_GROUP_KEYS` registry.
+- Rerun `pnpm client-thinning:audit`: passed
+  (`Client-thinning audit passed.`).
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors before and after
+  the verification-refresh test/audit-tooling edits.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: zero errors
+  before and after the verification-refresh test/audit-tooling edits.
+- Skipped/failed items: no remaining failed commands. `pnpm test` reports the
+  expected 4 skipped tests; the original full-suite and client-thinning audit
+  failures are preserved above with their exact diagnostics.
 
 ## Phase 4.5 V4-H2 Proxy Framing Hotfix (2026-06-07)
 
