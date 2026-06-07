@@ -19,10 +19,10 @@ the finding -> phase map is in
   [`phase-2-command-surface-scoping.md`](phase-2-command-surface-scoping.md).
 - Phase 3, complete (Theme 7: memory subsystem; M2, L15, L16, K1):
   [`phase-3-memory-subsystem.md`](phase-3-memory-subsystem.md).
-- Phase 4, pending — NEXT (Themes 3+9: server lifecycle, deadlines,
+- Phase 4, complete (Themes 3+9: server lifecycle, deadlines,
   transport; M9, L2, L4, L5, L17-L20, L56):
   [`phase-4-server-lifecycle-and-transport.md`](phase-4-server-lifecycle-and-transport.md).
-- Phase 5, pending (Themes 4+5: client write-path correctness; M8, L21,
+- Phase 5, pending — NEXT (Themes 4+5: client write-path correctness; M8, L21,
   L23-L27, L34-L37):
   [`phase-5-client-write-path-correctness.md`](phase-5-client-write-path-correctness.md).
 - Phase 6, pending (Theme 6: reactive amplification & render; M6, L22,
@@ -37,8 +37,8 @@ the finding -> phase map is in
 - Phase 9, pending (verification budgets; the v3 gate, closing run, archive):
   [`phase-9-verification-budgets.md`](phase-9-verification-budgets.md).
 
-Phases 0-4 land in order; Phase 4 is the next ordered batch. Phases 5-8 can
-land via separate branches; Phase 9 closes the plan.
+Phases 0-4 are complete. Phase 5 is the next ordered batch; Phases 6-8 can
+then land via separate branches, and Phase 9 closes the plan.
 
 ## Slice Rules
 

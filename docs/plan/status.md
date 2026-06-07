@@ -7,12 +7,12 @@ first, then [`next-steps.md`](next-steps.md) for the active task batch.
 
 ## Snapshot
 
-- Plan state: OPEN. Phase 0, Phase 1, Phase 2, and Phase 3 are complete;
-  Phase 4 is the next batch.
+- Plan state: OPEN. Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are
+  complete; Phase 5 is the next batch.
 - Findings covered: 89 confirmed v3 audit findings (1 high, 9 medium, 56 low,
   23 informational) plus the K1-K4 known-overlap residuals/re-opens.
-- Scheduled IDs: H1, M1-M9, L1-L56, and K1-K4. `H1`, `M1-M5`, `L11-L16`,
-  `K1`, and `K2` are `DONE` in
+- Scheduled IDs: H1, M1-M9, L1-L56, and K1-K4. `H1`, `M1-M5`, `M9`, `L2`,
+  `L4`, `L5`, `L11-L20`, `L56`, `K1`, and `K2` are `DONE` in
   [`active-risk-analysis.md`](active-risk-analysis.md); every other scheduled
   row remains `PENDING`.
 - Gated IDs: unchanged from the v2 closeout — `v2-L12`, the v1 carry-overs
@@ -24,9 +24,9 @@ first, then [`next-steps.md`](next-steps.md) for the active task batch.
   `src/ts/__tests__/fixCompletenessGateV2.test.ts` stays live against the
   archived v2 docs, and
   `src/ts/__tests__/fixCompletenessGateV3.test.ts` stays live against this
-  plan. The Phase 3 run keeps the active v3 gate green; see
+  plan. The Phase 4 run keeps the active v3 gate green; see
   [`latest-verification.md`](latest-verification.md).
-- Current proof: Phase 3 verification refresh on 2026-06-07. See
+- Current proof: Phase 4 verification refresh on 2026-06-07. See
   [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
@@ -41,9 +41,9 @@ first, then [`next-steps.md`](next-steps.md) for the active task batch.
   surface scoping (M1, M3, L11-L14, K2) and verification refresh.
 - [Phase 3](phases/phase-3-memory-subsystem.md): complete. Memory budget +
   per-send memory cost (M2, L15, L16, K1) and verification refresh.
-- [Phase 4](phases/phase-4-server-lifecycle-and-transport.md): pending — NEXT.
+- [Phase 4](phases/phase-4-server-lifecycle-and-transport.md): complete.
   Shutdown, deadlines, cancel, transport (M9, L2, L4, L5, L17-L20, L56).
-- [Phase 5](phases/phase-5-client-write-path-correctness.md): pending.
+- [Phase 5](phases/phase-5-client-write-path-correctness.md): pending — NEXT.
   Bridge state machine, unload flush, guard repairs (M8, L21, L23-L27,
   L34-L37).
 - [Phase 6](phases/phase-6-reactive-amplification-and-render.md): pending.

@@ -2,58 +2,66 @@
 
 Date: 2026-06-07
 
-The v3 remediation workstream is open. Phase 0, Phase 1, Phase 2, and Phase 3
-are complete and recorded in
-[`latest-verification.md`](latest-verification.md); the next batch is Phase 4.
+The v3 remediation workstream is open. Phase 0, Phase 1, Phase 2, Phase 3,
+and Phase 4 are complete and recorded in
+[`latest-verification.md`](latest-verification.md); the next batch is Phase 5.
 
-## Next Batch: Phase 4 (Server Lifecycle, Deadlines & Transport)
+## Next Batch: Phase 5 (Client Write-Path Correctness)
 
 Defined in
-[`phases/phase-4-server-lifecycle-and-transport.md`](phases/phase-4-server-lifecycle-and-transport.md).
-Author slices under `phases/slices/phase-4-server-lifecycle-and-transport/`
-as they open.
+[`phases/phase-5-client-write-path-correctness.md`](phases/phase-5-client-write-path-correctness.md).
+Slices already live under
+`phases/slices/phase-5-client-write-path-correctness/`.
 
-1. M9 `signal-handlers-app-close`: wire SIGTERM/SIGINT to `app.close()` and
-   prove shutdown runs the existing onClose cleanup within a backstop.
-2. L2/L5 `sliding-deadlines`: refresh deadlines for active generation/proxy
-   streams while preserving idle timeout behavior.
-3. L56 `proxy-stream-cancel`: keep cancel listeners live for proxy streams and
-   DELETE the server job when the client cancels before a terminal frame.
-4. L17/L18 `realm-egress-bounds`: add per-import abort/deadline handling and
-   JSON-card asset size caps without regressing legitimate imports.
-5. L4 `horde-delete-timeout`: bound the fire-and-forget Horde DELETE.
-6. L19/L20 transport quick wins: gzip bootstrap responses and serve immutable
-   hashed chunks while keeping `index.html` uncached.
-7. Phase 4 verification refresh: gates, focused proofs, full validation, and
+1. M8 `unload-flush`: flush all pending debounced server-backed bridge writes
+   on `pagehide` / `visibilitychange(hidden)` and watcher teardown, using
+   `keepalive` only for unload flushes.
+2. L23/L24/L26 `rollback-suppression`: suppress bridge watchers while
+   settings, global-lorebook, and chat-row metadata rollbacks restore
+   baselines.
+3. L25/L27 `first-baselines`: preserve true first rollback baselines for
+   coalesced prompt-template and lorebook entry edits.
+4. L21 `preset-rollback`: add rollback coverage to `runPresetCommand`,
+   including preset selection and copied scalar settings.
+5. L34/L35/L36 `guard-repairs`: fix guarded projection writes for IGP,
+   send-error inlays, `.po` file attach, and riding display-script injection
+   / coercion items.
+6. L37 `error-handler-hardening`: make global error/rejection handlers and
+   `alertError` null-safe.
+7. Phase 5 verification refresh: gates, focused proofs, full validation, and
    [`latest-verification.md`](latest-verification.md).
 
-Exit: M9, L2, L4, L5, L17-L20, and L56 registered with regression tests;
+Exit: M8, L21, L23-L27, and L34-L37 registered with regression tests;
 active-risk rows flipped to `DONE` only with matching v3 gate proofs; focused
-suites, API tests, and TypeScript checks green; verification refreshed.
+suites, client checks, and verification refreshed.
 
 ## Proof History
 
-Phase 3 closed on 2026-06-07 with M2, L15, L16, and K1 registered as `DONE`,
-the focused memory proof suite green, `pnpm api:test` green, the v3 gate green,
-and both TypeScript checks green. Keep new Phase 4 proof entries in
-[`latest-verification.md`](latest-verification.md) above the Phase 3 entry.
+Phase 4 closed on 2026-06-07 with M9, L2, L4, L5, L17, L18, L19, L20, and
+L56 registered as `DONE`, the focused lifecycle/deadline/transport proof
+suites green, `pnpm api:test` green, the v3 gate green, and both TypeScript
+checks green. Keep new Phase 5 proof entries in
+[`latest-verification.md`](latest-verification.md) above the Phase 4 entry.
 
-## After Phase 4
+## After Phase 5
 
-Phases 5-8 may then land independently by pain; Phase 9 closes.
+Phases 6-8 may then land independently by pain; Phase 9 closes.
 
 ## Proof Commands
 
 ```bash
-pnpm exec vitest run --config server/fastify/vitest.config.ts \
-  server/fastify/__tests__/streamJobs.test.ts \
-  server/fastify/__tests__/requestAbort.test.ts \
-  server/fastify/__tests__/realmImport.test.ts \
-  server/fastify/__tests__/hub.test.ts
-pnpm api:test
+pnpm exec vitest run \
+  src/ts/server/settingsBridge.svelte.test.ts \
+  src/ts/server/chatBridge.svelte.test.ts \
+  src/ts/server/lorebookBridge.svelte.test.ts \
+  src/ts/server/characterBridge.svelte.test.ts \
+  src/ts/server/promptTemplateBridge.svelte.test.ts \
+  src/ts/process/__tests__/sendChatErrors.test.ts \
+  src/ts/process/files/multisend.test.ts
+pnpm test
+pnpm client-thinning:audit
 pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
-pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
 ## Standing Caveats

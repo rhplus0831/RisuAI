@@ -1,6 +1,6 @@
 # Phase 4: Server Lifecycle, Deadlines & Transport (Themes 3+9)
 
-Status: pending.
+Status: complete.
 
 Goal: make the existing teardown reachable on real shutdowns, give every
 remaining stream/egress path the deadline/cancel treatment the durable path
@@ -8,9 +8,7 @@ already has, bound realm import, and claim the two transport quick wins.
 
 Findings: M9, L2, L4, L5, L17, L18, L19, L20, L56.
 
-## Planned Slices
-
-Author under `slices/phase-4-server-lifecycle-and-transport/` when starting.
+## Completed Slices
 
 - [signal-handlers-app-close](slices/phase-4-server-lifecycle-and-transport/signal-handlers-app-close.md)
   (M9) — `process.once('SIGTERM'|'SIGINT')` in `index.ts`
@@ -65,11 +63,11 @@ Author under `slices/phase-4-server-lifecycle-and-transport/` when starting.
   `MAX_CHARX_ASSET_SIZE_BYTES`.
 - L4: `generation/horde.ts` (`fireDeleteJob`).
 - L19: `app.ts` (`buildApp` registrations), `routes/bootstrap.ts`;
-  note `@fastify/compress` is not currently a dependency.
+  `@fastify/compress` registration and dependency.
 - L20: `app.ts` (fastifyStatic registration); contrast `routes/assets.ts`
   (`IMMUTABLE_CACHE`).
 
-## Planned Shape
+## Implemented Shape
 
 - M9: WAL + `synchronous=NORMAL` already makes abrupt kills crash-safe for
   committed data; the win is the cancel-persist of in-flight durable partials
@@ -88,34 +86,45 @@ Author under `slices/phase-4-server-lifecycle-and-transport/` when starting.
 
 ## Exit Criteria
 
-- [ ] M9: SIGTERM/SIGINT runs onClose (observable: runners settled,
+- [x] M9: SIGTERM/SIGINT runs onClose (observable: runners settled,
       cancel-persist executed, db closed) and exits within the backstop;
-      `docker stop` semantics verified in a test harness or documented
-      manual proof.
-- [ ] L2/L5: an actively-streaming completion/proxy job survives past the
+      test harness proof covers close/onClose ordering and the force backstop.
+- [x] L2/L5: an actively-streaming completion/proxy job survives past the
       fixed deadline while tokens flow; idle streams still die at the
       deadline.
-- [ ] L56: a mid-stream client cancel DELETEs the server job; the slot is
+- [x] L56: a mid-stream client cancel DELETEs the server job; the slot is
       released.
-- [ ] L17/L18: realm import egress aborts on client disconnect and deadline;
+- [x] L17/L18: realm import egress aborts on client disconnect and deadline;
       oversized JSON-card assets are rejected at the cap without OOM;
       legitimate imports unchanged.
-- [ ] L4: the Horde DELETE cannot outlive its timeout.
-- [ ] L19/L20: bootstrap JSON negotiates gzip (size assertion); hashed
+- [x] L4: the Horde DELETE cannot outlive its timeout.
+- [x] L19/L20: bootstrap JSON negotiates gzip (size assertion); hashed
       chunks serve `immutable`; index.html stays uncached; byte-identical
       bodies after decompression.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts \
-  server/fastify/__tests__/streamJobs.test.ts \
+  server/fastify/__tests__/index.test.ts \
+  server/fastify/__tests__/generation.completion.test.ts \
   server/fastify/__tests__/requestAbort.test.ts \
+  server/fastify/__tests__/streamJobs.test.ts \
+  server/fastify/__tests__/streamJobsRoutes.test.ts \
   server/fastify/__tests__/realmImport.test.ts \
-  server/fastify/__tests__/hub.test.ts
+  server/fastify/__tests__/hub.test.ts \
+  server/fastify/__tests__/horde.test.ts \
+  server/fastify/__tests__/bootstrap.test.ts \
+  server/fastify/__tests__/static.test.ts \
+  server/fastify/__tests__/generation.chat.test.ts
+pnpm exec vitest run \
+  src/ts/globalApi.proxy.test.ts \
+  src/ts/network/proxyJobWs.test.ts \
+  src/ts/server/realmImport.test.ts \
+  src/ts/__tests__/fixCompletenessGateV3.test.ts
 pnpm api:test
-pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
+pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```

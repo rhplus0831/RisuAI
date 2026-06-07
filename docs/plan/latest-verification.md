@@ -7,19 +7,57 @@ after each change to a narrowed or bounded path.
 
 ## Current State
 
-- Plan state: open; Phase 0, Phase 1, Phase 2, and Phase 3 are complete;
-  Phase 4 is the next batch. `H1`, `M1-M5`, `L11-L16`, `K1`, and `K2` are
-  `DONE` in [`active-risk-analysis.md`](active-risk-analysis.md); every other
-  scheduled row remains `PENDING`.
+- Plan state: open; Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are
+  complete; Phase 5 is the next batch. `H1`, `M1-M5`, `M9`, `L2`, `L4`,
+  `L5`, `L11-L20`, `L56`, `K1`, and `K2` are `DONE` in
+  [`active-risk-analysis.md`](active-risk-analysis.md); every other scheduled
+  row remains `PENDING`.
 - Gate state: the v1 gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
   and the v2 gate (`fixCompletenessGateV2.test.ts`) remain live against their
   archives. The v3 gate (`fixCompletenessGateV3.test.ts`) is live against
-  `docs/plan/`, with `H1`, `M1-M5`, `L11-L16`, `K1`, and `K2` registered as
-  `DONE` and all other scheduled v3 IDs registered as `PLANNED`. The Phase 3
-  v3 gate command is green; the v1/v2 archive gates were last refreshed in
-  the Phase 2 verification run below.
-- Tree: Phase 3 implementation is committed through `2a889d4d3`; this
-  verification refresh closes Phase 3 and does not change runtime code.
+  `docs/plan/`, with `H1`, `M1-M5`, `M9`, `L2`, `L4`, `L5`, `L11-L20`,
+  `L56`, `K1`, and `K2` registered as `DONE` and all other scheduled v3 IDs
+  registered as `PLANNED`. The Phase 4 v3 gate command is green; the v1/v2
+  archive gates were last refreshed in the Phase 2 verification run below.
+- Tree: Phase 4 implementation is committed through `3d1777616`; this
+  verification refresh closes Phase 4 and does not change runtime code.
+
+## Phase 4 Verification Refresh (2026-06-07)
+
+Run after the Phase 4 implementation commits landed:
+`0ec993848` (M9), `4d5e749af` (L2/L5), `ad856d2f9` (L56),
+`319c25098` (L17/L18), `e3fe55ede` (L4), `a4510d29a` (L19), and
+`3d1777616` (L20).
+
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/index.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/requestAbort.test.ts server/fastify/__tests__/streamJobs.test.ts server/fastify/__tests__/streamJobsRoutes.test.ts server/fastify/__tests__/realmImport.test.ts server/fastify/__tests__/hub.test.ts server/fastify/__tests__/horde.test.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/static.test.ts server/fastify/__tests__/generation.chat.test.ts`:
+  passed, 11 files / 300 tests.
+- Phase 4 lifecycle/deadline/cancel proofs: M9 proves SIGTERM and SIGINT reach
+  `app.close()` / `onClose`, duplicate signals do not double-close, and a hung
+  close uses the signal-style force backstop. L2 proves active standalone
+  completion streams slide past the original deadline while idle streams still
+  abort. L5 proves proxy JSON activity extends `deadlineAt` while silent proxy
+  jobs still abort. L56 proves mid-stream local proxy aborts DELETE the server
+  job once, while terminal `done` / `error` and non-local WebSocket close do
+  not DELETE.
+- Phase 4 import/provider/transport proofs: L17 proves hung Realm dynamic
+  downloads abort at the import deadline and SSE client disconnect aborts
+  upstream resource fetches. L18 proves known-length and unknown-length Realm
+  JSON caps, JSON-card per-asset and cumulative resource caps, staged-file
+  cleanup, and valid disk-staged JSON imports. L4 proves a hung Horde cleanup
+  DELETE receives its own bounded abort signal. L19 proves gzip negotiation for
+  bootstrap JSON and static assets with byte-identical decompressed bodies,
+  small responses below the threshold stay uncompressed, and chat SSE stays
+  uncompressed. L20 proves `/assets/*` receives immutable one-year cache
+  headers while `/`, SPA fallback HTML, API 404s, and non-GET fallback
+  rejections stay outside that policy.
+- `pnpm exec vitest run src/ts/globalApi.proxy.test.ts src/ts/network/proxyJobWs.test.ts src/ts/server/realmImport.test.ts src/ts/__tests__/fixCompletenessGateV3.test.ts`:
+  passed, 4 files / 39 tests. The command emitted the usual Vite/Svelte
+  default-config notice. The v3 gate and active-risk map agree that `M9`,
+  `L2`, `L4`, `L5`, `L17`, `L18`, `L19`, `L20`, and `L56` are `DONE`.
+- `pnpm api:test`: passed, 101 files / 1909 passed / 1 skipped.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: zero errors.
+- Skipped/failed items: none.
 
 ## Phase 3 Verification Refresh (2026-06-07)
 
