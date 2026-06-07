@@ -133,6 +133,11 @@ export interface ChatScopedSnapshot {
   chat: Chat | undefined
 }
 
+export interface MutateChatScopedOptions {
+  selectedChar?: number
+  selectedChat?: number
+}
+
 export function currentChatScopedSnapshot(): ChatScopedSnapshot {
   const selectedChar = get(selectedCharID)
   const character = DBState.db.characters?.[selectedChar]
@@ -321,6 +326,21 @@ export function runOptimisticCommandSequence(
   })()
 }
 
+export async function runOptimisticCommandSequenceAsync(
+  commands: Array<(baseRevision: number) => Promise<ServerCommandResult>>,
+  rollback: () => void,
+): Promise<ServerCommandResult | null> {
+  if (!canUseServerCommands() || commands.length === 0) return null
+  for (const command of commands) {
+    const result = await runServerCommand({ command })
+    if (result.status !== 'ok') {
+      rollback()
+      return result
+    }
+  }
+  return null
+}
+
 function runChatCommandSequence(
   commands: Array<(baseRevision: number) => Promise<ServerCommandResult>>,
   rollback: () => void,
@@ -453,6 +473,89 @@ export function dispatchCompatibleChatUpdateScoped(
   const factories = buildCompatibleChatUpdateFactories(previousChat, nextChat)
   if (factories.length > 0)
     runChatCommandSequence(factories, () => restoreChatScopedState(previous))
+}
+
+export async function dispatchCompatibleChatUpdateScopedAsync(
+  previousChat: Chat | undefined,
+  nextChat: Chat | undefined,
+  previous: ChatScopedSnapshot,
+): Promise<ServerCommandResult | null> {
+  const factories = buildCompatibleChatUpdateFactories(previousChat, nextChat)
+  return runOptimisticCommandSequenceAsync(factories, () => restoreChatScopedState(previous))
+}
+
+export function mutateChatWithScopedCommand(
+  mutate: (chat: Chat, character: character) => void,
+  options: MutateChatScopedOptions = {},
+): boolean {
+  const selectedChar = options.selectedChar ?? get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  if (!character?.chats) return false
+  const selectedChat = options.selectedChat ?? character.chatPage
+  const chat = character.chats?.[selectedChat]
+  if (!chat) return false
+
+  const previousChat = cloneJsonValue(chat) as Chat
+  const scopedRollback: ChatScopedSnapshot = {
+    selectedCharID: selectedChar,
+    characterId: character.chaId,
+    chatId: previousChat.id,
+    chat: previousChat,
+  }
+
+  let applied = false
+  withTrustedServerProjectionWrite(() => {
+    const liveCharacter = DBState.db.characters?.[selectedChar]
+    const liveChat = liveCharacter?.chats?.[selectedChat]
+    if (!liveCharacter || !liveChat) return
+    mutate(liveChat, liveCharacter)
+    applied = true
+  })
+  if (!applied) return false
+
+  const nextChat = DBState.db.characters?.[selectedChar]?.chats?.[selectedChat]
+  if (!nextChat) return false
+  dispatchCompatibleChatUpdateScoped(previousChat, cloneJsonValue(nextChat) as Chat, scopedRollback)
+  return true
+}
+
+export async function mutateChatWithScopedCommandAsync(
+  mutate: (chat: Chat, character: character) => void,
+  options: MutateChatScopedOptions = {},
+): Promise<boolean> {
+  const selectedChar = options.selectedChar ?? get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  if (!character?.chats) return false
+  const selectedChat = options.selectedChat ?? character.chatPage
+  const chat = character.chats?.[selectedChat]
+  if (!chat) return false
+
+  const previousChat = cloneJsonValue(chat) as Chat
+  const scopedRollback: ChatScopedSnapshot = {
+    selectedCharID: selectedChar,
+    characterId: character.chaId,
+    chatId: previousChat.id,
+    chat: previousChat,
+  }
+
+  let applied = false
+  withTrustedServerProjectionWrite(() => {
+    const liveCharacter = DBState.db.characters?.[selectedChar]
+    const liveChat = liveCharacter?.chats?.[selectedChat]
+    if (!liveCharacter || !liveChat) return
+    mutate(liveChat, liveCharacter)
+    applied = true
+  })
+  if (!applied) return false
+
+  const nextChat = DBState.db.characters?.[selectedChar]?.chats?.[selectedChat]
+  if (!nextChat) return false
+  await dispatchCompatibleChatUpdateScopedAsync(
+    previousChat,
+    cloneJsonValue(nextChat) as Chat,
+    scopedRollback,
+  )
+  return true
 }
 
 // Factory-list form of dispatchCompatibleChatUpdate so the V3 plugin API can

@@ -54,7 +54,8 @@ const testState = vi.hoisted(() => {
 })
 
 vi.mock('../storage/database.svelte', () => ({
-  getDatabase: () => testState.db,
+  getDatabase: (options: { snapshot?: boolean } = {}) =>
+    options.snapshot ? JSON.parse(JSON.stringify(testState.db)) : testState.db,
 }))
 
 vi.mock('../stores.svelte', () => ({
@@ -104,7 +105,13 @@ vi.mock('../../etc/send.mp3', () => ({
   default: 'send.mp3',
 }))
 
-import { TRANSLATE_CACHE_MAX_ENTRIES, __translatorTestHooks, translate } from './translator'
+import {
+  TRANSLATE_CACHE_MAX_ENTRIES,
+  __translatorTestHooks,
+  getCurrentTranslatorPreset,
+  translate,
+} from './translator'
+import { createTranslatorPreset } from './presets'
 
 function resetDatabase() {
   Object.assign(testState.db, {
@@ -239,5 +246,46 @@ describe('auto-translate cache', () => {
     expect(firstChatAgain).toBe('translated:ko:scoped text:3')
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(__translatorTestHooks.getTranslateCacheEntries()).toHaveLength(1)
+  })
+
+  it('v4-L30: current translator preset sync reads from a snapshot without mutating live legacy fields', () => {
+    const presets = [
+      createTranslatorPreset('Default', { prompt: 'default prompt', maxResponse: 128 }),
+      createTranslatorPreset('Detailed', { prompt: 'detailed prompt', maxResponse: 256 }),
+    ]
+    Object.assign(testState.db, {
+      translatorPrompt: 'legacy prompt',
+      translatorMaxResponse: 1000,
+      translatorPresets: presets,
+      translatorPresetId: 1,
+    })
+
+    const preset = getCurrentTranslatorPreset()
+
+    expect(preset).toMatchObject({ name: 'Detailed', prompt: 'detailed prompt', maxResponse: 256 })
+    expect(testState.db.translatorPrompt).toBe('legacy prompt')
+    expect(testState.db.translatorMaxResponse).toBe(1000)
+    expect(testState.db.translatorPresets).toBe(presets)
+  })
+
+  it('v4-L30: current translator preset normalization reads from a snapshot without writing preset defaults to live DB', () => {
+    Object.assign(testState.db, {
+      translatorPrompt: 'legacy only prompt',
+      translatorMaxResponse: 333,
+      translatorPresets: undefined,
+      translatorPresetId: 99,
+    })
+
+    const preset = getCurrentTranslatorPreset()
+
+    expect(preset).toMatchObject({
+      name: 'Default',
+      prompt: 'legacy only prompt',
+      maxResponse: 333,
+    })
+    expect(testState.db.translatorPresets).toBeUndefined()
+    expect(testState.db.translatorPresetId).toBe(99)
+    expect(testState.db.translatorPrompt).toBe('legacy only prompt')
+    expect(testState.db.translatorMaxResponse).toBe(333)
   })
 })

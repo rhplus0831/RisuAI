@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { alertErrorSpy } = vi.hoisted(() => ({ alertErrorSpy: vi.fn() }))
 vi.mock('../../alert', async (importActual) => {
@@ -15,10 +15,72 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { setDatabase, type Database, type character } from '../../storage/database.svelte'
+vi.mock('../../storage/fastifyStorage', () => ({
+  getNodeServerProxyAuth: async () => 'send-error-test-token',
+}))
+
+import {
+  applyServerProjectionDatabase,
+  setDatabase,
+  type Database,
+  type character,
+} from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import { DBState } from '../../stores.svelte'
 import { reportSendChatError, type SendChatErrorContext } from '../sendChatErrors'
+import { clearCachedServerCommandRevision } from '../../server/commands'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from '../../server/projectionWriteGuard.svelte'
+
+interface CapturedFetch {
+  url: string
+  method: string
+  body: any
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function stubCommandFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url.startsWith('/api/v1/commands/chats/') && url.endsWith('/messages')) {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'messages.replaced', revision: 11, resource: 'chat' },
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+async function waitForMessageCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const match = calls.find(
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+    )
+    if (match) return match
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  throw new Error(`message command not dispatched; saw ${JSON.stringify(calls)}`)
+}
 
 function makeChar(): character {
   return {
@@ -29,6 +91,7 @@ function makeChar(): character {
     notes: '',
     chats: [
       {
+        id: 'chat-1',
         message: [],
         note: '',
         name: 'main',
@@ -63,10 +126,19 @@ const baseCtx: SendChatErrorContext = {
 
 describe('reportSendChatError', () => {
   beforeEach(() => {
+    clearCachedServerCommandRevision()
+    setServerProjectionWriteGuardEnabled(false)
+    vi.unstubAllGlobals()
+    stubCommandFetch()
     alertErrorSpy.mockReset()
     // Each test calls seed() which wholesale reseeds DBState. Restoring to {}
     // between tests would fire a $effect chain that reads modules off a partial
     // DB and throws (same shape as the guard in parser.svelte.ts).
+  })
+
+  afterEach(() => {
+    setServerProjectionWriteGuardEnabled(false)
+    vi.unstubAllGlobals()
   })
 
   it('falls back to alertError when inlayErrorResponse is off', () => {
@@ -164,13 +236,71 @@ describe('reportSendChatError', () => {
   it('falls back to charRoom.chatPage when ctx.selectedChat is negative', () => {
     const char = makeChar()
     char.chats = [
-      { message: [], note: '', name: 'a', localLore: [] } as never,
-      { message: [], note: '', name: 'b', localLore: [] } as never,
+      { id: 'chat-1', message: [], note: '', name: 'a', localLore: [] } as never,
+      { id: 'chat-2', message: [], note: '', name: 'b', localLore: [] } as never,
     ]
     char.chatPage = 1
     seed({ inlayErrorResponse: true, char })
     reportSendChatError('boom', { ...baseCtx, selectedChat: -1 })
     expect(DBState.db.characters[0].chats[0].message).toHaveLength(0)
     expect(DBState.db.characters[0].chats[1].message).toHaveLength(1)
+  })
+
+  it('L35: writes and persists the inlay bubble under the enabled projection guard', async () => {
+    const calls = stubCommandFetch()
+    const char = makeChar()
+    char.chats[0].message = [{ role: 'user', data: 'hi', time: 0, chatId: 'm-user' }]
+    seed({ inlayErrorResponse: true, char })
+    setServerProjectionWriteGuardEnabled(true)
+    expect(() => {
+      DBState.db.characters[0].chats[0].message.push({ role: 'char', data: 'raw' })
+    }).toThrow(/read-only server projection/)
+
+    reportSendChatError('boom', { ...baseCtx, currentChar: char })
+
+    const messages = DBState.db.characters[0].chats[0].message
+    expect(alertErrorSpy).not.toHaveBeenCalled()
+    expect(messages.at(-1)).toMatchObject({
+      role: 'char',
+      data: '```risuerror\nboom\n```',
+      saying: 'test-cha-id',
+    })
+
+    const command = await waitForMessageCommand(calls)
+    expect(command.body.messages.at(-1)).toMatchObject({
+      role: 'char',
+      data: '```risuerror\nboom\n```',
+      saying: 'test-cha-id',
+    })
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].message = [{ role: 'user', data: 'stale' }]
+    })
+    applyServerProjectionDatabase({
+      characters: [
+        {
+          ...makeChar(),
+          chats: [
+            {
+              ...makeChar().chats[0],
+              message: command.body.messages,
+            },
+          ],
+        },
+      ],
+      inlayErrorResponse: true,
+    } as Database)
+    expect(DBState.db.characters[0].chats[0].message.at(-1).data).toBe(
+      '```risuerror\nboom\n```',
+    )
+  })
+
+  it('L35: keeps modal fallback for invalid targets while the guard is enabled', () => {
+    seed({ inlayErrorResponse: true, char: null })
+    setServerProjectionWriteGuardEnabled(true)
+
+    reportSendChatError('boom', { ...baseCtx, selectedChar: 99 })
+
+    expect(alertErrorSpy).toHaveBeenCalledWith('boom')
   })
 })

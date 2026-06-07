@@ -118,8 +118,8 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
 
           if (MCPs[mcp]) {
             invalidateMCPToolClientIndex()
+            await checkHandshakeOrRemoveClient(mcp)
           }
-          await MCPs[mcp].checkHandshake()
           continue
         }
 
@@ -128,7 +128,7 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
           if (customMCP) {
             MCPs[mcp] = customMCP
             invalidateMCPToolClientIndex()
-            await MCPs[mcp].checkHandshake()
+            await checkHandshakeOrRemoveClient(mcp)
             continue
           }
         }
@@ -190,6 +190,21 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
     }
   } finally {
     finishMCPInitialization()
+  }
+}
+
+async function checkHandshakeOrRemoveClient(mcp: string): Promise<boolean> {
+  const client = MCPs[mcp]
+  if (!client) return false
+  try {
+    await client.checkHandshake()
+    return true
+  } catch (error) {
+    console.error(`MCP: Failed to initialize MCP at ${mcp}:`, error)
+    client.destroy()
+    delete MCPs[mcp]
+    invalidateMCPToolClientIndex()
+    return false
   }
 }
 

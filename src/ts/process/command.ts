@@ -13,10 +13,9 @@ import { sendChat } from './index.svelte'
 import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { runTrigger } from './triggers'
 import {
+  mutateChatWithScopedCommand,
   currentChatScriptstateSnapshot,
-  dispatchCompatibleChatUpdateScoped,
   dispatchPatchChatScriptstateScoped,
-  type ChatScopedSnapshot,
 } from '../chatCommands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import type { Chat } from '../storage/database.svelte'
@@ -320,36 +319,12 @@ async function processCommand(command: string, pipe: string): Promise<false | st
   return false
 }
 
-function snapshotChat(chat: Chat): Chat {
-  return JSON.parse(JSON.stringify(chat)) as Chat
-}
-
 // Apply an optimistic mutation to the current chat's message history without
 // mutating the read-only server projection in place. The mutation runs inside
 // a trusted write scope against a freshly read database reference, then the
 // change is forwarded to the server through the compatible chat-update command.
 function mutateCurrentChatMessages(mutate: (chat: Chat) => void): void {
-  const selectedChar = get(selectedCharID)
-  const beforeChar = getDatabase().characters[selectedChar]
-  // `previousChat` already clones the one active chat for the diff; reuse it as
-  // the chat-scoped rollback payload instead of cloning the whole characters
-  // array via currentChatStateSnapshot().
-  const previousChat = snapshotChat(beforeChar.chats[beforeChar.chatPage])
-  const scopedRollback: ChatScopedSnapshot = {
-    selectedCharID: selectedChar,
-    characterId: beforeChar.chaId,
-    chatId: previousChat.id,
-    chat: previousChat,
-  }
-  withTrustedServerProjectionWrite(() => {
-    const db = getDatabase()
-    const char = db.characters[selectedChar]
-    const chat = char.chats[char.chatPage]
-    mutate(chat)
-  })
-  const afterChar = getDatabase().characters[selectedChar]
-  const nextChat = snapshotChat(afterChar.chats[afterChar.chatPage])
-  dispatchCompatibleChatUpdateScoped(previousChat, nextChat, scopedRollback)
+  mutateChatWithScopedCommand((chat) => mutate(chat))
 }
 
 function commandParser(command: string, pipe: string) {

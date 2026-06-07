@@ -116,7 +116,7 @@ function bumpLLMCacheMutationEpoch() {
 let waitTrans = 0
 
 export function getCurrentTranslatorPreset(): TranslatorPreset {
-  return getCurrentTranslatorPresetFromState(getDatabase())
+  return getCurrentTranslatorPresetFromState(getDatabase({ snapshot: true }))
 }
 
 export async function translate(text: string, reverse: boolean) {

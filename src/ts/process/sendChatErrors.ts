@@ -1,6 +1,7 @@
 import { get } from 'svelte/store'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { alertError } from '../alert'
+import { mutateChatWithScopedCommand } from '../chatCommands'
 import type {
   character,
   Message,
@@ -36,27 +37,35 @@ export function reportSendChatError(error: string, ctx: SendChatErrorContext): v
       return
     }
 
-    const messages = chatRoom.message
-    const last = messages[messages.length - 1]
     const suffix = `\n\`\`\`risuerror\n${error}\n\`\`\``
+    const applied = mutateChatWithScopedCommand(
+      (chat) => {
+        const messages = chat.message
+        const last = messages[messages.length - 1]
 
-    if (last?.role === 'char') {
-      last.data += suffix
-      return
-    }
+        if (last?.role === 'char') {
+          last.data += suffix
+          return
+        }
 
-    const m: Message = {
-      role: 'char',
-      data: `\`\`\`risuerror\n${error}\n\`\`\``,
-      time: Date.now(),
+        const m: Message = {
+          role: 'char',
+          data: `\`\`\`risuerror\n${error}\n\`\`\``,
+          time: Date.now(),
+        }
+        if (ctx.currentChar?.chaId) {
+          m.saying = ctx.currentChar.chaId
+        }
+        if (ctx.generationInfo) {
+          m.generationInfo = ctx.generationInfo
+        }
+        messages.push(m)
+      },
+      { selectedChar: sc, selectedChat: st },
+    )
+    if (!applied) {
+      alertError(error)
     }
-    if (ctx.currentChar?.chaId) {
-      m.saying = ctx.currentChar.chaId
-    }
-    if (ctx.generationInfo) {
-      m.generationInfo = ctx.generationInfo
-    }
-    messages.push(m)
     return
   } catch (e) {
     console.error(e)

@@ -1,4 +1,3 @@
-import { getDatabase, setDatabase } from 'src/ts/storage/database.svelte'
 import { DBState, selectedCharID } from 'src/ts/stores.svelte'
 import { get } from 'svelte/store'
 import { sendChat } from '../index.svelte'
@@ -6,6 +5,7 @@ import { downloadFile } from 'src/ts/globalApi.svelte'
 import { HypaProcesser } from '../memory/hypamemory'
 import { BufferToText as BufferToText, selectMultipleFile } from 'src/ts/util'
 import { postInlayAsset } from './inlays'
+import { mutateChatWithScopedCommandAsync } from 'src/ts/chatCommands'
 
 type sendTextFileArg = {
   file: string
@@ -40,12 +40,15 @@ async function sendPofile(arg: sendTextFileArg) {
       if (note !== '') {
         text = `Note: ${note}\n${text}`
       }
-      currentChat.message.push({
-        role: 'user',
-        data: text,
-      })
-      currentChar.chats[currentChar.chatPage] = currentChat
-      DBState.db.characters[get(selectedCharID)] = currentChar
+      await mutateChatWithScopedCommandAsync(
+        (chat) => {
+          chat.message.push({
+            role: 'user',
+            data: text,
+          })
+        },
+        { selectedChar: get(selectedCharID), selectedChat: currentChar.chatPage },
+      )
       await sendChat(-1)
       currentChar = DBState.db.characters[get(selectedCharID)]
       currentChat = currentChar.chats[currentChar.chatPage]
@@ -197,7 +200,7 @@ export async function postChatFile(
         name: string
         data: Uint8Array
       },
-): Promise<postFileResult[]> {
+): Promise<postFileResult[] | null> {
   const files =
     typeof query === 'string'
       ? await selectMultipleFile([
@@ -225,7 +228,7 @@ export async function postChatFile(
           'po',
           // 'pdf',
           'txt',
-        ])
+        ]).catch(() => [])
       : [query]
 
   if (!files) {
@@ -240,10 +243,14 @@ export async function postChatFile(
 
     switch (extention) {
       case 'po': {
-        await sendPofile({
-          file: BufferToText(file.data),
-          query: xquery,
-        })
+        try {
+          await sendPofile({
+            file: BufferToText(file.data),
+            query: xquery,
+          })
+        } catch {
+          continue
+        }
         results.push({
           type: 'void',
         })

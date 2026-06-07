@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { requestChatDataSpy } = vi.hoisted(() => ({
   requestChatDataSpy: vi.fn(),
@@ -15,9 +15,71 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { setDatabase, type Database, type character } from '../../storage/database.svelte'
+vi.mock('../../storage/fastifyStorage', () => ({
+  getNodeServerProxyAuth: async () => 'igp-test-token',
+}))
+
+import {
+  applyServerProjectionDatabase,
+  setDatabase,
+  type Database,
+  type character,
+} from '../../storage/database.svelte'
 import { selectedCharID, DBState } from '../../stores.svelte'
 import { evaluateIgp } from '../postGeneration/igp'
+import { clearCachedServerCommandRevision } from '../../server/commands'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from '../../server/projectionWriteGuard.svelte'
+
+interface CapturedFetch {
+  url: string
+  method: string
+  body: any
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function stubCommandFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/commands/chats/chat-1/messages') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'messages.replaced', revision: 11, resource: 'chat' },
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+async function waitForMessageCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const match = calls.find(
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+    )
+    if (match) return match
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  throw new Error(`message command not dispatched; saw ${JSON.stringify(calls)}`)
+}
 
 function makeChar(): character {
   return {
@@ -28,6 +90,7 @@ function makeChar(): character {
     notes: '',
     chats: [
       {
+        id: 'chat-1',
         message: [{ role: 'char', data: 'hello', time: 0 }],
         note: '',
         name: 'main',
@@ -57,8 +120,16 @@ const baseOpts = {
 
 describe('evaluateIgp', () => {
   beforeEach(() => {
+    clearCachedServerCommandRevision()
+    setServerProjectionWriteGuardEnabled(false)
+    vi.unstubAllGlobals()
     requestChatDataSpy.mockReset()
     requestChatDataSpy.mockResolvedValue({ type: 'success', result: 'IGP-RESULT' })
+  })
+
+  afterEach(() => {
+    setServerProjectionWriteGuardEnabled(false)
+    vi.unstubAllGlobals()
   })
 
   it('is a no-op when the prompt template is empty', async () => {
@@ -83,6 +154,7 @@ describe('evaluateIgp', () => {
     '<|im_start|>system<|im_sep|>Rate the response.<|im_end|>'
 
   it('dispatches with parsed ChatML and emotion mode when the prompt is non-empty', async () => {
+    stubCommandFetch()
     seed(makeChar())
     await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
     expect(requestChatDataSpy).toHaveBeenCalledTimes(1)
@@ -95,17 +167,28 @@ describe('evaluateIgp', () => {
     expect(arg.formated[0].role).toBe('system')
   })
 
-  it('preserves the existing "append raw response object" coercion behavior', async () => {
-    // The upstream code appended the full requestDataResponse via `+= rq`,
-    // which JS coerces to "[object Object]". This test pins the existing
-    // (likely-buggy) behavior so any future fix is intentional.
+  it('L34: appends the explicit response result instead of raw object coercion', async () => {
+    const calls = stubCommandFetch()
     seed(makeChar())
     requestChatDataSpy.mockResolvedValueOnce({ type: 'success', result: 'IGP-RESULT' })
     await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('hello[object Object]')
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
+    const command = await waitForMessageCommand(calls)
+    expect(command.body.messages.at(-1).data).toBe('helloIGP-RESULT')
+  })
+
+  it('L34/I11: stringifies non-string IGP result payloads without [object Object]', async () => {
+    stubCommandFetch()
+    seed(makeChar())
+    requestChatDataSpy.mockResolvedValueOnce({ type: 'success', result: { label: 'joy' } })
+
+    await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
+
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('hello{"label":"joy"}')
   })
 
   it('appends to the last message regardless of position', async () => {
+    stubCommandFetch()
     const char = makeChar()
     char.chats[0].message = [
       { role: 'user', data: 'first', time: 0 },
@@ -117,6 +200,39 @@ describe('evaluateIgp', () => {
     const messages = DBState.db.characters[0].chats[0].message
     expect(messages[0].data).toBe('first')
     expect(messages[1].data).toBe('second')
-    expect(messages[2].data).toBe('third[object Object]')
+    expect(messages[2].data).toBe('thirdIGP-RESULT')
+  })
+
+  it('L34: appends and persists under the enabled projection guard', async () => {
+    const calls = stubCommandFetch()
+    seed(makeChar())
+    setServerProjectionWriteGuardEnabled(true)
+    expect(() => {
+      DBState.db.characters[0].chats[0].message[0].data += 'raw'
+    }).toThrow(/read-only server projection/)
+
+    await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
+
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
+    const command = await waitForMessageCommand(calls)
+    expect(command.body.messages.at(-1).data).toBe('helloIGP-RESULT')
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].message[0].data = 'stale'
+    })
+    applyServerProjectionDatabase({
+      characters: [
+        {
+          ...makeChar(),
+          chats: [
+            {
+              ...makeChar().chats[0],
+              message: command.body.messages,
+            },
+          ],
+        },
+      ],
+    } as Database)
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
   })
 })

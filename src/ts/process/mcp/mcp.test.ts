@@ -41,7 +41,14 @@ vi.mock('src/ts/alert', async (importActual) => {
 import { clearCachedServerCommandRevision, type CommandEvent } from '../../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
 import { DBState } from '../../stores.svelte'
-import { callMCPTool, callOnlyMCPs, importMCPModule, MCPs, persistMCPRefreshToken } from './mcp'
+import {
+  callMCPTool,
+  callOnlyMCPs,
+  getTools,
+  importMCPModule,
+  MCPs,
+  persistMCPRefreshToken,
+} from './mcp'
 import type { MCPTool } from './mcplib'
 import { registeredCustomPluginMCPs, registerMCPModule } from './pluginmcp'
 
@@ -459,5 +466,37 @@ describe('MCP indexed tool dispatch', () => {
     expect(oldCallTool).not.toHaveBeenCalled()
     expect(newGetToolList).toHaveBeenCalledTimes(1)
     expect(newCallTool).toHaveBeenCalledTimes(2)
+  })
+
+  it('v4-L33: isolates a failing internal handshake while keeping other MCP tools usable', async () => {
+    const pluginIdentifier = 'plugin:v4-l33-survivor'
+    const pluginToolList = vi.fn(async () => [toolFixture('survivor_tool')])
+    const pluginCallTool = vi.fn(async (toolName: string) => [
+      { type: 'text' as const, text: `survivor:${toolName}` },
+    ])
+    await registerMCPModule(
+      {
+        identifier: pluginIdentifier,
+        name: 'v4 L33 Survivor MCP',
+        version: '1.0.0',
+        description: 'Survives a sibling internal handshake failure.',
+      },
+      pluginToolList,
+      pluginCallTool,
+    )
+    moduleMocks.mcps = ['internal:googlesearch', pluginIdentifier]
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      await expect(getTools()).resolves.toEqual([
+        expect.objectContaining({ name: 'survivor_tool', mcpURL: pluginIdentifier }),
+      ])
+    } finally {
+      errorSpy.mockRestore()
+    }
+
+    expect(MCPs['internal:googlesearch']).toBeUndefined()
+    expect(MCPs[pluginIdentifier]).toBeDefined()
+    expect(pluginToolList).toHaveBeenCalledTimes(1)
   })
 })

@@ -15,14 +15,18 @@ const testState = vi.hoisted(() => {
   }
 
   const sendChatSpy = vi.fn(async () => {
-    const currentChar = DBState.db.characters[0]
-    const currentChat = currentChar.chats[currentChar.chatPage]
-    const latestMessage = currentChat.message.at(-1)
-    currentChat.message.push({
-      role: 'char',
-      data: `translated:${latestMessage?.data ?? ''}`,
+    runTrustedWrite(() => {
+      const currentChar = DBState.db.characters[0]
+      const currentChat = currentChar.chats[currentChar.chatPage]
+      const latestMessage = currentChat.message.at(-1)
+      currentChat.message.push({
+        role: 'char',
+        data: `translated:${latestMessage?.data ?? ''}`,
+      })
     })
   })
+
+  let runTrustedWrite = <T>(callback: () => T): T => callback()
 
   return {
     DBState,
@@ -34,12 +38,19 @@ const testState = vi.hoisted(() => {
     addTextSpy: vi.fn(),
     similaritySearchSpy: vi.fn(),
     getDocumentSpy: vi.fn(),
+    setRunTrustedWrite(fn: typeof runTrustedWrite) {
+      runTrustedWrite = fn
+    },
   }
 })
 
 vi.mock('src/ts/storage/database.svelte', () => ({
   getDatabase: vi.fn(),
   setDatabase: vi.fn(),
+}))
+
+vi.mock('src/ts/storage/fastifyStorage', () => ({
+  getNodeServerProxyAuth: async () => 'multisend-test-token',
 }))
 
 vi.mock('src/ts/stores.svelte', () => ({
@@ -81,8 +92,64 @@ vi.mock('pdfjs-dist/build/pdf.worker?worker&url', () => ({
 }))
 
 import { postChatFile } from './multisend'
+import { clearCachedServerCommandRevision } from '../../server/commands'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from '../../server/projectionWriteGuard.svelte'
 
 let consoleLogSpy: ReturnType<typeof vi.spyOn>
+
+interface CapturedFetch {
+  url: string
+  method: string
+  body: any
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function stubCommandFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url.startsWith('/api/v1/commands/chats/') && url.endsWith('/messages')) {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'messages.replaced', revision: 11, resource: 'chat' },
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+async function waitForMessageCommands(
+  calls: CapturedFetch[],
+  expected: number,
+): Promise<CapturedFetch[]> {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const matches = calls.filter(
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+    )
+    if (matches.length >= expected) return matches
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  throw new Error(`expected ${expected} message commands; saw ${JSON.stringify(calls)}`)
+}
 
 function textBytes(value: string): Uint8Array {
   return new TextEncoder().encode(value)
@@ -101,6 +168,7 @@ function resetChatState() {
         chatPage: 0,
         chats: [
           {
+            id: 'chat-1',
             message: [],
           },
         ],
@@ -132,6 +200,11 @@ function mockPdfDocument(pageTexts: string[] = ['pdf extracted text']) {
 }
 
 beforeEach(() => {
+  clearCachedServerCommandRevision()
+  setServerProjectionWriteGuardEnabled(false)
+  vi.unstubAllGlobals()
+  stubCommandFetch()
+  testState.setRunTrustedWrite(withTrustedServerProjectionWrite)
   resetChatState()
   testState.sendChatSpy.mockClear()
   testState.downloadFileSpy.mockReset()
@@ -147,6 +220,8 @@ beforeEach(() => {
 
 afterEach(() => {
   consoleLogSpy.mockRestore()
+  setServerProjectionWriteGuardEnabled(false)
+  vi.unstubAllGlobals()
 })
 
 describe('postChatFile file-send handling', () => {
@@ -212,5 +287,57 @@ describe('postChatFile file-send handling', () => {
         name: 'paper.pdf',
       },
     ])
+  })
+
+  it('L36: .po transcript writes persist through scoped commands under the guard', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    expect(() => {
+      testState.DBState.db.characters[0].chats[0].message.push({ role: 'user', data: 'raw' })
+    }).toThrow(/read-only server projection/)
+
+    const results = await postChatFile({
+      name: 'dialogue.po',
+      data: textBytes(makePoFile(2)),
+    })
+
+    expect(results).toEqual([{ type: 'void' }])
+    expect(testState.sendChatSpy).toHaveBeenCalledTimes(2)
+    const commands = await waitForMessageCommands(calls, 2)
+    expect(commands[0].body.messages.map((message: any) => message.data)).toEqual(['line 0'])
+    expect(commands[1].body.messages.map((message: any) => message.data)).toEqual([
+      'line 0',
+      'translated:line 0',
+      'line 1',
+    ])
+    expect(testState.downloadFileSpy).toHaveBeenCalledTimes(1)
+    expect(testState.downloadFileSpy.mock.calls[0][1]).toContain('"translated:line 1"')
+  })
+
+  it('L36: picker cancellation and picker errors resolve without uncaught rejection', async () => {
+    testState.selectMultipleFileSpy.mockResolvedValueOnce([])
+
+    await expect(postChatFile('translate attachments')).resolves.toEqual([])
+
+    testState.selectMultipleFileSpy.mockRejectedValueOnce(new Error('picker failed'))
+
+    await expect(postChatFile('translate attachments')).resolves.toEqual([])
+    expect(testState.selectMultipleFileSpy).toHaveBeenCalledTimes(2)
+    expect(testState.sendChatSpy).not.toHaveBeenCalled()
+    expect(testState.downloadFileSpy).not.toHaveBeenCalled()
+  })
+
+  it('L36: .po processing errors resolve without uncaught rejection', async () => {
+    testState.sendChatSpy.mockRejectedValueOnce(new Error('send failed'))
+
+    await expect(
+      postChatFile({
+        name: 'dialogue.po',
+        data: textBytes(makePoFile(1)),
+      }),
+    ).resolves.toEqual([])
+
+    expect(testState.sendChatSpy).toHaveBeenCalledTimes(1)
+    expect(testState.downloadFileSpy).not.toHaveBeenCalled()
   })
 })

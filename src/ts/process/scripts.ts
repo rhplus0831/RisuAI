@@ -22,6 +22,7 @@ import { HypaProcesser } from './memory/hypamemory'
 import { runLuaEditTrigger } from './scriptings'
 import { pluginV2 } from '../plugins/plugins.svelte'
 import { runTrigger } from './triggers'
+import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
@@ -263,8 +264,11 @@ export async function processScriptFull(
             (outScript.startsWith('@@inject') || pscript.actions.includes('inject')) &&
             chatID !== -1
           ) {
-            const selchar = db.characters[get(selectedCharID)]
-            selchar.chats[selchar.chatPage].message[chatID].data = data
+            withTrustedServerProjectionWrite(() => {
+              const writableDb = getDatabase()
+              const selchar = writableDb.characters[get(selectedCharID)]
+              selchar.chats[selchar.chatPage].message[chatID].data = data
+            })
             data = data.replace(reg, '')
           } else if (
             outScript.startsWith('@@move_top') ||

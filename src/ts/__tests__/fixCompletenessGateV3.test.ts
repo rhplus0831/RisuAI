@@ -52,6 +52,12 @@ interface GateContextReason {
   reason: string
 }
 
+interface GuardRepairInventoryProof {
+  surface: string
+  disposition: 'fixed' | 'no-action' | 'deferred'
+  proof: string
+}
+
 interface ActiveRiskRoutingRow {
   id: string
   routing: ActiveRiskRouting
@@ -679,20 +685,76 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     6,
     'Stop/null `bgmElement` on chat/character switch; clear stale observed bgm nodes.',
   ),
-  planned(
+  done(
     'L34',
     5,
     'Wrap the IGP append in the trusted write + persist via a scoped chat command (fix the I11 `[object Object]` coercion in the same change).',
+    'src/ts/process/__tests__/igp.test.ts',
+    'L34: appends and persists under the enabled projection guard',
+    [
+      {
+        testPath: 'src/ts/process/__tests__/igp.test.ts',
+        testName: 'L34: appends the explicit response result instead of raw object coercion',
+      },
+      {
+        testPath: 'src/ts/process/__tests__/igp.test.ts',
+        testName: 'L34/I11: stringifies non-string IGP result payloads without [object Object]',
+      },
+      {
+        testPath: 'src/ts/translator/translator.cache.test.ts',
+        testName:
+          'v4-L30: current translator preset sync reads from a snapshot without mutating live legacy fields',
+      },
+      {
+        testPath: 'src/ts/translator/translator.cache.test.ts',
+        testName:
+          'v4-L30: current translator preset normalization reads from a snapshot without writing preset defaults to live DB',
+      },
+    ],
   ),
-  planned(
+  done(
     'L35',
     5,
     'Wrap + dispatch a scoped command for the inlay error bubble; add a guard-enabled test.',
+    'src/ts/process/__tests__/sendChatErrors.test.ts',
+    'L35: writes and persists the inlay bubble under the enabled projection guard',
+    [
+      {
+        testPath: 'src/ts/process/__tests__/sendChatErrors.test.ts',
+        testName: 'L35: keeps modal fallback for invalid targets while the guard is enabled',
+      },
+      {
+        testPath: 'src/ts/process/scripts.editdisplay.test.ts',
+        testName:
+          'I20: @@inject display action runs under the projection guard without durable persistence',
+      },
+    ],
   ),
-  planned(
+  done(
     'L36',
     5,
-    'Route `sendPofile` transcript mutations through the trusted write + scoped messages command; try/catch the picker call sites.',
+    'Route `sendPofile` transcript mutations through the trusted write + scoped messages command; absorb picker cancel/error and `.po` processing failures at the `postChatFile` boundary.',
+    'src/ts/process/files/multisend.test.ts',
+    'L36: .po transcript writes persist through scoped commands under the guard',
+    [
+      {
+        testPath: 'src/ts/process/files/multisend.test.ts',
+        testName: 'L36: picker cancellation and picker errors resolve without uncaught rejection',
+      },
+      {
+        testPath: 'src/ts/process/files/multisend.test.ts',
+        testName: 'L36: .po processing errors resolve without uncaught rejection',
+      },
+      {
+        testPath: 'src/ts/process/mcp/mcp.test.ts',
+        testName:
+          'v4-L33: isolates a failing internal handshake while keeping other MCP tools usable',
+      },
+      {
+        testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
+        testName: 'records Phase 5 guard-repair bounded inventory dispositions',
+      },
+    ],
   ),
   planned(
     'L37',
@@ -942,6 +1004,58 @@ const GATED_CONTEXT_REASONS: GateContextReason[] = [
   {
     reason:
       '../archive/leftover.md evidence gates stay explanatory only: prompt assembly loads, bootstrap load, byte fanout, memory-worker blocking, and token re-accumulation are not v3 IDs.',
+  },
+  {
+    reason:
+      'v4-L30 and v4-L33 are Phase 5 guard-repair proof riders only: translator preset read-path cloning and partial MCP handshake isolation are covered without adding v3 active-risk rows.',
+  },
+]
+
+const REQUIRED_GUARD_REPAIR_INVENTORY_SURFACES = [
+  'DBState.db',
+  'getDatabase()',
+  'translator preset getters',
+  'IGP/inlay/file transcript mutation',
+  'display/script injection',
+  'MCP bootstrap/handshake',
+]
+
+const GUARD_REPAIR_INVENTORY_PROOF: GuardRepairInventoryProof[] = [
+  {
+    surface: 'DBState.db',
+    disposition: 'fixed',
+    proof:
+      'Guard-breaking DBState.db mutations in IGP, inlay bubbles, .po transcript writes, and @@inject display writes now enter trusted projection writes or scoped chat commands; ordinary projection reads and server apply/rollback writes remain no-action by design.',
+  },
+  {
+    surface: 'getDatabase()',
+    disposition: 'fixed',
+    proof:
+      'The translator read path that previously normalized through getDatabase() now reads from getDatabase({ snapshot: true }); other getDatabase() reads in the bounded inventory are no-action reads.',
+  },
+  {
+    surface: 'translator preset getters',
+    disposition: 'fixed',
+    proof:
+      'getCurrentTranslatorPreset() passes a snapshot into the mutating preset normalizer, while getCurrentTranslatorPresetFromState keeps its trusted mutable-state contract for callers that already own mutable state.',
+  },
+  {
+    surface: 'IGP/inlay/file transcript mutation',
+    disposition: 'fixed',
+    proof:
+      'IGP append, send-error inlay bubble, and sendPofile transcript turns are guard-enabled and persist through scoped current-chat message commands instead of raw durable projection writes.',
+  },
+  {
+    surface: 'display/script injection',
+    disposition: 'fixed',
+    proof:
+      '@@inject uses a trusted transient projection write and intentionally does not dispatch a durable command, preserving display-only semantics while avoiding the guard throw.',
+  },
+  {
+    surface: 'MCP bootstrap/handshake',
+    disposition: 'fixed',
+    proof:
+      'initializeMCPs isolates internal checkHandshake failures per client/tool set so a failing internal client is unavailable to diagnostics without rejecting every client-side LLM tool initialization.',
   },
 ]
 
@@ -1612,6 +1726,9 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L25',
       'L26',
       'L27',
+      'L34',
+      'L35',
+      'L36',
       'L56',
       'K1',
       'K2',
@@ -1623,7 +1740,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L23, L24, L25, L26, L27, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L23, L24, L25, L26, L27, L34, L35, L36, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1655,11 +1772,34 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L25',
       'L26',
       'L27',
+      'L34',
+      'L35',
+      'L36',
       'L56',
       'K1',
       'K2',
     ])
     expect(collectGateProblems()).toEqual([])
+  })
+
+  it('records Phase 5 guard-repair bounded inventory dispositions', () => {
+    expect(GUARD_REPAIR_INVENTORY_PROOF.map((entry) => entry.surface)).toEqual(
+      REQUIRED_GUARD_REPAIR_INVENTORY_SURFACES,
+    )
+    expect(new Set(GUARD_REPAIR_INVENTORY_PROOF.map((entry) => entry.surface)).size).toBe(
+      REQUIRED_GUARD_REPAIR_INVENTORY_SURFACES.length,
+    )
+    for (const entry of GUARD_REPAIR_INVENTORY_PROOF) {
+      expect(['fixed', 'no-action', 'deferred']).toContain(entry.disposition)
+      expect(reasonIsSubstantive(entry.proof)).toBe(true)
+    }
+
+    const proofText = GUARD_REPAIR_INVENTORY_PROOF.map((entry) => entry.proof).join('\n')
+    expect(proofText).toContain('trusted projection writes')
+    expect(proofText).toContain('getDatabase({ snapshot: true })')
+    expect(proofText).toContain('scoped current-chat message commands')
+    expect(proofText).toContain('display-only semantics')
+    expect(proofText).toContain('checkHandshake failures per client/tool set')
   })
 
   it('records legacy gated and owner-decision context only as explanatory context', () => {
