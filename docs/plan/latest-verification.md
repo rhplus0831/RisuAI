@@ -7,26 +7,52 @@ after each change to a narrowed or bounded path.
 
 ## Current State
 
-- Plan state: open; Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are
-  complete; the v4-H2 Phase 4.5 hotfix is also complete; Phase 5 and Phase 6
-  are complete. Phase 7 is the next batch. `H1`, `M1-M6`, `M8`, `M9`, `L2`,
-  `L4`, `L5`,
-  `L11-L37`, `L56`, `K1`, and `K2` are `DONE` in
-  [`active-risk-analysis.md`](active-risk-analysis.md); every other scheduled
-  row remains `PENDING`.
+- Plan state: open; Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, Phase 5,
+  Phase 6, and Phase 7 are complete; the v4-H2 Phase 4.5 hotfix is also
+  complete. Phase 8 is the next batch. `H1`, `M1-M6`, `M8`, `M9`,
+  `L1-L37`, `L56`, and `K1-K3` are `DONE` in
+  [`active-risk-analysis.md`](active-risk-analysis.md); `M7`, `L38-L55`, and
+  `K4` remain `PENDING`.
 - Gate state: the v1 gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
   and the v2 gate (`fixCompletenessGateV2.test.ts`) remain live against their
   archives. The v3 gate (`fixCompletenessGateV3.test.ts`) is live against
-  `docs/plan/`, with `H1`, `M1-M6`, `M8`, `M9`, `L2`, `L4`, `L5`,
-  `L11-L37`, `L56`, `K1`, and `K2` registered as
-  `DONE` and all other scheduled v3 IDs registered as `PLANNED`. The latest
-  v3 gate command is green in the run below; the v1/v2 archive gates were
-  last refreshed during the Phase 5 verification run.
-- Tree: Phase 6 implementation is committed through `e665beec1`; this
-  working-tree update refreshes the Phase 6 closeout proof and router docs.
-  Phase 6 includes the v4-only transcript-window reset and render-parser
-  dependency narrowing proofs plus the v3 M6, L22, L28-L33 runtime, tests,
-  gate registrations, and active-risk status flips logged below.
+  `docs/plan/`, with `H1`, `M1-M6`, `M8`, `M9`, `L1-L37`, `L56`, and
+  `K1-K3` registered as `DONE` and all other scheduled v3 IDs registered as
+  `PLANNED`. The latest v3 gate command is green in the run below; the v1/v2
+  archive gates were last refreshed during the Phase 5 verification run.
+- Tree: Phase 7 implementation is committed through `93dc9cef1`; this
+  working-tree update refreshes the Phase 7 closeout proof and router docs.
+  Phase 7 includes the v3 L1, L3, L6-L10, and K3 runtime, tests, gate
+  registrations, and active-risk status flips plus v4-M4/v4-L6/v4-L7 proof
+  riders only.
+
+## Phase 7 Verification Refresh (2026-06-07)
+
+Run after the Phase 7 implementation commits landed:
+`39e5a09ec` (L1), `08b8fc17d` (L3/K3), `8446d4132` (v4-M4/v4-L6 proof
+rider), `833008904` (L6/L7), `60ffe516b` (L8), `a526d0c6e` (L9 plus v4-L7
+proof rider), and `93dc9cef1` (L10).
+
+Phase 7 exit criteria are satisfied. `L1`, `L3`, `L6`, `L7`, `L8`, `L9`,
+`L10`, and `K3` are `DONE` in the active-risk table and v3 gate.
+`v4-M4`, `v4-L6`, and `v4-L7` are recorded as Phase 7 proof riders only, not
+v3 `DONE` IDs. `M7`, `L38-L55`, `K4`, and Phase 8 remain `PENDING`.
+
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/lorebook.test.ts server/fastify/__tests__/triggers.test.ts server/fastify/__tests__/serverLoadCostHarness.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/openai.test.ts server/fastify/__tests__/horde.test.ts`:
+  passed, 7 files / 394 tests. The proof covers async stored asset reads,
+  dispatch/restoration clone counts, provider parameter conventions and
+  logit-bias policy, per-assembly asset/lorebook hoists, trigger clone
+  narrowing, regex bounds, and history memo chat-var invalidation.
+- `pnpm api:test`: passed, 101 files / 1950 passed / 1 skipped (1951 total),
+  exited 0. The run emitted normal Fastify request logs.
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts`:
+  passed, 1 file / 25 tests, exited 0. The command emitted the usual
+  Vite/Svelte default-config notice.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: zero errors.
+- `git diff --check`: clean before the L10 commit and passed after this
+  documentation-only refresh.
+- Skipped/failed items: none.
 
 ## Phase 6 Verification Refresh (2026-06-07)
 

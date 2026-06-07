@@ -1,6 +1,6 @@
 # Active Risk Analysis
 
-Date: 2026-06-06
+Date: 2026-06-07
 
 This file maps every confirmed v3 audit finding to a phase, target fix, and
 status. Evidence lives in
@@ -15,8 +15,9 @@ prior-audit finding IDs are referenced as `v1-*` / `v2-*`.
 ## Summary
 
 - Confirmed findings: 89 total: 1 high, 9 medium, 56 low, 23 informational.
-- Scheduled: H1, M1-M9, L1-L56, and the known-overlap residuals K1-K4. All
-  scheduled rows are `PENDING`.
+- Scheduled: H1, M1-M9, L1-L56, and the known-overlap residuals K1-K4.
+  `H1`, `M1-M6`, `M8`, `M9`, `L1-L37`, `L56`, and `K1-K3` are `DONE`;
+  `M7`, `L38-L55`, and `K4` remain `PENDING`.
 - Gated items: unchanged from v2 — `v2-L12`, plus the v1 carry-overs (v1-L4,
   v1-L7, v1-L26, v1-U2) and the `../archive/leftover.md` evidence gates. The
   v3 audit re-confirmed and respected all of them.

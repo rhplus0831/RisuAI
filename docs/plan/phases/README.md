@@ -28,17 +28,17 @@ the finding -> phase map is in
 - Phase 6, complete (Theme 6: reactive amplification & render; M6, L22,
   L28-L33; v4-H1/v4-M1/v4-L20/v4-L22 render-window riders):
   [`phase-6-reactive-amplification-and-render.md`](phase-6-reactive-amplification-and-render.md).
-- Phase 7, pending — NEXT (Themes 1+8 server side: assembly & trigger hot paths;
-  L1, L3, L6-L10, K3; v4-M4/v4-L6/v4-L7 provider/regex riders):
+- Phase 7, complete (Themes 1+8 server side: assembly & trigger hot paths;
+  L1, L3, L6-L10, K3; v4-M4/v4-L6/v4-L7 proof riders only):
   [`phase-7-assembly-and-trigger-hot-paths.md`](phase-7-assembly-and-trigger-hot-paths.md).
-- Phase 8, pending (Theme 8: client interpreters, plugins, media; M7,
+- Phase 8, pending — NEXT (Theme 8: client interpreters, plugins, media; M7,
   L38-L55, K4; bounded v4 translator/MCP/media/plugin riders):
   [`phase-8-client-interpreters-plugins-media.md`](phase-8-client-interpreters-plugins-media.md).
 - Phase 9, pending (verification budgets; the v3 gate, closing run, archive):
   [`phase-9-verification-budgets.md`](phase-9-verification-budgets.md).
 
-Phases 0-6 are complete. Phase 7 is the next ordered batch; Phase 8 can then
-land by pain, and Phase 9 closes the plan.
+Phases 0-7 are complete. Phase 8 is the next ordered batch; Phase 9 closes the
+plan.
 
 ## Slice Rules
 

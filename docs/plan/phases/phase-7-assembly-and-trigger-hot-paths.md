@@ -1,6 +1,6 @@
 # Phase 7: Assembly & Trigger Hot Paths (Themes 1+8, server side)
 
-Status: pending.
+Status: complete.
 
 Goal: narrow the per-send server amplifiers the v2 assembly wave missed —
 sync asset reads, redundant prompt/transcript clones, provider parameter
@@ -8,16 +8,17 @@ convention drift, per-message rebuilds, unbounded user regex, and the one
 stale-memo correctness edge.
 
 Findings: L1, L3, L6, L7, L8, L9, L10, K3.
-v4 amendments: v4-M4, v4-L6, v4-L7. v4-M4/v4-L6 are
-provider-dispatch convention riders and do not rename, replace, or satisfy
-the existing v3 L6 per-assembly invariant row. v4-L1/v4-L2/v4-L3 stay send-path
-polish unless a normal-use reproduction appears before Phase 7; v4-L5 is
-only a free rider if a Phase 7 history-window touch makes it trivial.
+v4 amendments: v4-M4, v4-L6, v4-L7. These are Phase 7 proof riders only, not
+v3 `DONE` IDs. v4-M4/v4-L6 are provider-dispatch convention riders and do not
+rename, replace, or satisfy the existing v3 L6 per-assembly invariant row.
+v4-L1/v4-L2/v4-L3 stay send-path polish unless a normal-use reproduction
+appears before Phase 7; v4-L5 is only a free rider if a Phase 7 history-window
+touch makes it trivial.
 Riding informational items: I5 (shared per-send trigger budget, the
 `luaExecBudget` shape) and I7 (single classifier pass per send) — land if
 free.
 
-## Planned Slices
+## Completed Slices
 
 Authored under `slices/phase-7-assembly-and-trigger-hot-paths/`.
 
@@ -125,30 +126,30 @@ Authored under `slices/phase-7-assembly-and-trigger-hot-paths/`.
 
 ## Exit Criteria
 
-- [ ] L1: an image-bearing send performs zero synchronous file reads on the
+- [x] L1: an image-bearing send performs zero synchronous file reads on the
       event loop (probe/spy); asset bytes identical.
-- [ ] L3/K3: a default-provider send performs zero dispatch-layer prompt
+- [x] L3/K3: a default-provider send performs zero dispatch-layer prompt
       clones and zero restoration-payload clones (count probe); payloads
       byte-identical.
-- [ ] v4-M4: serialized provider request-body tests prove disabled
+- [x] v4-M4: serialized provider request-body tests prove disabled
       `temperature`, `topK`, and `topP` are omitted instead of forwarded as
       negative values; active values still map as before.
-- [ ] v4-L6: assembled logit biases have a recorded pass/drop policy with
+- [x] v4-L6: assembled logit biases have a recorded pass/drop policy with
       provider-body proof: supported adapters receive native bias fields,
       unsupported adapters intentionally omit them, or dead bias assembly and
       prompt-event fields are removed.
-- [ ] L6/L7: per-message/per-query allocations hoisted (probe); activation
+- [x] L6/L7: per-message/per-query allocations hoisted (probe); activation
       results identical.
-- [ ] L8: a trigger set with no message-mutating effects clones no
+- [x] L8: a trigger set with no message-mutating effects clones no
       transcript; mutating sets still isolated; all three phases verified
       independently.
-- [ ] L9/v4-L7: a catastrophic-backtracking pattern terminates within the
+- [x] L9/v4-L7: a catastrophic-backtracking pattern terminates within the
       bound with a surfaced error in trigger effects and imported
       lorebook/customscript regex paths; legitimate regex behavior unchanged.
-- [ ] L10: the stale-var reproduction (two history references straddling a
+- [x] L10: the stale-var reproduction (two history references straddling a
       sticky-lorebook/run-var/Lua chat-var write) renders the fresh value;
       memo still hits when nothing changed.
-- [ ] Gates registered; focused suites + TypeScript checks green;
+- [x] Gates registered; focused suites + TypeScript checks green;
       [`../latest-verification.md`](../latest-verification.md) updated.
 
 ## Validation
@@ -164,5 +165,6 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts \
   server/fastify/__tests__/horde.test.ts
 pnpm api:test
 pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
+pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
