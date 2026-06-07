@@ -230,10 +230,26 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'M7',
     8,
     "Store `run()`'s cleanup closure on the SandboxHost instance; invoke from `terminate()`.",
+    'src/ts/plugins/apiV3/factory.test.ts',
+    'M7: terminate invokes the stored run cleanup once and removes the window message listener',
+    [
+      {
+        testPath: 'src/ts/plugins/apiV3/factory.test.ts',
+        testName: 'M7: run failure removes the window message listener and iframe',
+      },
+      {
+        testPath: 'src/ts/plugins/apiV3/v3.svelte.test.ts',
+        testName: 'M7/v4-L37: loadV3Plugins unloads every existing V3 instance from a snapshot',
+      },
+      {
+        testPath: 'src/ts/plugins/apiV3/v3.svelte.test.ts',
+        testName: 'M7/L43: throwing unload callbacks do not skip SandboxHost or provider cleanup',
+      },
+    ],
   ),
   done(
     'M8',
@@ -1009,12 +1025,26 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L43',
     8,
     'Reset/dedupe the custom-provider stores on plugin reload (mirror the existing reset block; or unload-callback removal).',
+    'src/ts/plugins/apiV3/v3.svelte.test.ts',
+    'L43: custom provider stores dedupe by provider name and unload by plugin ownership',
+    [
+      {
+        testPath: 'src/ts/plugins/apiV3/v3.svelte.test.ts',
+        testName: 'L43: unloading a V3 provider does not remove a same-name provider reloaded by V2',
+      },
+    ],
   ),
-  planned('L44', 8, 'Gate or remove the SandboxHost RPC console logs (never log transferables).'),
+  done(
+    'L44',
+    8,
+    'Gate or remove the SandboxHost RPC console logs (never log transferables).',
+    'src/ts/plugins/apiV3/factory.test.ts',
+    'L44: guest RPC calls do not log request response payloads or transferables by default',
+  ),
   planned(
     'L45',
     8,
@@ -1942,6 +1972,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M4',
       'M5',
       'M6',
+      'M7',
       'M8',
       'M9',
       'L1',
@@ -1986,6 +2017,8 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L40',
       'L41',
       'L42',
+      'L43',
+      'L44',
       'L56',
       'K1',
       'K2',
@@ -1998,7 +2031,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L38, L39, L40, L41, L42, L56, K1, K2, and K3 marked DONE', () => {
+  it('keeps the live registry green with H1, M1-M9, L1-L44, L56, K1, K2, and K3 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -2010,6 +2043,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M4',
       'M5',
       'M6',
+      'M7',
       'M8',
       'M9',
       'L1',
@@ -2054,6 +2088,8 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L40',
       'L41',
       'L42',
+      'L43',
+      'L44',
       'L56',
       'K1',
       'K2',
@@ -2099,7 +2135,7 @@ describe('v3 fix-completeness gate routing registry', () => {
 
   it('rejects PLANNED registry entries that claim proof fields', () => {
     const withPrematureProof = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M7'
+      entry.id === 'L45'
         ? {
             ...entry,
             testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
@@ -2109,35 +2145,35 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: withPrematureProof })).toContain(
-      'M7: PLANNED entries must not claim proof fields',
+      'L45: PLANNED entries must not claim proof fields',
     )
   })
 
   it('rejects doc DONE rows that do not have matching registry proof', () => {
-    const m7 = SCHEDULED_FIXES.find((entry) => entry.id === 'M7')
-    if (!m7) throw new Error('M7 registry entry not found')
+    const l45 = SCHEDULED_FIXES.find((entry) => entry.id === 'L45')
+    if (!l45) throw new Error('L45 registry entry not found')
 
     const withDoneDocRow = replaceRiskRow(
       readDoc(RISK_DOC),
-      'M7',
-      `| M7 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${m7.fix} | DONE |`,
+      'L45',
+      `| L45 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l45.fix} | DONE |`,
     )
 
     expect(collectGateProblems({ riskText: withDoneDocRow })).toContain(
-      'M7: status mismatch (registry PLANNED, docs DONE)',
+      'L45: status mismatch (registry PLANNED, docs DONE)',
     )
   })
 
   it('rejects DONE registry entries without a registered test path and test name', () => {
-    const m7 = SCHEDULED_FIXES.find((entry) => entry.id === 'M7')
-    if (!m7) throw new Error('M7 registry entry not found')
+    const l45 = SCHEDULED_FIXES.find((entry) => entry.id === 'L45')
+    if (!l45) throw new Error('L45 registry entry not found')
     const riskText = replaceRiskRow(
       readDoc(RISK_DOC),
-      'M7',
-      `| M7 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${m7.fix} | DONE |`,
+      'L45',
+      `| L45 | [8](phases/phase-8-client-interpreters-plugins-media.md) | ${l45.fix} | DONE |`,
     )
     const syntheticDone = SCHEDULED_FIXES.map((entry) =>
-      entry.id === 'M7'
+      entry.id === 'L45'
         ? {
             ...entry,
             status: 'DONE' as const,
@@ -2147,8 +2183,8 @@ describe('v3 fix-completeness gate routing registry', () => {
 
     expect(collectGateProblems({ scheduled: syntheticDone, riskText })).toEqual(
       expect.arrayContaining([
-        'M7: DONE without a registered testPath',
-        'M7: DONE without a registered testName',
+        'L45: DONE without a registered testPath',
+        'L45: DONE without a registered testName',
       ]),
     )
   })

@@ -115,15 +115,39 @@ function dispatchPluginApiSettingsPatch(
 
 const pluginChannel = new Map<string, Function>()
 
+class PluginLifecycleCleanup {
+  #cleanups = new Set<() => void>()
+
+  public track(cleanup: () => void): () => void {
+    let active = true
+    const wrapped = () => {
+      if (!active) return
+      active = false
+      this.#cleanups.delete(wrapped)
+      cleanup()
+    }
+    this.#cleanups.add(wrapped)
+    return wrapped
+  }
+
+  public cleanupAll() {
+    for (const cleanup of Array.from(this.#cleanups)) {
+      cleanup()
+    }
+  }
+}
+
 class SafeElement {
   #element: HTMLElement
+  #lifecycle?: PluginLifecycleCleanup
   __classType = 'REMOTE_REQUIRED' as const
 
-  constructor(element: HTMLElement) {
+  constructor(element: HTMLElement, lifecycle?: PluginLifecycleCleanup) {
     if (element.getAttribute('freezed')) {
       throw new Error('This element cannot be accessed by SafeELement')
     }
     this.#element = element
+    this.#lifecycle = lifecycle
   }
 
   public appendChild(child: SafeElement) {
@@ -144,7 +168,7 @@ class SafeElement {
 
   public cloneNode(deep: boolean = false): SafeElement {
     const cloned = this.#element.cloneNode(deep)
-    return new SafeElement(cloned as HTMLElement)
+    return new SafeElement(cloned as HTMLElement, this.#lifecycle)
   }
 
   public prepend(child: SafeElement) {
@@ -224,14 +248,14 @@ class SafeElement {
     const children: SafeElement[] = []
     this.#element.childNodes.forEach((node) => {
       if (node instanceof HTMLElement) {
-        children.push(new SafeElement(node))
+        children.push(new SafeElement(node, this.#lifecycle))
       }
     })
     return new SafeClassArray<SafeElement>(children)
   }
   public getParent(): SafeElement | null {
     if (this.#element.parentElement) {
-      return new SafeElement(this.#element.parentElement)
+      return new SafeElement(this.#element.parentElement, this.#lifecycle)
     }
     return null
   }
@@ -264,7 +288,7 @@ class SafeElement {
     const elements: SafeElement[] = []
     nodeList.forEach((node) => {
       if (node instanceof HTMLElement) {
-        elements.push(new SafeElement(node))
+        elements.push(new SafeElement(node, this.#lifecycle))
       }
     })
     return new SafeClassArray<SafeElement>(elements)
@@ -272,7 +296,7 @@ class SafeElement {
   public querySelector(selector: string): SafeElement | null {
     const element = this.#element.querySelector(selector)
     if (element instanceof HTMLElement) {
-      return new SafeElement(element)
+      return new SafeElement(element, this.#lifecycle)
     }
     return null
   }
@@ -300,7 +324,15 @@ class SafeElement {
   public scrollIntoView(options?: boolean | ScrollIntoViewOptions) {
     this.#element.scrollIntoView(options)
   }
-  #eventIdMap = new Map<string, Function>()
+  #eventIdMap = new Map<
+    string,
+    {
+      type: string
+      listener: EventListenerOrEventListenerObject
+      options: EventListenerOptions
+      cleanup: () => void
+    }
+  >()
 
   public async addEventListener(
     type: string,
@@ -372,8 +404,17 @@ class SafeElement {
       const modifiedListener = (event: any) => {
         listener(trimEvent(event))
       }
-      this.#eventIdMap.set(id, modifiedListener)
       document.addEventListener(type, modifiedListener, realOptions)
+      const cleanup = this.#lifecycle?.track(() => {
+        document.removeEventListener(type, modifiedListener, realOptions)
+        this.#eventIdMap.delete(id)
+      })
+      this.#eventIdMap.set(id, {
+        type,
+        listener: modifiedListener,
+        options: realOptions,
+        cleanup: cleanup ?? (() => {}),
+      })
       return id
     } else if (allowedDelayedEventListeners.includes(type)) {
       const modifiedListener = (event: any) => {
@@ -385,8 +426,17 @@ class SafeElement {
           listener(trimEvent(event))
         }, delay)
       }
-      this.#eventIdMap.set(id, modifiedListener)
       document.addEventListener(type, modifiedListener, realOptions)
+      const cleanup = this.#lifecycle?.track(() => {
+        document.removeEventListener(type, modifiedListener, realOptions)
+        this.#eventIdMap.delete(id)
+      })
+      this.#eventIdMap.set(id, {
+        type,
+        listener: modifiedListener,
+        options: realOptions,
+        cleanup: cleanup ?? (() => {}),
+      })
       return id
     } else {
       throw new Error(`Event listener of type '${type}' is not allowed for security reasons.`)
@@ -394,15 +444,16 @@ class SafeElement {
   }
 
   public removeEventListener(type: string, id: string, options?: boolean | EventListenerOptions) {
-    const listener = this.#eventIdMap.get(id)
-    if (listener) {
+    const record = this.#eventIdMap.get(id)
+    if (record) {
       const realOptions = typeof options === 'boolean' ? { capture: options } : options || {}
       document.removeEventListener(
         type,
-        listener as EventListenerOrEventListenerObject,
+        record.listener,
         realOptions,
       )
       this.#eventIdMap.delete(id)
+      record.cleanup()
     }
   }
 
@@ -413,8 +464,11 @@ class SafeElement {
 
 class SafeDocument extends SafeElement {
   __classType = 'REMOTE_REQUIRED' as const
-  constructor(document: Document) {
-    super(document.documentElement)
+  #lifecycle?: PluginLifecycleCleanup
+
+  constructor(document: Document, lifecycle?: PluginLifecycleCleanup) {
+    super(document.documentElement, lifecycle)
+    this.#lifecycle = lifecycle
   }
   createElement(tagName: string): SafeElement {
     if (!tagWhitelist.includes(tagName.toLowerCase())) {
@@ -427,7 +481,7 @@ class SafeDocument extends SafeElement {
       )
     }
     const element = document.createElement(tagName)
-    return new SafeElement(element)
+    return new SafeElement(element, this.#lifecycle)
   }
   createAnchorElement(href: string): SafeElement {
     const anchor = document.createElement('a')
@@ -441,7 +495,7 @@ class SafeDocument extends SafeElement {
       console.warn(`Invalid URL provided for anchor element: ${href}. Setting href to '#' instead.`)
       anchor.setAttribute('href', '#')
     }
-    return new SafeElement(anchor)
+    return new SafeElement(anchor, this.#lifecycle)
   }
 }
 
@@ -493,15 +547,16 @@ type SafeMutationCallback = (mutations: SafeClassArray<SafeMutationRecord>) => v
 
 class SafeMutationObserver {
   #observer: MutationObserver
+  #cleanup: () => void
   __classType = 'REMOTE_REQUIRED' as const
-  constructor(callback: SafeMutationCallback) {
+  constructor(callback: SafeMutationCallback, lifecycle?: PluginLifecycleCleanup) {
     this.#observer = new MutationObserver((mutations) => {
       const safeMutations: SafeMutationRecordObject[] = mutations.map((mutation) => {
         const elementMapHelper = (nodeList: NodeList): SafeElement[] => {
           const elements: SafeElement[] = []
           nodeList.forEach((node) => {
             if (node instanceof HTMLElement) {
-              elements.push(new SafeElement(node))
+              elements.push(new SafeElement(node, lifecycle))
             }
           })
           return elements
@@ -509,7 +564,7 @@ class SafeMutationObserver {
 
         return {
           type: mutation.type,
-          target: new SafeElement(mutation.target as HTMLElement),
+          target: new SafeElement(mutation.target as HTMLElement, lifecycle),
           addedNodes: elementMapHelper(mutation.addedNodes),
           removedNodes: elementMapHelper(mutation.removedNodes),
         }
@@ -521,6 +576,7 @@ class SafeMutationObserver {
       }
       callback(safeClassed)
     })
+    this.#cleanup = lifecycle?.track(() => this.#observer.disconnect()) ?? (() => {})
   }
 
   observe(element: SafeElement, options: MutationObserverInit) {
@@ -531,6 +587,10 @@ class SafeMutationObserver {
       this.#observer.observe(rawElement, options)
       element.setAttribute('x-identifier', '')
     }
+  }
+
+  disconnect() {
+    this.#cleanup()
   }
 }
 
@@ -565,21 +625,40 @@ const unloadV3Plugin = async (pluginName: string) => {
     pluginUnloadCallbacks.delete(pluginName)
     let promises: Promise<void>[] = []
     for (const callback of callbacks) {
-      const result = callback()
-      if (result instanceof Promise) {
-        promises.push(result)
+      try {
+        const result = callback()
+        if (result instanceof Promise) {
+          promises.push(
+            result.catch((error) => {
+              console.error(`Error running unload callback for plugin ${pluginName}:`, error)
+            }),
+          )
+        }
+      } catch (error) {
+        console.error(`Error running unload callback for plugin ${pluginName}:`, error)
       }
     }
 
-    await Promise.any([
-      Promise.all(promises),
-      sleep(1000), //timeout after 1 second
-    ])
-  }
-  try {
-    instance?.host?.terminate()
-  } catch (error) {
-    console.error(`Error terminating plugin ${pluginName}:`, error)
+    try {
+      await Promise.any([
+        Promise.all(promises),
+        sleep(1000), //timeout after 1 second
+      ])
+    } finally {
+      try {
+        instance?.lifecycle.cleanupAll()
+        instance?.host?.terminate()
+      } catch (error) {
+        console.error(`Error terminating plugin ${pluginName}:`, error)
+      }
+    }
+  } else {
+    try {
+      instance?.lifecycle.cleanupAll()
+      instance?.host?.terminate()
+    } catch (error) {
+      console.error(`Error terminating plugin ${pluginName}:`, error)
+    }
   }
 }
 
@@ -595,6 +674,89 @@ type PluginV3ProviderOptions = PluginV2ProviderOptions & {
 }
 
 export const customV3ProviderMetaStore: LLMModel[] = []
+
+type V3ProviderRegistration = {
+  pluginName: string
+  name: string
+  handler: (
+    arg: PluginV2ProviderArgument,
+    abortSignal?: AbortSignal,
+  ) => Promise<{ success: boolean; content: string | ReadableStream<string> }>
+  options: PluginV2ProviderOptions
+  modelData: LLMModel
+}
+
+const v3ProviderRegistrations: V3ProviderRegistration[] = []
+const v3SyncedProviderRegistrations = new Map<string, V3ProviderRegistration>()
+const registeredV3ProviderUnloadCallbacks = new Set<string>()
+
+function syncCustomProviderStoreFromMap() {
+  customProviderStore.set(Array.from(pluginV2.providers.keys()))
+}
+
+function getActiveV3ProviderRegistrations() {
+  const active = new Map<string, V3ProviderRegistration>()
+  for (const registration of v3ProviderRegistrations) {
+    active.set(registration.name, registration)
+  }
+  return active
+}
+
+function syncV3ProviderRegistrations() {
+  const active = getActiveV3ProviderRegistrations()
+  const knownNames = new Set([...v3SyncedProviderRegistrations.keys(), ...active.keys()])
+
+  for (const name of knownNames) {
+    const previous = v3SyncedProviderRegistrations.get(name)
+    const next = active.get(name)
+    if (next) {
+      pluginV2.providers.set(name, next.handler)
+      pluginV2.providerOptions.set(name, next.options)
+      v3SyncedProviderRegistrations.set(name, next)
+    } else {
+      if (previous && pluginV2.providers.get(name) === previous.handler) {
+        pluginV2.providers.delete(name)
+        pluginV2.providerOptions.delete(name)
+      }
+      v3SyncedProviderRegistrations.delete(name)
+    }
+  }
+
+  customV3ProviderMetaStore.splice(
+    0,
+    customV3ProviderMetaStore.length,
+    ...Array.from(active.values()).map((registration) => registration.modelData),
+  )
+  syncCustomProviderStoreFromMap()
+}
+
+function unregisterV3ProvidersForPlugin(pluginName: string) {
+  for (let i = v3ProviderRegistrations.length - 1; i >= 0; i--) {
+    if (v3ProviderRegistrations[i].pluginName === pluginName) {
+      v3ProviderRegistrations.splice(i, 1)
+    }
+  }
+  registeredV3ProviderUnloadCallbacks.delete(pluginName)
+  syncV3ProviderRegistrations()
+}
+
+function registerV3Provider(registration: V3ProviderRegistration) {
+  for (let i = v3ProviderRegistrations.length - 1; i >= 0; i--) {
+    const existing = v3ProviderRegistrations[i]
+    if (existing.pluginName === registration.pluginName && existing.name === registration.name) {
+      v3ProviderRegistrations.splice(i, 1)
+    }
+  }
+
+  v3ProviderRegistrations.push(registration)
+  if (!registeredV3ProviderUnloadCallbacks.has(registration.pluginName)) {
+    registeredV3ProviderUnloadCallbacks.add(registration.pluginName)
+    addPluginUnloadCallback(registration.pluginName, () =>
+      unregisterV3ProvidersForPlugin(registration.pluginName),
+    )
+  }
+  syncV3ProviderRegistrations()
+}
 
 const getPluginPermission = async (
   pluginName: string,
@@ -672,7 +834,11 @@ const urlBlacklist = ['risuai.xyz', 'risuai.net', 'sionyw.com']
 
 const authorizationHeaders = ['x-api-key', 'authorization', 'proxy-authorization']
 
-const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
+const makeRisuaiAPIV3 = (
+  iframe: HTMLIFrameElement,
+  plugin: RisuPlugin,
+  lifecycle: PluginLifecycleCleanup,
+) => {
   const oldApis = getV2PluginAPIs()
   return {
     //Old APIs from v2.1
@@ -728,17 +894,13 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       console.warn(
         `[WARN] addProvider is a powerful API that can potentially be unsafe if used incorrectly. addProvider's functionality might be limited or changed in future updates to ensure security. please use other APIs if possible.`,
       )
-      let provs = get(customProviderStore)
-      provs.push(name)
-      ;(pluginV2.providers.set(name, async (arg, abortSignal) => {
+      const handler = async (arg: PluginV2ProviderArgument, abortSignal?: AbortSignal) => {
         await getPluginPermission(plugin.name, 'provider', 'periodically')
         //mode is overridden to v3, due to vulnerabilities using mode.
         //Alternative to mode will be added in future
         arg.mode = 'v3'
         return await func(arg, abortSignal)
-      }),
-        pluginV2.providerOptions.set(name, options ?? {}))
-      customProviderStore.set(provs)
+      }
 
       const modelData: LLMModel = {
         id: `pluginmodel:::${name}`,
@@ -762,7 +924,13 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
         ],
         tokenizer: options?.model?.tokenizer ?? LLMTokenizer.Unknown,
       }
-      customV3ProviderMetaStore.push(modelData)
+      registerV3Provider({
+        pluginName: plugin.name,
+        name,
+        handler,
+        options: options ?? {},
+        modelData,
+      })
     },
     addTTSPreprocessor: async (func: TTSHookFn<BeforeTTSContext, BeforeTTSResult>) => {
       registerTTSPreprocessor(func)
@@ -1073,7 +1241,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       if (!conf) {
         return null
       }
-      return new SafeDocument(document)
+      return new SafeDocument(document, lifecycle)
     },
     registerSetting: (
       name: string,
@@ -1226,7 +1394,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       console.log(`[RisuAI Plugin: ${plugin.name}] ${message}`)
     },
     createMutationObserver(callback: SafeMutationCallback): SafeMutationObserver {
-      return new SafeMutationObserver(callback)
+      return new SafeMutationObserver(callback, lifecycle)
     },
     onUnload: (callback: () => void) => {
       addPluginUnloadCallback(plugin.name, callback)
@@ -1395,6 +1563,11 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
     },
     addPluginChannelListener: (channelName: string, callback: Function) => {
       pluginChannel.set(plugin.name + channelName, callback)
+      addPluginUnloadCallback(plugin.name, () => {
+        if (pluginChannel.get(plugin.name + channelName) === callback) {
+          pluginChannel.delete(plugin.name + channelName)
+        }
+      })
     },
     postPluginChannelMessage: (pluginName: string, channelName: string, message: any) => {
       const currentPluginName = plugin.name
@@ -1442,13 +1615,14 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
 type V3PluginInstance = {
   name: string
   host: SandboxHost
+  lifecycle: PluginLifecycleCleanup
 }
 
 const v3PluginInstances: V3PluginInstance[] = []
 
 export async function loadV3Plugins(plugins: RisuPlugin[]) {
   await Promise.all(
-    v3PluginInstances.map(async (instance) => {
+    [...v3PluginInstances].map(async (instance) => {
       await unloadV3Plugin(instance.name)
     }),
   )
@@ -1466,17 +1640,85 @@ export async function executePluginV3(plugin: RisuPlugin) {
   const iframe = document.createElement('iframe')
   iframe.style.display = 'none'
   document.body.appendChild(iframe)
-  const host = new SandboxHost(makeRisuaiAPIV3(iframe, plugin))
-  v3PluginInstances.push({
+  const lifecycle = new PluginLifecycleCleanup()
+  const host = new SandboxHost(makeRisuaiAPIV3(iframe, plugin, lifecycle))
+  const instance = {
     name: plugin.name,
     host,
-  })
-  host.run(iframe, plugin.script)
+    lifecycle,
+  }
+  v3PluginInstances.push(instance)
+  try {
+    host.run(iframe, plugin.script)
+  } catch (error) {
+    await unloadV3Plugin(plugin.name)
+    throw error
+  }
   console.log(`[RisuAI Plugin: ${plugin.name}] Loaded API V3 plugin.`)
 }
 
 export function getV3PluginInstance(name: string) {
   return v3PluginInstances.find((p) => p.name === name)
+}
+
+export const __v3PluginLifecycleTestHooks = {
+  async reset() {
+    for (const instance of [...v3PluginInstances]) {
+      await unloadV3Plugin(instance.name)
+    }
+    pluginUnloadCallbacks.clear()
+    pluginChannel.clear()
+    v3ProviderRegistrations.splice(0, v3ProviderRegistrations.length)
+    v3SyncedProviderRegistrations.clear()
+    registeredV3ProviderUnloadCallbacks.clear()
+    customV3ProviderMetaStore.splice(0, customV3ProviderMetaStore.length)
+    pluginV2.providers.clear()
+    pluginV2.providerOptions.clear()
+    syncCustomProviderStoreFromMap()
+  },
+  createLifecycle() {
+    return new PluginLifecycleCleanup()
+  },
+  createSafeDocument(lifecycle: PluginLifecycleCleanup) {
+    return new SafeDocument(document, lifecycle)
+  },
+  createMutationObserver(lifecycle: PluginLifecycleCleanup, callback: SafeMutationCallback) {
+    return new SafeMutationObserver(callback, lifecycle)
+  },
+  registerProvider(
+    pluginName: string,
+    name: string,
+    handler: V3ProviderRegistration['handler'] = async () => ({
+      success: true,
+      content: pluginName,
+    }),
+    options: PluginV2ProviderOptions = {},
+  ) {
+    registerV3Provider({
+      pluginName,
+      name,
+      handler,
+      options,
+      modelData: {
+        id: `pluginmodel:::${name}`,
+        name,
+        shortName: name,
+        fullName: name,
+        internalID: `pluginmodel:::${name}`,
+        provider: LLMProvider.AsIs,
+        format: LLMFormat.Plugin,
+        flags: [LLMFlags.hasFullSystemPrompt],
+        parameters: ['temperature'],
+        tokenizer: LLMTokenizer.Unknown,
+      },
+    })
+  },
+  addUnloadCallback(pluginName: string, callback: () => void | Promise<void>) {
+    addPluginUnloadCallback(pluginName, callback)
+  },
+  unloadPlugin(pluginName: string) {
+    return unloadV3Plugin(pluginName)
+  },
 }
 
 globalThis.__debugV3Plugin = (code: string | Function, pluginName: string = '') => {

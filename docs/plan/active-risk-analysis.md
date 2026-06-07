@@ -16,8 +16,8 @@ prior-audit finding IDs are referenced as `v1-*` / `v2-*`.
 
 - Confirmed findings: 89 total: 1 high, 9 medium, 56 low, 23 informational.
 - Scheduled: H1, M1-M9, L1-L56, and the known-overlap residuals K1-K4.
-  `H1`, `M1-M6`, `M8`, `M9`, `L1-L42`, `L56`, and `K1-K3` are `DONE`;
-  `M7`, `L43-L55`, and `K4` remain `PENDING`.
+  `H1`, `M1-M9`, `L1-L44`, `L56`, and `K1-K3` are `DONE`;
+  `L45-L55` and `K4` remain `PENDING`.
 - Gated items: unchanged from v2 — `v2-L12`, plus the v1 carry-overs (v1-L4,
   v1-L7, v1-L26, v1-U2) and the `../archive/leftover.md` evidence gates. The
   v3 audit re-confirmed and respected all of them.
@@ -69,7 +69,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | M4  | [1](phases/phase-1-high-and-send-path.md)                   | Plain-append fast-path via the single-message append command + id-keyed rollback; keep replace for trigger-rewritten transcripts. | DONE |
 | M5  | [1](phases/phase-1-high-and-send-path.md)                   | Field-scoped send rollback (`lastInteraction`; messages only on the first-send backfill branch), `restoreCharacterSelection` shape. | DONE |
 | M6  | [6](phases/phase-6-reactive-amplification-and-render.md)    | `$derived` + keyed each for the MobileCharacters sorted list (v2-L42/L43 helper shape, unit-testable pure function). | DONE |
-| M7  | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Store `run()`'s cleanup closure on the SandboxHost instance; invoke from `terminate()`. | PENDING |
+| M7  | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Store `run()`'s cleanup closure on the SandboxHost instance; invoke from `terminate()`. | DONE |
 | M8  | [5](phases/phase-5-client-write-path-correctness.md)        | `flushAllPendingBridgePatches()` aggregator on `pagehide`/`visibilitychange(hidden)` + watcher teardown; `keepalive` dispatch. | DONE |
 | M9  | [4](phases/phase-4-server-lifecycle-and-transport.md)       | `process.once('SIGTERM'\|'SIGINT')` -> `await app.close()` with a force-exit backstop. | DONE |
 
@@ -119,8 +119,8 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L40 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Key the client Lua engine cache on `(mode, codeHash)` (or a small per-mode LRU). | DONE |
 | L41 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Delete the editDisplay access key in the cleanup tail (run cleanup in a `finally`). | DONE |
 | L42 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | LRU-bound `googleCloudTokenizedCache` (or fold into `encodeCache`).          | DONE |
-| L43 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Reset/dedupe the custom-provider stores on plugin reload (mirror the existing reset block; or unload-callback removal). | PENDING |
-| L44 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Gate or remove the SandboxHost RPC console logs (never log transferables).  | PENDING |
+| L43 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Reset/dedupe the custom-provider stores on plugin reload (mirror the existing reset block; or unload-callback removal). | DONE |
+| L44 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Gate or remove the SandboxHost RPC console logs (never log transferables).  | DONE |
 | L45 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Compute MCP tools lazily, only in the browser-local adapters that consume them. | PENDING |
 | L46 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | In-flight construction promise per MCP key (the `mcpToolClientIndexBuild` dedup shape). | PENDING |
 | L47 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Size-cap the persistent `connectSSE` buffer (abort + destroy past a few MB without a delimiter). | PENDING |

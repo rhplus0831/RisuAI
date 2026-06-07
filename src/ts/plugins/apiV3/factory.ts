@@ -298,6 +298,8 @@ export class SandboxHost {
   private callbackWrapperCache = new Map<string, Function>()
 
   private pendingCallbacks = new Map<string, { resolve: Function; reject: Function }>()
+  private runCleanup: (() => void) | null = null
+  private executeMessageHandlers = new Set<(event: MessageEvent) => void>()
 
   constructor(apiFactory: any) {
     this.apiFactory = apiFactory
@@ -313,6 +315,7 @@ export class SandboxHost {
 
         if (data.type === 'EXEC_RESULT' && data.reqId === reqId) {
           window.removeEventListener('message', handler)
+          this.executeMessageHandlers.delete(handler)
           if (data.error) {
             reject(new Error(data.error))
           } else {
@@ -322,6 +325,7 @@ export class SandboxHost {
       }
 
       window.addEventListener('message', handler)
+      this.executeMessageHandlers.add(handler)
 
       this.iframe.contentWindow?.postMessage(
         {
@@ -339,11 +343,11 @@ export class SandboxHost {
 
     if (
       obj instanceof ArrayBuffer ||
-      obj instanceof MessagePort ||
-      obj instanceof ImageBitmap ||
-      obj instanceof ReadableStream ||
-      obj instanceof WritableStream ||
-      obj instanceof TransformStream ||
+      (typeof MessagePort !== 'undefined' && obj instanceof MessagePort) ||
+      (typeof ImageBitmap !== 'undefined' && obj instanceof ImageBitmap) ||
+      (typeof ReadableStream !== 'undefined' && obj instanceof ReadableStream) ||
+      (typeof WritableStream !== 'undefined' && obj instanceof WritableStream) ||
+      (typeof TransformStream !== 'undefined' && obj instanceof TransformStream) ||
       (typeof OffscreenCanvas !== 'undefined' && obj instanceof OffscreenCanvas)
     ) {
       transferables.push(obj)
@@ -488,7 +492,20 @@ export class SandboxHost {
     })
   }
 
+  private cleanupRuntimeState() {
+    for (const handler of this.executeMessageHandlers) {
+      window.removeEventListener('message', handler)
+    }
+    this.executeMessageHandlers.clear()
+    this.instanceRegistry.clear()
+    this.pendingCallbacks.clear()
+    this.abortControllers.clear()
+    this.callbackWrapperCache.clear()
+  }
+
   public run(container: HTMLElement | HTMLIFrameElement, userCode: string) {
+    this.terminate()
+
     if (container instanceof HTMLIFrameElement) {
       this.iframe = container
     } else {
@@ -565,8 +582,6 @@ export class SandboxHost {
         }
 
         const transferables = this.collectTransferables(response)
-        console.log('Original request:', data)
-        console.log('Original response:', response, transferables)
         try {
           this.iframe.contentWindow?.postMessage(response, '*', transferables)
         } catch (error) {
@@ -583,54 +598,63 @@ export class SandboxHost {
       }
     }
 
-    window.addEventListener('message', messageHandler)
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <meta http-equiv="Content-Security-Policy" content="${this.csp}" id="csp-meta">
-      </head>
-      <body>
-        <style>
-            body {
-                background-color: transparent;
-            }
-        </style>
-        <script nonce="${this.nonce}">
-            document.querySelector('meta#csp-meta')?.remove();
-            (async () => {
-                ${GUEST_BRIDGE_SCRIPT}
-                    
-                (async () => {
-                    ${userCode}
-                })()
-            })();
-        </script>
-      </body>
-      </html>
-    `
-
-    this.iframe.srcdoc = html
-
-    return () => {
+    const cleanup = () => {
+      if (this.runCleanup !== cleanup) return
       window.removeEventListener('message', messageHandler)
       this.iframe.remove()
-      this.instanceRegistry.clear()
-      this.pendingCallbacks.clear()
-      this.abortControllers.clear()
-      this.callbackWrapperCache.clear()
+      this.cleanupRuntimeState()
+      this.runCleanup = null
     }
+
+    window.addEventListener('message', messageHandler)
+    this.runCleanup = cleanup
+
+    try {
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta http-equiv="Content-Security-Policy" content="${this.csp}" id="csp-meta">
+        </head>
+        <body>
+          <style>
+              body {
+                  background-color: transparent;
+              }
+          </style>
+          <script nonce="${this.nonce}">
+              document.querySelector('meta#csp-meta')?.remove();
+              (async () => {
+                  ${GUEST_BRIDGE_SCRIPT}
+
+                  (async () => {
+                      ${userCode}
+                  })()
+              })();
+          </script>
+        </body>
+        </html>
+      `
+
+      this.iframe.srcdoc = html
+    } catch (error) {
+      cleanup()
+      throw error
+    }
+
+    return cleanup
   }
 
   public terminate() {
+    const cleanup = this.runCleanup
+    if (cleanup) {
+      cleanup()
+      return
+    }
     if (this.iframe) {
       this.iframe.remove()
     }
-    this.instanceRegistry.clear()
-    this.pendingCallbacks.clear()
-    this.abortControllers.clear()
-    this.callbackWrapperCache.clear()
+    this.cleanupRuntimeState()
   }
 }

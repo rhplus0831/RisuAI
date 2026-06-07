@@ -99,6 +99,30 @@ persistence, DPoP/auth storage recovery, or MCP plugin tools.
 - M7, L43, and L44 are registered as `DONE` in the v3 gate and active-risk
   table, with no unrelated ID status changes.
 
+## Proof Notes
+
+- Fixed `SandboxHost.run()`/`terminate()` ownership: the run cleanup closure is
+  stored on the host, removes the permanent `window.message` listener, drains
+  pending debug execution listeners, clears host registries, and is idempotent
+  across unload, repeated terminate, callback failure, and startup failure.
+- Fixed V3 reload teardown: `loadV3Plugins()` unloads a snapshot of running
+  instances so splicing during unload cannot skip sibling plugin hosts.
+- Fixed V3 provider stores: provider registrations are tracked by plugin owner
+  and provider name, `customProviderStore` is rebuilt from the active provider
+  map, `customV3ProviderMetaStore` reflects only active V3 providers, duplicate
+  provider names keep one visible entry, and unloading one plugin restores or
+  preserves providers from still-loaded owners.
+- Fixed plugin-owned DOM lifecycle for v4-L37: `SafeElement` document
+  listeners and `SafeMutationObserver`s are registered under the owning V3
+  lifecycle and removed/disconnected exactly once on unload. Safe wrappers
+  created from document queries, children, parents, clones, and mutation records
+  carry the same owner.
+- Fixed plugin cache/store cleanup: plugin channel listeners now register an
+  unload callback, V2 reload clears stale provider options and custom-provider
+  names before reloading, and no timer sites are introduced by this slice.
+- Fixed debug-log hygiene: the default SandboxHost RPC request/response payload
+  logs were removed; only the existing postMessage failure error log remains.
+
 ## Validation
 
 ```bash

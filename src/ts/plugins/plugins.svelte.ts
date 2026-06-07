@@ -900,14 +900,12 @@ export const getV2PluginAPIs = () => {
       func: (
         arg: PluginV2ProviderArgument,
         abortSignal?: AbortSignal,
-      ) => Promise<{ success: boolean; content: string }>,
+    ) => Promise<{ success: boolean; content: string }>,
       options?: PluginV2ProviderOptions,
     ) => {
-      let provs = get(customProviderStore)
-      provs.push(name)
       pluginV2.providers.set(name, func)
       pluginV2.providerOptions.set(name, options ?? {})
-      customProviderStore.set(provs)
+      customProviderStore.set(Array.from(pluginV2.providers.keys()))
     },
     addRisuScriptHandler: (name: ScriptMode, func: EditFunction) => {
       if (pluginV2['edit' + name]) {
@@ -1215,10 +1213,12 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
     }
 
     pluginV2.providers.clear()
+    pluginV2.providerOptions.clear()
     pluginV2.editdisplay.clear()
     pluginV2.editoutput.clear()
     pluginV2.editprocess.clear()
     pluginV2.editinput.clear()
+    customProviderStore.set([])
   }
 
   pluginV2.loaded = true
