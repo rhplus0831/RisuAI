@@ -405,10 +405,28 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'server/fastify/__tests__/lorebook.test.ts',
     'L7: preserves recursive activation output without per-query combined arrays',
   ),
-  planned(
+  done(
     'L8',
     7,
     'Per-phase narrowing of the `runTrigger` chat clone (skip/limit for non-message-mutating trigger sets; do NOT share one clone across phases).',
+    'server/fastify/__tests__/triggers.test.ts',
+    'L8: %s triggers with no message-mutating effects do not clone the transcript',
+    [
+      {
+        testPath: 'server/fastify/__tests__/triggers.test.ts',
+        testName: 'L8: mutating output triggers get a private transcript clone',
+      },
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName:
+          'L8: input, start, and output chat-var triggers avoid full trigger transcript clones',
+      },
+      {
+        testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+        testName:
+          'Phase 7 L8: no-message input/start/output triggers perform zero full transcript clones',
+      },
+    ],
   ),
   planned(
     'L9',
@@ -1852,6 +1870,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L5',
       'L6',
       'L7',
+      'L8',
       'L11',
       'L12',
       'L13',
@@ -1891,7 +1910,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L6, L7, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L56, K1, K2, and K3 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L6, L7, L8, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L56, K1, K2, and K3 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1912,6 +1931,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L5',
       'L6',
       'L7',
+      'L8',
       'L11',
       'L12',
       'L13',

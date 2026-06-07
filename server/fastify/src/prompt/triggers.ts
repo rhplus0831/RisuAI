@@ -271,6 +271,195 @@ const requestAllowList = [
   ...safeSubset,
 ]
 
+type TriggerModeCloneCounts = Record<TriggerMode, number>
+
+interface TriggerCloneInstrumentation {
+  fullTranscriptClones: TriggerModeCloneCounts
+  messageSharingEnvelopeClones: TriggerModeCloneCounts
+}
+
+function zeroTriggerModeCounts(): TriggerModeCloneCounts {
+  return {
+    start: 0,
+    manual: 0,
+    output: 0,
+    input: 0,
+    display: 0,
+    request: 0,
+  }
+}
+
+const triggerCloneInstrumentation: TriggerCloneInstrumentation = {
+  fullTranscriptClones: zeroTriggerModeCounts(),
+  messageSharingEnvelopeClones: zeroTriggerModeCounts(),
+}
+
+export function resetTriggerCloneInstrumentation(): void {
+  triggerCloneInstrumentation.fullTranscriptClones = zeroTriggerModeCounts()
+  triggerCloneInstrumentation.messageSharingEnvelopeClones = zeroTriggerModeCounts()
+}
+
+export function getTriggerCloneInstrumentation(): TriggerCloneInstrumentation {
+  return {
+    fullTranscriptClones: {
+      ...triggerCloneInstrumentation.fullTranscriptClones,
+    },
+    messageSharingEnvelopeClones: {
+      ...triggerCloneInstrumentation.messageSharingEnvelopeClones,
+    },
+  }
+}
+
+const directMessageMutatingEffectTypes = new Set<string>([
+  'impersonate',
+  'cutchat',
+  'modifychat',
+  'runtrigger',
+  'v2Impersonate',
+  'v2CutChat',
+  'v2ModifyChat',
+  'v2RunTrigger',
+  'triggerlua',
+])
+
+const knownNonMessageMutatingEffectTypes = new Set<string>([
+  'setvar',
+  'systemprompt',
+  'stop',
+  'v2Header',
+  'v2Comment',
+  'v2ConsoleLog',
+  'v2SetVar',
+  'v2DeclareLocalVar',
+  'v2If',
+  'v2IfAdvanced',
+  'v2Else',
+  'v2EndIndent',
+  'v2Loop',
+  'v2LoopNTimes',
+  'v2BreakLoop',
+  'v2StopTrigger',
+  'v2StopPromptSending',
+  'v2SystemPrompt',
+  'v2GetLastMessage',
+  'v2GetMessageAtIndex',
+  'v2GetMessageCount',
+  'v2GetLastUserMessage',
+  'v2GetLastCharMessage',
+  'v2GetFirstMessage',
+  'v2GetCharAt',
+  'v2GetCharCount',
+  'v2ToLowerCase',
+  'v2ToUpperCase',
+  'v2SetCharAt',
+  'v2SplitString',
+  'v2JoinArrayVar',
+  'v2ConcatString',
+  'v2ReplaceString',
+  'v2MakeArrayVar',
+  'v2GetArrayVarLength',
+  'v2GetArrayVar',
+  'v2SetArrayVar',
+  'v2PushArrayVar',
+  'v2PopArrayVar',
+  'v2ShiftArrayVar',
+  'v2UnshiftArrayVar',
+  'v2SpliceArrayVar',
+  'v2SliceArrayVar',
+  'v2GetIndexOfValueInArrayVar',
+  'v2RemoveIndexFromArrayVar',
+  'v2MakeDictVar',
+  'v2GetDictVar',
+  'v2SetDictVar',
+  'v2DeleteDictKey',
+  'v2HasDictKey',
+  'v2ClearDict',
+  'v2GetDictSize',
+  'v2GetDictKeys',
+  'v2GetDictValues',
+  'v2Random',
+  'v2Calculate',
+  'v2Tokenize',
+  'v2RegexTest',
+  'v2QuickSearchChat',
+  'v2GetDisplayState',
+  'v2SetDisplayState',
+  'v2GetRequestState',
+  'v2SetRequestState',
+  'v2GetRequestStateRole',
+  'v2SetRequestStateRole',
+  'v2GetRequestStateLength',
+])
+
+function effectRunsInMode(effectType: string, mode: TriggerMode): boolean {
+  if (mode === 'display') {
+    return displayAllowList.includes(effectType)
+  }
+  if (mode === 'request') {
+    return requestAllowList.includes(effectType)
+  }
+  return true
+}
+
+function effectMayMutateMessages(
+  effect: triggerscript['effect'][number],
+  mode: TriggerMode,
+): boolean {
+  if (!effectRunsInMode(effect.type, mode)) {
+    return false
+  }
+  if (directMessageMutatingEffectTypes.has(effect.type)) {
+    return true
+  }
+  // Unknown/deferred arms stay conservative: commands, triggercode, updateChatAt,
+  // low-level provider/browser effects, and future effect kinds get isolation.
+  return !knownNonMessageMutatingEffectTypes.has(effect.type)
+}
+
+function selectedTriggersMayMutateMessages(
+  triggers: readonly triggerscript[],
+  mode: TriggerMode,
+): boolean {
+  return triggers.some((trigger) =>
+    (trigger.effect ?? []).some((effect) => effectMayMutateMessages(effect, mode)),
+  )
+}
+
+function cloneTriggerCharacterEnvelope(source: character): character {
+  return {
+    ...source,
+    chats: Array.isArray(source.chats) ? source.chats.slice() : source.chats,
+  } as character
+}
+
+function cloneTriggerChatEnvelope(source: Chat, mode: TriggerMode): Chat {
+  triggerCloneInstrumentation.messageSharingEnvelopeClones[mode]++
+  const cloned = {
+    ...source,
+    message: source.message ?? [],
+  } as Chat
+  if (source.scriptstate) {
+    cloned.scriptstate = structuredClone(source.scriptstate)
+  }
+  return cloned
+}
+
+function cloneTriggerChatForRun(
+  source: Chat,
+  mode: TriggerMode,
+  needsPrivateTranscript: boolean,
+  hasSelectedTriggers: boolean,
+): Chat {
+  if (needsPrivateTranscript) {
+    triggerCloneInstrumentation.fullTranscriptClones[mode]++
+    return structuredClone(source)
+  }
+  if (hasSelectedTriggers) {
+    return cloneTriggerChatEnvelope(source, mode)
+  }
+  return source
+}
+
 export const DEFAULT_TRIGGER_WALL_CLOCK_BUDGET_MS = 3_000
 export const DEFAULT_TRIGGER_MAX_EFFECT_STEPS = 100_000
 export const DEFAULT_TRIGGER_MAX_LOOP_BACK_EDGES = 10_000
@@ -567,17 +756,19 @@ export function evaluateConditions(
 }
 
 /**
- * Collects triggers, clones inputs, applies the selection filter, evaluates
- * each selected trigger's conditions, and returns the SPA result shape.
+ * Collects triggers, classifies the selected phase's effects, clones only the
+ * inputs that need isolation, evaluates conditions, and returns the SPA result
+ * shape.
  *
  * Returns `null` when there are no triggers at all (SPA
  * `triggers.ts:1215-1220`). When triggers exist but none match the
  * mode, a result is still returned (mode mismatch is *ignored*, not a
  * no-op return).
  *
- * Cloning rules match the SPA (`triggers.ts:1186, 1207`): in
- * `displayMode` the caller's `char`/`chat` are used directly;
- * otherwise both are deep-cloned so the inputs are never mutated.
+ * L8 clone narrowing: in `displayMode` the caller's `char`/`chat` are used
+ * directly. Otherwise, effects that can mutate `chat.message` get a private
+ * full transcript clone; non-message-mutating trigger sets use a cheap chat
+ * envelope clone that shares message rows but keeps scriptstate writes isolated.
  *
  * Parity note: `scriptstate` writes persist through the var engine
  * onto the db chat; `chat.message` edits (impersonate / cutchat /
@@ -598,13 +789,24 @@ export async function runTrigger(
     return null
   }
   const triggerCache = arg.triggerCache ?? createTriggerRunCache()
-  const workingChar = arg.displayMode ? char : structuredClone(char)
+  const selected = triggers.filter((trigger) =>
+    matchesTrigger(trigger, mode, arg.manualName),
+  )
+  const needsPrivateTranscript =
+    !arg.displayMode && selectedTriggersMayMutateMessages(selected, mode)
+  const workingChar = arg.displayMode ? char : cloneTriggerCharacterEnvelope(char)
+  const sourceChat = arg.chat ?? workingChar.chats[workingChar.chatPage]
   let stopSending = arg.stopSending ?? false
   const sendAIprompt = false
   let additonalSysPrompt = arg.additonalSysPrompt ?? emptySysPrompt()
   let chat = arg.displayMode
-    ? arg.chat
-    : structuredClone(arg.chat ?? workingChar.chats[workingChar.chatPage])
+    ? sourceChat
+    : cloneTriggerChatForRun(
+        sourceChat,
+        mode,
+        needsPrivateTranscript,
+        selected.length > 0,
+      )
 
   const defaultVariables = parseKeyValue(workingChar.defaultVariables ?? '').concat(
     parseKeyValue(ctx.database.templateDefaultVariables ?? ''),
@@ -657,9 +859,6 @@ export async function runTrigger(
     }
   }
 
-  const selected = triggers.filter((trigger) =>
-    matchesTrigger(trigger, mode, arg.manualName),
-  )
   for (const trigger of selected) {
     if (shouldStopTriggerExecution(ctx, budget, 'before trigger conditions')) {
       return buildResult()

@@ -83,7 +83,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L5  | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Create proxy stream jobs with `slidingDeadline: true` (activity detection already exists in `pushRaw`). | DONE |
 | L6  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Build the char+module asset table once per assembly; share with `buildAssetLookup`. | DONE |
 | L7  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Iterate the depth slice and recursive entries without the per-call concat.  | DONE |
-| L8  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Per-phase narrowing of the `runTrigger` chat clone (skip/limit for non-message-mutating trigger sets; do NOT share one clone across phases). | PENDING |
+| L8  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Per-phase narrowing of the `runTrigger` chat clone (skip/limit for non-message-mutating trigger sets; do NOT share one clone across phases). | DONE |
 | L9  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Bound user-regex execution (haystack/pattern caps or complexity screen); document non-interruptibility at minimum. | PENDING |
 | L10 | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Bump the history-callback memo generation from every chat-var-dirty fold (all three un-bumped sites). | PENDING |
 | L11 | [2](phases/phase-2-command-surface-scoping.md)              | Collection-scoped mutation reads for the preset/persona/loadout/plugin/global-lorebook/translator-preset routes (reuse `COLLECTION_TABLE_MAP` machinery). | DONE |

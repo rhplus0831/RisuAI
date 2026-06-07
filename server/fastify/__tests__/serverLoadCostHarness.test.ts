@@ -47,6 +47,10 @@ import {
   resetPromptAssetTableInstrumentation,
 } from '../src/prompt/promptAssets.js'
 import {
+  getTriggerCloneInstrumentation,
+  resetTriggerCloneInstrumentation,
+} from '../src/prompt/triggers.js'
+import {
   createMemoryChunk,
   createMemoryEmbedding,
   createMemorySummary,
@@ -114,6 +118,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  resetTriggerCloneInstrumentation()
   await harness.app.close()
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
@@ -1477,6 +1482,63 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(res.body).toContain('clone-count pong')
     expect(getChatDispatchReformatInstrumentation().fullPromptClones).toBe(0)
     expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.restoration).toBe(0)
+  })
+
+  it('Phase 7 L8: no-message input/start/output triggers perform zero full transcript clones', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const database = promptReadyLargeCorpusDatabase(fixture)
+    const characters = database.characters as Array<Record<string, unknown>>
+    characters[0] = {
+      ...characters[0],
+      triggerscript: [
+        {
+          comment: '',
+          type: 'input',
+          conditions: [],
+          effect: [{ type: 'setvar', operator: '=', var: 'l8Input', value: '1' }],
+        },
+        {
+          comment: '',
+          type: 'start',
+          conditions: [],
+          effect: [{ type: 'setvar', operator: '=', var: 'l8Start', value: '1' }],
+        },
+        {
+          comment: '',
+          type: 'output',
+          conditions: [],
+          effect: [{ type: 'v2GetMessageCount', outputVar: 'l8OutputCount', indent: 0 }],
+        },
+      ],
+    }
+    await importDatabase({
+      ...database,
+      aiModel: 'echo_model',
+      subModel: 'echo_model',
+      echoMessage: 'l8 clone-count pong',
+      echoDelay: 0,
+    })
+    resetTriggerCloneInstrumentation()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: fixture.hot.chatId,
+        characterId: fixture.hot.characterId,
+        mode: 'send',
+        userMessage: 'hi',
+        durable: false,
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('l8 clone-count pong')
+    const cloneMetrics = getTriggerCloneInstrumentation()
+    expect(cloneMetrics.fullTranscriptClones.input).toBe(0)
+    expect(cloneMetrics.fullTranscriptClones.start).toBe(0)
+    expect(cloneMetrics.fullTranscriptClones.output).toBe(0)
   })
 
   it('L13: Realm character append performs zero loadPersisted-shaped corpus reads', async () => {

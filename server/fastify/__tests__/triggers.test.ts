@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type {
   Chat,
   Database,
@@ -11,9 +11,12 @@ import {
   collectTriggers,
   createTriggerExecutionBudget,
   evaluateConditions,
+  getTriggerCloneInstrumentation,
   matchesTrigger,
+  resetTriggerCloneInstrumentation,
   runTrigger,
   type TriggerRunContext,
+  type TriggerMode,
 } from '../src/prompt/triggers.js'
 import { createTriggerVarEngine } from '../src/prompt/triggerVars.js'
 import { applyV2DataEffect } from '../src/prompt/triggerDataEffects.js'
@@ -22,6 +25,10 @@ import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 
 beforeAll(() => {
   bootPromptVariables()
+})
+
+afterEach(() => {
+  resetTriggerCloneInstrumentation()
 })
 
 /** Pass-through expander for condition tests that use no CBS syntax. */
@@ -292,6 +299,117 @@ describe('Phase 7-9a runTrigger shell', () => {
     const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
     expect(result).not.toBeNull()
     expect(result?.varChanged).toBe(false)
+  })
+})
+
+describe('Phase 7 L8 trigger clone narrowing', () => {
+  const nonMutatingEffect = eff({
+    type: 'v2GetMessageCount',
+    outputVar: 'messageCount',
+    indent: 0,
+  })
+
+  it.each(['input', 'start', 'output'] as const)(
+    'L8: %s triggers with no message-mutating effects do not clone the transcript',
+    async (mode: TriggerMode) => {
+      const char = makeChar({
+        triggerscript: [
+          makeTrigger({
+            type: mode,
+            effect: [nonMutatingEffect],
+          }),
+        ],
+      })
+      const chat = makeChat({
+        message: [
+          { role: 'user', data: 'one' },
+          { role: 'char', data: 'two' },
+        ] as never,
+        scriptstate: { $existing: 'kept' },
+      })
+
+      const result = await runTrigger(ctx, char, mode, { chat })
+
+      expect(result?.chat.message).toBe(chat.message)
+      expect(result?.chat.scriptstate?.['$messageCount']).toBe('2')
+      expect(chat.scriptstate?.['$messageCount']).toBeUndefined()
+      expect(getTriggerCloneInstrumentation().fullTranscriptClones[mode]).toBe(0)
+      expect(
+        getTriggerCloneInstrumentation().messageSharingEnvelopeClones[mode],
+      ).toBe(1)
+    },
+  )
+
+  it('L8: mutating output triggers get a private transcript clone', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({ type: 'modifychat', index: '0', value: 'edited' }),
+          eff({ type: 'impersonate', role: 'char', value: 'added' }),
+        ]),
+      ],
+    })
+    const chat = makeChat({
+      message: [{ role: 'user', data: 'original' }] as never,
+    })
+
+    const result = await runTrigger(ctx, char, 'output', { chat })
+
+    expect(result?.chat).not.toBe(chat)
+    expect(result?.chat.message).not.toBe(chat.message)
+    expect(result?.chat.message.map((message) => message.data)).toEqual([
+      'edited',
+      'added',
+    ])
+    expect(chat.message.map((message) => message.data)).toEqual(['original'])
+    expect(getTriggerCloneInstrumentation().fullTranscriptClones.output).toBe(1)
+  })
+
+  it('L8: triggerlua uses a private transcript because host functions can mutate chat', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([eff({ type: 'triggerlua', code: 'mutate()' })]),
+      ],
+    })
+    const chat = makeChat({
+      message: [{ role: 'user', data: 'original' }] as never,
+    })
+    const luaCtx = makeCtx({
+      runLua: async ({ chat: luaChat }) => {
+        luaChat.message[0].data = 'lua edit'
+        return { chat: luaChat, stopSending: false }
+      },
+    })
+
+    const result = await runTrigger(luaCtx, char, 'output', { chat })
+
+    expect(result?.chat.message[0].data).toBe('lua edit')
+    expect(chat.message[0].data).toBe('original')
+    expect(getTriggerCloneInstrumentation().fullTranscriptClones.output).toBe(1)
+  })
+
+  it('L8: displayMode keeps the legacy caller-chat no-clone path', async () => {
+    const char = makeChar({
+      triggerscript: [
+        makeTrigger({
+          type: 'display',
+          effect: [eff({ type: 'impersonate', role: 'char', value: 'skipped' })],
+        }),
+      ],
+    })
+    const chat = makeChat({ message: [{ role: 'user', data: 'shown' }] as never })
+
+    const result = await runTrigger(ctx, char, 'display', {
+      chat,
+      displayMode: true,
+    })
+
+    expect(result?.chat).toBe(chat)
+    expect(chat.message.map((message) => message.data)).toEqual(['shown'])
+    expect(getTriggerCloneInstrumentation().fullTranscriptClones.display).toBe(0)
+    expect(
+      getTriggerCloneInstrumentation().messageSharingEnvelopeClones.display,
+    ).toBe(0)
   })
 })
 

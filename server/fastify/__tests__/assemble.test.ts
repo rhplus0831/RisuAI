@@ -33,6 +33,7 @@ import {
   isRunVarParserFixedPoint,
   renderAndBudget,
   resetAssemblyMessageCaptureInstrumentation,
+  runServerPostGeneration,
   type AssembleDeps,
   type AssembleInput,
 } from '../src/prompt/assemble.js'
@@ -60,6 +61,10 @@ import {
   getPromptAssetTableInstrumentation,
   resetPromptAssetTableInstrumentation,
 } from '../src/prompt/promptAssets.js'
+import {
+  getTriggerCloneInstrumentation,
+  resetTriggerCloneInstrumentation,
+} from '../src/prompt/triggers.js'
 import { LLMFlags } from '../../../src/ts/model/types'
 
 beforeAll(() => {
@@ -77,6 +82,7 @@ function makeDataDir(): string {
 afterEach(() => {
   vi.restoreAllMocks()
   resetHypaV3PrefixTokenMemoForTests()
+  resetTriggerCloneInstrumentation()
   for (const dataDir of dataDirs.splice(0)) {
     rmSync(dataDir, { recursive: true, force: true })
   }
@@ -2321,6 +2327,58 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     )
     expect(captureCount('start_trigger')).toBe(0)
     expectNoFullTranscriptStringify()
+  })
+
+  it('L8: input, start, and output chat-var triggers avoid full trigger transcript clones', async () => {
+    resetTriggerCloneInstrumentation()
+    const db = m1Db([msg('user', 'before triggers', 'msg-1')], {
+      char: {
+        triggerscript: [
+          {
+            comment: '',
+            type: 'input',
+            conditions: [],
+            effect: [{ type: 'setvar', operator: '=', var: 'l8Input', value: '1' }],
+          },
+          startTrigger([{ type: 'setvar', operator: '=', var: 'l8Start', value: '1' }]),
+          {
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [
+              { type: 'v2GetMessageCount', outputVar: 'l8OutputCount', indent: 0 },
+            ],
+          },
+        ] as never,
+      },
+    })
+
+    const assembled = await assemblePrompt(
+      baseInput({ userMessage: 'new user' }),
+      depsFor(db),
+    )
+    expect(assembled.stopSending).toBe(false)
+    expect(assembled.mutations?.chatVarMutations).toEqual([
+      { key: '$l8Input', before: null, after: '1' },
+      { key: '$l8Start', before: null, after: '1' },
+    ])
+
+    const post = await runServerPostGeneration(assembled.state!, {
+      completionText: 'assistant reply',
+      generationId: 'generation-l8',
+    })
+
+    expect(post.finalText).toBe('assistant reply')
+    expect(post.mutations.chatVarMutations).toEqual([
+      { key: '$l8OutputCount', before: null, after: '3' },
+    ])
+    const cloneMetrics = getTriggerCloneInstrumentation()
+    expect(cloneMetrics.fullTranscriptClones.input).toBe(0)
+    expect(cloneMetrics.fullTranscriptClones.start).toBe(0)
+    expect(cloneMetrics.fullTranscriptClones.output).toBe(0)
+    expect(cloneMetrics.messageSharingEnvelopeClones.input).toBe(1)
+    expect(cloneMetrics.messageSharingEnvelopeClones.start).toBe(1)
+    expect(cloneMetrics.messageSharingEnvelopeClones.output).toBe(1)
   })
 
   it('captures input-trigger transcript rewrites once and keeps restoration at the original transcript', async () => {
