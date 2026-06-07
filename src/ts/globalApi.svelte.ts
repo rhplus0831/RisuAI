@@ -1121,25 +1121,31 @@ async function fetchViaProxyJobWs(
   const encoder = new TextEncoder()
 
   const ws = new WebSocket(wsUrl)
-  const readable = new ReadableStream<Uint8Array>({
-    start(controller) {
-      streamController = controller
-    },
-    cancel() {
-      try {
-        ws.close()
-      } catch {
-        // no-op
-      }
-    },
-  })
-  const pipedReadable = pipeFetchLog(arg.fetchLogIndex, readable)
+  let terminalProxyFrameSeen = false
+  let localRequestAborted = false
+  let cancelDeleteSent = false
+  let abortListenerAttached = false
+  let abortHandler: () => void = () => {}
 
-  const ensureHeadersReady = () => {
-    if (!headersReady) {
-      headersReady = true
-      resolveHeaders()
+  const detachAbortListener = () => {
+    if (!abortListenerAttached) {
+      return
     }
+    abortListenerAttached = false
+    requestSignal?.removeEventListener('abort', abortHandler)
+  }
+
+  const deleteProxyJobOnce = () => {
+    if (cancelDeleteSent || !jobId) {
+      return
+    }
+    cancelDeleteSent = true
+    void fetch(getProxyStreamJobDeleteUrl(jobId), {
+      method: 'DELETE',
+      headers: {
+        'risu-auth': auth,
+      },
+    }).catch(() => {})
   }
 
   const closeAndEnd = () => {
@@ -1147,6 +1153,10 @@ async function fetchViaProxyJobWs(
       return
     }
     settled = true
+    detachAbortListener()
+    if (localRequestAborted && !terminalProxyFrameSeen) {
+      deleteProxyJobOnce()
+    }
     if (streamController) {
       try {
         streamController.close()
@@ -1158,6 +1168,23 @@ async function fetchViaProxyJobWs(
       ws.close()
     } catch {
       // no-op
+    }
+  }
+
+  const readable = new ReadableStream<Uint8Array>({
+    start(controller) {
+      streamController = controller
+    },
+    cancel() {
+      closeAndEnd()
+    },
+  })
+  const pipedReadable = pipeFetchLog(arg.fetchLogIndex, readable)
+
+  const ensureHeadersReady = () => {
+    if (!headersReady) {
+      headersReady = true
+      resolveHeaders()
     }
   }
 
@@ -1180,6 +1207,7 @@ async function fetchViaProxyJobWs(
         streamController.enqueue(decodeProxyJobWsChunk(parsed.dataBase64))
         return
       case 'error': {
+        terminalProxyFrameSeen = true
         status = parsed.status ?? 502
         responseHeaders = { 'content-type': 'text/plain; charset=utf-8' }
         ensureHeadersReady()
@@ -1189,6 +1217,7 @@ async function fetchViaProxyJobWs(
         return
       }
       case 'done':
+        terminalProxyFrameSeen = true
         ensureHeadersReady()
         closeAndEnd()
         return
@@ -1215,29 +1244,24 @@ async function fetchViaProxyJobWs(
     closeAndEnd()
   }
 
-  const abortHandler = () => {
+  abortHandler = () => {
+    localRequestAborted = true
     status = 499
     responseHeaders = { 'content-type': 'text/plain; charset=utf-8' }
     ensureHeadersReady()
     if (streamController && !settled) {
       streamController.enqueue(encoder.encode('Aborted'))
     }
-    void fetch(getProxyStreamJobDeleteUrl(jobId), {
-      method: 'DELETE',
-      headers: {
-        'risu-auth': auth,
-      },
-    }).catch(() => {})
     closeAndEnd()
   }
   if (requestSignal?.aborted) {
     abortHandler()
   } else {
-    requestSignal?.addEventListener('abort', abortHandler, { once: true })
+    requestSignal?.addEventListener('abort', abortHandler)
+    abortListenerAttached = !!requestSignal
   }
 
   await waitHeaders
-  requestSignal?.removeEventListener('abort', abortHandler)
   return new Response(pipedReadable, {
     status,
     headers: new Headers(responseHeaders),

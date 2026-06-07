@@ -131,7 +131,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L53 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Dispose the old VITS synthesizer before replacing (mirror the extractor).    | PENDING |
 | L54 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | `await pdf.destroy()` in a `finally` after PDF conversion.                   | PENDING |
 | L55 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Close the whisper-mode AudioContexts and revoke the probe-video URL.         | PENDING |
-| L56 | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Keep the proxy-stream abort listener attached for the whole stream; issue the job DELETE from `closeAndEnd` when no terminal frame arrived. | PENDING |
+| L56 | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Keep the proxy-stream abort listener attached for the whole stream; issue the job DELETE from `closeAndEnd` when no terminal frame arrived. | DONE |
 
 ### Known-Overlap Residuals (scheduled)
 

@@ -554,10 +554,30 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
   planned('L53', 8, 'Dispose the old VITS synthesizer before replacing (mirror the extractor).'),
   planned('L54', 8, '`await pdf.destroy()` in a `finally` after PDF conversion.'),
   planned('L55', 8, 'Close the whisper-mode AudioContexts and revoke the probe-video URL.'),
-  planned(
+  done(
     'L56',
     4,
     'Keep the proxy-stream abort listener attached for the whole stream; issue the job DELETE from `closeAndEnd` when no terminal frame arrived.',
+    'src/ts/globalApi.proxy.test.ts',
+    'DELETEs the proxy stream job once when aborted after headers but before a terminal frame',
+    [
+      {
+        testPath: 'src/ts/globalApi.proxy.test.ts',
+        testName: 'returns the existing 499 response shape when aborted before headers',
+      },
+      {
+        testPath: 'src/ts/globalApi.proxy.test.ts',
+        testName: 'closes normally on terminal done without DELETEing the finished job',
+      },
+      {
+        testPath: 'src/ts/globalApi.proxy.test.ts',
+        testName: 'closes on terminal server error without DELETEing the finished job',
+      },
+      {
+        testPath: 'src/ts/globalApi.proxy.test.ts',
+        testName: 'does not DELETE on WebSocket close before terminal when the request was not locally aborted',
+      },
+    ],
   ),
   done(
     'K1',
@@ -1372,6 +1392,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L14',
       'L15',
       'L16',
+      'L56',
       'K1',
       'K2',
     ])
@@ -1382,7 +1403,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L5, L11, L12, L13, L14, L15, L16, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L5, L11, L12, L13, L14, L15, L16, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1402,6 +1423,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L14',
       'L15',
       'L16',
+      'L56',
       'K1',
       'K2',
     ])

@@ -26,12 +26,11 @@ class FakeWebSocket {
   onmessage: ((event: MessageEvent<string>) => void) | null = null
   onerror: (() => void) | null = null
   onclose: (() => void) | null = null
+  closeCalls = 0
 
   constructor(readonly url: string) {
     fakeWebSocketUrls.push(url)
-    queueMicrotask(() => {
-      this.onerror?.()
-    })
+    fakeWebSockets.push(this)
   }
 
   send(): void {
@@ -39,13 +38,55 @@ class FakeWebSocket {
   }
 
   close(): void {
+    this.closeCalls += 1
+    if (this.readyState === 3) {
+      return
+    }
     this.readyState = 3
     this.onclose?.()
+  }
+
+  emit(event: unknown): void {
+    this.onmessage?.({ data: JSON.stringify(event) } as MessageEvent<string>)
+  }
+
+  emitError(): void {
+    this.onerror?.()
   }
 }
 
 const fetchCalls: Array<{ url: string; init?: RequestInit }> = []
 const fakeWebSocketUrls: string[] = []
+const fakeWebSockets: FakeWebSocket[] = []
+
+async function waitForWebSocket(index = 0): Promise<FakeWebSocket> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (fakeWebSockets[index]) {
+      return fakeWebSockets[index]
+    }
+    await Promise.resolve()
+  }
+  throw new Error(`FakeWebSocket ${index} was not created`)
+}
+
+function startStreamingProxyFetch(signal?: AbortSignal): Promise<Response> {
+  return fetchNative('http://127.0.0.1:11434/v1/chat/completions', {
+    body: JSON.stringify({ stream: true }),
+    headers: { authorization: 'Bearer test' },
+    interceptor: 'openai_streaming',
+    method: 'POST',
+    networkRoute: 'local_network',
+    signal,
+  })
+}
+
+function proxyDeleteCalls() {
+  return fetchCalls.filter((call) => call.init?.method === 'DELETE')
+}
+
+function encodedChunk(text: string) {
+  return Buffer.from(text, 'utf-8').toString('base64')
+}
 
 beforeEach(() => {
   platformState.isFastifyServer = true
@@ -55,6 +96,7 @@ beforeEach(() => {
   } as typeof DBState.db
   fetchCalls.length = 0
   fakeWebSocketUrls.length = 0
+  fakeWebSockets.length = 0
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
     fetchCalls.push({ url, init })
@@ -63,6 +105,9 @@ beforeEach(() => {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
+    }
+    if (init?.method === 'DELETE' && url.startsWith('/api/v1/proxy/stream-jobs/')) {
+      return new Response(null, { status: 204 })
     }
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -94,13 +139,10 @@ describe('Fastify proxy routing', () => {
   })
 
   it('routes local streaming proxy jobs through Fastify create and websocket endpoints', async () => {
-    const res = await fetchNative('http://127.0.0.1:11434/v1/chat/completions', {
-      body: JSON.stringify({ stream: true }),
-      headers: { authorization: 'Bearer test' },
-      interceptor: 'openai_streaming',
-      method: 'POST',
-      networkRoute: 'local_network',
-    })
+    const resPromise = startStreamingProxyFetch()
+    const socket = await waitForWebSocket()
+    socket.emitError()
+    const res = await resPromise
 
     expect(res.status).toBe(502)
     expect(fetchCalls[0].url).toBe('/api/v1/proxy/stream-jobs')
@@ -109,5 +151,109 @@ describe('Fastify proxy routing', () => {
       'ws://localhost:3000/api/v1/proxy/stream-jobs/job%201/ws?risu-auth=proxy-auth-token',
     ])
     expect(fakeWebSocketUrls[0]).not.toContain('/proxy-stream-jobs')
+  })
+
+  it('returns the existing 499 response shape when aborted before headers', async () => {
+    const controller = new AbortController()
+    const resPromise = startStreamingProxyFetch(controller.signal)
+    await waitForWebSocket()
+
+    controller.abort()
+    const res = await resPromise
+
+    expect(res.status).toBe(499)
+    expect(res.headers.get('content-type')).toContain('text/plain')
+    await expect(res.text()).resolves.toBe('Aborted')
+    expect(proxyDeleteCalls()).toHaveLength(1)
+    expect(proxyDeleteCalls()[0]).toMatchObject({
+      url: '/api/v1/proxy/stream-jobs/job%201',
+      init: {
+        method: 'DELETE',
+        headers: {
+          'risu-auth': 'proxy-auth-token',
+        },
+      },
+    })
+  })
+
+  it('DELETEs the proxy stream job once when aborted after headers but before a terminal frame', async () => {
+    const controller = new AbortController()
+    const removeAbortListener = vi.spyOn(controller.signal, 'removeEventListener')
+    const resPromise = startStreamingProxyFetch(controller.signal)
+    const socket = await waitForWebSocket()
+    socket.emit({
+      type: 'upstream_headers',
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+    const res = await resPromise
+
+    controller.abort()
+    socket.close()
+
+    expect(res.status).toBe(200)
+    await expect(res.text()).resolves.toBe('Aborted')
+    expect(proxyDeleteCalls()).toHaveLength(1)
+    expect(proxyDeleteCalls()[0]).toMatchObject({
+      url: '/api/v1/proxy/stream-jobs/job%201',
+      init: {
+        method: 'DELETE',
+        headers: {
+          'risu-auth': 'proxy-auth-token',
+        },
+      },
+    })
+    expect(removeAbortListener).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes normally on terminal done without DELETEing the finished job', async () => {
+    const controller = new AbortController()
+    const resPromise = startStreamingProxyFetch(controller.signal)
+    const socket = await waitForWebSocket()
+    socket.emit({
+      type: 'upstream_headers',
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+    const res = await resPromise
+
+    socket.emit({ type: 'chunk', dataBase64: encodedChunk('hello') })
+    socket.emit({ type: 'done' })
+    controller.abort()
+
+    expect(res.status).toBe(200)
+    await expect(res.text()).resolves.toBe('hello')
+    expect(proxyDeleteCalls()).toHaveLength(0)
+  })
+
+  it('closes on terminal server error without DELETEing the finished job', async () => {
+    const controller = new AbortController()
+    const resPromise = startStreamingProxyFetch(controller.signal)
+    const socket = await waitForWebSocket()
+
+    socket.emit({ type: 'error', status: 503, message: 'upstream failed' })
+    const res = await resPromise
+    controller.abort()
+
+    expect(res.status).toBe(503)
+    await expect(res.text()).resolves.toBe('upstream failed')
+    expect(proxyDeleteCalls()).toHaveLength(0)
+  })
+
+  it('does not DELETE on WebSocket close before terminal when the request was not locally aborted', async () => {
+    const resPromise = startStreamingProxyFetch()
+    const socket = await waitForWebSocket()
+    socket.emit({
+      type: 'upstream_headers',
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+    const res = await resPromise
+
+    socket.close()
+
+    expect(res.status).toBe(200)
+    await expect(res.text()).resolves.toBe('')
+    expect(proxyDeleteCalls()).toHaveLength(0)
   })
 })
