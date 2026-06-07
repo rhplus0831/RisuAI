@@ -47,30 +47,29 @@ export const alertStore = {
   },
 }
 
-export function alertError(msg: string | Error) {
+export function alertError(msg: unknown) {
   console.error(msg)
   const db = getDatabase()
 
   let stackTrace: string | undefined = undefined
+  let message: string
 
-  if (typeof msg !== 'string') {
+  if (msg instanceof Error) {
+    stackTrace = msg.stack
+    message = msg.message
+  } else {
     try {
-      if (msg instanceof Error) {
-        stackTrace = msg.stack
-        msg = msg.message
-      } else {
-        msg = JSON.stringify(msg)
-      }
+      message = String(msg)
     } catch {
-      msg = `${msg}`
+      message = '[unprintable error]'
     }
   }
 
-  msg = msg.trim()
+  message = message.trim()
 
   const ignoredErrors = ['{}']
 
-  if (ignoredErrors.includes(msg)) {
+  if (ignoredErrors.includes(message)) {
     return
   }
 
@@ -78,8 +77,8 @@ export function alertError(msg: string | Error) {
 
   //check if it's a known error
   if (
-    msg.includes('Failed to fetch') ||
-    msg.includes('NetworkError when attempting to fetch resource.')
+    message.includes('Failed to fetch') ||
+    message.includes('NetworkError when attempting to fetch resource.')
   ) {
     submsg = db.usePlainFetch
       ? language.errors.networkFetchPlain
@@ -88,7 +87,7 @@ export function alertError(msg: string | Error) {
 
   alertStoreImported.set({
     type: 'error',
-    msg: msg,
+    msg: message,
     submsg: submsg,
     stackTrace: stackTrace,
   })

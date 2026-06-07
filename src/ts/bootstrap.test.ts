@@ -201,6 +201,7 @@ import {
   loadWebInitialDatabase,
   stopServerProjectionEvents,
 } from './bootstrap'
+import { alertError } from './alert'
 import {
   isServerProjectionWriteGuardEnabled,
   setServerProjectionWriteGuardEnabled,
@@ -310,6 +311,7 @@ beforeEach(() => {
     subMsg: '',
   })
   loadedStore.set(false)
+  vi.mocked(alertError).mockClear()
 })
 
 // The surgical-sync decision tree processes command events on a serial promise
@@ -355,7 +357,105 @@ function expectFullBootstrapResyncDelta(
   }
 }
 
+async function installErrorHandlersForTest(): Promise<{
+  errorHandler: EventListener
+  rejectionHandler: EventListener
+}> {
+  serverBootstrapState.response = {
+    status: 'ok',
+    projection: {
+      revision: 5,
+      database: serverDefaultDatabase(),
+    },
+  }
+  const addEventListenerSpy = vi.spyOn(window, 'addEventListener')
+  try {
+    await loadData()
+
+    const errorHandler = addEventListenerSpy.mock.calls
+      .filter(([type]) => type === 'error')
+      .at(-1)?.[1] as EventListener | undefined
+    const rejectionHandler = addEventListenerSpy.mock.calls
+      .filter(([type]) => type === 'unhandledrejection')
+      .at(-1)?.[1] as EventListener | undefined
+
+    if (!errorHandler || !rejectionHandler) {
+      throw new Error('Expected bootstrap to register global error handlers')
+    }
+
+    vi.mocked(alertError).mockClear()
+    return { errorHandler, rejectionHandler }
+  } finally {
+    addEventListenerSpy.mockRestore()
+  }
+}
+
 describe('web bootstrap startup source', () => {
+  it('L37/I21: global handlers ignore null error events and undefined rejections without useless alerts', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const { errorHandler, rejectionHandler } = await installErrorHandlersForTest()
+
+      expect(() => {
+        errorHandler({ error: null, message: '', target: null } as unknown as ErrorEvent)
+      }).not.toThrow()
+      expect(() => {
+        errorHandler({ target: null } as unknown as ErrorEvent)
+      }).not.toThrow()
+      expect(() => {
+        rejectionHandler({ reason: undefined } as unknown as PromiseRejectionEvent)
+      }).not.toThrow()
+      expect(() => {
+        rejectionHandler({ reason: null } as unknown as PromiseRejectionEvent)
+      }).not.toThrow()
+      expect(() => {
+        rejectionHandler({ reason: { code: 'plain-object' } } as unknown as PromiseRejectionEvent)
+      }).not.toThrow()
+
+      expect(alertError).not.toHaveBeenCalled()
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
+  it('L37: resource-target global errors skip generic application alerts', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const { errorHandler } = await installErrorHandlersForTest()
+      const img = document.createElement('img')
+      const error = new Error('image failed')
+
+      expect(() => {
+        errorHandler({ error, message: error.message, target: img } as unknown as ErrorEvent)
+      }).not.toThrow()
+
+      expect(alertError).not.toHaveBeenCalled()
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
+  it('L37: useful global Error objects and message strings still alert', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const { errorHandler, rejectionHandler } = await installErrorHandlersForTest()
+      const thrown = new Error('global boom')
+      const rejected = new Error('rejected boom')
+
+      errorHandler({ error: thrown, message: '', target: null } as unknown as ErrorEvent)
+      errorHandler({ error: null, message: 'script message', target: null } as unknown as ErrorEvent)
+      rejectionHandler({ reason: rejected } as unknown as PromiseRejectionEvent)
+      rejectionHandler({ reason: 'rejected message' } as unknown as PromiseRejectionEvent)
+
+      expect(alertError).toHaveBeenCalledWith(thrown)
+      expect(alertError).toHaveBeenCalledWith('script message')
+      expect(alertError).toHaveBeenCalledWith(rejected)
+      expect(alertError).toHaveBeenCalledWith('rejected message')
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
   it('loads the Fastify bootstrap projection without entering localForage', async () => {
     await loadWebInitialDatabase()
 

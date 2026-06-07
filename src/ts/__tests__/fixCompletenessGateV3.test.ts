@@ -756,10 +756,26 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L37',
     5,
     'Null-safe global error handler: check `event.target` (not `event.error.target`), skip alerting when no usable error exists.',
+    'src/ts/bootstrap.test.ts',
+    'L37/I21: global handlers ignore null error events and undefined rejections without useless alerts',
+    [
+      {
+        testPath: 'src/ts/bootstrap.test.ts',
+        testName: 'L37: resource-target global errors skip generic application alerts',
+      },
+      {
+        testPath: 'src/ts/bootstrap.test.ts',
+        testName: 'L37: useful global Error objects and message strings still alert',
+      },
+      {
+        testPath: 'src/ts/alert.test.ts',
+        testName: 'L37/I21: accepts non-string payloads with String coercion after Error handling',
+      },
+    ],
   ),
   planned(
     'L38',
@@ -1729,6 +1745,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L34',
       'L35',
       'L36',
+      'L37',
       'L56',
       'K1',
       'K2',
@@ -1740,7 +1757,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L23, L24, L25, L26, L27, L34, L35, L36, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L23, L24, L25, L26, L27, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1775,6 +1792,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L34',
       'L35',
       'L36',
+      'L37',
       'L56',
       'K1',
       'K2',

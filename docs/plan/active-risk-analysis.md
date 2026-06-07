@@ -112,7 +112,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L34 | [5](phases/phase-5-client-write-path-correctness.md)        | Wrap the IGP append in the trusted write + persist via a scoped chat command (fix the I11 `[object Object]` coercion in the same change). | DONE |
 | L35 | [5](phases/phase-5-client-write-path-correctness.md)        | Wrap + dispatch a scoped command for the inlay error bubble; add a guard-enabled test. | DONE |
 | L36 | [5](phases/phase-5-client-write-path-correctness.md)        | Route `sendPofile` transcript mutations through the trusted write + scoped messages command; absorb picker cancel/error and `.po` processing failures at the `postChatFile` boundary. | DONE |
-| L37 | [5](phases/phase-5-client-write-path-correctness.md)        | Null-safe global error handler: check `event.target` (not `event.error.target`), skip alerting when no usable error exists. | PENDING |
+| L37 | [5](phases/phase-5-client-write-path-correctness.md)        | Null-safe global error handler: check `event.target` (not `event.error.target`), skip alerting when no usable error exists. | DONE |
 | L38 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Port the server `TriggerExecutionBudget` caps + abort to the client `runTrigger` (manual entrypoints). | PENDING |
 | L39 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Install the instruction-count hook + wall-clock deadline on client Lua engines (server `luaRuntime` shape). | PENDING |
 | L40 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Key the client Lua engine cache on `(mode, codeHash)` (or a small per-mode LRU). | PENDING |

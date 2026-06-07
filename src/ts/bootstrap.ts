@@ -448,18 +448,68 @@ function isOwnCommandEvent(event: CommandEvent): boolean {
  * Updates the error handling by adding custom handlers for errors and unhandled promise rejections.
  */
 function updateErrorHandling() {
-  const errorHandler = (event: ErrorEvent) => {
-    console.error(event.error)
-    if (!(event.error.target instanceof Worker)) {
-      alertError(event.error)
+  const errorHandler = (event: ErrorEvent | Event) => {
+    console.error(getGlobalErrorLogPayload(event))
+    if (isResourceOrWorkerErrorTarget(event.target)) {
+      return
+    }
+    const alertPayload = getUsableGlobalErrorAlertPayload(event)
+    if (alertPayload !== null) {
+      alertError(alertPayload)
     }
   }
   const rejectHandler = (event: PromiseRejectionEvent) => {
     console.error(event.reason)
-    alertError(event.reason)
+    const alertPayload = getUsableRejectionAlertPayload(event.reason)
+    if (alertPayload !== null) {
+      alertError(alertPayload)
+    }
   }
   window.addEventListener('error', errorHandler)
   window.addEventListener('unhandledrejection', rejectHandler)
+}
+
+function getGlobalErrorLogPayload(event: ErrorEvent | Event): unknown {
+  if ('error' in event) {
+    return event.error
+  }
+  return event
+}
+
+function isResourceOrWorkerErrorTarget(target: EventTarget | null): boolean {
+  if (target === null || target === window) {
+    return false
+  }
+  if (typeof Worker !== 'undefined' && target instanceof Worker) {
+    return true
+  }
+  return typeof Element !== 'undefined' && target instanceof Element
+}
+
+function getUsableGlobalErrorAlertPayload(event: ErrorEvent | Event): Error | string | null {
+  const error = 'error' in event ? event.error : undefined
+  const errorPayload = getUsableErrorLikeAlertPayload(error)
+  if (errorPayload !== null) {
+    return errorPayload
+  }
+
+  const message = 'message' in event ? event.message : undefined
+  return getUsableErrorLikeAlertPayload(message)
+}
+
+function getUsableRejectionAlertPayload(reason: unknown): Error | string | null {
+  return getUsableErrorLikeAlertPayload(reason)
+}
+
+function getUsableErrorLikeAlertPayload(value: unknown): Error | string | null {
+  if (value instanceof Error) {
+    return value.message.trim() ? value : null
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed ? trimmed : null
+  }
+  return null
 }
 
 /**
