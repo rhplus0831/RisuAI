@@ -96,11 +96,136 @@ function presetIdAt(index: number): string | null {
   return DBState.db.botPresets[index]?.id ?? null
 }
 
+const SET_PRESET_ROLLBACK_KEYS = [
+  'apiType',
+  'localNetworkMode',
+  'localNetworkTimeoutSec',
+  'mainPrompt',
+  'jailbreak',
+  'globalNote',
+  'temperature',
+  'maxContext',
+  'maxResponse',
+  'frequencyPenalty',
+  'PresensePenalty',
+  'formatingOrder',
+  'aiModel',
+  'subModel',
+  'currentPluginProvider',
+  'textgenWebUIStreamURL',
+  'textgenWebUIBlockingURL',
+  'forceReplaceUrl',
+  'promptPreprocess',
+  'bias',
+  'koboldURL',
+  'proxyKey',
+  'ooba',
+  'ainconfig',
+  'openrouterRequestModel',
+  'proxyRequestModel',
+  'NAIsettings',
+  'autoSuggestPrompt',
+  'autoSuggestPrefix',
+  'autoSuggestClean',
+  'promptTemplate',
+  'NAIadventure',
+  'NAIappendName',
+  'localStopStrings',
+  'customProxyRequestModel',
+  'reverseProxyOobaArgs',
+  'top_p',
+  'promptSettings',
+  'repetition_penalty',
+  'min_p',
+  'top_a',
+  'openrouterProvider',
+  'useInstructPrompt',
+  'customPromptTemplateToggle',
+  'templateDefaultVariables',
+  'moduleIntergration',
+  'top_k',
+  'instructChatTemplate',
+  'JinjaTemplate',
+  'jsonSchemaEnabled',
+  'jsonSchema',
+  'strictJsonSchema',
+  'extractJson',
+  'seperateParametersEnabled',
+  'customAPIFormat',
+  'systemContentReplacement',
+  'systemRoleReplacement',
+  'customFlags',
+  'enableCustomFlags',
+  'presetRegex',
+  'reasoningEffort',
+  'thinkingTokens',
+  'thinkingType',
+  'deepseekThinkingType',
+  'adaptiveThinkingEffort',
+  'deepseekReasoningEffort',
+  'outputImageModal',
+  'seperateModelsForAxModels',
+  'seperateModels',
+  'fallbackModels',
+  'fallbackWhenBlankResponse',
+  'seperateParameters',
+  'modelTools',
+  'verbosity',
+  'dynamicOutput',
+] as const satisfies readonly (keyof Database)[]
+
+type SetPresetRollbackKey = (typeof SET_PRESET_ROLLBACK_KEYS)[number]
+
+interface PresetRollbackSnapshot {
+  botPresets: botPreset[]
+  botPresetsId: number
+  setPresetSettings?: Partial<Record<SetPresetRollbackKey, unknown>>
+}
+
+function snapshotSetPresetSettings(db: Database): Partial<Record<SetPresetRollbackKey, unknown>> {
+  const snapshot: Partial<Record<SetPresetRollbackKey, unknown>> = {}
+  const dbRecord = db as unknown as Record<SetPresetRollbackKey, unknown>
+  for (const key of SET_PRESET_ROLLBACK_KEYS) {
+    snapshot[key] = safeStructuredClone(dbRecord[key])
+  }
+  return snapshot
+}
+
+function currentPresetRollbackSnapshot(
+  db: Database,
+  options: { includeSetPresetSettings?: boolean } = {},
+): PresetRollbackSnapshot {
+  normalizeBotPresetIds(db)
+  return {
+    botPresets: safeStructuredClone(db.botPresets),
+    botPresetsId: db.botPresetsId,
+    ...(options.includeSetPresetSettings
+      ? { setPresetSettings: snapshotSetPresetSettings(db) }
+      : {}),
+  }
+}
+
+function restorePresetRollbackSnapshot(snapshot: PresetRollbackSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.botPresets = safeStructuredClone(snapshot.botPresets)
+    DBState.db.botPresetsId = snapshot.botPresetsId
+    if (snapshot.setPresetSettings) {
+      const dbRecord = DBState.db as unknown as Record<SetPresetRollbackKey, unknown>
+      for (const key of SET_PRESET_ROLLBACK_KEYS) {
+        if (Object.hasOwn(snapshot.setPresetSettings, key)) {
+          dbRecord[key] = safeStructuredClone(snapshot.setPresetSettings[key])
+        }
+      }
+    }
+  })
+}
+
 function runPresetCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
+  rollback: () => void,
 ) {
   if (!canUseServerCommands()) return
-  void runServerPresetCommand({ command })
+  void runServerPresetCommand({ command, rollback })
 }
 
 export function setDatabase(data: Database) {
@@ -2341,22 +2466,27 @@ function saveCurrentPresetLocal() {
 
 export function saveCurrentPreset() {
   withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    const rollback = currentPresetRollbackSnapshot(db)
     const savedPreset = saveCurrentPresetLocal()
     if (!savedPreset?.id) return
-    runPresetCommand((baseRevision) =>
-      updatePresetCommand({
-        baseRevision,
-        presetId: savedPreset.id!,
-        patch: safeStructuredClone(savedPreset) as unknown as PresetSnapshot,
-      }),
+    runPresetCommand(
+      (baseRevision) =>
+        updatePresetCommand({
+          baseRevision,
+          presetId: savedPreset.id!,
+          patch: safeStructuredClone(savedPreset) as unknown as PresetSnapshot,
+        }),
+      () => restorePresetRollbackSnapshot(rollback),
     )
   })
 }
 
 export function copyPreset(id: number) {
   withTrustedServerProjectionWrite(() => {
-    saveCurrentPresetLocal()
     let db = DBState.db
+    const rollback = currentPresetRollbackSnapshot(db)
+    saveCurrentPresetLocal()
     normalizeBotPresetIds(db)
     let pres = db.botPresets
     const newPres = safeStructuredClone(pres[id])
@@ -2365,24 +2495,27 @@ export function copyPreset(id: number) {
     newPres.id = createClientPresetId()
     newPres.name += ' Copy'
     db.botPresets.push(newPres)
-    runPresetCommand((baseRevision) =>
-      copyPresetCommand({
-        baseRevision,
-        presetId: sourcePresetId,
-        newPresetId: newPres.id,
-        name: newPres.name,
-        saveCurrent: true,
-      }),
+    runPresetCommand(
+      (baseRevision) =>
+        copyPresetCommand({
+          baseRevision,
+          presetId: sourcePresetId,
+          newPresetId: newPres.id,
+          name: newPres.name,
+          saveCurrent: true,
+        }),
+      () => restorePresetRollbackSnapshot(rollback),
     )
   })
 }
 
 export function changeToPreset(id = 0, savecurrent = true) {
   withTrustedServerProjectionWrite(() => {
+    let db = DBState.db
+    const rollback = currentPresetRollbackSnapshot(db, { includeSetPresetSettings: true })
     if (savecurrent) {
       saveCurrentPresetLocal()
     }
-    let db = DBState.db
     normalizeBotPresetIds(db)
     let pres = db.botPresets
     const newPres = pres[id]
@@ -2392,13 +2525,15 @@ export function changeToPreset(id = 0, savecurrent = true) {
       setPreset(db, newPres)
     }
     if (targetPresetId) {
-      runPresetCommand((baseRevision) =>
-        selectPresetCommand({
-          baseRevision,
-          presetId: targetPresetId,
-          apply: true,
-          saveCurrent: savecurrent,
-        }),
+      runPresetCommand(
+        (baseRevision) =>
+          selectPresetCommand({
+            baseRevision,
+            presetId: targetPresetId,
+            apply: true,
+            saveCurrent: savecurrent,
+          }),
+        () => restorePresetRollbackSnapshot(rollback),
       )
     }
   })
@@ -2407,16 +2542,18 @@ export function changeToPreset(id = 0, savecurrent = true) {
 export function createPreset(preset: botPreset) {
   withTrustedServerProjectionWrite(() => {
     let db = DBState.db
-    normalizeBotPresetIds(db)
+    const rollback = currentPresetRollbackSnapshot(db)
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
     db.botPresets.push(newPreset)
     db.botPresets = db.botPresets
-    runPresetCommand((baseRevision) =>
-      createPresetCommand({
-        baseRevision,
-        preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
-      }),
+    runPresetCommand(
+      (baseRevision) =>
+        createPresetCommand({
+          baseRevision,
+          preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
+        }),
+      () => restorePresetRollbackSnapshot(rollback),
     )
   })
 }
@@ -2424,16 +2561,18 @@ export function createPreset(preset: botPreset) {
 function addImportedPreset(preset: botPreset) {
   withTrustedServerProjectionWrite(() => {
     let db = DBState.db
-    normalizeBotPresetIds(db)
+    const rollback = currentPresetRollbackSnapshot(db)
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
     db.botPresets.push(newPreset)
     db.botPresets = db.botPresets
-    runPresetCommand((baseRevision) =>
-      importPresetCommand({
-        baseRevision,
-        preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
-      }),
+    runPresetCommand(
+      (baseRevision) =>
+        importPresetCommand({
+          baseRevision,
+          preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
+        }),
+      () => restorePresetRollbackSnapshot(rollback),
     )
   })
 }
@@ -2441,16 +2580,18 @@ function addImportedPreset(preset: botPreset) {
 export function updatePreset(id: number, patch: Partial<botPreset>) {
   withTrustedServerProjectionWrite(() => {
     let db = DBState.db
-    normalizeBotPresetIds(db)
+    const rollback = currentPresetRollbackSnapshot(db)
     const presetId = db.botPresets[id]?.id
     if (!presetId) return
     Object.assign(db.botPresets[id], patch)
-    runPresetCommand((baseRevision) =>
-      updatePresetCommand({
-        baseRevision,
-        presetId,
-        patch: safeStructuredClone({ ...patch, id: presetId }) as PresetSnapshot,
-      }),
+    runPresetCommand(
+      (baseRevision) =>
+        updatePresetCommand({
+          baseRevision,
+          presetId,
+          patch: safeStructuredClone({ ...patch, id: presetId }) as PresetSnapshot,
+        }),
+      () => restorePresetRollbackSnapshot(rollback),
     )
   })
 }
@@ -2458,7 +2599,7 @@ export function updatePreset(id: number, patch: Partial<botPreset>) {
 export function deletePreset(id: number, selectIndex = 0, apply = true) {
   withTrustedServerProjectionWrite(() => {
     let db = DBState.db
-    normalizeBotPresetIds(db)
+    const rollback = currentPresetRollbackSnapshot(db, { includeSetPresetSettings: apply })
     if (db.botPresets.length <= 1) return
     const presetId = db.botPresets[id]?.id
     const nextSelectedPreset =
@@ -2481,14 +2622,16 @@ export function deletePreset(id: number, selectIndex = 0, apply = true) {
     } else if (db.botPresetsId >= db.botPresets.length) {
       db.botPresetsId = db.botPresets.length - 1
     }
-    runPresetCommand((baseRevision) =>
-      deletePresetCommand({
-        baseRevision,
-        presetId,
-        selectPresetId,
-        apply,
-        saveCurrent: false,
-      }),
+    runPresetCommand(
+      (baseRevision) =>
+        deletePresetCommand({
+          baseRevision,
+          presetId,
+          selectPresetId,
+          apply,
+          saveCurrent: false,
+        }),
+      () => restorePresetRollbackSnapshot(rollback),
     )
   })
 }
@@ -2496,7 +2639,7 @@ export function deletePreset(id: number, selectIndex = 0, apply = true) {
 export function reorderPresets(fromIndex: number, toIndex: number) {
   withTrustedServerProjectionWrite(() => {
     let db = DBState.db
-    normalizeBotPresetIds(db)
+    const rollback = currentPresetRollbackSnapshot(db)
     if (fromIndex === toIndex) return
     if (
       fromIndex < 0 ||
@@ -2525,11 +2668,13 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
 
     db.botPresets = botPresets
     const presetIds = db.botPresets.map((preset) => preset.id).filter((id): id is string => !!id)
-    runPresetCommand((baseRevision) =>
-      reorderPresetsCommand({
-        baseRevision,
-        presetIds,
-      }),
+    runPresetCommand(
+      (baseRevision) =>
+        reorderPresetsCommand({
+          baseRevision,
+          presetIds,
+        }),
+      () => restorePresetRollbackSnapshot(rollback),
     )
   })
 }

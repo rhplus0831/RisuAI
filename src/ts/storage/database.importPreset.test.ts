@@ -22,7 +22,7 @@ vi.mock('../process/modules', async (importActual) => {
 import * as fflate from 'fflate'
 import { encode as encodeMsgpack } from 'msgpackr/index-no-eval'
 import { encryptBuffer } from '../util'
-import { importPreset } from './database.svelte'
+import { importPreset, presetTemplate } from './database.svelte'
 import { clearCachedServerCommandRevision } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
 import { DBState } from '../stores.svelte'
@@ -38,6 +38,10 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function clonePlain<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function stubCommandFetch(): CapturedFetch[] {
@@ -65,6 +69,27 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
+function stubFailedImportCommandFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 20 })
+      if (url === '/api/v1/commands/presets/import') {
+        return jsonResponse({ error: 'forced import failure' }, 500)
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
 async function waitForImportCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const match = calls.find(
@@ -74,6 +99,20 @@ async function waitForImportCommand(calls: CapturedFetch[]): Promise<CapturedFet
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
   throw new Error(`import command not dispatched; saw: ${JSON.stringify(calls)}`)
+}
+
+async function waitForState(assertion: () => void): Promise<void> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      assertion()
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+  }
+  throw lastError
 }
 
 /** A binary `.risupreset` file, built exactly like `downloadPreset` builds it. */
@@ -168,5 +207,32 @@ describe('importPreset warm-path logging (L37)', () => {
     } finally {
       logSpy.mockRestore()
     }
+  })
+
+  it('L21: a failed preset import rolls back the optimistic imported row', async () => {
+    DBState.db.botPresets = [
+      {
+        ...clonePlain(presetTemplate),
+        id: 'preset-existing',
+        name: 'Existing',
+        temperature: 33,
+      },
+    ]
+    DBState.db.botPresetsId = 0
+    const beforePresets = clonePlain(DBState.db.botPresets)
+    const beforeSelected = DBState.db.botPresetsId
+    const calls = stubFailedImportCommandFetch()
+    const file = new TextEncoder().encode(
+      JSON.stringify({ name: 'Import Will Roll Back', temperature: 66 }),
+    )
+
+    await importPreset({ name: 'plain-preset.json', data: file })
+
+    expect(DBState.db.botPresets.map((preset) => preset.name)).toContain('Import Will Roll Back')
+    await waitForImportCommand(calls)
+    await waitForState(() => {
+      expect(DBState.db.botPresets).toEqual(beforePresets)
+      expect(DBState.db.botPresetsId).toBe(beforeSelected)
+    })
   })
 })

@@ -551,10 +551,43 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L21',
     5,
     'Add a rollback parameter to `runPresetCommand`; snapshot `botPresets`/`botPresetsId` + the `setPreset` scalar settings.',
+    'src/ts/storage/database.svelte.test.ts',
+    'L21: failed select restores setPreset scalars without overwriting unrelated fields',
+    [
+      {
+        testPath: 'src/ts/storage/database.svelte.test.ts',
+        testName: 'L21: failed save restores the saved preset collection and selected index',
+      },
+      {
+        testPath: 'src/ts/storage/database.svelte.test.ts',
+        testName:
+          'L21: failed copy restores the original collection after save-current and generated copy id',
+      },
+      {
+        testPath: 'src/ts/storage/database.svelte.test.ts',
+        testName: 'L21: failed create removes the optimistic preset and generated id',
+      },
+      {
+        testPath: 'src/ts/storage/database.svelte.test.ts',
+        testName: 'L21: failed update restores the patched preset row',
+      },
+      {
+        testPath: 'src/ts/storage/database.svelte.test.ts',
+        testName: 'L21: failed delete restores collection, selection, and setPreset scalars',
+      },
+      {
+        testPath: 'src/ts/storage/database.svelte.test.ts',
+        testName: 'L21: failed reorder restores collection order and selected index',
+      },
+      {
+        testPath: 'src/ts/storage/database.importPreset.test.ts',
+        testName: 'L21: a failed preset import rolls back the optimistic imported row',
+      },
+    ],
   ),
   planned(
     'L22',
@@ -1573,6 +1606,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L18',
       'L19',
       'L20',
+      'L21',
       'L23',
       'L24',
       'L25',
@@ -1589,7 +1623,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L23, L24, L25, L26, L27, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L23, L24, L25, L26, L27, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1615,6 +1649,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L18',
       'L19',
       'L20',
+      'L21',
       'L23',
       'L24',
       'L25',
