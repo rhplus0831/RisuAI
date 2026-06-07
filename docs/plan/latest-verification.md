@@ -10,22 +10,39 @@ after each change to a narrowed or bounded path.
 - Plan state: open; Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are
   complete; the v4-H2 Phase 4.5 hotfix is also complete; Phase 5 is complete;
   Phase 6 is active. `H1`, `M1-M6`, `M8`, `M9`, `L2`, `L4`, `L5`,
-  `L11-L21`, `L23-L29`, `L34-L37`, `L56`, `K1`, and `K2` are `DONE` in
+  `L11-L29`, `L34-L37`, `L56`, `K1`, and `K2` are `DONE` in
   [`active-risk-analysis.md`](active-risk-analysis.md); every other scheduled
   row remains `PENDING`.
 - Gate state: the v1 gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
   and the v2 gate (`fixCompletenessGateV2.test.ts`) remain live against their
   archives. The v3 gate (`fixCompletenessGateV3.test.ts`) is live against
   `docs/plan/`, with `H1`, `M1-M6`, `M8`, `M9`, `L2`, `L4`, `L5`,
-  `L11-L21`, `L23-L29`, `L34-L37`, `L56`, `K1`, and `K2` registered as
+  `L11-L29`, `L34-L37`, `L56`, `K1`, and `K2` registered as
   `DONE` and all other scheduled v3 IDs registered as `PLANNED`. The latest
   v3 gate command is green in the run below; the v1/v2 archive gates were
   last refreshed during the Phase 5 verification run.
 - Tree: Phase 5 implementation is committed through `68edd23d7`; this
   working-tree update adds the Phase 6 M6 `catalog-derived-lists` runtime and
-  the L28/L29 `watcher-short-circuits` runtime, tests, and docs proof. The
-  earlier v4-only Phase 6 transcript-window reset and render-parser dependency
-  narrowing proof remains logged below.
+  the L22 `draft-mirror-gating` plus L28/L29 `watcher-short-circuits` runtime,
+  tests, and docs proof. The earlier v4-only Phase 6 transcript-window reset
+  and render-parser dependency narrowing proof remains logged below.
+
+## Phase 6 Draft Mirror Gating (2026-06-07)
+
+Run for the Phase 6 L22 `draft-mirror-gating` slice. L22 moved to `DONE` in
+the active-risk table and v3 gate.
+
+- `pnpm exec vitest run src/ts/server/characterBridge.svelte.test.ts src/ts/__tests__/fixCompletenessGateV3.test.ts`:
+  passed, 2 files / 32 tests. The command emitted the usual
+  Vite/Svelte default-config notice. The proof covers nested character draft
+  edits updating the local projection without re-reading the server seed field,
+  selected-character switches reseeding the draft, real server projection
+  applies with changed character fields reseeding, and local edits dispatching
+  sanitized patches while excluded keys such as `chaId` stay out of the
+  projection and command patch.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- `git diff --check`: passed with no output.
+- Skipped/failed items: none.
 
 ## Phase 6 Watcher Short-Circuits (2026-06-07)
 

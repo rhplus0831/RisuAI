@@ -604,10 +604,26 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L22',
     6,
     'Gate the character-draft mirror recomputation (character switch / apply epoch); split the read/seed effect.',
+    'src/ts/server/characterBridge.svelte.test.ts',
+    'L22: editing nested draft fields does not rerun the server seed path',
+    [
+      {
+        testPath: 'src/ts/server/characterBridge.svelte.test.ts',
+        testName: 'L22: character switch reseeds the draft',
+      },
+      {
+        testPath: 'src/ts/server/characterBridge.svelte.test.ts',
+        testName: 'L22: server projection apply with changed fields reseeds the draft',
+      },
+      {
+        testPath: 'src/ts/server/characterBridge.svelte.test.ts',
+        testName: 'L22: local edits update projection and dispatch sanitized character patches',
+      },
+    ],
   ),
   done(
     'L23',
@@ -1767,6 +1783,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L19',
       'L20',
       'L21',
+      'L22',
       'L23',
       'L24',
       'L25',
@@ -1789,7 +1806,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L23, L24, L25, L26, L27, L28, L29, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1817,6 +1834,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L19',
       'L20',
       'L21',
+      'L22',
       'L23',
       'L24',
       'L25',

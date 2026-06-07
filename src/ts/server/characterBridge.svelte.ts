@@ -50,23 +50,46 @@ export function createServerBackedCharacterDraft(
   let initialized = false
   let suppressDraftDispatch = false
   let previousServerSnapshot = ''
+  let previousSeedSelected = Number.NaN
+  let previousSeedCharacterId: string | null = null
+  let previousSeedProjectionApplyEpoch = -1
+  const selectedCharMirror = $state({ value: get(selectedCharID) })
 
   $effect(() => {
-    const character = DBState.db.characters?.[get(selectedCharID)]
-    const characterId = character?.chaId ?? null
-    const serverValue = character
-      ? normalizeCharacterDraft(
-          pickCharacterFields(character as unknown as CharacterSnapshot, keys),
-        )
-      : {}
-    const serverSnapshot = snapshotJson({ characterId, value: serverValue })
-    const draftSnapshot = snapshotJson({ characterId: draft.characterId, value: draft.value })
+    const unsubscribe = selectedCharID.subscribe((value) => {
+      selectedCharMirror.value = value
+    })
+    return unsubscribe
+  })
 
-    if (
-      !initialized ||
-      characterId !== draft.characterId ||
-      (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot)
-    ) {
+  $effect(() => {
+    const selected = selectedCharMirror.value
+    const projectionApplyEpoch = getServerProjectionApplyEpoch()
+    const characterId = DBState.db.characters?.[selected]?.chaId ?? null
+    const identityChanged =
+      !initialized || selected !== previousSeedSelected || characterId !== previousSeedCharacterId
+    const projectionApplyChanged = projectionApplyEpoch !== previousSeedProjectionApplyEpoch
+
+    if (!identityChanged && !projectionApplyChanged) return
+
+    previousSeedSelected = selected
+    previousSeedCharacterId = characterId
+    previousSeedProjectionApplyEpoch = projectionApplyEpoch
+
+    const { serverSnapshot, serverValue } = untrack(() =>
+      currentCharacterDraftSeed(selected, characterId, keys),
+    )
+    const shouldSeedDraft =
+      identityChanged ||
+      untrack(() => {
+        const draftSnapshot = snapshotJson({
+          characterId: draft.characterId,
+          value: draft.value,
+        })
+        return serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot
+      })
+
+    if (shouldSeedDraft) {
       suppressDraftDispatch = true
       draft.characterId = characterId
       draft.value = cloneJsonValue(serverValue)
@@ -80,13 +103,21 @@ export function createServerBackedCharacterDraft(
   })
 
   let draftInitialized = false
+  let previousDraftDispatchSnapshot = ''
   $effect(() => {
     const characterId = draft.characterId
+    const draftSnapshot = snapshotJson(draft.value)
     if (!draftInitialized) {
       draftInitialized = true
+      previousDraftDispatchSnapshot = draftSnapshot
       return
     }
-    if (suppressDraftDispatch || !characterId) return
+    if (suppressDraftDispatch || !characterId) {
+      previousDraftDispatchSnapshot = draftSnapshot
+      return
+    }
+    if (draftSnapshot === previousDraftDispatchSnapshot) return
+    previousDraftDispatchSnapshot = draftSnapshot
 
     untrack(() => {
       const patch = sanitizeCharacterPatch(cloneJsonValue(draft.value))
@@ -102,6 +133,23 @@ export function createServerBackedCharacterDraft(
   })
 
   return draft
+}
+
+function currentCharacterDraftSeed(
+  selected: number,
+  characterId: string | null,
+  keys: readonly string[],
+): { serverSnapshot: string; serverValue: CharacterDraftValue } {
+  const character = DBState.db.characters?.[selected]
+  const serverValue = character
+    ? normalizeCharacterDraft(
+        pickCharacterFields(character as unknown as CharacterSnapshot, keys),
+      )
+    : {}
+  return {
+    serverSnapshot: snapshotJson({ characterId, value: serverValue }),
+    serverValue,
+  }
 }
 
 export function watchServerBackedCharacterProfile(
