@@ -22,8 +22,28 @@ after each change to a narrowed or bounded path.
   v3 gate command is green; the v1/v2 archive gates were refreshed during the
   Phase 5 verification run below.
 - Tree: Phase 5 implementation is committed through `68edd23d7`; this
-  working-tree update adds the v4-only Phase 6 transcript-window reset
-  runtime/test/docs proof below and does not move v3 statuses or gates.
+  working-tree update adds v4-only Phase 6 transcript-window reset and
+  render-parser dependency narrowing runtime/test/docs proof below and does
+  not move v3 statuses or gates.
+
+## Phase 6 Render Parser Dependency Narrowing (2026-06-07)
+
+Run for the v4-only Phase 6 `render-parser-dependency-narrowing` slice
+covering v4-M1/v4-L22. No v3 active-risk rows moved to `DONE`, and the v3
+gate registry was not edited. v4-L23 parser-helper churn was left untouched.
+
+- `pnpm exec vitest run src/lib/ChatScreens/Chat.parserDependencies.test.ts src/lib/ChatScreens/BackgroundDom.parserDependencies.test.ts`:
+  passed, 2 files / 5 tests. The command emitted the usual
+  Vite/Svelte default-config notice. The proof covers unrelated guarded
+  projection writes not re-running `risuChatParser` for visible `Chat.svelte`
+  rows, changed message/name/role/parser-index props and explicit reload
+  still invalidating the correct chat parse surface, unrelated guarded writes
+  not re-running `BackgroundDom` `risuChatParser`/`ParseMarkdown`, and
+  selected-character parser fields, background HTML, module background
+  embedding, and reload pointer changes still invalidating the background
+  surface.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors.
+- Skipped/failed items: none.
 
 ## Phase 6 Transcript Window Reset (2026-06-07)
 

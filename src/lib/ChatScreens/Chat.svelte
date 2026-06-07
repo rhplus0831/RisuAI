@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import {
     ArrowLeft,
     ArrowLeftRightIcon,
@@ -310,10 +311,7 @@
     try {
       const cbsConditions: CbsConditions = {
         firstmsg: firstMessage ?? false,
-        chatRole:
-          DBState.db.characters[selIdState.selId].chats[
-            DBState.db.characters[selIdState.selId].chatPage
-          ]?.message?.[idx]?.role ?? null,
+        chatRole: role ?? null,
       }
       return cbsConditions
     } catch (e) {
@@ -348,12 +346,17 @@
   }
 
   function displaya(message: string) {
-    msgDisplay = risuChatParser(message, {
-      chara: name,
-      chatID: idx,
-      rmVar: true,
-      visualize: true,
-      cbsConditions: getCbsCondition(),
+    const cbsConditions = getCbsCondition()
+    const chara = name
+    const chatID = idx
+    msgDisplay = untrack(() => {
+      return risuChatParser(message, {
+        chara,
+        chatID,
+        rmVar: true,
+        visualize: true,
+        cbsConditions,
+      })
     })
   }
 
