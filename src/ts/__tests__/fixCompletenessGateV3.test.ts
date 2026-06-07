@@ -225,10 +225,26 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     5,
     '`flushAllPendingBridgePatches()` aggregator on `pagehide`/`visibilitychange(hidden)` + watcher teardown; `keepalive` dispatch.',
   ),
-  planned(
+  done(
     'M9',
     4,
     "`process.once('SIGTERM'\\|'SIGINT')` -> `await app.close()` with a force-exit backstop.",
+    'server/fastify/__tests__/index.test.ts',
+    'M9: SIGTERM reaches Fastify app.close and onClose',
+    [
+      {
+        testPath: 'server/fastify/__tests__/index.test.ts',
+        testName: 'M9: SIGINT reaches Fastify app.close and onClose',
+      },
+      {
+        testPath: 'server/fastify/__tests__/index.test.ts',
+        testName: 'M9: duplicate shutdown signals reuse one app.close call',
+      },
+      {
+        testPath: 'server/fastify/__tests__/index.test.ts',
+        testName: 'M9: hung shutdown backstop is unrefd and exits with signal-style code',
+      },
+    ],
   ),
   planned(
     'L1',
@@ -1331,6 +1347,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M3',
       'M4',
       'M5',
+      'M9',
       'L11',
       'L12',
       'L13',
@@ -1347,7 +1364,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, L11, L12, L13, L14, L15, L16, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L11, L12, L13, L14, L15, L16, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1358,6 +1375,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M3',
       'M4',
       'M5',
+      'M9',
       'L11',
       'L12',
       'L13',
