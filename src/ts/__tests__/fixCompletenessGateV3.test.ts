@@ -466,10 +466,30 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L20',
     4,
     "`maxAge: '1y', immutable: true` for the hashed SPA chunks (index.html stays uncached).",
+    'server/fastify/__tests__/static.test.ts',
+    'L20: immutable-caches SPA assets under /assets',
+    [
+      {
+        testPath: 'server/fastify/__tests__/static.test.ts',
+        testName: 'L20: keeps GET / outside immutable chunk caching',
+      },
+      {
+        testPath: 'server/fastify/__tests__/static.test.ts',
+        testName: 'L20: keeps SPA fallback outside immutable chunk caching',
+      },
+      {
+        testPath: 'server/fastify/__tests__/static.test.ts',
+        testName: 'L20: preserves API 404 outside SPA fallback',
+      },
+      {
+        testPath: 'server/fastify/__tests__/static.test.ts',
+        testName: 'L20: preserves non-GET SPA fallback rejection',
+      },
+    ],
   ),
   planned(
     'L21',
@@ -1448,6 +1468,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L17',
       'L18',
       'L19',
+      'L20',
       'L56',
       'K1',
       'K2',
@@ -1459,7 +1480,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1483,6 +1504,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L17',
       'L18',
       'L19',
+      'L20',
       'L56',
       'K1',
       'K2',

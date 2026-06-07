@@ -65,6 +65,8 @@ import {
  * `deadlineAt` reference instead of Node's implicit 300s default.
  */
 export const REQUEST_RECEIVE_TIMEOUT_MS = 600_000
+export const STATIC_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable'
+export const STATIC_REVALIDATE_CACHE_CONTROL = 'public, max-age=0'
 
 export interface BuildAppOptions {
   config?: AppConfig
@@ -88,6 +90,11 @@ export interface BuildAppOptions {
 export interface BuiltApp {
   app: FastifyInstance
   config: AppConfig
+}
+
+function isPathWithin(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child)
+  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative)
 }
 
 export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
@@ -316,6 +323,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {
     const indexPath = path.join(config.staticRoot, 'index.html')
+    const staticAssetsRoot = path.join(config.staticRoot, 'assets')
     let cachedIndex: string | null = null
     const indexHtml = (): string => {
       if (cachedIndex !== null) return cachedIndex
@@ -328,6 +336,15 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
       prefix: '/',
       wildcard: false,
       index: false,
+      cacheControl: false,
+      setHeaders: (res, filePath) => {
+        res.setHeader(
+          'Cache-Control',
+          isPathWithin(staticAssetsRoot, filePath)
+            ? STATIC_ASSET_CACHE_CONTROL
+            : STATIC_REVALIDATE_CACHE_CONTROL,
+        )
+      },
     })
 
     app.get('/', async (_req, reply) => {
