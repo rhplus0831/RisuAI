@@ -35,8 +35,14 @@ let ScriptingLowLevelIds = new Set<string>()
 let lastRequestResetTime = 0
 let lastRequestsCount = 0
 
+export const DEFAULT_CLIENT_LUA_EXEC_TIMEOUT_MS = 3_000
+export const CLIENT_LUA_ENGINE_CACHE_PER_MODE = 4
+
 interface BasicScriptingEngineState {
   code?: string
+  cacheKey?: string
+  cacheBucket?: string
+  activeRuns?: number
   mutex: Mutex
   chat?: Chat
   setVar?: (key: string, value: string) => void
@@ -45,6 +51,7 @@ interface BasicScriptingEngineState {
 
 interface LuaScriptingEngineState extends BasicScriptingEngineState {
   engine?: LuaEngine
+  execTimeoutMs?: number
   type: 'lua'
 }
 
@@ -56,6 +63,7 @@ interface PythonScriptingEngineState extends BasicScriptingEngineState {
 type ScriptingEngineState = LuaScriptingEngineState | PythonScriptingEngineState
 
 let ScriptingEngines = new Map<string, ScriptingEngineState>()
+let ScriptingEngineLru = new Map<string, string[]>()
 let luaFactoryPromise: Promise<void> | null = null
 let pendingEngineCreations = new Map<string, Promise<ScriptingEngineState>>()
 
@@ -71,6 +79,7 @@ export async function runScripted(
     meta?: object
     mode?: string
     type?: 'lua' | 'py'
+    luaExecTimeoutMs?: number
   },
 ) {
   const type: 'lua' | 'py' = arg.type ?? 'lua'
@@ -80,6 +89,7 @@ export async function runScripted(
   const getVar = arg.getVar ?? getChatVar
   const meta = arg.meta ?? {}
   const mode = arg.mode ?? 'manual'
+  const luaExecTimeoutMs = arg.luaExecTimeoutMs ?? DEFAULT_CLIENT_LUA_EXEC_TIMEOUT_MS
 
   let chat = arg.chat ?? getCurrentChat()
   let stopSending = false
@@ -88,20 +98,34 @@ export async function runScripted(
   if (type === 'lua') {
     await ensureLuaFactory()
   }
-  let ScriptingEngineState = await getOrCreateEngineState(mode, type)
+  const codeHash = type === 'lua' ? await hashScriptingCode(code) : undefined
+  let ScriptingEngineState = await getOrCreateEngineState(mode, type, codeHash)
+  ScriptingEngineState.activeRuns = (ScriptingEngineState.activeRuns ?? 0) + 1
 
-  return await ScriptingEngineState.mutex.runExclusive(async () => {
+  const runResult = ScriptingEngineState.mutex.runExclusive(async () => {
     ScriptingEngineState.chat = chat
     ScriptingEngineState.setVar = setVar
     ScriptingEngineState.getVar = getVar
-    if (code !== ScriptingEngineState.code) {
+    const shouldRecreateLuaEngine =
+      ScriptingEngineState.type === 'lua' &&
+      (code !== ScriptingEngineState.code ||
+        ScriptingEngineState.execTimeoutMs !== luaExecTimeoutMs)
+    if (
+      code !== ScriptingEngineState.code ||
+      shouldRecreateLuaEngine ||
+      (ScriptingEngineState.type === 'py' && !ScriptingEngineState.pyodide)
+    ) {
       let declareAPI: (name: string, func: Function) => void
 
       if (ScriptingEngineState.type === 'lua') {
         console.log('Creating new Lua engine for mode:', mode)
         ScriptingEngineState.engine?.global.close()
         ScriptingEngineState.code = code
-        ScriptingEngineState.engine = await luaFactory.createEngine({ injectObjects: true })
+        ScriptingEngineState.execTimeoutMs = luaExecTimeoutMs
+        ScriptingEngineState.engine = await luaFactory.createEngine({
+          injectObjects: true,
+          functionTimeout: luaExecTimeoutMs,
+        })
         const luaEngine = ScriptingEngineState.engine
         declareAPI = (name: string, func: Function) => {
           luaEngine.global.set(name, func)
@@ -1062,7 +1086,11 @@ export async function runScripted(
 
       console.log('Running Lua code:', code)
       if (ScriptingEngineState.type === 'lua') {
-        await ScriptingEngineState.engine?.doString(luaCodeWrapper(code))
+        await runLuaStringWithTimeout(
+          ScriptingEngineState.engine,
+          luaCodeWrapper(code),
+          luaExecTimeoutMs,
+        )
       }
       if (ScriptingEngineState.type === 'py') {
         await ScriptingEngineState.pyodide?.init(code)
@@ -1079,102 +1107,107 @@ export async function runScripted(
       }
     }
     let res: any
-    if (ScriptingEngineState.type === 'lua') {
-      const luaEngine = ScriptingEngineState.engine
-      try {
+    try {
+      if (ScriptingEngineState.type === 'lua') {
+        const luaEngine = ScriptingEngineState.engine
+        try {
+          switch (mode) {
+            case 'input': {
+              const func = luaEngine.global.get('onInput')
+              if (func) {
+                res = await func(accessKey)
+              }
+              break
+            }
+            case 'output': {
+              const func = luaEngine.global.get('onOutput')
+              if (func) {
+                res = await func(accessKey)
+              }
+              break
+            }
+            case 'start': {
+              const func = luaEngine.global.get('onStart')
+              if (func) {
+                res = await func(accessKey)
+              }
+              break
+            }
+            case 'onButtonClick': {
+              const func = luaEngine.global.get('onButtonClick')
+              if (func) {
+                res = await func(accessKey, data)
+              }
+              break
+            }
+            case 'editRequest':
+            case 'editDisplay':
+            case 'editInput':
+            case 'editOutput': {
+              const func = luaEngine.global.get('callListenMain')
+              if (func) {
+                res = await func(mode, accessKey, JSON.stringify(data), JSON.stringify(meta))
+                res = JSON.parse(res)
+              }
+              break
+            }
+            default: {
+              const func = luaEngine.global.get(mode)
+              if (func) {
+                res = await func(accessKey)
+              }
+              break
+            }
+          }
+          if (res === false) {
+            stopSending = true
+          }
+        } catch (error) {
+          console.error(error)
+        }
+      }
+      if (ScriptingEngineState.type === 'py') {
         switch (mode) {
           case 'input': {
-            const func = luaEngine.global.get('onInput')
-            if (func) {
-              res = await func(accessKey)
-            }
+            res = await ScriptingEngineState.pyodide?.python(`onInput('${accessKey}')`)
             break
           }
           case 'output': {
-            const func = luaEngine.global.get('onOutput')
-            if (func) {
-              res = await func(accessKey)
-            }
+            res = await ScriptingEngineState.pyodide?.python(`onOutput('${accessKey}')`)
             break
           }
           case 'start': {
-            const func = luaEngine.global.get('onStart')
-            if (func) {
-              res = await func(accessKey)
-            }
+            res = await ScriptingEngineState.pyodide?.python(`onStart('${accessKey}')`)
             break
           }
           case 'onButtonClick': {
-            const func = luaEngine.global.get('onButtonClick')
-            if (func) {
-              res = await func(accessKey, data)
-            }
+            res = await ScriptingEngineState.pyodide?.python(
+              `onButtonClick('${accessKey}', '${data as string}')`,
+            )
             break
           }
           case 'editRequest':
           case 'editDisplay':
           case 'editInput':
           case 'editOutput': {
-            const func = luaEngine.global.get('callListenMain')
-            if (func) {
-              res = await func(mode, accessKey, JSON.stringify(data), JSON.stringify(meta))
-              res = JSON.parse(res)
-            }
+            res = await ScriptingEngineState.pyodide?.python(
+              `callListenMain('${mode}', '${accessKey}', '${JSON.stringify(data)}', '${JSON.stringify(meta)}')`,
+            )
+            res = JSON.parse(res)
             break
           }
           default: {
-            const func = luaEngine.global.get(mode)
-            if (func) {
-              res = await func(accessKey)
-            }
+            res = await ScriptingEngineState.pyodide?.python(`${mode}('${accessKey}')`)
             break
           }
         }
-        if (res === false) {
-          stopSending = true
-        }
-      } catch (error) {
-        console.error(error)
       }
+    } finally {
+      ScriptingSafeIds.delete(accessKey)
+      ScriptingLowLevelIds.delete(accessKey)
+      ScriptingEditDisplayIds.delete(accessKey)
     }
-    if (ScriptingEngineState.type === 'py') {
-      switch (mode) {
-        case 'input': {
-          res = await ScriptingEngineState.pyodide?.python(`onInput('${accessKey}')`)
-          break
-        }
-        case 'output': {
-          res = await ScriptingEngineState.pyodide?.python(`onOutput('${accessKey}')`)
-          break
-        }
-        case 'start': {
-          res = await ScriptingEngineState.pyodide?.python(`onStart('${accessKey}')`)
-          break
-        }
-        case 'onButtonClick': {
-          res = await ScriptingEngineState.pyodide?.python(
-            `onButtonClick('${accessKey}', '${data as string}')`,
-          )
-          break
-        }
-        case 'editRequest':
-        case 'editDisplay':
-        case 'editInput':
-        case 'editOutput': {
-          res = await ScriptingEngineState.pyodide?.python(
-            `callListenMain('${mode}', '${accessKey}', '${JSON.stringify(data)}', '${JSON.stringify(meta)}')`,
-          )
-          res = JSON.parse(res)
-          break
-        }
-        default: {
-          res = await ScriptingEngineState.pyodide?.python(`${mode}('${accessKey}')`)
-          break
-        }
-      }
-    }
-    ScriptingSafeIds.delete(accessKey)
-    ScriptingLowLevelIds.delete(accessKey)
+
     chat = ScriptingEngineState.chat
 
     return {
@@ -1182,6 +1215,10 @@ export async function runScripted(
       chat,
       res,
     }
+  })
+  return await runResult.finally(() => {
+    ScriptingEngineState.activeRuns = Math.max(0, (ScriptingEngineState.activeRuns ?? 1) - 1)
+    enforceScriptingEngineCacheLimit(ScriptingEngineState.cacheBucket)
   })
 }
 
@@ -1225,16 +1262,99 @@ async function ensureLuaFactory() {
   }
 }
 
+async function hashScriptingCode(code: string): Promise<string> {
+  const data = new TextEncoder().encode(code)
+  const digest = await globalThis.crypto?.subtle?.digest?.('SHA-256', data)
+  if (digest) {
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
+  }
+
+  let hash = 2166136261
+  for (let i = 0; i < code.length; i++) {
+    hash ^= code.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `fnv1a-${(hash >>> 0).toString(16)}-${code.length}`
+}
+
+function getScriptingEngineBucket(mode: string, type: 'lua' | 'py'): string {
+  return `${type}:${mode}`
+}
+
+function getScriptingEngineCacheKey(mode: string, type: 'lua' | 'py', codeHash?: string): string {
+  const bucket = getScriptingEngineBucket(mode, type)
+  return type === 'lua' ? `${bucket}:${codeHash ?? 'empty'}` : bucket
+}
+
+function touchScriptingEngineCacheKey(bucket: string, cacheKey: string): void {
+  const current = ScriptingEngineLru.get(bucket) ?? []
+  const next = current.filter((key) => key !== cacheKey)
+  next.push(cacheKey)
+  ScriptingEngineLru.set(bucket, next)
+}
+
+function closeScriptingEngineState(engineState: ScriptingEngineState): void {
+  try {
+    if (engineState.type === 'lua') {
+      engineState.engine?.global.close()
+    } else {
+      engineState.pyodide?.close()
+    }
+  } catch (error) {
+    console.warn('Failed to close scripting engine state', error)
+  }
+}
+
+function deleteScriptingEngineCacheKey(cacheKey: string): void {
+  const engineState = ScriptingEngines.get(cacheKey)
+  if (engineState) {
+    closeScriptingEngineState(engineState)
+  }
+  ScriptingEngines.delete(cacheKey)
+  pendingEngineCreations.delete(cacheKey)
+}
+
+function enforceScriptingEngineCacheLimit(bucket?: string): void {
+  if (!bucket) {
+    return
+  }
+  const keys = ScriptingEngineLru.get(bucket)
+  if (!keys) {
+    return
+  }
+  let index = 0
+  while (keys.length > CLIENT_LUA_ENGINE_CACHE_PER_MODE && index < keys.length) {
+    const cacheKey = keys[index]
+    const engineState = ScriptingEngines.get(cacheKey)
+    if ((engineState?.activeRuns ?? 0) > 0) {
+      index++
+      continue
+    }
+    keys.splice(index, 1)
+    deleteScriptingEngineCacheKey(cacheKey)
+  }
+  ScriptingEngineLru.set(
+    bucket,
+    keys.filter((key) => ScriptingEngines.has(key)),
+  )
+}
+
 async function getOrCreateEngineState(
   mode: string,
   type: 'lua' | 'py',
+  codeHash?: string,
 ): Promise<ScriptingEngineState> {
-  let engineState = ScriptingEngines.get(mode)
+  const cacheKey = getScriptingEngineCacheKey(mode, type, codeHash)
+  const cacheBucket = getScriptingEngineBucket(mode, type)
+  let engineState = ScriptingEngines.get(cacheKey)
   if (engineState) {
+    touchScriptingEngineCacheKey(cacheBucket, cacheKey)
     return engineState
   }
 
-  let pendingCreation = pendingEngineCreations.get(mode)
+  let pendingCreation = pendingEngineCreations.get(cacheKey)
   if (pendingCreation) {
     return pendingCreation
   }
@@ -1243,17 +1363,66 @@ async function getOrCreateEngineState(
     const engineState: ScriptingEngineState = {
       mutex: new Mutex(),
       type: type,
+      cacheKey,
+      cacheBucket,
     }
-    ScriptingEngines.set(mode, engineState)
+    ScriptingEngines.set(cacheKey, engineState)
+    touchScriptingEngineCacheKey(cacheBucket, cacheKey)
+    enforceScriptingEngineCacheLimit(cacheBucket)
 
-    pendingEngineCreations.delete(mode)
+    pendingEngineCreations.delete(cacheKey)
 
     return Promise.resolve(engineState)
   })()
 
-  pendingEngineCreations.set(mode, creationPromise)
+  pendingEngineCreations.set(cacheKey, creationPromise)
 
   return creationPromise
+}
+
+async function runLuaStringWithTimeout(
+  engine: LuaEngine | undefined,
+  code: string,
+  timeoutMs: number,
+): Promise<void> {
+  if (!engine) {
+    return
+  }
+  const global = engine.global
+  const thread = global.newThread()
+  const threadIndex = global.getTop()
+  try {
+    thread.loadString(code)
+    await thread.run(0, { timeout: timeoutMs })
+  } finally {
+    global.remove(threadIndex)
+  }
+}
+
+export function resetScriptingEngineCacheForTests(): void {
+  for (const engineState of ScriptingEngines.values()) {
+    closeScriptingEngineState(engineState)
+  }
+  ScriptingEngines.clear()
+  ScriptingEngineLru.clear()
+  pendingEngineCreations.clear()
+  ScriptingSafeIds.clear()
+  ScriptingEditDisplayIds.clear()
+  ScriptingLowLevelIds.clear()
+}
+
+export function getScriptingEngineCacheSnapshotForTests(): {
+  keys: string[]
+  accessSetSizes: { safe: number; editDisplay: number; lowLevel: number }
+} {
+  return {
+    keys: [...ScriptingEngines.keys()],
+    accessSetSizes: {
+      safe: ScriptingSafeIds.size,
+      editDisplay: ScriptingEditDisplayIds.size,
+      lowLevel: ScriptingLowLevelIds.size,
+    },
+  }
 }
 
 function luaCodeWrapper(code: string) {

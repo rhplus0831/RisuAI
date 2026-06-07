@@ -948,25 +948,49 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L38',
     8,
     'Port the server `TriggerExecutionBudget` caps + abort to the client `runTrigger` (manual entrypoints).',
+    'src/ts/process/triggers.clientBudget.test.ts',
+    'L38: manual v2Loop stops at the shared client trigger budget',
+    [
+      {
+        testPath: 'src/ts/process/triggers.clientBudget.test.ts',
+        testName: 'L38: manual trigger abort signal interrupts v2Wait before later effects',
+      },
+      {
+        testPath: 'src/ts/process/triggers.clientBudget.test.ts',
+        testName: 'L38: manual v2Wait wakes at the wall-clock budget without an abort signal',
+      },
+    ],
   ),
-  planned(
+  done(
     'L39',
     8,
     'Install the instruction-count hook + wall-clock deadline on client Lua engines (server `luaRuntime` shape).',
+    'src/ts/process/scriptings.test.ts',
+    'L39: client Lua while true loads through the timeout-bound thread',
   ),
-  planned(
+  done(
     'L40',
     8,
     'Key the client Lua engine cache on `(mode, codeHash)` (or a small per-mode LRU).',
+    'src/ts/process/scriptings.test.ts',
+    'L40: same-mode Lua code hash cache reuses alternating bodies and evicts by LRU',
   ),
-  planned(
+  done(
     'L41',
     8,
     'Delete the editDisplay access key in the cleanup tail (run cleanup in a `finally`).',
+    'src/ts/process/scriptings.test.ts',
+    'L41: editDisplay access key is removed after Lua success and rejection',
+    [
+      {
+        testPath: 'src/ts/process/scriptings.test.ts',
+        testName: 'L41: Python editDisplay rejection cleans up access key',
+      },
+    ],
   ),
   planned('L42', 8, 'LRU-bound `googleCloudTokenizedCache` (or fold into `encodeCache`).'),
   planned(
@@ -1941,6 +1965,10 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L35',
       'L36',
       'L37',
+      'L38',
+      'L39',
+      'L40',
+      'L41',
       'L56',
       'K1',
       'K2',
@@ -1953,7 +1981,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L56, K1, K2, and K3 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L38, L39, L40, L41, L56, K1, K2, and K3 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -2004,6 +2032,10 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L35',
       'L36',
       'L37',
+      'L38',
+      'L39',
+      'L40',
+      'L41',
       'L56',
       'K1',
       'K2',

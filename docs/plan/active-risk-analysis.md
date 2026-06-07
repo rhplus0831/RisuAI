@@ -16,8 +16,8 @@ prior-audit finding IDs are referenced as `v1-*` / `v2-*`.
 
 - Confirmed findings: 89 total: 1 high, 9 medium, 56 low, 23 informational.
 - Scheduled: H1, M1-M9, L1-L56, and the known-overlap residuals K1-K4.
-  `H1`, `M1-M6`, `M8`, `M9`, `L1-L37`, `L56`, and `K1-K3` are `DONE`;
-  `M7`, `L38-L55`, and `K4` remain `PENDING`.
+  `H1`, `M1-M6`, `M8`, `M9`, `L1-L41`, `L56`, and `K1-K3` are `DONE`;
+  `M7`, `L42-L55`, and `K4` remain `PENDING`.
 - Gated items: unchanged from v2 — `v2-L12`, plus the v1 carry-overs (v1-L4,
   v1-L7, v1-L26, v1-U2) and the `../archive/leftover.md` evidence gates. The
   v3 audit re-confirmed and respected all of them.
@@ -114,10 +114,10 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | L35 | [5](phases/phase-5-client-write-path-correctness.md)        | Wrap + dispatch a scoped command for the inlay error bubble; add a guard-enabled test. | DONE |
 | L36 | [5](phases/phase-5-client-write-path-correctness.md)        | Route `sendPofile` transcript mutations through the trusted write + scoped messages command; absorb picker cancel/error and `.po` processing failures at the `postChatFile` boundary. | DONE |
 | L37 | [5](phases/phase-5-client-write-path-correctness.md)        | Null-safe global error handler: check `event.target` (not `event.error.target`), skip alerting when no usable error exists. | DONE |
-| L38 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Port the server `TriggerExecutionBudget` caps + abort to the client `runTrigger` (manual entrypoints). | PENDING |
-| L39 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Install the instruction-count hook + wall-clock deadline on client Lua engines (server `luaRuntime` shape). | PENDING |
-| L40 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Key the client Lua engine cache on `(mode, codeHash)` (or a small per-mode LRU). | PENDING |
-| L41 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Delete the editDisplay access key in the cleanup tail (run cleanup in a `finally`). | PENDING |
+| L38 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Port the server `TriggerExecutionBudget` caps + abort to the client `runTrigger` (manual entrypoints). | DONE |
+| L39 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Install the instruction-count hook + wall-clock deadline on client Lua engines (server `luaRuntime` shape). | DONE |
+| L40 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Key the client Lua engine cache on `(mode, codeHash)` (or a small per-mode LRU). | DONE |
+| L41 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Delete the editDisplay access key in the cleanup tail (run cleanup in a `finally`). | DONE |
 | L42 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | LRU-bound `googleCloudTokenizedCache` (or fold into `encodeCache`).          | PENDING |
 | L43 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Reset/dedupe the custom-provider stores on plugin reload (mirror the existing reset block; or unload-callback removal). | PENDING |
 | L44 | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Gate or remove the SandboxHost RPC console logs (never log transferables).  | PENDING |

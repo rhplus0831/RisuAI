@@ -11,7 +11,11 @@ import { sayTTS } from './tts'
 import { risuChatParser } from '../parser/parser.svelte'
 import { sendChat } from './index.svelte'
 import { loadLoreBookV3Prompt } from './lorebook.svelte'
-import { runTrigger } from './triggers'
+import {
+  clearManualTriggerAbortController,
+  createManualTriggerAbortController,
+  runTrigger,
+} from './triggers'
 import {
   mutateChatWithScopedCommand,
   currentChatScriptstateSnapshot,
@@ -247,13 +251,19 @@ async function processCommand(command: string, pipe: string): Promise<false | st
     }
     case 'trigger': {
       const currentChar = getCurrentCharacter()
-      const triggerResult = await runTrigger(currentChar, 'manual', {
-        chat: getCurrentChat(),
-        manualName: arg,
-      })
+      const triggerController = createManualTriggerAbortController()
+      try {
+        const triggerResult = await runTrigger(currentChar, 'manual', {
+          chat: getCurrentChat(),
+          manualName: arg,
+          signal: triggerController.signal,
+        })
 
-      if (triggerResult) {
-        setCurrentChat(triggerResult.chat)
+        if (triggerResult) {
+          setCurrentChat(triggerResult.chat)
+        }
+      } finally {
+        clearManualTriggerAbortController(triggerController)
       }
       return
     }

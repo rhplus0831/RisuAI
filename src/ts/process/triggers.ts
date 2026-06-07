@@ -1199,6 +1199,165 @@ function persistCharacterLorebookEdit(char: character, prevGlobalLore: string): 
   )
 }
 
+export const DEFAULT_TRIGGER_WALL_CLOCK_BUDGET_MS = 3_000
+export const DEFAULT_TRIGGER_MAX_EFFECT_STEPS = 100_000
+export const DEFAULT_TRIGGER_MAX_LOOP_BACK_EDGES = 10_000
+export const DEFAULT_TRIGGER_MAX_RECURSION_DEPTH = 10
+
+type TriggerBudgetStopReason = 'aborted' | 'wallClock' | 'effectSteps' | 'loopBackEdges'
+
+export interface TriggerExecutionBudget {
+  startedAtMs: number
+  wallClockMs: number
+  effectSteps: number
+  maxEffectSteps: number
+  loopBackEdges: number
+  maxLoopBackEdges: number
+  maxRecursionDepth: number
+  now: () => number
+  stoppedReason?: TriggerBudgetStopReason
+  stoppedDetail?: string
+}
+
+export interface TriggerExecutionBudgetOptions {
+  wallClockMs?: number
+  maxEffectSteps?: number
+  maxLoopBackEdges?: number
+  maxRecursionDepth?: number
+  now?: () => number
+}
+
+export function createTriggerExecutionBudget(
+  opts: TriggerExecutionBudgetOptions = {},
+): TriggerExecutionBudget {
+  const now = opts.now ?? Date.now
+  return {
+    startedAtMs: now(),
+    wallClockMs: opts.wallClockMs ?? DEFAULT_TRIGGER_WALL_CLOCK_BUDGET_MS,
+    effectSteps: 0,
+    maxEffectSteps: opts.maxEffectSteps ?? DEFAULT_TRIGGER_MAX_EFFECT_STEPS,
+    loopBackEdges: 0,
+    maxLoopBackEdges: opts.maxLoopBackEdges ?? DEFAULT_TRIGGER_MAX_LOOP_BACK_EDGES,
+    maxRecursionDepth: opts.maxRecursionDepth ?? DEFAULT_TRIGGER_MAX_RECURSION_DEPTH,
+    now,
+  }
+}
+
+function markTriggerStopped(
+  budget: TriggerExecutionBudget,
+  reason: TriggerBudgetStopReason,
+  detail: string,
+): void {
+  if (budget.stoppedReason) {
+    return
+  }
+  budget.stoppedReason = reason
+  budget.stoppedDetail = detail
+}
+
+function shouldStopTriggerExecution(
+  budget: TriggerExecutionBudget,
+  signal: AbortSignal | undefined,
+  detail: string,
+): boolean {
+  if (signal?.aborted) {
+    markTriggerStopped(budget, 'aborted', detail)
+    return true
+  }
+  if (budget.stoppedReason) {
+    return true
+  }
+  if (
+    Number.isFinite(budget.wallClockMs) &&
+    budget.now() - budget.startedAtMs >= budget.wallClockMs
+  ) {
+    markTriggerStopped(budget, 'wallClock', detail)
+    return true
+  }
+  return false
+}
+
+function chargeTriggerEffectStep(
+  budget: TriggerExecutionBudget,
+  signal: AbortSignal | undefined,
+  effectType: string,
+): boolean {
+  if (shouldStopTriggerExecution(budget, signal, `before effect ${effectType}`)) {
+    return true
+  }
+  budget.effectSteps++
+  if (budget.effectSteps > budget.maxEffectSteps) {
+    markTriggerStopped(budget, 'effectSteps', effectType)
+    return true
+  }
+  return false
+}
+
+function chargeTriggerLoopBack(
+  budget: TriggerExecutionBudget,
+  signal: AbortSignal | undefined,
+  effectType: string,
+): boolean {
+  if (shouldStopTriggerExecution(budget, signal, `before ${effectType} loop-back`)) {
+    return true
+  }
+  budget.loopBackEdges++
+  if (budget.loopBackEdges > budget.maxLoopBackEdges) {
+    markTriggerStopped(budget, 'loopBackEdges', effectType)
+    return true
+  }
+  return false
+}
+
+function triggerBudgetRemainingMs(budget: TriggerExecutionBudget): number {
+  if (!Number.isFinite(budget.wallClockMs)) {
+    return Number.POSITIVE_INFINITY
+  }
+  return Math.max(0, budget.wallClockMs - (budget.now() - budget.startedAtMs))
+}
+
+function sleepWithAbort(
+  ms: number,
+  signal: AbortSignal | undefined,
+  budget?: TriggerExecutionBudget,
+): Promise<void> {
+  const budgetRemainingMs = budget ? triggerBudgetRemainingMs(budget) : Number.POSITIVE_INFINITY
+  const sleepMs = Math.max(0, Math.min(ms, budgetRemainingMs))
+  if (!signal) {
+    return sleep(sleepMs).then(() => {})
+  }
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve()
+      return
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, sleepMs)
+    const onAbort = () => {
+      clearTimeout(timer)
+      resolve()
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+let activeManualTriggerAbortController: AbortController | null = null
+
+export function createManualTriggerAbortController(): AbortController {
+  activeManualTriggerAbortController?.abort()
+  const controller = new AbortController()
+  activeManualTriggerAbortController = controller
+  return controller
+}
+
+export function clearManualTriggerAbortController(controller: AbortController): void {
+  if (activeManualTriggerAbortController === controller) {
+    activeManualTriggerAbortController = null
+  }
+}
+
 export async function runTrigger(
   char: character,
   mode: triggerMode,
@@ -1212,9 +1371,13 @@ export async function runTrigger(
     displayMode?: boolean
     displayData?: string
     tempVars?: Record<string, string>
+    signal?: AbortSignal
+    triggerBudget?: TriggerExecutionBudget
+    triggerBudgetOptions?: TriggerExecutionBudgetOptions
   },
 ) {
   arg.recursiveCount ??= 0
+  const triggerBudget = arg.triggerBudget ?? createTriggerExecutionBudget(arg.triggerBudgetOptions)
   let varChanged = false
   let stopSending = arg.stopSending ?? false
   const CharacterlowLevelAccess = char.lowLevelAccess ?? false
@@ -1420,8 +1583,44 @@ export async function runTrigger(
     }
   }
 
+  const buildResult = async () => {
+    let caculatedTokens = 0
+    if (additonalSysPrompt.start) {
+      caculatedTokens += await tokenize(additonalSysPrompt.start)
+    }
+    if (additonalSysPrompt.historyend) {
+      caculatedTokens += await tokenize(additonalSysPrompt.historyend)
+    }
+    if (additonalSysPrompt.promptend) {
+      caculatedTokens += await tokenize(additonalSysPrompt.promptend)
+    }
+    if (varChanged) {
+      syncActiveChatScriptstate()
+      refreshVariableOnlyGui()
+    }
+    if (shouldSetTriggerId && mode !== 'manual') {
+      CurrentTriggerIdStore.set(previousTriggerId)
+    }
+
+    return {
+      additonalSysPrompt,
+      chat,
+      tokens: caculatedTokens,
+      stopSending,
+      sendAIprompt,
+      displayData: arg.displayData,
+      tempVars: arg.tempVars,
+      triggerStoppedReason: triggerBudget.stoppedReason,
+      triggerStoppedDetail: triggerBudget.stoppedDetail,
+    }
+  }
+
   for (const trigger of triggers) {
     let tempVars: Record<string, number> = {}
+
+    if (shouldStopTriggerExecution(triggerBudget, arg.signal, 'before trigger pass')) {
+      return await buildResult()
+    }
 
     if (trigger.effect[0]?.type === 'triggercode' || trigger.effect[0]?.type === 'triggerlua') {
       //
@@ -1524,6 +1723,9 @@ export async function runTrigger(
 
     for (let index = 0; index < trigger.effect.length; index++) {
       const effect = trigger.effect[index]
+      if (chargeTriggerEffectStep(triggerBudget, arg.signal, effect.type)) {
+        return await buildResult()
+      }
       if (mode === 'display' && !displayAllowList.includes(effect.type)) {
         continue
       }
@@ -1596,14 +1798,16 @@ export async function runTrigger(
           break
         }
         case 'runtrigger': {
-          if (arg.recursiveCount < 10 || trigger.lowLevelAccess) {
-            arg.recursiveCount++
+          if (arg.recursiveCount < triggerBudget.maxRecursionDepth) {
+            const recursiveCount = arg.recursiveCount + 1
             const r = await runTrigger(char, 'manual', {
               chat,
-              recursiveCount: arg.recursiveCount,
+              recursiveCount,
               additonalSysPrompt,
               stopSending,
               manualName: effect.value,
+              signal: arg.signal,
+              triggerBudget,
             })
             if (r) {
               additonalSysPrompt = r.additonalSysPrompt
@@ -1980,8 +2184,13 @@ export async function runTrigger(
                   if (tempVars[index + 'LoopNTimes'] >= valueNum) {
                     index = originalIndex
                   } else {
+                    if (chargeTriggerLoopBack(triggerBudget, arg.signal, ef.type)) {
+                      return await buildResult()
+                    }
                     break
                   }
+                } else if (chargeTriggerLoopBack(triggerBudget, arg.signal, ef.type)) {
+                  return await buildResult()
                 }
 
                 break
@@ -1991,8 +2200,11 @@ export async function runTrigger(
             //this is for preventing lagging
             tempVars['loopTimes'] = (tempVars['loopTimes'] ?? 0) + 1
             if (tempVars['loopTimes'] > 100) {
-              await sleep(1)
+              await sleepWithAbort(1, arg.signal, triggerBudget)
               tempVars['loopTimes'] = 0
+              if (shouldStopTriggerExecution(triggerBudget, arg.signal, 'after v2 loop yield')) {
+                return await buildResult()
+              }
             }
           }
 
@@ -2015,14 +2227,16 @@ export async function runTrigger(
           break
         }
         case 'v2RunTrigger': {
-          if (arg.recursiveCount < 10 || trigger.lowLevelAccess) {
-            arg.recursiveCount++
+          if (arg.recursiveCount < triggerBudget.maxRecursionDepth) {
+            const recursiveCount = arg.recursiveCount + 1
             const r = await runTrigger(char, 'manual', {
               chat,
-              recursiveCount: arg.recursiveCount,
+              recursiveCount,
               additonalSysPrompt,
               stopSending,
               manualName: effect.target,
+              signal: arg.signal,
+              triggerBudget,
             })
             if (r) {
               additonalSysPrompt = r.additonalSysPrompt
@@ -2802,7 +3016,7 @@ export async function runTrigger(
             effect.valueType === 'value'
               ? Number(risuChatParser(effect.value, { chara: char }))
               : Number(getVar(risuChatParser(effect.value, { chara: char })))
-          await sleep(value * 1000)
+          await sleepWithAbort(value * 1000, arg.signal, triggerBudget)
           break
         }
         case 'v2GetRequestState': {
@@ -3397,35 +3611,11 @@ export async function runTrigger(
           break
         }
       }
+      if (shouldStopTriggerExecution(triggerBudget, arg.signal, `after effect ${effect.type}`)) {
+        return await buildResult()
+      }
     }
   }
 
-  let caculatedTokens = 0
-  if (additonalSysPrompt.start) {
-    caculatedTokens += await tokenize(additonalSysPrompt.start)
-  }
-  if (additonalSysPrompt.historyend) {
-    caculatedTokens += await tokenize(additonalSysPrompt.historyend)
-  }
-  if (additonalSysPrompt.promptend) {
-    caculatedTokens += await tokenize(additonalSysPrompt.promptend)
-  }
-  if (varChanged) {
-    syncActiveChatScriptstate()
-    refreshVariableOnlyGui()
-  }
-
-  if (shouldSetTriggerId && mode !== 'manual') {
-    CurrentTriggerIdStore.set(previousTriggerId)
-  }
-
-  return {
-    additonalSysPrompt,
-    chat,
-    tokens: caculatedTokens,
-    stopSending,
-    sendAIprompt,
-    displayData: arg.displayData,
-    tempVars: arg.tempVars,
-  }
+  return await buildResult()
 }

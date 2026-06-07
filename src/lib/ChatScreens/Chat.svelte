@@ -32,7 +32,11 @@
   import { getModelInfo } from 'src/ts/model/modellist'
   import { runLuaButtonTrigger } from 'src/ts/process/scriptings'
   import { risuChatParser } from 'src/ts/process/scripts'
-  import { runTrigger } from 'src/ts/process/triggers'
+  import {
+    clearManualTriggerAbortController,
+    createManualTriggerAbortController,
+    runTrigger,
+  } from 'src/ts/process/triggers'
   import { sayTTS } from 'src/ts/process/tts'
   import {
     DBState,
@@ -412,15 +416,22 @@
     const triggerId = origin.getAttribute('risu-id')
     const btnEvent = origin.getAttribute('risu-btn')
 
-    const triggerResult = triggerName
-      ? await runTrigger(currentChar, 'manual', {
+    let triggerResult = null
+    if (triggerName) {
+      const triggerController = createManualTriggerAbortController()
+      try {
+        triggerResult = await runTrigger(currentChar, 'manual', {
           chat: getCurrentChat(),
           manualName: triggerName,
           triggerId: triggerId || undefined,
+          signal: triggerController.signal,
         })
-      : btnEvent
-        ? await runLuaButtonTrigger(currentChar, btnEvent)
-        : null
+      } finally {
+        clearManualTriggerAbortController(triggerController)
+      }
+    } else if (btnEvent) {
+      triggerResult = await runLuaButtonTrigger(currentChar, btnEvent)
+    }
 
     if (triggerResult) {
       setCurrentChat(triggerResult.chat)
