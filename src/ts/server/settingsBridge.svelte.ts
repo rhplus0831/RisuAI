@@ -5,6 +5,7 @@ import {
   patchServerBackedSettings,
   settingsGroupForKey,
   type SettingsPatch,
+  type ServerCommandTransportOptions,
 } from './commands'
 import {
   getServerProjectionApplyEpoch,
@@ -78,9 +79,7 @@ export function createServerBackedSettingDraft<T>(
     untrack(() => {
       if (!settingsGroupForKey(key)) return
       const attempted = cloneJsonValue(draft.value)
-      const previous = cloneJsonValue(
-        (DBState.db as unknown as Record<string, unknown>)[key],
-      )
+      const previous = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[key])
       withTrustedServerProjectionWrite(() => {
         // Re-read DBState.db inside the callback: the trusted write swaps it to
         // a mutable clone, so an alias captured earlier still points at the
@@ -172,7 +171,10 @@ export function watchServerBackedSettings(
     })
   })
 
-  return stop
+  return () => {
+    flushPendingServerBackedSettingsPatch()
+    stop()
+  }
 }
 
 function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay: number): void {
@@ -196,30 +198,45 @@ function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay
     return
   }
   pendingSettingsPatch.timer = setTimeout(() => {
-    pendingSettingsPatch.timer = null
-    const commandPatch = pendingSettingsPatch.patch
-    const commandPrevious = pendingSettingsPatch.previous
-    const commandAttempted = pendingSettingsPatch.attempted
-    pendingSettingsPatch.patch = {}
-    pendingSettingsPatch.previous = {}
-    pendingSettingsPatch.attempted = {}
-
-    if (Object.keys(commandPatch).length === 0) return
-
-    void patchServerBackedSettings({
-      patch: commandPatch,
-      rollback: () => {
-        suppressRollbackDispatch = true
-        try {
-          rollbackSettings(commandPrevious, commandAttempted)
-        } finally {
-          queueMicrotask(() => {
-            suppressRollbackDispatch = false
-          })
-        }
-      },
-    })
+    dispatchPendingSettingsPatch()
   }, delay)
+}
+
+export function flushPendingServerBackedSettingsPatch(
+  options: ServerCommandTransportOptions = {},
+): void {
+  dispatchPendingSettingsPatch(options)
+}
+
+function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {}): void {
+  if (pendingSettingsPatch.timer) {
+    clearTimeout(pendingSettingsPatch.timer)
+    pendingSettingsPatch.timer = null
+  }
+  const commandPatch = pendingSettingsPatch.patch
+  const commandPrevious = pendingSettingsPatch.previous
+  const commandAttempted = pendingSettingsPatch.attempted
+  pendingSettingsPatch.patch = {}
+  pendingSettingsPatch.previous = {}
+  pendingSettingsPatch.attempted = {}
+
+  if (Object.keys(commandPatch).length === 0) return
+
+  void patchServerBackedSettings({
+    patch: commandPatch,
+    keepalive: options.keepalive,
+    signal: options.signal,
+    rollback: () => {
+      suppressRollbackDispatch = true
+      try {
+        rollbackSettings(commandPrevious, commandAttempted)
+      } finally {
+        queueMicrotask(() => {
+          suppressRollbackDispatch = false
+        })
+      }
+    },
+  })
 }
 
 function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): void {

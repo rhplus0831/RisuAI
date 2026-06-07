@@ -2,8 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
 
 const recorded = vi.hoisted(() => ({
-  chatUpdates: [] as Array<{ chatId: string; patch: Record<string, unknown> }>,
-  folderUpdates: [] as Array<{ folderId: string; patch: Record<string, unknown> }>,
+  chatUpdates: [] as Array<{
+    chatId: string
+    patch: Record<string, unknown>
+    keepalive?: boolean
+  }>,
+  folderUpdates: [] as Array<{
+    folderId: string
+    patch: Record<string, unknown>
+    keepalive?: boolean
+  }>,
 }))
 const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const chatCommandState = vi.hoisted(() => ({
@@ -39,11 +47,29 @@ vi.mock('../chatCommands', () => {
       'bookmarkNames',
       'modules',
     ]),
-    dispatchUpdateChatRow: (chatId: string, patch: Record<string, unknown>) => {
-      recorded.chatUpdates.push({ chatId, patch: cloneJsonValue(patch) })
+    dispatchUpdateChatRow: (
+      chatId: string,
+      patch: Record<string, unknown>,
+      _rollback: unknown,
+      options?: { keepalive?: boolean },
+    ) => {
+      recorded.chatUpdates.push({
+        chatId,
+        patch: cloneJsonValue(patch),
+        ...(options?.keepalive ? { keepalive: options.keepalive } : {}),
+      })
     },
-    dispatchUpdateChatFolderRow: (folderId: string, patch: Record<string, unknown>) => {
-      recorded.folderUpdates.push({ folderId, patch: cloneJsonValue(patch) })
+    dispatchUpdateChatFolderRow: (
+      folderId: string,
+      patch: Record<string, unknown>,
+      _rollback: unknown,
+      options?: { keepalive?: boolean },
+    ) => {
+      recorded.folderUpdates.push({
+        folderId,
+        patch: cloneJsonValue(patch),
+        ...(options?.keepalive ? { keepalive: options.keepalive } : {}),
+      })
     },
     restoreChatState: (snapshot: { characters: unknown[]; selectedCharID: number }) => {
       const db = chatCommandState.getDb?.()
@@ -58,6 +84,7 @@ vi.mock('../chatCommands', () => {
 import { DBState, selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
+  flushPendingServerBackedChatPatches,
   rollbackServerBackedChatMetadata,
   watchServerBackedChatMetadata,
 } from './chatBridge.svelte'
@@ -133,9 +160,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
     DBState.db.characters[0].chatFolders[0].folded = true
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
-    expect(recorded.folderUpdates).toEqual([
-      { folderId: 'folder-1', patch: { folded: true } },
-    ])
+    expect(recorded.folderUpdates).toEqual([{ folderId: 'folder-1', patch: { folded: true } }])
     stop()
   })
 
@@ -159,6 +184,51 @@ describe('watchServerBackedChatMetadata baselines', () => {
 
     expect(recorded.chatUpdates).toEqual([])
     stop()
+  })
+
+  it('M8: flushes pending chat and folder metadata with keepalive and clears debounces', async () => {
+    setupChat()
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY * 10 })
+    flushSync()
+
+    DBState.db.characters[0].chats[0].name = 'Unload Chat'
+    DBState.db.characters[0].chatFolders[0].folded = true
+    flushSync()
+    flushPendingServerBackedChatPatches({ keepalive: true })
+
+    expect(recorded.chatUpdates).toEqual([
+      { chatId: 'chat-1', patch: { name: 'Unload Chat' }, keepalive: true },
+    ])
+    expect(recorded.folderUpdates).toEqual([
+      { folderId: 'folder-1', patch: { folded: true }, keepalive: true },
+    ])
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(recorded.chatUpdates).toHaveLength(1)
+    expect(recorded.folderUpdates).toHaveLength(1)
+    stop()
+  })
+
+  it('M8: watcher teardown flushes pending chat and folder metadata and clears debounces', async () => {
+    setupChat()
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY * 10 })
+    flushSync()
+
+    DBState.db.characters[0].chats[0].name = 'Teardown Chat'
+    DBState.db.characters[0].chatFolders[0].folded = true
+    flushSync()
+    stop()
+
+    expect(recorded.chatUpdates).toEqual([
+      { chatId: 'chat-1', patch: { name: 'Teardown Chat' } },
+    ])
+    expect(recorded.folderUpdates).toEqual([
+      { folderId: 'folder-1', patch: { folded: true } },
+    ])
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(recorded.chatUpdates).toHaveLength(1)
+    expect(recorded.folderUpdates).toHaveLength(1)
   })
 })
 

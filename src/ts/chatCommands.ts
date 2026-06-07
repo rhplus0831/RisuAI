@@ -23,6 +23,7 @@ import {
   type ChatSnapshot,
   type MessageSnapshot,
   type ServerCommandResult,
+  type ServerCommandTransportOptions,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { DBState, reloadGuiDisplay, selectedCharID } from './stores.svelte'
@@ -274,9 +275,10 @@ export function restoreChatFolderRowMetadata(snapshot: ChatFolderRowMetadataSnap
 export function runChatCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,
+  options: ServerCommandTransportOptions = {},
 ): void {
   if (!canUseServerCommands()) return
-  void runServerCommand({ command, rollback })
+  void runServerCommand({ command, rollback, ...options })
 }
 
 export function runMessageCommand<T extends Record<string, unknown>>(
@@ -385,18 +387,24 @@ export function dispatchUpdateChatRow(
   chatId: string,
   patch: ChatSnapshot,
   rollback: ChatRowMetadataSnapshot,
+  options: ServerCommandTransportOptions = {},
 ): void {
   const commandPatch = sanitizeChatPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
   runChatCommand(
     (baseRevision) =>
-      updateChatCommand({
-        baseRevision,
-        chatId,
-        patch: commandPatch,
-        select: false,
-      }),
+      updateChatCommand(
+        {
+          baseRevision,
+          chatId,
+          patch: commandPatch,
+          select: false,
+        },
+        options.signal,
+        options.keepalive,
+      ),
     () => restoreChatRowMetadata(rollback),
+    options,
   )
 }
 
@@ -440,7 +448,8 @@ export function dispatchCompatibleChatUpdateScoped(
   previous: ChatScopedSnapshot,
 ): void {
   const factories = buildCompatibleChatUpdateFactories(previousChat, nextChat)
-  if (factories.length > 0) runChatCommandSequence(factories, () => restoreChatScopedState(previous))
+  if (factories.length > 0)
+    runChatCommandSequence(factories, () => restoreChatScopedState(previous))
 }
 
 // Factory-list form of dispatchCompatibleChatUpdate so the V3 plugin API can
@@ -626,15 +635,21 @@ export function dispatchUpdateChatFolderRow(
   folderId: string,
   patch: ChatFolderSnapshot,
   rollback: ChatFolderRowMetadataSnapshot,
+  options: ServerCommandTransportOptions = {},
 ): void {
   runChatCommand(
     (baseRevision) =>
-      updateChatFolderCommand({
-        baseRevision,
-        folderId,
-        patch,
-      }),
+      updateChatFolderCommand(
+        {
+          baseRevision,
+          folderId,
+          patch,
+        },
+        options.signal,
+        options.keepalive,
+      ),
     () => restoreChatFolderRowMetadata(rollback),
+    options,
   )
 }
 
@@ -795,9 +810,7 @@ function removeOptimisticCurrentChatMessage(input: {
     const chatIndex = locateChatIndex(character, input.chatId)
     if (chatIndex < 0 && input.chatId !== undefined) return
     const chat =
-      chatIndex >= 0
-        ? character.chats[chatIndex]
-        : character.chats[character.chatPage ?? 0]
+      chatIndex >= 0 ? character.chats[chatIndex] : character.chats[character.chatPage ?? 0]
     if (!chat?.message) return
     const messageIndex = chat.message.findIndex((message) => message.chatId === input.messageId)
     if (messageIndex >= 0) {
@@ -1113,10 +1126,7 @@ function chatMetadataPatchKeyOrder(
   return orderedKeys
 }
 
-function sanitizedChatMetadataValue(
-  record: Record<string, unknown>,
-  key: string,
-): unknown {
+function sanitizedChatMetadataValue(record: Record<string, unknown>, key: string): unknown {
   return hasSanitizedChatMetadataValue(record, key) ? record[key] : undefined
 }
 

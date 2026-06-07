@@ -15,11 +15,17 @@ const recorded = vi.hoisted(() => ({ commands: [] as Array<Record<string, unknow
 const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
-  runServerCommand: vi.fn(async ({ command }: { command: (rev: number) => Promise<unknown> }) => {
-    const built = await command(1)
-    recorded.commands.push(built as Record<string, unknown>)
-    return { status: 'ok', revision: 1 }
-  }),
+  runServerCommand: vi.fn(
+    async (args: { command: (rev: number) => Promise<unknown>; keepalive?: boolean }) => {
+      const { command } = args
+      const built = await command(1)
+      recorded.commands.push({
+        ...(built as Record<string, unknown>),
+        ...(args.keepalive ? { keepalive: args.keepalive } : {}),
+      })
+      return { status: 'ok', revision: 1 }
+    },
+  ),
   // Builders: identity stubs that tag the command kind so the test can assert which
   // entity (if any) the watcher tried to persist.
   createGlobalLorebookCommand: async (a: unknown) => ({ kind: 'createGlobal', a }),
@@ -57,6 +63,7 @@ import {
   currentLorebookEntryScopedSnapshot,
   dispatchReplaceCharacterLorebooks,
   flushPendingLorebookEntryDraftEdit,
+  flushPendingServerBackedLorebookPatches,
   markCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
@@ -195,10 +202,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     const cmds = characterReplaceCommands()
     expect(cmds).toHaveLength(1)
     expect(cmds[0].characterId).toBe('c1')
-    expect((cmds[0].entries as Entry[]).map((entry) => entry.content)).toEqual([
-      'Server',
-      'Local',
-    ])
+    expect((cmds[0].entries as Entry[]).map((entry) => entry.content)).toEqual(['Server', 'Local'])
     stop()
   })
 })
@@ -429,6 +433,52 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(characterReplaceCommands()).toHaveLength(1)
   })
 
+  it('M8: bridge flush sends pending lorebook replacements with keepalive and clears debounce', async () => {
+    setupK4EditorDb()
+
+    applyLorebookEntryDraftEdit(
+      { kind: 'character', characterId: 'c-k4' },
+      4,
+      { ...(DBState.db.characters[0].globalLore as Entry[])[4], content: 'unload final' } as any,
+      DELAY * 10,
+    )
+    flushPendingServerBackedLorebookPatches({ keepalive: true })
+    await vi.advanceTimersByTimeAsync(0)
+
+    const cmds = characterReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect(cmds[0].keepalive).toBe(true)
+    expect((cmds[0].entries as Entry[])[4].content).toBe('unload final')
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(characterReplaceCommands()).toHaveLength(1)
+  })
+
+  it('M8: watcher teardown flushes pending lorebook replacements and clears debounce', async () => {
+    setupK4EditorDb()
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY * 10 })
+    flushSync()
+
+    recorded.commands.length = 0
+    ;(DBState.db.characters[0].globalLore as Entry[]).push({
+      key: 'teardown',
+      content: 'Teardown lore',
+    })
+    flushSync()
+    stop()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const cmds = characterReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect(cmds[0].keepalive).toBeUndefined()
+    expect((cmds[0].entries as Entry[]).map((entry) => entry.content).at(-1)).toBe(
+      'Teardown lore',
+    )
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(characterReplaceCommands()).toHaveLength(1)
+  })
+
   it('K4: immediate flush with an active watcher sends one replacement only', async () => {
     setupK4EditorDb()
     const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
@@ -507,7 +557,9 @@ describe('K4 lorebook editor entry draft scope', () => {
       source.indexOf('<div class="text-textcolor2 mt-2 flex">'),
     )
 
-    expect(source).toContain("applyLorebookEntryDraftEdit({ kind: 'module', moduleId }, index, value)")
+    expect(source).toContain(
+      "applyLorebookEntryDraftEdit({ kind: 'module', moduleId }, index, value)",
+    )
     expect(source).toContain("flushPendingLorebookEntryDraftEdit({ kind: 'module', moduleId })")
     expect(lorebookList).toContain('onEntryChange={updateModuleLorebookValue}')
     expect(lorebookList).toContain('onEntrySettled={flushModuleLorebookValue}')
@@ -531,9 +583,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect((DBState.db.characters[0].globalLore as Entry[])[4].content).toBe(
       'same collection sibling edit',
     )
-    expect((DBState.db.characters[1].globalLore as Entry[])[0].content).toBe(
-      'other character edit',
-    )
+    expect((DBState.db.characters[1].globalLore as Entry[])[0].content).toBe('other character edit')
   })
 
   it('K4: collection operations still use collection-level replacement rollback', async () => {
@@ -560,7 +610,6 @@ describe('K4 lorebook editor entry draft scope', () => {
       ...originalIds.slice(1),
       originalIds[0],
     ])
-
     ;(DBState.db.characters[0].globalLore as Entry[])[1].content = 'collection failed edit'
     restoreLorebookState(previous)
     expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(

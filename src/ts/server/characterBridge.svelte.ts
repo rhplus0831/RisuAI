@@ -8,7 +8,11 @@ import {
   sanitizeCharacterPatch,
   type CharacterStateSnapshot,
 } from '../characterCommands'
-import { canUseServerCommands, type CharacterSnapshot } from './commands'
+import {
+  canUseServerCommands,
+  type CharacterSnapshot,
+  type ServerCommandTransportOptions,
+} from './commands'
 import { DBState, selectedCharID } from '../stores.svelte'
 import {
   getServerProjectionApplyEpoch,
@@ -160,7 +164,10 @@ export function watchServerBackedCharacterProfile(
     })
   })
 
-  return stop
+  return () => {
+    flushPendingServerBackedCharacterPatches()
+    stop()
+  }
 }
 
 function queueCharacterPatch(
@@ -185,22 +192,37 @@ function queueCharacterPatch(
         timer: null,
       }
 
-  nextPatch.timer = setTimeout(() => {
-    const commandPatch = pendingPatches.get(characterId)
-    pendingPatches.delete(characterId)
-    if (!commandPatch) return
-
-    dispatchUpdateCharacter(
-      commandPatch.characterId,
-      commandPatch.patch,
-      {
-        ...commandPatch.previous,
-        selectedCharID: get(selectedCharID),
-      },
-      rollbackServerBackedCharacterProfile,
-    )
-  }, delay)
+  nextPatch.timer = setTimeout(() => runPendingCharacterPatch(characterId), delay)
   pendingPatches.set(characterId, nextPatch)
+}
+
+export function flushPendingServerBackedCharacterPatches(
+  options: ServerCommandTransportOptions = {},
+): void {
+  for (const characterId of Array.from(pendingPatches.keys())) {
+    runPendingCharacterPatch(characterId, options)
+  }
+}
+
+function runPendingCharacterPatch(
+  characterId: string,
+  options: ServerCommandTransportOptions = {},
+): void {
+  const commandPatch = pendingPatches.get(characterId)
+  if (!commandPatch) return
+  if (commandPatch.timer) clearTimeout(commandPatch.timer)
+  pendingPatches.delete(characterId)
+
+  dispatchUpdateCharacter(
+    commandPatch.characterId,
+    commandPatch.patch,
+    {
+      ...commandPatch.previous,
+      selectedCharID: get(selectedCharID),
+    },
+    rollbackServerBackedCharacterProfile,
+    options,
+  )
 }
 
 function scalarCharacterProfile(character: Record<string, unknown>): CharacterSnapshot {

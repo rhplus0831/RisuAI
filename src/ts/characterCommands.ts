@@ -11,6 +11,7 @@ import {
   type CharacterOrderEntry,
   type CharacterSnapshot,
   type ServerCommandResult,
+  type ServerCommandTransportOptions,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
@@ -123,7 +124,9 @@ export interface CharacterSupaMemorySnapshot {
   supaMemory: boolean | undefined
 }
 
-export function currentCharacterRowSnapshot(index: number = get(selectedCharID)): CharacterRowSnapshot {
+export function currentCharacterRowSnapshot(
+  index: number = get(selectedCharID),
+): CharacterRowSnapshot {
   const character = DBState.db.characters?.[index]
   return {
     characterId: character?.chaId,
@@ -226,9 +229,10 @@ function locateCharacterIndex(
 export function runCharacterCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,
+  options: ServerCommandTransportOptions = {},
 ): void {
   if (!canUseServerCommands()) return
-  void runServerCommand({ command, rollback })
+  void runServerCommand({ command, rollback, ...options })
 }
 
 export function dispatchCreateCharacter(
@@ -269,17 +273,23 @@ function dispatchUpdateCharacterWith(
   characterId: string,
   patch: CharacterSnapshot,
   rollback: () => void,
+  options: ServerCommandTransportOptions = {},
 ): void {
   const commandPatch = sanitizeCharacterPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
   runCharacterCommand(
     (baseRevision) =>
-      updateCharacterCommand({
-        baseRevision,
-        characterId,
-        patch: commandPatch,
-      }),
+      updateCharacterCommand(
+        {
+          baseRevision,
+          characterId,
+          patch: commandPatch,
+        },
+        options.signal,
+        options.keepalive,
+      ),
     rollback,
+    options,
   )
 }
 
@@ -288,8 +298,9 @@ export function dispatchUpdateCharacter(
   patch: CharacterSnapshot,
   previous: CharacterStateSnapshot,
   rollback: (snapshot: CharacterStateSnapshot) => void = restoreCharacterState,
+  options: ServerCommandTransportOptions = {},
 ): void {
-  dispatchUpdateCharacterWith(characterId, patch, () => rollback(previous))
+  dispatchUpdateCharacterWith(characterId, patch, () => rollback(previous), options)
 }
 
 // Single-row rollback variant of `dispatchUpdateCharacter` for character-FIELD

@@ -370,6 +370,7 @@ export interface PatchServerBackedSettingsInput {
   patch: SettingsPatch
   rollback?: () => void
   signal?: AbortSignal | null
+  keepalive?: boolean
 }
 
 export type PresetSnapshot = Record<string, unknown> & {
@@ -947,6 +948,12 @@ export interface RunServerPresetCommandInput<T extends Record<string, unknown> =
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>
   rollback?: () => void
   signal?: AbortSignal | null
+  keepalive?: boolean
+}
+
+export interface ServerCommandTransportOptions {
+  signal?: AbortSignal | null
+  keepalive?: boolean
 }
 
 let cachedServerCommandRevision: number | null = null
@@ -981,6 +988,7 @@ export function peekCachedServerCommandRevision(): number | null {
 
 export async function getServerCommandBaseRevision(
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<number | null> {
   if (!canUseServerCommands()) return null
   if (cachedServerCommandRevision !== null) return cachedServerCommandRevision
@@ -988,13 +996,15 @@ export async function getServerCommandBaseRevision(
   const auth = await getNodeServerProxyAuth()
   let response: Response
   try {
-    response = await fetch(BOOTSTRAP_ENDPOINT, {
+    const init: RequestInit = {
       method: 'GET',
       signal: signal ?? undefined,
       headers: {
         'risu-auth': auth,
       },
-    })
+    }
+    if (keepalive) init.keepalive = true
+    response = await fetch(BOOTSTRAP_ENDPOINT, init)
   } catch {
     return null
   }
@@ -1030,6 +1040,7 @@ export async function patchRuntimeSettings(
 export async function patchSettingsGroup(
   input: PatchSettingsGroupInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult> {
   return requestCommandJson(`/settings/${encodeURIComponent(input.group)}`, {
     method: 'PATCH',
@@ -1038,6 +1049,7 @@ export async function patchSettingsGroup(
       patch: input.patch,
     },
     signal,
+    keepalive,
   })
 }
 
@@ -1068,13 +1080,17 @@ export async function patchServerBackedSettings(
 
   let lastResult: ServerCommandResult = { status: 'unavailable' }
   for (const [group, patch] of grouped) {
-    const baseRevision = await getServerCommandBaseRevision(input.signal)
+    const baseRevision = await getServerCommandBaseRevision(input.signal, input.keepalive)
     if (baseRevision === null) {
       input.rollback?.()
       return { status: 'error', error: 'Unable to read server command revision' }
     }
 
-    const result = await patchSettingsGroup({ group, baseRevision, patch }, input.signal)
+    const result = await patchSettingsGroup(
+      { group, baseRevision, patch },
+      input.signal,
+      input.keepalive,
+    )
 
     if (result.status !== 'ok') {
       input.rollback?.()
@@ -1193,6 +1209,7 @@ export async function reorderPresetsCommand(
 export async function patchPromptSettingsCommand(
   input: PatchPromptSettingsCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult> {
   return requestCommandJson('/prompt-settings', {
     method: 'PATCH',
@@ -1201,6 +1218,7 @@ export async function patchPromptSettingsCommand(
       patch: input.patch,
     },
     signal,
+    keepalive,
   })
 }
 
@@ -1221,6 +1239,7 @@ export async function createPromptItemCommand(
 export async function updatePromptItemCommand(
   input: UpdatePromptItemCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ itemId: string }>> {
   return requestCommandJson(`/prompt-items/${encodeURIComponent(input.itemId)}`, {
     method: 'PATCH',
@@ -1229,6 +1248,7 @@ export async function updatePromptItemCommand(
       patch: input.patch,
     },
     signal,
+    keepalive,
   })
 }
 
@@ -1508,6 +1528,7 @@ export async function createAndSelectCharacterCommand(
 export async function updateCharacterCommand(
   input: UpdateCharacterCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ characterId: string }>> {
   return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}`, {
     method: 'PATCH',
@@ -1516,6 +1537,7 @@ export async function updateCharacterCommand(
       patch: input.patch,
     },
     signal,
+    keepalive,
   })
 }
 
@@ -1579,6 +1601,7 @@ export async function createChatCommand(
 export async function updateChatCommand(
   input: UpdateChatCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ chatId: string; selectedChatId: string | null }>> {
   return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}`, {
     method: 'PATCH',
@@ -1588,6 +1611,7 @@ export async function updateChatCommand(
       select: input.select,
     },
     signal,
+    keepalive,
   })
 }
 
@@ -1656,6 +1680,7 @@ export async function createChatFolderCommand(
 export async function updateChatFolderCommand(
   input: UpdateChatFolderCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ folderId: string }>> {
   return requestCommandJson(`/chat-folders/${encodeURIComponent(input.folderId)}`, {
     method: 'PATCH',
@@ -1664,6 +1689,7 @@ export async function updateChatFolderCommand(
       patch: input.patch,
     },
     signal,
+    keepalive,
   })
 }
 
@@ -1784,6 +1810,7 @@ export async function selectGlobalLorebookCommand(
 export async function replaceGlobalLorebookEntriesCommand(
   input: ReplaceGlobalLorebookEntriesCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ lorebookId: string }>> {
   return requestCommandJson(`/lorebooks/${encodeURIComponent(input.lorebookId)}/entries`, {
     method: 'PUT',
@@ -1792,12 +1819,14 @@ export async function replaceGlobalLorebookEntriesCommand(
       entries: input.entries,
     },
     signal,
+    keepalive,
   })
 }
 
 export async function replaceCharacterLorebooksCommand(
   input: ReplaceCharacterLorebooksCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ characterId: string }>> {
   return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/lorebooks`, {
     method: 'PUT',
@@ -1806,12 +1835,14 @@ export async function replaceCharacterLorebooksCommand(
       entries: input.entries,
     },
     signal,
+    keepalive,
   })
 }
 
 export async function replaceChatLorebooksCommand(
   input: ReplaceChatLorebooksCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ chatId: string }>> {
   return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/lorebooks`, {
     method: 'PUT',
@@ -1820,12 +1851,14 @@ export async function replaceChatLorebooksCommand(
       entries: input.entries,
     },
     signal,
+    keepalive,
   })
 }
 
 export async function replaceModuleLorebooksCommand(
   input: ReplaceModuleLorebooksCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ moduleId: string }>> {
   return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/lorebooks`, {
     method: 'PUT',
@@ -1834,12 +1867,14 @@ export async function replaceModuleLorebooksCommand(
       entries: input.entries,
     },
     signal,
+    keepalive,
   })
 }
 
 export async function replaceCharacterScriptsCommand(
   input: ReplaceCharacterScriptsCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ characterId: string }>> {
   return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/scripts`, {
     method: 'PUT',
@@ -1848,12 +1883,14 @@ export async function replaceCharacterScriptsCommand(
       scripts: input.scripts,
     },
     signal,
+    keepalive,
   })
 }
 
 export async function replaceCharacterTriggersCommand(
   input: ReplaceCharacterTriggersCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ characterId: string }>> {
   return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/triggers`, {
     method: 'PUT',
@@ -1862,12 +1899,14 @@ export async function replaceCharacterTriggersCommand(
       triggers: input.triggers,
     },
     signal,
+    keepalive,
   })
 }
 
 export async function replaceModuleScriptsCommand(
   input: ReplaceModuleScriptsCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ moduleId: string }>> {
   return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/scripts`, {
     method: 'PUT',
@@ -1876,12 +1915,14 @@ export async function replaceModuleScriptsCommand(
       scripts: input.scripts,
     },
     signal,
+    keepalive,
   })
 }
 
 export async function replaceModuleTriggersCommand(
   input: ReplaceModuleTriggersCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ moduleId: string }>> {
   return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/triggers`, {
     method: 'PUT',
@@ -1890,6 +1931,7 @@ export async function replaceModuleTriggersCommand(
       triggers: input.triggers,
     },
     signal,
+    keepalive,
   })
 }
 
@@ -2204,7 +2246,7 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
 
   let result: ServerCommandResult<T>
   try {
-    const baseRevision = await getServerCommandBaseRevision(input.signal)
+    const baseRevision = await getServerCommandBaseRevision(input.signal, input.keepalive)
     if (baseRevision === null) {
       input.rollback?.()
       return { status: 'error', error: 'Unable to read server command revision' }
@@ -2242,14 +2284,14 @@ function groupSettingsPatch(patch: SettingsPatch): Array<[SettingsGroup, Setting
 
 async function requestCommandJson<T extends Record<string, unknown> = {}>(
   path: string,
-  init: { method: string; body: unknown; signal?: AbortSignal | null },
+  init: { method: string; body: unknown; signal?: AbortSignal | null; keepalive?: boolean },
 ): Promise<ServerCommandResult<T>> {
   if (!canUseServerCommands()) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
   let response: Response
   try {
-    response = await fetch(`${COMMAND_ENDPOINT}${path}`, {
+    const requestInit: RequestInit = {
       method: init.method,
       signal: init.signal ?? undefined,
       headers: {
@@ -2258,7 +2300,9 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
         ...activeWriterSessionHeader(),
       },
       body: JSON.stringify(init.body),
-    })
+    }
+    if (init.keepalive) requestInit.keepalive = true
+    response = await fetch(`${COMMAND_ENDPOINT}${path}`, requestInit)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return { status: 'error', error: `Network error: ${message}` }

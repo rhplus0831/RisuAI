@@ -12,6 +12,7 @@ import {
   runServerCommand,
   type ScriptDefinitionSnapshot,
   type ServerCommandResult,
+  type ServerCommandTransportOptions,
   type TriggerDefinitionSnapshot,
 } from './commands'
 import {
@@ -53,7 +54,10 @@ interface PendingCollectionReplacement {
   // The command receives the coalesced rollback baseline at fire time rather than
   // closing over a per-dispatch value, so debounced same-key edits roll back to
   // the first baseline (see `queueReplacement`), not the intermediate one.
-  command: (rollback: ScriptDefinitionRollback) => Promise<ServerCommandResult<Record<string, unknown>>>
+  command: (
+    rollback: ScriptDefinitionRollback,
+    options?: ServerCommandTransportOptions,
+  ) => Promise<ServerCommandResult<Record<string, unknown>>>
 }
 
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
@@ -170,15 +174,21 @@ export function dispatchReplaceCharacterScripts(
   queueReplacement(
     `characterScripts:${characterId}`,
     previous,
-    (rollback) =>
+    (rollback, options = {}) =>
       runServerCommand({
         command: (baseRevision) =>
-          replaceCharacterScriptsCommand({
-            baseRevision,
-            characterId,
-            scripts: cloneJsonValue(scripts) as ScriptDefinitionSnapshot[],
-          }),
+          replaceCharacterScriptsCommand(
+            {
+              baseRevision,
+              characterId,
+              scripts: cloneJsonValue(scripts) as ScriptDefinitionSnapshot[],
+            },
+            options.signal,
+            options.keepalive,
+          ),
         rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        signal: options.signal,
+        keepalive: options.keepalive,
       }),
     delayMs,
   )
@@ -195,15 +205,21 @@ export function dispatchReplaceCharacterTriggers(
   queueReplacement(
     `characterTriggers:${characterId}`,
     previous,
-    (rollback) =>
+    (rollback, options = {}) =>
       runServerCommand({
         command: (baseRevision) =>
-          replaceCharacterTriggersCommand({
-            baseRevision,
-            characterId,
-            triggers: cloneJsonValue(triggers) as TriggerDefinitionSnapshot[],
-          }),
+          replaceCharacterTriggersCommand(
+            {
+              baseRevision,
+              characterId,
+              triggers: cloneJsonValue(triggers) as TriggerDefinitionSnapshot[],
+            },
+            options.signal,
+            options.keepalive,
+          ),
         rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        signal: options.signal,
+        keepalive: options.keepalive,
       }),
     delayMs,
   )
@@ -220,15 +236,21 @@ export function dispatchReplaceModuleScripts(
   queueReplacement(
     `moduleScripts:${moduleId}`,
     previous,
-    (rollback) =>
+    (rollback, options = {}) =>
       runServerCommand({
         command: (baseRevision) =>
-          replaceModuleScriptsCommand({
-            baseRevision,
-            moduleId,
-            scripts: cloneJsonValue(scripts) as ScriptDefinitionSnapshot[],
-          }),
+          replaceModuleScriptsCommand(
+            {
+              baseRevision,
+              moduleId,
+              scripts: cloneJsonValue(scripts) as ScriptDefinitionSnapshot[],
+            },
+            options.signal,
+            options.keepalive,
+          ),
         rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        signal: options.signal,
+        keepalive: options.keepalive,
       }),
     delayMs,
   )
@@ -245,15 +267,21 @@ export function dispatchReplaceModuleTriggers(
   queueReplacement(
     `moduleTriggers:${moduleId}`,
     previous,
-    (rollback) =>
+    (rollback, options = {}) =>
       runServerCommand({
         command: (baseRevision) =>
-          replaceModuleTriggersCommand({
-            baseRevision,
-            moduleId,
-            triggers: cloneJsonValue(triggers) as TriggerDefinitionSnapshot[],
-          }),
+          replaceModuleTriggersCommand(
+            {
+              baseRevision,
+              moduleId,
+              triggers: cloneJsonValue(triggers) as TriggerDefinitionSnapshot[],
+            },
+            options.signal,
+            options.keepalive,
+          ),
         rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        signal: options.signal,
+        keepalive: options.keepalive,
       }),
     delayMs,
   )
@@ -315,25 +343,27 @@ export function watchServerBackedScriptDefinitions(
   })
 
   return () => {
+    flushPendingServerBackedScriptDefinitionPatches()
     unsubscribeSelected?.()
     stop()
   }
 }
 
-function dispatchWatchedReplacement(
-  key: string,
-  previousSnapshot: string,
-  delayMs: number,
-): void {
+function dispatchWatchedReplacement(key: string, previousSnapshot: string, delayMs: number): void {
   if (key.startsWith('characterScripts:')) {
     const characterId = key.slice('characterScripts:'.length)
     const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
     if (character) {
-      dispatchReplaceCharacterScripts(characterId, character.customscript ?? [], {
-        kind: 'characterScripts',
+      dispatchReplaceCharacterScripts(
         characterId,
-        scripts: parseSnapshotArray<customscript>(previousSnapshot),
-      }, delayMs)
+        character.customscript ?? [],
+        {
+          kind: 'characterScripts',
+          characterId,
+          scripts: parseSnapshotArray<customscript>(previousSnapshot),
+        },
+        delayMs,
+      )
     }
     return
   }
@@ -341,11 +371,16 @@ function dispatchWatchedReplacement(
     const characterId = key.slice('characterTriggers:'.length)
     const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
     if (character) {
-      dispatchReplaceCharacterTriggers(characterId, character.triggerscript ?? [], {
-        kind: 'characterTriggers',
+      dispatchReplaceCharacterTriggers(
         characterId,
-        triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
-      }, delayMs)
+        character.triggerscript ?? [],
+        {
+          kind: 'characterTriggers',
+          characterId,
+          triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
+        },
+        delayMs,
+      )
     }
     return
   }
@@ -355,11 +390,16 @@ function dispatchWatchedReplacement(
       (candidate) => candidate.id === moduleId,
     )
     if (module?.regex) {
-      dispatchReplaceModuleScripts(moduleId, module.regex, {
-        kind: 'moduleScripts',
+      dispatchReplaceModuleScripts(
         moduleId,
-        scripts: parseSnapshotArray<customscript>(previousSnapshot),
-      }, delayMs)
+        module.regex,
+        {
+          kind: 'moduleScripts',
+          moduleId,
+          scripts: parseSnapshotArray<customscript>(previousSnapshot),
+        },
+        delayMs,
+      )
     }
     return
   }
@@ -369,11 +409,16 @@ function dispatchWatchedReplacement(
       (candidate) => candidate.id === moduleId,
     )
     if (module?.trigger) {
-      dispatchReplaceModuleTriggers(moduleId, module.trigger, {
-        kind: 'moduleTriggers',
+      dispatchReplaceModuleTriggers(
         moduleId,
-        triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
-      }, delayMs)
+        module.trigger,
+        {
+          kind: 'moduleTriggers',
+          moduleId,
+          triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
+        },
+        delayMs,
+      )
     }
   }
 }
@@ -424,14 +469,8 @@ function collectCharacterScriptDefinitionSnapshots(
   snapshots: Map<string, string>,
   character: character,
 ): void {
-  snapshots.set(
-    `characterScripts:${character.chaId}`,
-    snapshotJson(character.customscript ?? []),
-  )
-  snapshots.set(
-    `characterTriggers:${character.chaId}`,
-    snapshotJson(character.triggerscript ?? []),
-  )
+  snapshots.set(`characterScripts:${character.chaId}`, snapshotJson(character.customscript ?? []))
+  snapshots.set(`characterTriggers:${character.chaId}`, snapshotJson(character.triggerscript ?? []))
 }
 
 function collectModuleScriptDefinitionSnapshots(
@@ -500,7 +539,10 @@ function ensureScopedClientScriptDefinitionIds(scope: ScriptDefinitionWatchScope
 function queueReplacement(
   key: string,
   previous: ScriptDefinitionRollback,
-  command: (rollback: ScriptDefinitionRollback) => Promise<ServerCommandResult<Record<string, unknown>>>,
+  command: (
+    rollback: ScriptDefinitionRollback,
+    options?: ServerCommandTransportOptions,
+  ) => Promise<ServerCommandResult<Record<string, unknown>>>,
   delay: number,
 ): void {
   const existing = pendingReplacements.get(key)
@@ -515,11 +557,27 @@ function queueReplacement(
     command,
     timer: null,
   }
-  pending.timer = setTimeout(() => {
-    pendingReplacements.delete(key)
-    void pending.command(pending.previous)
-  }, delay)
+  pending.timer = setTimeout(() => runPendingScriptDefinitionReplacement(key), delay)
   pendingReplacements.set(key, pending)
+}
+
+export function flushPendingServerBackedScriptDefinitionPatches(
+  options: ServerCommandTransportOptions = {},
+): void {
+  for (const key of Array.from(pendingReplacements.keys())) {
+    runPendingScriptDefinitionReplacement(key, options)
+  }
+}
+
+function runPendingScriptDefinitionReplacement(
+  key: string,
+  options: ServerCommandTransportOptions = {},
+): void {
+  const pending = pendingReplacements.get(key)
+  if (!pending) return
+  if (pending.timer) clearTimeout(pending.timer)
+  pendingReplacements.delete(key)
+  void pending.command(pending.previous, options)
 }
 
 function rollbackServerBackedScriptDefinitions(rollback: ScriptDefinitionRollback): void {

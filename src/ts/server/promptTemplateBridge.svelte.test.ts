@@ -1,26 +1,88 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount, tick, unmount } from 'svelte'
 
-const commandState = vi.hoisted(() => ({ revision: 1 as number | null }))
-
-vi.mock('./commands', () => ({
-  peekCachedServerCommandRevision: () => commandState.revision,
+const commandState = vi.hoisted(() => ({
+  revision: 1 as number | null,
+  commands: [] as Array<{
+    built: Record<string, unknown>
+    rollback?: () => void
+    keepalive?: boolean
+  }>,
 }))
+
+const commandMocks = vi.hoisted(() => ({
+  canUseServerCommands: () => true,
+  patchPromptSettingsCommand: async (args: Record<string, unknown>) => ({
+    kind: 'patchPromptSettings',
+    ...args,
+  }),
+  peekCachedServerCommandRevision: () => commandState.revision,
+  runServerCommand: vi.fn(
+    async (args: {
+      command: (baseRevision: number) => Promise<Record<string, unknown>>
+      rollback?: () => void
+      keepalive?: boolean
+    }) => {
+      const built = await args.command(1)
+      commandState.commands.push({
+        built,
+        rollback: args.rollback,
+        ...(args.keepalive ? { keepalive: args.keepalive } : {}),
+      })
+      return { status: 'ok', revision: 1 }
+    },
+  ),
+  updatePromptItemCommand: async (args: Record<string, unknown>) => ({
+    kind: 'updatePromptItem',
+    ...args,
+  }),
+  createPromptItemCommand: async (args: Record<string, unknown>) => ({
+    kind: 'createPromptItem',
+    ...args,
+  }),
+  deletePromptItemCommand: async (args: Record<string, unknown>) => ({
+    kind: 'deletePromptItem',
+    ...args,
+  }),
+  reorderPromptItemsCommand: async (args: Record<string, unknown>) => ({
+    kind: 'reorderPromptItems',
+    ...args,
+  }),
+}))
+
+vi.mock('./commands', () => commandMocks)
+vi.mock('src/ts/server/commands', () => commandMocks)
 
 vi.mock('./projectionWriteGuard.svelte', () => ({
   withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
+}))
+vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
+  withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
+}))
+
+vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+  createServerBackedSettingDraft: vi.fn((_key: string, fallback: unknown) => ({ value: fallback })),
+  watchServerBackedSettings: vi.fn(() => () => {}),
 }))
 
 import type { PromptItem } from '../process/prompt'
 import { DBState } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
+import PromptSettings from 'src/lib/Setting/Pages/PromptSettings.svelte'
+import { queuePromptItemProjectionUpdate as queuePromptItemProjectionUpdateForPromptSettings } from 'src/ts/server/promptTemplateBridge.svelte'
 import {
   applyPromptItemProjectionWrite,
   cloneJsonValue,
+  flushPendingPromptTemplatePatches,
+  queuePromptItemProjectionUpdate,
+  queuePromptSettingsProjectionPatch,
   reconcilePromptTemplateDraft,
   restorePromptItemProjectionWrite,
+  type PromptTemplateDraftBinding,
 } from './promptTemplateBridge.svelte'
 
 const BIG = 'x'.repeat(5000)
+type MountedComponent = Parameters<typeof unmount>[0]
 
 function item(id: string, text: string): PromptItem {
   return { id, type: 'plain', type2: 'normal', role: 'system', text } as PromptItem
@@ -36,12 +98,7 @@ function textOf(value: PromptItem | undefined): string | undefined {
 // distinguishable from a whole-`promptTemplate` clone by serialized size.
 function seedTemplate(): void {
   ;(DBState as { db: unknown }).db = {
-    promptTemplate: [
-      item('p-0', 'small'),
-      item('p-1', BIG),
-      item('p-2', BIG),
-      item('p-3', BIG),
-    ],
+    promptTemplate: [item('p-0', 'small'), item('p-1', BIG), item('p-2', BIG), item('p-3', BIG)],
   }
 }
 
@@ -50,10 +107,13 @@ function draftCopy(): PromptItem[] {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers()
   commandState.revision = 1
+  commandState.commands.length = 0
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   ;(DBState as { db: unknown }).db = {}
 })
 
@@ -112,6 +172,103 @@ describe('restorePromptItemProjectionWrite', () => {
     expect((DBState.db.promptTemplate as PromptItem[])[0]).toEqual(item('p-0', 'original'))
     // A whole-array rollback would have reverted p-1 to BIG; the scoped rollback does not.
     expect(textOf((DBState.db.promptTemplate as PromptItem[])[1])).toBe('concurrent')
+  })
+})
+
+describe('flushPendingPromptTemplatePatches', () => {
+  it('M8: flushes pending prompt item updates with keepalive and clears debounce', async () => {
+    seedTemplate()
+    let draftItems = draftCopy()
+    draftItems[0] = item('p-0', 'unload item')
+    const binding: PromptTemplateDraftBinding = {
+      getItems: () => draftItems,
+      setItems: (items) => {
+        draftItems = items
+      },
+    }
+
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500)
+    flushPendingPromptTemplatePatches({ keepalive: true })
+    await Promise.resolve()
+
+    expect(commandState.commands).toHaveLength(1)
+    expect(commandState.commands[0].keepalive).toBe(true)
+    expect(commandState.commands[0].built).toEqual({
+      kind: 'updatePromptItem',
+      baseRevision: 1,
+      itemId: 'p-0',
+      patch: item('p-0', 'unload item'),
+    })
+
+    await vi.advanceTimersByTimeAsync(500)
+    expect(commandState.commands).toHaveLength(1)
+  })
+
+  it('M8: PromptSettings component teardown flushes pending prompt-template patches', async () => {
+    seedTemplate()
+    let draftItems = draftCopy()
+    draftItems[0] = item('p-0', 'component teardown item')
+    const binding: PromptTemplateDraftBinding = {
+      getItems: () => draftItems,
+      setItems: (items) => {
+        draftItems = items
+      },
+    }
+    queuePromptItemProjectionUpdateForPromptSettings(binding, 'p-0', item('p-0', 'small'), 500)
+    DBState.db.promptTemplate = []
+    DBState.db.promptSettings = {}
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await unmount(component)
+      component = null
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+    await Promise.resolve()
+
+    expect(commandState.commands).toHaveLength(1)
+    expect(commandState.commands[0].keepalive).toBeUndefined()
+    expect(commandState.commands[0].built).toEqual({
+      kind: 'updatePromptItem',
+      baseRevision: 1,
+      itemId: 'p-0',
+      patch: item('p-0', 'component teardown item'),
+    })
+
+    await vi.advanceTimersByTimeAsync(500)
+    expect(commandState.commands).toHaveLength(1)
+  })
+
+  it('M8: flushes pending prompt settings patches with keepalive and clears debounce', async () => {
+    ;(DBState as { db: unknown }).db = { jsonSchemaEnabled: true }
+
+    queuePromptSettingsProjectionPatch(
+      { jsonSchemaEnabled: false },
+      { jsonSchemaEnabled: true },
+      500,
+    )
+    flushPendingPromptTemplatePatches({ keepalive: true })
+    await Promise.resolve()
+
+    expect(commandState.commands).toHaveLength(1)
+    expect(commandState.commands[0].keepalive).toBe(true)
+    expect(commandState.commands[0].built).toEqual({
+      kind: 'patchPromptSettings',
+      baseRevision: 1,
+      patch: { jsonSchemaEnabled: false },
+    })
+
+    await vi.advanceTimersByTimeAsync(500)
+    expect(commandState.commands).toHaveLength(1)
   })
 })
 

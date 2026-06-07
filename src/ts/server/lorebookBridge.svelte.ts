@@ -19,6 +19,7 @@ import {
   type GlobalLorebookSnapshot,
   type LorebookEntrySnapshot,
   type ServerCommandResult,
+  type ServerCommandTransportOptions,
 } from './commands'
 import {
   getServerProjectionApplyEpoch,
@@ -54,7 +55,9 @@ interface PendingCollectionReplacement {
   previous: LorebookReplacementSnapshot
   source: LorebookReplacementSource
   timer: ReturnType<typeof setTimeout> | null
-  command: () => Promise<ServerCommandResult<Record<string, unknown>>>
+  command: (
+    options?: ServerCommandTransportOptions,
+  ) => Promise<ServerCommandResult<Record<string, unknown>>>
 }
 
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
@@ -418,9 +421,12 @@ export function applyLorebookEntryDraftEdit(
   return true
 }
 
-export function flushPendingLorebookEntryDraftEdit(scope: DiscreteLorebookEditScope): void {
+export function flushPendingLorebookEntryDraftEdit(
+  scope: DiscreteLorebookEditScope,
+  options: ServerCommandTransportOptions = {},
+): void {
   const key = lorebookCollectionScopeKey(scope)
-  runPendingReplacement(key)
+  runPendingReplacement(key, options)
 }
 
 // Assign missing ids on the edited collection only. The target is re-read inside
@@ -464,10 +470,7 @@ function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
   })
 }
 
-function ensureScopedClientLorebookEntryId(
-  scope: DiscreteLorebookEditScope,
-  index: number,
-): void {
+function ensureScopedClientLorebookEntryId(scope: DiscreteLorebookEditScope, index: number): void {
   withTrustedServerProjectionWrite(() => {
     if (
       scope.kind === 'character' &&
@@ -673,38 +676,56 @@ function queueScopedLorebookReplacement(
   queueReplacement(
     key,
     previous,
-    (rollbackSnapshot) =>
+    (rollbackSnapshot, options = {}) =>
       runServerCommand({
         command: (baseRevision): Promise<ServerCommandResult<Record<string, unknown>>> => {
           const entrySnapshots = cloneLorebookEntriesForCommand(entries)
           switch (scope.kind) {
             case 'character':
-              return replaceCharacterLorebooksCommand({
-                baseRevision,
-                characterId: scope.characterId,
-                entries: entrySnapshots,
-              }) as Promise<ServerCommandResult<Record<string, unknown>>>
+              return replaceCharacterLorebooksCommand(
+                {
+                  baseRevision,
+                  characterId: scope.characterId,
+                  entries: entrySnapshots,
+                },
+                options.signal,
+                options.keepalive,
+              ) as Promise<ServerCommandResult<Record<string, unknown>>>
             case 'chat':
-              return replaceChatLorebooksCommand({
-                baseRevision,
-                chatId: scope.chatId,
-                entries: entrySnapshots,
-              }) as Promise<ServerCommandResult<Record<string, unknown>>>
+              return replaceChatLorebooksCommand(
+                {
+                  baseRevision,
+                  chatId: scope.chatId,
+                  entries: entrySnapshots,
+                },
+                options.signal,
+                options.keepalive,
+              ) as Promise<ServerCommandResult<Record<string, unknown>>>
             case 'global':
-              return replaceGlobalLorebookEntriesCommand({
-                baseRevision,
-                lorebookId: scope.lorebookId,
-                entries: entrySnapshots,
-              }) as Promise<ServerCommandResult<Record<string, unknown>>>
+              return replaceGlobalLorebookEntriesCommand(
+                {
+                  baseRevision,
+                  lorebookId: scope.lorebookId,
+                  entries: entrySnapshots,
+                },
+                options.signal,
+                options.keepalive,
+              ) as Promise<ServerCommandResult<Record<string, unknown>>>
             case 'module':
-              return replaceModuleLorebooksCommand({
-                baseRevision,
-                moduleId: scope.moduleId,
-                entries: entrySnapshots,
-              }) as Promise<ServerCommandResult<Record<string, unknown>>>
+              return replaceModuleLorebooksCommand(
+                {
+                  baseRevision,
+                  moduleId: scope.moduleId,
+                  entries: entrySnapshots,
+                },
+                options.signal,
+                options.keepalive,
+              ) as Promise<ServerCommandResult<Record<string, unknown>>>
           }
         },
         rollback: () => rollbackLorebookReplacement(rollbackSnapshot),
+        signal: options.signal,
+        keepalive: options.keepalive,
       }),
     delayMs,
     source,
@@ -720,13 +741,7 @@ export function dispatchReplaceModuleLorebooks(
 ): void {
   if (!canUseServerCommands()) return
   if (source === 'collection') ensureClientLorebookEntryIds(entries)
-  queueScopedLorebookReplacement(
-    { kind: 'module', moduleId },
-    entries,
-    previous,
-    delayMs,
-    source,
-  )
+  queueScopedLorebookReplacement({ kind: 'module', moduleId }, entries, previous, delayMs, source)
 }
 
 export function watchServerBackedLorebooks(
@@ -801,6 +816,7 @@ export function watchServerBackedLorebooks(
   })
 
   return () => {
+    flushPendingServerBackedLorebookPatches()
     unsubscribeSelected?.()
     stop()
   }
@@ -926,6 +942,7 @@ function queueReplacement(
   previous: LorebookReplacementSnapshot,
   command: (
     previous: LorebookReplacementSnapshot,
+    options?: ServerCommandTransportOptions,
   ) => Promise<ServerCommandResult<Record<string, unknown>>>,
   delay: number,
   source: LorebookReplacementSource,
@@ -942,7 +959,7 @@ function queueReplacement(
     key,
     previous: effectivePrevious,
     source: effectiveSource,
-    command: () => command(effectivePrevious),
+    command: (options = {}) => command(effectivePrevious, options),
     timer: null,
   }
   if (effectiveSource === 'entry') {
@@ -958,7 +975,15 @@ function queueReplacement(
   pendingReplacements.set(key, pending)
 }
 
-function runPendingReplacement(key: string): void {
+export function flushPendingServerBackedLorebookPatches(
+  options: ServerCommandTransportOptions = {},
+): void {
+  for (const key of Array.from(pendingReplacements.keys())) {
+    runPendingReplacement(key, options)
+  }
+}
+
+function runPendingReplacement(key: string, options: ServerCommandTransportOptions = {}): void {
   const pending = pendingReplacements.get(key)
   if (!pending) return
   if (pending.timer) clearTimeout(pending.timer)
@@ -973,7 +998,7 @@ function runPendingReplacement(key: string): void {
       flushedEntryEditSnapshots.set(key, snapshot)
     }
   }
-  void pending.command()
+  void pending.command(options)
 }
 
 function scheduleFlushedEntrySuppressionClear(key: string, snapshot: string): void {

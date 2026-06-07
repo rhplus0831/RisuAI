@@ -55,6 +55,7 @@ import {
 import { peekActiveWriterSessionId } from './server/activeWriterSession'
 import { fetchServerProjectionResource } from './server/projection'
 import { forceServerProjectionResync } from './server/projectionResync'
+import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
 import {
   applyServerChatMessagesProjection,
   hydrateActiveCharacterLorebook,
@@ -78,6 +79,7 @@ const SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS = 30_000
 const SERVER_PROJECTION_RECONNECT_JITTER_RATIO = 0.2
 
 let serverProjectionEventSubscription: { unsubscribe: () => void } | null = null
+let stopBridgePatchLifecycleFlush: (() => void) | null = null
 // Serializes the surgical-sync decision tree so inbound command events are
 // applied strictly in arrival order (gap detection per-event, not batched).
 let serverProjectionSyncChain: Promise<void> = Promise.resolve()
@@ -170,6 +172,8 @@ export async function loadWebInitialDatabase() {
   // open (and re-hydrate after a re-stub).
   startChatMessageHydration()
   void hydrateActiveChat()
+  stopBridgePatchLifecycleFlush?.()
+  stopBridgePatchLifecycleFlush = startBridgePatchLifecycleFlush()
   await startServerProjectionEvents()
 }
 
@@ -227,6 +231,8 @@ export function stopServerProjectionEvents() {
   serverProjectionEventsDesired = false
   serverProjectionEventSubscription?.unsubscribe()
   serverProjectionEventSubscription = null
+  stopBridgePatchLifecycleFlush?.()
+  stopBridgePatchLifecycleFlush = null
   if (serverProjectionReconnectTimer) {
     clearTimeout(serverProjectionReconnectTimer)
     serverProjectionReconnectTimer = null
@@ -288,8 +294,7 @@ export function calculateServerProjectionReconnectDelayMs(
   attempt: number,
   random: () => number = Math.random,
 ): number {
-  const normalizedAttempt =
-    Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0
+  const normalizedAttempt = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0
   const exponentialDelay = Math.min(
     SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS,
     SERVER_PROJECTION_RECONNECT_BASE_DELAY_MS * 2 ** normalizedAttempt,
@@ -298,14 +303,12 @@ export function calculateServerProjectionReconnectDelayMs(
   const normalizedRandom =
     Number.isFinite(randomValue) && randomValue >= 0 && randomValue <= 1 ? randomValue : 0.5
   const jitterMultiplier =
-    1 - SERVER_PROJECTION_RECONNECT_JITTER_RATIO +
+    1 -
+    SERVER_PROJECTION_RECONNECT_JITTER_RATIO +
     normalizedRandom * SERVER_PROJECTION_RECONNECT_JITTER_RATIO * 2
   const jitteredDelay = Math.round(exponentialDelay * jitterMultiplier)
 
-  return Math.min(
-    SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS,
-    Math.max(1, jitteredDelay),
-  )
+  return Math.min(SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS, Math.max(1, jitteredDelay))
 }
 
 function applyServerMemoryEvent(event: ServerMemoryEvent) {

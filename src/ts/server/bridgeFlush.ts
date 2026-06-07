@@ -1,0 +1,48 @@
+import type { ServerCommandTransportOptions } from './commands'
+import { flushPendingServerBackedSettingsPatch } from './settingsBridge.svelte'
+import { flushPendingServerBackedCharacterPatches } from './characterBridge.svelte'
+import { flushPendingServerBackedChatPatches } from './chatBridge.svelte'
+import { flushPendingServerBackedLorebookPatches } from './lorebookBridge.svelte'
+import { flushPendingPromptTemplatePatches } from './promptTemplateBridge.svelte'
+import { flushPendingServerBackedScriptDefinitionPatches } from './scriptDefinitionBridge.svelte'
+
+export function flushAllPendingBridgePatches(options: ServerCommandTransportOptions = {}): void {
+  flushPendingServerBackedSettingsPatch(options)
+  flushPendingServerBackedCharacterPatches(options)
+  flushPendingServerBackedChatPatches(options)
+  flushPendingServerBackedLorebookPatches(options)
+  flushPendingPromptTemplatePatches(options)
+  flushPendingServerBackedScriptDefinitionPatches(options)
+}
+
+let lifecycleListenerRefs = 0
+let stopLifecycleListeners: (() => void) | null = null
+
+export function startBridgePatchLifecycleFlush(): () => void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return () => {}
+  }
+
+  lifecycleListenerRefs += 1
+  if (!stopLifecycleListeners) {
+    const flushForLifecycle = () => flushAllPendingBridgePatches({ keepalive: true })
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flushForLifecycle()
+    }
+
+    window.addEventListener('pagehide', flushForLifecycle)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    stopLifecycleListeners = () => {
+      window.removeEventListener('pagehide', flushForLifecycle)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }
+
+  return () => {
+    lifecycleListenerRefs -= 1
+    if (lifecycleListenerRefs > 0) return
+    lifecycleListenerRefs = 0
+    stopLifecycleListeners?.()
+    stopLifecycleListeners = null
+  }
+}

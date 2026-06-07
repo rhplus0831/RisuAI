@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
 
 const recorded = vi.hoisted(() => ({
-  commands: [] as Array<{ built: Record<string, unknown>; rollback?: () => void }>,
+  commands: [] as Array<{
+    built: Record<string, unknown>
+    rollback?: () => void
+    keepalive?: boolean
+  }>,
 }))
 const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 
@@ -28,9 +32,14 @@ vi.mock('./commands', () => ({
     async (args: {
       command: (baseRevision: number) => Promise<Record<string, unknown>>
       rollback?: () => void
+      keepalive?: boolean
     }) => {
       const built = await args.command(1)
-      recorded.commands.push({ built, rollback: args.rollback })
+      recorded.commands.push({
+        built,
+        rollback: args.rollback,
+        ...(args.keepalive ? { keepalive: args.keepalive } : {}),
+      })
       return { status: 'ok', revision: 1 }
     },
   ),
@@ -45,12 +54,16 @@ import { DBState, selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
   collectScriptDefinitionCollectionSnapshots,
+  flushPendingServerBackedScriptDefinitionPatches,
   watchServerBackedScriptDefinitions,
 } from './scriptDefinitionBridge.svelte'
 
 const DELAY = 50
 
-function script(id: string, out: string): {
+function script(
+  id: string,
+  out: string,
+): {
   id: string
   comment: string
   in: string
@@ -66,7 +79,10 @@ function script(id: string, out: string): {
   }
 }
 
-function trigger(id: string, comment: string): {
+function trigger(
+  id: string,
+  comment: string,
+): {
   id: string
   comment: string
   type: 'manual'
@@ -184,6 +200,53 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
 
     expect(recorded.commands).toHaveLength(1)
     stop()
+  })
+
+  it('M8: flushes pending script-definition edits with keepalive and clears debounce', async () => {
+    setupScriptDefinitions()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY * 10 })
+    flushSync()
+
+    DBState.db.characters[0].customscript = [script('script-1', 'unload local')]
+    flushSync()
+    flushPendingServerBackedScriptDefinitionPatches({ keepalive: true })
+    await Promise.resolve()
+
+    expect(recorded.commands).toHaveLength(1)
+    expect(recorded.commands[0].keepalive).toBe(true)
+    expect(recorded.commands[0].built).toEqual({
+      kind: 'replaceCharacterScripts',
+      baseRevision: 1,
+      characterId: 'char-1',
+      scripts: [script('script-1', 'unload local')],
+    })
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(recorded.commands).toHaveLength(1)
+    stop()
+  })
+
+  it('M8: watcher teardown flushes pending script-definition edits and clears debounce', async () => {
+    setupScriptDefinitions()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY * 10 })
+    flushSync()
+
+    DBState.db.characters[0].customscript = [script('script-1', 'teardown local')]
+    flushSync()
+    stop()
+    await Promise.resolve()
+
+    expect(recorded.commands).toHaveLength(1)
+    expect(recorded.commands[0].keepalive).toBeUndefined()
+    expect(recorded.commands[0].built).toEqual({
+      kind: 'replaceCharacterScripts',
+      baseRevision: 1,
+      characterId: 'char-1',
+      scripts: [script('script-1', 'teardown local')],
+    })
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(recorded.commands).toHaveLength(1)
   })
 })
 
@@ -350,7 +413,9 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
 
     recorded.commands[0].rollback?.()
 
-    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
+    expect(DBState.db.modules[0].trigger).toEqual([
+      trigger('module-trigger-1', 'initial module trigger'),
+    ])
     expect(DBState.db.modules[0].regex).toEqual([script('module-script-1', 'regex-concurrent')])
     stop()
   })
@@ -417,7 +482,9 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
     ])
 
     recorded.commands[0].rollback?.()
-    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
+    expect(DBState.db.modules[0].trigger).toEqual([
+      trigger('module-trigger-1', 'initial module trigger'),
+    ])
     stop()
   })
 })
@@ -468,7 +535,9 @@ describe('watchServerBackedScriptDefinitions — scoped change detection (L31)',
     })
     flushSync()
 
-    const keys = [...collectScriptDefinitionCollectionSnapshots({ kind: 'character' }).keys()].sort()
+    const keys = [
+      ...collectScriptDefinitionCollectionSnapshots({ kind: 'character' }).keys(),
+    ].sort()
     expect(keys).toEqual(['characterScripts:char-1', 'characterTriggers:char-1'])
     stop()
   })
@@ -477,7 +546,10 @@ describe('watchServerBackedScriptDefinitions — scoped change detection (L31)',
     setupMultiCharacterScriptDb()
 
     const keys = [
-      ...collectScriptDefinitionCollectionSnapshots({ kind: 'module', moduleId: 'module-1' }).keys(),
+      ...collectScriptDefinitionCollectionSnapshots({
+        kind: 'module',
+        moduleId: 'module-1',
+      }).keys(),
     ].sort()
     expect(keys).toEqual(['moduleScripts:module-1', 'moduleTriggers:module-1'])
   })

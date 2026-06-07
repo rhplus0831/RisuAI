@@ -26,20 +26,19 @@
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
-    applyPromptItemProjectionWrite,
+    flushPendingPromptTemplatePatches,
+    queuePromptItemProjectionUpdate,
+    queuePromptSettingsProjectionPatch,
     reconcilePromptTemplateDraft,
-    restorePromptItemProjectionWrite,
+    type PromptTemplateDraftBinding,
   } from 'src/ts/server/promptTemplateBridge.svelte'
   import {
     canUseServerCommands,
     createPromptItemCommand,
     deletePromptItemCommand,
-    patchPromptSettingsCommand,
     peekCachedServerCommandRevision,
     reorderPromptItemsCommand,
     runServerCommand,
-    updatePromptItemCommand,
-    type PromptItemSnapshot,
     type SettingsPatch,
   } from 'src/ts/server/commands'
 
@@ -55,13 +54,6 @@
   let openedItemIndices = $state(new Set<number>())
   type FallbackModelKey = 'model' | 'memory' | 'translate' | 'emotion' | 'otherAx'
   type FallbackModelsDraft = Record<FallbackModelKey, string[]>
-  const pendingPromptItemUpdates = new Map<string, ReturnType<typeof setTimeout>>()
-  const pendingPromptSettingsPatch = {
-    patch: {} as SettingsPatch,
-    previous: {} as SettingsPatch,
-    attempted: {} as SettingsPatch,
-    timer: null as ReturnType<typeof setTimeout> | null,
-  }
   const promptTokenizeDebouncer = createPromptTokenizeDebouncer({
     debounceMs: 300,
     onResult: (totals) => {
@@ -72,6 +64,12 @@
   const promptTemplateDraft = $state<{ value: PromptItem[] }>({
     value: cloneJsonValue(DBState.db.promptTemplate ?? []),
   })
+  const promptTemplateDraftBinding: PromptTemplateDraftBinding = {
+    getItems: () => promptTemplateDraft.value,
+    setItems: (items) => {
+      promptTemplateDraft.value = items
+    },
+  }
   let previousPromptTemplateRevision = peekCachedServerCommandRevision()
   const promptSettingsDraft = createPromptSettingsDraft<Record<string, any>>('promptSettings', {})
   const jsonSchemaEnabledDraft = createPromptSettingsDraft<boolean>('jsonSchemaEnabled', false)
@@ -206,38 +204,7 @@
 
   function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem): void {
     const itemId = promptItemId(promptItem)
-    // Mirror only the edited item into the projection in place — no whole-array
-    // clone per keystroke.
-    applyPromptItemProjectionWrite(promptTemplateDraft.value, itemId)
-    if (!canUseServerCommands()) return
-    if (pendingPromptItemUpdates.has(itemId)) {
-      clearTimeout(pendingPromptItemUpdates.get(itemId))
-    }
-    const attemptedItem = cloneJsonValue(promptItem)
-    pendingPromptItemUpdates.set(
-      itemId,
-      setTimeout(() => {
-        pendingPromptItemUpdates.delete(itemId)
-        void runServerCommand({
-          command: (baseRevision) =>
-            updatePromptItemCommand({
-              baseRevision,
-              itemId,
-              patch: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
-            }),
-          rollback: () => {
-            const index = promptTemplateDraft.value.findIndex((item) => item.id === itemId)
-            if (index === -1) return
-            if (snapshotJson(promptTemplateDraft.value[index]) === snapshotJson(attemptedItem)) {
-              promptTemplateDraft.value[index] = cloneJsonValue(previousItem)
-              promptTemplateDraft.value = [...promptTemplateDraft.value]
-              // Restore only the edited item in the projection (not the array).
-              restorePromptItemProjectionWrite(itemId, previousItem)
-            }
-          },
-        })
-      }, 250),
-    )
+    queuePromptItemProjectionUpdate(promptTemplateDraftBinding, itemId, previousItem)
   }
 
   function movePromptItem(originalIndex: number, nextIndex: number): void {
@@ -262,43 +229,7 @@
   }
 
   function queuePromptSettingsPatch(patch: SettingsPatch, previous: SettingsPatch): void {
-    if (!canUseServerCommands()) return
-    for (const [key, value] of Object.entries(patch)) {
-      if (!(key in pendingPromptSettingsPatch.previous)) {
-        pendingPromptSettingsPatch.previous[key] = previous[key]
-      }
-      pendingPromptSettingsPatch.patch[key] = value
-      pendingPromptSettingsPatch.attempted[key] = value
-    }
-
-    if (pendingPromptSettingsPatch.timer) clearTimeout(pendingPromptSettingsPatch.timer)
-    pendingPromptSettingsPatch.timer = setTimeout(() => {
-      pendingPromptSettingsPatch.timer = null
-      const commandPatch = pendingPromptSettingsPatch.patch
-      const commandPrevious = pendingPromptSettingsPatch.previous
-      const commandAttempted = pendingPromptSettingsPatch.attempted
-      pendingPromptSettingsPatch.patch = {}
-      pendingPromptSettingsPatch.previous = {}
-      pendingPromptSettingsPatch.attempted = {}
-
-      void runServerCommand({
-        command: (baseRevision) =>
-          patchPromptSettingsCommand({
-            baseRevision,
-            patch: commandPatch,
-          }),
-        rollback: () => {
-          withTrustedServerProjectionWrite(() => {
-            const target = DBState.db as unknown as Record<string, unknown>
-            for (const [key, previousValue] of Object.entries(commandPrevious)) {
-              if (snapshotJson(target[key]) === snapshotJson(commandAttempted[key])) {
-                target[key] = cloneJsonValue(previousValue)
-              }
-            }
-          })
-        },
-      })
-    }, 250)
+    queuePromptSettingsProjectionPatch(patch, previous)
   }
 
   function createPromptSettingsDraft<T>(key: string, fallback: T): { value: T } {
@@ -334,9 +265,7 @@
 
       untrack(() => {
         const attempted = cloneJsonValue(draft.value)
-        const previous = cloneJsonValue(
-          (DBState.db as unknown as Record<string, unknown>)[key],
-        )
+        const previous = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[key])
         withTrustedServerProjectionWrite(() => {
           // Re-read inside the trusted write to get the mutable projection.
           const target = DBState.db as unknown as Record<string, unknown>
@@ -465,12 +394,7 @@
 
   onDestroy(() => {
     document.removeEventListener('keydown', handleKeyDown)
-    for (const timer of pendingPromptItemUpdates.values()) {
-      clearTimeout(timer)
-    }
-    if (pendingPromptSettingsPatch.timer) {
-      clearTimeout(pendingPromptSettingsPatch.timer)
-    }
+    flushPendingPromptTemplatePatches()
     promptTokenizeDebouncer.cancel()
   })
 </script>

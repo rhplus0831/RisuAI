@@ -2,14 +2,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
 
 const recorded = vi.hoisted(() => ({
-  patches: [] as Array<{ patch: Record<string, unknown>; rollback?: () => void }>,
+  patches: [] as Array<{
+    patch: Record<string, unknown>
+    rollback?: () => void
+    keepalive?: boolean
+  }>,
 }))
 const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
   patchServerBackedSettings: vi.fn(
-    async (args: { patch: Record<string, unknown>; rollback?: () => void }) => {
+    async (args: {
+      patch: Record<string, unknown>
+      rollback?: () => void
+      keepalive?: boolean
+    }) => {
       recorded.patches.push(args)
       return { status: 'ok', revision: 1 }
     },
@@ -26,6 +34,7 @@ vi.mock('./projectionWriteGuard.svelte', () => ({
 import { DBState } from '../stores.svelte'
 import {
   applyServerBackedSettingsPatch,
+  flushPendingServerBackedSettingsPatch,
   watchServerBackedSettings,
 } from './settingsBridge.svelte'
 
@@ -78,9 +87,7 @@ describe('settingsBridge coalescing', () => {
     })
     await Promise.resolve()
 
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
-      { useAutoSuggestions: true },
-    ])
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ useAutoSuggestions: true }])
     expect(DBState.db).toMatchObject({
       notification: true,
       useAutoSuggestions: true,
@@ -107,6 +114,45 @@ describe('settingsBridge coalescing', () => {
       { notification: true, useAutoSuggestions: true },
     ])
     stop()
+  })
+
+  it('M8: flushes pending watched settings with keepalive and clears the debounce', async () => {
+    setupSettings({ notification: false })
+    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY * 10 })
+    flushSync()
+
+    DBState.db.notification = true
+    flushSync()
+    flushPendingServerBackedSettingsPatch({ keepalive: true })
+    await Promise.resolve()
+
+    expect(
+      recorded.patches.map((entry) => ({
+        patch: entry.patch,
+        keepalive: entry.keepalive,
+      })),
+    ).toEqual([{ patch: { notification: true }, keepalive: true }])
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(recorded.patches).toHaveLength(1)
+    stop()
+  })
+
+  it('M8: watcher teardown flushes pending watched settings and clears the debounce', async () => {
+    setupSettings({ notification: false })
+    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY * 10 })
+    flushSync()
+
+    DBState.db.notification = true
+    flushSync()
+    stop()
+    await Promise.resolve()
+
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
+    expect(recorded.patches[0].keepalive).toBeUndefined()
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(recorded.patches).toHaveLength(1)
   })
 
   it('drops watched settings when the final value returns to the original baseline', async () => {

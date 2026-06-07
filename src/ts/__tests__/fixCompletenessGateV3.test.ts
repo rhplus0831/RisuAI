@@ -220,10 +220,70 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     8,
     "Store `run()`'s cleanup closure on the SandboxHost instance; invoke from `terminate()`.",
   ),
-  planned(
+  done(
     'M8',
     5,
     '`flushAllPendingBridgePatches()` aggregator on `pagehide`/`visibilitychange(hidden)` + watcher teardown; `keepalive` dispatch.',
+    'src/ts/server/bridgeFlush.test.ts',
+    'M8: pagehide and hidden visibility flush with keepalive until teardown',
+    [
+      {
+        testPath: 'src/ts/server/settingsBridge.svelte.test.ts',
+        testName: 'M8: flushes pending watched settings with keepalive and clears the debounce',
+      },
+      {
+        testPath: 'src/ts/server/settingsBridge.svelte.test.ts',
+        testName: 'M8: watcher teardown flushes pending watched settings and clears the debounce',
+      },
+      {
+        testPath: 'src/ts/server/characterBridge.svelte.test.ts',
+        testName:
+          'M8: flushes pending character profile edits with keepalive and clears the debounce',
+      },
+      {
+        testPath: 'src/ts/server/characterBridge.svelte.test.ts',
+        testName:
+          'M8: watcher teardown flushes pending character profile edits and clears the debounce',
+      },
+      {
+        testPath: 'src/ts/server/chatBridge.svelte.test.ts',
+        testName:
+          'M8: flushes pending chat and folder metadata with keepalive and clears debounces',
+      },
+      {
+        testPath: 'src/ts/server/chatBridge.svelte.test.ts',
+        testName:
+          'M8: watcher teardown flushes pending chat and folder metadata and clears debounces',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName:
+          'M8: bridge flush sends pending lorebook replacements with keepalive and clears debounce',
+      },
+      {
+        testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
+        testName:
+          'M8: watcher teardown flushes pending lorebook replacements and clears debounce',
+      },
+      {
+        testPath: 'src/ts/server/promptTemplateBridge.svelte.test.ts',
+        testName: 'M8: flushes pending prompt item updates with keepalive and clears debounce',
+      },
+      {
+        testPath: 'src/ts/server/promptTemplateBridge.svelte.test.ts',
+        testName:
+          'M8: PromptSettings component teardown flushes pending prompt-template patches',
+      },
+      {
+        testPath: 'src/ts/server/scriptDefinitionBridge.svelte.test.ts',
+        testName: 'M8: flushes pending script-definition edits with keepalive and clears debounce',
+      },
+      {
+        testPath: 'src/ts/server/scriptDefinitionBridge.svelte.test.ts',
+        testName:
+          'M8: watcher teardown flushes pending script-definition edits and clears debounce',
+      },
+    ],
   ),
   done(
     'M9',
@@ -393,7 +453,8 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
-        testName: 'L16: aborts a hung single contextual embedding provider call within the deadline',
+        testName:
+          'L16: aborts a hung single contextual embedding provider call within the deadline',
       },
       {
         testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
@@ -427,8 +488,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/realmImport.test.ts',
-        testName:
-          'L18: aborts unknown-length oversized Realm dynamic JSON once the cap is crossed',
+        testName: 'L18: aborts unknown-length oversized Realm dynamic JSON once the cap is crossed',
       },
       {
         testPath: 'server/fastify/__tests__/realmImport.test.ts',
@@ -647,7 +707,8 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/globalApi.proxy.test.ts',
-        testName: 'does not DELETE on WebSocket close before terminal when the request was not locally aborted',
+        testName:
+          'does not DELETE on WebSocket close before terminal when the request was not locally aborted',
       },
     ],
   ),
@@ -1455,6 +1516,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M3',
       'M4',
       'M5',
+      'M8',
       'M9',
       'L2',
       'L4',
@@ -1480,7 +1542,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M8, M9, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L56, K1, and K2 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1491,6 +1553,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M3',
       'M4',
       'M5',
+      'M8',
       'M9',
       'L2',
       'L4',

@@ -69,7 +69,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | M5  | [1](phases/phase-1-high-and-send-path.md)                   | Field-scoped send rollback (`lastInteraction`; messages only on the first-send backfill branch), `restoreCharacterSelection` shape. | DONE |
 | M6  | [6](phases/phase-6-reactive-amplification-and-render.md)    | `$derived` + keyed each for the MobileCharacters sorted list (v2-L42/L43 helper shape, unit-testable pure function). | PENDING |
 | M7  | [8](phases/phase-8-client-interpreters-plugins-media.md)    | Store `run()`'s cleanup closure on the SandboxHost instance; invoke from `terminate()`. | PENDING |
-| M8  | [5](phases/phase-5-client-write-path-correctness.md)        | `flushAllPendingBridgePatches()` aggregator on `pagehide`/`visibilitychange(hidden)` + watcher teardown; `keepalive` dispatch. | PENDING |
+| M8  | [5](phases/phase-5-client-write-path-correctness.md)        | `flushAllPendingBridgePatches()` aggregator on `pagehide`/`visibilitychange(hidden)` + watcher teardown; `keepalive` dispatch. | DONE |
 | M9  | [4](phases/phase-4-server-lifecycle-and-transport.md)       | `process.once('SIGTERM'\|'SIGINT')` -> `await app.close()` with a force-exit backstop. | DONE |
 
 ### Low

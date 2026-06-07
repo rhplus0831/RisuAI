@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
 
 const recorded = vi.hoisted(() => ({
-  characterUpdates: [] as Array<{ characterId: string; patch: Record<string, unknown> }>,
+  characterUpdates: [] as Array<{
+    characterId: string
+    patch: Record<string, unknown>
+    keepalive?: boolean
+  }>,
 }))
 const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 
@@ -46,10 +50,17 @@ vi.mock('../characterCommands', () => {
   return {
     CHARACTER_PATCH_EXCLUDED_KEYS: excluded,
     cloneJsonValue,
-    dispatchUpdateCharacter: (characterId: string, patch: Record<string, unknown>) => {
+    dispatchUpdateCharacter: (
+      characterId: string,
+      patch: Record<string, unknown>,
+      _previous: unknown,
+      _rollback: unknown,
+      options?: { keepalive?: boolean },
+    ) => {
       recorded.characterUpdates.push({
         characterId,
         patch: cloneJsonValue(sanitizeCharacterPatch(patch)),
+        ...(options?.keepalive ? { keepalive: options.keepalive } : {}),
       })
     },
     restoreCharacterState: vi.fn(),
@@ -59,7 +70,10 @@ vi.mock('../characterCommands', () => {
 
 import { DBState, selectedCharID } from '../stores.svelte'
 import { mergeServerProjectionCharacterRow } from '../storage/database.svelte'
-import { watchServerBackedCharacterProfile } from './characterBridge.svelte'
+import {
+  flushPendingServerBackedCharacterPatches,
+  watchServerBackedCharacterProfile,
+} from './characterBridge.svelte'
 
 const DELAY = 50
 
@@ -114,9 +128,42 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    expect(recorded.characterUpdates).toEqual([
-      { characterId: 'char-1', patch: { name: 'Local' } },
-    ])
+    expect(recorded.characterUpdates).toEqual([{ characterId: 'char-1', patch: { name: 'Local' } }])
     stop()
+  })
+
+  it('M8: flushes pending character profile edits with keepalive and clears the debounce', async () => {
+    setupCharacter()
+    const stop = watchServerBackedCharacterProfile({ delayMs: DELAY * 10 })
+    flushSync()
+
+    DBState.db.characters[0].name = 'Unload Local'
+    flushSync()
+    flushPendingServerBackedCharacterPatches({ keepalive: true })
+
+    expect(recorded.characterUpdates).toEqual([
+      { characterId: 'char-1', patch: { name: 'Unload Local' }, keepalive: true },
+    ])
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(recorded.characterUpdates).toHaveLength(1)
+    stop()
+  })
+
+  it('M8: watcher teardown flushes pending character profile edits and clears the debounce', async () => {
+    setupCharacter()
+    const stop = watchServerBackedCharacterProfile({ delayMs: DELAY * 10 })
+    flushSync()
+
+    DBState.db.characters[0].name = 'Teardown Local'
+    flushSync()
+    stop()
+
+    expect(recorded.characterUpdates).toEqual([
+      { characterId: 'char-1', patch: { name: 'Teardown Local' } },
+    ])
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(recorded.characterUpdates).toHaveLength(1)
   })
 })

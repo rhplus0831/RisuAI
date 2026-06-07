@@ -10,7 +10,12 @@ import {
   type ChatRowMetadataSnapshot,
   type ChatStateSnapshot,
 } from '../chatCommands'
-import { canUseServerCommands, type ChatFolderSnapshot, type ChatSnapshot } from './commands'
+import {
+  canUseServerCommands,
+  type ChatFolderSnapshot,
+  type ChatSnapshot,
+  type ServerCommandTransportOptions,
+} from './commands'
 import { DBState, selectedCharID } from '../stores.svelte'
 import type { ChatFolder } from '../storage/database.svelte'
 import { getServerProjectionApplyEpoch } from './projectionWriteGuard.svelte'
@@ -48,6 +53,7 @@ export function watchServerBackedChatMetadata(
     return () => {
       watcherRefs -= 1
       if (watcherRefs <= 0) {
+        flushPendingServerBackedChatPatches()
         activeStop?.()
         activeStop = null
         watcherRefs = 0
@@ -132,6 +138,7 @@ export function watchServerBackedChatMetadata(
   return () => {
     watcherRefs -= 1
     if (watcherRefs <= 0) {
+      flushPendingServerBackedChatPatches()
       activeStop?.()
       activeStop = null
       watcherRefs = 0
@@ -163,12 +170,7 @@ function queueChatPatch(
         timer: null,
       }
 
-  nextPatch.timer = setTimeout(() => {
-    const commandPatch = pendingChatPatches.get(chatId)
-    pendingChatPatches.delete(chatId)
-    if (!commandPatch) return
-    dispatchUpdateChatRow(commandPatch.chatId, commandPatch.patch, commandPatch.rollback)
-  }, delay)
+  nextPatch.timer = setTimeout(() => runPendingChatPatch(chatId), delay)
   pendingChatPatches.set(chatId, nextPatch)
 }
 
@@ -194,13 +196,43 @@ function queueFolderPatch(
         timer: null,
       }
 
-  nextPatch.timer = setTimeout(() => {
-    const commandPatch = pendingFolderPatches.get(folderId)
-    pendingFolderPatches.delete(folderId)
-    if (!commandPatch) return
-    dispatchUpdateChatFolderRow(commandPatch.folderId, commandPatch.patch, commandPatch.rollback)
-  }, delay)
+  nextPatch.timer = setTimeout(() => runPendingFolderPatch(folderId), delay)
   pendingFolderPatches.set(folderId, nextPatch)
+}
+
+export function flushPendingServerBackedChatPatches(
+  options: ServerCommandTransportOptions = {},
+): void {
+  for (const chatId of Array.from(pendingChatPatches.keys())) {
+    runPendingChatPatch(chatId, options)
+  }
+  for (const folderId of Array.from(pendingFolderPatches.keys())) {
+    runPendingFolderPatch(folderId, options)
+  }
+}
+
+function runPendingChatPatch(chatId: string, options: ServerCommandTransportOptions = {}): void {
+  const commandPatch = pendingChatPatches.get(chatId)
+  if (!commandPatch) return
+  if (commandPatch.timer) clearTimeout(commandPatch.timer)
+  pendingChatPatches.delete(chatId)
+  dispatchUpdateChatRow(commandPatch.chatId, commandPatch.patch, commandPatch.rollback, options)
+}
+
+function runPendingFolderPatch(
+  folderId: string,
+  options: ServerCommandTransportOptions = {},
+): void {
+  const commandPatch = pendingFolderPatches.get(folderId)
+  if (!commandPatch) return
+  if (commandPatch.timer) clearTimeout(commandPatch.timer)
+  pendingFolderPatches.delete(folderId)
+  dispatchUpdateChatFolderRow(
+    commandPatch.folderId,
+    commandPatch.patch,
+    commandPatch.rollback,
+    options,
+  )
 }
 
 // Build the scalar metadata snapshot for one chat without ever serializing its
