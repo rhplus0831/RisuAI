@@ -91,6 +91,22 @@ const OPENAI_MODEL_IDS = new Set(
   ),
 )
 
+export interface ChatDispatchReformatInstrumentation {
+  fullPromptClones: number
+}
+
+const chatDispatchReformatInstrumentation: ChatDispatchReformatInstrumentation = {
+  fullPromptClones: 0,
+}
+
+export function resetChatDispatchReformatInstrumentation(): void {
+  chatDispatchReformatInstrumentation.fullPromptClones = 0
+}
+
+export function getChatDispatchReformatInstrumentation(): ChatDispatchReformatInstrumentation {
+  return { ...chatDispatchReformatInstrumentation }
+}
+
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
@@ -354,12 +370,45 @@ function resolveModelInfo(db: Database): ModelInfoLite {
   return { id: aiModel, format: LLMFormat.OpenAICompatible, flags: DEFAULT_OPENAI_FLAGS }
 }
 
-function reformatMessages(db: Database, rows: OpenAIChat[], flags: number[]): OpenAIChat[] {
-  let formated = structuredClone(rows)
+interface ReformatBranchNeeds {
+  systemPrompt: boolean
+  firstSystemPrompt: boolean
+  alternateRole: boolean
+  startWithUserInput: boolean
+}
+
+function resolveReformatBranchNeeds(flags: readonly number[]): ReformatBranchNeeds {
+  const systemPrompt = !flags.includes(LLMFlags.hasFullSystemPrompt)
+  return {
+    systemPrompt,
+    firstSystemPrompt: systemPrompt && flags.includes(LLMFlags.hasFirstSystemPrompt),
+    alternateRole: flags.includes(LLMFlags.requiresAlternateRole),
+    startWithUserInput: flags.includes(LLMFlags.mustStartWithUserInput),
+  }
+}
+
+function needsReformatClone(needs: ReformatBranchNeeds): boolean {
+  return needs.systemPrompt || needs.alternateRole || needs.startWithUserInput
+}
+
+function cloneDispatchRows(rows: OpenAIChat[]): OpenAIChat[] {
+  chatDispatchReformatInstrumentation.fullPromptClones++
+  return structuredClone(rows)
+}
+
+export function reformatMessages(
+  db: Database,
+  rows: OpenAIChat[],
+  flags: readonly number[],
+): OpenAIChat[] {
+  const needs = resolveReformatBranchNeeds(flags)
+  if (!needsReformatClone(needs)) return rows
+
+  let formated = cloneDispatchRows(rows)
   let systemPrompt: OpenAIChat | null = null
 
-  if (!flags.includes(LLMFlags.hasFullSystemPrompt)) {
-    if (flags.includes(LLMFlags.hasFirstSystemPrompt)) {
+  if (needs.systemPrompt) {
+    if (needs.firstSystemPrompt) {
       while (formated[0]?.role === 'system') {
         if (systemPrompt) {
           systemPrompt.content += '\n\n' + formated[0].content
@@ -387,7 +436,7 @@ function reformatMessages(db: Database, rows: OpenAIChat[], flags: number[]): Op
     }
   }
 
-  if (flags.includes(LLMFlags.requiresAlternateRole)) {
+  if (needs.alternateRole) {
     const merged: OpenAIChat[] = []
     for (const row of formated) {
       const prev = merged[merged.length - 1]
@@ -409,7 +458,7 @@ function reformatMessages(db: Database, rows: OpenAIChat[], flags: number[]): Op
     formated = merged
   }
 
-  if (flags.includes(LLMFlags.mustStartWithUserInput)) {
+  if (needs.startWithUserInput) {
     if (formated.length === 0 || formated[0].role !== 'user') {
       formated.unshift({ role: 'user', content: ' ' })
     }

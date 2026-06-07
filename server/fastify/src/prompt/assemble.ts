@@ -1000,14 +1000,14 @@ function buildMutationPayload(state: AssemblyState): AssembleMutationPayload {
   }
 }
 
-function buildRestorationPayload(state: AssemblyState): AssembleRestorationPayload {
+export function buildRestorationPayload(state: AssemblyState): AssembleRestorationPayload {
   const scriptstate = structuredClone(state.initialScriptstate ?? {})
   return {
     chatId: state.input.chatId,
     characterId: state.input.characterId,
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
-    messages: cloneMessages(state.initialMessages ?? [], 'restoration'),
+    messages: state.initialMessages ?? [],
     scriptstate: Object.keys(scriptstate).length > 0 ? scriptstate : undefined,
   }
 }

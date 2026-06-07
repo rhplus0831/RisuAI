@@ -78,7 +78,7 @@ classes `H/M/L/I/K` and statuses `PENDING`/`DONE`, mirroring the v2 gate).
 | --- | ----------------------------------------------------------- | ---------------------------------------------------------------------------- | ------- |
 | L1  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Read assembly asset bytes off the event loop (async pre-resolve or async resolver contract). | DONE |
 | L2  | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Thread `RequestAbort.refresh` into `pipeStream` on activity frames (mirror `streamAssembly`). | DONE |
-| L3  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Compute reformat flags first; return `rows` unchanged when no branch applies (or clone lazily per branch). | PENDING |
+| L3  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Compute reformat flags first; return `rows` unchanged when no branch applies (or clone lazily per branch). | DONE |
 | L4  | [4](phases/phase-4-server-lifecycle-and-transport.md)       | `AbortSignal.timeout` on the fire-and-forget Horde DELETE.                  | DONE |
 | L5  | [4](phases/phase-4-server-lifecycle-and-transport.md)       | Create proxy stream jobs with `slidingDeadline: true` (activity detection already exists in `pushRaw`). | DONE |
 | L6  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Build the char+module asset table once per assembly; share with `buildAssetLookup`. | PENDING |
@@ -142,7 +142,7 @@ prior IDs stay closed in their archives, these rows own the remaining gap.
 | --- | ----------------------------------------------------------- | ---------------------------------------------------------------------------- | ------- |
 | K1  | [3](phases/phase-3-memory-subsystem.md)                     | Skip/lazy the embedding `vector_blob` decode when no valid query vectors exist (v2-R5 re-open: the dismissal covered the math, not the decode). | DONE |
 | K2  | [2](phases/phase-2-command-surface-scoping.md)              | Drop the redundant in-handler auth verify on the proxy/hub routes (v2-L16 propagation). | DONE |
-| K3  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Return the provably-immutable `initialMessages` restoration payload by reference (v2-M1 ring). | PENDING |
+| K3  | [7](phases/phase-7-assembly-and-trigger-hot-paths.md)       | Return the provably-immutable `initialMessages` restoration payload by reference (v2-M1 ring). | DONE |
 | K4  | [8](phases/phase-8-client-interpreters-plugins-media.md)    | `onerror` + timeout for the stableDiff reference-image load (v2-L49 propagation). | PENDING |
 
 ### Informational

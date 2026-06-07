@@ -347,10 +347,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'L3',
     7,
     'Compute reformat flags first; return `rows` unchanged when no branch applies (or clone lazily per branch).',
+    'server/fastify/__tests__/assemble.test.ts',
+    'L3: returns default OpenAI-flag rows by reference without mutation or prompt clones',
+    [
+      {
+        testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+        testName:
+          'Phase 7 L3/K3: default chat dispatch performs zero prompt and restoration clones',
+      },
+      {
+        testPath: 'server/fastify/__tests__/assemble.test.ts',
+        testName: 'L3: preserves byte-identical output and isolation for $name',
+      },
+    ],
   ),
   done(
     'L4',
@@ -990,10 +1003,19 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
     ],
   ),
-  planned(
+  done(
     'K3',
     7,
     'Return the provably-immutable `initialMessages` restoration payload by reference (v2-M1 ring).',
+    'server/fastify/__tests__/assemble.test.ts',
+    'K3: returns immutable initial restoration messages by reference and clones scriptstate',
+    [
+      {
+        testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
+        testName:
+          'Phase 7 L3/K3: default chat dispatch performs zero prompt and restoration clones',
+      },
+    ],
   ),
   planned(
     'K4',
@@ -1752,7 +1774,7 @@ Mentions v2-L12 and v1-L4 in prose only.
 
     expect(rows).toHaveLength(4)
     expect(rows.map((row) => row.id)).toEqual(rangeIds('K', 4))
-    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'PENDING', 'PENDING'])
+    expect(rows.map((row) => row.status)).toEqual(['DONE', 'DONE', 'DONE', 'PENDING'])
     expect(rows[0].targetFix).toContain('v2-R5 re-open')
     expect(allAuditIds(overlapEvidenceUniverse)).toEqual([])
   })
@@ -1811,6 +1833,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M9',
       'L1',
       'L2',
+      'L3',
       'L4',
       'L5',
       'L11',
@@ -1843,6 +1866,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L56',
       'K1',
       'K2',
+      'K3',
     ])
     expect(plannedEntries.filter(hasProofFields)).toEqual([])
     expect(doneEntries.every(hasProofFields)).toBe(true)
@@ -1851,7 +1875,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
   })
 
-  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L56, K1, and K2 marked DONE', () => {
+  it('keeps the live registry green with H1, M1, M2, M3, M4, M5, M6, M8, M9, L1, L2, L3, L4, L5, L11, L12, L13, L14, L15, L16, L17, L18, L19, L20, L21, L22, L23, L24, L25, L26, L27, L28, L29, L30, L31, L32, L33, L34, L35, L36, L37, L56, K1, K2, and K3 marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
     expect(
       SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
@@ -1867,6 +1891,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'M9',
       'L1',
       'L2',
+      'L3',
       'L4',
       'L5',
       'L11',
@@ -1899,6 +1924,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       'L56',
       'K1',
       'K2',
+      'K3',
     ])
     expect(collectGateProblems()).toEqual([])
   })

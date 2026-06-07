@@ -28,6 +28,7 @@ import {
   fillLorebookSlots,
   fillMemoryAndPostHistory,
   fillStaticSlots,
+  buildRestorationPayload,
   getAssemblyMessageCaptureInstrumentation,
   isRunVarParserFixedPoint,
   renderAndBudget,
@@ -47,9 +48,15 @@ import {
   resetAssemblyCbsCallbackMemoInstrumentation,
 } from '../src/prompt/cbsCallbackMemo.js'
 import {
+  getChatDispatchReformatInstrumentation,
+  reformatMessages,
+  resetChatDispatchReformatInstrumentation,
+} from '../src/prompt/chatDispatch.js'
+import {
   getHypaV3PrefixTokenMemoStatsForTests,
   resetHypaV3PrefixTokenMemoForTests,
 } from '../src/prompt/prefixTokenMemo.js'
+import { LLMFlags } from '../../../src/ts/model/types'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -115,6 +122,16 @@ function depsFor(
   overrides: Partial<Omit<AssembleDeps, 'loadDatabase'>> = {},
 ): AssembleDeps {
   return { loadDatabase: () => db, ...overrides }
+}
+
+function freezeDeep<T>(value: T): T {
+  if (value && typeof value === 'object') {
+    for (const nested of Object.values(value as Record<string, unknown>)) {
+      freezeDeep(nested)
+    }
+    Object.freeze(value)
+  }
+  return value
 }
 
 const baseInput = (overrides: Partial<AssembleInput> = {}): AssembleInput => ({
@@ -184,6 +201,139 @@ describe('Phase 7 L1 async asset reads', () => {
       { type: 'image', base64: `data:asset_prompt:${assetId}` },
     ])
     expect(reads).toEqual([`asset_prompt:${assetId}`])
+  })
+})
+
+describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
+  it('L3: returns default OpenAI-flag rows by reference without mutation or prompt clones', () => {
+    resetChatDispatchReformatInstrumentation()
+    const rows = freezeDeep([
+      {
+        role: 'system',
+        content: 'system row',
+        multimodals: [{ type: 'image', base64: 'data:image/png;base64,AAAA' }],
+      },
+      { role: 'user', content: 'hello' },
+    ] satisfies OpenAIChat[]) as OpenAIChat[]
+    const before = JSON.stringify(rows)
+
+    const result = reformatMessages(makeDatabase(), rows, [
+      LLMFlags.hasFullSystemPrompt,
+      LLMFlags.hasStreaming,
+    ])
+
+    expect(result).toBe(rows)
+    expect(JSON.stringify(rows)).toBe(before)
+    expect(getChatDispatchReformatInstrumentation().fullPromptClones).toBe(0)
+  })
+
+  it.each([
+    {
+      name: 'system role replacement',
+      db: makeDatabase(),
+      flags: [],
+      rows: [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'hi' },
+      ] satisfies OpenAIChat[],
+      expected: [
+        { role: 'user', content: 'system: sys' },
+        { role: 'user', content: 'hi' },
+      ],
+    },
+    {
+      name: 'first system hoist',
+      db: makeDatabase(),
+      flags: [LLMFlags.hasFirstSystemPrompt],
+      rows: [
+        { role: 'system', content: 'sys one' },
+        { role: 'system', content: 'sys two' },
+        { role: 'user', content: 'hi' },
+        { role: 'system', content: 'inner' },
+      ] satisfies OpenAIChat[],
+      expected: [
+        { role: 'system', content: 'sys one\n\nsys two' },
+        { role: 'user', content: 'hi' },
+        { role: 'user', content: 'system: inner' },
+      ],
+    },
+    {
+      name: 'alternate role merge',
+      db: makeDatabase(),
+      flags: [LLMFlags.hasFullSystemPrompt, LLMFlags.requiresAlternateRole],
+      rows: [
+        {
+          role: 'user',
+          content: 'one',
+          multimodals: [{ type: 'image', base64: 'one' }],
+          cachePoint: true,
+        },
+        {
+          role: 'user',
+          content: 'two',
+          multimodals: [{ type: 'image', base64: 'two' }],
+          thoughts: ['think'],
+        },
+        { role: 'assistant', content: 'reply' },
+      ] satisfies OpenAIChat[],
+      expected: [
+        {
+          role: 'user',
+          content: 'one\ntwo',
+          multimodals: [
+            { type: 'image', base64: 'one' },
+            { type: 'image', base64: 'two' },
+          ],
+          cachePoint: true,
+          thoughts: ['think'],
+        },
+        { role: 'assistant', content: 'reply' },
+      ],
+    },
+    {
+      name: 'must start with user',
+      db: makeDatabase(),
+      flags: [LLMFlags.hasFullSystemPrompt, LLMFlags.mustStartWithUserInput],
+      rows: [{ role: 'assistant', content: 'prefill' }] satisfies OpenAIChat[],
+      expected: [
+        { role: 'user', content: ' ' },
+        { role: 'assistant', content: 'prefill' },
+      ],
+    },
+  ])('L3: preserves byte-identical output and isolation for $name', ({ db, flags, rows, expected }) => {
+    resetChatDispatchReformatInstrumentation()
+    const sourceRows = rows as OpenAIChat[]
+    const originalRows = structuredClone(sourceRows)
+
+    const result = reformatMessages(db, sourceRows, flags)
+
+    expect(result).not.toBe(sourceRows)
+    expect(JSON.stringify(result)).toBe(JSON.stringify(expected))
+    expect(sourceRows).toEqual(originalRows)
+    expect(result.some((row) => sourceRows.includes(row))).toBe(false)
+    expect(getChatDispatchReformatInstrumentation().fullPromptClones).toBe(1)
+  })
+
+  it('K3: returns immutable initial restoration messages by reference and clones scriptstate', () => {
+    const initialMessages = freezeDeep([
+      { role: 'user', data: 'before', chatId: 'msg-1' },
+    ] satisfies Message[]) as Message[]
+    const initialScriptstate = { $mood: 'calm' }
+    const state = {
+      input: baseInput(),
+      selectedCharID: 0,
+      chatPage: 0,
+      initialMessages,
+      initialScriptstate,
+    } as unknown as ReturnType<typeof beginAssembly>
+
+    const restoration = buildRestorationPayload(state)
+
+    expect(restoration.messages).toBe(initialMessages)
+    expect(restoration.messages).toEqual([{ role: 'user', data: 'before', chatId: 'msg-1' }])
+    expect(restoration.scriptstate).toEqual(initialScriptstate)
+    expect(restoration.scriptstate).not.toBe(initialScriptstate)
+    expect(() => restoration.messages.push({ role: 'char', data: 'mutate' } as Message)).toThrow()
   })
 })
 

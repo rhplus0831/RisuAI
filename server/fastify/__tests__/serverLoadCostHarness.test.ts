@@ -35,6 +35,14 @@ import {
   resetChatMessageDiffInstrumentation,
 } from '../src/messageStore.js'
 import {
+  getAssemblyMessageCaptureInstrumentation,
+  resetAssemblyMessageCaptureInstrumentation,
+} from '../src/prompt/assemble.js'
+import {
+  getChatDispatchReformatInstrumentation,
+  resetChatDispatchReformatInstrumentation,
+} from '../src/prompt/chatDispatch.js'
+import {
   createMemoryChunk,
   createMemoryEmbedding,
   createMemorySummary,
@@ -1362,6 +1370,37 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(corpusLoadCount).toBe(0)
     expect(loadCountByTable.characters ?? 0).toBe(0)
     expect(loadCountByTable.chats ?? 0).toBe(0)
+  })
+
+  it('Phase 7 L3/K3: default chat dispatch performs zero prompt and restoration clones', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase({
+      ...promptReadyLargeCorpusDatabase(fixture),
+      aiModel: 'echo_model',
+      subModel: 'echo_model',
+      echoMessage: 'clone-count pong',
+      echoDelay: 0,
+    })
+    resetChatDispatchReformatInstrumentation()
+    resetAssemblyMessageCaptureInstrumentation()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: fixture.hot.chatId,
+        characterId: fixture.hot.characterId,
+        mode: 'send',
+        userMessage: 'hi',
+        durable: false,
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('clone-count pong')
+    expect(getChatDispatchReformatInstrumentation().fullPromptClones).toBe(0)
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.restoration).toBe(0)
   })
 
   it('L13: Realm character append performs zero loadPersisted-shaped corpus reads', async () => {
