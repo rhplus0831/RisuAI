@@ -19,13 +19,29 @@ import localforage from 'localforage'
 import sendSound from '../../etc/send.mp3'
 
 export const TRANSLATE_CACHE_MAX_ENTRIES = 256
+export const TRANSLATE_HTML_OUTPUT_MEMO_MAX_ENTRIES = 64
+export const LLM_TRANSLATE_CACHE_MAX_ENTRIES = 256
+const EDITTRANS_REGEX_CACHE_MAX_ENTRIES = 1000
+const LLM_CACHE_INDEX_KEY = '__risu_llm_translate_cache_index_v1__'
+export const DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS = 8
 
 const translateCache = new Map<string, string>()
 const pendingTranslateCache = new Map<string, Promise<string>>()
+const translateHTMLMemo = new Map<string, string>()
+const edittransRegexCache = new Map<string, RegExp>()
+const invalidEdittransRegexCache = new Map<string, true>()
+const llmVolatileCache = new Map<string, string>()
+const llmCacheWriteFailures = new Set<string>()
 let activeTranslateCacheScope: string | null = null
+let llmCacheIndex: string[] | null = null
+let llmCacheIndexLoad: Promise<string[]> | null = null
 
 function getTranslateCacheKey(reverse: boolean, text: string) {
-  return `${reverse ? '1' : '0'}:${text}`
+  return JSON.stringify({
+    reverse,
+    text,
+    settings: getTranslatorSettingsSignature(getDatabase()),
+  })
 }
 
 function getCurrentTranslateCacheScope(db = getDatabase()) {
@@ -39,6 +55,10 @@ function getCurrentTranslateCacheScope(db = getDatabase()) {
 function clearTranslateCacheEntries() {
   translateCache.clear()
   pendingTranslateCache.clear()
+}
+
+function clearTranslateHTMLMemoEntries() {
+  translateHTMLMemo.clear()
 }
 
 function syncTranslateCacheScope(db = getDatabase()) {
@@ -62,16 +82,21 @@ function readTranslateCache(reverse: boolean, text: string): string | undefined 
   return translated
 }
 
-function writeTranslateCache(reverse: boolean, text: string, translated: string, scope: string) {
+function writeTranslateCache(
+  reverse: boolean,
+  text: string,
+  translated: string,
+  scope: string,
+  cacheKey = getTranslateCacheKey(reverse, text),
+) {
   if (syncTranslateCacheScope() !== scope) {
     return
   }
 
-  const key = getTranslateCacheKey(reverse, text)
-  if (translateCache.has(key)) {
-    translateCache.delete(key)
+  if (translateCache.has(cacheKey)) {
+    translateCache.delete(cacheKey)
   }
-  translateCache.set(key, translated)
+  translateCache.set(cacheKey, translated)
 
   while (translateCache.size > TRANSLATE_CACHE_MAX_ENTRIES) {
     const oldestKey = translateCache.keys().next().value
@@ -85,10 +110,35 @@ function writeTranslateCache(reverse: boolean, text: string, translated: string,
 export const __translatorTestHooks = {
   clearTranslateCache() {
     clearTranslateCacheEntries()
+    clearTranslateHTMLMemoEntries()
+    edittransRegexCache.clear()
+    invalidEdittransRegexCache.clear()
+    llmVolatileCache.clear()
+    llmCacheIndex = null
+    llmCacheIndexLoad = null
+    llmCacheWriteFailures.clear()
     activeTranslateCacheScope = null
   },
   getTranslateCacheEntries() {
     return Array.from(translateCache.entries())
+  },
+  clearTranslateHTMLMemo() {
+    clearTranslateHTMLMemoEntries()
+  },
+  getTranslateHTMLMemoEntries() {
+    return Array.from(translateHTMLMemo.entries())
+  },
+  getEdittransRegexCacheSize() {
+    return edittransRegexCache.size
+  },
+  getInvalidEdittransRegexCacheSize() {
+    return invalidEdittransRegexCache.size
+  },
+  getLLMVolatileCacheEntries() {
+    return Array.from(llmVolatileCache.entries())
+  },
+  getLLMCacheWriteFailureKeys() {
+    return Array.from(llmCacheWriteFailures)
   },
 }
 
@@ -111,6 +161,400 @@ export function getLLMCacheMutationEpoch() {
 
 function bumpLLMCacheMutationEpoch() {
   llmCacheMutationEpoch += 1
+}
+
+function safeStringify(value: unknown) {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function getTranslatorSettingsSignature(db = getDatabase()) {
+  return {
+    translatorType: db.translatorType,
+    translator: db.translator,
+    translatorInputLanguage: db.translatorInputLanguage,
+    aiModel: db.aiModel,
+    useExperimentalGoogleTranslator: db.useExperimentalGoogleTranslator,
+    deeplOptions: {
+      freeApi: db.deeplOptions?.freeApi,
+      key: db.deeplOptions?.key,
+    },
+    deeplXOptions: {
+      url: db.deeplXOptions?.url,
+      token: db.deeplXOptions?.token,
+    },
+  }
+}
+
+function getScriptSignature(scripts: customscript[] | undefined) {
+  return (scripts ?? []).map((script, index) => ({
+    identity: script.id ?? `${index}:${script.comment ?? ''}`,
+    type: script.type,
+    in: script.in,
+    out: script.out,
+    flag: script.flag ?? '',
+    ableFlag: Boolean(script.ableFlag),
+    comment: script.comment,
+  }))
+}
+
+function getRelevantScriptSignature(
+  db: ReturnType<typeof getDatabase>,
+  alwaysExistChar: character | simpleCharacterArgument,
+) {
+  const isRelevant = (script: customscript) =>
+    script.type === 'edittrans' || script.type === 'editdisplay'
+  return {
+    presetRegex: getScriptSignature((db.presetRegex ?? []).filter(isRelevant)),
+    characterScripts: getScriptSignature((alwaysExistChar?.customscript ?? []).filter(isRelevant)),
+    moduleScripts: getScriptSignature((getModuleRegexScripts() ?? []).filter(isRelevant)),
+    globalscript: getScriptSignature((db.globalscript ?? []).filter(isRelevant)),
+    enabledModules: db.enabledModules ?? [],
+    moduleIntergration: db.moduleIntergration ?? '',
+    dynamicAssetsEditDisplay: db.dynamicAssetsEditDisplay,
+  }
+}
+
+function getTranslatorNoteSignature(
+  db: ReturnType<typeof getDatabase>,
+  alwaysExistChar: character | simpleCharacterArgument,
+) {
+  const selectedCharacter = db.characters?.[get(selectedCharID)]
+  return {
+    selectedCharID: get(selectedCharID),
+    selectedChaId: selectedCharacter?.chaId,
+    selectedTranslatorNote:
+      selectedCharacter?.type === 'character' ? (selectedCharacter.translatorNote ?? '') : '',
+    activeTranslatorNote:
+      alwaysExistChar?.type === 'character' ? (alwaysExistChar.translatorNote ?? '') : '',
+  }
+}
+
+function getTranslateHTMLMemoKey(
+  html: string,
+  reverse: boolean,
+  charArg: simpleCharacterArgument | string,
+  chatID: number,
+  alwaysExistChar: character | simpleCharacterArgument,
+) {
+  const db = getDatabase()
+  const preset = db.translatorType === 'llm' ? getCurrentTranslatorPreset() : null
+  return safeStringify({
+    version: 1,
+    html,
+    reverse,
+    charArg:
+      typeof charArg === 'string'
+        ? { type: 'string', value: charArg }
+        : { type: 'object', chaId: charArg.chaId, scriptCount: charArg.customscript?.length ?? 0 },
+    chatID,
+    chatScope: getCurrentTranslateCacheScope(db),
+    translator: {
+      ...getTranslatorSettingsSignature(db),
+      htmlTranslation: db.htmlTranslation,
+      combineTranslation: db.combineTranslation,
+      playMessageOnTranslateEnd: db.playMessageOnTranslateEnd,
+      noWaitForTranslate: db.noWaitForTranslate,
+      preset: preset ? { prompt: preset.prompt, maxResponse: preset.maxResponse } : null,
+      llmCacheMutationEpoch: db.translatorType === 'llm' ? llmCacheMutationEpoch : 0,
+    },
+    scripts: getRelevantScriptSignature(db, alwaysExistChar),
+    character: {
+      chaId: alwaysExistChar.chaId,
+      type: alwaysExistChar.type ?? 'character',
+      translatorNote: getTranslatorNoteSignature(db, alwaysExistChar),
+    },
+    regenerateReusable: false,
+  })
+}
+
+function readTranslateHTMLMemo(key: string): string | undefined {
+  if (!translateHTMLMemo.has(key)) {
+    return undefined
+  }
+
+  const translated = translateHTMLMemo.get(key)!
+  translateHTMLMemo.delete(key)
+  translateHTMLMemo.set(key, translated)
+  return translated
+}
+
+function writeTranslateHTMLMemo(key: string, translated: string) {
+  if (translateHTMLMemo.has(key)) {
+    translateHTMLMemo.delete(key)
+  }
+  translateHTMLMemo.set(key, translated)
+
+  while (translateHTMLMemo.size > TRANSLATE_HTML_OUTPUT_MEMO_MAX_ENTRIES) {
+    const oldestKey = translateHTMLMemo.keys().next().value
+    if (oldestKey === undefined) {
+      break
+    }
+    translateHTMLMemo.delete(oldestKey)
+  }
+}
+
+function normalizeLLMCacheIndex(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null
+  }
+
+  const normalized: string[] = []
+  const seen = new Set<string>()
+  for (let i = value.length - 1; i >= 0; i -= 1) {
+    const key = value[i]
+    if (typeof key !== 'string' || key === LLM_CACHE_INDEX_KEY || seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    normalized.unshift(key)
+  }
+  return normalized
+}
+
+async function rebuildLLMCacheIndex() {
+  const keys: string[] = []
+  try {
+    await LLMCacheStorage.iterate<unknown, void>((_value, key) => {
+      if (key !== LLM_CACHE_INDEX_KEY) {
+        keys.push(key)
+      }
+    })
+  } catch {
+    return []
+  }
+  return keys
+}
+
+async function getLoadedLLMCacheIndex() {
+  if (llmCacheIndex !== null) {
+    return llmCacheIndex
+  }
+
+  if (!llmCacheIndexLoad) {
+    llmCacheIndexLoad = (async () => {
+      let loaded: string[] | null = null
+      try {
+        loaded = normalizeLLMCacheIndex(await LLMCacheStorage.getItem(LLM_CACHE_INDEX_KEY))
+      } catch {
+        loaded = null
+      }
+      llmCacheIndex = loaded ?? (await rebuildLLMCacheIndex())
+      return llmCacheIndex
+    })().finally(() => {
+      llmCacheIndexLoad = null
+    })
+  }
+
+  return llmCacheIndexLoad
+}
+
+async function persistLLMCacheIndex() {
+  if (llmCacheIndex === null) {
+    return
+  }
+
+  try {
+    await LLMCacheStorage.setItem(LLM_CACHE_INDEX_KEY, llmCacheIndex.slice())
+  } catch {
+    // The index is advisory. Cached values and the volatile fallback remain usable.
+  }
+}
+
+function rememberLLMCacheWriteFailure(key: string) {
+  if (!llmCacheWriteFailures.has(key)) {
+    llmCacheWriteFailures.add(key)
+  }
+}
+
+function readVolatileLLMCache(key: string): string | null {
+  if (!llmVolatileCache.has(key)) {
+    return null
+  }
+
+  const value = llmVolatileCache.get(key)!
+  llmVolatileCache.delete(key)
+  llmVolatileCache.set(key, value)
+  return value
+}
+
+function writeVolatileLLMCache(key: string, value: string) {
+  if (llmVolatileCache.has(key)) {
+    llmVolatileCache.delete(key)
+  }
+  llmVolatileCache.set(key, value)
+
+  while (llmVolatileCache.size > LLM_TRANSLATE_CACHE_MAX_ENTRIES) {
+    const oldestKey = llmVolatileCache.keys().next().value
+    if (oldestKey === undefined) {
+      break
+    }
+    llmVolatileCache.delete(oldestKey)
+  }
+}
+
+async function prunePersistentLLMCache(maxEntries = LLM_TRANSLATE_CACHE_MAX_ENTRIES) {
+  const index = await getLoadedLLMCacheIndex()
+  let changed = false
+
+  while (index.length > maxEntries) {
+    const oldestKey = index.shift()
+    if (!oldestKey) {
+      break
+    }
+    try {
+      await LLMCacheStorage.removeItem(oldestKey)
+    } catch {}
+    changed = true
+  }
+
+  if (changed) {
+    await persistLLMCacheIndex()
+  }
+}
+
+async function touchPersistentLLMCacheKey(key: string) {
+  const index = await getLoadedLLMCacheIndex()
+  const existingIndex = index.indexOf(key)
+  if (existingIndex !== -1) {
+    index.splice(existingIndex, 1)
+  }
+  index.push(key)
+  await prunePersistentLLMCache()
+  await persistLLMCacheIndex()
+}
+
+async function readLLMCacheEntry(key: string): Promise<string | null> {
+  if (key === LLM_CACHE_INDEX_KEY) {
+    return null
+  }
+
+  const volatile = readVolatileLLMCache(key)
+  if (volatile !== null) {
+    return volatile
+  }
+
+  try {
+    const cacheMatch = await LLMCacheStorage.getItem<string>(key)
+    if (typeof cacheMatch === 'string') {
+      await touchPersistentLLMCacheKey(key)
+      return cacheMatch
+    }
+  } catch {}
+
+  return null
+}
+
+async function writePersistentLLMCacheEntry(key: string, value: string) {
+  try {
+    await LLMCacheStorage.setItem(key, value)
+    return true
+  } catch {}
+
+  await prunePersistentLLMCache(Math.max(LLM_TRANSLATE_CACHE_MAX_ENTRIES - 1, 0))
+
+  try {
+    await LLMCacheStorage.setItem(key, value)
+    return true
+  } catch {
+    rememberLLMCacheWriteFailure(key)
+    return false
+  }
+}
+
+async function writeLLMCacheEntry(
+  key: string,
+  value: string,
+  options: { bumpEpoch?: boolean } = {},
+) {
+  if (key === LLM_CACHE_INDEX_KEY) {
+    return false
+  }
+
+  writeVolatileLLMCache(key, value)
+  const stored = await writePersistentLLMCacheEntry(key, value)
+  if (stored) {
+    await touchPersistentLLMCacheKey(key)
+  }
+  if (options.bumpEpoch !== false) {
+    bumpLLMCacheMutationEpoch()
+  }
+  return stored
+}
+
+async function writeLLMCacheEntries(keys: string[], value: string) {
+  const uniqueKeys = Array.from(new Set(keys.filter((key) => key !== LLM_CACHE_INDEX_KEY)))
+  let accepted = 0
+  for (const key of uniqueKeys) {
+    await writeLLMCacheEntry(key, value, { bumpEpoch: false })
+    accepted += 1
+  }
+  if (accepted > 0) {
+    bumpLLMCacheMutationEpoch()
+  }
+}
+
+function resolveTranslatorNote(
+  translatorNote: string | undefined,
+  currentChar: character | simpleCharacterArgument | undefined,
+) {
+  if (translatorNote) {
+    return translatorNote
+  }
+  if (currentChar?.type === 'character') {
+    return currentChar.translatorNote ?? ''
+  }
+  return ''
+}
+
+function getLLMTranslationCacheKey(
+  text: string,
+  arg: { to: string; from: string; translatorNote?: string },
+  preset: TranslatorPreset,
+  translatorNote: string,
+  currentChar: character | simpleCharacterArgument | undefined,
+) {
+  return safeStringify({
+    version: 2,
+    mode: 'llm-translate',
+    text,
+    from: arg.from,
+    to: arg.to,
+    translatorNote,
+    preset: {
+      prompt: preset.prompt,
+      maxResponse: preset.maxResponse,
+    },
+    char: {
+      selectedCharID: get(selectedCharID),
+      chaId: currentChar?.chaId ?? null,
+      type: currentChar?.type ?? null,
+    },
+  })
+}
+
+function getCurrentLLMTranslationCacheKey(text: string): string | null {
+  const db = getDatabase()
+  if (db.translatorType !== 'llm') {
+    return null
+  }
+
+  const currentChar = db.characters?.[get(selectedCharID)]
+  const preset = getCurrentTranslatorPreset()
+  const translatorNote = resolveTranslatorNote(undefined, currentChar)
+  return getLLMTranslationCacheKey(
+    text,
+    {
+      to: db.translator || 'en',
+      from: db.translatorInputLanguage,
+    },
+    preset,
+    translatorNote,
+    currentChar,
+  )
 }
 
 let waitTrans = 0
@@ -158,6 +602,7 @@ export async function runTranslator(
   exarg?: { translatorNote?: string },
 ) {
   const cacheScope = syncTranslateCacheScope()
+  const cacheKey = getTranslateCacheKey(reverse, text)
   const arg = {
     from: reverse ? from : target,
 
@@ -181,7 +626,8 @@ export async function runTranslator(
       chunks.push([texts[i], false])
       chunks.push(['', true])
     } else {
-      chunks[chunks.length - 1][0] += texts[i]
+      chunks[chunks.length - 1][0] +=
+        chunks[chunks.length - 1][0].length === 0 ? texts[i] : `\n${texts[i]}`
     }
   }
 
@@ -209,7 +655,7 @@ export async function runTranslator(
 
   const result = fullResult.join('\n').trim()
 
-  writeTranslateCache(reverse, text, result, cacheScope)
+  writeTranslateCache(reverse, text, result, cacheScope, cacheKey)
 
   return result
 }
@@ -399,6 +845,20 @@ export async function translateHTML(
       return html
     }
   }
+  const initialMemoKey = getTranslateHTMLMemoKey(html, reverse, charArg, chatID, alwaysExistChar)
+  if (!regenerate) {
+    const memoized = readTranslateHTMLMemo(initialMemoKey)
+    if (memoized !== undefined) {
+      return memoized
+    }
+  }
+  const cacheTranslateHTMLResult = (translated: string) => {
+    writeTranslateHTMLMemo(
+      getTranslateHTMLMemoKey(html, reverse, charArg, chatID, alwaysExistChar),
+      translated,
+    )
+    return translated
+  }
   if (db.translatorType === 'llm') {
     const tr = db.translator || 'en'
     const from = db.translatorInputLanguage
@@ -408,7 +868,7 @@ export async function translateHTML(
       audio.play().catch(() => {})
     }
 
-    return applyEdittransRegex(r, charArg, alwaysExistChar)
+    return cacheTranslateHTMLResult(applyEdittransRegex(r, charArg, alwaysExistChar))
   }
   if (db.translatorType == 'bergamot' && db.htmlTranslation) {
     const from = db.aiModel.startsWith('novellist') ? 'ja' : 'en'
@@ -419,15 +879,14 @@ export async function translateHTML(
       bergamotTranslate = bergamotTranslator.bergamotTranslate
     }
 
-    return applyEdittransRegex(
-      await bergamotTranslate(html, from, to, true),
-      charArg,
-      alwaysExistChar,
+    return cacheTranslateHTMLResult(
+      applyEdittransRegex(await bergamotTranslate(html, from, to, true), charArg, alwaysExistChar),
     )
   }
   const dom = new DOMParser().parseFromString(html, 'text/html')
 
   let promises: Promise<void>[] = []
+  let deeplXFallbackSegmentsUsed = 0
   let translationChunks: {
     chunks: string[]
     resolvers: ((text: string) => void)[]
@@ -465,9 +924,19 @@ export async function translateHTML(
 
     if (split.length !== currentChunk.chunks.length) {
       //try translating one by one
-      for (let i = 0; i < currentChunk.chunks.length; i++) {
+      const fallbackRemaining = Math.max(
+        DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS - deeplXFallbackSegmentsUsed,
+        0,
+      )
+      const fallbackCount = Math.min(currentChunk.chunks.length, fallbackRemaining)
+      deeplXFallbackSegmentsUsed += fallbackCount
+      for (let i = 0; i < fallbackCount; i++) {
         currentChunk.resolvers[i](await translate(currentChunk.chunks[i], reverse))
       }
+      for (let i = fallbackCount; i < currentChunk.chunks.length; i++) {
+        currentChunk.resolvers[i](currentChunk.chunks[i])
+      }
+      return
     }
 
     for (let i = 0; i < split.length; i++) {
@@ -475,7 +944,11 @@ export async function translateHTML(
     }
   }
 
-  async function translateNodeText(node: Node, reprocessDisplayScript: boolean = false) {
+  async function translateNodeText(
+    node: Node,
+    reprocessDisplayScript: boolean = false,
+    combineAsSingleChunk: boolean = false,
+  ) {
     if (node.textContent.trim().length !== 0) {
       if (needSuperChunkedTranslate()) {
         const prm = new Promise<string>((resolve) => {
@@ -488,7 +961,9 @@ export async function translateHTML(
         return
       }
 
-      const translateChunks = (node.textContent || '').split(/\n\n+/g)
+      const translateChunks = combineAsSingleChunk
+        ? [node.textContent || '']
+        : (node.textContent || '').split(/\n\n+/g)
       let translatedChunksPromises: Promise<string>[] = []
       for (const chunk of translateChunks) {
         const translatedPromise = translate(chunk, reverse)
@@ -559,22 +1034,9 @@ export async function translateHTML(
         )
         if (!hasBlacklistChild && (node as Element)?.getAttribute('translate') !== 'no') {
           const text = getNodetextToSentence(node)
-          const sentences = text.split('\n')
-          if (sentences.length > 1) {
-            // Multiple sentences seperated by <br> tags
-            // reconstruct the p tag
-            node.innerHTML = ''
-            for (const sentence of sentences) {
-              const newNode = document.createElement('span')
-              newNode.textContent = sentence
-              node.appendChild(newNode)
-              await translateNodeText(newNode, true)
-              node.appendChild(document.createElement('br'))
-            }
-          } else {
-            // Single sentence
-            node.innerHTML = sentences[0]
-            await translateNodeText(node, true)
+          if (text.trim().length !== 0) {
+            node.textContent = text
+            await translateNodeText(node, true, true)
           }
           return
         }
@@ -607,7 +1069,7 @@ export async function translateHTML(
   translatedHTML = applyEdittransRegex(translatedHTML, charArg, alwaysExistChar)
 
   // Return the translated HTML, excluding the outer <body> tags if needed
-  return translatedHTML
+  return cacheTranslateHTMLResult(translatedHTML)
 }
 
 function needSuperChunkedTranslate() {
@@ -618,10 +1080,17 @@ async function translateLLM(
   text: string,
   arg: { to: string; from: string; regenerate?: boolean; translatorNote?: string },
 ): Promise<string> {
+  const originalText = text
+  const db = getDatabase()
+  const charIndex = get(selectedCharID)
+  const currentChar = db.characters[charIndex]
+  const translatorNote = resolveTranslatorNote(arg.translatorNote, currentChar)
+  const preset = getCurrentTranslatorPreset()
+  const cacheKey = getLLMTranslationCacheKey(originalText, arg, preset, translatorNote, currentChar)
   if (!arg.regenerate) {
-    const cacheMatch = await LLMCacheStorage.getItem(text)
+    const cacheMatch = await readLLMCacheEntry(cacheKey)
     if (cacheMatch) {
-      return cacheMatch as string
+      return cacheMatch
     }
   }
   const styleDecodeRegex = /\<risu-style\>(.+?)\<\/risu-style\>/gms
@@ -631,22 +1100,7 @@ async function translateLLM(
     return `<style-data style-index="${styleDecodes.length - 1}"></style-data>`
   })
 
-  const db = getDatabase()
-  const charIndex = get(selectedCharID)
-  const currentChar = db.characters[charIndex]
-  let translatorNote = ''
-  console.log(arg.translatorNote)
-  if (arg.translatorNote) {
-    translatorNote = arg.translatorNote
-  } else if (currentChar?.type === 'character') {
-    translatorNote = currentChar.translatorNote ?? ''
-  } else {
-    translatorNote = ''
-  }
-  console.log(translatorNote)
-
   let formated: OpenAIChat[] = []
-  const preset = getCurrentTranslatorPreset()
   let prompt = preset.prompt || defaultTranslatorPrompt
   let parsedPrompt = parseChatML(
     prompt
@@ -698,21 +1152,24 @@ async function translateLLM(
       return styleDecodes[parseInt(p1)] ?? ''
     })
     .replace(/<\/style-data>/g, '')
-  await LLMCacheStorage.setItem(text, result)
-  bumpLLMCacheMutationEpoch()
+  await writeLLMCacheEntry(cacheKey, result)
   return result
 }
 
 export async function getLLMCache(text: string): Promise<string | null> {
-  return await LLMCacheStorage.getItem(text)
+  const cacheKey = getCurrentLLMTranslationCacheKey(text)
+  if (cacheKey) {
+    return await readLLMCacheEntry(cacheKey)
+  }
+  return await readLLMCacheEntry(text)
 }
 
 export async function searchLLMCache(
   partialKey: string,
 ): Promise<{ key: string; value: string }[]> {
   const results: { key: string; value: string }[] = []
-  await LLMCacheStorage.iterate<string, void>((value, key) => {
-    if (key.includes(partialKey)) {
+  await LLMCacheStorage.iterate<unknown, void>((value, key) => {
+    if (key !== LLM_CACHE_INDEX_KEY && typeof value === 'string' && key.includes(partialKey)) {
       results.push({ key, value })
     }
   })
@@ -720,14 +1177,16 @@ export async function searchLLMCache(
 }
 
 export async function setLLMCache(key: string, value: string): Promise<void> {
-  await LLMCacheStorage.setItem(key, value)
-  bumpLLMCacheMutationEpoch()
+  const cacheKey = getCurrentLLMTranslationCacheKey(key)
+  await writeLLMCacheEntries(cacheKey ? [key, cacheKey] : [key], value)
 }
 
 export async function exportLLMCacheAsJSON(): Promise<Record<string, string>> {
   const result: Record<string, string> = {}
-  await LLMCacheStorage.iterate<string, void>((value, key) => {
-    result[key] = value
+  await LLMCacheStorage.iterate<unknown, void>((value, key) => {
+    if (key !== LLM_CACHE_INDEX_KEY && typeof value === 'string') {
+      result[key] = value
+    }
   })
   return result
 }
@@ -737,15 +1196,24 @@ export async function importLLMCacheFromJSON(
 ): Promise<{ count: number; failed: number }> {
   let count = 0
   let failed = 0
+  let accepted = 0
   for (const [key, value] of Object.entries(data)) {
+    if (key === LLM_CACHE_INDEX_KEY) {
+      continue
+    }
     try {
-      await LLMCacheStorage.setItem(key, value)
-      count++
+      const stored = await writeLLMCacheEntry(key, value, { bumpEpoch: false })
+      accepted++
+      if (stored) {
+        count++
+      } else {
+        failed++
+      }
     } catch {
       failed++
     }
   }
-  if (count > 0) {
+  if (accepted > 0) {
     bumpLLMCacheMutationEpoch()
   }
   return { count, failed }
@@ -753,7 +1221,64 @@ export async function importLLMCacheFromJSON(
 
 export async function clearLLMCache(): Promise<void> {
   await LLMCacheStorage.clear()
+  llmVolatileCache.clear()
+  llmCacheIndex = null
+  llmCacheIndexLoad = null
+  llmCacheWriteFailures.clear()
   bumpLLMCacheMutationEpoch()
+}
+
+function pruneEdittransRegexCaches() {
+  while (edittransRegexCache.size > EDITTRANS_REGEX_CACHE_MAX_ENTRIES) {
+    const oldestKey = edittransRegexCache.keys().next().value
+    if (oldestKey === undefined) {
+      break
+    }
+    edittransRegexCache.delete(oldestKey)
+  }
+  while (invalidEdittransRegexCache.size > EDITTRANS_REGEX_CACHE_MAX_ENTRIES) {
+    const oldestKey = invalidEdittransRegexCache.keys().next().value
+    if (oldestKey === undefined) {
+      break
+    }
+    invalidEdittransRegexCache.delete(oldestKey)
+  }
+}
+
+function getEdittransRegexCacheKey(script: customscript, index: number) {
+  return safeStringify({
+    identity: script.id ?? `${index}:${script.comment ?? ''}`,
+    in: script.in,
+    flag: script.ableFlag ? script.flag : 'g',
+    ableFlag: Boolean(script.ableFlag),
+  })
+}
+
+function getEdittransRegex(script: customscript, index: number): RegExp | null {
+  const key = getEdittransRegexCacheKey(script, index)
+  const cached = edittransRegexCache.get(key)
+  if (cached) {
+    edittransRegexCache.delete(key)
+    edittransRegexCache.set(key, cached)
+    cached.lastIndex = 0
+    return cached
+  }
+
+  if (invalidEdittransRegexCache.has(key)) {
+    return null
+  }
+
+  try {
+    const reg = new RegExp(script.in, script.ableFlag ? script.flag : 'g')
+    edittransRegexCache.set(key, reg)
+    pruneEdittransRegexCaches()
+    reg.lastIndex = 0
+    return reg
+  } catch (error) {
+    invalidEdittransRegexCache.set(key, true)
+    pruneEdittransRegexCaches()
+    throw error
+  }
 }
 
 function applyEdittransRegex(
@@ -766,9 +1291,12 @@ function applyEdittransRegex(
   let scripts: customscript[] = []
   scripts = (getModuleRegexScripts() ?? []).concat(alwaysExistChar?.customscript ?? [])
 
-  for (const script of scripts) {
+  for (const [index, script] of scripts.entries()) {
     if (script.type === 'edittrans') {
-      const reg = new RegExp(script.in, script.ableFlag ? script.flag : 'g')
+      const reg = getEdittransRegex(script, index)
+      if (!reg) {
+        continue
+      }
       let outScript = script.out.replaceAll('$n', '\n')
       text = text.replace(reg, outScript)
     }

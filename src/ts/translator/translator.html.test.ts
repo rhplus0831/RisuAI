@@ -29,10 +29,13 @@ const testState = vi.hoisted(() => {
       llmCache.set(key, value)
       return value
     }),
+    removeItem: vi.fn(async (key: string) => {
+      llmCache.delete(key)
+    }),
     clear: vi.fn(async () => {
       llmCache.clear()
     }),
-    iterate: vi.fn(async (callback: (value: string, key: string) => void) => {
+    iterate: vi.fn(async (callback: (value: unknown, key: string) => void) => {
       for (const [key, value] of llmCache.entries()) {
         callback(value, key)
       }
@@ -88,7 +91,32 @@ vi.mock('../process/modules', () => ({
 }))
 
 vi.mock('../util', () => ({
-  getNodetextToSentence: (node: { textContent?: string | null }) => node.textContent ?? '',
+  getNodetextToSentence: (node: {
+    childNodes?: NodeListOf<ChildNode>
+    innerHTML?: string
+    textContent?: string | null
+  }) => {
+    if (typeof node.innerHTML === 'string') {
+      return node.innerHTML.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+    }
+    if (!node.childNodes) {
+      return node.textContent ?? ''
+    }
+    const walk = (child: ChildNode): string => {
+      if (child.nodeName.toLowerCase() === 'br') {
+        return '\n'
+      }
+      if (child.childNodes.length > 0) {
+        return Array.from(child.childNodes)
+          .map((nested) => walk(nested))
+          .join('')
+      }
+      return child.textContent ?? ''
+    }
+    return Array.from(node.childNodes)
+      .map((child) => walk(child))
+      .join('')
+  },
   sleep: vi.fn(async () => {}),
 }))
 
@@ -106,7 +134,12 @@ vi.mock('../../etc/send.mp3', () => ({
   default: 'send.mp3',
 }))
 
-import { __translatorTestHooks, setLLMCache, translateHTML } from './translator'
+import {
+  DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS,
+  __translatorTestHooks,
+  setLLMCache,
+  translateHTML,
+} from './translator'
 
 function resetDatabase() {
   Object.assign(testState.db, {
@@ -207,5 +240,121 @@ describe('translateHTML streaming guards', () => {
     expect(testState.requestChatData).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
     expect(consoleLog).not.toHaveBeenCalled()
+  })
+
+  it('v4-L24: memoizes translated HTML output until the explicit signature changes', async () => {
+    const fetchMock = stubGoogleFetch()
+    const OriginalDOMParser = DOMParser
+    const parseSpy = vi.fn()
+    class SpyDOMParser extends OriginalDOMParser {
+      parseFromString(string: string, type: DOMParserSupportedType) {
+        parseSpy(string, type)
+        return super.parseFromString(string, type)
+      }
+    }
+    vi.stubGlobal('DOMParser', SpyDOMParser)
+
+    const first = await translateHTML('<p>Hello</p>', false, '', 0)
+    const second = await translateHTML('<p>Hello</p>', false, '', 0)
+    testState.db.translator = 'fr'
+    const targetChanged = await translateHTML('<p>Hello</p>', false, '', 0)
+    const beforeRegenerateParseCount = parseSpy.mock.calls.length
+    const regenerated = await translateHTML('<p>Hello</p>', false, '', 0, true)
+
+    expect(first).toContain('translated:ko:Hello')
+    expect(second).toBe(first)
+    expect(targetChanged).toContain('translated:fr:Hello')
+    expect(regenerated).toBe(targetChanged)
+    expect(parseSpy).toHaveBeenCalledTimes(beforeRegenerateParseCount + 1)
+    expect(parseSpy).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(__translatorTestHooks.getTranslateHTMLMemoEntries()).toHaveLength(2)
+  })
+
+  it('v4-L29: combineTranslation processes a multi-line paragraph as one display unit', async () => {
+    testState.db.combineTranslation = true
+    const fetchMock = stubGoogleFetch()
+    testState.processScriptFull.mockImplementation(async (_char: unknown, text: string) => ({
+      data: `display:${text}`,
+    }))
+
+    const translated = await translateHTML(
+      '<p>Line one<br>Line two<br>Line three</p>',
+      false,
+      '',
+      0,
+    )
+
+    expect(translated).toContain('display:translated:ko:Line one')
+    expect(translated).toContain('Line two')
+    expect(translated).toContain('Line three')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(testState.processScriptFull).toHaveBeenCalledTimes(1)
+    expect(testState.processScriptFull.mock.calls[0][1]).toBe(
+      'translated:ko:Line one\nLine two\nLine three',
+    )
+  })
+
+  it('v4-L25: reuses edit-translation regexes and reports invalid patterns once per script version', async () => {
+    const fetchMock = stubGoogleFetch()
+    testState.db.characters[0].customscript = [
+      {
+        id: 'edittrans-valid',
+        comment: '',
+        in: 'Hello',
+        out: 'Hi',
+        type: 'edittrans',
+        flag: '',
+        ableFlag: false,
+      },
+    ]
+
+    const first = await translateHTML('<p>Hello one</p>', false, 'char-a', 0)
+    const second = await translateHTML('<p>Hello two</p>', false, 'char-a', 0)
+
+    expect(first).toContain('translated:ko:Hi one')
+    expect(second).toContain('translated:ko:Hi two')
+    expect(__translatorTestHooks.getEdittransRegexCacheSize()).toBe(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    testState.db.characters[0].customscript = [
+      {
+        id: 'edittrans-invalid',
+        comment: '',
+        in: '(',
+        out: 'ignored',
+        type: 'edittrans',
+        flag: '',
+        ableFlag: false,
+      },
+    ]
+    await expect(translateHTML('<p>Invalid one</p>', false, 'char-a', 0)).rejects.toThrow()
+    await expect(translateHTML('<p>Invalid two</p>', false, 'char-a', 0)).resolves.toContain(
+      'translated:ko:Invalid two',
+    )
+    expect(__translatorTestHooks.getInvalidEdittransRegexCacheSize()).toBe(1)
+  })
+
+  it('v4-L27: caps deeplX delimiter-mismatch one-by-one fallback fanout', async () => {
+    testState.db.translatorType = 'deeplX'
+    testState.globalFetch.mockImplementation(
+      async (_url: string, options: { body: { text: string } }) => ({
+        ok: true,
+        data: {
+          data: options.body.text.includes('■') ? 'bulk mismatch' : `deeplx:${options.body.text}`,
+        },
+      }),
+    )
+    const count = DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS + 2
+    const html = Array.from(
+      { length: count },
+      (_value, index) => `<p>deepl-${index}-${'x'.repeat(700)}</p>`,
+    ).join('')
+
+    const translated = await translateHTML(html, false, '', 0)
+
+    expect(testState.globalFetch).toHaveBeenCalledTimes(2 + DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS)
+    expect(translated).toContain('deeplx:deepl-0')
+    expect(translated).toContain(`deepl-${count - 1}`)
   })
 })

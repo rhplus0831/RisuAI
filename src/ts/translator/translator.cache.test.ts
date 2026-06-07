@@ -22,17 +22,20 @@ const testState = vi.hoisted(() => {
     }
   }
 
-  const llmCache = new Map<string, string>()
+  const llmCache = new Map<string, unknown>()
   const storage = {
     getItem: vi.fn(async (key: string) => llmCache.get(key) ?? null),
-    setItem: vi.fn(async (key: string, value: string) => {
+    setItem: vi.fn(async (key: string, value: unknown) => {
       llmCache.set(key, value)
       return value
+    }),
+    removeItem: vi.fn(async (key: string) => {
+      llmCache.delete(key)
     }),
     clear: vi.fn(async () => {
       llmCache.clear()
     }),
-    iterate: vi.fn(async (callback: (value: string, key: string) => void) => {
+    iterate: vi.fn(async (callback: (value: unknown, key: string) => void) => {
       for (const [key, value] of llmCache.entries()) {
         callback(value, key)
       }
@@ -106,10 +109,14 @@ vi.mock('../../etc/send.mp3', () => ({
 }))
 
 import {
+  LLM_TRANSLATE_CACHE_MAX_ENTRIES,
   TRANSLATE_CACHE_MAX_ENTRIES,
   __translatorTestHooks,
+  getLLMCache,
   getCurrentTranslatorPreset,
+  setLLMCache,
   translate,
+  translateHTML,
 } from './translator'
 import { createTranslatorPreset } from './presets'
 
@@ -206,9 +213,9 @@ describe('auto-translate cache', () => {
     expect(fetchMock).toHaveBeenCalledTimes(TRANSLATE_CACHE_MAX_ENTRIES + 2)
     const entries = __translatorTestHooks.getTranslateCacheEntries()
     expect(entries).toHaveLength(TRANSLATE_CACHE_MAX_ENTRIES)
-    expect(entries.some(([key]) => key.endsWith(':entry-0'))).toBe(true)
-    expect(entries.some(([key]) => key.endsWith(':entry-1'))).toBe(true)
-    expect(entries.some(([key]) => key.endsWith(':entry-2'))).toBe(false)
+    expect(entries.some(([key]) => key.includes('"text":"entry-0"'))).toBe(true)
+    expect(entries.some(([key]) => key.includes('"text":"entry-1"'))).toBe(true)
+    expect(entries.some(([key]) => key.includes('"text":"entry-2"'))).toBe(false)
   })
 
   it('M15: keeps forward and reverse translation cache keys separate', async () => {
@@ -224,9 +231,10 @@ describe('auto-translate cache', () => {
     expect(forwardHit).toBe(forward)
     expect(reverseHit).toBe(reverse)
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(__translatorTestHooks.getTranslateCacheEntries().map(([key]) => key)).toEqual([
-      '0:shared text',
-      '1:shared text',
+    const keys = __translatorTestHooks.getTranslateCacheEntries().map(([key]) => JSON.parse(key))
+    expect(keys).toMatchObject([
+      { reverse: false, text: 'shared text' },
+      { reverse: true, text: 'shared text' },
     ])
   })
 
@@ -246,6 +254,120 @@ describe('auto-translate cache', () => {
     expect(firstChatAgain).toBe('translated:ko:scoped text:3')
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(__translatorTestHooks.getTranslateCacheEntries()).toHaveLength(1)
+  })
+
+  it('v4-L26: separates LLM translation cache entries by translator signature', async () => {
+    testState.db.translatorType = 'llm'
+    testState.requestChatData.mockImplementation(async () => ({
+      type: 'success',
+      result: `<p>llm:${testState.db.translator}</p>`,
+    }))
+
+    const first = await translateHTML('<p>shared llm body</p>', false, '', 0)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.translator = 'fr'
+    const second = await translateHTML('<p>shared llm body</p>', false, '', 0)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.translator = 'ko'
+    const firstAgain = await translateHTML('<p>shared llm body</p>', false, '', 0)
+
+    expect(first).toBe('<p>llm:ko</p>')
+    expect(second).toBe('<p>llm:fr</p>')
+    expect(firstAgain).toBe(first)
+    expect(testState.requestChatData).toHaveBeenCalledTimes(2)
+  })
+
+  it('v4-L26: manual LLM cache edits update the active signature entry', async () => {
+    testState.db.translatorType = 'llm'
+    testState.requestChatData.mockResolvedValue({
+      type: 'success',
+      result: '<p>generated translation</p>',
+    })
+
+    const generated = await translateHTML('<p>manual edit body</p>', false, '', 0)
+    await setLLMCache('<p>manual edit body</p>', '<p>manual edited translation</p>')
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    const edited = await translateHTML('<p>manual edit body</p>', false, '', 0)
+
+    expect(generated).toBe('<p>generated translation</p>')
+    expect(edited).toBe('<p>manual edited translation</p>')
+    expect(testState.requestChatData).toHaveBeenCalledTimes(1)
+    await expect(getLLMCache('<p>manual edit body</p>')).resolves.toBe(
+      '<p>manual edited translation</p>',
+    )
+  })
+
+  it('v4-L26: manual LLM cache edits do not shadow another translator signature', async () => {
+    testState.db.translatorType = 'llm'
+    testState.requestChatData.mockImplementation(async () => ({
+      type: 'success',
+      result: `<p>generated:${testState.db.translator}</p>`,
+    }))
+
+    await setLLMCache('<p>manual scoped body</p>', '<p>manual:ko</p>')
+    await expect(getLLMCache('<p>manual scoped body</p>')).resolves.toBe('<p>manual:ko</p>')
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.translator = 'fr'
+    await expect(getLLMCache('<p>manual scoped body</p>')).resolves.toBeNull()
+    const translated = await translateHTML('<p>manual scoped body</p>', false, '', 0)
+
+    expect(translated).toBe('<p>generated:fr</p>')
+    expect(testState.requestChatData).toHaveBeenCalledTimes(1)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.translator = 'ko'
+    await expect(translateHTML('<p>manual scoped body</p>', false, '', 0)).resolves.toBe(
+      '<p>manual:ko</p>',
+    )
+    expect(testState.requestChatData).toHaveBeenCalledTimes(1)
+  })
+
+  it('v4-L26: enforces deterministic LLM cache pruning', async () => {
+    testState.db.translatorType = 'llm'
+    testState.requestChatData.mockImplementation(
+      async ({ formated }: { formated: { content: string }[] }) => ({
+        type: 'success',
+        result: `llm:${formated.at(-1)?.content ?? ''}`,
+      }),
+    )
+
+    for (let i = 0; i <= LLM_TRANSLATE_CACHE_MAX_ENTRIES; i++) {
+      await translateHTML(`<p>llm-${i}</p>`, false, '', 0)
+    }
+
+    const cacheKeys = Array.from(testState.llmCache.keys()).filter(
+      (key) => key !== '__risu_llm_translate_cache_index_v1__',
+    )
+    expect(cacheKeys).toHaveLength(LLM_TRANSLATE_CACHE_MAX_ENTRIES)
+    expect(cacheKeys.some((key) => key.includes('<p>llm-0</p>'))).toBe(false)
+    expect(
+      cacheKeys.some((key) => key.includes(`<p>llm-${LLM_TRANSLATE_CACHE_MAX_ENTRIES}</p>`)),
+    ).toBe(true)
+    await expect(getLLMCache('<p>llm-0</p>')).resolves.toBeNull()
+  })
+
+  it('v4-L26: quota write failures keep translated output in a bounded volatile cache without alerting', async () => {
+    testState.db.translatorType = 'llm'
+    testState.requestChatData.mockResolvedValue({ type: 'success', result: '<p>paid result</p>' })
+    testState.storage.setItem.mockRejectedValue(new DOMException('full', 'QuotaExceededError'))
+
+    const first = await translateHTML('<p>quota body</p>', false, '', 0)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    const second = await translateHTML('<p>quota body</p>', false, '', 0)
+
+    expect(first).toBe('<p>paid result</p>')
+    expect(second).toBe(first)
+    expect(testState.requestChatData).toHaveBeenCalledTimes(1)
+    expect(testState.alertError).not.toHaveBeenCalled()
+    expect(__translatorTestHooks.getLLMVolatileCacheEntries()).toHaveLength(1)
+    expect(__translatorTestHooks.getLLMCacheWriteFailureKeys()).toHaveLength(1)
+
+    testState.storage.setItem.mockReset()
+    testState.storage.setItem.mockImplementation(async (key: string, value: unknown) => {
+      testState.llmCache.set(key, value)
+      return value
+    })
+    await setLLMCache('manual-key', 'manual-value')
+    await expect(getLLMCache('manual-key')).resolves.toBe('manual-value')
   })
 
   it('v4-L30: current translator preset sync reads from a snapshot without mutating live legacy fields', () => {

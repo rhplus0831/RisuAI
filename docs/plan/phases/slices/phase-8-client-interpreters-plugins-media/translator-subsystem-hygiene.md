@@ -145,3 +145,35 @@ pnpm exec vitest run \
 pnpm exec vitest run src/ts/__tests__/fixCompletenessGateV3.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 ```
+
+## Implementation Proof Notes
+
+Status: v4-L24 through v4-L29 fixed in translator-local code. v4-L30 remains
+Phase 5-owned and no v3 active-risk status IDs are flipped by this slice.
+
+Inventory:
+
+- Cache sites: the existing `translateCache` remains bounded and now keys on
+  translator settings; `translateHTML` has a bounded output memo; edit-translation
+  regex compilation has bounded valid/invalid memo storage; `LLMCacheStorage`
+  has a fixed entry limit, deterministic pruning, signature-aware auto-LLM keys,
+  and a bounded volatile fallback for persistent write failures. The Bergamot
+  model cache is no-actioned because it stores finite model assets, not per-output
+  translation results.
+- Listener/timer sites: no new listeners or timers were added. The existing
+  deeplX `waitTrans` limiter remains, and delimiter-mismatch fallback is capped
+  per message at `DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS` one-by-one calls
+  across all batched flushes, bounding any limiter wait amplification.
+- Blob/audio/object URL sites: no Blob or object URL sites exist in the
+  translator slice. `new Audio(sendSound)` remains no-actioned; memoized remounts
+  intentionally do not replay the completion sound.
+- Debug-log sites: the LLM translator-note `console.log` calls were removed.
+
+Focused proof added:
+
+- `translator.html.test.ts`: output memo remount/invalidation/regenerate proof,
+  combined paragraph fanout proof, edittrans regex valid/invalid memo proof, and
+  deeplX fallback cap proof.
+- `translator.cache.test.ts`: translator-settings cache-key proof, LLM signature
+  separation, deterministic LLM cache pruning, and quota-failure volatile fallback
+  proof.
