@@ -176,6 +176,14 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: 'mt-4',
   },
   {
+    id: 'adv.doNotWarnExternalServers',
+    type: 'check',
+    labelKey: 'doNotWarnExternalServers',
+    bindKey: 'doNotWarnExternalServers',
+    keywords: ['external', 'server', 'warning'],
+    classes: 'mt-4',
+  },
+  {
     id: 'adv.imgComp',
     type: 'check',
     labelKey: 'imageCompression',

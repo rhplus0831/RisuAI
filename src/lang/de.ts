@@ -839,6 +839,7 @@ export const languageGerman = {
   unrecommended: 'Nicht empfohlen',
   chatNotes: 'Chat-Notizen',
   showUnrecommended: 'Nicht empfohlene Einstellungen anzeigen',
+  doNotWarnExternalServers: 'Nicht vor externen Servern warnen',
   altGreet: 'Alternative erste Nachrichten',
   scripts: 'Skripte',
   settings: 'Einstellungen',
@@ -970,6 +971,8 @@ export const languageGerman = {
   ifRandom: 'Wenn zufällig',
   ifValue: 'Wenn Wert',
   hideRealm: 'RisuRealm verstecken',
+  sendExternalServerWarning:
+    'Wenn Sie fortfahren, wird eine Anfrage an einen externen Server gesendet, und Ihre IP-Adresse kann übertragen werden. Möchten Sie fortfahren?',
   hideAllImages: 'Alle Bilder ausblenden',
   popularityLevel: '{} Beliebtheit',
   colorScheme: 'Farbschema',

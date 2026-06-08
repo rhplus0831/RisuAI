@@ -1,13 +1,29 @@
 <script lang="ts">
   import { DBState } from 'src/ts/stores.svelte'
   import Hub from './Realm/RealmMain.svelte'
-  import { OpenRealmStore, RealmInitialOpenChar } from 'src/ts/stores.svelte'
+  import { OpenRealmStore } from 'src/ts/stores.svelte'
   import { ArrowLeft, FolderCodeIcon } from '@lucide/svelte'
   import { getVersionString, openURL } from 'src/ts/globalApi.svelte'
   import { language } from 'src/lang'
-  import { getRisuHub, hubAdditionalHTML } from 'src/ts/characterCards'
-  import RisuHubIcon from './Realm/RealmHubIcon.svelte'
   import Title from './Title.svelte'
+  import { alertConfirm } from 'src/ts/alert'
+
+  let realmConfirmOpen = $state(false)
+
+  async function openRealm() {
+    if ($OpenRealmStore || realmConfirmOpen) return
+
+    if (!DBState.db.doNotWarnExternalServers) {
+      realmConfirmOpen = true
+      try {
+        if (!(await alertConfirm(language.sendExternalServerWarning))) return
+      } finally {
+        realmConfirmOpen = false
+      }
+    }
+
+    $OpenRealmStore = true
+  }
 </script>
 
 <div class="h-full w-full flex flex-col overflow-y-auto items-center">
@@ -18,38 +34,12 @@
   <div class="w-full flex p-4 flex-col text-textcolor max-w-4xl">
     {#if !$OpenRealmStore}
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
-      <h1 class="text-2xl font-bold">
-        Recently Uploaded<button
-          class="text-base font-medium float-right p-1 bg-darkbg rounded-md hover:ring-3"
-          onclick={() => {
-            $OpenRealmStore = true
-          }}>Get More</button
-        >
-      </h1>
-      {#if !DBState.db.hideRealm}
-        {#await getRisuHub({ search: '', page: 0, nsfw: false, sort: 'recommended' }) then charas}
-          {#if charas.length > 0}
-            {@html hubAdditionalHTML}
-            <div class="w-full flex gap-4 p-2 flex-wrap justify-center">
-              {#each charas as chara}
-                <RisuHubIcon
-                  onClick={() => {
-                    $OpenRealmStore = true
-                    if (DBState.db.realmDirectOpen) {
-                      $RealmInitialOpenChar = chara
-                    }
-                  }}
-                  {chara}
-                />
-              {/each}
-            </div>
-          {:else}
-            <div class="text-textcolor2">Failed to load {language.hub}...</div>
-          {/if}
-        {/await}
-      {:else}
-        <div class="text-textcolor2">{language.hideRealm}</div>
-      {/if}
+      <button
+        class="w-full rounded-lg bg-darkbg px-5 py-4 text-left text-xl font-bold transition-colors hover:bg-selected"
+        onclick={openRealm}
+      >
+        Open Risu Realm
+      </button>
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
       <div class="flex w-full max-w-md p-2">
         <button

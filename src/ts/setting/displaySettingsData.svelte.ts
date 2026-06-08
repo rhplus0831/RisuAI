@@ -270,13 +270,6 @@ export const displayOtherSettingsItems: SettingItem[] = [
     keywords: ['first', 'message', 'pages'],
   },
   {
-    id: 'display.hideRealm',
-    type: 'check',
-    labelKey: 'hideRealm',
-    bindKey: 'hideRealm',
-    keywords: ['realm', 'hide'],
-  },
-  {
     id: 'display.hideAllImages',
     type: 'check',
     labelKey: 'hideAllImages',

@@ -30,9 +30,6 @@ import { isLite } from 'src/ts/lite'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
-const SUPPORTER_CONFIRM_MESSAGE =
-  'Continuing will send a request to the RisuAI server, and your IP address may be transmitted. Do you want to continue?'
-
 let target: HTMLElement
 let component: MountedComponent | undefined
 
@@ -56,6 +53,7 @@ describe('Settings supporter tab', () => {
     additionalSettingsMenu.splice(0)
     DBState.db = {
       enableRisuaiProTools: false,
+      doNotWarnExternalServers: false,
       settingsCloseButtonSize: 24,
     } as any
     isLite.set(false)
@@ -84,7 +82,7 @@ describe('Settings supporter tab', () => {
     supporterButton().click()
     await flushClick()
 
-    expect(alertSpies.alertConfirm).toHaveBeenCalledWith(SUPPORTER_CONFIRM_MESSAGE)
+    expect(alertSpies.alertConfirm).toHaveBeenCalledWith(language.sendExternalServerWarning)
     expect(get(SettingsMenuIndex)).toBe(-1)
     expect(fetch).not.toHaveBeenCalled()
   })
@@ -101,5 +99,15 @@ describe('Settings supporter tab', () => {
 
     expect(get(SettingsMenuIndex)).toBe(77)
     expect(fetch).toHaveBeenCalledWith(SUPPORTER_ENDPOINT)
+  })
+
+  it('skips the external server warning when the opt-out is enabled', async () => {
+    DBState.db.doNotWarnExternalServers = true
+
+    supporterButton().click()
+    await flushClick()
+
+    expect(alertSpies.alertConfirm).not.toHaveBeenCalled()
+    expect(get(SettingsMenuIndex)).toBe(77)
   })
 })

@@ -88,6 +88,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   disableSeperateParameterChangeOnPresetChange: 'runtime',
   doNotChangeFallbackModels: 'runtime',
   doNotChangeSeperateModels: 'runtime',
+  doNotWarnExternalServers: 'advanced',
   dynamicAssets: 'media',
   dynamicAssetsEditDisplay: 'media',
   dynamicModelRegistry: 'providers',

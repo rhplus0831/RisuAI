@@ -840,6 +840,7 @@ export const languageSpanish = {
   unrecommended: 'No Recomendado',
   chatNotes: 'Notas del Chat',
   showUnrecommended: 'Mostrar Configuraciones No Recomendadas',
+  doNotWarnExternalServers: 'No advertir sobre servidores externos',
   altGreet: 'Mensajes de Inicio Alternativos',
   scripts: 'Scripts',
   settings: 'Configuración',
@@ -972,6 +973,8 @@ export const languageSpanish = {
   ifRandom: 'Si aleatorio',
   ifValue: 'Si valor',
   hideRealm: 'Ocultar RisuRealm',
+  sendExternalServerWarning:
+    'Continuar enviará una solicitud a un servidor externo y puede transmitir tu dirección IP. ¿Quieres continuar?',
   hideAllImages: 'Ocultar todas las imágenes',
   popularityLevel: '{} Popularidad',
   colorScheme: 'Esquema de Colores',

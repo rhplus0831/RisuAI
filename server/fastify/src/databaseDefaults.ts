@@ -231,6 +231,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'useSayNothing', true)
   setDefault(database, 'bias', [])
   setDefault(database, 'showUnrecommended', false)
+  setDefault(database, 'doNotWarnExternalServers', false)
   setDefault(database, 'pluginCompatibilityMode', false)
   setDefault(database, 'elevenLabKey', '')
   setDefault(database, 'voicevoxUrl', '')

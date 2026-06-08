@@ -820,6 +820,7 @@ export const languageVietnamese = {
   unrecommended: 'Không được khuyến khích',
   chatNotes: 'Ghi chú trò chuyện',
   showUnrecommended: 'Hiển thị cài đặt không được đề xuất',
+  doNotWarnExternalServers: 'Không cảnh báo về máy chủ bên ngoài',
   altGreet: 'Tin nhắn đầu tiên thay thế',
   scripts: 'Tập lệnh',
   settings: 'Cài đặt',
@@ -951,6 +952,8 @@ export const languageVietnamese = {
   ifRandom: 'Nếu ngẫu nhiên',
   ifValue: 'Nếu giá trị',
   hideRealm: 'Ẩn RisuRealm',
+  sendExternalServerWarning:
+    'Tiếp tục sẽ gửi yêu cầu đến máy chủ bên ngoài và địa chỉ IP của bạn có thể được truyền đi. Bạn có muốn tiếp tục không?',
   hideAllImages: 'Ẩn tất cả hình ảnh',
   popularityLevel: '{} Mức độ phổ biến',
   colorScheme: 'Bảng màu',

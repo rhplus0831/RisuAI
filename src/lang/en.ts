@@ -910,6 +910,7 @@ export const languageEnglish = {
   unrecommended: 'Not Recommended',
   chatNotes: 'Chat Notes',
   showUnrecommended: 'Show Unrecommended Settings',
+  doNotWarnExternalServers: 'Do not warn about external servers',
   altGreet: 'Alternative First Messages',
   scripts: 'Scripts',
   settings: 'Settings',
@@ -1044,6 +1045,8 @@ export const languageEnglish = {
   ifRandom: 'If random',
   ifValue: 'If Value',
   hideRealm: 'Hide RisuRealm',
+  sendExternalServerWarning:
+    'Continuing will send a request to an external server, and your IP address may be transmitted. Do you want to continue?',
   hideAllImages: 'Hide All Images',
   popularityLevel: '{} Popularity',
   colorScheme: 'Color Scheme',

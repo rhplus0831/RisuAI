@@ -829,6 +829,7 @@ export const languageKorean = {
   unrecommended: '비권장',
   chatNotes: '채팅 노트',
   showUnrecommended: '비권장 설정 보이기',
+  doNotWarnExternalServers: '외부 서버 경고 표시 안 함',
   altGreet: '추가 첫 메시지',
   scripts: '스크립트',
   settings: '설정',
@@ -962,6 +963,8 @@ export const languageKorean = {
   ifRandom: '만약 랜덤',
   ifValue: '값이 다음과 같다면',
   hideRealm: 'RisuRealm 숨기기',
+  sendExternalServerWarning:
+    '계속하면 외부 서버로 요청이 전송되며 IP 주소가 전달될 수 있습니다. 계속하시겠습니까?',
   hideAllImages: '모든 이미지 숨기기',
   popularityLevel: '{} 인기도',
   colorScheme: '색상 팔레트',

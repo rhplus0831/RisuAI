@@ -420,6 +420,7 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.showUnrecommended)) {
     data.showUnrecommended = false
   }
+  data.doNotWarnExternalServers ??= false
   if (checkNullish(data.pluginCompatibilityMode)) {
     data.pluginCompatibilityMode = false
   }
@@ -1265,6 +1266,7 @@ export interface Database {
   useSayNothing: boolean
   didFirstSetup: boolean
   showUnrecommended: boolean
+  doNotWarnExternalServers: boolean
   pluginCompatibilityMode: boolean
   elevenLabKey: string
   voicevoxUrl: string

@@ -45,9 +45,6 @@
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import { alertConfirm } from 'src/ts/alert'
 
-  const SUPPORTER_CONFIRM_MESSAGE =
-    'Continuing will send a request to the RisuAI server, and your IP address may be transmitted. Do you want to continue?'
-
   let openLoreList = $state(false)
   let supporterConfirmOpen = $state(false)
   if (window.innerWidth >= 900 && $SettingsMenuIndex === -1 && !$MobileGUI) {
@@ -57,9 +54,14 @@
   async function openSupporterThanks() {
     if ($SettingsMenuIndex === 77 || supporterConfirmOpen) return
 
+    if (DBState.db.doNotWarnExternalServers) {
+      $SettingsMenuIndex = 77
+      return
+    }
+
     supporterConfirmOpen = true
     try {
-      if (await alertConfirm(SUPPORTER_CONFIRM_MESSAGE)) {
+      if (await alertConfirm(language.sendExternalServerWarning)) {
         $SettingsMenuIndex = 77
       }
     } finally {
