@@ -786,6 +786,7 @@ export const languageKorean = {
   savebackup: '구글 백업 저장',
   loadbackup: '구글 백업 불러오기',
   files: '파일',
+  backupRestore: '백업 및 복원',
   backupConfirm: '정말로 백업을 저장하시겠습니까?',
   backupLoadConfirm: '정말로 백업을 불러오시겠습니까? 현재 데이터가 모두 사라집니다!',
   backupLoadConfirm2: '정말로, 정말로 백업을 불러오시겠습니까? 현재 데이터가 모두 사라집니다!',
@@ -1018,7 +1019,10 @@ export const languageKorean = {
   translationPrompt: '번역 프롬프트',
   translationResponseSize: '번역 응답 크기',
   webdeeplwarn: '이 옵션은 CORS 오류를 일으킬 수 있습니다.',
+  saveServerBackup: '서버 백업 저장',
+  loadServerBackup: '서버 백업 불러오기',
   saveBackupLocal: '로컬 백업 저장',
+  saveBackupLocalZipStyle: 'ZIP 형식 로컬 백업 저장 (권장하지 않음)',
   loadBackupLocal: '로컬 백업 불러오기',
   topP: 'Top P',
   genTimes: '생성 횟수',
@@ -1620,4 +1624,7 @@ export const languageKorean = {
   nanoGPTSelectFromList: '목록에서 선택',
   nanoGPTManualInput: '수동 입력',
   nanoGPTManualModelSelect: '수동 모델 선택',
+  cleanColdStorage: '사용하지 않는 콜드 스토리지 정리',
+  cleanColdStorageConfirm:
+    '사용하지 않는 콜드 스토리지 데이터를 영구적으로 삭제합니다. 현재 사용되지 않지만 나중에 필요할 수 있는 데이터가 포함될 수 있습니다. 계속하시겠습니까?',
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

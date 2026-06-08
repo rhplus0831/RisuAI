@@ -85,7 +85,7 @@
   }
 </script>
 
-<h2 class="mb-2 text-2xl font-bold mt-2">{language.account} & {language.files}</h2>
+<h2 class="mb-2 text-2xl font-bold mt-2">{language.backupRestore}</h2>
 
 <Button
   onclick={async () => {
@@ -98,7 +98,7 @@
   className="mt-2"
   disabled={activeBackupOperation !== null}
 >
-  Save Server Backup
+  {language.saveServerBackup}
 </Button>
 
 <Button
@@ -115,7 +115,7 @@
   className="mt-2"
   disabled={activeBackupOperation !== null}
 >
-  Load Server Backup
+  {language.loadServerBackup}
 </Button>
 
 <Button

@@ -7,10 +7,10 @@
     BoxIcon,
     CodeIcon,
     ContactIcon,
+    HardDrive,
     LanguagesIcon,
     MonitorIcon,
     Sailboat,
-    UserIcon,
     CircleXIcon,
     KeyboardIcon,
     SparkleIcon,
@@ -163,8 +163,8 @@
             $SettingsMenuIndex = 0
           }}
         >
-          <UserIcon />
-          <span>{language.account} & {language.files}</span>
+          <HardDrive />
+          <span>{language.backupRestore}</span>
         </button>
         <button
           class="flex gap-2 items-center hover:text-textcolor"
