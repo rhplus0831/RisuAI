@@ -7,7 +7,6 @@
     settingsOpen,
     sideBarClosing,
     sideBarStore,
-    OpenRealmStore,
     PlaygroundStore,
     QuickSettings,
     additionalHamburgerMenu,
@@ -47,6 +46,7 @@
   } from 'src/ts/characterCommands'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { createSidebarCharacterListMemo, type SidebarCharacterListItem } from './sidebarCharList'
+  import { characterRoutePath, navigate } from 'src/ts/router'
   let sideBarMode = $state(0)
   let editMode = $state(false)
   let menuMode = $state(0)
@@ -58,6 +58,31 @@
     editMode = false
     settingsOpen.set(false)
     CharEmotion.set({})
+  }
+
+  function openHomeRoute() {
+    reseter()
+    navigate('/')
+  }
+
+  function openSettingsRoute() {
+    reseter()
+    navigate($settingsOpen ? '/' : '/settings')
+  }
+
+  function openPlaygroundRoute() {
+    reseter()
+    navigate($selectedCharID === -1 && $PlaygroundStore !== 0 ? '/' : '/playground')
+  }
+
+  function openCharacterRoute(index: number) {
+    const character = DBState.db.characters?.[index]
+    if (!character?.chaId) {
+      changeChar(index, { reseter })
+      return
+    }
+    reseter()
+    navigate(characterRoutePath(character.chaId, character.chats?.[character.chatPage]?.id))
   }
 
   const getSidebarCharacterList = createSidebarCharacterListMemo()
@@ -326,12 +351,7 @@
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full mt-4"
       class:text-textcolor2={!($selectedCharID < 0 && $PlaygroundStore === 0 && !$settingsOpen)}
-      onclick={() => {
-        reseter()
-        selectedCharID.set(-1)
-        PlaygroundStore.set(0)
-        OpenRealmStore.set(false)
-      }}
+      onclick={openHomeRoute}
     >
       <HomeIcon />
       <span class="text-xs">{language.home}</span>
@@ -339,15 +359,7 @@
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full"
       class:text-textcolor2={!$settingsOpen}
-      onclick={() => {
-        if ($settingsOpen) {
-          reseter()
-          settingsOpen.set(false)
-        } else {
-          reseter()
-          settingsOpen.set(true)
-        }
-      }}
+      onclick={openSettingsRoute}
     >
       <Settings />
       <span class="text-xs">{language.settings}</span>
@@ -366,11 +378,7 @@
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full"
       class:text-textcolor2={!($selectedCharID < 0 && $PlaygroundStore !== 0)}
-      onclick={() => {
-        reseter()
-        selectedCharID.set(-1)
-        PlaygroundStore.set(1)
-      }}
+      onclick={openPlaygroundRoute}
     >
       <ShellIcon />
       <span class="text-xs">{language.playground.playground}</span>
@@ -399,36 +407,15 @@
             class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2"
           >
             <BarIcon
-              onClick={() => {
-                if ($settingsOpen) {
-                  reseter()
-                  settingsOpen.set(false)
-                } else {
-                  reseter()
-                  settingsOpen.set(true)
-                }
-              }}><Settings /></BarIcon
+              onClick={openSettingsRoute}><Settings /></BarIcon
             >
             <div class="mt-2"></div>
             <BarIcon
-              onClick={() => {
-                reseter()
-                selectedCharID.set(-1)
-                PlaygroundStore.set(0)
-                OpenRealmStore.set(false)
-              }}><HomeIcon /></BarIcon
+              onClick={openHomeRoute}><HomeIcon /></BarIcon
             >
             <div class="mt-2"></div>
             <BarIcon
-              onClick={() => {
-                reseter()
-                if ($selectedCharID === -1 && $PlaygroundStore !== 0) {
-                  PlaygroundStore.set(0)
-                  return
-                }
-                selectedCharID.set(-1)
-                PlaygroundStore.set(1)
-              }}><ShellIcon /></BarIcon
+              onClick={openPlaygroundRoute}><ShellIcon /></BarIcon
             >
             {#each additionalHamburgerMenu as menu}
               <div class="mt-2"></div>
@@ -497,13 +484,13 @@
             tabindex="0"
             onclick={() => {
               if (char.type === 'normal') {
-                changeChar(char.index, { reseter })
+                openCharacterRoute(char.index)
               }
             }}
             onkeydown={(e) => {
               if (e.key === 'Enter') {
                 if (char.type === 'normal') {
-                  changeChar(char.index, { reseter })
+                  openCharacterRoute(char.index)
                 }
               }
             }}
@@ -713,13 +700,13 @@
                     tabindex="0"
                     onclick={() => {
                       if (char2.type === 'normal') {
-                        changeChar(char2.index, { reseter })
+                        openCharacterRoute(char2.index)
                       }
                     }}
                     onkeydown={(e) => {
                       if (e.key === 'Enter') {
                         if (char2.type === 'normal') {
-                          changeChar(char2.index, { reseter })
+                          openCharacterRoute(char2.index)
                         }
                       }
                     }}
@@ -805,36 +792,15 @@
             class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2"
           >
             <BarIcon
-              onClick={() => {
-                if ($settingsOpen) {
-                  reseter()
-                  settingsOpen.set(false)
-                } else {
-                  reseter()
-                  settingsOpen.set(true)
-                }
-              }}><Settings /></BarIcon
+              onClick={openSettingsRoute}><Settings /></BarIcon
             >
             <div class="mt-2"></div>
             <BarIcon
-              onClick={() => {
-                reseter()
-                selectedCharID.set(-1)
-                PlaygroundStore.set(0)
-                OpenRealmStore.set(false)
-              }}><HomeIcon /></BarIcon
+              onClick={openHomeRoute}><HomeIcon /></BarIcon
             >
             <div class="mt-2"></div>
             <BarIcon
-              onClick={() => {
-                reseter()
-                if ($selectedCharID === -1 && $PlaygroundStore !== 0) {
-                  PlaygroundStore.set(0)
-                  return
-                }
-                selectedCharID.set(-1)
-                PlaygroundStore.set(1)
-              }}><ShellIcon /></BarIcon
+              onClick={openPlaygroundRoute}><ShellIcon /></BarIcon
             >
             {#each additionalHamburgerMenu as menu}
               <div class="mt-2"></div>

@@ -111,6 +111,7 @@
   import { addCharacter, changeChar, getCharImage } from 'src/ts/characters'
   import { MobileSearch } from 'src/ts/stores.svelte'
   import { MessageSquareIcon, PlusIcon } from '@lucide/svelte'
+  import { characterRoutePath, navigate } from 'src/ts/router'
 
   interface Props {
     endGrid?: () => void
@@ -128,6 +129,16 @@
   let visibleMobileCharacterRows = $derived(
     filterMobileCharacterRows(mobileCharacterRows, normalizedSearch),
   )
+
+  function openCharacterRoute(index: number) {
+    const character = DBState.db.characters?.[index]
+    if (!character?.chaId) {
+      changeChar(index)
+      endGrid()
+      return
+    }
+    navigate(characterRoutePath(character.chaId, character.chats?.[character.chatPage]?.id))
+  }
 </script>
 
 <div class="flex flex-col items-center w-full overflow-y-auto h-full">
@@ -136,8 +147,7 @@
       class="flex p-2 border-t-darkborderc gap-2 w-full"
       class:border-t={char.sortedIndex !== 0}
       onclick={() => {
-        changeChar(char.index)
-        endGrid()
+        openCharacterRoute(char.index)
       }}
     >
       <BarIcon additionalStyle={getCharImage(char.image, 'css')}></BarIcon>

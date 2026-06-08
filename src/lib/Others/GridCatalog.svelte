@@ -69,6 +69,7 @@
   import MobileCharacters from '../Mobile/MobileCharacters.svelte'
   import { currentCharacterStateSnapshot, dispatchUpdateCharacter } from 'src/ts/characterCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
+  import { characterRoutePath, navigate } from 'src/ts/router'
   interface Props {
     endGrid?: any
   }
@@ -78,6 +79,15 @@
   let selected = $state(3)
   let normalizedSearch = $derived(normalizeGridCatalogSearch(search))
   let catalogCharacters = $derived(formatGridCatalogCharacterLists(DBState.db, normalizedSearch))
+
+  function openCharacterRoute(index: number) {
+    const character = DBState.db.characters?.[index]
+    if (!character?.chaId) {
+      changeChar(index)
+      return
+    }
+    navigate(characterRoutePath(character.chaId, character.chats?.[character.chatPage]?.id))
+  }
 </script>
 
 <div class="h-full w-full flex justify-center">
@@ -153,14 +163,14 @@
               {#if char.image}
                 <BarIcon
                   onClick={() => {
-                    changeChar(char.index)
+                    openCharacterRoute(char.index)
                   }}
                   additionalStyle={getCharImage(char.image, 'css')}
                 ></BarIcon>
               {:else}
                 <BarIcon
                   onClick={() => {
-                    changeChar(char.index)
+                    openCharacterRoute(char.index)
                   }}
                   additionalStyle={char.index === $selectedCharID
                     ? 'background:var(--risu-theme-selected)'
@@ -178,7 +188,7 @@
         <div class="flex p-2 border border-darkborderc rounded-md mb-2">
           <BarIcon
             onClick={() => {
-              changeChar(char.index)
+              openCharacterRoute(char.index)
             }}
             additionalStyle={getCharImage(char.image, 'css')}
           ></BarIcon>
@@ -193,7 +203,7 @@
               <button
                 class="hover:text-textcolor text-textcolor2"
                 onclick={() => {
-                  changeChar(char.index)
+                  openCharacterRoute(char.index)
                 }}
               >
                 <SquareMousePointer />
@@ -216,7 +226,7 @@
         <div class="flex p-2 border border-darkborderc rounded-md mb-2">
           <BarIcon
             onClick={() => {
-              changeChar(char.index)
+              openCharacterRoute(char.index)
             }}
             additionalStyle={getCharImage(char.image, 'css')}
           ></BarIcon>

@@ -6,7 +6,6 @@
     ShowRealmFrameStore,
     openPresetList,
     openPersonaList,
-    MobileGUI,
     CustomGUISettingMenuStore,
     loadedStore,
     alertStore,
@@ -18,6 +17,9 @@
     loadoutModalStore,
     irisStore,
     customSideBarConfigDialogStore,
+    PlaygroundStore,
+    selectedCharID,
+    SettingsMenuIndex,
   } from './ts/stores.svelte'
   import Sidebar from './lib/SideBars/Sidebar.svelte'
   import { DBState } from './ts/stores.svelte'
@@ -35,9 +37,6 @@
   import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte'
   import Botpreset from './lib/Setting/botpreset.svelte'
   import ListedPersona from './lib/Setting/listedPersona.svelte'
-  import MobileHeader from './lib/Mobile/MobileHeader.svelte'
-  import MobileBody from './lib/Mobile/MobileBody.svelte'
-  import MobileFooter from './lib/Mobile/MobileFooter.svelte'
   import CustomGUISettingMenu from './lib/Setting/Pages/CustomGUISettingMenu.svelte'
   import { checkCharOrder } from './ts/globalApi.svelte'
   import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte'
@@ -53,11 +52,50 @@
   import IrisModal from './lib/Others/IrisModal.svelte'
   import Legal from './lib/Others/Legal.svelte'
   import CustomSidebarConfig from './lib/Others/CustomSidebarConfig.svelte'
+  import {
+    applyRouteToStores,
+    characterRoutePath,
+    consumeStateDrivenRouteUpdate,
+    currentRoute,
+    hasPendingRouteApplication,
+    isApplyingRouteToStores,
+    navigate,
+    syncRouteFromState,
+  } from './ts/router'
 
-  let gridOpen = $state(false)
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
   let aprilFoolsPage = $state(0)
   let keepingSessionAlive = $state(false)
+
+  function closeGridRoute() {
+    const character = DBState.db.characters?.[$selectedCharID]
+    if ($selectedCharID >= 0 && character?.chaId) {
+      navigate(characterRoutePath(character.chaId, character.chats?.[character.chatPage]?.id))
+      return
+    }
+    navigate('/')
+  }
+
+  $effect(() => {
+    if (!$loadedStore) return
+    const route = $currentRoute
+    if (consumeStateDrivenRouteUpdate()) return
+    void applyRouteToStores(route)
+  })
+
+  $effect(() => {
+    if (!$loadedStore || isApplyingRouteToStores() || hasPendingRouteApplication()) return
+    const character = DBState.db.characters?.[$selectedCharID]
+    syncRouteFromState({
+      currentRouteKind: $currentRoute.kind,
+      settingsOpen: $settingsOpen,
+      settingsMenuIndex: $SettingsMenuIndex,
+      selectedCharID: $selectedCharID,
+      playgroundStore: $PlaygroundStore,
+      characterId: character?.chaId,
+      chatId: character?.chats?.[character.chatPage]?.id,
+    })
+  })
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -222,23 +260,13 @@
     <CustomGUISettingMenu />
   {:else if $settingsOpen}
     <Settings />
-  {:else if $MobileGUI}
-    <div class="w-full h-full flex flex-col">
-      <MobileHeader />
-      <MobileBody />
-      <MobileFooter />
-    </div>
-  {:else if gridOpen}
-    <GridChars
-      endGrid={() => {
-        gridOpen = false
-      }}
-    />
+  {:else if $currentRoute.kind === 'grid'}
+    <GridChars endGrid={closeGridRoute} />
   {:else}
     {#if !$DynamicGUI}
       <Sidebar
         openGrid={() => {
-          gridOpen = true
+          navigate('/grid')
         }}
         hidden={!$sideBarStore}
       />
@@ -251,7 +279,7 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <Sidebar
           openGrid={() => {
-            gridOpen = true
+            navigate('/grid')
           }}
           hidden={false}
         />

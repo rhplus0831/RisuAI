@@ -14,7 +14,6 @@ import {
   type Database,
 } from './storage/database.svelte'
 import {
-  MobileGUI,
   botMakerMode,
   selectedCharID,
   loadedStore,
@@ -35,7 +34,6 @@ import { language } from 'src/lang'
 import { startObserveDom } from './observer.svelte'
 import { updateGuisize } from './gui/guisize'
 import { updateLorebooks } from './characters'
-import { initMobileGesture } from './hotkey'
 import { moduleUpdate } from './process/modules'
 import { checkCharOrder } from './globalApi.svelte'
 import { registerModelDynamic } from './model/modellist'
@@ -133,13 +131,6 @@ export async function loadData() {
       }
       if (db.botSettingAtStart) {
         botMakerMode.set(true)
-      }
-      if (
-        (db.betaMobileGUI && window.innerWidth <= 800) ||
-        import.meta.env.VITE_RISU_LITE === 'TRUE'
-      ) {
-        initMobileGesture()
-        MobileGUI.set(true)
       }
       loadedStore.set(true)
       selectedCharID.set(initialSelectedCharFromDatabase(db))

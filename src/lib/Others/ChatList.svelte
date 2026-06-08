@@ -25,6 +25,7 @@
   import { canUseServerCommands } from 'src/ts/server/commands'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
+  import { characterRoutePath, navigate } from 'src/ts/router'
 
   let editMode = $state(false)
   let chatNameDrafts = $state({})
@@ -58,6 +59,19 @@
       chat.name = name
     })
   }
+
+  function openChatRoute(index) {
+    const character = DBState.db.characters[$selectedCharID]
+    const chatId = character?.chats?.[index]?.id
+    if (character?.chaId && chatId) {
+      navigate(characterRoutePath(character.chaId, chatId))
+      close()
+      return
+    }
+
+    changeChatTo(index)
+    close()
+  }
 </script>
 
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
@@ -79,8 +93,7 @@
       <button
         onclick={() => {
           if (!editMode) {
-            changeChatTo(i)
-            close()
+            openChatRoute(i)
           }
         }}
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"

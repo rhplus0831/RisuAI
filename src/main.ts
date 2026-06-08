@@ -4,9 +4,11 @@ import './ts/storage/database.svelte'
 import App from './App.svelte'
 import { loadData } from './ts/bootstrap'
 import { initHotkey } from './ts/hotkey'
+import { installRouter } from './ts/router'
 import { mount } from 'svelte'
 import { installFastifyBrowserSmokeHook } from './ts/server/browserSmoke'
 
+installRouter()
 let app = mount(App, {
   target: document.getElementById('app'),
 })

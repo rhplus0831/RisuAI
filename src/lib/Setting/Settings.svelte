@@ -27,7 +27,6 @@
     easyPanelStore,
     MobileGUI,
     SettingsMenuIndex,
-    settingsOpen,
   } from 'src/ts/stores.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import Communities from './Pages/Communities.svelte'
@@ -44,6 +43,7 @@
   import HotkeySettings from './Pages/HotkeySettings.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import { alertConfirm } from 'src/ts/alert'
+  import { navigate } from 'src/ts/router'
 
   let openLoreList = $state(false)
   let supporterConfirmOpen = $state(false)
@@ -55,14 +55,14 @@
     if ($SettingsMenuIndex === 77 || supporterConfirmOpen) return
 
     if (DBState.db.doNotWarnExternalServers) {
-      $SettingsMenuIndex = 77
+      navigate('/settings/supporter')
       return
     }
 
     supporterConfirmOpen = true
     try {
       if (await alertConfirm(language.sendExternalServerWarning)) {
-        $SettingsMenuIndex = 77
+        navigate('/settings/supporter')
       }
     } finally {
       supporterConfirmOpen = false
@@ -89,7 +89,7 @@
             class:text-textcolor={$SettingsMenuIndex === 1 || $SettingsMenuIndex === 13}
             class:text-textcolor2={$SettingsMenuIndex !== 1 && $SettingsMenuIndex !== 13}
             onclick={() => {
-              $SettingsMenuIndex = 1
+              navigate('/settings/bot-preset')
             }}
           >
             <BotIcon />
@@ -100,7 +100,7 @@
             class:text-textcolor={$SettingsMenuIndex === 12}
             class:text-textcolor2={$SettingsMenuIndex !== 12}
             onclick={() => {
-              $SettingsMenuIndex = 12
+              navigate('/settings/persona')
             }}
           >
             <ContactIcon />
@@ -111,7 +111,7 @@
             class:text-textcolor={$SettingsMenuIndex === 2}
             class:text-textcolor2={$SettingsMenuIndex !== 2}
             onclick={() => {
-              $SettingsMenuIndex = 2
+              navigate('/settings/other-bots')
             }}
           >
             <Sailboat />
@@ -122,7 +122,7 @@
             class:text-textcolor={$SettingsMenuIndex === 3}
             class:text-textcolor2={$SettingsMenuIndex !== 3}
             onclick={() => {
-              $SettingsMenuIndex = 3
+              navigate('/settings/display')
             }}
           >
             <MonitorIcon />
@@ -134,7 +134,7 @@
           class:text-textcolor={$SettingsMenuIndex === 10}
           class:text-textcolor2={$SettingsMenuIndex !== 10}
           onclick={() => {
-            $SettingsMenuIndex = 10
+            navigate('/settings/language')
           }}
         >
           <LanguagesIcon />
@@ -146,7 +146,7 @@
             class:text-textcolor={$SettingsMenuIndex === 11}
             class:text-textcolor2={$SettingsMenuIndex !== 11}
             onclick={() => {
-              $SettingsMenuIndex = 11
+              navigate('/settings/accessibility')
             }}
           >
             <AccessibilityIcon />
@@ -157,7 +157,7 @@
             class:text-textcolor={$SettingsMenuIndex === 14}
             class:text-textcolor2={$SettingsMenuIndex !== 14}
             onclick={() => {
-              $SettingsMenuIndex = 14
+              navigate('/settings/modules')
             }}
           >
             <PackageIcon />
@@ -168,7 +168,7 @@
             class:text-textcolor={$SettingsMenuIndex === 4}
             class:text-textcolor2={$SettingsMenuIndex !== 4}
             onclick={() => {
-              $SettingsMenuIndex = 4
+              navigate('/settings/plugins')
             }}
           >
             <CodeIcon />
@@ -180,7 +180,7 @@
           class:text-textcolor={$SettingsMenuIndex === 0}
           class:text-textcolor2={$SettingsMenuIndex !== 0}
           onclick={() => {
-            $SettingsMenuIndex = 0
+            navigate('/settings/backup')
           }}
         >
           <HardDrive />
@@ -191,7 +191,7 @@
           class:text-textcolor={$SettingsMenuIndex === 15}
           class:text-textcolor2={$SettingsMenuIndex !== 15}
           onclick={() => {
-            $SettingsMenuIndex = 15
+            navigate('/settings/hotkeys')
           }}
         >
           <KeyboardIcon />
@@ -203,7 +203,7 @@
             class:text-textcolor={$SettingsMenuIndex === 6}
             class:text-textcolor2={$SettingsMenuIndex !== 6}
             onclick={() => {
-              $SettingsMenuIndex = 6
+              navigate('/settings/advanced')
             }}
           >
             <ActivityIcon />
@@ -257,7 +257,7 @@
           <button
             class="absolute top-2 right-2 hover:text-green-500 text-textcolor"
             onclick={() => {
-              settingsOpen.set(false)
+              navigate('/')
             }}
           >
             <CircleXIcon size={DBState.db.settingsCloseButtonSize} />
@@ -275,7 +275,7 @@
           {:else if $SettingsMenuIndex === 1}
             <BotSettings
               goPromptTemplate={() => {
-                $SettingsMenuIndex = 13
+                navigate('/settings/prompt')
               }}
             />
           {:else if $SettingsMenuIndex === 2}
@@ -303,7 +303,7 @@
           {:else if $SettingsMenuIndex === 13}
             <PromptSettings
               onGoBack={() => {
-                $SettingsMenuIndex = 1
+                navigate('/settings/bot-preset')
               }}
             />
           {:else if $SettingsMenuIndex === 15}
@@ -317,11 +317,7 @@
         <button
           class="absolute top-2 right-2 hover:text-green-500 text-textcolor"
           onclick={() => {
-            if (window.innerWidth >= 700) {
-              settingsOpen.set(false)
-            } else {
-              $SettingsMenuIndex = -1
-            }
+            navigate('/')
           }}
         >
           <CircleXIcon size={DBState.db.settingsCloseButtonSize} />

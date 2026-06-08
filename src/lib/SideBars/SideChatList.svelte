@@ -59,6 +59,7 @@
   } from 'src/ts/server/commands'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import { groupChatsByFolderId } from './chatFolderGrouping'
+  import { characterRoutePath, navigate } from 'src/ts/router'
 
   interface Props {
     chara: character
@@ -89,6 +90,10 @@
 
   function selectChat(index: number): void {
     const chatId = chara.chats[index]?.id
+    if (chara.chaId && chatId) {
+      navigate(characterRoutePath(chara.chaId, chatId))
+      return
+    }
     if (canUseServerCommands() && chatId) {
       // Scalar rollback (H2): select only flips `chatPage`; the whole-array
       // snapshot deep-cloned every hydrated transcript per sidebar click.

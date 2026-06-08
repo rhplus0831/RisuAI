@@ -1,15 +1,11 @@
 <script lang="ts">
   import { ArrowLeft } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { PlaygroundStore, SizeStore, selectedCharID } from 'src/ts/stores.svelte'
+  import { PlaygroundStore, SizeStore } from 'src/ts/stores.svelte'
   import PlaygroundEmbedding from './PlaygroundEmbedding.svelte'
   import PlaygroundTokenizer from './PlaygroundTokenizer.svelte'
   import PlaygroundJinja from './PlaygroundJinja.svelte'
   import PlaygroundSyntax from './PlaygroundSyntax.svelte'
-  import { findCharacterIndexbyId } from 'src/ts/util'
-  import { characterFormatUpdate, createBlankChar } from 'src/ts/characters'
-  import { setCharacterByIndex, type character } from 'src/ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
   import PlaygroundImageGen from './PlaygroundImageGen.svelte'
   import PlaygroundParser from './PlaygroundParser.svelte'
   import ToolConversion from './ToolConversion.svelte'
@@ -19,98 +15,9 @@
   import PlaygroundMcp from './PlaygroundMCP.svelte'
   import PlaygroundDocs from './PlaygroundDocs.svelte'
   import PlaygroundInlayExplorer from './PlaygroundInlayExplorer.svelte'
-  import {
-    currentCharacterStateSnapshot,
-    dispatchSelectCharacter,
-    toCharacterSnapshot,
-  } from 'src/ts/characterCommands'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
-  import {
-    canUseServerCommands,
-    createAndSelectCharacterCommand,
-    runServerCommand,
-  } from 'src/ts/server/commands'
-  import { fetchServerProjectionResource } from 'src/ts/server/projection'
-  import { mergeServerProjectionFields } from 'src/ts/storage/database.svelte'
-  import { resetChatHydration } from 'src/ts/server/chatMessageHydration.svelte'
-  import {
-    recordHydratedCharacterLorebooks,
-    resetLorebookHydration,
-  } from 'src/ts/server/lorebookBridge.svelte'
+  import { navigate } from 'src/ts/router'
 
   let easterEggTouch = $state(0)
-  const playgroundCharacterId = '§playground'
-
-  const playgroundChat = async () => {
-    const charIndex = findCharacterIndexbyId(playgroundCharacterId)
-    PlaygroundStore.set(2)
-
-    if (charIndex !== -1) {
-      const previous = currentCharacterStateSnapshot()
-      const char = structuredClone(DBState.db.characters[charIndex]) as character
-      char.utilityBot = true
-      char.name = 'assistant'
-      char.firstMessage = '{{none}}'
-      const formattedChar = characterFormatUpdate(char)
-      setCharacterByIndex(charIndex, formattedChar)
-
-      selectedCharID.set(charIndex)
-      dispatchSelectCharacter(formattedChar.chaId, previous)
-      return
-    }
-
-    const character = createBlankChar()
-    character.chaId = playgroundCharacterId
-    character.utilityBot = true
-    character.name = 'assistant'
-    character.firstMessage = '{{none}}'
-    const formattedChar = characterFormatUpdate(character)
-    const lastInteraction = Date.now()
-    formattedChar.lastInteraction = lastInteraction
-
-    if (canUseServerCommands()) {
-      const result = await runServerCommand({
-        command: (baseRevision) =>
-          createAndSelectCharacterCommand({
-            baseRevision,
-            character: toCharacterSnapshot(formattedChar),
-            lastInteraction,
-          }),
-      })
-      if (result.status !== 'ok') {
-        console.warn('Unable to create playground character', result)
-      }
-      await refreshPlaygroundProjection()
-      selectPlaygroundCharacter()
-      return
-    }
-
-    withTrustedServerProjectionWrite(() => {
-      DBState.db.characters.push(formattedChar)
-      const index = DBState.db.characters.length - 1
-      ;(DBState.db as unknown as { currentChar?: number }).currentChar = index
-      selectedCharID.set(index)
-    })
-  }
-
-  async function refreshPlaygroundProjection() {
-    const result = await fetchServerProjectionResource('character', {
-      id: playgroundCharacterId,
-    })
-    if (result.status !== 'ok' || result.mode !== 'fields') return
-    mergeServerProjectionFields(result.fields)
-    if (Object.prototype.hasOwnProperty.call(result.fields, 'characters')) {
-      resetChatHydration()
-      resetLorebookHydration()
-      recordHydratedCharacterLorebooks(result.fields.characters)
-    }
-  }
-
-  function selectPlaygroundCharacter() {
-    const index = findCharacterIndexbyId(playgroundCharacterId)
-    if (index === -1) return
-    selectedCharID.set(index)
-  }
 </script>
 
 <div class="h-full w-full flex flex-col overflow-y-auto items-center">
@@ -122,7 +29,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1 md:col-span-2"
         onclick={() => {
-          void playgroundChat()
+          navigate('/playground/chat')
         }}
       >
         <h1 class="text-2xl font-bold text-start">{language.Chat}</h1>
@@ -130,7 +37,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(13)
+          navigate('/playground/cbs')
         }}
       >
         <h1 class="text-2xl font-bold text-start">CBS Doc</h1>
@@ -138,7 +45,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(3)
+          navigate('/playground/embedding')
         }}
       >
         <h1 class="text-2xl font-bold text-start">{language.embedding}</h1>
@@ -146,7 +53,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(4)
+          navigate('/playground/tokenizer')
         }}
       >
         <h1 class="text-2xl font-bold text-start">{language.tokenizer}</h1>
@@ -154,7 +61,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(5)
+          navigate('/playground/syntax')
         }}
       >
         <h1 class="text-2xl font-bold text-start">{language.syntax}</h1>
@@ -162,7 +69,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(6)
+          navigate('/playground/jinja')
         }}
       >
         <h1 class="text-2xl font-bold text-start">Jinja</h1>
@@ -170,7 +77,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(7)
+          navigate('/playground/image-gen')
         }}
       >
         <h1 class="text-2xl font-bold text-start">{language.imageGeneration}</h1>
@@ -178,7 +85,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(8)
+          navigate('/playground/parser')
         }}
       >
         <h1 class="text-2xl font-bold text-start">Parser</h1>
@@ -186,7 +93,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(9)
+          navigate('/playground/subtitles')
         }}
       >
         <h1 class="text-2xl font-bold text-start">{language.subtitles}</h1>
@@ -194,7 +101,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(10)
+          navigate('/playground/image-trans')
         }}
       >
         <h1 class="text-2xl font-bold text-start">{language.imageTranslation}</h1>
@@ -202,7 +109,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(11)
+          navigate('/playground/translation')
         }}
       >
         <h1 class="text-2xl font-bold text-start">{language.translator}</h1>
@@ -210,7 +117,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(12)
+          navigate('/playground/mcp')
         }}
       >
         <h1 class="text-2xl font-bold text-start">MCP</h1>
@@ -218,7 +125,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(14)
+          navigate('/inlay')
         }}
       >
         <h1 class="text-2xl font-bold text-start">{language.playground.inlayExplorer}</h1>
@@ -226,7 +133,7 @@
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
-          PlaygroundStore.set(101)
+          navigate('/playground/tools')
         }}
       >
         <h1 class="text-2xl font-bold text-start">{language.promptConvertion}</h1>
@@ -256,7 +163,7 @@
       <div class="flex items-center mt-4">
         <button
           class="mr-2 text-textcolor2 hover:text-green-500"
-          onclick={() => ($PlaygroundStore = 1)}
+          onclick={() => navigate('/playground')}
         >
           <ArrowLeft />
         </button>
