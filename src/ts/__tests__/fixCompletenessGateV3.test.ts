@@ -12,9 +12,9 @@ import path from 'node:path'
  */
 
 // `vitest run` executes from the repo root. Match the v1/v2 gates and keep
-// v3 pointed at the active plan docs until the eventual archive repoint.
+// v3 pointed at the archived closeout docs.
 const ROOT = process.cwd()
-const PLAN = 'docs/plan'
+const PLAN = 'docs/archive/audit-stability-and-performance-v3'
 const AUDIT_DOC = path.join(ROOT, PLAN, 'audit-stability-and-performance-v3.md')
 const RISK_DOC = path.join(ROOT, PLAN, 'active-risk-analysis.md')
 
@@ -1371,7 +1371,7 @@ const GATED_CONTEXT_REASONS: GateContextReason[] = [
   },
   {
     reason:
-      '../archive/leftover.md evidence gates stay explanatory only: prompt assembly loads, bootstrap load, byte fanout, memory-worker blocking, and token re-accumulation are not v3 IDs.',
+      '../leftover.md evidence gates stay explanatory only: prompt assembly loads, bootstrap load, byte fanout, memory-worker blocking, and token re-accumulation are not v3 IDs.',
   },
   {
     reason:
@@ -1980,11 +1980,20 @@ export function collectGateProblems(input: GateProblemInput = {}): string[] {
 }
 
 describe('v3 fix-completeness gate doc universe', () => {
-  it('points at the current docs/plan sources', () => {
-    expect(AUDIT_DOC).toContain(path.join('docs', 'plan', 'audit-stability-and-performance-v3.md'))
-    expect(RISK_DOC).toContain(path.join('docs', 'plan', 'active-risk-analysis.md'))
-    expect(AUDIT_DOC).not.toContain(path.join('docs', 'archive'))
-    expect(RISK_DOC).not.toContain(path.join('docs', 'archive'))
+  it('points at the archived v3 closeout sources', () => {
+    expect(AUDIT_DOC).toContain(
+      path.join(
+        'docs',
+        'archive',
+        'audit-stability-and-performance-v3',
+        'audit-stability-and-performance-v3.md',
+      ),
+    )
+    expect(RISK_DOC).toContain(
+      path.join('docs', 'archive', 'audit-stability-and-performance-v3', 'active-risk-analysis.md'),
+    )
+    expect(AUDIT_DOC).not.toContain(path.join('docs', 'plan'))
+    expect(RISK_DOC).not.toContain(path.join('docs', 'plan'))
     expect(existsSync(AUDIT_DOC)).toBe(true)
     expect(existsSync(RISK_DOC)).toBe(true)
   })
@@ -2329,10 +2338,10 @@ describe('v3 fix-completeness gate routing registry', () => {
 
     expect(registeredIds).not.toContain('v2-L12')
     expect(registeredIds).not.toContain('v1-L4')
-    expect(registeredIds).not.toContain('../archive/leftover.md')
+    expect(registeredIds).not.toContain('../leftover.md')
     expect(contextText).toContain('v2-L12')
     expect(contextText).toContain('v1-L4')
-    expect(contextText).toContain('../archive/leftover.md')
+    expect(contextText).toContain('../leftover.md')
   })
 
   it('rejects PLANNED registry entries that claim proof fields', () => {

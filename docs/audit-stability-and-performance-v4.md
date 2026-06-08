@@ -5,7 +5,8 @@ Date: 2026-06-07.
 This is the fourth broad stability/performance audit of the Fastify-only
 RisuAI codebase. It follows v1 (2026-06-04), v2 (2026-06-05) — both archived
 with their completed remediation waves — and v3 (2026-06-06), whose
-remediation plan is OPEN at `docs/plan/` and was mid-execution while this
+remediation plan is archived at
+`docs/archive/audit-stability-and-performance-v3/` and was mid-execution while this
 audit ran: phases 0-3 (H1, M1-M5 partial, L11-L16, K1, K2) landed during the
 audit window. The app still shows performance and stability issues in real
 use, so this audit hunted specifically for what v1-v3 **missed**: new
@@ -38,9 +39,10 @@ items are referenced as `v1-*` / `v2-*` / `v3-*`.
   proxied model output) is a real hostile vector.
 - Not released, no real users. DB migrations out of scope; normal-use data
   loss/corruption in scope.
-- The full v1/v2/v3 registries — 89 v3 findings (most still PENDING in
-  `docs/plan/active-risk-analysis.md`), the gated items (`v2-L12`, v1-L4/L7/
-  L26/U2, the `docs/archive/leftover.md` evidence gates), the no-action
+- The full v1/v2/v3 registries — 89 v3 findings (later closed in
+  `docs/archive/audit-stability-and-performance-v3/active-risk-analysis.md`),
+  the gated items (`v2-L12`, v1-L4/L7/L26/U2, the
+  `docs/archive/leftover.md` evidence gates), the no-action
   inventories, and all dismissed sets — were embedded in every finder and
   verifier prompt. Candidates matching them were classified as overlaps, not
   findings. v3 PENDING items rediscovered in the code were NOT re-reported.
@@ -605,13 +607,14 @@ target hypotheses):
   incomplete fix is L11 (v3-M2's persist half), and L17 documents that the
   v3-M4 fast-path widened a PRE-EXISTING double-send window rather than
   introducing one. Nothing else in the v3 wave regressed.
-- v3 PENDING rows (M6-M9, most of L1-L56, K3, K4) remain owned by
-  `docs/plan/active-risk-analysis.md` — they were treated as known items
-  here and are NOT re-listed. Two v4 findings sharpen scheduled v3 rows and
-  should fold into their slices: L11 → the v3 Phase-3 M2 row (persist-time
-  tokens); L30/L33 → the v3 Phase-5 projection-guard repair batch (add the
-  translator-preset and MCP-handshake sites to its sweep, and make that
-  slice a tree-wide `getDatabase()`-write-back sweep rather than an
+- The then-pending v3 rows (M6-M9, most of L1-L56, K3, K4) were owned by the
+  v3 risk map now archived at
+  `docs/archive/audit-stability-and-performance-v3/active-risk-analysis.md`;
+  they were treated as known items here and are NOT re-listed. Two v4
+  findings sharpened scheduled v3 rows and folded into their slices: L11 →
+  the v3 Phase-3 M2 row (persist-time tokens); L30/L33 → the v3 Phase-5
+  projection-guard repair batch (translator-preset and MCP-handshake sites,
+  plus a tree-wide `getDatabase()`-write-back sweep rather than an
   enumerated-site fix).
 - Gated items were respected and none is re-opened: `v2-L12`,
   v1-L4/L7/L26/U2, and the `leftover.md` evidence gates. L14/L15/I7 are NOT

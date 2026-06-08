@@ -49,6 +49,7 @@ preserve everything decision-relevant.
   candidates were refuted against current code and carry explicit re-open
   criteria; do not re-report them without that evidence.
 - Findings tagged `extension of vX-YY` sharpen prior-audit items; the prior
-  IDs stay owned by their registries (`../plan/active-risk-analysis.md` for
-  v3, the archives for v1/v2). In particular v4-L11 folds into the open v3
+  IDs stay owned by their registries
+  (`../archive/audit-stability-and-performance-v3/active-risk-analysis.md`
+  for v3, the archives for v1/v2). In particular v4-L11 folded into the v3
   Phase-3 M2 row and v4-L30/L33 into the v3 Phase-5 projection-guard batch.
