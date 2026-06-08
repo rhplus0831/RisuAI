@@ -43,10 +43,28 @@
   import { isLite } from 'src/ts/lite'
   import HotkeySettings from './Pages/HotkeySettings.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
+  import { alertConfirm } from 'src/ts/alert'
+
+  const SUPPORTER_CONFIRM_MESSAGE =
+    'Continuing will send a request to the RisuAI server, and your IP address may be transmitted. Do you want to continue?'
 
   let openLoreList = $state(false)
+  let supporterConfirmOpen = $state(false)
   if (window.innerWidth >= 900 && $SettingsMenuIndex === -1 && !$MobileGUI) {
     $SettingsMenuIndex = 1
+  }
+
+  async function openSupporterThanks() {
+    if ($SettingsMenuIndex === 77 || supporterConfirmOpen) return
+
+    supporterConfirmOpen = true
+    try {
+      if (await alertConfirm(SUPPORTER_CONFIRM_MESSAGE)) {
+        $SettingsMenuIndex = 77
+      }
+    } finally {
+      supporterConfirmOpen = false
+    }
   }
 </script>
 
@@ -193,9 +211,7 @@
             class="flex gap-2 items-center hover:text-textcolor"
             class:text-textcolor={$SettingsMenuIndex === 77}
             class:text-textcolor2={$SettingsMenuIndex !== 77}
-            onclick={() => {
-              $SettingsMenuIndex = 77
-            }}
+            onclick={openSupporterThanks}
           >
             <BoxIcon />
             <span>{language.supporterThanks}</span>

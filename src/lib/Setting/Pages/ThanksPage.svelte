@@ -1,34 +1,9 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import { openURL } from 'src/ts/globalApi.svelte'
+  import { loadSupporters } from './supporters'
 
-  interface supporters {
-    I: string[]
-    II: string[]
-    III: string[]
-    IV: string[]
-    V: string[]
-  }
-
-  interface supporterL {
-    amount: number
-    name: string
-  }
-
-  async function loadSupporters() {
-    const supp = await fetch('https://sv.risuai.xyz/patreon/list')
-
-    const list = (await supp.json()) as supporterL[]
-    const thanks: supporters = {
-      //random names
-      I: list.filter((v) => v.amount < 5).map((v) => v.name),
-      II: list.filter((v) => v.amount >= 5 && v.amount < 10).map((v) => v.name),
-      III: list.filter((v) => v.amount >= 10 && v.amount < 20).map((v) => v.name),
-      IV: list.filter((v) => v.amount >= 20 && v.amount < 50).map((v) => v.name),
-      V: list.filter((v) => v.amount >= 50).map((v) => v.name),
-    }
-    return thanks
-  }
+  const supportersPromise = loadSupporters()
 </script>
 
 <h2 class="text-2xl font-bold mt-2">{language.supporterThanks}</h2>
@@ -59,13 +34,15 @@
 
 <!-- Supporters -->
 
-{#await loadSupporters()}
+{#await supportersPromise}
   <span>Loading...</span>
 {:then supporter}
   <h3 class="text-xl font-bold mt-4">Supporter V</h3>
   <div class="flex w-full max-w-full flex-wrap gap-2">
-    {#each supporter.V as support}
-      <div class="flex flex-col items-center justify-center border-selected border rounded-sm">
+    {#each supporter.V as support, index (`V-${index}-${support}`)}
+      <div
+        class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm"
+      >
         <div class="flex justify-center items-center py-4 px-8">
           <span class="font-black prism-font prism-font-gold text-3xl">{support}</span>
         </div>
@@ -74,8 +51,10 @@
   </div>
   <h3 class="text-xl font-bold mt-4">Supporter IV</h3>
   <div class="flex w-full max-w-3xl flex-wrap gap-2">
-    {#each supporter.IV as support}
-      <div class="flex flex-col items-center justify-center border-selected border rounded-sm">
+    {#each supporter.IV as support, index (`IV-${index}-${support}`)}
+      <div
+        class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm"
+      >
         <div class="flex justify-center items-center py-4 px-8">
           <span class="font-black prism-font prism-font-silver text-2xl">{support}</span>
         </div>
@@ -84,8 +63,10 @@
   </div>
   <h3 class="text-xl font-bold mt-4">Supporter III</h3>
   <div class="flex w-full max-w-3xl flex-wrap gap-2">
-    {#each supporter.III as support}
-      <div class="flex flex-col items-center justify-center border-selected border rounded-sm">
+    {#each supporter.III as support, index (`III-${index}-${support}`)}
+      <div
+        class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm"
+      >
         <div class="w-32 flex justify-center items-center py-3 px-6">
           <span class="font-black prism-font prism-font-silver text-xl">{support}</span>
         </div>
@@ -94,8 +75,10 @@
   </div>
   <h3 class="text-xl font-bold mt-4">Supporter II</h3>
   <div class="flex w-full max-w-3xl flex-wrap gap-2">
-    {#each supporter.II as support}
-      <div class="flex flex-col items-center justify-center border-selected border rounded-sm">
+    {#each supporter.II as support, index (`II-${index}-${support}`)}
+      <div
+        class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm"
+      >
         <div class="w-32 flex justify-center items-center p-1">
           <span class="font-bold prism-font prism-font-copper text-lg">{support}</span>
         </div>
@@ -104,17 +87,27 @@
   </div>
   <h3 class="text-xl font-bold mt-4">Supporter I</h3>
   <div class="flex w-full max-w-3xl flex-wrap gap-2">
-    {#each supporter.I as support}
-      <div class="flex flex-col items-center justify-center border-selected border rounded-sm">
+    {#each supporter.I as support, index (`I-${index}-${support}`)}
+      <div
+        class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm"
+      >
         <div class="w-32 flex justify-center items-center p-1">
           <span class="font-bold prism-font prism-font-copper">{support}</span>
         </div>
       </div>
     {/each}
   </div>
+{:catch error}
+  <span>{error instanceof Error ? error.message : 'Failed to load supporters'}</span>
 {/await}
 
 <style>
+  .supporter-chip {
+    contain: layout paint;
+    content-visibility: auto;
+    contain-intrinsic-size: 48px 128px;
+  }
+
   .prism-font-silver {
     background: linear-gradient(to right, #777, #fff, #777, #fff, #777);
   }
@@ -126,26 +119,16 @@
   }
 
   .prism-font {
+    display: inline-block;
+    max-width: 100%;
     text-align: center;
     color: transparent;
-    background-size: 150px 100%;
+    overflow-wrap: anywhere;
+    background-size: 100% 100%;
     background-clip: text;
-    animation-name: shimmer;
-    animation-duration: 2s;
-    animation-iteration-count: infinite;
+    -webkit-background-clip: text;
     background-repeat: no-repeat;
     background-position: 0 0;
     background-color: #222;
-  }
-  @keyframes shimmer {
-    0% {
-      background-position: top left;
-    }
-    50% {
-      background-position: top right;
-    }
-    0% {
-      background-position: top left;
-    }
   }
 </style>
