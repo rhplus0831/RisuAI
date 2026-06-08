@@ -75,7 +75,9 @@ they are not the source of current behavior.
   `isFastifyServer = true`; native/mobile wrappers, browser-local persistence,
   service workers, peer sync, Drive sync, and non-Fastify modes are not live.
 - Vite dev (`pnpm dev`) serves the SPA on port 5174 and proxies `/api` to the
-  API server. Run `pnpm api:dev` or `pnpm api:dev:flag` separately.
+  API server. Run `pnpm api:dev` or `pnpm api:dev:flag` separately. For
+  agent-facing full-stack dev, `pnpm dev:agent` serves the SPA on port 6418 and
+  starts the API on port 6419 behind the same `/api` proxy.
 - If an agent-run API server is expected on port `6002` and the port is already
   open, try `touch .risu-api-restart` for the flag-gated runner before starting
   another server.

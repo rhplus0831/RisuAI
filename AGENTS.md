@@ -2,6 +2,12 @@
 
 - Use `pnpm`.
 
+# Agent Dev Server
+
+- Use `pnpm dev:agent` when an agent needs a full-stack development server.
+- The frontend is available at `http://localhost:6418`; Fastify runs on port `6419` and is proxied through `/api` on the frontend server.
+- Stop the dev server when you are done using it so ports `6418` and `6419` are released for the next agent.
+
 ## Available Tools
 
 - `rg`
@@ -21,8 +27,8 @@ When writing commit titles, use conventional prefixes such as `feat:`, `fix:`, a
 
 The Fastify variation has not been released yet, so there are currently no real users using it. This means:
 
-* We do not need to worry about DB migrations.
-* The `data` folder is only a copied backup brought over from the original Risuai project, and it is acceptable if that data is lost.
+- We do not need to worry about DB migrations.
+- The `data` folder is only a copied backup brought over from the original Risuai project, and it is acceptable if that data is lost.
 
 # TypeScript Check Workflow
 
