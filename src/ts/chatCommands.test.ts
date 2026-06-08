@@ -112,6 +112,13 @@ function stubCommandFetch(): CapturedFetch[] {
           selectedChatId: 'chat-a',
         })
       }
+      if (url === '/api/v1/commands/chats/chat-b') {
+        return jsonResponse({
+          revision: 13,
+          event: { type: 'chat.updated', revision: 13, resource: 'characterRow' },
+          selectedChatId: 'chat-b',
+        })
+      }
       if (url === '/api/v1/commands/characters/char-a/chats/reorder') {
         return jsonResponse({
           revision: 14,
@@ -787,7 +794,12 @@ describe('H2 chat-selection snapshot', () => {
     const snapshot = currentChatSelectionSnapshot()
 
     DBState.db.characters[0].chatPage = 1
-    DBState.db.characters.unshift({ chaId: 'char-new', name: 'Inserted', chatPage: 9, chats: [] } as any)
+    DBState.db.characters.unshift({
+      chaId: 'char-new',
+      name: 'Inserted',
+      chatPage: 9,
+      chats: [],
+    } as any)
 
     restoreChatSelection(snapshot)
 
@@ -812,6 +824,56 @@ describe('H2 chat-selection snapshot', () => {
         patch: {},
         select: true,
       },
+    })
+  })
+
+  it('dispatchSelectChat optimistically updates chatPage before the PATCH resolves', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
+
+    expect(DBState.db.characters[0].chatPage).toBe(1)
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/chats/chat-b',
+      method: 'PATCH',
+      authHeader: 'chat-command-token',
+      body: {
+        baseRevision: 10,
+        patch: {},
+        select: true,
+      },
+    })
+  })
+
+  it('dispatchSelectChat rolls back the optimistic chatPage on command failure', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-b') return jsonResponse({ error: 'nope' }, 500)
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setServerProjectionWriteGuardEnabled(true)
+
+    dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
+
+    expect(DBState.db.characters[0].chatPage).toBe(1)
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chatPage).toBe(0)
     })
   })
 })
@@ -948,7 +1010,9 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
       modules: ['module-a', 'module-b'],
     })
     current.message = [{ role: 'char', data: 'ignored transcript change', chatId: 'msg-new' }]
-    current.localLore = [{ id: 'ignored-lore-new', key: 'y', content: 'ignored changed lore' }] as any
+    current.localLore = [
+      { id: 'ignored-lore-new', key: 'y', content: 'ignored changed lore' },
+    ] as any
     ;(current as any).hypaV3Data = { ignored: 'changed memory payload' }
 
     const patch = changedChatMetadata(previous, current)
@@ -1063,7 +1127,9 @@ describe('Phase 2 chat-scoped message dispatch', () => {
       chaId: 'char-b',
       name: 'Other',
       chatPage: 0,
-      chats: [{ id: 'chat-c', name: 'C', message: [{ role: 'user', data: 'sib', chatId: 'm-sib' }] }],
+      chats: [
+        { id: 'chat-c', name: 'C', message: [{ role: 'user', data: 'sib', chatId: 'm-sib' }] },
+      ],
       chatFolders: [],
     } as any)
 

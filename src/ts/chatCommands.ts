@@ -120,6 +120,20 @@ export function restoreChatSelection(snapshot: ChatSelectionSnapshot): void {
   })
 }
 
+function applyOptimisticChatSelection(chatId: string, snapshot: ChatSelectionSnapshot): void {
+  const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
+  const chatIndex = character?.chats?.findIndex((candidate) => candidate.id === chatId) ?? -1
+  if (!character || chatIndex < 0 || character.chatPage === chatIndex) return
+
+  withTrustedServerProjectionWrite(() => {
+    const liveCharacter = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
+    const liveChatIndex =
+      liveCharacter?.chats?.findIndex((candidate) => candidate.id === chatId) ?? -1
+    if (!liveCharacter || liveChatIndex < 0) return
+    liveCharacter.chatPage = liveChatIndex
+  })
+}
+
 // Narrow single-chat rollback. Message edit/delete/bookmark/replace/send and
 // slash-command message mutation only touch the active chat row, so a rollback
 // only needs that one chat — not a JSON clone of every character's whole chat
@@ -387,9 +401,11 @@ export function dispatchUpdateChat(
 }
 
 // Scalar-rollback variant of `dispatchUpdateChat` for chat selection (H2): the
-// same empty-patch select command, but a failed select restores only the owning
-// character's `chatPage` instead of cloning the whole characters array.
+// same empty-patch select command, with the local optimistic write limited to the
+// owning character's `chatPage` instead of cloning the whole characters array.
 export function dispatchSelectChat(chatId: string, previous: ChatSelectionSnapshot): void {
+  if (!canUseServerCommands()) return
+  applyOptimisticChatSelection(chatId, previous)
   runChatCommand(
     (baseRevision) =>
       updateChatCommand({
