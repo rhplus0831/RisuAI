@@ -9,6 +9,7 @@ const LOCAL_BACKUP_EXPORT_ENDPOINT = '/api/v1/export/local-backup'
 const BUNDLE_IMPORT_ENDPOINT = '/api/v1/import/bundle'
 const DEFAULT_BUNDLE_FILENAME = 'database.risu.zip'
 const DEFAULT_LOCAL_BACKUP_FILENAME = 'database.bin'
+const ESTIMATED_BACKUP_BYTES_HEADER = 'x-risu-estimated-backup-bytes'
 
 export interface ServerBackupManifest {
   _version: number
@@ -39,6 +40,7 @@ export interface ServerBackupProgress {
   percent: number | null
   loadedBytes?: number
   totalBytes?: number | null
+  estimatedTotalBytes?: boolean
 }
 
 export type ServerBackupProgressCallback = (progress: ServerBackupProgress) => void
@@ -400,7 +402,13 @@ async function readResponseBlobWithProgress(
     return response.blob()
   }
 
-  const totalBytes = parseContentLength(response.headers.get('content-length'))
+  const contentLengthBytes = parseContentLength(response.headers.get('content-length'))
+  const estimatedContentLengthBytes =
+    contentLengthBytes === null
+      ? parseContentLength(response.headers.get(ESTIMATED_BACKUP_BYTES_HEADER))
+      : null
+  const totalBytes = contentLengthBytes ?? estimatedContentLengthBytes
+  const estimatedTotalBytes = contentLengthBytes === null && estimatedContentLengthBytes !== null
   let loadedBytes = 0
   reportProgress(onProgress, {
     phase: 'download',
@@ -408,6 +416,7 @@ async function readResponseBlobWithProgress(
     percent: totalBytes === null ? null : 0,
     loadedBytes,
     totalBytes,
+    estimatedTotalBytes,
   })
 
   const reader = response.body.getReader()
@@ -422,9 +431,11 @@ async function readResponseBlobWithProgress(
       reportProgress(onProgress, {
         phase: 'download',
         message,
-        percent: totalBytes === null ? null : (loadedBytes / Math.max(totalBytes, 1)) * 100,
+        percent:
+          totalBytes === null ? null : downloadPercent(loadedBytes, totalBytes, estimatedTotalBytes),
         loadedBytes,
         totalBytes,
+        estimatedTotalBytes,
       })
       controller.enqueue(read.value)
     },
@@ -437,6 +448,11 @@ async function readResponseBlobWithProgress(
   const contentType = response.headers.get('content-type')
   if (contentType) headers.set('content-type', contentType)
   return new Response(stream, { headers }).blob()
+}
+
+function downloadPercent(loadedBytes: number, totalBytes: number, estimatedTotalBytes: boolean) {
+  const percent = (loadedBytes / Math.max(totalBytes, 1)) * 100
+  return estimatedTotalBytes ? Math.min(99, percent) : percent
 }
 
 function parseContentLength(header: string | null): number | null {

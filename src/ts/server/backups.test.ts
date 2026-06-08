@@ -351,6 +351,54 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     })
   })
 
+  it('uses the server-estimated backup size for streamed download progress without content-length', async () => {
+    const estimatedBackupBytes = BUNDLE_BYTES.byteLength * 2
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(BUNDLE_BYTES.slice(0, 4))
+        controller.enqueue(BUNDLE_BYTES.slice(4))
+        controller.close()
+      },
+    })
+    const backupFetch = makeBackupFetch(
+      () =>
+        new Response(stream, {
+          status: 200,
+          headers: {
+            'content-disposition': 'attachment; filename="database.risu.zip"',
+            'x-risu-estimated-backup-bytes': String(estimatedBackupBytes),
+          },
+        }),
+    )
+    vi.stubGlobal('fetch', backupFetch.fetch)
+    const progress: ServerBackupProgress[] = []
+
+    const result = await exportServerBundle({ onProgress: (frame) => progress.push(frame) })
+
+    expect(result.status).toBe('ok')
+    expect(
+      progress
+        .filter((frame) => frame.phase === 'download')
+        .every((frame) => typeof frame.percent === 'number'),
+    ).toBe(true)
+    expect(
+      progress.some(
+        (frame) =>
+          frame.phase === 'download' &&
+          frame.loadedBytes === 4 &&
+          frame.totalBytes === estimatedBackupBytes &&
+          frame.estimatedTotalBytes === true &&
+          frame.percent === 31.25,
+      ),
+    ).toBe(true)
+    expect(progress.at(-1)).toMatchObject({
+      phase: 'complete',
+      percent: 100,
+      loadedBytes: BUNDLE_BYTES.byteLength,
+      totalBytes: BUNDLE_BYTES.byteLength,
+    })
+  })
+
   it('reports server errors when the bundle export fails', async () => {
     const backupFetch = makeBackupFetch(() =>
       jsonResponse({ error: 'database payload missing' }, 400),

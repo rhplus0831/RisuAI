@@ -59,6 +59,8 @@ const INCLUDED_ASSET = 'a'.repeat(64)
 const MISSING_REFERENCE = 'b'.repeat(64)
 const MISSING_FILE = 'c'.repeat(64)
 const ORPHANED_ASSET = 'd'.repeat(64)
+const ESTIMATED_BACKUP_BYTES_HEADER = 'x-risu-estimated-backup-bytes'
+const SQLITE_EXPORT_ESTIMATE_FILE = 'risu.db'
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
@@ -165,6 +167,10 @@ function parseLegacyLocalBackupBin(bytes: Buffer): Map<string, Uint8Array> {
   return records
 }
 
+function expectedEstimatedBackupBytes(dataDir: string, includedAssetBytes: number): number {
+  return fs.statSync(path.join(dataDir, SQLITE_EXPORT_ESTIMATE_FILE)).size + includedAssetBytes
+}
+
 let harness: Harness
 let assertion: string
 
@@ -197,6 +203,9 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     expect(exported.statusCode).toBe(200)
     expect(exported.headers['content-type']).toContain('application/zip')
     expect(exported.headers['content-disposition']).toBe('attachment; filename="database.risu.zip"')
+    expect(Number(exported.headers[ESTIMATED_BACKUP_BYTES_HEADER])).toBe(
+      expectedEstimatedBackupBytes(harness.dataDir, 12),
+    )
 
     const files = unzipBundle(exported.rawPayload)
     expect(Object.keys(files).sort()).toEqual([
@@ -288,6 +297,9 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     expect(exported.statusCode).toBe(200)
     expect(exported.headers['content-type']).toContain('application/octet-stream')
     expect(exported.headers['content-disposition']).toBe('attachment; filename="database.bin"')
+    expect(Number(exported.headers[ESTIMATED_BACKUP_BYTES_HEADER])).toBe(
+      expectedEstimatedBackupBytes(harness.dataDir, 12),
+    )
 
     const records = parseLegacyLocalBackupBin(exported.rawPayload)
     expect([...records.keys()].sort()).toEqual([`${INCLUDED_ASSET}.png`, 'database.risudat'])

@@ -13,8 +13,10 @@ import {
   ValidationError,
   addAssets,
   applyImport,
+  assetPath,
   getAllAssetMetadata,
   loadPersistedWithMessages,
+  type Persisted,
 } from '../repository.js'
 import { replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
 import {
@@ -32,6 +34,7 @@ import {
 import { buildRepositoryRisuSaveBundleExport } from '../risuSave/bundleExport.js'
 import { buildRepositoryRisuLocalBackupExport } from '../risuSave/localBackupExport.js'
 import {
+  buildRisuSaveAssetReport,
   buildRepositoryRisuSaveAssetReport,
   summarizeRisuSaveAssetReport,
 } from '../risuSave/assetReferences.js'
@@ -58,7 +61,9 @@ interface ExportQuery {
 const EXPORT_FILENAME = 'database.risu'
 const BUNDLE_EXPORT_FILENAME = 'database.risu.zip'
 const LOCAL_BACKUP_EXPORT_FILENAME = 'database.bin'
+const ESTIMATED_BACKUP_BYTES_HEADER = 'x-risu-estimated-backup-bytes'
 const LOCAL_BACKUP_DATABASE_ENVELOPE = 'legacy-compressed'
+const SQLITE_EXPORT_ESTIMATE_FILE = 'risu.db'
 // Unlimited by default: the upload streams to a temp file and decodes in bounded
 // batches, so size is constrained by disk, not memory. A finite ceiling is opt-in
 // via RISU_API_IMPORT_MAX_BYTES (see config.ts).
@@ -264,6 +269,7 @@ export function registerSaveRoutes(
         const snapshotStart = measure ? protocolNowMs() : 0
         const persisted = loadPersistedWithMessages(db, dataDir)
         persisted.assets = getAllAssetMetadata(db)
+        const estimatedBackupBytes = estimateDeviceBackupBytes(dataDir, persisted)
         const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
         const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
         const encodeStart = measure ? protocolNowMs() : 0
@@ -290,6 +296,7 @@ export function registerSaveRoutes(
         })
         reply.header('content-type', 'application/zip')
         reply.header('content-disposition', `attachment; filename="${BUNDLE_EXPORT_FILENAME}"`)
+        reply.header(ESTIMATED_BACKUP_BYTES_HEADER, String(estimatedBackupBytes))
         return reply.send(bundle.stream)
       } catch (err) {
         if (err instanceof ValidationError) {
@@ -311,6 +318,7 @@ export function registerSaveRoutes(
       const snapshotStart = measure ? protocolNowMs() : 0
       const persisted = loadPersistedWithMessages(db, dataDir)
       persisted.assets = getAllAssetMetadata(db)
+      const estimatedBackupBytes = estimateDeviceBackupBytes(dataDir, persisted)
       const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
       const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
       const encodeStart = measure ? protocolNowMs() : 0
@@ -336,6 +344,7 @@ export function registerSaveRoutes(
       })
       reply.header('content-type', 'application/octet-stream')
       reply.header('content-disposition', `attachment; filename="${LOCAL_BACKUP_EXPORT_FILENAME}"`)
+      reply.header(ESTIMATED_BACKUP_BYTES_HEADER, String(estimatedBackupBytes))
       return reply.send(localBackup.stream)
     } catch (err) {
       if (err instanceof ValidationError) {
@@ -345,6 +354,38 @@ export function registerSaveRoutes(
       throw err
     }
   })
+}
+
+function estimateDeviceBackupBytes(dataDir: string, persisted: Persisted): number {
+  return estimateSqliteFootprintBytes(dataDir) + estimateReferencedAssetBytes(dataDir, persisted)
+}
+
+function estimateSqliteFootprintBytes(dataDir: string): number {
+  return safeFileSize(path.join(dataDir, SQLITE_EXPORT_ESTIMATE_FILE))
+}
+
+function estimateReferencedAssetBytes(dataDir: string, persisted: Persisted): number {
+  const report = buildRisuSaveAssetReport(persisted.database, persisted.assets)
+  const assetsById = new Map(persisted.assets.map((asset) => [asset.id, asset]))
+  let total = 0
+
+  for (const reference of report.referenced) {
+    const asset = assetsById.get(reference.id)
+    if (!asset) continue
+    if (safeFileSize(assetPath(dataDir, asset)) === 0) continue
+    total += asset.size
+  }
+
+  return total
+}
+
+function safeFileSize(filePath: string): number {
+  try {
+    const stat = fs.statSync(filePath)
+    return stat.isFile() ? stat.size : 0
+  } catch {
+    return 0
+  }
 }
 
 function emitRisuSaveExportMetric(

@@ -67,7 +67,8 @@
     if (typeof progress.loadedBytes !== 'number') return ''
     const loaded = formatBytes(progress.loadedBytes)
     if (typeof progress.totalBytes === 'number' && progress.totalBytes > 0) {
-      return `${loaded} / ${formatBytes(progress.totalBytes)}`
+      const prefix = progress.estimatedTotalBytes ? '~' : ''
+      return `${loaded} / ${prefix}${formatBytes(progress.totalBytes)}`
     }
     return loaded
   }

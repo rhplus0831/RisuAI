@@ -372,8 +372,8 @@
           aria-label={$alertStore.msg}
         >
           <div
-            class="h-full bg-linear-to-r from-blue-500 to-purple-800 saving-animation transition-[width]"
-            style:width={progressPercent + '%'}
+            class="h-full w-full origin-left bg-linear-to-r from-blue-500 to-purple-800 saving-animation transition-transform"
+            style:transform={`scaleX(${progressPercent / 100})`}
           ></div>
         </div>
         <div class="w-full flex justify-center mt-6">
