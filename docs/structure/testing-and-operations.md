@@ -5,22 +5,22 @@ is root-only; there is no `server/fastify/package.json`.
 
 ## Scripts
 
-| Command                            | Purpose                                                                                                                                                                                                  |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm dev`                         | Start Vite client dev server on `0.0.0.0:5174`.                                                                                                                                                          |
-| `pnpm api:dev`                     | Start Fastify with `tsx watch server/fastify/src/index.ts`.                                                                                                                                              |
-| `pnpm api:dev:flag`                | Start Fastify through `util/api-flag-dev.ts`; restarts only when `.risu-api-restart` is touched/created.                                                                                                 |
-| `pnpm api:start`                   | Start Fastify once with `tsx server/fastify/src/index.ts`.                                                                                                                                               |
-| `pnpm build`                       | Vite build with sourcemaps.                                                                                                                                                                              |
-| `pnpm buildsite`                   | Production client build with `VITE_RISU_LEGAL_CONFIGURED=TRUE`.                                                                                                                                          |
-| `pnpm preview`                     | Vite preview server for a built client bundle.                                                                                                                                                           |
-| `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                                           |
-| `pnpm test`                        | Run root/browser Vitest tests.                                                                                                                                                                           |
-| `pnpm api:test`                    | Run Fastify/server Vitest tests.                                                                                                                                                                         |
-| `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                                                                                                                   |
-| `pnpm client-thinning:audit`       | Run `util/client-thinning-audit.ts`.                                                                                                                                                                     |
-| `pnpm analyze:db <path>`           | Analyze `.risu`, `db.json`, raw database JSON, or a legacy data dir containing `db.json`; current SQLite-only `data/` dirs need a follow-up before this works. Add `--json` for machine-readable output. |
-| `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                                                                                                                    |
+| Command                            | Purpose                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                         | Start Vite client dev server on `0.0.0.0:5174`.                                                               |
+| `pnpm api:dev`                     | Start Fastify with `tsx watch server/fastify/src/index.ts`.                                                   |
+| `pnpm api:dev:flag`                | Start Fastify through `util/api-flag-dev.ts`; restarts only when `.risu-api-restart` is touched/created.      |
+| `pnpm api:start`                   | Start Fastify once with `tsx server/fastify/src/index.ts`.                                                    |
+| `pnpm build`                       | Vite build with sourcemaps.                                                                                   |
+| `pnpm buildsite`                   | Production client build with `VITE_RISU_LEGAL_CONFIGURED=TRUE`.                                               |
+| `pnpm preview`                     | Vite preview server for a built client bundle.                                                                |
+| `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                |
+| `pnpm test`                        | Run root/browser Vitest tests.                                                                                |
+| `pnpm api:test`                    | Run Fastify/server Vitest tests.                                                                              |
+| `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                        |
+| `pnpm client-thinning:audit`       | Run `util/client-thinning-audit.ts`.                                                                          |
+| `pnpm analyze:db <path>`           | Analyze `.risu`, `db.json`, raw database JSON, or legacy data dirs. Add `--json` for machine-readable output. |
+| `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                         |
 
 There is no ESLint config or `lint` script.
 
@@ -44,6 +44,10 @@ touch .risu-api-restart
 The flag runner removes stale flags on startup and deletes the flag after
 consuming a restart request. `RISU_API_RESTART_FLAG=/path/to/file` changes the
 sentinel path.
+
+`pnpm analyze:db` does not read current SQLite-only `data/` dirs unless they
+also contain legacy `db.json`; use it for imported/exported JSON or `.risu`
+inputs.
 
 Vite proxies `/api` to `RISU_API_PROXY_TARGET` or `http://localhost:6002`.
 Fastify defaults to `0.0.0.0:6002`. Vite dev changes only how the SPA bundle is
@@ -112,6 +116,12 @@ Server:
 | `RISU_REALM_URL`            | `https://realm.risuai.net` | Realm character import target.                                                                             |
 | `LOG_LEVEL`                 | `info`                     | Use `silent` to disable Fastify logger.                                                                    |
 | `RISU_PROTOCOL_METRICS`     | unset                      | Enables structured protocol metrics when `1`, `true`, `yes`, or `on`.                                      |
+
+Local/dev:
+
+| Variable                | Default             | Notes                                     |
+| ----------------------- | ------------------- | ----------------------------------------- |
+| `RISU_API_RESTART_FLAG` | `.risu-api-restart` | Flag file watched by `pnpm api:dev:flag`. |
 
 Client/build:
 

@@ -6,20 +6,21 @@ does not execute browser plugin code.
 
 ## Plugin Runtime
 
-| Path                                                                                     | Purpose                                                                                       |
-| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `src/ts/plugins/plugins.svelte.ts`                                                       | Plugin import/update/load, V2 compatibility, custom providers, command-backed state dispatch. |
-| `src/ts/plugins/apiV3/v3.svelte.ts`                                                      | Plugin API V3 surface exposed to sandboxed plugins.                                           |
-| `src/ts/plugins/apiV3/factory.ts`                                                        | `SandboxHost` iframe/RPC bridge between app and plugin guest code.                            |
-| `src/ts/plugins/apiV3/transpiler.ts`, `src/ts/plugins/apiV3/developMode.ts`              | Plugin V3 transpilation and development-mode loading.                                         |
-| `src/ts/plugins/apiV3/risuai.d.ts`                                                       | Plugin V3 TypeScript declarations for plugin authors.                                         |
-| `src/ts/plugins/pluginSafeClass.ts`, `src/ts/plugins/pluginSafety.ts`                    | Safe wrappers, static safety rewrite/checks, device-local storage gates.                      |
-| `src/ts/pluginCommands.ts`                                                               | Browser command wrappers for plugin records and plugin custom storage.                        |
-| `server/fastify/src/commands/plugins.ts`, `server/fastify/src/commands/pluginStorage.ts` | Server validation for plugin records and plugin key/value JSON storage.                       |
+| Path                                                         | Purpose                                                                                       |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `src/ts/plugins/plugins.svelte.ts`                           | Plugin import/update/load, V2 compatibility, custom providers, command-backed state dispatch. |
+| `src/ts/plugins/apiV3/v3.svelte.ts`                          | Plugin API V3 surface exposed to sandboxed plugins.                                           |
+| `src/ts/plugins/apiV3/factory.ts`                            | `SandboxHost` iframe/RPC bridge between app and plugin guest code.                            |
+| `src/ts/plugins/apiV3/transpiler.ts`, `developMode.ts`       | Plugin V3 transpilation and development-mode loading.                                         |
+| `src/ts/plugins/apiV3/risuai.d.ts`                           | Plugin V3 TypeScript declarations for plugin authors.                                         |
+| `src/ts/plugins/pluginSafeClass.ts`, `pluginSafety.ts`       | Safe wrappers, static safety rewrite/checks, device-local storage gates.                      |
+| `src/ts/pluginCommands.ts`                                   | Browser command wrappers for plugin records and plugin custom storage.                        |
+| `server/fastify/src/commands/plugins.ts`, `pluginStorage.ts` | Server validation for plugin records and plugin key/value JSON storage.                       |
 
 Plugin records live in `Database.plugins` and use the plugin `name` as the
 stable id. `currentPluginProvider` selects a plugin-defined provider when one is
-active.
+active. Plugin providers remain browser compatibility surfaces; Fastify
+chat/completion does not execute plugin provider code.
 
 Plugin V3 code runs through an iframe RPC boundary. API functions must accept
 and return serializable data, callback functions, marked remote class instances,
@@ -29,8 +30,6 @@ assembly return `unsupported`; Fastify never executes browser plugin code.
 Server Lua scripting is separate from browser plugins.
 
 ## Plugin Storage
-
-There are two storage classes:
 
 - Server-backed plugin custom storage is `Database.pluginCustomStorage`, mutated
   through `PUT /api/v1/commands/plugin-storage/:key`,
@@ -46,17 +45,18 @@ state.
 
 ## MCP Runtime
 
-MCP and tool orchestration mostly lives under `src/ts/process/mcp/`. Module
-runtime wiring that resolves MCP URLs starts from `src/ts/process/modules.ts`.
+MCP and tool orchestration mostly lives under `src/ts/process/mcp/`. MCP
+initialization reads MCP URLs from currently active modules via
+`getModuleMcps()` in `src/ts/process/modules.ts`.
 
-| Path                                                                                                                                                                                   | Purpose                                                                                               |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `src/ts/process/mcp/mcp.ts`                                                                                                                                                            | Runtime registry, URL parsing, tool discovery/calls, OAuth refresh persistence, module import helper. |
-| `src/ts/process/mcp/mcplib.ts`                                                                                                                                                         | Remote HTTP/SSE JSON-RPC MCP client.                                                                  |
-| `src/ts/process/mcp/internalmcp.ts`                                                                                                                                                    | Base class for internal MCP-like clients.                                                             |
-| `src/ts/process/mcp/pluginmcp.ts`                                                                                                                                                      | Plugin-registered MCP modules using `plugin:` identifiers.                                            |
-| `src/ts/process/mcp/risuaccess/`                                                                                                                                                       | Internal Risu access tools for characters, chats, and modules.                                        |
-| `src/ts/process/mcp/aiaccess.ts`, `src/ts/process/mcp/googlesearchclient.ts`, `src/ts/process/mcp/graphmem.ts`, `src/ts/process/mcp/dice.ts`, `src/ts/process/mcp/filesystemclient.ts` | Internal tool clients.                                                                                |
+| Path                                                                                                       | Purpose                                                                                               |
+| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `src/ts/process/mcp/mcp.ts`                                                                                | Runtime registry, URL parsing, tool discovery/calls, OAuth refresh persistence, module import helper. |
+| `src/ts/process/mcp/mcplib.ts`                                                                             | Remote HTTP/SSE JSON-RPC MCP client.                                                                  |
+| `src/ts/process/mcp/internalmcp.ts`                                                                        | Base class for internal MCP-like clients.                                                             |
+| `src/ts/process/mcp/pluginmcp.ts`                                                                          | Plugin-registered MCP modules using `plugin:` identifiers.                                            |
+| `src/ts/process/mcp/risuaccess/`                                                                           | Internal Risu access tools for characters, chats, and modules.                                        |
+| `src/ts/process/mcp/aiaccess.ts`, `googlesearchclient.ts`, `graphmem.ts`, `dice.ts`, `filesystemclient.ts` | Internal tool clients.                                                                                |
 
 Supported MCP URL forms:
 
@@ -89,5 +89,6 @@ payloads, but they are not server-persisted unless a later command stores them.
   plugin arguments.
 - `src/lib/Playground/PlaygroundMCP.svelte` lists MCP metadata/tools and can run
   tool calls for debugging.
-- `src/lib/Setting/Pages/Module/ModuleSettings.svelte` associates MCP module
-  URLs with modules outside the blocked import helper.
+- `src/lib/Setting/Pages/Module/ModuleSettings.svelte` can display existing MCP
+  module records and exposes the import UI, but Fastify mode still lacks
+  command-backed MCP module create/update support.

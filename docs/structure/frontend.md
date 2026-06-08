@@ -17,24 +17,26 @@ application, display state, TTS playback, media previews, and plugin execution.
 
 `src/LiteMain.svelte` exists but is not the live entrypoint. Live lite mode is
 `VITE_RISU_LITE` driving branches in `src/App.svelte` and `src/ts/lite.ts`.
-There is no SvelteKit-style `src/routes/`; navigation is store/render-switch
-driven.
+There is no SvelteKit `src/routes/`; navigation is store/render-switch driven.
+
+Vite dev (`pnpm dev`) uses strict port 5174 and proxies `/api` to
+`RISU_API_PROXY_TARGET` or `http://localhost:6002`. `pnpm build` and
+`pnpm buildsite` produce the production bundle.
 
 ## Component Directories
 
-| Path                                                  | Purpose                                                                                                                                                                  |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/lib/ChatScreens/`                                | Chat rendering and interaction components.                                                                                                                               |
-| `src/lib/SideBars/`                                   | Sidebar, character config, chat list, lorebook, scripts, navigation.                                                                                                     |
-| `src/lib/Setting/`                                    | Settings layout, wrappers, shared field helpers.                                                                                                                         |
-| `src/lib/Setting/Pages/`                              | Concrete settings pages and subfolders for user/bot/provider/plugin/module, prompt, display, language, advanced, accessibility, persona, hotkey, and community settings. |
-| `src/lib/Mobile/`                                     | Mobile shell components.                                                                                                                                                 |
-| `src/lib/LiteUI/`                                     | Unwired lite shell support components.                                                                                                                                   |
-| `src/lib/Playground/`                                 | Parser/tokenizer/MCP/image/translation/tooling playgrounds.                                                                                                              |
-| `src/lib/UI/`, `src/lib/UI/GUI/`, `src/lib/UI/Realm/` | Shared UI primitives, dense GUI controls, model pickers, Realm UI.                                                                                                       |
-| `src/lib/Others/`                                     | Modals, alerts, editor, loadout, Hypa V3, popup/misc pieces.                                                                                                             |
-| `src/lang/`                                           | Localization data.                                                                                                                                                       |
-| `src/etc/`                                            | Bundled docs/media/tokenizer seed data imported by the client.                                                                                                           |
+| Path                                                  | Purpose                                                                                                                                                                                                             |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/ChatScreens/`                                | Chat rendering and interaction components.                                                                                                                                                                          |
+| `src/lib/SideBars/`                                   | Sidebar, character config, chat list, lorebook, scripts, navigation.                                                                                                                                                |
+| `src/lib/Setting/`, `src/lib/Setting/Pages/`          | Settings layout, wrappers, concrete pages, and `Advanced/`, `Display/`, `Language/`, `Model/`, `Module/` subfolders. Provider-facing settings live mostly in `BotSettings.svelte` and provider-specific page files. |
+| `src/lib/Mobile/`                                     | Mobile shell components.                                                                                                                                                                                            |
+| `src/lib/LiteUI/`                                     | Lite shell support components.                                                                                                                                                                                      |
+| `src/lib/Playground/`                                 | Parser/tokenizer/MCP/image/translation/tooling playgrounds.                                                                                                                                                         |
+| `src/lib/UI/`, `src/lib/UI/GUI/`, `src/lib/UI/Realm/` | Shared UI primitives, dense GUI controls, model pickers, Realm UI.                                                                                                                                                  |
+| `src/lib/Others/`                                     | Modals, alerts, editor, loadout, Hypa V3, popup/misc pieces.                                                                                                                                                        |
+| `src/lang/`                                           | Localization data.                                                                                                                                                                                                  |
+| `src/etc/`                                            | Bundled docs/media/tokenizer seed data imported by the client.                                                                                                                                                      |
 
 ## Client TypeScript Areas
 
@@ -48,12 +50,10 @@ driven.
 | `src/ts/plugins/`                                                                                                                           | Browser plugin loading/runtime and Plugin V3 API host.                                                                                                                                        |
 | `src/ts/process/mcp/`                                                                                                                       | Browser MCP clients, internal tools, Risu access tools, plugin MCP clients.                                                                                                                   |
 | `src/ts/media/`, `src/ts/parser/`, `src/ts/gui/`, `src/ts/setting/`, `src/ts/translator/`, `src/ts/network/`, `src/ts/kei/`, `src/ts/util/` | Focused helper domains and tests.                                                                                                                                                             |
-| `src/ts/stores.svelte.ts`, `globalApi.svelte.ts`, `characters.ts`, `characterCards.ts`, `hotkey.ts`, `lite.ts`, `observer.svelte.ts`        | Cross-cutting browser stores, global compatibility helpers, character/import flows, hotkeys, lite-mode state, and DOM observers.                                                              |
+| `src/ts/stores.svelte.ts`, `globalApi.svelte.ts`, `characters.ts`, `characterCards.ts`, `hotkey.ts`, `lite.ts`, `observer.svelte.ts`        | Cross-cutting browser stores and compatibility helpers.                                                                                                                                       |
 
-Retained compatibility/parity helpers still exist under `src/ts/process/dispatch`,
-`models`, `embedding`, `promptAssembly`, `promptBudget`, `postGeneration`,
-`memory`, `files`, and `templates`. Do not treat them as a selectable
-browser-local runtime.
+Retained compatibility/parity helpers still exist under `src/ts/process/`, but
+do not treat them as a selectable browser-local runtime.
 
 ## Startup And Projection
 
@@ -77,9 +77,8 @@ Fastify mode uses server prompt assembly and server provider dispatch:
   legacy inlay ids to server asset refs, calls `/api/v1/generate/chat` or the
   preview route, applies server message patches, and returns terminal generation
   data to the coordinator.
-- `src/ts/process/request/serverChat.ts` parses chat SSE frames such as
-  `job_accepted`, stage, prompt, `message_patch`, info, token, `side_effect`,
-  warning, error, and done.
+- `src/ts/process/request/serverChat.ts` parses chat SSE frames including job,
+  stage, prompt, patch, info, token, side-effect, warning, error, and done.
 - Server-dispatch paths persist generation results server-side, so the browser
   suppresses its old generation-result command.
 
@@ -89,9 +88,9 @@ allowed. Bootstrap `activeGenerationJobs` drives current-chat reattach through
 
 ## Assets, Storage, Realm, Plugins
 
-Fastify asset uploads go through `/api/v1/assets`; URLs normalize to
-`/api/v1/assets/:id`. Browser helpers live in `src/ts/server/assets.ts` and
-`src/ts/globalApi.svelte.ts`.
+Single asset uploads go through `/api/v1/assets`; bulk saves use
+`/api/v1/assets/bulk`. Asset references normalize to `/api/v1/assets/:id`.
+Browser helpers live in `src/ts/server/assets.ts` and `src/ts/globalApi.svelte.ts`.
 
 `src/ts/storage/fastifyStorage.ts` backs current `/api/v1/storage/*`
 compatibility endpoints, instantiated by `src/ts/storage/autoStorage.ts`.

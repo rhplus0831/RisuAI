@@ -12,31 +12,30 @@ through command helpers or explicit server-owned mutation routes.
   `/api/v1/bootstrap`.
 - Empty bootstrap (`database: null`) triggers
   `POST /api/v1/commands/state/initialize`, then a read-only bootstrap refetch.
-- The returned projection is applied through trusted write scopes, revision
-  cache is seeded, projection write guard is enabled, active generation jobs are
-  handed to reattach logic, hydration starts, and events subscribe.
+- The projection is applied through trusted write scopes, revision cache is
+  seeded, projection write guard is enabled, active generation jobs are handed
+  to reattach logic, hydration starts, and `/api/v1/events` subscribes.
 - Full recovery uses `fetchServerBootstrapProjectionReadOnly()` so passive
   resync does not steal writer ownership from another browser session.
 
-Important files:
-
-| Path                                | Role                                                                                                                   |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/server/bootstrap.ts`        | Validates bootstrap payloads and exposes writer-intent/read-only variants.                                             |
-| `src/ts/server/projection.ts`       | Wraps targeted projection, single/bulk chat hydration, single/bulk lorebook hydration, character-selection projection. |
-| `src/ts/server/projectionResync.ts` | Full-bootstrap recovery for event replay misses, projection gaps, backup restore, partial-success repairs.             |
-| `src/ts/process/reattach.ts`        | Reattaches active durable generation jobs from bootstrap.                                                              |
+| Path                                | Role                                                                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `src/ts/server/bootstrap.ts`        | Validates bootstrap payloads and exposes writer-intent/read-only variants.                                 |
+| `src/ts/server/projection.ts`       | Targeted projection, chat/lorebook hydration, character-selection projection.                              |
+| `src/ts/server/projectionResync.ts` | Full-bootstrap recovery for event replay misses, projection gaps, backup restore, partial-success repairs. |
+| `src/ts/process/reattach.ts`        | Reattaches active durable generation jobs from bootstrap.                                                  |
 
 ## Event Reconcile
 
-`src/ts/server/events.ts` subscribes to `/api/v1/events` with the cached revision
-as `sinceRevision` / `Last-Event-ID`. `src/ts/bootstrap.ts` processes command
-events serially:
+`src/ts/server/events.ts` subscribes to `/api/v1/events` with the cached
+revision as `sinceRevision` / `Last-Event-ID`. `src/ts/bootstrap.ts` processes
+command events serially:
 
 - Own echoes and already-applied revisions are skipped.
 - Contiguous foreign events fetch `GET /api/v1/projection/:resource`.
 - Narrow resources include `characterSelection`, `characterRow`, and
-  `generation-chat`.
+  `generation`. `generation.persisted` events are keyed by chat id and may
+  return projection mode `generation-chat`.
 - Gaps, replay-unavailable responses, projection failures, unknown resources, or
   server-requested full mode fall back to read-only full bootstrap.
 - Memory events bypass projection refresh and update Hypa V3 job/progress UI
@@ -49,7 +48,7 @@ notifications and are not replayed.
 
 ## Hydration
 
-Bootstrap and broad targeted projections contain chat stubs: chat metadata is
+Bootstrap and broad targeted projections contain chat stubs: metadata is
 present, while messages, per-chat `hypaV3Data`, and reroll alternates hydrate on
 demand.
 
@@ -82,19 +81,20 @@ as commands.
 
 ## Bridge Watchers
 
-| File                               | Role                                                                          |
-| ---------------------------------- | ----------------------------------------------------------------------------- |
-| `settingsBridge.svelte.ts`         | Debounced settings groups, equality-noop suppression, rollback-aware patches. |
-| `characterBridge.svelte.ts`        | Character profile and compatible-character command bridging.                  |
-| `chatBridge.svelte.ts`             | Chat metadata and chat-folder command bridging.                               |
-| `lorebookBridge.svelte.ts`         | Global/character/chat/module lorebook replacement, hydrated-lorebook guards.  |
-| `promptTemplateBridge.svelte.ts`   | Prompt-template optimistic writes, rollback, revision-gated reconciliation.   |
-| `scriptDefinitionBridge.svelte.ts` | Character/module script and trigger replacement commands.                     |
+| File                               | Role                                                                               |
+| ---------------------------------- | ---------------------------------------------------------------------------------- |
+| `bridgeFlush.ts`                   | Flushes pending bridge patches on `pagehide` / hidden visibility with `keepalive`. |
+| `settingsBridge.svelte.ts`         | Debounced settings groups, equality-noop suppression, rollback-aware patches.      |
+| `characterBridge.svelte.ts`        | Character profile and compatible-character command bridging.                       |
+| `chatBridge.svelte.ts`             | Chat metadata and chat-folder command bridging.                                    |
+| `lorebookBridge.svelte.ts`         | Global/character/chat/module lorebook replacement, hydrated-lorebook guards.       |
+| `promptTemplateBridge.svelte.ts`   | Prompt-template optimistic writes, rollback, revision-gated reconciliation.        |
+| `scriptDefinitionBridge.svelte.ts` | Character/module script and trigger replacement commands.                          |
 
-Common ideas, not a mandatory single pattern: capture snapshots, suppress no-op
-updates, respect projection-apply epochs, debounce noisy edits, roll back on
-failure/conflict, and use trusted optimistic writes only in helpers that intend
-to update local projection before the server response.
+Common requirements: capture snapshots, suppress no-op updates, respect
+projection-apply epochs, debounce noisy edits, roll back on failure/conflict, and
+use trusted optimistic writes only in helpers that intentionally update local
+projection before the server response.
 
 ## Active Writer And Diagnostics
 

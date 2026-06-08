@@ -6,18 +6,19 @@ request shape can run on the server.
 
 ## Browser Model Registry
 
-| Path                                                                                                                                   | Role                                                                |
-| -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `src/ts/model/types.ts`                                                                                                                | `LLMProvider`, `LLMFormat`, `LLMTokenizer`, `LLMFlags`, `LLMModel`. |
-| `src/ts/model/modellist.ts`                                                                                                            | Static/dynamic/custom model registry and `getModelInfo()`.          |
-| `src/ts/model/providers/`                                                                                                              | Provider-specific static model lists.                               |
-| `src/ts/model/openrouter.ts`, `src/ts/model/nanogpt.ts`, `src/ts/model/ollama.ts`, `src/ts/model/ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers.                                   |
-| `src/lib/UI/ModelList.svelte`, `src/lib/UI/ModelGrid.svelte`, `src/lib/UI/NanoGPT*`, `src/lib/UI/OpenrouterProviderList.svelte`        | Model-picker UI.                                                    |
+| Path                                                                                            | Role                                                                |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `src/ts/model/types.ts`                                                                         | `LLMProvider`, `LLMFormat`, `LLMTokenizer`, `LLMFlags`, `LLMModel`. |
+| `src/ts/model/modellist.ts`                                                                     | Static/dynamic/custom model registry and `getModelInfo()`.          |
+| `src/ts/model/providers/`                                                                       | Provider-specific static model lists.                               |
+| `src/ts/model/openrouter.ts`, `nanogpt.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers.                                   |
+| `src/lib/UI/ModelList.svelte`, `ModelGrid.svelte`, `NanoGPT*`, `OpenrouterProviderList.svelte`  | Model-picker UI.                                                    |
 
 `Database.aiModel` and related fields select model strings for main, auxiliary,
-fallback, translator, memory, and tool flows. Custom/dynamic models are browser
-registry concepts. The server imports only narrow metadata needed for dispatch
-decisions, not the full browser UI registry.
+fallback, translator, memory, and tool flows. Dynamic registry additions are
+browser-side; persisted `xcustom:::` custom models are server-routable when
+their stored URL/key/format pass the capability table. The server imports only
+narrow metadata needed for dispatch decisions, not the full browser UI registry.
 
 ## Server Provider Dispatch
 
@@ -42,24 +43,20 @@ routing decision table. Given resolved model metadata and the narrow config it
 needs, it returns either a server provider name (`routable: true`) or a stable
 unsupported reason category.
 
-Do not fork this table in server-only code. Browser preflight and Fastify route
-handlers map its verdict into chat/completion-specific `server` or
-`unsupported` behavior so `/api/v1/generate/chat` and
-`/api/v1/generate/completion` stay aligned.
+Do not fork this table in server-only code. Browser chat preflight and Fastify
+dispatch share it. Server-intent completion sends shaped messages to Fastify;
+provider/model routing is resolved server-side.
 
-## Chat Generation Vs Completion
+## Generation Surfaces
 
 `/api/v1/generate/chat` is server-assembled. The browser sends raw chat inputs;
 the server assembles the prompt, dispatches the provider, streams chat SSE
 frames, runs post-generation derivation, and persists the result.
 
-`/api/v1/generate/completion` is lower-level:
-
-- Browser sends already-shaped messages and sampling intent.
-- Browser does not send provider-wire credentials/options for server-intent
-  requests.
-- Server resolves provider/model/options/secrets from persisted settings.
-- A legacy direct-provider envelope remains for compatibility tests/tools.
+`/api/v1/generate/completion` is lower-level. The browser sends already-shaped
+messages and sampling intent, and the server resolves provider/model/options
+and secrets from persisted settings. A legacy direct-provider envelope remains
+for compatibility tests/tools.
 
 ## Server Assembly Gates
 
@@ -78,9 +75,9 @@ Supported multimodal/image/asset/inlay inputs route through server asset ids
 where possible. Prompt assembly resolves bytes from the server asset store when
 a provider needs inline media.
 
-## Adding Provider Settings
+## Adding Provider Behavior
 
-When adding provider behavior, update browser settings metadata, server
-settings-group mapping, `providerSecrets.ts` for secret fields,
-`providerCapability.ts` for routability changes, and server completion/chat
-generation tests for server-routable providers.
+Update browser model/settings metadata, `providerCapability.ts`,
+`server/fastify/src/prompt/chatDispatch.ts`, provider secrets/settings groups,
+generation adapters, and server chat/completion tests for server-routable
+providers.
