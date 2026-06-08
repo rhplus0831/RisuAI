@@ -296,6 +296,112 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
   })
 
+  it('repairs legacy lorebook key arrays and external aliases during imports', async () => {
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          characters: [
+            {
+              chaId: 'char-lore-array',
+              name: 'Lore Array',
+              globalLore: [
+                {
+                  id: 'char-entry-array',
+                  keys: ['gamma', 'delta'],
+                  secondary_keys: ['epsilon'],
+                  entry: 'character lore content',
+                  name: 'Character Entry',
+                  mode: 'normal',
+                  constant: false,
+                  selective: true,
+                  priority: 7,
+                },
+              ],
+              chats: [
+                {
+                  id: 'chat-lore-array',
+                  name: 'Chat Lore Array',
+                  note: '',
+                  localLore: [
+                    {
+                      id: 'chat-entry-array',
+                      key: ['chat'],
+                      secondkey: ['side'],
+                      content: 'chat lore content',
+                      comment: 'Chat Entry',
+                      mode: 'normal',
+                      alwaysActive: false,
+                      selective: true,
+                      order: 9,
+                    },
+                  ],
+                  message: [],
+                },
+              ],
+            },
+          ],
+          characterOrder: ['char-lore-array'],
+          modules: [
+            {
+              id: 'mod-lore-array',
+              name: 'Module Lore Array',
+              description: '',
+              lorebook: [
+                {
+                  id: 'module-entry-array',
+                  key: [],
+                  secondkey: [],
+                  content: 'module lore content',
+                  comment: 'Module Entry',
+                  mode: 'normal',
+                  alwaysActive: false,
+                  selective: false,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    expect(imported.statusCode).toBe(200)
+
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const database = bootstrap.json().database
+    expect(database.characters[0].globalLore[0]).toMatchObject({
+      id: 'char-entry-array',
+      key: 'gamma, delta',
+      secondkey: 'epsilon',
+      insertorder: 7,
+      comment: 'Character Entry',
+      content: 'character lore content',
+      alwaysActive: false,
+      selective: true,
+    })
+    expect(database.characters[0].chats[0].localLore[0]).toMatchObject({
+      id: 'chat-entry-array',
+      key: 'chat',
+      secondkey: 'side',
+      insertorder: 9,
+      comment: 'Chat Entry',
+      content: 'chat lore content',
+      alwaysActive: false,
+      selective: true,
+    })
+    expect(database.modules[0].lorebook[0]).toMatchObject({
+      id: 'module-entry-array',
+      key: '',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Module Entry',
+      content: 'module lore content',
+      alwaysActive: false,
+      selective: false,
+    })
+  })
+
   it('L28: imports JSON bodies through the normalized throwaway object without repository structuredClone', async () => {
     const payload = {
       database: {

@@ -324,7 +324,13 @@ export function normalizeSelectedChatLorebooks(
   }
 }
 
-function lorebookEntryFromInput(input: unknown, label: string): LorebookEntryRecord {
+function lorebookEntryFromInput(
+  input: unknown,
+  label: string,
+  options: { repair?: boolean } = {},
+): LorebookEntryRecord {
+  const raw = readOptionalJsonObject(input)
+  const fields = options.repair ? repairLorebookEntryFields(raw) : raw
   return readJsonObject(
     {
       key: '',
@@ -335,7 +341,7 @@ function lorebookEntryFromInput(input: unknown, label: string): LorebookEntryRec
       mode: 'normal',
       alwaysActive: false,
       selective: false,
-      ...readOptionalJsonObject(input),
+      ...fields,
     },
     label,
   ) as LorebookEntryRecord
@@ -355,12 +361,59 @@ function validateLorebookEntry(input: unknown, label: string): LorebookEntryReco
 // for missing entry ids; only called from `repair*` callers and never from
 // command-path routes.
 function repairLorebookEntry(input: unknown, label: string): LorebookEntryRecord {
-  const entry = lorebookEntryFromInput(input, label)
+  const entry = lorebookEntryFromInput(input, label, { repair: true })
   if (typeof entry.id !== 'string' || entry.id.trim() === '') {
     entry.id = randomUUID()
   }
   validateLorebookEntryRecord(entry, label)
   return entry
+}
+
+function repairLorebookEntryFields(raw: JsonRecord): JsonRecord {
+  const repaired: JsonRecord = { ...raw }
+  repaired.key = readLorebookKeyString(raw.key ?? raw.keys ?? raw.keywords)
+  repaired.secondkey = readLorebookKeyString(raw.secondkey ?? raw.secondary_keys)
+  repaired.insertorder =
+    readFiniteNumber(raw.insertorder) ??
+    readFiniteNumber(raw.order) ??
+    readFiniteNumber(raw.priority) ??
+    readFiniteNumber(readOptionalJsonObject(raw.contextConfig).budgetPriority) ??
+    100
+  repaired.comment = readStringLike(raw.comment ?? raw.name ?? raw.displayName) ?? ''
+  repaired.content = readStringLike(raw.content ?? raw.entry ?? raw.text) ?? ''
+  repaired.mode = readStringLike(raw.mode) ?? 'normal'
+  repaired.alwaysActive =
+    readBoolean(raw.alwaysActive ?? raw.constant ?? raw.forceActivation) ?? false
+  repaired.selective = readBoolean(raw.selective) ?? false
+  if (repaired.folder !== undefined && typeof repaired.folder !== 'string') {
+    delete repaired.folder
+  }
+  return repaired
+}
+
+function readLorebookKeyString(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value
+      .map(readStringLike)
+      .filter((item): item is string => item !== undefined)
+      .join(', ')
+  }
+  return readStringLike(value) ?? ''
+}
+
+function readStringLike(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  if (typeof value === 'boolean') return String(value)
+  return undefined
+}
+
+function readFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined
 }
 
 function validateGlobalLorebookRecord(record: GlobalLorebookRecord, label: string): void {

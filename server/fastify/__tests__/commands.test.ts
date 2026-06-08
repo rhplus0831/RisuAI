@@ -6411,6 +6411,15 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(malformedTarget.statusCode).toBe(400)
     expect(malformedTarget.json().error).toBe('entries[0].key must be a string')
 
+    const arrayKeyTarget = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/lorebooks/book-a/entries',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 2, entries: [{ ...invalidEntry, key: [] }] },
+    })
+    expect(arrayKeyTarget.statusCode).toBe(400)
+    expect(arrayKeyTarget.json().error).toBe('entries[0].key must be a string')
+
     expect(readJsonRow('characters', 'char-a').globalLore).toEqual([invalidEntry])
     expect(readJsonRow('chats', 'chat-a').localLore).toEqual([invalidEntry])
     expect(readJsonRow('modules', 'mod-a').lorebook).toEqual([invalidEntry])
