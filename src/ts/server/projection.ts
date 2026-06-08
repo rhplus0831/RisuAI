@@ -158,7 +158,11 @@ export async function fetchServerProjectionResource(
     if (typeof record.characterId !== 'string' || record.characterId.trim() === '') {
       return { status: 'error', error: 'Invalid character-row response' }
     }
-    if (!record.character || typeof record.character !== 'object' || Array.isArray(record.character)) {
+    if (
+      !record.character ||
+      typeof record.character !== 'object' ||
+      Array.isArray(record.character)
+    ) {
       return { status: 'error', error: 'Invalid character-row response' }
     }
     return {
@@ -198,6 +202,8 @@ export type ServerChatMessagesResult =
       chatId: string
       message: unknown[]
       hypaV3Data?: unknown
+      messageStart?: number
+      messageTotal?: number
       // Persisted reroll candidates for this chat's turn (the alternate rows).
       // Always present (empty array when none); the client seeds its swipe buffer
       // from these so rerolls survive a reload.
@@ -227,11 +233,23 @@ export type ServerBulkChatMessagesResult =
  */
 export async function fetchServerChatMessages(
   chatId: string,
-  options: { signal?: AbortSignal | null } = {},
+  options: { signal?: AbortSignal | null; start?: number; limit?: number; tail?: number } = {},
 ): Promise<ServerChatMessagesResult> {
   if (!canUseServerProjection()) return { status: 'unavailable' }
 
-  const url = `${PROJECTION_ENDPOINT}/chatMessages?id=${encodeURIComponent(chatId)}`
+  const query = new URLSearchParams({ id: chatId })
+  if (Number.isInteger(options.tail) && (options.tail as number) > 0) {
+    query.set('tail', String(options.tail))
+  } else if (
+    Number.isInteger(options.start) &&
+    (options.start as number) >= 0 &&
+    Number.isInteger(options.limit) &&
+    (options.limit as number) > 0
+  ) {
+    query.set('start', String(options.start))
+    query.set('limit', String(options.limit))
+  }
+  const url = `${PROJECTION_ENDPOINT}/chatMessages?${query.toString()}`
   const auth = await getNodeServerProxyAuth()
   let response: Response
   try {
@@ -267,12 +285,28 @@ export async function fetchServerChatMessages(
   if (record.mode !== 'chat-messages' || !Array.isArray(record.message)) {
     return { status: 'error', error: 'Invalid chat-messages response' }
   }
+  if (
+    (record.messageStart !== undefined || record.messageTotal !== undefined) &&
+    (!Number.isInteger(record.messageStart) ||
+      (record.messageStart as number) < 0 ||
+      !Number.isInteger(record.messageTotal) ||
+      (record.messageTotal as number) < 0 ||
+      (record.messageStart as number) > (record.messageTotal as number))
+  ) {
+    return { status: 'error', error: 'Invalid chat-messages range' }
+  }
   return {
     status: 'ok',
     revision: revision as number,
     chatId: typeof record.chatId === 'string' ? record.chatId : chatId,
     message: record.message as unknown[],
     hypaV3Data: record.hypaV3Data,
+    ...(typeof record.messageStart === 'number' && typeof record.messageTotal === 'number'
+      ? {
+          messageStart: record.messageStart,
+          messageTotal: record.messageTotal,
+        }
+      : {}),
     alternates: Array.isArray(record.alternates) ? (record.alternates as unknown[]) : [],
   }
 }

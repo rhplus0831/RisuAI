@@ -8,6 +8,7 @@ import {
   loadCharacterLorebookHydration,
   loadCharacterLorebookHydrations,
   loadChatHydration,
+  loadChatHydrationRange,
   loadChatHydrations,
   loadPersistedDatabaseFields,
   loadSingleCharacterStubRow,
@@ -259,24 +260,39 @@ export function registerProjectionRoutes(
     },
   )
 
-  app.get<{ Params: { resource: string }; Querystring: { id?: string; parentId?: string } }>(
-    '/api/v1/projection/:resource',
-    { exposeHeadRoute: false },
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
-      const { resource } = req.params
-      const { revision } = getSchemaState(db)
+  app.get<{
+    Params: { resource: string }
+    Querystring: {
+      id?: string
+      parentId?: string
+      start?: string
+      limit?: string
+      tail?: string
+    }
+  }>('/api/v1/projection/:resource', { exposeHeadRoute: false }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    const { resource } = req.params
+    const { revision } = getSchemaState(db)
 
-      // Per-chat message hydration fills the stubbed `message[]` on chat-open.
-      // Distinct from the event-driven `chat` resource, which projects metadata.
-      if (resource === 'chatMessages') {
-        const chatId = req.query.id
-        if (typeof chatId !== 'string' || chatId.trim() === '') {
-          const response = { revision, resource, mode: 'full' as const }
-          emitProjectionMetric(req.log, resource, revision, response)
-          return response
-        }
-        const hydration = loadChatHydration(db, dataDir, chatId)
+    // Per-chat message hydration fills the stubbed `message[]` on chat-open.
+    // Distinct from the event-driven `chat` resource, which projects metadata.
+    if (resource === 'chatMessages') {
+      const chatId = req.query.id
+      if (typeof chatId !== 'string' || chatId.trim() === '') {
+        const response = { revision, resource, mode: 'full' as const }
+        emitProjectionMetric(req.log, resource, revision, response)
+        return response
+      }
+      const range = readChatMessageRange(req.query)
+      if (range === 'invalid') {
+        reply.code(400).send({
+          error: 'invalid_chat_message_range',
+          reason: 'Expected tail, or start and limit, to be positive integers.',
+        })
+        return
+      }
+      if (range) {
+        const hydration = loadChatHydrationRange(db, dataDir, chatId, range)
         const response = {
           revision,
           resource,
@@ -284,158 +300,180 @@ export function registerProjectionRoutes(
           chatId,
           message: hydration.message,
           hypaV3Data: hydration.hypaV3Data,
+          messageStart: hydration.messageStart,
+          messageTotal: hydration.messageTotal,
           // Preserved reroll candidates. Present, possibly empty; the current
           // client ignores it.
+          alternates: hydration.alternates,
+        }
+        emitProjectionMetric(req.log, resource, revision, response, {
+          id: chatId,
+          messageStart: hydration.messageStart,
+          messageTotal: hydration.messageTotal,
+          returnedCount: hydration.message.length,
+        })
+        return response
+      }
+
+      const hydration = loadChatHydration(db, dataDir, chatId)
+      const response = {
+        revision,
+        resource,
+        mode: 'chat-messages' as const,
+        chatId,
+        message: hydration.message,
+        hypaV3Data: hydration.hypaV3Data,
+        // Preserved reroll candidates. Present, possibly empty; the current
+        // client ignores it.
+        alternates: hydration.alternates,
+      }
+      emitProjectionMetric(req.log, resource, revision, response, { id: chatId })
+      return response
+    }
+
+    // Per-character `globalLore` hydration fills the stubbed globalLore on
+    // character-open when `enableLorebookStubs` is on.
+    if (resource === 'characterLorebook') {
+      const characterId = req.query.id
+      if (typeof characterId !== 'string' || characterId.trim() === '') {
+        const response = { revision, resource, mode: 'full' as const }
+        emitProjectionMetric(req.log, resource, revision, response)
+        return response
+      }
+      const hydration = loadCharacterLorebookHydration(db, dataDir, characterId)
+      const response = {
+        revision,
+        resource,
+        mode: 'character-lorebook' as const,
+        characterId,
+        globalLore: hydration.globalLore,
+      }
+      emitProjectionMetric(req.log, resource, revision, response, { id: characterId })
+      return response
+    }
+
+    // Character selection only changes the active character pointer and that
+    // character's `lastInteraction`. Do not ship the whole `characters` array.
+    if (resource === 'characterSelection') {
+      const characterId = req.query.id
+      if (typeof characterId !== 'string' || characterId.trim() === '') {
+        const response = { revision, resource, mode: 'full' as const }
+        emitProjectionMetric(req.log, resource, revision, response)
+        return response
+      }
+
+      const selection = loadCharacterSelectionProjection(db, characterId)
+      if (!selection) {
+        reply.code(404).send({
+          error: 'character_not_found',
+          reason: `Character not found: ${characterId}`,
+        })
+        return
+      }
+
+      const response = {
+        revision,
+        resource,
+        mode: 'character-selection' as const,
+        ...selection,
+      }
+      emitProjectionMetric(req.log, resource, revision, response, { id: characterId })
+      return response
+    }
+
+    // Per-character row: character field edits, module-link reorders, and chat
+    // / chat-folder metadata edits each write a single character row. A foreign
+    // refresh ships just that character (message-free, masked) instead of the
+    // whole `characters` array. The character id is `parentId` for chat/folder
+    // events (which key by chatId/folderId) and `id` for character events.
+    if (resource === 'characterRow') {
+      const characterId =
+        typeof req.query.parentId === 'string' && req.query.parentId.trim() !== ''
+          ? req.query.parentId
+          : req.query.id
+      if (typeof characterId !== 'string' || characterId.trim() === '') {
+        const response = { revision, resource, mode: 'full' as const }
+        emitProjectionMetric(req.log, resource, revision, response)
+        return response
+      }
+      const character = loadSingleCharacterRow(db, dataDir, characterId)
+      if (!character) {
+        reply.code(404).send({
+          error: 'character_not_found',
+          reason: `Character not found: ${characterId}`,
+        })
+        return
+      }
+      const response = {
+        revision,
+        resource,
+        mode: 'character-row' as const,
+        characterId,
+        character,
+      }
+      emitProjectionMetric(req.log, resource, revision, response, { id: characterId })
+      return response
+    }
+
+    // Per-chat generation: `generation.persisted` is the one foreign-firing
+    // command (server-owned post-generation). It only changes one chat's
+    // messages, so ship that chat's message tail (keyed by the event's
+    // `parentId` = chatId) instead of re-stubbing every character. Without a
+    // chat id (e.g. a recovery fetch) it falls through to the broad fields path.
+    if (resource === 'generation') {
+      const chatId = req.query.parentId
+      if (typeof chatId === 'string' && chatId.trim() !== '') {
+        const hydration = loadChatHydration(db, dataDir, chatId)
+        const response = {
+          revision,
+          resource,
+          mode: 'generation-chat' as const,
+          chatId,
+          message: hydration.message,
+          hypaV3Data: hydration.hypaV3Data,
           alternates: hydration.alternates,
         }
         emitProjectionMetric(req.log, resource, revision, response, { id: chatId })
         return response
       }
+    }
 
-      // Per-character `globalLore` hydration fills the stubbed globalLore on
-      // character-open when `enableLorebookStubs` is on.
-      if (resource === 'characterLorebook') {
-        const characterId = req.query.id
-        if (typeof characterId !== 'string' || characterId.trim() === '') {
-          const response = { revision, resource, mode: 'full' as const }
-          emitProjectionMetric(req.log, resource, revision, response)
-          return response
-        }
-        const hydration = loadCharacterLorebookHydration(db, dataDir, characterId)
-        const response = {
-          revision,
-          resource,
-          mode: 'character-lorebook' as const,
-          characterId,
-          globalLore: hydration.globalLore,
-        }
-        emitProjectionMetric(req.log, resource, revision, response, { id: characterId })
-        return response
-      }
+    const fieldKeys = resourceProjectionFields(resource)
 
-      // Character selection only changes the active character pointer and that
-      // character's `lastInteraction`. Do not ship the whole `characters` array.
-      if (resource === 'characterSelection') {
-        const characterId = req.query.id
-        if (typeof characterId !== 'string' || characterId.trim() === '') {
-          const response = { revision, resource, mode: 'full' as const }
-          emitProjectionMetric(req.log, resource, revision, response)
-          return response
-        }
-
-        const selection = loadCharacterSelectionProjection(db, characterId)
-        if (!selection) {
-          reply.code(404).send({
-            error: 'character_not_found',
-            reason: `Character not found: ${characterId}`,
-          })
-          return
-        }
-
-        const response = {
-          revision,
-          resource,
-          mode: 'character-selection' as const,
-          ...selection,
-        }
-        emitProjectionMetric(req.log, resource, revision, response, { id: characterId })
-        return response
-      }
-
-      // Per-character row: character field edits, module-link reorders, and chat
-      // / chat-folder metadata edits each write a single character row. A foreign
-      // refresh ships just that character (message-free, masked) instead of the
-      // whole `characters` array. The character id is `parentId` for chat/folder
-      // events (which key by chatId/folderId) and `id` for character events.
-      if (resource === 'characterRow') {
-        const characterId =
-          typeof req.query.parentId === 'string' && req.query.parentId.trim() !== ''
-            ? req.query.parentId
-            : req.query.id
-        if (typeof characterId !== 'string' || characterId.trim() === '') {
-          const response = { revision, resource, mode: 'full' as const }
-          emitProjectionMetric(req.log, resource, revision, response)
-          return response
-        }
-        const character = loadSingleCharacterRow(db, dataDir, characterId)
-        if (!character) {
-          reply.code(404).send({
-            error: 'character_not_found',
-            reason: `Character not found: ${characterId}`,
-          })
-          return
-        }
-        const response = {
-          revision,
-          resource,
-          mode: 'character-row' as const,
-          characterId,
-          character,
-        }
-        emitProjectionMetric(req.log, resource, revision, response, { id: characterId })
-        return response
-      }
-
-      // Per-chat generation: `generation.persisted` is the one foreign-firing
-      // command (server-owned post-generation). It only changes one chat's
-      // messages, so ship that chat's message tail (keyed by the event's
-      // `parentId` = chatId) instead of re-stubbing every character. Without a
-      // chat id (e.g. a recovery fetch) it falls through to the broad fields path.
-      if (resource === 'generation') {
-        const chatId = req.query.parentId
-        if (typeof chatId === 'string' && chatId.trim() !== '') {
-          const hydration = loadChatHydration(db, dataDir, chatId)
-          const response = {
-            revision,
-            resource,
-            mode: 'generation-chat' as const,
-            chatId,
-            message: hydration.message,
-            hypaV3Data: hydration.hypaV3Data,
-            alternates: hydration.alternates,
-          }
-          emitProjectionMetric(req.log, resource, revision, response, { id: chatId })
-          return response
-        }
-      }
-
-      const fieldKeys = resourceProjectionFields(resource)
-
-      if (fieldKeys === null) {
-        // Unknown or sprawling resource: tell the client to full-bootstrap. The
-        // opt-in metric records whether this is an expected sprawling resource
-        // (`settings`, `state`, `pluginStorage`) or an unknown one so the cost
-        // of these fallbacks can be attributed per resource.
-        const response = { revision, resource, mode: 'full' as const }
-        emitProjectionMetric(req.log, resource, revision, response, {
-          fallbackClass: fullBootstrapFallbackClass(resource),
-        })
-        return response
-      }
-
-      if (fieldKeys.length === 0) {
-        const response = { revision, resource, mode: 'fields' as const, fields: {} }
-        emitProjectionMetric(req.log, resource, revision, response, {
-          fieldCount: 0,
-          fieldKeys,
-        })
-        return response
-      }
-
-      const fields = NARROW_FIELD_PROJECTION_RESOURCES.has(resource)
-        ? maskProviderSecrets(loadPersistedDatabaseFields(db, dataDir, fieldKeys))
-        : NARROW_STUBBED_PROJECTION_RESOURCES.has(resource)
-          ? maskProviderSecrets(loadStubbedProjectionFields(db, dataDir, fieldKeys))
-          : loadStubProjectionFields(db, dataDir, fieldKeys)
-
-      const response = { revision, resource, mode: 'fields' as const, fields }
+    if (fieldKeys === null) {
+      // Unknown or sprawling resource: tell the client to full-bootstrap. The
+      // opt-in metric records whether this is an expected sprawling resource
+      // (`settings`, `state`, `pluginStorage`) or an unknown one so the cost
+      // of these fallbacks can be attributed per resource.
+      const response = { revision, resource, mode: 'full' as const }
       emitProjectionMetric(req.log, resource, revision, response, {
-        fieldCount: Object.keys(fields).length,
+        fallbackClass: fullBootstrapFallbackClass(resource),
+      })
+      return response
+    }
+
+    if (fieldKeys.length === 0) {
+      const response = { revision, resource, mode: 'fields' as const, fields: {} }
+      emitProjectionMetric(req.log, resource, revision, response, {
+        fieldCount: 0,
         fieldKeys,
       })
       return response
-    },
-  )
+    }
+
+    const fields = NARROW_FIELD_PROJECTION_RESOURCES.has(resource)
+      ? maskProviderSecrets(loadPersistedDatabaseFields(db, dataDir, fieldKeys))
+      : NARROW_STUBBED_PROJECTION_RESOURCES.has(resource)
+        ? maskProviderSecrets(loadStubbedProjectionFields(db, dataDir, fieldKeys))
+        : loadStubProjectionFields(db, dataDir, fieldKeys)
+
+    const response = { revision, resource, mode: 'fields' as const, fields }
+    emitProjectionMetric(req.log, resource, revision, response, {
+      fieldCount: Object.keys(fields).length,
+      fieldKeys,
+    })
+    return response
+  })
 }
 
 function invalidBulkChatIdsReply(reply: FastifyReply): void {
@@ -484,6 +522,42 @@ function readBulkIds(body: { ids?: unknown } | undefined): string[] | null {
     seen.add(id)
   }
   return ids
+}
+
+function readPositiveInteger(value: string | undefined): number | null {
+  if (value === undefined) return null
+  if (!/^\d+$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+function readNonNegativeInteger(value: string | undefined): number | null {
+  if (value === undefined) return null
+  if (!/^\d+$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
+function readChatMessageRange(query: {
+  start?: string
+  limit?: string
+  tail?: string
+}): { start?: number; limit?: number; tail?: number } | 'invalid' | null {
+  const hasTail = query.tail !== undefined
+  const hasStart = query.start !== undefined
+  const hasLimit = query.limit !== undefined
+  if (!hasTail && !hasStart && !hasLimit) return null
+  if (hasTail && (hasStart || hasLimit)) return 'invalid'
+
+  if (hasTail) {
+    const tail = readPositiveInteger(query.tail)
+    return tail === null ? 'invalid' : { tail }
+  }
+
+  const start = readNonNegativeInteger(query.start)
+  const limit = readPositiveInteger(query.limit)
+  if (start === null || limit === null) return 'invalid'
+  return { start, limit }
 }
 
 function loadStubProjectionFields(

@@ -19,6 +19,8 @@ const loadPageMocks = vi.hoisted(() => ({
   processMultiCommand: vi.fn(async () => false),
   sendChat: vi.fn(async () => true),
   sleep: vi.fn(async () => undefined),
+  hydrateActiveChatFully: vi.fn(async () => undefined),
+  hydrateActiveChatWindow: vi.fn(async () => undefined),
   toCanvas: vi.fn(),
 }))
 
@@ -153,6 +155,8 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
 }))
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
+  hydrateActiveChatFully: loadPageMocks.hydrateActiveChatFully,
+  hydrateActiveChatWindow: loadPageMocks.hydrateActiveChatWindow,
   isChatMessageHydrationPending: () => false,
 }))
 
@@ -236,6 +240,7 @@ function seedDatabase(messageCounts: number[]) {
     alwaysScrollToNewMessage: false,
     autoScrollToNewMessage: false,
     characters: messageCounts.map((count, index) => makeCharacter(index, count)),
+    chatDisplayTailCount: 30,
     enableRisuaiProTools: false,
     fixedChatTextarea: false,
     hypaV3: false,
@@ -317,13 +322,13 @@ beforeEach(() => {
     fillRect: vi.fn(),
     drawImage: vi.fn(),
   } as unknown as CanvasRenderingContext2D)
-  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(
-    'data:image/png;base64,AA==',
-  )
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AA==')
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   vi.clearAllMocks()
   loadPageMocks.toCanvas.mockReset()
   loadPageMocks.toCanvas.mockImplementation(async () => createCanvas())
+  loadPageMocks.hydrateActiveChatFully.mockClear()
+  loadPageMocks.hydrateActiveChatWindow.mockClear()
 })
 
 afterEach(() => {
@@ -343,6 +348,21 @@ afterEach(() => {
 })
 
 describe('DefaultChatScreen transcript window state', () => {
+  it('uses the configured display tail count for the initial chat window', async () => {
+    seedDatabase([80])
+    DBState.db.chatDisplayTailCount = 12
+
+    mountScreen()
+
+    await waitFor(() => {
+      const indexes = messageRowIndexes()
+      expect(indexes).toHaveLength(12)
+      expect(indexes).toContain(79)
+      expect(indexes).toContain(68)
+      expect(indexes).not.toContain(67)
+    })
+  })
+
   it('expands the current chat window enough for a deep jump target', async () => {
     seedDatabase([120])
     mountScreen()

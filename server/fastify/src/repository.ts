@@ -21,10 +21,12 @@ import {
   getChatHypaV3,
   getChatHypaV3GroupedByIds,
   getChatMessages,
+  getChatMessagesRange,
   getChatMessagesGroupedByIds,
   replaceAllChatHypaV3,
   replaceAllChatMessages,
   setChatHypaV3,
+  countChatMessages,
 } from './messageStore.js'
 
 export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
@@ -1506,6 +1508,78 @@ export function loadChatHydration(
     if (hypaV3Data === undefined && chat.hypaV3Data !== undefined) hypaV3Data = chat.hypaV3Data
   })
   return { message, hypaV3Data, alternates }
+}
+
+export interface ChatHydrationRangeInput {
+  start?: number
+  limit?: number
+  tail?: number
+}
+
+export interface ChatHydrationRangePayload {
+  message: unknown[]
+  hypaV3Data: unknown
+  alternates: unknown[]
+  messageStart: number
+  messageTotal: number
+}
+
+function normalizedMessageRange(
+  total: number,
+  range: ChatHydrationRangeInput,
+): { start: number; limit: number } {
+  if (Number.isInteger(range.tail) && (range.tail as number) > 0) {
+    const limit = Math.min(range.tail as number, total)
+    return { start: Math.max(0, total - limit), limit }
+  }
+
+  const start =
+    Number.isInteger(range.start) && (range.start as number) > 0 ? (range.start as number) : 0
+  const limit =
+    Number.isInteger(range.limit) && (range.limit as number) > 0
+      ? Math.min(range.limit as number, Math.max(0, total - start))
+      : Math.max(0, total - start)
+  return { start: Math.min(start, total), limit }
+}
+
+/**
+ * One chat's hydration payload for a visible message window. The response
+ * includes the transcript's total length so the client can keep stable absolute
+ * message indexes while filling only loaded rows.
+ */
+export function loadChatHydrationRange(
+  db: DatabaseSync,
+  dataDir: string,
+  chatId: string,
+  range: ChatHydrationRangeInput,
+): ChatHydrationRangePayload {
+  const alternates = getAlternateMessages(db, chatId) as unknown[]
+  const hypaV3Data = getChatHypaV3(db, chatId)
+  const rowCount = countChatMessages(db, chatId)
+
+  if (rowCount > 0) {
+    const { start, limit } = normalizedMessageRange(rowCount, range)
+    return {
+      message: getChatMessagesRange(db, chatId, start, limit) as unknown[],
+      hypaV3Data,
+      alternates,
+      messageStart: start,
+      messageTotal: rowCount,
+    }
+  }
+
+  // Defensive fallback for pre-extraction / embedded chat payloads. This path is
+  // not expected during normal Fastify runtime, but preserves the old route's
+  // behavior while still honoring the requested range.
+  const full = loadChatHydration(db, dataDir, chatId)
+  const { start, limit } = normalizedMessageRange(full.message.length, range)
+  return {
+    message: full.message.slice(start, start + limit),
+    hypaV3Data: full.hypaV3Data,
+    alternates,
+    messageStart: start,
+    messageTotal: full.message.length,
+  }
 }
 
 export function loadChatHydrations(

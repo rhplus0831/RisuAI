@@ -19,6 +19,7 @@ import {
   type MessageSnapshot,
   type ServerCommandResult,
 } from '../server/commands'
+import { isServerChatMessagePlaceholder } from '../server/chatMessagePlaceholders'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { getModuleToggles } from './modules'
 
@@ -86,10 +87,7 @@ function locateSendSnapshotCharacter(snapshot: SendRollbackSnapshot): character 
   return characters[snapshot.characterIndex]
 }
 
-function locateSendSnapshotChatIndex(
-  character: character,
-  snapshot: SendRollbackSnapshot,
-): number {
+function locateSendSnapshotChatIndex(character: character, snapshot: SendRollbackSnapshot): number {
   if (snapshot.chatId) {
     return character.chats?.findIndex((candidate) => candidate.id === snapshot.chatId) ?? -1
   }
@@ -150,7 +148,9 @@ export function setupSendChatContext(args: {
       const characterId = nowChatroom.chaId
       const selectedChat = nowChatroom.chatPage
       const selectedChatRecord = nowChatroom.chats[selectedChat]
-      const needsMessageIdBackfill = selectedChatRecord.message.some((v) => v.chatId == null)
+      const hasUnloadedMessages = selectedChatRecord.message.some(isServerChatMessagePlaceholder)
+      const needsMessageIdBackfill =
+        !hasUnloadedMessages && selectedChatRecord.message.some((v) => v.chatId == null)
 
       if (characterId || needsMessageIdBackfill) {
         rollbackSnapshot = currentSendRollbackSnapshot({

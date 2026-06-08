@@ -2,6 +2,7 @@ import { defaultAutoSuggestPrompt } from '../../../src/ts/storage/defaultPrompts
 import { prebuiltNAIpresets, prebuiltPresets } from '../../../src/ts/process/templates/templates.js'
 import { defaultHotkeys } from '../../../src/ts/defaulthotkeys.js'
 import { LLMFormat } from '../../../src/ts/model/types.js'
+import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT } from '../../../src/ts/chatDisplayTailCount.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -198,6 +199,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'currentPluginProvider', '')
   setDefault(database, 'plugins', [])
   setDefault(database, 'zoomsize', 100)
+  setDefault(database, 'chatDisplayTailCount', DEFAULT_CHAT_DISPLAY_TAIL_COUNT)
   setDefault(database, 'customBackground', '')
   if (providerDefaults) {
     setDefault(database, 'textgenWebUIStreamURL', 'wss://localhost/api/')

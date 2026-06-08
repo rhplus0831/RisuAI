@@ -4,6 +4,8 @@ import { DBState, selectedCharID } from '../stores.svelte'
 import {
   hydrateServerCharacterLorebook,
   hydrateServerChatMessages,
+  isServerChatMessagePlaceholder,
+  type Message,
 } from '../storage/database.svelte'
 import { seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
 import { markCharacterLorebookHydrated } from './lorebookBridge.svelte'
@@ -20,8 +22,13 @@ import {
   recordBulkHydration,
   recordHydrationStaleDrop,
 } from './protocolDiagnostics'
+import {
+  DEFAULT_CHAT_DISPLAY_TAIL_COUNT,
+  normalizeChatDisplayTailCount,
+} from '../chatDisplayTailCount'
 
 export const BULK_HYDRATION_CONCURRENCY = 4
+export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_DISPLAY_TAIL_COUNT
 
 // The bootstrap ships chat *stubs* (empty message[]). This bridge hydrates a
 // chat's messages when it is opened and re-hydrates the open chat after a
@@ -56,19 +63,82 @@ function activeChatId(): string | undefined {
   return chat?.id
 }
 
-async function hydrateChat(chatId: string, force: boolean): Promise<void> {
+function activeChatMessageArray(): Message[] | undefined {
+  const selId = get(selectedCharID)
+  if (selId < 0) return undefined
+  const character = DBState.db?.characters?.[selId]
+  if (!character) return undefined
+  const chat = character.chats?.[character.chatPage ?? 0]
+  return chat?.message
+}
+
+type ChatHydrationRangeRequest =
+  | { tail: number; start?: never; limit?: never }
+  | { start: number; limit: number; tail?: never }
+
+interface ChatHydrationRequest {
+  force?: boolean
+  range?: ChatHydrationRangeRequest
+  seedReroll?: boolean
+}
+
+function chatHydrationRequestKey(chatId: string, request: ChatHydrationRequest): string {
+  if (!request.range) return `full:${chatId}`
+  if (request.range.tail !== undefined) return `tail:${chatId}:${request.range.tail}`
+  return `range:${chatId}:${request.range.start}:${request.range.limit}`
+}
+
+function isFullRange(start: number, total: number, returnedCount: number): boolean {
+  return start === 0 && returnedCount >= total
+}
+
+function requestedTailSize(loadPages: number): number {
+  if (!Number.isFinite(loadPages)) return Number.MAX_SAFE_INTEGER
+  return Math.max(1, Math.ceil(loadPages))
+}
+
+function unloadedRangesForTail(
+  messages: readonly Message[],
+  loadPages: number,
+): Array<{ start: number; limit: number }> {
+  if (messages.length === 0) return []
+  const tailSize = requestedTailSize(loadPages)
+  const start = Math.max(0, messages.length - tailSize)
+  const end = messages.length - 1
+  const ranges: Array<{ start: number; limit: number }> = []
+  let rangeStart = -1
+
+  for (let index = start; index <= end; index += 1) {
+    if (isServerChatMessagePlaceholder(messages[index])) {
+      if (rangeStart === -1) rangeStart = index
+    } else if (rangeStart !== -1) {
+      ranges.push({ start: rangeStart, limit: index - rangeStart })
+      rangeStart = -1
+    }
+  }
+
+  if (rangeStart !== -1) {
+    ranges.push({ start: rangeStart, limit: end - rangeStart + 1 })
+  }
+  return ranges
+}
+
+async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): Promise<void> {
   if (!canUseServerProjection()) return
+  const force = request.force ?? false
+  const wantsFullHydration = !request.range
   if (!force && hydratedChatIds.has(chatId)) return
-  const currentRequest = inFlight.get(chatId)
+  const requestKey = chatHydrationRequestKey(chatId, request)
+  const currentRequest = inFlight.get(requestKey)
   if (currentRequest) return currentRequest
 
   const generation = chatHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
-  let request: Promise<void>
-  request = (async () => {
+  let requestPromise: Promise<void>
+  requestPromise = (async () => {
     try {
       const endRequest = beginHydrationRequest('chat')
-      const result = await fetchServerChatMessages(chatId).finally(endRequest)
+      const result = await fetchServerChatMessages(chatId, request.range ?? {}).finally(endRequest)
       if (result.status !== 'ok' || result.chatId !== chatId) {
         return
       }
@@ -80,26 +150,39 @@ async function hydrateChat(chatId: string, force: boolean): Promise<void> {
         recordHydrationStaleDrop('chat', 'older-than-applied-revision')
         return
       }
+      if (request.range && !force && hydratedChatIds.has(chatId)) {
+        return
+      }
 
-      const applied = hydrateServerChatMessages(chatId, result.message, result.hypaV3Data)
+      const range =
+        typeof result.messageStart === 'number' && typeof result.messageTotal === 'number'
+          ? { start: result.messageStart, total: result.messageTotal }
+          : undefined
+      const applied = hydrateServerChatMessages(chatId, result.message, result.hypaV3Data, range)
       if (!applied) return
-      hydratedChatIds.add(chatId)
+      if (
+        wantsFullHydration ||
+        !range ||
+        isFullRange(range.start, range.total, result.message.length)
+      ) {
+        hydratedChatIds.add(chatId)
+      }
       // Only the open chat's tail drives the swipe buffer; seed it from this
       // chat's persisted reroll candidates so rerolls survive a reload.
-      if (activeChatId() === chatId) {
+      if (request.seedReroll !== false && activeChatId() === chatId) {
         seedRerollBufferFromAlternates(result.message, result.alternates)
       }
     } finally {
       // Mark the attempt as settled (even on failure / stale-drop) so the
       // loading state can clear and fall back to the greeting render.
       attemptedChatIds.add(chatId)
-      if (inFlight.get(chatId) === request) {
-        inFlight.delete(chatId)
+      if (inFlight.get(requestKey) === requestPromise) {
+        inFlight.delete(requestKey)
       }
     }
   })()
-  inFlight.set(chatId, request)
-  return request
+  inFlight.set(requestKey, requestPromise)
+  return requestPromise
 }
 
 async function hydrateChatsBulk(chatIds: readonly string[]): Promise<void> {
@@ -134,14 +217,61 @@ async function hydrateChatsBulk(chatIds: readonly string[]): Promise<void> {
 }
 
 /** Hydrate the currently-open chat's messages (no-op if already hydrated). */
-export async function hydrateActiveChat(options: { force?: boolean } = {}): Promise<void> {
+export async function hydrateActiveChat(
+  options: { force?: boolean; loadPages?: number } = {},
+): Promise<void> {
+  await hydrateActiveChatWindow(
+    options.loadPages ?? normalizeChatDisplayTailCount(DBState.db?.chatDisplayTailCount),
+    {
+      force: options.force,
+    },
+  )
+}
+
+/**
+ * Ensure the current visible tail window is resident. This is the fast active
+ * chat path: first open fetches only the tail; later scroll/jump expansion fills
+ * just the newly visible unloaded ranges.
+ */
+export async function hydrateActiveChatWindow(
+  loadPages: number,
+  options: { force?: boolean } = {},
+): Promise<void> {
   const chatId = activeChatId()
-  if (chatId) await hydrateChat(chatId, options.force ?? false)
+  if (!chatId) return
+  if (!Number.isFinite(loadPages)) {
+    await hydrateChat(chatId, { force: options.force, seedReroll: true })
+    return
+  }
+
+  const messages = activeChatMessageArray()
+  if (!messages || messages.length === 0 || options.force) {
+    await hydrateChat(chatId, {
+      force: options.force,
+      range: { tail: requestedTailSize(loadPages) },
+      seedReroll: true,
+    })
+    return
+  }
+
+  const ranges = unloadedRangesForTail(messages, loadPages)
+  for (const range of ranges) {
+    await hydrateChat(chatId, {
+      range,
+      seedReroll: range.start + range.limit >= messages.length,
+    })
+  }
+}
+
+/** Hydrate the currently-open chat's complete transcript. */
+export async function hydrateActiveChatFully(options: { force?: boolean } = {}): Promise<void> {
+  const chatId = activeChatId()
+  if (chatId) await hydrateChat(chatId, { force: options.force, seedReroll: true })
 }
 
 /** Hydrate a specific chat's messages by id (for single-chat bulk reads). */
 export async function hydrateChatMessages(chatId: string): Promise<void> {
-  if (chatId) await hydrateChat(chatId, false)
+  if (chatId) await hydrateChat(chatId, { seedReroll: activeChatId() === chatId })
 }
 
 /**
@@ -349,7 +479,7 @@ export async function ensureAllChatsHydrated(): Promise<void> {
       if (typeof chat.id !== 'string' || !chat.id || hydratedChatIds.has(chat.id)) {
         continue
       }
-      const pending = inFlight.get(chat.id)
+      const pending = inFlight.get(chatHydrationRequestKey(chat.id, {}))
       if (pending) {
         pendingRequests.push(pending)
         continue

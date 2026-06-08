@@ -2,6 +2,7 @@
   interface Props {
     min?: number
     max?: number
+    step?: number
     size?: 'sm' | 'md' | 'lg'
     value: number
     id?: string
@@ -22,6 +23,7 @@
   let {
     min = undefined,
     max = undefined,
+    step = undefined,
     size = 'sm',
     value = $bindable(),
     id = undefined,
@@ -56,6 +58,7 @@
   type="number"
   {min}
   {max}
+  {step}
   {id}
   {disabled}
   bind:value

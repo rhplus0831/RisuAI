@@ -19,6 +19,7 @@ import {
   getAlternateMessages,
   getChatHypaV3,
   getChatMessages,
+  getChatMessagesRange,
   getChatMessageDiffInstrumentation,
   replaceChatMessages,
   resetChatMessageDiffInstrumentation,
@@ -74,6 +75,8 @@ describe('messageStore CRUD', () => {
     replaceChatMessages(db, 'chat-1', messages)
 
     expect(getChatMessages(db, 'chat-1')).toEqual(messages)
+    expect(getChatMessagesRange(db, 'chat-1', 1, 1)).toEqual([messages[1]])
+    expect(getChatMessagesRange(db, 'chat-1', 1, 10)).toEqual([messages[1], messages[2]])
     expect(countChatMessages(db, 'chat-1')).toBe(3)
     expect(getAllChatIdsWithMessages(db)).toEqual(['chat-1'])
   })

@@ -18,12 +18,16 @@ vi.mock('./projection', () => ({
 
 import { DBState, selectedCharID } from '../stores.svelte'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from './commands'
+import { isServerChatMessagePlaceholder, type Message } from '../storage/database.svelte'
 import {
   BULK_HYDRATION_CONCURRENCY,
+  ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW,
   ensureAllCharacterLorebooksHydrated,
   ensureAllChatsHydrated,
   hydrateActiveCharacterLorebook,
   hydrateActiveChat,
+  hydrateActiveChatWindow,
+  hydrateActiveChatFully,
   hydrateChatMessages,
   isChatMessageHydrationPending,
   resetChatHydration,
@@ -33,6 +37,23 @@ import { getProtocolDiagnosticsSnapshot } from './protocolDiagnostics'
 
 function okResult(chatId: string, message: Array<Record<string, unknown>>) {
   return { status: 'ok' as const, revision: 1, chatId, message, alternates: [] }
+}
+
+function okWindowResult(
+  chatId: string,
+  message: Array<Record<string, unknown>>,
+  messageStart: number,
+  messageTotal: number,
+) {
+  return {
+    status: 'ok' as const,
+    revision: 1,
+    chatId,
+    message,
+    messageStart,
+    messageTotal,
+    alternates: [],
+  }
 }
 
 function okBulkResult(chatIds: string[]) {
@@ -141,7 +162,9 @@ describe('chat message hydration bridge', () => {
     await hydrateActiveChat()
 
     expect(projectionState.fetchChat).toHaveBeenCalledTimes(1)
-    expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-1')
+    expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-1', {
+      tail: ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW,
+    })
     expect(db().characters[0].chats[0].message).toEqual([
       { role: 'user', data: 'hi', chatId: 'm1' },
     ])
@@ -151,6 +174,17 @@ describe('chat message hydration bridge', () => {
     // Second call is deduped (no refetch).
     await hydrateActiveChat()
     expect(projectionState.fetchChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the configured active chat tail window size', async () => {
+    ;(DBState.db as { chatDisplayTailCount?: number }).chatDisplayTailCount = 12
+    projectionState.fetchChat.mockResolvedValue(
+      okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]),
+    )
+
+    await hydrateActiveChat()
+
+    expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-1', { tail: 12 })
   })
 
   it('force re-hydrates even when already cached', async () => {
@@ -166,6 +200,63 @@ describe('chat message hydration bridge', () => {
     expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'b', chatId: 'm1' }])
   })
 
+  it('hydrates only the active chat tail window and keeps absolute indexes stable', async () => {
+    projectionState.fetchChat.mockResolvedValue(
+      okWindowResult(
+        'chat-1',
+        [
+          { role: 'user', data: 'tail-2', chatId: 'm3' },
+          { role: 'char', data: 'tail-1', chatId: 'm4' },
+        ],
+        2,
+        4,
+      ),
+    )
+
+    await hydrateActiveChat({ loadPages: 2 })
+
+    const messages = db().characters[0].chats[0].message as Message[]
+    expect(messages).toHaveLength(4)
+    expect(isServerChatMessagePlaceholder(messages[0])).toBe(true)
+    expect(isServerChatMessagePlaceholder(messages[1])).toBe(true)
+    expect(messages[2]).toEqual({ role: 'user', data: 'tail-2', chatId: 'm3' })
+    expect(messages[3]).toEqual({ role: 'char', data: 'tail-1', chatId: 'm4' })
+    expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-1', { tail: 2 })
+  })
+
+  it('fetches only newly visible unloaded ranges when the active window expands', async () => {
+    projectionState.fetchChat.mockResolvedValueOnce(
+      okWindowResult('chat-1', [{ role: 'char', data: 'tail', chatId: 'm4' }], 3, 4),
+    )
+    await hydrateActiveChat({ loadPages: 1 })
+    projectionState.fetchChat.mockResolvedValueOnce(
+      okWindowResult(
+        'chat-1',
+        [
+          { role: 'user', data: 'older-1', chatId: 'm1' },
+          { role: 'char', data: 'older-2', chatId: 'm2' },
+          { role: 'user', data: 'older-3', chatId: 'm3' },
+        ],
+        0,
+        4,
+      ),
+    )
+
+    await hydrateActiveChatWindow(4)
+
+    expect(projectionState.fetchChat).toHaveBeenNthCalledWith(1, 'chat-1', { tail: 1 })
+    expect(projectionState.fetchChat).toHaveBeenNthCalledWith(2, 'chat-1', {
+      start: 0,
+      limit: 3,
+    })
+    expect(db().characters[0].chats[0].message.map((message) => message.data)).toEqual([
+      'older-1',
+      'older-2',
+      'older-3',
+      'tail',
+    ])
+  })
+
   it('ensureAllChatsHydrated fills every chat', async () => {
     await ensureAllChatsHydrated()
 
@@ -177,6 +268,21 @@ describe('chat message hydration bridge', () => {
     ])
     expect(db().characters[0].chats[1].message).toEqual([
       { role: 'user', data: 'chat-2', chatId: 'm-chat-2' },
+    ])
+  })
+
+  it('ensureAllChatsHydrated includes chats that only have a partial active window', async () => {
+    projectionState.fetchChat.mockResolvedValueOnce(
+      okWindowResult('chat-1', [{ role: 'char', data: 'tail', chatId: 'm2' }], 1, 2),
+    )
+    await hydrateActiveChat({ loadPages: 1 })
+    projectionState.fetchBulkChat.mockClear()
+
+    await ensureAllChatsHydrated()
+
+    expect(projectionState.fetchBulkChat).toHaveBeenCalledWith(['chat-1', 'chat-2'])
+    expect(db().characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'chat-1', chatId: 'm-chat-1' },
     ])
   })
 
@@ -236,8 +342,32 @@ describe('chat message hydration bridge', () => {
       okResult('chat-2', [{ role: 'char', data: 'yo', chatId: 'm2' }]),
     )
     await hydrateChatMessages('chat-2')
+    expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-2', {})
     expect(db().characters[0].chats[1].message).toEqual([
       { role: 'char', data: 'yo', chatId: 'm2' },
+    ])
+  })
+
+  it('full active hydration replaces a partial window and marks the chat cached', async () => {
+    projectionState.fetchChat.mockResolvedValueOnce(
+      okWindowResult('chat-1', [{ role: 'char', data: 'tail', chatId: 'm2' }], 1, 2),
+    )
+    await hydrateActiveChat({ loadPages: 1 })
+    projectionState.fetchChat.mockResolvedValueOnce(
+      okResult('chat-1', [
+        { role: 'user', data: 'full-1', chatId: 'm1' },
+        { role: 'char', data: 'full-2', chatId: 'm2' },
+      ]),
+    )
+
+    await hydrateActiveChatFully()
+    await hydrateActiveChatFully()
+
+    expect(projectionState.fetchChat).toHaveBeenCalledTimes(2)
+    expect(projectionState.fetchChat).toHaveBeenNthCalledWith(2, 'chat-1', {})
+    expect(db().characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'full-1', chatId: 'm1' },
+      { role: 'char', data: 'full-2', chatId: 'm2' },
     ])
   })
 

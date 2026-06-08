@@ -868,6 +868,75 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
   })
 })
 
+describe('single chat message hydration route', () => {
+  it('serves full history by default and a tail window on request', async () => {
+    const revision = await importDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chats: [
+            {
+              id: 'chat-a',
+              message: [
+                { role: 'user', data: 'm0', chatId: 'm0' },
+                { role: 'char', data: 'm1', chatId: 'm1' },
+                { role: 'user', data: 'm2', chatId: 'm2' },
+                { role: 'char', data: 'm3', chatId: 'm3' },
+              ],
+              hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+            },
+          ],
+        },
+      ],
+    })
+
+    const full = (await getProjection('chatMessages', '?id=chat-a')).json()
+    expect(full).toMatchObject({
+      revision,
+      resource: 'chatMessages',
+      mode: 'chat-messages',
+      chatId: 'chat-a',
+      message: [
+        { role: 'user', data: 'm0', chatId: 'm0' },
+        { role: 'char', data: 'm1', chatId: 'm1' },
+        { role: 'user', data: 'm2', chatId: 'm2' },
+        { role: 'char', data: 'm3', chatId: 'm3' },
+      ],
+      hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+      alternates: [],
+    })
+    expect(full).not.toHaveProperty('messageStart')
+    expect(full).not.toHaveProperty('messageTotal')
+
+    const tail = (await getProjection('chatMessages', '?id=chat-a&tail=2')).json()
+    expect(tail).toMatchObject({
+      revision,
+      resource: 'chatMessages',
+      mode: 'chat-messages',
+      chatId: 'chat-a',
+      message: [
+        { role: 'user', data: 'm2', chatId: 'm2' },
+        { role: 'char', data: 'm3', chatId: 'm3' },
+      ],
+      messageStart: 2,
+      messageTotal: 4,
+      hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+      alternates: [],
+    })
+  })
+
+  it('rejects malformed chat message ranges', async () => {
+    await importDatabase({ characters: [] })
+    const res = await getProjection('chatMessages', '?id=chat-a&tail=0')
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({
+      error: 'invalid_chat_message_range',
+      reason: 'Expected tail, or start and limit, to be positive integers.',
+    })
+  })
+})
+
 describe('bulk chat message hydration route', () => {
   it('serves requested chat histories in one read-only response', async () => {
     const revision = await importDatabase({

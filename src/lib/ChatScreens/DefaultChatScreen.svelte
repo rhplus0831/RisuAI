@@ -91,12 +91,16 @@
   } from 'src/ts/chatCommands'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
-  import { isChatMessageHydrationPending } from 'src/ts/server/chatMessageHydration.svelte'
+  import {
+    hydrateActiveChatFully,
+    hydrateActiveChatWindow,
+    isChatMessageHydrationPending,
+  } from 'src/ts/server/chatMessageHydration.svelte'
   import {
     buildTranscriptWindowIdentity,
-    DEFAULT_CHAT_LOAD_PAGES,
     getLoadPagesForMessageJump,
   } from './DefaultChatScreen.loadPages'
+  import { normalizeChatDisplayTailCount } from 'src/ts/chatDisplayTailCount'
 
   const loadPlaygroundMenu = () =>
     import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
@@ -110,13 +114,14 @@
   let messageInput: string = $state('')
   let messageInputTranslate: string = $state('')
   let openMenu = $state(false)
-  let loadPages = $state(DEFAULT_CHAT_LOAD_PAGES)
+  let loadPages = $state(normalizeChatDisplayTailCount(DBState.db.chatDisplayTailCount))
   let doingChatInputTranslate = false
   let toggleStickers: boolean = $state(false)
   let fileInput: string[] = $state([])
   let showNewMessageButton = $state(false)
   let chatsInstance: any = $state()
   let isScrollingToMessage = $state(false)
+  let preparingSend = $state(false)
   let scrollToMessageRunId = 0
   let activeTranscriptWindowIdentity: string | null = $state(null)
   let activeBgmObserverIdentity: string | null = $state(null)
@@ -127,6 +132,9 @@
   }: Props = $props()
   let currentCharacter = $derived(DBState.db.characters[$selectedCharID])
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
+  let configuredChatLoadPages = $derived(
+    normalizeChatDisplayTailCount(DBState.db.chatDisplayTailCount),
+  )
   // The open chat ships as a message-less stub until `/projection/chatMessages`
   // resolves; show a loading state over the message area until then so the
   // history does not flash in over the greeting-only stub.
@@ -156,11 +164,19 @@
   }
 
   function resetTranscriptWindowForChatSwitch() {
-    loadPages = DEFAULT_CHAT_LOAD_PAGES
+    loadPages = configuredChatLoadPages
     isScrollingToMessage = false
     scrollToMessageRunId += 1
     chatFoldedState.data = null
     chatFoldedStateMessageIndex.index = -1
+  }
+
+  async function expandTranscriptWindow(nextLoadPages: number) {
+    const targetIdentity = getActiveTranscriptWindowIdentity()
+    if (!targetIdentity || nextLoadPages <= loadPages) return
+    await hydrateActiveChatWindow(nextLoadPages)
+    if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
+    loadPages = Math.max(loadPages, nextLoadPages)
   }
 
   $effect(() => {
@@ -171,7 +187,7 @@
 
     const previousIdentity = activeTranscriptWindowIdentity
     activeTranscriptWindowIdentity = nextIdentity
-    loadPages = DEFAULT_CHAT_LOAD_PAGES
+    loadPages = configuredChatLoadPages
 
     if (previousIdentity !== null) {
       resetTranscriptWindowForChatSwitch()
@@ -216,6 +232,10 @@
       const neededLoadPages = getLoadPagesForMessageJump(loadPages, totalMessages, index)
 
       if (loadPages < neededLoadPages) {
+        await hydrateActiveChatWindow(neededLoadPages)
+        if (!isCurrentJump()) {
+          return
+        }
         loadPages = neededLoadPages
         await tick()
         if (!isCurrentJump()) {
@@ -300,73 +320,84 @@
 
   async function sendMain(continueResponse: boolean) {
     let selectedChar = $selectedCharID
-    if ($doingChat) {
+    if ($doingChat || preparingSend) {
       return
     }
-    resetRerollOnCharChange()
-
-    const currentChatRecord =
-      DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
-    let userMessage: Message | null = null
-
-    if (messageInput.startsWith('/')) {
-      const commandProcessed = await processMultiCommand(messageInput)
-      if (commandProcessed !== false) {
-        messageInput = ''
+    preparingSend = true
+    try {
+      resetRerollOnCharChange()
+      const targetIdentity = getActiveTranscriptWindowIdentity()
+      await hydrateActiveChatFully()
+      if (targetIdentity !== getActiveTranscriptWindowIdentity()) {
         return
       }
-    }
 
-    if (fileInput.length > 0) {
-      for (const file of fileInput) {
-        messageInput += `{{inlayed::${file}}}`
+      const currentChatRecord =
+        DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
+      let userMessage: Message | null = null
+
+      if (messageInput.startsWith('/')) {
+        const commandProcessed = await processMultiCommand(messageInput)
+        if (commandProcessed !== false) {
+          messageInput = ''
+          return
+        }
       }
-      fileInput = []
-    }
 
-    if (!continueResponse) {
-      if (messageInput === '') {
-        const messages = currentChatRecord.message ?? []
-        if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
-          if (DBState.db.useSayNothing) {
-            userMessage = {
-              role: 'user',
-              data: '*says nothing*',
-              name: null,
+      if (fileInput.length > 0) {
+        for (const file of fileInput) {
+          messageInput += `{{inlayed::${file}}}`
+        }
+        fileInput = []
+      }
+
+      if (!continueResponse) {
+        if (messageInput === '') {
+          const messages = currentChatRecord.message ?? []
+          if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
+            if (DBState.db.useSayNothing) {
+              userMessage = {
+                role: 'user',
+                data: '*says nothing*',
+                name: null,
+              }
             }
           }
-        }
-      } else {
-        // Server prompt assembly owns submit-time input triggers/editinput.
-        userMessage = {
-          role: 'user',
-          data: messageInput,
-          time: Date.now(),
-          name: null,
+        } else {
+          // Server prompt assembly owns submit-time input triggers/editinput.
+          userMessage = {
+            role: 'user',
+            data: messageInput,
+            time: Date.now(),
+            name: null,
+          }
         }
       }
-    }
-    messageInput = ''
-    messageInputTranslate = ''
-    if (userMessage) {
-      const appended = await appendCurrentChatUserMessageForSend(userMessage)
-      if (appended.status !== 'ok') {
-        alertError(appended.error)
-        await sleep(10)
-        updateInputSizeAll()
-        return
+      messageInput = ''
+      messageInputTranslate = ''
+      if (userMessage) {
+        const appended = await appendCurrentChatUserMessageForSend(userMessage)
+        if (appended.status !== 'ok') {
+          alertError(appended.error)
+          await sleep(10)
+          updateInputSizeAll()
+          return
+        }
       }
+      await sleep(10)
+      updateInputSizeAll()
+      // Clear the reroll buffer only after send/continue succeeds.
+      await sendChatMain(continueResponse, undefined, true)
+    } finally {
+      preparingSend = false
     }
-    await sleep(10)
-    updateInputSizeAll()
-    // Clear the reroll buffer only after send/continue succeeds.
-    await sendChatMain(continueResponse, undefined, true)
   }
 
   async function reroll() {
     if ($doingChat) {
       return
     }
+    await hydrateActiveChatFully()
     await rerollNav({ sendChatMain, closeMenu: () => (openMenu = false) })
   }
 
@@ -374,6 +405,7 @@
     if ($doingChat) {
       return
     }
+    await hydrateActiveChatFully()
     await unRerollNav()
   }
 
@@ -528,6 +560,7 @@
     let canvases: Array<HTMLCanvasElement | null> = []
     let mergedCanvas: HTMLCanvasElement | null = null
     try {
+      await hydrateActiveChatFully()
       loadPages = Infinity
       await tick()
       const html2canvas = await import('html-to-image')
@@ -593,7 +626,7 @@
       loadPages =
         getActiveTranscriptWindowIdentity() === screenshotIdentity
           ? previousLoadPages
-          : DEFAULT_CHAT_LOAD_PAGES
+          : configuredChatLoadPages
     }
   }
 
@@ -734,7 +767,7 @@
             DBState.db.characters[$selectedCharID].chatPage
           ].message.length > loadPages
         ) {
-          loadPages += 15
+          void expandTranscriptWindow(loadPages + 15)
         }
         const chatTarget = e.target as HTMLElement
         const chatsContainer =
@@ -1018,8 +1051,8 @@
           <button class="w-full flex justify-center max-w-full p-4">
             <Button
               className="max-w-xl w-full"
-              onclick={() => {
-                loadPages += chatFoldedStateMessageIndex.index + 1
+              onclick={async () => {
+                await expandTranscriptWindow(loadPages + chatFoldedStateMessageIndex.index + 1)
                 chatFoldedState.data = null
               }}
             >

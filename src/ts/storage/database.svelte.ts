@@ -43,6 +43,14 @@ import {
   withServerProjectionApply,
   withTrustedServerProjectionWrite,
 } from '../server/projectionWriteGuard.svelte'
+import {
+  isServerChatMessagePlaceholder,
+  SERVER_UNLOADED_CHAT_MESSAGE_MARKER,
+} from '../server/chatMessagePlaceholders'
+import {
+  DEFAULT_CHAT_DISPLAY_TAIL_COUNT,
+  normalizeChatDisplayTailCount,
+} from '../chatDisplayTailCount'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = 'Fastify Variant Version: Alpha' //<APP_VERSION_POINT>
@@ -327,6 +335,9 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.zoomsize)) {
     data.zoomsize = 100
   }
+  data.chatDisplayTailCount = normalizeChatDisplayTailCount(
+    data.chatDisplayTailCount ?? DEFAULT_CHAT_DISPLAY_TAIL_COUNT,
+  )
   if (checkNullish(data.customBackground)) {
     data.customBackground = ''
   }
@@ -957,7 +968,8 @@ export function mergeServerProjectionCharacterRow(
     // The shipped chats are stubs (empty message[]); carry over any messages
     // this client already hydrated so a metadata refresh keeps loaded history.
     const incomingChats = (character as { chats?: Array<Record<string, unknown>> }).chats
-    const existingChats = (existing as { chats?: Array<Record<string, unknown>> } | undefined)?.chats
+    const existingChats = (existing as { chats?: Array<Record<string, unknown>> } | undefined)
+      ?.chats
     if (Array.isArray(incomingChats) && Array.isArray(existingChats)) {
       const existingById = new Map(existingChats.map((chat) => [chat?.id, chat]))
       for (const chat of incomingChats) {
@@ -1009,16 +1021,51 @@ export function applyServerCharacterSelectionProjection(input: {
  * chat-open. Targets the chat by id across all characters; a trusted projection
  * write so it passes the read-only guard. Returns true if found and hydrated.
  */
+export interface ServerChatMessagesHydrationRange {
+  start: number
+  total: number
+}
+
+export { isServerChatMessagePlaceholder }
+
+function createServerChatMessagePlaceholder(): Message {
+  return {
+    role: 'char',
+    data: '',
+    isComment: true,
+    disabled: true,
+    [SERVER_UNLOADED_CHAT_MESSAGE_MARKER]: true,
+  } as Message
+}
+
+function createServerChatMessagePlaceholderArray(total: number): Message[] {
+  return Array.from({ length: total }, () => createServerChatMessagePlaceholder())
+}
+
 export function hydrateServerChatMessages(
   chatId: string,
   message: unknown[],
   hypaV3Data?: unknown,
+  range?: ServerChatMessagesHydrationRange,
 ): boolean {
   return withTrustedServerProjectionWrite(() => {
     for (const character of DBState.db.characters ?? []) {
       const chat = character.chats?.find((candidate) => candidate.id === chatId)
       if (chat) {
-        chat.message = message as Message[]
+        if (range) {
+          const total = Math.max(0, Math.floor(range.total))
+          const start = Math.min(Math.max(0, Math.floor(range.start)), total)
+          const next =
+            Array.isArray(chat.message) && chat.message.length === total
+              ? chat.message.slice()
+              : createServerChatMessagePlaceholderArray(total)
+          for (let index = 0; index < message.length && start + index < total; index += 1) {
+            next[start + index] = message[index] as Message
+          }
+          chat.message = next
+        } else {
+          chat.message = message as Message[]
+        }
         // `hypaV3Data` is hydrated alongside messages; undefined means the chat
         // has none, so clear any stale value.
         if (hypaV3Data === undefined) {
@@ -1219,6 +1266,7 @@ export interface Database {
   plugins: RisuPlugin[]
   currentPluginProvider: string
   zoomsize: number
+  chatDisplayTailCount?: number
   customBackground: string
   textgenWebUIStreamURL: string
   textgenWebUIBlockingURL: string

@@ -279,6 +279,8 @@ export const languageEnglish = {
       'When enabled, it will request to model at random timing without waiting for user input.',
     settingsCloseButtonSize:
       'Adjusts the size of the close (X) button in the top right corner of the settings window. Default is 24.',
+    chatDisplayTailCount:
+      'Controls how many latest chat messages are rendered and hydrated when opening a chat. Lower values can make large chats open faster. Default is 30.',
     showTypingEffect:
       'When enabled, it will show a typing indicator while the assistant is generating a response.',
     dynamicOutputPrompt: 'When enabled, the schema information will be included in the request.',
@@ -1588,6 +1590,7 @@ export const languageEnglish = {
   dynamicRequest: 'Dynamic Request',
   dynamicOutputPrompt: 'Dynamic Output Prompt',
   settingsCloseButtonSize: 'Settings Close Button Size',
+  chatDisplayTailCount: 'Initial Chat Messages to Display',
   translating: 'Translating...',
   stackTraceTranslationFailed:
     'Stack trace translation failed. Showing original obfuscated stack trace below.',

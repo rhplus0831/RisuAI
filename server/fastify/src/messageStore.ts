@@ -508,6 +508,29 @@ export function getChatMessages(db: DatabaseSync, chatId: string): JsonRecord[] 
   return rows.map((row) => JSON.parse(row.json) as JsonRecord)
 }
 
+/**
+ * ACTIVE messages for a zero-based `[start, start + limit)` range.
+ *
+ * Used by active-chat window hydration so opening a large chat does not pay to
+ * parse every historical row before the first visible messages can render.
+ */
+export function getChatMessagesRange(
+  db: DatabaseSync,
+  chatId: string,
+  start: number,
+  limit: number,
+): JsonRecord[] {
+  if (!Number.isInteger(start) || start < 0 || !Number.isInteger(limit) || limit <= 0) {
+    return []
+  }
+  const rows = db
+    .prepare(
+      'SELECT json FROM messages WHERE chat_id = ? AND alternate = 0 AND seq >= ? AND seq < ? ORDER BY seq',
+    )
+    .all(chatId, start, start + limit) as { json: string }[]
+  return rows.map((row) => JSON.parse(row.json) as JsonRecord)
+}
+
 /** Every chat's ACTIVE messages, grouped by chat id, in `seq` order (one query). */
 export function getAllChatMessagesGrouped(db: DatabaseSync): Map<string, JsonRecord[]> {
   const rows = db

@@ -26,6 +26,7 @@ import {
   type ServerCommandTransportOptions,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { isServerChatMessagePlaceholder } from './server/chatMessagePlaceholders'
 import { DBState, reloadGuiDisplay, selectedCharID } from './stores.svelte'
 import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
 import { v4 } from 'uuid'
@@ -613,7 +614,10 @@ function buildCompatibleChatUpdateFactories(
       )
     }
 
-    if (snapshotJson(previousChat.message ?? []) !== snapshotJson(nextChat.message ?? [])) {
+    if (
+      snapshotJson(previousChat.message ?? []) !== snapshotJson(nextChat.message ?? []) &&
+      !hasServerChatMessagePlaceholders(nextChat.message ?? [])
+    ) {
       for (const message of nextChat.message ?? []) {
         ensureMessageId(message)
       }
@@ -1036,6 +1040,10 @@ function dispatchReplaceMessagesWith(
   messages: Message[],
   rollback: () => void,
 ): void {
+  if (hasServerChatMessagePlaceholders(messages)) {
+    console.warn('Skipped replaceMessagesCommand for a partially hydrated chat transcript.')
+    return
+  }
   for (const message of messages) {
     ensureMessageId(message)
   }
@@ -1048,6 +1056,10 @@ function dispatchReplaceMessagesWith(
       }),
     rollback,
   )
+}
+
+function hasServerChatMessagePlaceholders(messages: readonly Message[]): boolean {
+  return messages.some(isServerChatMessagePlaceholder)
 }
 
 export function dispatchReplaceMessages(

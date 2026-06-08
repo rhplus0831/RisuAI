@@ -68,6 +68,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   currentPluginProvider: 'providers',
   customAPIFormat: 'providers',
   customBackground: 'display',
+  chatDisplayTailCount: 'display',
   customCSS: 'display',
   customFont: 'display',
   customGUI: 'display',
