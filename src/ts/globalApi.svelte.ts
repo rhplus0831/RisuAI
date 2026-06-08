@@ -19,14 +19,7 @@ import {
   bodyIntercepterStore,
 } from './stores.svelte'
 import { loadPlugins } from './plugins/plugins.svelte'
-import {
-  alertError,
-  alertMd,
-  alertNormal,
-  alertSelect,
-  alertTOS,
-  waitAlert,
-} from './alert'
+import { alertError, alertMd, alertNormal, alertSelect, alertTOS, waitAlert } from './alert'
 import { characterURLImport } from './characterCards'
 import {
   defaultJailbreak,
@@ -63,7 +56,12 @@ import {
   uploadServerAsset,
   SERVER_ASSET_CONTENT_TYPES,
 } from './server/assets'
-import { listServerBackups, restoreServerBackup } from './server/backups'
+import {
+  listServerBackups,
+  restoreServerBackup,
+  type ServerBackupProgress,
+  type ServerBackupProgressCallback,
+} from './server/backups'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 
 export const forageStorage = new AutoStorage()
@@ -1353,9 +1351,7 @@ export async function fetchNative(
       })
     } else if (throughProxy) {
       const useProxyJobWs =
-        arg.interceptor === 'openai_streaming' &&
-        arg.method === 'POST' &&
-        useLocalNetworkRoute
+        arg.interceptor === 'openai_streaming' && arg.method === 'POST' && useLocalNetworkRoute
       const nodeProxyAuth = await getNodeServerProxyAuth()
 
       if (useProxyJobWs) {
@@ -1495,18 +1491,37 @@ export class BlankWriter {
   }
 }
 
-export async function loadInternalBackup() {
-  const list = await listServerBackups()
-  if (list.status === 'unavailable') return
+export interface LoadInternalBackupOptions {
+  signal?: AbortSignal | null
+  onProgress?: ServerBackupProgressCallback
+}
+
+export type LoadInternalBackupStatus = 'ok' | 'error' | 'unavailable' | 'cancelled'
+
+export async function loadInternalBackup(
+  options: LoadInternalBackupOptions = {},
+): Promise<LoadInternalBackupStatus> {
+  reportInternalBackupProgress(options.onProgress, {
+    phase: 'request',
+    message: 'Loading server backups',
+    percent: 5,
+  })
+  const list = await listServerBackups(options.signal)
+  if (list.status === 'unavailable') return 'unavailable'
   if (list.status === 'error') {
     alertError(list.error)
-    return
+    return 'error'
   }
   if (list.backups.length === 0) {
     alertNormal('No server backups found')
-    return
+    return 'cancelled'
   }
 
+  reportInternalBackupProgress(options.onProgress, {
+    phase: 'prepare',
+    message: 'Waiting for backup selection',
+    percent: 15,
+  })
   const selectOptions = [
     'Cancel',
     ...list.backups.map((backup) => {
@@ -1515,14 +1530,50 @@ export async function loadInternalBackup() {
     }),
   ]
   const alertResult = parseInt(await alertSelect(selectOptions)) - 1
-  if (alertResult === -1) return
+  if (alertResult === -1) return 'cancelled'
 
   const selectedBackup = list.backups[alertResult]
-  const restored = await restoreServerBackup({ id: selectedBackup.id })
+  const restored = await restoreServerBackup({
+    id: selectedBackup.id,
+    signal: options.signal,
+    onProgress: scaleInternalBackupProgress(options.onProgress, 20, 100),
+  })
   if (restored.status === 'ok') {
     alertNormal('Loaded server backup')
+    return 'ok'
   } else if (restored.status === 'error') {
     alertError(restored.error)
+    return 'error'
+  }
+  return 'unavailable'
+}
+
+function reportInternalBackupProgress(
+  onProgress: ServerBackupProgressCallback | undefined,
+  progress: ServerBackupProgress,
+): void {
+  if (!onProgress) return
+  onProgress({
+    ...progress,
+    percent:
+      progress.percent === null ? null : Math.max(0, Math.min(100, Number(progress.percent))),
+  })
+}
+
+function scaleInternalBackupProgress(
+  onProgress: ServerBackupProgressCallback | undefined,
+  start: number,
+  end: number,
+): ServerBackupProgressCallback | undefined {
+  if (!onProgress) return undefined
+  return (progress) => {
+    reportInternalBackupProgress(onProgress, {
+      ...progress,
+      percent:
+        progress.percent === null
+          ? null
+          : start + ((end - start) * Math.max(0, Math.min(100, progress.percent))) / 100,
+    })
   }
 }
 

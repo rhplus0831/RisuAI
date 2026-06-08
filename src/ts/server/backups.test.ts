@@ -47,6 +47,7 @@ import {
   importServerBundle,
   listServerBackups,
   restoreServerBackup,
+  type ServerBackupProgress,
 } from './backups'
 import { clearCachedServerCommandRevision, peekCachedServerCommandRevision } from './commands'
 import { DBState } from '../stores.svelte'
@@ -304,6 +305,52 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     ])
   })
 
+  it('reports streamed download progress for local backup exports', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(BUNDLE_BYTES.slice(0, 4))
+        controller.enqueue(BUNDLE_BYTES.slice(4))
+        controller.close()
+      },
+    })
+    const backupFetch = makeBackupFetch(
+      () =>
+        new Response(stream, {
+          status: 200,
+          headers: {
+            'content-disposition': 'attachment; filename="database.risu.zip"',
+            'content-length': String(BUNDLE_BYTES.byteLength),
+          },
+        }),
+    )
+    vi.stubGlobal('fetch', backupFetch.fetch)
+    const progress: ServerBackupProgress[] = []
+
+    const result = await exportServerBundle({ onProgress: (frame) => progress.push(frame) })
+
+    expect(result.status).toBe('ok')
+    expect(progress[0]).toMatchObject({
+      phase: 'request',
+      message: 'Requesting backup export',
+      percent: 5,
+    })
+    expect(
+      progress.some(
+        (frame) =>
+          frame.phase === 'download' &&
+          frame.loadedBytes === 4 &&
+          frame.totalBytes === BUNDLE_BYTES.byteLength &&
+          frame.percent === 52.5,
+      ),
+    ).toBe(true)
+    expect(progress.at(-1)).toMatchObject({
+      phase: 'complete',
+      percent: 100,
+      loadedBytes: BUNDLE_BYTES.byteLength,
+      totalBytes: BUNDLE_BYTES.byteLength,
+    })
+  })
+
   it('reports server errors when the bundle export fails', async () => {
     const backupFetch = makeBackupFetch(() =>
       jsonResponse({ error: 'database payload missing' }, 400),
@@ -357,6 +404,113 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       contentType: null,
     })
     expect(backupFetch.calls[1]).toMatchObject({ url: '/api/v1/bootstrap', method: 'GET' })
+  })
+
+  it('reports upload progress when restoring a device backup with progress enabled', async () => {
+    const event = { type: 'state.imported', resource: 'state', revision: 21 }
+    class FakeXMLHttpRequest {
+      static instances: FakeXMLHttpRequest[] = []
+
+      upload = {
+        onprogress: null as ((event: ProgressEvent) => void) | null,
+      }
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      onabort: (() => void) | null = null
+      method = ''
+      url = ''
+      headers: Record<string, string> = {}
+      body: unknown = null
+      status = 200
+      statusText = 'OK'
+      responseText = JSON.stringify({ revision: 21, event })
+
+      constructor() {
+        FakeXMLHttpRequest.instances.push(this)
+      }
+
+      open(method: string, url: string) {
+        this.method = method
+        this.url = url
+      }
+
+      setRequestHeader(key: string, value: string) {
+        this.headers[key] = value
+      }
+
+      getAllResponseHeaders() {
+        return 'content-type: application/json\r\n'
+      }
+
+      send(body: unknown) {
+        this.body = body
+        this.upload.onprogress?.({
+          lengthComputable: true,
+          loaded: 1,
+          total: 4,
+        } as ProgressEvent)
+        this.upload.onprogress?.({
+          lengthComputable: true,
+          loaded: 4,
+          total: 4,
+        } as ProgressEvent)
+        this.onload?.()
+      }
+
+      abort() {
+        this.onabort?.()
+      }
+    }
+    const backupFetch = makeBackupFetch((url) => {
+      if (url === '/api/v1/bootstrap') {
+        return {
+          revision: 21,
+          database: {
+            characters: [{ chaId: 'char-z', name: 'Imported', chats: [] }],
+            modules: [],
+            personas: [],
+            language: 'en',
+          },
+        }
+      }
+      return { revision: 22 }
+    })
+    vi.stubGlobal('XMLHttpRequest', FakeXMLHttpRequest)
+    vi.stubGlobal('fetch', backupFetch.fetch)
+    const file = new Blob([BUNDLE_BYTES], { type: 'application/zip' })
+    const progress: ServerBackupProgress[] = []
+
+    await expect(
+      importServerBundle({
+        file,
+        filename: 'database.risu.zip',
+        onProgress: (frame) => progress.push(frame),
+      }),
+    ).resolves.toEqual({
+      status: 'ok',
+      revision: 21,
+      event,
+    })
+
+    expect(FakeXMLHttpRequest.instances).toHaveLength(1)
+    expect(FakeXMLHttpRequest.instances[0]).toMatchObject({
+      method: 'POST',
+      url: '/api/v1/import/bundle',
+      headers: expect.objectContaining({ 'risu-auth': 'backup-auth-token' }),
+    })
+    expect(
+      progress.some(
+        (frame) =>
+          frame.phase === 'upload' &&
+          frame.loadedBytes === 1 &&
+          frame.totalBytes === 4 &&
+          frame.percent === 22.5,
+      ),
+    ).toBe(true)
+    expect(progress.some((frame) => frame.phase === 'process' && frame.percent === 80)).toBe(true)
+    expect(progress.at(-1)).toMatchObject({ phase: 'complete', percent: 100 })
+    expect(backupFetch.calls).toHaveLength(1)
+    expect(backupFetch.calls[0]).toMatchObject({ url: '/api/v1/bootstrap', method: 'GET' })
   })
 
   it('does not cache the import revision when the projection refresh fails', async () => {

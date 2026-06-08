@@ -24,6 +24,30 @@ export type ServerBackupResult<T> =
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
+export type ServerBackupProgressPhase =
+  | 'prepare'
+  | 'request'
+  | 'download'
+  | 'upload'
+  | 'process'
+  | 'resync'
+  | 'complete'
+
+export interface ServerBackupProgress {
+  phase: ServerBackupProgressPhase
+  message: string
+  percent: number | null
+  loadedBytes?: number
+  totalBytes?: number | null
+}
+
+export type ServerBackupProgressCallback = (progress: ServerBackupProgress) => void
+
+export interface ServerBackupProgressOptions {
+  signal?: AbortSignal | null
+  onProgress?: ServerBackupProgressCallback
+}
+
 export function canUseServerBackups(): boolean {
   return true
 }
@@ -32,15 +56,29 @@ export async function createServerBackup(
   input: {
     label?: string | null
     signal?: AbortSignal | null
+    onProgress?: ServerBackupProgressCallback
   } = {},
 ): Promise<ServerBackupResult<{ backup: ServerBackupManifest }>> {
-  return requestServerBackupJson('', {
+  reportProgress(input.onProgress, {
+    phase: 'process',
+    message: 'Creating server backup',
+    percent: 10,
+  })
+  const result = await requestServerBackupJson('', {
     method: 'POST',
     body: { label: input.label ?? null },
     signal: input.signal,
     validate: readBackupManifest,
     map: (backup) => ({ backup }),
   })
+  if (result.status === 'ok') {
+    reportProgress(input.onProgress, {
+      phase: 'complete',
+      message: 'Server backup saved',
+      percent: 100,
+    })
+  }
+  return result
 }
 
 export async function listServerBackups(
@@ -65,7 +103,13 @@ export async function listServerBackups(
 export async function restoreServerBackup(input: {
   id: string
   signal?: AbortSignal | null
+  onProgress?: ServerBackupProgressCallback
 }): Promise<ServerBackupResult<{ revision: number; event?: CommandEvent }>> {
+  reportProgress(input.onProgress, {
+    phase: 'process',
+    message: 'Restoring server backup',
+    percent: 10,
+  })
   const restored = await requestServerBackupJson(`/${encodeURIComponent(input.id)}/restore`, {
     method: 'POST',
     signal: input.signal,
@@ -83,6 +127,11 @@ export async function restoreServerBackup(input: {
   })
   if (restored.status !== 'ok') return restored
 
+  reportProgress(input.onProgress, {
+    phase: 'resync',
+    message: 'Refreshing local state',
+    percent: 75,
+  })
   const resync = await forceServerProjectionResync('backup-restore')
   if (resync.status !== 'ok') {
     return {
@@ -94,6 +143,11 @@ export async function restoreServerBackup(input: {
     }
   }
 
+  reportProgress(input.onProgress, {
+    phase: 'complete',
+    message: 'Server backup loaded',
+    percent: 100,
+  })
   return restored
 }
 
@@ -119,9 +173,9 @@ export async function deleteServerBackup(input: {
  * fallback backup.
  */
 export async function exportServerBundle(
-  signal?: AbortSignal | null,
+  options?: AbortSignal | ServerBackupProgressOptions | null,
 ): Promise<ServerBackupResult<{ blob: Blob; filename: string }>> {
-  return exportServerBackupBlob(BUNDLE_EXPORT_ENDPOINT, DEFAULT_BUNDLE_FILENAME, signal)
+  return exportServerBackupBlob(BUNDLE_EXPORT_ENDPOINT, DEFAULT_BUNDLE_FILENAME, options)
 }
 
 /**
@@ -131,18 +185,28 @@ export async function exportServerBundle(
  * path.
  */
 export async function exportServerLocalBackup(
-  signal?: AbortSignal | null,
+  options?: AbortSignal | ServerBackupProgressOptions | null,
 ): Promise<ServerBackupResult<{ blob: Blob; filename: string }>> {
-  return exportServerBackupBlob(LOCAL_BACKUP_EXPORT_ENDPOINT, DEFAULT_LOCAL_BACKUP_FILENAME, signal)
+  return exportServerBackupBlob(
+    LOCAL_BACKUP_EXPORT_ENDPOINT,
+    DEFAULT_LOCAL_BACKUP_FILENAME,
+    options,
+  )
 }
 
 async function exportServerBackupBlob(
   endpoint: string,
   defaultFilename: string,
-  signal?: AbortSignal | null,
+  options?: AbortSignal | ServerBackupProgressOptions | null,
 ): Promise<ServerBackupResult<{ blob: Blob; filename: string }>> {
   if (!canUseServerBackups()) return { status: 'unavailable' }
 
+  const { signal, onProgress } = normalizeProgressOptions(options)
+  reportProgress(onProgress, {
+    phase: 'request',
+    message: 'Requesting backup export',
+    percent: 5,
+  })
   const auth = await getNodeServerProxyAuth()
   let response: Response
   try {
@@ -166,9 +230,18 @@ async function exportServerBackupBlob(
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
 
-  // Read as a Blob (not an ArrayBuffer) so the browser can back large backups
-  // by disk instead of holding the whole bundle in a single buffer.
-  const blob = await response.blob()
+  const blob = await readResponseBlobWithProgress(
+    response,
+    scaleProgress(onProgress, 10, 95),
+    'Downloading backup',
+  )
+  reportProgress(onProgress, {
+    phase: 'complete',
+    message: 'Backup download complete',
+    percent: 100,
+    loadedBytes: blob.size,
+    totalBytes: blob.size,
+  })
   return {
     status: 'ok',
     blob,
@@ -188,28 +261,49 @@ export async function importServerBundle(input: {
   file: Blob
   filename?: string
   signal?: AbortSignal | null
+  onProgress?: ServerBackupProgressCallback
 }): Promise<ServerBackupResult<{ revision: number; event?: CommandEvent }>> {
   if (!canUseServerBackups()) return { status: 'unavailable' }
 
+  reportProgress(input.onProgress, {
+    phase: 'prepare',
+    message: 'Preparing local backup upload',
+    percent: 2,
+  })
   const auth = await getNodeServerProxyAuth()
   const form = new FormData()
   form.append('file', input.file, input.filename ?? DEFAULT_BUNDLE_FILENAME)
 
   let response: Response
   try {
-    // Let the browser set the multipart content-type (with boundary) for the
-    // FormData body; an explicit content-type header would break the upload.
-    response = await fetch(BUNDLE_IMPORT_ENDPOINT, {
-      method: 'POST',
-      signal: input.signal ?? undefined,
-      headers: { 'risu-auth': auth, ...activeWriterSessionHeader() },
-      body: form,
-    })
+    if (input.onProgress) {
+      response = await sendMultipartWithUploadProgress({
+        endpoint: BUNDLE_IMPORT_ENDPOINT,
+        form,
+        headers: { 'risu-auth': auth, ...activeWriterSessionHeader() },
+        signal: input.signal ?? null,
+        onProgress: scaleProgress(input.onProgress, 5, 75),
+      })
+    } else {
+      // Let the browser set the multipart content-type (with boundary) for the
+      // FormData body; an explicit content-type header would break the upload.
+      response = await fetch(BUNDLE_IMPORT_ENDPOINT, {
+        method: 'POST',
+        signal: input.signal ?? undefined,
+        headers: { 'risu-auth': auth, ...activeWriterSessionHeader() },
+        body: form,
+      })
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return { status: 'error', error: `Network error: ${message}` }
   }
 
+  reportProgress(input.onProgress, {
+    phase: 'process',
+    message: 'Processing local backup',
+    percent: 80,
+  })
   let body: unknown = null
   try {
     body = await response.json()
@@ -227,6 +321,11 @@ export async function importServerBundle(input: {
     return { status: 'error', error: 'Invalid bundle import response' }
   }
 
+  reportProgress(input.onProgress, {
+    phase: 'resync',
+    message: 'Refreshing local state',
+    percent: 90,
+  })
   const resync = await forceServerProjectionResync('bundle-restore')
   if (resync.status !== 'ok') {
     return {
@@ -238,7 +337,180 @@ export async function importServerBundle(input: {
     }
   }
 
+  reportProgress(input.onProgress, {
+    phase: 'complete',
+    message: 'Local backup loaded',
+    percent: 100,
+  })
   return { status: 'ok', ...imported }
+}
+
+function reportProgress(
+  onProgress: ServerBackupProgressCallback | undefined,
+  progress: ServerBackupProgress,
+): void {
+  if (!onProgress) return
+  const percent =
+    progress.percent === null ? null : Math.max(0, Math.min(100, Number(progress.percent)))
+  onProgress({ ...progress, percent })
+}
+
+function scaleProgress(
+  onProgress: ServerBackupProgressCallback | undefined,
+  start: number,
+  end: number,
+): ServerBackupProgressCallback | undefined {
+  if (!onProgress) return undefined
+  return (progress) => {
+    reportProgress(onProgress, {
+      ...progress,
+      percent:
+        progress.percent === null
+          ? null
+          : start + ((end - start) * Math.max(0, Math.min(100, progress.percent))) / 100,
+    })
+  }
+}
+
+function normalizeProgressOptions(
+  options?: AbortSignal | ServerBackupProgressOptions | null,
+): ServerBackupProgressOptions {
+  if (!options) return {}
+  if (isAbortSignal(options)) return { signal: options }
+  return options
+}
+
+function isAbortSignal(value: unknown): value is AbortSignal {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as AbortSignal).aborted === 'boolean' &&
+    typeof (value as AbortSignal).addEventListener === 'function'
+  )
+}
+
+async function readResponseBlobWithProgress(
+  response: Response,
+  onProgress: ServerBackupProgressCallback | undefined,
+  message: string,
+): Promise<Blob> {
+  if (!onProgress || !response.body) {
+    // Read as a Blob (not an ArrayBuffer) so the browser can back large backups
+    // by disk instead of holding the whole bundle in a single buffer.
+    return response.blob()
+  }
+
+  const totalBytes = parseContentLength(response.headers.get('content-length'))
+  let loadedBytes = 0
+  reportProgress(onProgress, {
+    phase: 'download',
+    message,
+    percent: totalBytes === null ? null : 0,
+    loadedBytes,
+    totalBytes,
+  })
+
+  const reader = response.body.getReader()
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const read = await reader.read()
+      if (read.done) {
+        controller.close()
+        return
+      }
+      loadedBytes += read.value.byteLength
+      reportProgress(onProgress, {
+        phase: 'download',
+        message,
+        percent: totalBytes === null ? null : (loadedBytes / Math.max(totalBytes, 1)) * 100,
+        loadedBytes,
+        totalBytes,
+      })
+      controller.enqueue(read.value)
+    },
+    cancel(reason) {
+      return reader.cancel(reason)
+    },
+  })
+
+  const headers = new Headers()
+  const contentType = response.headers.get('content-type')
+  if (contentType) headers.set('content-type', contentType)
+  return new Response(stream, { headers }).blob()
+}
+
+function parseContentLength(header: string | null): number | null {
+  if (!header) return null
+  const value = Number(header)
+  return Number.isFinite(value) && value >= 0 ? value : null
+}
+
+function sendMultipartWithUploadProgress(input: {
+  endpoint: string
+  form: FormData
+  headers: Record<string, string>
+  signal: AbortSignal | null
+  onProgress: ServerBackupProgressCallback
+}): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    if (input.signal?.aborted) {
+      reject(new Error('request aborted'))
+      return
+    }
+
+    const xhr = new XMLHttpRequest()
+    const cleanup = () => {
+      input.signal?.removeEventListener('abort', abort)
+    }
+    const abort = () => {
+      xhr.abort()
+    }
+
+    xhr.open('POST', input.endpoint)
+    for (const [key, value] of Object.entries(input.headers)) {
+      xhr.setRequestHeader(key, value)
+    }
+    xhr.upload.onprogress = (event) => {
+      reportProgress(input.onProgress, {
+        phase: 'upload',
+        message: 'Uploading local backup',
+        percent: event.lengthComputable ? (event.loaded / Math.max(event.total, 1)) * 100 : null,
+        loadedBytes: event.loaded,
+        totalBytes: event.lengthComputable ? event.total : null,
+      })
+    }
+    xhr.onload = () => {
+      cleanup()
+      resolve(
+        new Response(xhr.responseText, {
+          status: xhr.status,
+          statusText: xhr.statusText,
+          headers: parseXhrHeaders(xhr.getAllResponseHeaders()),
+        }),
+      )
+    }
+    xhr.onerror = () => {
+      cleanup()
+      reject(new Error('request failed'))
+    }
+    xhr.onabort = () => {
+      cleanup()
+      reject(new Error('request aborted'))
+    }
+
+    input.signal?.addEventListener('abort', abort, { once: true })
+    xhr.send(input.form)
+  })
+}
+
+function parseXhrHeaders(rawHeaders: string): Headers {
+  const headers = new Headers()
+  for (const line of rawHeaders.trim().split(/[\r\n]+/)) {
+    const index = line.indexOf(':')
+    if (index <= 0) continue
+    headers.append(line.slice(0, index).trim(), line.slice(index + 1).trim())
+  }
+  return headers
 }
 
 function readBundleImportResult(body: unknown): { revision: number; event?: CommandEvent } | null {
