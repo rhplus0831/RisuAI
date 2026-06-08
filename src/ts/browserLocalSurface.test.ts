@@ -47,13 +47,12 @@ describe('Fastify-only browser local surface policy', () => {
     expect(bootstrap).not.toContain('navigator.storage.persist')
     expect(platform).not.toContain('isInStandaloneMode')
     expect(platform).not.toContain('android-app://')
-    // The removed surfaces read/wrote browser-local persistence (forageStorage,
-    // the Tauri filesystem, the LocalWriter `.bin` blob). Those stay gone.
+    // The removed surfaces read/wrote browser-local persistence (forageStorage
+    // and the Tauri filesystem). Those stay gone.
     expect(backup).not.toContain('SaveLocalBackup')
     expect(backup).not.toContain('SavePartialLocalBackup')
     expect(backup).not.toContain('LoadLocalBackup')
     expect(backup).not.toContain('LocalWriter')
-    expect(backup).not.toContain('database.risudat')
     expect(backup).not.toContain('forageStorage')
     expect(backup).not.toContain('@tauri-apps')
     expect(userSettings).not.toContain('SavePartialLocalBackup')
@@ -63,17 +62,18 @@ describe('Fastify-only browser local surface policy', () => {
   })
 
   it('restores Save/Load Backup Locally as a server-backed device backup', () => {
-    // The user-facing "Save/Load Backup Locally" feature is restored, but as a
-    // round-trip over the server `.risu.zip` bundle endpoints — not over the
-    // removed browser-local persistence. The device backup downloads the
-    // server's bundle export and uploads a picked file to the bundle import
-    // route; it must not reintroduce forageStorage / Tauri-fs reads.
+    // The user-facing "Save/Load Backup Locally" feature is restored as a
+    // round-trip over server endpoints, not over removed browser-local
+    // persistence. Save downloads the original Risu `.bin` format; the ZIP
+    // bundle remains available as an explicit fallback.
     const backup = readWorkspaceFile('src/ts/storage/backup.ts')
     const userSettings = readWorkspaceFile('src/lib/Setting/Pages/UserSettings.svelte')
 
+    expect(backup).toContain('exportServerLocalBackup')
     expect(backup).toContain('exportServerBundle')
     expect(backup).toContain('importServerBundle')
     expect(userSettings).toContain('saveBackupToDevice')
+    expect(userSettings).toContain('saveZipBackupToDevice')
     expect(userSettings).toContain('loadBackupFromDevice')
   })
 

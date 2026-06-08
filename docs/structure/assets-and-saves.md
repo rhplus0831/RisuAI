@@ -54,6 +54,9 @@ they do not fetch remote/cache assets server-side.
 supports envelope/compression query options.
 `GET /api/v1/export/bundle` returns a zip with `database.risu`,
 `manifest.json`, and present referenced asset files.
+`GET /api/v1/export/local-backup` returns an original Risu-style `.bin` local
+backup with referenced asset records and a legacy-compressed `database.risudat`
+record.
 
 `POST /api/v1/import/bundle` handles the browser "Load Backup Locally" path. It
 streams upload bytes to disk, bounded by `RISU_API_IMPORT_MAX_BYTES` (unlimited

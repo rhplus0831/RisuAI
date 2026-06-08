@@ -43,6 +43,7 @@ import {
   createServerBackup,
   deleteServerBackup,
   exportServerBundle,
+  exportServerLocalBackup,
   importServerBundle,
   listServerBackups,
   restoreServerBackup,
@@ -245,6 +246,35 @@ describe('server backup helpers', () => {
 
 describe('device backup helpers (Save/Load Backup Locally)', () => {
   const BUNDLE_BYTES = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4])
+  const LOCAL_BACKUP_BYTES = new Uint8Array([1, 0, 0, 0, 120, 0, 0, 0, 0])
+
+  it('downloads the original Risu local backup bytes with an auth header', async () => {
+    const backupFetch = makeBackupFetch(
+      () =>
+        new Response(LOCAL_BACKUP_BYTES, {
+          status: 200,
+          headers: { 'content-disposition': 'attachment; filename="database.bin"' },
+        }),
+    )
+    vi.stubGlobal('fetch', backupFetch.fetch)
+
+    const result = await exportServerLocalBackup()
+    expect(result.status).toBe('ok')
+    if (result.status === 'ok') {
+      expect(result.filename).toBe('database.bin')
+      expect(result.blob).toBeInstanceOf(Blob)
+      expect(new Uint8Array(await result.blob.arrayBuffer())).toEqual(LOCAL_BACKUP_BYTES)
+    }
+    expect(backupFetch.calls).toEqual([
+      {
+        url: '/api/v1/export/local-backup',
+        method: 'GET',
+        authHeader: 'backup-auth-token',
+        contentType: null,
+        body: null,
+      },
+    ])
+  })
 
   it('downloads the bundle bytes with an auth header and content-disposition filename', async () => {
     const backupFetch = makeBackupFetch(
@@ -347,5 +377,4 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     expect(peekCachedServerCommandRevision()).toBeNull()
     expect(DBState.db).toEqual({})
   })
-
 })

@@ -236,6 +236,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'binary',
   },
   {
+    id: 'risusave-local-backup-export',
+    methods: GET_ONLY,
+    path: '/api/v1/export/local-backup',
+    auth: {
+      decision: 'required',
+      reason: 'Local backup export returns the persisted user database and assets.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only repository export.',
+    },
+    streaming: 'binary',
+  },
+  {
     id: 'realm-character-import',
     methods: ['POST'],
     path: '/api/v1/import/realm-character',

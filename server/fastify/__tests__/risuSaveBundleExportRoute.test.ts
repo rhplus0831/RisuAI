@@ -145,6 +145,26 @@ function parseManifest(files: Record<string, Uint8Array>): Record<string, unknow
   return JSON.parse(Buffer.from(raw).toString('utf8')) as Record<string, unknown>
 }
 
+function parseLegacyLocalBackupBin(bytes: Buffer): Map<string, Uint8Array> {
+  const records = new Map<string, Uint8Array>()
+  let offset = 0
+  while (offset < bytes.length) {
+    expect(offset + 4).toBeLessThanOrEqual(bytes.length)
+    const nameLength = bytes.readUInt32LE(offset)
+    offset += 4
+    expect(offset + nameLength).toBeLessThanOrEqual(bytes.length)
+    const name = bytes.subarray(offset, offset + nameLength).toString('utf8')
+    offset += nameLength
+    expect(offset + 4).toBeLessThanOrEqual(bytes.length)
+    const dataLength = bytes.readUInt32LE(offset)
+    offset += 4
+    expect(offset + dataLength).toBeLessThanOrEqual(bytes.length)
+    records.set(name, bytes.subarray(offset, offset + dataLength))
+    offset += dataLength
+  }
+  return records
+}
+
 let harness: Harness
 let assertion: string
 
@@ -255,6 +275,40 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
       envelope: 'legacy-raw',
       compression: false,
     })
+  })
+
+  it('exports an original Risu .bin local backup with database.risudat and asset records', async () => {
+    persistBundleDatabase(harness.dataDir)
+
+    const exported = await authedInject({
+      method: 'GET',
+      url: '/api/v1/export/local-backup',
+    })
+
+    expect(exported.statusCode).toBe(200)
+    expect(exported.headers['content-type']).toContain('application/octet-stream')
+    expect(exported.headers['content-disposition']).toBe('attachment; filename="database.bin"')
+
+    const records = parseLegacyLocalBackupBin(exported.rawPayload)
+    expect([...records.keys()].sort()).toEqual([`${INCLUDED_ASSET}.png`, 'database.risudat'])
+    expect(Buffer.from(records.get(`${INCLUDED_ASSET}.png`) ?? []).toString('utf8')).toBe(
+      'included-png',
+    )
+
+    const databaseBytes = records.get('database.risudat')
+    expect(databaseBytes).toBeInstanceOf(Uint8Array)
+    const decoded = decodeRisuSaveImportSnapshot(databaseBytes ?? new Uint8Array())
+    expect(decoded.envelope).toBe('legacy-compressed')
+    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(
+      INCLUDED_ASSET,
+    )
+    expect(harness.commandEvents.list()).toEqual([
+      {
+        type: 'state.exported',
+        revision: 0,
+        resource: 'state',
+      },
+    ])
   })
 
   it('includes assets referenced through legacy local asset paths', async () => {

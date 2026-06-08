@@ -3,7 +3,12 @@
 
   import { alertConfirm } from 'src/ts/alert'
   import { loadInternalBackup } from 'src/ts/globalApi.svelte'
-  import { SaveServerBackup, loadBackupFromDevice, saveBackupToDevice } from 'src/ts/storage/backup'
+  import {
+    SaveServerBackup,
+    loadBackupFromDevice,
+    saveBackupToDevice,
+    saveZipBackupToDevice,
+  } from 'src/ts/storage/backup'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import { exportAsDataset } from 'src/ts/storage/exportAsDataset'
   import { cleanColdStorage } from 'src/ts/process/coldstorage.svelte'
@@ -45,6 +50,17 @@
   className="mt-2"
 >
   {language.saveBackupLocal}
+</Button>
+
+<Button
+  onclick={async () => {
+    if (await alertConfirm(language.backupConfirm)) {
+      saveZipBackupToDevice()
+    }
+  }}
+  className="mt-2"
+>
+  {language.saveBackupLocalZipStyle}
 </Button>
 
 <Button

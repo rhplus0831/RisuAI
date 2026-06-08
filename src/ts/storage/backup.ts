@@ -1,5 +1,10 @@
 import { alertError, alertNormal, alertWait } from '../alert'
-import { createServerBackup, exportServerBundle, importServerBundle } from '../server/backups'
+import {
+  createServerBackup,
+  exportServerBundle,
+  exportServerLocalBackup,
+  importServerBundle,
+} from '../server/backups'
 
 export async function SaveServerBackup() {
   alertWait('Saving server backup...')
@@ -12,13 +17,26 @@ export async function SaveServerBackup() {
 }
 
 /**
- * Save a complete backup (database + all referenced assets) to the user's
- * device. The bytes come from the server's `.risu.zip` bundle export; this is
- * the server-backed replacement for the original on-device "Save Backup
- * Locally" feature.
+ * Save a complete backup to the user's device in the original Risu local
+ * backup format. The bytes come from the server, not browser-local storage.
  */
 export async function saveBackupToDevice() {
   alertWait('Saving local backup...')
+  const result = await exportServerLocalBackup()
+  if (result.status === 'ok') {
+    triggerBlobDownload(result.blob, result.filename)
+    alertNormal('Local backup saved')
+  } else if (result.status === 'error') {
+    alertError(result.error)
+  }
+}
+
+/**
+ * Save a complete backup (database + all referenced assets) to the user's
+ * device using the newer `.risu.zip` bundle export.
+ */
+export async function saveZipBackupToDevice() {
+  alertWait('Saving ZIP-style local backup...')
   const result = await exportServerBundle()
   if (result.status === 'ok') {
     triggerBlobDownload(result.blob, result.filename)

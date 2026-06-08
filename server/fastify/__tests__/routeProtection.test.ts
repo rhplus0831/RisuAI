@@ -231,6 +231,7 @@ describe('route protection (table-wide auth enforcement)', () => {
       '/api/v1/projection/chatMessages?id=chat-a',
       '/api/v1/export/risusave',
       '/api/v1/export/bundle',
+      '/api/v1/export/local-backup',
       '/api/v1/events',
       '/api/v1/generate/chat/missing-job/stream',
     ]

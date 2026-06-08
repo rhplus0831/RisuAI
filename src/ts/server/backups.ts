@@ -5,8 +5,10 @@ import { forceServerProjectionResync } from './projectionResync'
 
 const BACKUPS_ENDPOINT = '/api/v1/backups'
 const BUNDLE_EXPORT_ENDPOINT = '/api/v1/export/bundle'
+const LOCAL_BACKUP_EXPORT_ENDPOINT = '/api/v1/export/local-backup'
 const BUNDLE_IMPORT_ENDPOINT = '/api/v1/import/bundle'
 const DEFAULT_BUNDLE_FILENAME = 'database.risu.zip'
+const DEFAULT_LOCAL_BACKUP_FILENAME = 'database.bin'
 
 export interface ServerBackupManifest {
   _version: number
@@ -113,12 +115,30 @@ export async function deleteServerBackup(input: {
 
 /**
  * Download the server's full `.risu.zip` bundle (database + referenced asset
- * files) so the caller can save it to the user's device. This is the server-
- * backed replacement for the original "Save Backup Locally" feature: the bytes
- * are produced by the server's bundle export and never read from browser-local
- * persistence.
+ * files) so the caller can save it to the user's device as the ZIP-style
+ * fallback backup.
  */
 export async function exportServerBundle(
+  signal?: AbortSignal | null,
+): Promise<ServerBackupResult<{ blob: Blob; filename: string }>> {
+  return exportServerBackupBlob(BUNDLE_EXPORT_ENDPOINT, DEFAULT_BUNDLE_FILENAME, signal)
+}
+
+/**
+ * Download a server-built backup in the original Risu local `.bin` format. The
+ * file is a LocalWriter-compatible record stream with `database.risudat` plus
+ * referenced asset files, so original Risu can load it through its local backup
+ * path.
+ */
+export async function exportServerLocalBackup(
+  signal?: AbortSignal | null,
+): Promise<ServerBackupResult<{ blob: Blob; filename: string }>> {
+  return exportServerBackupBlob(LOCAL_BACKUP_EXPORT_ENDPOINT, DEFAULT_LOCAL_BACKUP_FILENAME, signal)
+}
+
+async function exportServerBackupBlob(
+  endpoint: string,
+  defaultFilename: string,
   signal?: AbortSignal | null,
 ): Promise<ServerBackupResult<{ blob: Blob; filename: string }>> {
   if (!canUseServerBackups()) return { status: 'unavailable' }
@@ -126,7 +146,7 @@ export async function exportServerBundle(
   const auth = await getNodeServerProxyAuth()
   let response: Response
   try {
-    response = await fetch(BUNDLE_EXPORT_ENDPOINT, {
+    response = await fetch(endpoint, {
       method: 'GET',
       signal: signal ?? undefined,
       headers: { 'risu-auth': auth },
@@ -154,7 +174,7 @@ export async function exportServerBundle(
     blob,
     filename:
       filenameFromContentDisposition(response.headers.get('content-disposition')) ??
-      DEFAULT_BUNDLE_FILENAME,
+      defaultFilename,
   }
 }
 

@@ -30,6 +30,7 @@ import {
   type RisuSaveExportSnapshot,
 } from '../risuSave/exportSnapshot.js'
 import { buildRepositoryRisuSaveBundleExport } from '../risuSave/bundleExport.js'
+import { buildRepositoryRisuLocalBackupExport } from '../risuSave/localBackupExport.js'
 import {
   buildRepositoryRisuSaveAssetReport,
   summarizeRisuSaveAssetReport,
@@ -56,6 +57,8 @@ interface ExportQuery {
 
 const EXPORT_FILENAME = 'database.risu'
 const BUNDLE_EXPORT_FILENAME = 'database.risu.zip'
+const LOCAL_BACKUP_EXPORT_FILENAME = 'database.bin'
+const LOCAL_BACKUP_DATABASE_ENVELOPE = 'legacy-compressed'
 // Unlimited by default: the upload streams to a temp file and decodes in bounded
 // batches, so size is constrained by disk, not memory. A finite ceiling is opt-in
 // via RISU_API_IMPORT_MAX_BYTES (see config.ts).
@@ -297,6 +300,51 @@ export function registerSaveRoutes(
       }
     },
   )
+
+  app.get('/api/v1/export/local-backup', { exposeHeadRoute: false }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      // The original Risu local backup file is a `.bin` record stream whose
+      // database record is named `database.risudat` and carries a legacy-
+      // compressed `.risu` payload.
+      const measure = protocolMetricsEnabled()
+      const snapshotStart = measure ? protocolNowMs() : 0
+      const persisted = loadPersistedWithMessages(db, dataDir)
+      persisted.assets = getAllAssetMetadata(db)
+      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
+      const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
+      const encodeStart = measure ? protocolNowMs() : 0
+      const risuBytes = encodeRisuSaveLegacyExportSnapshot(snapshot, LOCAL_BACKUP_DATABASE_ENVELOPE)
+      const encodeMs = measure ? protocolDurationMs(encodeStart) : undefined
+      emitRisuSaveExportMetric(req.log, {
+        bundle: true,
+        envelope: LOCAL_BACKUP_DATABASE_ENVELOPE,
+        compression: false,
+        snapshotLoadMs,
+        encodeMs,
+        outputBytes: risuBytes.byteLength,
+      })
+      const localBackup = buildRepositoryRisuLocalBackupExport({
+        dataDir,
+        persisted,
+        databaseBytes: risuBytes,
+        envelope: LOCAL_BACKUP_DATABASE_ENVELOPE,
+      })
+      eventSink.emit({
+        ...COMMAND_EVENT_CATALOG.stateExported,
+        revision: getSchemaState(db).revision,
+      })
+      reply.header('content-type', 'application/octet-stream')
+      reply.header('content-disposition', `attachment; filename="${LOCAL_BACKUP_EXPORT_FILENAME}"`)
+      return reply.send(localBackup.stream)
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        reply.code(400)
+        return { error: err.message }
+      }
+      throw err
+    }
+  })
 }
 
 function emitRisuSaveExportMetric(
