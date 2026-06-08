@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { get } from 'svelte/store'
   import { language } from 'src/lang'
 
-  import { alertConfirm, alertError } from 'src/ts/alert'
+  import { alertClear, alertConfirm, alertError, alertProgress } from 'src/ts/alert'
+  import { alertStore } from 'src/ts/stores.svelte'
   import { loadInternalBackup } from 'src/ts/globalApi.svelte'
   import {
     SaveServerBackup,
@@ -23,21 +25,7 @@
     | 'localRestore'
   type OperationStatus = 'ok' | 'error' | 'unavailable' | 'cancelled'
 
-  interface BackupProgressView {
-    message: string
-    percent: number | null
-    detail: string
-    state: 'running' | 'done' | 'error'
-  }
-
   let activeBackupOperation = $state<BackupProgressKind | null>(null)
-  let backupProgress = $state<Record<BackupProgressKind, BackupProgressView | null>>({
-    serverSave: null,
-    serverRestore: null,
-    localSave: null,
-    localZipSave: null,
-    localRestore: null,
-  })
 
   async function runBackupOperation(
     kind: BackupProgressKind,
@@ -46,45 +34,32 @@
   ) {
     if (activeBackupOperation !== null) return
     activeBackupOperation = kind
-    backupProgress[kind] = {
-      message: initialMessage,
-      percent: 0,
-      detail: '',
-      state: 'running',
-    }
+    alertProgress(initialMessage, 0)
 
     try {
-      const status = await action((progress) => setBackupProgress(kind, progress))
-      finishBackupProgress(kind, status)
+      const status = await action(setBackupProgress)
+      finishBackupProgress(status)
     } catch (err) {
-      finishBackupProgress(kind, 'error')
       alertError(err)
     } finally {
       activeBackupOperation = null
     }
   }
 
-  function setBackupProgress(kind: BackupProgressKind, progress: ServerBackupProgress) {
-    backupProgress[kind] = {
-      message: progress.message,
-      percent: progress.percent === null ? null : Math.max(0, Math.min(100, progress.percent)),
-      detail: formatProgressDetail(progress),
-      state: 'running',
-    }
+  function setBackupProgress(progress: ServerBackupProgress) {
+    alertProgress(
+      progress.message,
+      progress.percent === null ? null : Math.max(0, Math.min(100, progress.percent)),
+      formatProgressDetail(progress) || undefined,
+    )
   }
 
-  function finishBackupProgress(kind: BackupProgressKind, status: OperationStatus) {
-    if (status === 'cancelled' || status === 'unavailable') {
-      backupProgress[kind] = null
-      return
-    }
-
-    const current = backupProgress[kind]
-    backupProgress[kind] = {
-      message: status === 'ok' ? (current?.message ?? 'Backup complete') : 'Backup failed',
-      percent: status === 'ok' ? 100 : (current?.percent ?? 100),
-      detail: current?.detail ?? '',
-      state: status === 'ok' ? 'done' : 'error',
+  function finishBackupProgress(status: OperationStatus) {
+    if (
+      (status === 'cancelled' || status === 'unavailable') &&
+      get(alertStore).type === 'progress'
+    ) {
+      alertClear()
     }
   }
 
@@ -107,40 +82,9 @@
     }
     return `${value < 10 && unitIndex > 0 ? value.toFixed(1) : Math.round(value)} ${units[unitIndex]}`
   }
-
-  function progressWidth(progress: BackupProgressView): string {
-    return progress.percent === null ? '100%' : `${progress.percent}%`
-  }
-
-  function progressLabel(progress: BackupProgressView): string {
-    return progress.percent === null ? 'Working' : `${Math.round(progress.percent)}%`
-  }
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.account} & {language.files}</h2>
-
-{#snippet ProgressBar(progress: BackupProgressView)}
-  <div class="mt-2 w-full max-w-xl" role="status" aria-live="polite">
-    <div class="flex items-center justify-between gap-3 text-xs text-textcolor2">
-      <span class="min-w-0 truncate">{progress.message}</span>
-      <span class="shrink-0">{progressLabel(progress)}</span>
-    </div>
-    <div class="mt-1 h-2 w-full overflow-hidden rounded-md border border-darkborderc bg-darkbg">
-      <div
-        class="h-full bg-linear-to-r transition-[width] duration-200"
-        class:from-green-500={progress.state !== 'error'}
-        class:to-blue-500={progress.state !== 'error'}
-        class:from-red-600={progress.state === 'error'}
-        class:to-red-400={progress.state === 'error'}
-        class:saving-animation={progress.state === 'running'}
-        style:width={progressWidth(progress)}
-      ></div>
-    </div>
-    {#if progress.detail}
-      <div class="mt-1 text-xs text-textcolor2">{progress.detail}</div>
-    {/if}
-  </div>
-{/snippet}
 
 <Button
   onclick={async () => {
@@ -155,9 +99,6 @@
 >
   Save Server Backup
 </Button>
-{#if backupProgress.serverSave}
-  {@render ProgressBar(backupProgress.serverSave)}
-{/if}
 
 <Button
   onclick={async () => {
@@ -175,9 +116,6 @@
 >
   Load Server Backup
 </Button>
-{#if backupProgress.serverRestore}
-  {@render ProgressBar(backupProgress.serverRestore)}
-{/if}
 
 <Button
   onclick={async () => {
@@ -192,9 +130,6 @@
 >
   {language.saveBackupLocal}
 </Button>
-{#if backupProgress.localSave}
-  {@render ProgressBar(backupProgress.localSave)}
-{/if}
 
 <Button
   onclick={async () => {
@@ -209,9 +144,6 @@
 >
   {language.saveBackupLocalZipStyle}
 </Button>
-{#if backupProgress.localZipSave}
-  {@render ProgressBar(backupProgress.localZipSave)}
-{/if}
 
 <Button
   onclick={async () => {
@@ -229,9 +161,6 @@
 >
   {language.loadBackupLocal}
 </Button>
-{#if backupProgress.localRestore}
-  {@render ProgressBar(backupProgress.localRestore)}
-{/if}
 
 <Button
   onclick={async () => {
