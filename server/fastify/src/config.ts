@@ -22,6 +22,12 @@ export interface AppConfig {
   staticRoot?: string | null
   hubUrl: string
   realmUrl?: string
+  /**
+   * Agent-only development escape hatch. When enabled, protected routes accept
+   * requests without password setup/login so automated agents can inspect the
+   * app without getting stuck at the first-run auth prompt.
+   */
+  agentDevAuthBypass?: boolean
 }
 
 function repoRoot(): string {
@@ -96,6 +102,12 @@ function parseHubUrl(raw: string | undefined, fallback: string): string {
   }
 }
 
+function parseBoolean(raw: string | undefined): boolean {
+  if (!raw) return false
+  const normalized = raw.trim().toLowerCase()
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const dataDir = env.RISU_API_DATA_DIR
     ? path.resolve(env.RISU_API_DATA_DIR)
@@ -111,5 +123,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     staticRoot: parseStaticRoot(env.RISU_API_STATIC_ROOT, path.join(repoRoot(), 'dist')),
     hubUrl: parseHubUrl(env.RISU_HUB_URL, 'https://sv.risuai.xyz'),
     realmUrl: parseHubUrl(env.RISU_REALM_URL, 'https://realm.risuai.net'),
+    agentDevAuthBypass: parseBoolean(env.RISU_AGENT_DEV_AUTH_BYPASS),
   }
 }

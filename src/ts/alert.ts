@@ -41,7 +41,9 @@ type AlertGenerationInfoStoreData = {
   genInfo: MessageGenerationInfo
   idx: number
 }
-export const alertGenerationInfoStore = writable<AlertGenerationInfoStoreData | undefined>(undefined)
+export const alertGenerationInfoStore = writable<AlertGenerationInfoStoreData | undefined>(
+  undefined,
+)
 export const alertStore = {
   set: (d: alertData) => {
     alertStoreImported.set(d)
@@ -81,9 +83,7 @@ export function alertError(msg: unknown) {
     message.includes('Failed to fetch') ||
     message.includes('NetworkError when attempting to fetch resource.')
   ) {
-    submsg = db.usePlainFetch
-      ? language.errors.networkFetchPlain
-      : language.errors.networkFetch
+    submsg = db.usePlainFetch ? language.errors.networkFetchPlain : language.errors.networkFetch
   }
 
   alertStoreImported.set({
@@ -276,6 +276,10 @@ export async function alertCardExport(type: string = '') {
 }
 
 export async function alertTOS() {
+  if (import.meta.env.VITE_RISU_AGENT_DEV_IGNORE_TOS === 'TRUE') {
+    return true
+  }
+
   if (localStorage.getItem('tos4') === 'true') {
     return true
   }

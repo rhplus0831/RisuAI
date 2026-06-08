@@ -6,6 +6,7 @@
 
 - Use `pnpm dev:agent` when an agent needs a full-stack development server.
 - The frontend is available at `http://localhost:6418`; Fastify runs on port `6419` and is proxied through `/api` on the frontend server.
+- `pnpm dev:agent` bypasses password authentication and Terms of Service confirmation for agent-run browser sessions.
 - Stop the dev server when you are done using it so ports `6418` and `6419` are released for the next agent.
 
 ## Available Tools

@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { type AuthState, hasPassword, verifyAssertion } from './auth.js'
+import { type AuthState, hasPassword, isAgentDevAuthBypassed, verifyAssertion } from './auth.js'
 
 export function extractRisuAuth(req: FastifyRequest): string {
   const raw = req.headers['risu-auth']
@@ -14,6 +14,9 @@ export async function requireAuth(
   req: FastifyRequest,
   reply: FastifyReply,
 ): Promise<boolean> {
+  if (isAgentDevAuthBypassed(state)) {
+    return true
+  }
   if (!hasPassword(state)) {
     reply.code(401).send({ error: 'Auth required' })
     return false

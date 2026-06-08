@@ -75,6 +75,50 @@ describe('auth.knownKeyHashes (A4EC5 / B6 bounded accumulator)', () => {
   })
 })
 
+describe('agent dev auth bypass', () => {
+  it('reports authorized and allows protected routes without password setup', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-agent-bypass-'))
+    try {
+      const { buildApp } = await import('../src/app.js')
+      const { app } = await buildApp({
+        config: {
+          host: '127.0.0.1',
+          port: 0,
+          dataDir,
+          bodyLimit: 1024 * 1024,
+          importMaxBytes: Infinity,
+          trustProxy: false,
+          hubUrl: 'https://sv.risuai.xyz',
+          agentDevAuthBypass: true,
+        },
+        assetGc: false,
+        memoryWorker: false,
+      })
+
+      try {
+        const status = await app.inject({
+          method: 'GET',
+          url: '/api/v1/auth/status',
+        })
+        expect(status.statusCode).toBe(200)
+        expect(status.json()).toEqual({ noPassword: false, authorized: true })
+
+        const storageList = await app.inject({
+          method: 'GET',
+          url: '/api/v1/storage/list',
+        })
+        expect(storageList.statusCode).toBe(200)
+        expect(storageList.json()).toEqual({ success: true, content: [] })
+        expect(fs.existsSync(path.join(dataDir, '__password'))).toBe(false)
+      } finally {
+        await app.close()
+      }
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('projection bulk route auth (L16)', () => {
   it('rejects unauthenticated requests and verifies authenticated requests exactly once', async () => {
     vi.resetModules()

@@ -49,12 +49,14 @@ vi.mock('src/lang', () => ({
   },
 }))
 
-import { alertError, alertProgress } from './alert'
+import { alertError, alertProgress, alertTOS } from './alert'
 
 beforeEach(() => {
+  vi.unstubAllEnvs()
   alertTestState.alertStoreSet.mockClear()
   alertTestState.getDatabase.mockClear()
   alertTestState.getDatabase.mockReturnValue({ usePlainFetch: false })
+  localStorage.clear()
 })
 
 describe('alertError', () => {
@@ -137,5 +139,16 @@ describe('alertProgress', () => {
         progress: null,
       }),
     )
+  })
+})
+
+describe('alertTOS', () => {
+  it('returns accepted without opening the modal in the agent dev browser environment', async () => {
+    vi.stubEnv('VITE_RISU_AGENT_DEV_IGNORE_TOS', 'TRUE')
+
+    await expect(alertTOS()).resolves.toBe(true)
+
+    expect(alertTestState.alertStoreSet).not.toHaveBeenCalled()
+    expect(localStorage.getItem('tos4')).toBeNull()
   })
 })

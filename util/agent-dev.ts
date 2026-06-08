@@ -86,6 +86,7 @@ spawnManaged('api', 'pnpm', ['exec', 'tsx', 'watch', 'server/fastify/src/index.t
   RISU_API_HOST: host,
   RISU_API_PORT: String(apiPort),
   RISU_API_STATIC_ROOT: process.env.RISU_API_STATIC_ROOT ?? 'none',
+  RISU_AGENT_DEV_AUTH_BYPASS: process.env.RISU_AGENT_DEV_AUTH_BYPASS ?? 'TRUE',
 })
 
 spawnManaged(
@@ -96,6 +97,7 @@ spawnManaged(
     ...process.env,
     RISU_API_PROXY_TARGET: `http://localhost:${apiPort}`,
     VITE_RISU_LEGAL_CONFIGURED: process.env.VITE_RISU_LEGAL_CONFIGURED ?? 'TRUE',
+    VITE_RISU_AGENT_DEV_IGNORE_TOS: process.env.VITE_RISU_AGENT_DEV_IGNORE_TOS ?? 'TRUE',
   },
 )
 

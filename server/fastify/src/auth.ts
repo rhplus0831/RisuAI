@@ -15,6 +15,7 @@ export interface AuthState {
   passwordPath: string
   knownKeysPath: string
   sessionTokensPath: string
+  agentDevAuthBypass: boolean
   password: string
   // The Set preserves insertion order; we treat `delete` + `add` as
   // "touch" to maintain an LRU on `verifyAssertion` / `registerPublicKey`.
@@ -22,7 +23,11 @@ export interface AuthState {
   knownSessionTokenHashes: Set<string>
 }
 
-export function createAuthState(dataDir: string): AuthState {
+interface AuthStateOptions {
+  agentDevAuthBypass?: boolean
+}
+
+export function createAuthState(dataDir: string, opts: AuthStateOptions = {}): AuthState {
   fs.mkdirSync(dataDir, { recursive: true })
   const passwordPath = path.join(dataDir, '__password')
   const knownKeysPath = path.join(dataDir, '__known_public_key_hashes.json')
@@ -32,7 +37,15 @@ export function createAuthState(dataDir: string): AuthState {
   const knownKeyHashes = loadHashSet(knownKeysPath)
   const knownSessionTokenHashes = loadHashSet(sessionTokensPath)
 
-  return { passwordPath, knownKeysPath, sessionTokensPath, password, knownKeyHashes, knownSessionTokenHashes }
+  return {
+    passwordPath,
+    knownKeysPath,
+    sessionTokensPath,
+    agentDevAuthBypass: opts.agentDevAuthBypass === true,
+    password,
+    knownKeyHashes,
+    knownSessionTokenHashes,
+  }
 }
 
 function loadHashSet(filePath: string): Set<string> {
@@ -69,6 +82,10 @@ function touch(set: Set<string>, hash: string): void {
 
 export function hasPassword(state: AuthState): boolean {
   return state.password.trim().length > 0
+}
+
+export function isAgentDevAuthBypassed(state: AuthState): boolean {
+  return state.agentDevAuthBypass
 }
 
 export function setPassword(state: AuthState, password: string): void {

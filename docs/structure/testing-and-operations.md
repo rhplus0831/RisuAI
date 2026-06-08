@@ -103,25 +103,28 @@ imports.
 
 Server:
 
-| Variable                    | Default                    | Notes                                                                                                      |
-| --------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `RISU_API_HOST`             | `0.0.0.0`                  | Fastify listen host.                                                                                       |
-| `RISU_API_PORT`             | `6002`                     | Fastify listen port.                                                                                       |
-| `RISU_API_DATA_DIR`         | `<repo>/data`              | SQLite, asset bytes, backups, auth files, legacy import artifacts.                                         |
-| `RISU_API_BODY_LIMIT`       | `104857600`                | JSON/body and multipart file limit.                                                                        |
-| `RISU_API_IMPORT_MAX_BYTES` | unlimited                  | Streamed device-backup import limit; positive byte count caps, `0`/`unlimited`/`none`/`infinity` opts out. |
-| `TRUST_PROXY`               | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string.                                          |
-| `RISU_API_STATIC_ROOT`      | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                                                         |
-| `RISU_HUB_URL`              | `https://sv.risuai.xyz`    | Hub passthrough target.                                                                                    |
-| `RISU_REALM_URL`            | `https://realm.risuai.net` | Realm character import target.                                                                             |
-| `LOG_LEVEL`                 | `info`                     | Use `silent` to disable Fastify logger.                                                                    |
-| `RISU_PROTOCOL_METRICS`     | unset                      | Enables structured protocol metrics when `1`, `true`, `yes`, or `on`.                                      |
+| Variable                     | Default                    | Notes                                                                                                      |
+| ---------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `RISU_API_HOST`              | `0.0.0.0`                  | Fastify listen host.                                                                                       |
+| `RISU_API_PORT`              | `6002`                     | Fastify listen port.                                                                                       |
+| `RISU_API_DATA_DIR`          | `<repo>/data`              | SQLite, asset bytes, backups, auth files, legacy import artifacts.                                         |
+| `RISU_API_BODY_LIMIT`        | `104857600`                | JSON/body and multipart file limit.                                                                        |
+| `RISU_API_IMPORT_MAX_BYTES`  | unlimited                  | Streamed device-backup import limit; positive byte count caps, `0`/`unlimited`/`none`/`infinity` opts out. |
+| `TRUST_PROXY`                | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string.                                          |
+| `RISU_API_STATIC_ROOT`       | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                                                         |
+| `RISU_HUB_URL`               | `https://sv.risuai.xyz`    | Hub passthrough target.                                                                                    |
+| `RISU_REALM_URL`             | `https://realm.risuai.net` | Realm character import target.                                                                             |
+| `RISU_AGENT_DEV_AUTH_BYPASS` | unset                      | Agent-only dev escape hatch; `pnpm dev:agent` sets it to bypass password auth for protected routes.        |
+| `LOG_LEVEL`                  | `info`                     | Use `silent` to disable Fastify logger.                                                                    |
+| `RISU_PROTOCOL_METRICS`      | unset                      | Enables structured protocol metrics when `1`, `true`, `yes`, or `on`.                                      |
 
 Local/dev:
 
-| Variable                | Default             | Notes                                     |
-| ----------------------- | ------------------- | ----------------------------------------- |
-| `RISU_API_RESTART_FLAG` | `.risu-api-restart` | Flag file watched by `pnpm api:dev:flag`. |
+| Variable                         | Default             | Notes                                                                                 |
+| -------------------------------- | ------------------- | ------------------------------------------------------------------------------------- |
+| `RISU_API_RESTART_FLAG`          | `.risu-api-restart` | Flag file watched by `pnpm api:dev:flag`.                                             |
+| `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE`              | Set by `pnpm dev:agent`; protected API routes ignore password auth for agent access.  |
+| `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE`              | Set by `pnpm dev:agent`; `alertTOS()` returns accepted without showing the TOS modal. |
 
 Client/build:
 

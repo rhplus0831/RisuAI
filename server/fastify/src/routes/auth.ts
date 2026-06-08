@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import {
   type AuthState,
   hasPassword,
+  isAgentDevAuthBypassed,
   passwordMatches,
   registerPublicKey,
   registerSessionToken,
@@ -25,6 +26,9 @@ interface SetupBody {
 
 export function registerAuthRoutes(app: FastifyInstance, state: AuthState): void {
   app.get('/api/v1/auth/status', async (req) => {
+    if (isAgentDevAuthBypassed(state)) {
+      return { noPassword: false, authorized: true }
+    }
     const token = extractRisuAuth(req)
     if (!hasPassword(state)) {
       return { noPassword: true, authorized: false }

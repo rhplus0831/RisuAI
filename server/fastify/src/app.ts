@@ -188,7 +188,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
           },
         })
   memoryWorker?.start()
-  const authState = createAuthState(config.dataDir)
+  const authState = createAuthState(config.dataDir, {
+    agentDevAuthBypass: config.agentDevAuthBypass === true,
+  })
   const commandEventSink = opts.commandEvents ?? createCommandEventSink()
   const streamJobRegistry = new JobRegistry()
   // Separately GC-ticked registry for detached chat generations and their
