@@ -68,7 +68,7 @@ Authored under `slices/phase-7-assembly-and-trigger-hot-paths/`.
 
 - [`../audit-stability-and-performance-v3.md`](../audit-stability-and-performance-v3.md) -
   L1, L3, L6-L10; K3 under Known-Item Overlaps.
-- [`../../../audit-stability-and-performance-v4.md`](../../../audit-stability-and-performance-v4.md) -
+- [`../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md) -
   v4-M4, v4-L6, v4-L7, plus v4-L1/v4-L2/v4-L3/v4-L5 routing notes.
 - L1: `server/fastify/src/routes/generationChat.ts` (`readStoredAsset`,
   `createRequestScopedStoredAssetResolver`, `loadDatabaseDeps`),

@@ -19,7 +19,7 @@ translation behavior, or the projection guard.
 
 ## Anchors
 
-- [`../../../../../audit-stability-and-performance-v4.md`](../../../../../audit-stability-and-performance-v4.md)
+- [`../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md)
   v4-M1, v4-L22, and v4-L23.
 - [`../../../v4-integration-brief.md`](../../../v4-integration-brief.md)
   Phase 6 amendments and render budget gate.

@@ -29,7 +29,7 @@ persistence, DPoP/auth storage recovery, or MCP plugin tools.
   document listeners, and `SafeMutationObserver`.
 - `src/ts/plugins/plugins.svelte.ts`: `loadV2Plugin` reset block and plugin
   reload/toggle flow.
-- [`../../../../../audit-stability-and-performance-v4.md`](../../../../../audit-stability-and-performance-v4.md):
+- [`../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md):
   v4-L37.
 - Existing focused tests near `src/ts/plugins/plugins.test.ts`; add V3
   lifecycle tests near the touched modules if needed.

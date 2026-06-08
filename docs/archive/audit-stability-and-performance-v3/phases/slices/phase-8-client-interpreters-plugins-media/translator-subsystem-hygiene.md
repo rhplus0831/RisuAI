@@ -20,7 +20,7 @@ plugin guest listener cleanup, or DPoP keypair recovery.
 
 ## Anchors
 
-- [`../../../../../audit-stability-and-performance-v4.md`](../../../../../audit-stability-and-performance-v4.md)
+- [`../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md)
   v4-L24 through v4-L29 under "Client -- translator subsystem".
 - [`../../../v4-integration-brief.md`](../../../v4-integration-brief.md):
   Phase 8 amendment routing for the translator slice and Phase 5 routing for

@@ -59,7 +59,7 @@ inventoried as no-action or measured/deferred.
 - `src/ts/__tests__/fixCompletenessGateV3.test.ts` and
   [`../../../active-risk-analysis.md`](../../../active-risk-analysis.md) for
   L50-L55/K4 proof registration.
-- [`../../../../../audit-stability-and-performance-v4.md`](../../../../../audit-stability-and-performance-v4.md):
+- [`../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md):
   v4-L31 and v4-L36.
 
 ## Target Shape

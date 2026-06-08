@@ -180,8 +180,8 @@ consumers, and adds a regression test.
 
 ## V4 Integration
 
-[`../../audit-stability-and-performance-v4.md`](../../audit-stability-and-performance-v4.md)
-is now treated as a post-Phase-4 routing input for the remaining v3 work, not
-as an unrelated plan. Start with
+[`../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md)
+is now archived and was treated as a post-Phase-4 routing input for the
+remaining v3 work, not as an unrelated plan. Start with
 [`v4-integration-brief.md`](v4-integration-brief.md) before opening Phase 5
 or rewriting any later phase slices.

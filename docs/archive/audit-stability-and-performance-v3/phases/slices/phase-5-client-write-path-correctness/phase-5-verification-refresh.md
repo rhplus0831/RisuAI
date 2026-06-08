@@ -22,7 +22,7 @@ verification.
 - `docs/plan/latest-verification.md`.
 - `docs/plan/active-risk-analysis.md`: M8, L21, L23, L24, L25, L26, L27,
   L34, L35, L36, and L37 rows.
-- [`docs/audit-stability-and-performance-v4.md`](../../../../../audit-stability-and-performance-v4.md):
+- [`docs/archive/audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md):
   v4-L30, v4-L33, and the routing note that folds them into Phase 5.
 - [`docs/plan/v4-integration-brief.md`](../../../v4-integration-brief.md):
   Phase 5 amendments and guard inventory requirements.

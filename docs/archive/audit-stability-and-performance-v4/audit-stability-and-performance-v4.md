@@ -2,6 +2,9 @@
 
 Date: 2026-06-07.
 
+Archived: 2026-06-08 in
+`docs/archive/audit-stability-and-performance-v4/`.
+
 This is the fourth broad stability/performance audit of the Fastify-only
 RisuAI codebase. It follows v1 (2026-06-04), v2 (2026-06-05) — both archived
 with their completed remediation waves — and v3 (2026-06-06), whose

@@ -36,7 +36,7 @@ lifecycle and do not match this slice's abort/cap/log cleanup invariant.
 - `src/ts/process/mcp/filesystemclient.ts`: `readFileAsPDF` and `limit`
   argument; v4-L35 base64 read and content-search cap siblings.
 - `src/ts/process/dynamicutils/pdf.ts`: `convertPdfToImages` page rendering.
-- [`../../../../../audit-stability-and-performance-v4.md`](../../../../../audit-stability-and-performance-v4.md):
+- [`../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md):
   v4-L35.
 - Existing focused tests:
   `src/ts/process/mcp/mcplib.test.ts`,

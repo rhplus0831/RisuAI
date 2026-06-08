@@ -19,7 +19,7 @@ provider-specific optional parameters. It also does not change UI settings or
 
 ## Anchors
 
-- [`../../../../../audit-stability-and-performance-v4.md`](../../../../../audit-stability-and-performance-v4.md)
+- [`../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md)
   v4-M4 and v4-L6, plus the routing note pairing them.
 - `server/fastify/src/prompt/chatDispatch.ts`: `ChatDispatchArgs`,
   `dispatchChatProvider`, shared `temperature` derivation, and Horde

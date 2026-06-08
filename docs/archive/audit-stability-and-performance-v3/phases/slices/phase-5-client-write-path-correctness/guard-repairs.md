@@ -21,7 +21,7 @@ logic, or schedule the rest of the v4 translator/MCP hygiene batch.
 
 - [`../../../audit-stability-and-performance-v3.md`](../../../audit-stability-and-performance-v3.md)
   L34, L35, L36, I20, and I11.
-- [`../../../../../audit-stability-and-performance-v4.md`](../../../../../audit-stability-and-performance-v4.md)
+- [`../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md)
   v4-L30, v4-L33, and the routing note that folds them into the Phase 5
   projection-guard repair batch.
 - `src/ts/server/projectionWriteGuard.svelte.ts`: guard enablement and

@@ -63,7 +63,7 @@ Authored under `slices/phase-5-client-write-path-correctness/`.
 - [`../audit-stability-and-performance-v3.md`](../audit-stability-and-performance-v3.md) -
   M8, L21, L23-L27, L34-L37 (the verifier corrections name the precise
   trigger paths and the existing suppression/baseline precedents).
-- [`../../../audit-stability-and-performance-v4.md`](../../../audit-stability-and-performance-v4.md) -
+- [`../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md) -
   v4-L30, v4-L33, and the Phase 5 routing note that folds translator preset
   and MCP handshake feature breakage into this guard-repair sweep.
 - M8: `src/ts/server/settingsBridge.svelte.ts`, `characterBridge.svelte.ts`,

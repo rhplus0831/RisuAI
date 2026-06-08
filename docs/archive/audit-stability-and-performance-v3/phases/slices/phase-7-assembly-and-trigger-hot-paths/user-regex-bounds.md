@@ -21,7 +21,7 @@ regex results below the selected caps.
 
 - [`../../../audit-stability-and-performance-v3.md`](../../../audit-stability-and-performance-v3.md)
   L9.
-- [`../../../../../audit-stability-and-performance-v4.md`](../../../../../audit-stability-and-performance-v4.md)
+- [`../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md)
   v4-L7.
 - `server/fastify/src/prompt/triggerDataEffects.ts`: `v2ExtractRegex`,
   `v2RegexTest`, `v2ReplaceString`, `v2QuickSearchChat`, and any shared regex

@@ -65,7 +65,7 @@ Authored under `slices/phase-6-reactive-amplification-and-render/`.
 - [`../audit-stability-and-performance-v3.md`](../audit-stability-and-performance-v3.md) -
   M6, v3-L22, L28-L33 (the verifier corrections pin the true re-fire drivers
   and the safe fix shapes).
-- [`../../../audit-stability-and-performance-v4.md`](../../../audit-stability-and-performance-v4.md) -
+- [`../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md) -
   v4-H1/v4-L20 transcript window reset and screenshot bound,
   v4-M1/v4-L22 parser dependency narrowing, and v4-L23 measure-first helper
   churn.

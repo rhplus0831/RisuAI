@@ -19,8 +19,9 @@ Primary sources:
 [`next-steps.md`](next-steps.md),
 [`active-risk-analysis.md`](active-risk-analysis.md),
 [`latest-verification.md`](latest-verification.md),
-[`../../audit-stability-and-performance-v4.md`](../../audit-stability-and-performance-v4.md),
-and [`../../audit-v4-findings/README.md`](../../audit-v4-findings/README.md).
+[`../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md),
+and
+[`../audit-stability-and-performance-v4/audit-v4-findings/README.md`](../audit-stability-and-performance-v4/audit-v4-findings/README.md).
 
 ## Routing Summary
 

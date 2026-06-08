@@ -17,7 +17,7 @@ streaming persistence, parser output, or screenshot image contents.
 
 ## Anchors
 
-- [`../../../../../audit-stability-and-performance-v4.md`](../../../../../audit-stability-and-performance-v4.md)
+- [`../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md`](../../../../audit-stability-and-performance-v4/audit-stability-and-performance-v4.md)
   v4-H1, v4-L20, and the suggested Phase 6 remediation order.
 - [`../../../v4-integration-brief.md`](../../../v4-integration-brief.md)
   Phase 6 amendments.
