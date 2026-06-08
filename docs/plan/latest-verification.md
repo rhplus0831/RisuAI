@@ -9,23 +9,50 @@ after each change to a narrowed or bounded path.
 
 - Plan state: open; Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, Phase 5,
   Phase 6, Phase 7, and Phase 8 are complete; the v4-H2 Phase 4.5 hotfix is
-  also complete. Phase 9 is the next batch. `H1`, `M1-M9`, `L1-L56`, and
-  `K1-K4` are `DONE` in
+  also complete. Phase 9 registry sweep, gate self-proof freeze, and closing
+  proof are complete; archive/repoint remains open. `H1`, `M1-M9`, `L1-L56`,
+  and `K1-K4` are `DONE` in
   [`active-risk-analysis.md`](active-risk-analysis.md).
 - Gate state: the v1 gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
   and the v2 gate (`fixCompletenessGateV2.test.ts`) remain live against their
   archives. The v3 gate (`fixCompletenessGateV3.test.ts`) is live against
   `docs/plan/`, with every scheduled v3 ID (`H1`, `M1-M9`, `L1-L56`,
-  `K1-K4`) registered as `DONE`. The latest v3 gate command is green in the
-  run below; the v1/v2 archive gates were last refreshed during the Phase 5
-  verification run.
+  `K1-K4`) registered as `DONE`. All three gate commands are green in the
+  Phase 9 closing proof below.
 - Tree: Phase 8 implementation is committed through `2a1b84fe4`; this
-  working-tree update refreshes the Phase 8 closeout proof and router docs.
+  working-tree update records the Phase 9 closing proof and exit-criteria
+  progress only. It does not archive the plan or repoint the v3 gate.
   Phase 8 includes the v3 M7, L38-L55, and K4 runtime, tests, gate
   registrations, and active-risk status flips plus v4-L24 through v4-L29,
   v4-L31, v4-L35, v4-L36, and v4-L37 proof riders only. `v4-L30` remains
   Phase 5-owned, and `v4-L38` remains outside Phase 8 without a separate
   storage-persistence owner.
+
+## Phase 9 Closing Proof (2026-06-08)
+
+Run for
+[`phases/slices/phase-9-verification-budgets/closing-proof.md`](phases/slices/phase-9-verification-budgets/closing-proof.md)
+after the Phase 9 registry sweep and gate self-proof freeze. The registry
+sweep, all-gates-green, and closing-run exit criteria are satisfied. Archive
+movement and v3 gate repointing remain open for the later archive slice.
+
+- `pnpm exec vitest run src/ts/__tests__/fixCompletenessGate.test.ts src/ts/__tests__/fixCompletenessGateV2.test.ts src/ts/__tests__/fixCompletenessGateV3.test.ts`:
+  passed, 3 files / 52 tests, exited 0. The command emitted the usual
+  Vite/Svelte default-config notice.
+- `pnpm test`: passed, 168 files / 1480 tests passed / 4 skipped
+  (1484 total), exited 0. The command emitted the existing
+  `ECONNREFUSED 127.0.0.1:3000` diagnostics from network-path tests plus the
+  existing `src/lib/SideBars/LoreBook/LoreBookData.svelte`
+  `state_referenced_locally` warning, but exited successfully.
+- `pnpm api:test`: passed, 101 files / 1950 tests passed / 1 skipped
+  (1951 total), exited 0. The run emitted normal Fastify request logs.
+- `pnpm client-thinning:audit`: passed (`Client-thinning audit passed.`),
+  exited 0.
+- `pnpm exec tsc -p tsconfig.client-lib.json`: zero errors, exited 0.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`: zero errors,
+  exited 0.
+- Skipped/failed items: no failed commands; only the expected skipped tests
+  reported by the full client and API suites.
 
 ## Phase 8 Verification Refresh (2026-06-08)
 

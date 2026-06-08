@@ -30,10 +30,10 @@ Authored under `slices/phase-9-verification-budgets/`.
 
 ## Exit Criteria
 
-- [ ] Registry sweep clean: every scheduled row `DONE` (or re-gated with a
+- [x] Registry sweep clean: every scheduled row `DONE` (or re-gated with a
       recorded owner decision); gate/risk-map/audit-index alignment proven.
-- [ ] All three gates green; v3 negative self-proofs in place.
-- [ ] Closing run recorded: both prior gates + the v3 gate, `pnpm test`,
+- [x] All three gates green; v3 negative self-proofs in place.
+- [x] Closing run recorded: both prior gates + the v3 gate, `pnpm test`,
       `pnpm api:test`, `pnpm client-thinning:audit`, both TypeScript checks.
 - [ ] Plan archived; v3 gate repointed; navigation docs updated.
 

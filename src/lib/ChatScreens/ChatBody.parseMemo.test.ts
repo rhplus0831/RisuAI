@@ -230,7 +230,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   const translatorModule = await import('../../ts/translator/translator')
-  await translatorModule.LLMCacheStorage.removeItem(explicitRetranslateCacheKey)
+  await translatorModule.clearLLMCache()
   document.body.innerHTML = ''
   DBState.db = previousDb
   selectedCharID.set(previousSelectedChar)
@@ -659,7 +659,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const parserModule = await import('../../ts/parser/parser.svelte')
     vi.spyOn(parserModule, 'ParseMarkdown').mockImplementation(async (data) => `<p>${data}</p>`)
     const translatorModule = await import('../../ts/translator/translator')
-    await translatorModule.LLMCacheStorage.setItem(explicitRetranslateCacheKey, 'cached hit')
+    await translatorModule.setLLMCache(explicitRetranslateCacheKey, 'cached hit')
     translateHTMLMock.implementation = async () => 'explicit translated body'
     const memoModule = await import('./ChatBodyParseMemo')
     memoModule.clearChatBodyParseMemo()
