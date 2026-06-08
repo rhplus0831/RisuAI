@@ -322,14 +322,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   bootPromptVariables()
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {
-    const indexPath = path.join(config.staticRoot, 'index.html')
     const staticAssetsRoot = path.join(config.staticRoot, 'assets')
-    let cachedIndex: string | null = null
-    const indexHtml = (): string => {
-      if (cachedIndex !== null) return cachedIndex
-      cachedIndex = fs.readFileSync(indexPath, 'utf-8')
-      return cachedIndex
-    }
 
     await app.register(fastifyStatic, {
       root: config.staticRoot,
@@ -348,7 +341,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     })
 
     app.get('/', async (_req, reply) => {
-      reply.type('text/html').send(indexHtml())
+      return reply.sendFile('index.html')
     })
 
     app.setNotFoundHandler((req, reply) => {
@@ -356,7 +349,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
         reply.code(404).send({ error: 'not found' })
         return
       }
-      reply.type('text/html').send(indexHtml())
+      return reply.sendFile('index.html')
     })
   }
 

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { createHash, webcrypto } from 'node:crypto'
+import { createHash, randomBytes, webcrypto } from 'node:crypto'
 import { Buffer } from 'node:buffer'
 
 const subtle = webcrypto.subtle
@@ -14,35 +14,43 @@ const KNOWN_KEY_HASH_CAP = 4096
 export interface AuthState {
   passwordPath: string
   knownKeysPath: string
+  sessionTokensPath: string
   password: string
   // The Set preserves insertion order; we treat `delete` + `add` as
   // "touch" to maintain an LRU on `verifyAssertion` / `registerPublicKey`.
   knownKeyHashes: Set<string>
+  knownSessionTokenHashes: Set<string>
 }
 
 export function createAuthState(dataDir: string): AuthState {
   fs.mkdirSync(dataDir, { recursive: true })
   const passwordPath = path.join(dataDir, '__password')
   const knownKeysPath = path.join(dataDir, '__known_public_key_hashes.json')
+  const sessionTokensPath = path.join(dataDir, '__known_session_token_hashes.json')
 
   const password = fs.existsSync(passwordPath) ? fs.readFileSync(passwordPath, 'utf-8') : ''
-  const knownKeyHashes = new Set<string>()
-  if (fs.existsSync(knownKeysPath)) {
+  const knownKeyHashes = loadHashSet(knownKeysPath)
+  const knownSessionTokenHashes = loadHashSet(sessionTokensPath)
+
+  return { passwordPath, knownKeysPath, sessionTokensPath, password, knownKeyHashes, knownSessionTokenHashes }
+}
+
+function loadHashSet(filePath: string): Set<string> {
+  const hashes = new Set<string>()
+  if (fs.existsSync(filePath)) {
     try {
-      const raw = JSON.parse(fs.readFileSync(knownKeysPath, 'utf-8'))
+      const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
       if (Array.isArray(raw)) {
         for (const h of raw) {
-          if (typeof h === 'string') knownKeyHashes.add(h)
+          if (typeof h === 'string') hashes.add(h)
         }
       }
     } catch {
       // ignore malformed cache; will be rewritten on next login
     }
   }
-  // Trim any legacy oversize cache to the cap before first use.
-  trimToCap(knownKeyHashes)
-
-  return { passwordPath, knownKeysPath, password, knownKeyHashes }
+  trimToCap(hashes)
+  return hashes
 }
 
 function trimToCap(set: Set<string>): void {
@@ -84,6 +92,22 @@ export function registerPublicKey(state: AuthState, publicKey: unknown): void {
   persistKnownKeys(state)
 }
 
+export function registerSessionToken(state: AuthState): string {
+  const token = `session.${randomBytes(32).toString('base64url')}`
+  state.knownSessionTokenHashes.add(hashToken(token))
+  trimToCap(state.knownSessionTokenHashes)
+  persistKnownSessionTokens(state)
+  return token
+}
+
+function persistKnownSessionTokens(state: AuthState): void {
+  fs.writeFileSync(
+    state.sessionTokensPath,
+    JSON.stringify(Array.from(state.knownSessionTokenHashes)),
+    'utf-8',
+  )
+}
+
 export function passwordMatches(state: AuthState, candidate: string | undefined): boolean {
   if (typeof candidate !== 'string') return false
   if (!hasPassword(state)) return false
@@ -92,6 +116,10 @@ export function passwordMatches(state: AuthState, candidate: string | undefined)
 
 function hashJSON(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+}
+
+function hashToken(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
 }
 
 interface AssertionShape {
@@ -140,6 +168,12 @@ export type VerifyResult =
 
 export async function verifyAssertion(state: AuthState, token: string): Promise<VerifyResult> {
   if (!token) return { ok: false, reason: 'missing' }
+  if (token.startsWith('session.')) {
+    const hash = hashToken(token)
+    if (!state.knownSessionTokenHashes.has(hash)) return { ok: false, reason: 'unknown-key' }
+    touch(state.knownSessionTokenHashes, hash)
+    return { ok: true }
+  }
   const decoded = decodeAssertion(token)
   if (!decoded) return { ok: false, reason: 'malformed' }
 

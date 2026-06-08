@@ -112,6 +112,33 @@ describe('Fastify foundation smoke', () => {
     })
     expect(statusExpired.json()).toEqual({ noPassword: false, authorized: false })
   })
+
+  it('issues and accepts server session auth for browsers without WebCrypto', async () => {
+    const setup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: { password: 'hunter2', sessionAuth: true },
+    })
+    expect(setup.statusCode).toBe(200)
+    const setupBody = setup.json()
+    expect(setupBody.status).toBe('success')
+    expect(setupBody.authToken).toMatch(/^session\./)
+
+    const status = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/status',
+      headers: { 'risu-auth': setupBody.authToken },
+    })
+    expect(status.statusCode).toBe(200)
+    expect(status.json()).toEqual({ noPassword: false, authorized: true })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': setupBody.authToken },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+  })
 })
 
 async function signAssertion(

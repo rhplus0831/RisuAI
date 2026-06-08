@@ -4,6 +4,7 @@ import {
   hasPassword,
   passwordMatches,
   registerPublicKey,
+  registerSessionToken,
   setPassword,
   verifyAssertion,
 } from '../auth.js'
@@ -13,11 +14,13 @@ import { authLoginRateLimit, authSetupRateLimit } from '../routeRateLimits.js'
 interface LoginBody {
   password?: unknown
   publicKey?: unknown
+  sessionAuth?: unknown
 }
 
 interface SetupBody {
   password?: unknown
   publicKey?: unknown
+  sessionAuth?: unknown
 }
 
 export function registerAuthRoutes(app: FastifyInstance, state: AuthState): void {
@@ -50,6 +53,9 @@ export function registerAuthRoutes(app: FastifyInstance, state: AuthState): void
       if (typeof body.publicKey === 'object' && body.publicKey !== null) {
         registerPublicKey(state, body.publicKey)
       }
+      if (body.sessionAuth === true) {
+        return { status: 'success', authToken: registerSessionToken(state) }
+      }
       return { status: 'success' }
     },
   )
@@ -65,8 +71,8 @@ export function registerAuthRoutes(app: FastifyInstance, state: AuthState): void
       }
       if (
         typeof body.password !== 'string' ||
-        typeof body.publicKey !== 'object' ||
-        body.publicKey === null
+        (body.sessionAuth !== true &&
+          (typeof body.publicKey !== 'object' || body.publicKey === null))
       ) {
         reply.code(400)
         return { error: 'Invalid payload' }
@@ -75,7 +81,12 @@ export function registerAuthRoutes(app: FastifyInstance, state: AuthState): void
         reply.code(400)
         return { error: 'Password incorrect' }
       }
-      registerPublicKey(state, body.publicKey)
+      if (typeof body.publicKey === 'object' && body.publicKey !== null) {
+        registerPublicKey(state, body.publicKey)
+      }
+      if (body.sessionAuth === true) {
+        return { status: 'success', authToken: registerSessionToken(state) }
+      }
       return { status: 'success' }
     },
   )

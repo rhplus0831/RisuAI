@@ -18,13 +18,34 @@ const ROUTES = {
 }
 
 type AuthStatus = 'unset' | 'incorrect' | 'success'
+type PasswordAuthResponse = {
+  authToken?: unknown
+  error?: unknown
+}
 
 const FASTIFY_BROWSER_SMOKE_PASSWORD = 'risu-fastify-browser-smoke'
+const SESSION_AUTH_PREFIX = 'session.'
 
 function fastifyBrowserSmokePassword(): string | null {
   return import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE'
     ? FASTIFY_BROWSER_SMOKE_PASSWORD
     : null
+}
+
+function subtleCrypto(): SubtleCrypto | null {
+  return globalThis.crypto?.subtle ?? null
+}
+
+function storedSessionAuth(): string | null {
+  if (typeof localStorage === 'undefined') return null
+  const token = localStorage.getItem('risuauth')
+  return token?.startsWith(SESSION_AUTH_PREFIX) ? token : null
+}
+
+function saveSessionAuth(token: string): void {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('risuauth', token)
+  }
 }
 
 async function fetchAuthStatus(assertion: string): Promise<AuthStatus> {
@@ -46,6 +67,11 @@ export class FastifyStorage {
   }
 
   async createAuth() {
+    const subtle = subtleCrypto()
+    if (!subtle) {
+      return storedSessionAuth() ?? ''
+    }
+
     const keyPair = await this.getKeyPair()
     const date = Math.floor(Date.now() / 1000)
 
@@ -56,9 +82,9 @@ export class FastifyStorage {
     const payload = {
       iat: date,
       exp: date + 5 * 60, //5 minutes expiration
-      pub: await crypto.subtle.exportKey('jwk', keyPair.publicKey),
+      pub: await subtle.exportKey('jwk', keyPair.publicKey),
     }
-    const sig = await crypto.subtle.sign(
+    const sig = await subtle.sign(
       {
         name: 'ECDSA',
         hash: 'SHA-256',
@@ -94,7 +120,12 @@ export class FastifyStorage {
       return storedKey
     }
 
-    const keyPair = await crypto.subtle.generateKey(
+    const subtle = subtleCrypto()
+    if (!subtle) {
+      throw new Error('WebCrypto is unavailable on this origin')
+    }
+
+    const keyPair = await subtle.generateKey(
       {
         name: 'ECDSA',
         namedCurve: 'P-256',
@@ -190,10 +221,11 @@ export class FastifyStorage {
   private async checkAuth() {
     if (!this.authChecked) {
       const status = await fetchAuthStatus(await this.createAuth())
+      const canUseWebCrypto = subtleCrypto() !== null
 
       if (status === 'unset') {
-        const keypair = await this.getKeyPair()
-        const publicKey = await crypto.subtle.exportKey('jwk', keypair.publicKey)
+        const keypair = canUseWebCrypto ? await this.getKeyPair() : null
+        const publicKey = keypair ? await subtleCrypto()!.exportKey('jwk', keypair.publicKey) : null
         const smokePassword = fastifyBrowserSmokePassword()
         const input = await digestPassword(
           smokePassword ?? (await alertInput(language.setNodePassword)),
@@ -202,29 +234,25 @@ export class FastifyStorage {
           method: 'POST',
           body: JSON.stringify({
             password: input,
-            publicKey: publicKey,
+            ...(publicKey ? { publicKey } : { sessionAuth: true }),
           }),
           headers: {
             'content-type': 'application/json',
           },
         })
-        if (s.status < 200 || s.status >= 300) {
-          let message = `Password setup failed (${s.status})`
-          try {
-            const body = await s.json()
-            if (body?.error) {
-              message = body.error
-            }
-          } catch {}
-          alertError(message)
-          await waitAlert()
-          throw message
+        const sessionAuth = await readPasswordAuthResponse(
+          s,
+          `Password setup failed (${s.status})`,
+          !canUseWebCrypto,
+        )
+        if (sessionAuth) {
+          saveSessionAuth(sessionAuth)
         }
         this.authChecked = true
         return await this.createAuth()
       } else if (status === 'incorrect') {
-        const keypair = await this.getKeyPair()
-        const publicKey = await crypto.subtle.exportKey('jwk', keypair.publicKey)
+        const keypair = canUseWebCrypto ? await this.getKeyPair() : null
+        const publicKey = keypair ? await subtleCrypto()!.exportKey('jwk', keypair.publicKey) : null
         const smokePassword = fastifyBrowserSmokePassword()
         const input = await digestPassword(
           smokePassword ?? (await alertInput(language.inputNodePassword)),
@@ -234,23 +262,19 @@ export class FastifyStorage {
           method: 'POST',
           body: JSON.stringify({
             password: input,
-            publicKey: publicKey,
+            ...(publicKey ? { publicKey } : { sessionAuth: true }),
           }),
           headers: {
             'content-type': 'application/json',
           },
         })
-        if (s.status < 200 || s.status >= 300) {
-          let message = `Login failed (${s.status})`
-          try {
-            const body = await s.json()
-            if (body?.error) {
-              message = body.error
-            }
-          } catch {}
-          alertError(message)
-          await waitAlert()
-          throw message
+        const sessionAuth = await readPasswordAuthResponse(
+          s,
+          `Login failed (${s.status})`,
+          !canUseWebCrypto,
+        )
+        if (sessionAuth) {
+          saveSessionAuth(sessionAuth)
         }
         this.authChecked = true
         return await this.createAuth()
@@ -267,6 +291,35 @@ const sharedStorage = new FastifyStorage()
 
 export async function getNodeServerProxyAuth() {
   return await sharedStorage.getProxyAuth()
+}
+
+async function readPasswordAuthResponse(
+  response: Response,
+  fallbackMessage: string,
+  requireSessionAuth: boolean,
+): Promise<string | null> {
+  let body: PasswordAuthResponse | null = null
+  try {
+    body = (await response.json()) as PasswordAuthResponse
+  } catch {}
+
+  if (response.status < 200 || response.status >= 300) {
+    const message = typeof body?.error === 'string' ? body.error : fallbackMessage
+    alertError(message)
+    await waitAlert()
+    throw message
+  }
+
+  if (!requireSessionAuth) return null
+
+  if (typeof body?.authToken === 'string' && body.authToken.startsWith(SESSION_AUTH_PREFIX)) {
+    return body.authToken
+  }
+
+  const message = 'Server did not return a LAN auth token'
+  alertError(message)
+  await waitAlert()
+  throw message
 }
 
 async function digestPassword(message: string) {

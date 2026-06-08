@@ -10,6 +10,11 @@ import type { FastifyInstance } from 'fastify'
 const STATIC_APP_JS =
   'console.log("app")\n' +
   `globalThis.__STATIC_COMPRESSION_FIXTURE__ = ${JSON.stringify('static chunk '.repeat(300))}\n`
+const STATIC_INDEX_HTML =
+  '<!doctype html><html><head lang="en"><title>spa</title></head><body>' +
+  '<main data-test="spa-root">' +
+  'static spa entry '.repeat(120) +
+  '</main></body></html>'
 
 interface Harness {
   app: FastifyInstance
@@ -35,10 +40,7 @@ async function startHarness(opts: { withStatic: boolean }): Promise<Harness> {
   let staticRoot: string | null = null
   if (opts.withStatic) {
     staticRoot = mkdtempSync(path.join(tmpdir(), 'risu-fastify-static-'))
-    writeFileSync(
-      path.join(staticRoot, 'index.html'),
-      '<!doctype html><html><head lang="en"><title>spa</title></head><body></body></html>',
-    )
+    writeFileSync(path.join(staticRoot, 'index.html'), STATIC_INDEX_HTML)
     mkdirSync(path.join(staticRoot, 'assets'))
     writeFileSync(path.join(staticRoot, 'assets', 'app.js'), STATIC_APP_JS)
   }
@@ -80,6 +82,18 @@ describe('Phase 2E static serving', () => {
       expect(res.statusCode).toBe(200)
       expect(res.body).toContain('<title>spa</title>')
       expectNotImmutableCached(res)
+    })
+
+    it('serves compressed GET / with the SPA document body', async () => {
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/',
+        headers: { 'accept-encoding': 'gzip' },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-type']).toContain('text/html')
+      expect(res.headers['content-encoding']).toBe('gzip')
+      expect(gunzipSync(Buffer.from(res.rawPayload)).toString('utf8')).toBe(STATIC_INDEX_HTML)
     })
 
     it('serves index.html without injecting runtime flags', async () => {
@@ -142,6 +156,19 @@ describe('Phase 2E static serving', () => {
       expect(res.statusCode).toBe(200)
       expect(res.headers['content-type']).toContain('text/html')
       expect(res.body).toContain('<title>spa</title>')
+      expectNotImmutableCached(res)
+    })
+
+    it('serves SPA fallback with the document body when compression is requested', async () => {
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/character/123',
+        headers: { 'accept-encoding': 'gzip' },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-type']).toContain('text/html')
+      expect(res.headers['content-encoding']).toBeUndefined()
+      expect(res.body).toBe(STATIC_INDEX_HTML)
       expectNotImmutableCached(res)
     })
 

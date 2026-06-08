@@ -64,6 +64,27 @@ function captureFetch(handler: (url: string, init: RequestInit) => Response): Ca
   return calls
 }
 
+function stubLocalStorage(): Map<string, string> {
+  const store = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: vi.fn((key: string) => store.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store.set(key, String(value))
+    }),
+    removeItem: vi.fn((key: string) => {
+      store.delete(key)
+    }),
+    clear: vi.fn(() => {
+      store.clear()
+    }),
+    key: vi.fn((index: number) => Array.from(store.keys())[index] ?? null),
+    get length() {
+      return store.size
+    },
+  } as Storage)
+  return store
+}
+
 describe('FastifyStorage client', () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
@@ -129,5 +150,36 @@ describe('FastifyStorage client', () => {
       publicKey: expect.objectContaining({ kty: 'EC' }),
     })
     expect(alertState.alertInput).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses server-issued session auth when WebCrypto is unavailable', async () => {
+    vi.stubGlobal('crypto', {})
+    const sessionToken = 'session.test-token'
+    const stored = stubLocalStorage()
+    const calls = captureFetch((url) => {
+      if (url === '/api/v1/auth/status') return jsonResponse({ noPassword: true })
+      if (url === '/api/v1/auth/crypto') return textResponse('hashed-password')
+      if (url === '/api/v1/auth/setup') {
+        return jsonResponse({ status: 'success', authToken: sessionToken })
+      }
+      return jsonResponse({ success: true })
+    })
+    const storage = new FastifyStorage()
+
+    await storage.setItem('database/database.bin', new Uint8Array([1]))
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      'GET /api/v1/auth/status',
+      'POST /api/v1/auth/crypto',
+      'POST /api/v1/auth/setup',
+      'POST /api/v1/storage/write',
+    ])
+    expect(calls[0].headers['risu-auth']).toBe('')
+    expect(JSON.parse(calls[2].body ?? '{}')).toEqual({
+      password: 'hashed-password',
+      sessionAuth: true,
+    })
+    expect(calls[3].headers['risu-auth']).toBe(sessionToken)
+    expect(stored.get('risuauth')).toBe(sessionToken)
   })
 })
