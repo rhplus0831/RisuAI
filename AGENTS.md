@@ -36,3 +36,7 @@ The server tsconfig (`server/fastify/tsconfig.json`) uses `strict: true` and ref
 pnpm exec tsc -p tsconfig.client-lib.json              # build client .d.ts (re-run after client src/ changes)
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit  # check server (strict, zero errors)
 ```
+
+# Language File
+
+When adding strings that appear in the frontend UI, create an appropriate key for them under `src/lang`.
