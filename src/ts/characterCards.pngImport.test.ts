@@ -27,6 +27,7 @@ vi.mock('./alert', () => ({
   alertInput: vi.fn(async () => ''),
   alertMd: vi.fn(),
   alertNormal: alertState.alertNormal,
+  alertProgress: vi.fn(),
   alertStore: {
     set: alertState.alertStoreSet,
   },

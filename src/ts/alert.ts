@@ -34,6 +34,7 @@ export interface alertData {
   datalist?: [string, string][]
   stackTrace?: string
   defaultValue?: string
+  progress?: number | null
 }
 
 type AlertGenerationInfoStoreData = {
@@ -195,6 +196,28 @@ export function alertWait(msg: string) {
     type: 'wait',
     msg: msg,
   })
+}
+
+function normalizeProgress(progress: number) {
+  if (!Number.isFinite(progress)) {
+    return 0
+  }
+
+  return Math.max(0, Math.min(100, progress))
+}
+
+export function alertProgress(msg: string, progress: number | null, submsg?: string) {
+  const data: alertData = {
+    type: 'progress',
+    msg: msg,
+    progress: progress === null ? null : normalizeProgress(progress),
+  }
+
+  if (submsg !== undefined) {
+    data.submsg = submsg
+  }
+
+  alertStoreImported.set(data)
 }
 
 export function alertClear() {

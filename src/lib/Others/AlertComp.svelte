@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { alertGenerationInfoStore } from '../../ts/alert'
+  import { alertGenerationInfoStore, type alertData } from '../../ts/alert'
 
   import { DBState } from 'src/ts/stores.svelte'
   import { getCharImage } from '../../ts/characters'
@@ -185,6 +185,40 @@
       return data
     }
   }
+
+  function readProgressPercent(data: alertData) {
+    if (data.progress === null) {
+      return 100
+    }
+
+    const progress = typeof data.progress === 'number' ? data.progress : Number(data.submsg)
+    if (!Number.isFinite(progress)) {
+      return 0
+    }
+
+    return Math.max(0, Math.min(100, progress))
+  }
+
+  function readProgressLabel(data: alertData, percent: number) {
+    if (data.progress === null) {
+      return 'Working'
+    }
+
+    const rounded = Math.round(percent * 100) / 100
+    return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2)}%`
+  }
+
+  function readProgressDetail(data: alertData) {
+    if (!data.submsg) {
+      return ''
+    }
+
+    if (data.progress === undefined && Number.isFinite(Number(data.submsg))) {
+      return ''
+    }
+
+    return data.submsg
+  }
 </script>
 
 <svelte:window
@@ -326,17 +360,30 @@
         {/if}
       {/if}
       {#if $alertStore.type === 'progress'}
+        {@const progressPercent = readProgressPercent($alertStore)}
+        {@const progressLabel = readProgressLabel($alertStore, progressPercent)}
+        {@const progressDetail = readProgressDetail($alertStore)}
         <div
-          class="w-full min-w-64 md:min-w-138 h-2 bg-darkbg border border-darkborderc rounded-md mt-6"
+          class="w-full min-w-64 md:min-w-138 h-2 bg-darkbg border border-darkborderc rounded-md mt-6 overflow-hidden"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow={$alertStore.progress === null ? undefined : Math.round(progressPercent)}
+          aria-label={$alertStore.msg}
         >
           <div
             class="h-full bg-linear-to-r from-blue-500 to-purple-800 saving-animation transition-[width]"
-            style:width={$alertStore.submsg + '%'}
+            style:width={progressPercent + '%'}
           ></div>
         </div>
         <div class="w-full flex justify-center mt-6">
-          <span class="text-gray-500 text-sm">{$alertStore.submsg + '%'}</span>
+          <span class="text-gray-500 text-sm">{progressLabel}</span>
         </div>
+        {#if progressDetail}
+          <div class="w-full mt-2 text-center text-gray-500 text-sm whitespace-pre-wrap">
+            {progressDetail}
+          </div>
+        {/if}
       {/if}
 
       {#if $alertStore.type === 'ask' || $alertStore.type === 'pluginconfirm'}

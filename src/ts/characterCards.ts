@@ -6,6 +6,7 @@ import {
   alertInput,
   alertMd,
   alertNormal,
+  alertProgress,
   alertStore,
   alertTOS,
   alertWait,
@@ -1942,11 +1943,7 @@ async function finishServerRealmImport(
 }
 
 function showRealmImportProgress(progress: ServerRealmImportProgress) {
-  alertStore.set({
-    type: 'progress',
-    msg: progress.message,
-    submsg: progress.percent.toFixed(2),
-  })
+  alertProgress(progress.message, progress.percent)
 }
 
 async function refreshServerProjectionAfterRealmImport() {

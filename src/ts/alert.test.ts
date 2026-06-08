@@ -49,7 +49,7 @@ vi.mock('src/lang', () => ({
   },
 }))
 
-import { alertError } from './alert'
+import { alertError, alertProgress } from './alert'
 
 beforeEach(() => {
   alertTestState.alertStoreSet.mockClear()
@@ -101,5 +101,41 @@ describe('alertError', () => {
     } finally {
       consoleErrorSpy.mockRestore()
     }
+  })
+})
+
+describe('alertProgress', () => {
+  it('sets a progress alert with a clamped percentage', () => {
+    alertProgress('Loading assets', 125, 'Saving embedded assets')
+
+    expect(alertTestState.alertStoreSet).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'progress',
+        msg: 'Loading assets',
+        progress: 100,
+        submsg: 'Saving embedded assets',
+      }),
+    )
+
+    alertProgress('Loading assets', -10)
+    expect(alertTestState.alertStoreSet).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'progress',
+        msg: 'Loading assets',
+        progress: 0,
+      }),
+    )
+  })
+
+  it('supports indeterminate progress alerts', () => {
+    alertProgress('Working', null)
+
+    expect(alertTestState.alertStoreSet).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'progress',
+        msg: 'Working',
+        progress: null,
+      }),
+    )
   })
 })
