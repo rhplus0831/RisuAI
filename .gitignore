@@ -56,3 +56,5 @@ Cargo.lock
 /test-results
 
 .claude
+
+blobs-for-test
