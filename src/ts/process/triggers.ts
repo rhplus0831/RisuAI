@@ -1388,18 +1388,15 @@ export async function runTrigger(
     promptend: '',
   }
   // Resolve the effective trigger list BEFORE any clone so a zero-trigger
-  // character returns early without paying a single clone. Each character trigger
-  // carries the character-level `lowLevelAccess`: the display path keeps its
-  // historical in-place write on the caller's definitions (it never clones nor
-  // installs the character), while the non-display path maps to fresh objects so
-  // the (now shallow) working character is not mutated in place.
-  const charTriggers = arg.displayMode
-    ? char.triggerscript.map((v) => {
-        v.lowLevelAccess = CharacterlowLevelAccess
-        return v
-      })
-    : char.triggerscript.map((v) => ({ ...v, lowLevelAccess: CharacterlowLevelAccess }))
-  const triggers = charTriggers.concat(getModuleTriggers())
+  // character returns early without paying a deep clone. Each character trigger
+  // carries the character-level `lowLevelAccess`, but the source trigger rows
+  // may be read-only Fastify projection objects, so attach that metadata on
+  // shallow copies.
+  const charTriggers: triggerscript[] = char.triggerscript.map((v): triggerscript => ({
+    ...v,
+    lowLevelAccess: CharacterlowLevelAccess,
+  }))
+  const triggers: triggerscript[] = charTriggers.concat(getModuleTriggers())
   const db = getDatabase()
   const defaultVariables = parseKeyValue(char.defaultVariables).concat(
     parseKeyValue(db.templateDefaultVariables),

@@ -1,6 +1,7 @@
 import type { Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
+import type { LuaExecBudget } from './luaRuntime.js'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import {
   clearActivePromptScope,
@@ -56,6 +57,8 @@ export interface ExpandContext {
   callStack?: number
   /** Originating request/durable-job abort signal for downstream trigger handoffs. */
   signal?: AbortSignal
+  /** Optional per-assembly Lua budget shared by trigger handoffs from prompt helpers. */
+  luaExecBudget?: LuaExecBudget
   /** Optional per-assembly CBS callback memo. Browser/local calls omit this. */
   cbsCallbackMemo?: CbsCallbackMemo
 }

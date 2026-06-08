@@ -1693,6 +1693,41 @@ describe('Phase 7-9f start trigger handoff', () => {
     expect(result.messages.some((m) => m.content === 'should-not-appear')).toBe(false)
   })
 
+  it('runs an active module triggerlua effect during the start handoff', async () => {
+    const db = makeDatabase({
+      enabledModules: ['module-start-lua'],
+      modules: [
+        {
+          id: 'module-start-lua',
+          name: 'Module Start Lua',
+          description: '',
+          trigger: [
+            startTrigger([
+              {
+                type: 'triggerlua',
+                code: `
+                  function onStart(id)
+                    setChatVar(id, 'moduleStartLua', 'yes')
+                    addChat(id, 'user', 'from module lua start')
+                  end
+                `,
+              },
+            ]),
+          ],
+        },
+      ],
+    } as Partial<Database>)
+    const char = db.characters[0]
+    const chat = char.chats[0]
+
+    const result = await buildHistoryWindow(ctxFor(db), char, chat)
+
+    expect(result.varChanged).toBe(true)
+    expect(result.currentChat.message.at(-1)?.data).toBe('from module lua start')
+    expect(result.messages.some((m) => m.content === 'from module lua start')).toBe(true)
+    expect(chat.scriptstate?.$moduleStartLua).toBe('yes')
+  })
+
   it('reports varChanged and persists a setvar write into the db chat', async () => {
     const char = makeCharacter({
       triggerscript: [

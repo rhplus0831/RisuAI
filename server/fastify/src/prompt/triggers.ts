@@ -12,6 +12,7 @@ import { encodingForModel, tokenize } from './tokens.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
 import { applyV2DataEffect } from './triggerDataEffects.js'
 import { expandVariables, type ExpandContext } from './variables.js'
+import { runServerLua } from './luaRuntime.js'
 import {
   createTriggerRunCache,
   getCachedTriggerRegex,
@@ -98,10 +99,10 @@ import {
  * parity, but no code runs for them.
  *
  * `triggerlua` runs the server Lua VM via the injected
- * {@link TriggerRunContext.runLua} seam. The submit-time input trigger supplies
- * it; the start-trigger path does not, so `triggerlua` no-ops there as before.
- * It bypasses the mode filter, so it is selected in every run mode but only
- * executes when a runner is injected.
+ * {@link TriggerRunContext.runLua} seam. Input, output, and start-trigger
+ * handoffs supply that runner, while direct tests may still omit it to exercise
+ * the no-op fall-through. It bypasses the mode filter, so it is selected in
+ * every run mode but only executes when a runner is injected.
  */
 
 /** SPA `triggerMode` (`src/ts/process/triggers.ts:222`, unexported). */
@@ -611,7 +612,7 @@ export function collectTriggers(char: character, modules: RisuModule[]): trigger
  *   - `triggercode` / `triggerlua` first effects bypass the filter (so they
  *     run in every mode). `triggercode` execution stays browser-side (selected
  *     for parity, no-op here); `triggerlua` runs via the VM seam when injected
- *     (submit-time Lua path).
+ *     (submit/start/output Lua paths).
  *   - with a `manualName`, only triggers whose `comment` matches run.
  *   - otherwise the trigger's `type` must equal the run `mode`.
  */
@@ -1310,14 +1311,34 @@ export async function runStartTrigger(
 ): Promise<TriggerRunResult | null> {
   const db = ctx.database
   const currentCharIndex = (db as { currentChar?: unknown }).currentChar
+  const selectedCharID =
+    ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0)
+  const chatPage = ctx.chatPage ?? char.chatPage ?? 0
+  const modules = getActiveModules(db, char, chat)
   const runCtx: TriggerRunContext = {
-    modules: getActiveModules(db, char, chat),
+    modules,
     model: db.aiModel,
     database: db,
-    selectedCharID:
-      ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0),
-    chatPage: ctx.chatPage ?? char.chatPage ?? 0,
+    selectedCharID,
+    chatPage,
     signal: ctx.signal,
+    runLua: async ({ code, mode, lowLevelAccess, chat: luaChat, varEngine }) => {
+      const result = await runServerLua(
+        { code, mode, lowLevelAccess },
+        {
+          chat: luaChat,
+          database: db,
+          selectedCharID,
+          chatPage,
+          varEngine,
+          char,
+          model: db.aiModel,
+          signal: ctx.signal,
+          execBudget: ctx.luaExecBudget,
+        },
+      )
+      return { chat: luaChat, stopSending: result.stopSending }
+    },
   }
   return runTrigger(runCtx, char, 'start', { chat })
 }

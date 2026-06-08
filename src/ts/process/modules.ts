@@ -398,10 +398,12 @@ function deduplicateModuleById(modules: RisuModule[]) {
 
 let lastModules = ''
 let lastModuleData: RisuModule[] = []
+let lastModuleSource: RisuModule[] | undefined
 export function getModules() {
   const currentChat = getCurrentChat()
   const character = getCurrentCharacter()
   const db = getDatabase()
+  const moduleSource = db.modules
   let ids = db.enabledModules ?? []
   if (currentChat) {
     ids = ids.concat(currentChat.modules ?? [])
@@ -414,12 +416,13 @@ export function getModules() {
     ids = ids.concat(intList)
   }
   const idsJoined = ids.join('-')
-  if (lastModules === idsJoined) {
+  if (lastModules === idsJoined && lastModuleSource === moduleSource) {
     return lastModuleData
   }
 
   let modules: RisuModule[] = getModuleByIds(ids)
   lastModules = idsJoined
+  lastModuleSource = moduleSource
   lastModuleData = modules
   return modules
 }
@@ -462,8 +465,10 @@ export function getModuleTriggers() {
     if (module.trigger) {
       triggers = triggers.concat(
         module.trigger.map((t) => {
-          t.lowLevelAccess = module.lowLevelAccess
-          return t
+          return {
+            ...t,
+            lowLevelAccess: module.lowLevelAccess,
+          }
         }),
       )
     }
@@ -642,4 +647,5 @@ export function moduleUpdate() {
 export function refreshModules() {
   lastModules = ''
   lastModuleData = []
+  lastModuleSource = undefined
 }

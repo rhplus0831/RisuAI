@@ -1611,14 +1611,16 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   try {
     let data = content
 
-    const triggers =
+    const triggers: triggerscript[] =
       char.type === 'simple'
         ? getModuleTriggers()
         : char.triggerscript
-            .map((v) => {
-              v.lowLevelAccess = false
-              return v
-            })
+            .map(
+              (v): triggerscript => ({
+                ...v,
+                lowLevelAccess: false,
+              }),
+            )
             .concat(getModuleTriggers())
 
     for (let trigger of triggers) {

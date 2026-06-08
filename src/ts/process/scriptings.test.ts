@@ -173,6 +173,7 @@ import {
   CLIENT_LUA_ENGINE_CACHE_PER_MODE,
   getScriptingEngineCacheSnapshotForTests,
   resetScriptingEngineCacheForTests,
+  runLuaEditTrigger,
   runScripted,
 } from './scriptings'
 
@@ -255,6 +256,23 @@ describe('client scripting media cleanup (L51)', () => {
 })
 
 describe('client scripting Lua budgets and cache (L39-L41)', () => {
+  it('keeps readonly character trigger rows immutable before Lua edit-display dispatch', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    const trigger = Object.freeze({
+      comment: 'readonly lua trigger',
+      type: 'display',
+      conditions: [],
+      effect: [{ type: 'triggerlua', code: 'return "display"' }],
+    })
+    char.triggerscript = [trigger as unknown as character['triggerscript'][number]]
+
+    await expect(runLuaEditTrigger(char, 'editdisplay', 'body')).resolves.toBe('body')
+
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(1)
+    expect('lowLevelAccess' in trigger).toBe(false)
+  })
+
   it('L39: client Lua while true loads through the timeout-bound thread', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)

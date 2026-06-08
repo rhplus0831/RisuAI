@@ -1,13 +1,13 @@
 import DOMPurify from 'dompurify'
 import markdownit from 'markdown-it'
 import {
-  appVer,
   getCurrentCharacter,
   getDatabase,
   type character,
   type customscript,
   type triggerscript,
 } from '../storage/database.svelte'
+import versionInfo from '../../../version.json'
 import { CurrentTriggerIdStore, DBState, selIdState } from '../stores.svelte'
 import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte'
 import './chatVar.svelte' // side effect: registers the browser chatVar backend
@@ -103,7 +103,7 @@ registerRisuChatParserCBS({
     return ''
   },
   isMobile: false,
-  appVer: appVer,
+  appVer: versionInfo.version,
   getCurrentTriggerId: () => get(CurrentTriggerIdStore) ?? 'null',
 })
 

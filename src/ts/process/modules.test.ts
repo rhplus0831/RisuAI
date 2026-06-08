@@ -133,7 +133,7 @@ vi.mock('../server/projectionWriteGuard.svelte', () => ({
   withTrustedServerProjectionWrite: (fn: () => void) => fn(),
 }))
 
-import { applyModule, importModule } from './modules'
+import { applyModule, getModuleTriggers, importModule, refreshModules } from './modules'
 import { DBState } from '../stores.svelte'
 import type { character } from '../storage/database.svelte'
 
@@ -151,6 +151,7 @@ describe('module imports', () => {
     dispatchReplaceCharacterLorebooks.mockClear()
     dispatchReplaceCharacterScripts.mockClear()
     dispatchReplaceCharacterTriggers.mockClear()
+    refreshModules()
   })
 
   it('rejects .risum import before client-side asset decoding in Fastify mode', async () => {
@@ -254,5 +255,84 @@ describe('module imports', () => {
       ],
     })
     expect(alertNormal).toHaveBeenCalled()
+  })
+
+  it('refreshes active module triggers when module rows are replaced under the same enabled namespace', () => {
+    const db = {
+      enabledModules: [],
+      moduleIntergration: 'aos-ns',
+      modules: [
+        {
+          id: 'module-a',
+          name: 'AOS Module',
+          namespace: 'aos-ns',
+          trigger: [
+            {
+              comment: '',
+              type: 'start',
+              conditions: [],
+              effect: [{ type: 'triggerlua', code: 'old triggerlua' }],
+            },
+          ],
+        },
+      ],
+    }
+    getDatabase.mockReturnValue(db)
+
+    expect(getModuleTriggers()[0]?.effect?.[0]).toMatchObject({
+      type: 'triggerlua',
+      code: 'old triggerlua',
+    })
+
+    db.modules = [
+      {
+        id: 'module-a',
+        name: 'AOS Module',
+        namespace: 'aos-ns',
+        trigger: [
+          {
+            comment: '',
+            type: 'start',
+            conditions: [],
+            effect: [{ type: 'triggerlua', code: 'new triggerlua with AOS' }],
+          },
+        ],
+      },
+    ]
+
+    expect(getModuleTriggers()[0]?.effect?.[0]).toMatchObject({
+      type: 'triggerlua',
+      code: 'new triggerlua with AOS',
+    })
+  })
+
+  it('does not mutate module trigger rows when attaching low-level access metadata', () => {
+    const trigger = Object.freeze({
+      comment: 'readonly trigger',
+      type: 'start',
+      conditions: [],
+      effect: [{ type: 'triggerlua', code: 'return "ok"' }],
+    })
+    getDatabase.mockReturnValue({
+      enabledModules: ['module-a'],
+      modules: [
+        {
+          id: 'module-a',
+          name: 'Readonly Module',
+          description: '',
+          lowLevelAccess: true,
+          trigger: [trigger],
+        },
+      ],
+    })
+
+    const [resolvedTrigger] = getModuleTriggers()
+
+    expect(resolvedTrigger).not.toBe(trigger)
+    expect(resolvedTrigger).toMatchObject({
+      comment: 'readonly trigger',
+      lowLevelAccess: true,
+    })
+    expect('lowLevelAccess' in trigger).toBe(false)
   })
 })

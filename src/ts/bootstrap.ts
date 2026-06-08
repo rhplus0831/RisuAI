@@ -86,6 +86,20 @@ let serverProjectionSyncChain: Promise<void> = Promise.resolve()
 let serverProjectionEventsDesired = false
 let serverProjectionReconnectTimer: ReturnType<typeof setTimeout> | null = null
 let serverProjectionReconnectAttempt = 0
+
+function initialSelectedCharFromDatabase(db: Database): number {
+  const currentChar = (db as { currentChar?: unknown }).currentChar
+  const characterCount = Array.isArray(db.characters) ? db.characters.length : 0
+  if (
+    Number.isInteger(currentChar) &&
+    (currentChar as number) >= 0 &&
+    (currentChar as number) < characterCount
+  ) {
+    return currentChar as number
+  }
+  return -1
+}
+
 /**
  * Loads the application data.
  */
@@ -128,7 +142,7 @@ export async function loadData() {
         MobileGUI.set(true)
       }
       loadedStore.set(true)
-      selectedCharID.set(-1)
+      selectedCharID.set(initialSelectedCharFromDatabase(db))
       startObserveDom()
       registerModelDynamic()
       moduleUpdate()
@@ -156,6 +170,7 @@ export async function loadWebInitialDatabase() {
       ? await initializeFreshServerDatabase()
       : bootstrap.projection
   applyServerProjectionDatabase(projection.database)
+  selectedCharID.set(initialSelectedCharFromDatabase(projection.database))
   // Record which characters arrive with a REAL (resident) globalLore. The
   // lorebook watcher only persists hydrated characters.
   resetLorebookHydration()

@@ -148,6 +148,26 @@ afterEach(() => {
 })
 
 describe('trigger durable writes under the projection guard', () => {
+  it('keeps readonly display trigger rows immutable while attaching low-level metadata', async () => {
+    const trigger = Object.freeze({
+      comment: 'readonly display',
+      type: 'display',
+      conditions: [],
+      effect: [],
+    })
+    const char = characterWithTriggers([trigger])
+
+    await expect(
+      runTrigger(char, 'display', {
+        chat: char.chats[char.chatPage],
+        displayMode: true,
+        displayData: 'shown',
+      }),
+    ).resolves.toMatchObject({ displayData: 'shown' })
+
+    expect('lowLevelAccess' in trigger).toBe(false)
+  })
+
   it('routes v2SetCharacterDesc through a character command instead of a guarded direct write', async () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)

@@ -1329,6 +1329,40 @@ describe('web bootstrap startup source', () => {
     expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
   })
 
+  it('preserves the selected server character during Fastify-served startup', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            { chaId: 'char-a', name: 'Ada', chats: [{ id: 'chat-a', message: [] }], chatPage: 0 },
+            {
+              chaId: 'char-b',
+              name: 'Babbage',
+              chats: [{ id: 'chat-b', message: [] }],
+              chatPage: 0,
+            },
+          ],
+          currentChar: 1,
+          modules: [],
+          personas: [],
+          language: 'en',
+          formatversion: 5,
+          characterOrder: [],
+          mainPrompt: '',
+          loreBookToken: 8000,
+        } as any,
+      },
+    }
+
+    await loadData()
+
+    expect(get(selectedCharID)).toBe(1)
+    expect(hydrationSpies.startChatMessageHydration).toHaveBeenCalledTimes(1)
+    expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalledTimes(1)
+  })
+
   it('seeds a missing server database before marking startup loaded', async () => {
     serverBootstrapState.response = {
       status: 'ok',

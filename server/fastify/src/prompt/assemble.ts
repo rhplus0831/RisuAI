@@ -546,11 +546,13 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
   const { database, currentChar, currentChat, selectedCharID, chatPage } = resolveScope(input, deps)
 
   const cbsCallbackMemo = createAssemblyCbsCallbackMemo()
+  const luaExecBudget = createLuaExecBudget()
   const ctx: ExpandContext = {
     database,
     selectedCharID,
     chatPage,
     signal: deps.signal,
+    luaExecBudget,
     cbsCallbackMemo,
   }
   const unformated = createEmptyUnformatedSlots()
@@ -575,7 +577,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     stableCardCache,
     formatOrder,
     signal: deps.signal,
-    luaExecBudget: createLuaExecBudget(),
+    luaExecBudget,
     isContinue: input.mode === 'continue',
     presetId: input.presetId,
     loadoutId: input.loadoutId,
