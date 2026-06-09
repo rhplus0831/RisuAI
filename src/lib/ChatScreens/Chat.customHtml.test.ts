@@ -363,6 +363,16 @@ describe('customHTML template memo', () => {
     expect(target.textContent).toContain('changed-template|first=false|role=user')
   })
 
+  it('falls back to the standard message layout when customHTML has no template', async () => {
+    seedDatabase(1, null as unknown as string)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    expect(target.querySelector('.custom-html-template')).toBeNull()
+    expect(target.textContent).toContain('Template Bot')
+    expect(target.textContent).toContain('parsed-message:visible message 0')
+  })
+
   it('L31: parse failures return an empty placeholder without poisoning the memo', () => {
     const body = renderCustomHtmlTemplate(customHtmlMocks.templates.throwing, {
       firstmsg: false,

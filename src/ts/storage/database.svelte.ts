@@ -785,6 +785,7 @@ export function setDatabase(data: Database) {
   data.customQuotes ??= false
   data.customQuotesData ??= ['“', '”', '‘', '’']
   data.customGUI ??= ''
+  data.guiHTML ??= ''
   data.customAPIFormat ??= LLMFormat.OpenAICompatible
   data.systemContentReplacement ??= `system: {{slot}}`
   data.systemRoleReplacement ??= 'user'

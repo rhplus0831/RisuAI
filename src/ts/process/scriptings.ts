@@ -1640,7 +1640,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
     return data
   } catch (error) {
     console.error(`Lua edit trigger failed in ${mode}:`, error)
-    throw error
+    return content
   }
 }
 

@@ -276,6 +276,30 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     expect('lowLevelAccess' in trigger).toBe(false)
   })
 
+  it('falls back to original edit-display content when Lua dispatch fails', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    char.triggerscript = [
+      {
+        comment: 'display-fallback',
+        type: 'display',
+        conditions: [],
+        effect: [{ type: 'triggerlua', code: 'return "display"' }],
+      },
+    ] as character['triggerscript']
+    luaMock.setRejectDispatch(true)
+
+    await expect(runLuaEditTrigger(char, 'editdisplay', 'visible body')).resolves.toBe(
+      'visible body',
+    )
+
+    expect(console.error).toHaveBeenCalledWith(
+      'Lua edit trigger failed in editDisplay:',
+      expect.any(Error),
+    )
+    expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.editDisplay).toBe(0)
+  })
+
   it('L39: client Lua while true loads through the timeout-bound thread', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)

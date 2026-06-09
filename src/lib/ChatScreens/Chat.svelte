@@ -387,6 +387,10 @@
     return renderCustomHtmlTemplate(html, getCbsCondition())
   }
 
+  function hasCustomHtmlTemplate(html: unknown): html is string {
+    return typeof html === 'string' && html.trim().length > 0
+  }
+
   function getRisuButtonAttributes(dom: HTMLElement) {
     const attributes: Record<string, string> = {}
 
@@ -1626,7 +1630,7 @@
           {@render iconButtons({ applyTextColors: false })}
         </div>
       </div>
-    {:else if DBState.db.theme === 'customHTML' && !blankMessage}
+    {:else if DBState.db.theme === 'customHTML' && !blankMessage && hasCustomHtmlTemplate(DBState.db.guiHTML)}
       {@render renderGuiHtmlPart(RenderGUIHtml(DBState.db.guiHTML))}
     {:else}
       {@render senderIcon({ rounded: DBState.db.roundIcons })}
