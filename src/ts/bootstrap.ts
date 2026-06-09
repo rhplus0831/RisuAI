@@ -255,6 +255,13 @@ async function startServerProjectionEvents() {
     onMemoryEvent: applyServerMemoryEvent,
     onError: (error) => {
       console.warn(error)
+      if (error.includes('Malformed command event frame')) {
+        enqueueServerProjectionSync(async () => {
+          await forceServerProjectionResync('malformed-command-event')
+          scheduleServerProjectionReconnect()
+        })
+        return
+      }
       scheduleServerProjectionReconnect()
     },
     onClose: () => {

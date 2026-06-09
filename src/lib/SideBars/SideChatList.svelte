@@ -794,7 +794,12 @@
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={async () => {
           // Branch tree hashes require all lazily-loaded chats first.
-          await ensureAllChatsHydrated()
+          try {
+            await ensureAllChatsHydrated({ strict: true })
+          } catch (error) {
+            alertError(error)
+            return
+          }
           alertStore.set({
             type: 'branches',
             msg: '',

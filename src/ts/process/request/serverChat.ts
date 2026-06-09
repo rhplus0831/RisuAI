@@ -27,6 +27,7 @@ import type {
   ServerChatMessagePatch,
   ServerChatRestoration,
   ServerChatSideEffect,
+  ServerChatWarning,
 } from './serverChatEvents'
 import type { requestDataResponse, StreamResponseChunk } from './request'
 
@@ -76,6 +77,7 @@ export interface ServerChatTerminal {
   error?: string
   restoration?: ServerChatRestoration
   sideEffects?: ServerChatSideEffect[]
+  warnings?: ServerChatWarning[]
   done?: Omit<DoneEvent, 'type'>
 }
 
@@ -320,6 +322,7 @@ export async function requestServerChatGeneration(
   let donePayload: Omit<DoneEvent, 'type'> | undefined
   const messagePatches: ServerChatMessagePatch[] = []
   const sideEffects: ServerChatSideEffect[] = []
+  const warnings: ServerChatWarning[] = []
   let readyResolved = false
   let terminalResolved = false
   let tokenResult = ''
@@ -406,6 +409,13 @@ export async function requestServerChatGeneration(
                   sideEffects.push(data as unknown as ServerChatSideEffect)
                 }
                 break
+              case 'warning':
+                if (typeof data.message === 'string') {
+                  const warning = data as unknown as ServerChatWarning
+                  warnings.push(warning)
+                  console.warn(`Server chat warning: ${warning.message}`, warning.context ?? '')
+                }
+                break
               case 'token': {
                 const content = typeof data.content === 'string' ? data.content : ''
                 tokenResult += content
@@ -430,6 +440,7 @@ export async function requestServerChatGeneration(
                   error,
                   restoration,
                   sideEffects,
+                  warnings,
                 })
                 controller.close()
                 return
@@ -455,7 +466,7 @@ export async function requestServerChatGeneration(
                       : 'stream ended without a prompt event',
                   })
                 }
-                resolveTerminalOnce({ status: 'done', done: donePayload, sideEffects })
+                resolveTerminalOnce({ status: 'done', done: donePayload, sideEffects, warnings })
                 controller.close()
                 return
               default:
@@ -465,28 +476,32 @@ export async function requestServerChatGeneration(
           if (signal?.aborted) {
             cancelDurableOnAbort()
             resolveReadyOnce({ status: 'aborted' })
-            resolveTerminalOnce({ status: 'error', error: 'Aborted' })
+            resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
           } else {
             resolveReadyOnce({ status: 'error', error: 'stream ended without a done event' })
-            resolveTerminalOnce({ status: 'error', error: 'stream ended without a done event' })
+            resolveTerminalOnce({
+              status: 'error',
+              error: 'stream ended without a done event',
+              warnings,
+            })
           }
           controller.close()
         } catch (err) {
           if (signal?.aborted) {
             cancelDurableOnAbort()
             resolveReadyOnce({ status: 'aborted' })
-            resolveTerminalOnce({ status: 'error', error: 'Aborted' })
+            resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
           } else {
             const error = err instanceof Error ? err.message : String(err)
             resolveReadyOnce({ status: 'error', error })
-            resolveTerminalOnce({ status: 'error', error })
+            resolveTerminalOnce({ status: 'error', error, warnings })
           }
           controller.close()
         }
       })()
     },
     cancel() {
-      resolveTerminalOnce({ status: 'error', error: 'Aborted' })
+      resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
     },
   })
 

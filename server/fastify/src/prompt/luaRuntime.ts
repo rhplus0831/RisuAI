@@ -6,11 +6,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { isIP } from 'node:net'
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { request as httpsRequest } from 'node:https'
-import type {
-  Chat,
-  Database,
-  character,
-} from '../../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { triggerscript } from '../../../../src/ts/process/triggers'
 import type { simpleCharacterArgument } from '../../../../src/ts/parser/parser.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
@@ -107,11 +103,7 @@ export function createLuaExecBudget(
 }
 
 // Banned egress targets carried over from the browser (`scriptings.ts:344`).
-const BANNED_URL_PREFIXES = [
-  'https://realm.risuai.net',
-  'https://risuai.net',
-  'https://risuai.xyz',
-]
+const BANNED_URL_PREFIXES = ['https://realm.risuai.net', 'https://risuai.net', 'https://risuai.xyz']
 
 // json.lua + factory singleton.
 
@@ -273,8 +265,7 @@ function parseV6Groups(ip: string): number[] | null {
 function embeddedV4InV6(ip: string): string | null {
   const groups = parseV6Groups(ip)
   if (!groups) return null
-  const v4 = (hi: number, lo: number): string =>
-    `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`
+  const v4 = (hi: number, lo: number): string => `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`
   const allZero = (from: number, to: number): boolean =>
     groups.slice(from, to).every((group) => group === 0)
   // IPv4-mapped ::ffff:0:0/96 (hex form; the dotted form is unwrapped by
@@ -329,7 +320,11 @@ export async function validateEgressUrl(
   // A literal IP needs no DNS — classify it directly.
   if (isIP(host)) {
     if (isBlockedAddress(host)) {
-      return { ok: false, status: 403, data: 'Requests to private or reserved addresses are not allowed' }
+      return {
+        ok: false,
+        status: 403,
+        data: 'Requests to private or reserved addresses are not allowed',
+      }
     }
     return { ok: true, addresses: [host] }
   }
@@ -345,7 +340,11 @@ export async function validateEgressUrl(
   }
   for (const entry of resolved) {
     if (isBlockedAddress(entry.address)) {
-      return { ok: false, status: 403, data: 'Requests to private or reserved addresses are not allowed' }
+      return {
+        ok: false,
+        status: 403,
+        data: 'Requests to private or reserved addresses are not allowed',
+      }
     }
   }
   return { ok: true, addresses: resolved.map((entry) => entry.address) }
@@ -709,11 +708,24 @@ export interface ServerLuaResult {
   error?: string
 }
 
+export function serverLuaFailureMessage(result: ServerLuaResult, context: string): string | null {
+  if (result.aborted) return null
+  if (result.error && result.error.length > 0) return `${context}: ${result.error}`
+  if (result.timedOut) return `${context}: Lua execution timed out`
+  if (result.interactiveInvoked) {
+    return `${context}: interactive Lua APIs are not supported by server prompt assembly`
+  }
+  return null
+}
+
+export function throwServerLuaFailure(result: ServerLuaResult, context: string): void {
+  const message = serverLuaFailureMessage(result, context)
+  if (message) throw new Error(message)
+}
+
 function asCharacter(ctx: ServerLuaRuntimeContext): character | undefined {
   const char = ctx.char
-  return char && (char as { type?: string }).type === 'character'
-    ? (char as character)
-    : undefined
+  return char && (char as { type?: string }).type === 'character' ? (char as character) : undefined
 }
 
 /** Sleep that wakes early when `signal` fires, so an aborted request never
@@ -812,8 +824,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     })
   }
   const canWrite = (id: string) => state.safeIds.has(id)
-  const canWriteVar = (id: string) =>
-    state.safeIds.has(id) || state.editDisplayIds.has(id)
+  const canWriteVar = (id: string) => state.safeIds.has(id) || state.editDisplayIds.has(id)
   const canLowLevel = (id: string) => state.lowLevelIds.has(id)
 
   // ── Pure: chat vars (bound to the assembler's var engine) ──
@@ -935,16 +946,20 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     if (!canWrite(id)) return
     return tokenize(String(value ?? ''), encodingForModel(state.ctx.model))
   })
-  declare('cbs', (value: string) =>
-    expandVariables(String(value ?? ''), {
-      database: state.ctx.database,
-      selectedCharID: state.ctx.selectedCharID,
-      chatPage: state.ctx.chatPage,
-      chara: asCharacter(state.ctx),
-    }).text,
+  declare(
+    'cbs',
+    (value: string) =>
+      expandVariables(String(value ?? ''), {
+        database: state.ctx.database,
+        selectedCharID: state.ctx.selectedCharID,
+        chatPage: state.ctx.chatPage,
+        chara: asCharacter(state.ctx),
+      }).text,
   )
   declare('hash', async (_id: string, value: string) =>
-    createHash('sha256').update(new TextEncoder().encode(String(value ?? ''))).digest('hex'),
+    createHash('sha256')
+      .update(new TextEncoder().encode(String(value ?? '')))
+      .digest('hex'),
   )
 
   // ── Pure: character / persona getters + setters ──
@@ -1393,7 +1408,8 @@ export async function runServerLua(
 
     try {
       let res: unknown
-      const get = (name: string) => engine.global.get(name) as ((...a: unknown[]) => unknown) | undefined
+      const get = (name: string) =>
+        engine.global.get(name) as ((...a: unknown[]) => unknown) | undefined
       switch (opts.mode) {
         case 'input': {
           const fn = get('onInput')
@@ -1475,7 +1491,8 @@ export interface ServerLuaEditTriggerContext extends Omit<ServerLuaRuntimeContex
  * casing, early-returns for `editprocess` (a browser no-op), then runs each
  * `triggerlua` effect on the character + active modules with `lowLevelAccess:
  * false` (browser parity, `:1452`), threading the transformed `data` forward.
- * Errors fall back to the original `content`.
+ * Lua failures throw with context instead of returning the original `content`;
+ * otherwise callers cannot distinguish a no-op hook from a broken hook.
  */
 export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   char: character | simpleCharacterArgument,
@@ -1502,9 +1519,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
     let data: T = content
 
     const ownTriggers =
-      (char as { type?: string }).type === 'simple'
-        ? []
-        : ((char as character).triggerscript ?? [])
+      (char as { type?: string }).type === 'simple' ? [] : ((char as character).triggerscript ?? [])
     const triggers = ownTriggers.concat(ctx.moduleTriggers ?? [])
 
     for (const trigger of triggers) {
@@ -1519,12 +1534,14 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
           },
           { ...ctx, char },
         )
+        throwServerLuaFailure(runResult, `Lua ${mode} edit trigger failed`)
         data = (runResult.res as T) ?? data
       }
     }
 
     return data
-  } catch {
-    return content
+  } catch (error) {
+    console.error(`Lua edit trigger failed in ${mode}:`, error)
+    throw error
   }
 }

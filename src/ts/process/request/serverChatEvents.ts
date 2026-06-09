@@ -149,6 +149,8 @@ export interface WarningEvent {
   context?: Record<string, unknown>
 }
 
+export type ServerChatWarning = Omit<WarningEvent, 'type'>
+
 export interface ErrorEvent {
   type: 'error'
   error: string

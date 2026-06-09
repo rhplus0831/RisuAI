@@ -1173,7 +1173,8 @@ export async function runScripted(
             stopSending = true
           }
         } catch (error) {
-          console.error(error)
+          console.error('Lua dispatch failed:', error)
+          throw error
         }
       }
       if (ScriptingEngineState.type === 'py') {
@@ -1638,7 +1639,8 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
 
     return data
   } catch (error) {
-    return content
+    console.error(`Lua edit trigger failed in ${mode}:`, error)
+    throw error
   }
 }
 

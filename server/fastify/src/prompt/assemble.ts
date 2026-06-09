@@ -46,10 +46,7 @@ import {
   type PreparedDepthPrompt,
 } from './history.js'
 import { buildAssetLookup, type ResolveStoredAsset } from './assetLookup.js'
-import {
-  buildPromptAssetTable,
-  type PromptAssetTable,
-} from './promptAssets.js'
+import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'
 import { buildMemoryWindow } from './memory.js'
 import {
   assemblePromptMemoryRows,
@@ -69,6 +66,7 @@ import {
   createLuaExecBudget,
   runLuaEditTrigger,
   runServerLua,
+  throwServerLuaFailure,
   type LuaExecBudget,
   type ServerLuaEditTriggerContext,
 } from './luaRuntime.js'
@@ -833,6 +831,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
           execBudget: state.luaExecBudget,
         },
       )
+      throwServerLuaFailure(result, `Lua ${mode} trigger failed`)
       // The host fns mutate `chat` in place (its `.message` array is reassigned by
       // cutChat/setFullChat etc.), so the same reference carries the edits back.
       return { chat, stopSending: result.stopSending }
@@ -1945,6 +1944,7 @@ async function runOutputTrigger(state: AssemblyState): Promise<boolean> {
           execBudget: state.luaExecBudget,
         },
       )
+      throwServerLuaFailure(result, `Lua ${mode} trigger failed`)
       return { chat, stopSending: result.stopSending }
     },
   }

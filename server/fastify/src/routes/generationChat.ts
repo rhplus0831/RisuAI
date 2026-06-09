@@ -307,9 +307,7 @@ async function readAssetBytes(file: string): Promise<Buffer | undefined> {
     return await fs.promises.readFile(file)
   } catch (err) {
     const code =
-      err && typeof err === 'object' && 'code' in err
-        ? (err as { code?: unknown }).code
-        : undefined
+      err && typeof err === 'object' && 'code' in err ? (err as { code?: unknown }).code : undefined
     if (code === 'ENOENT' || code === 'ENOTDIR') return undefined
     throw err
   }
@@ -760,6 +758,7 @@ async function resolvePostGenerationResult(args: {
   promptInfo?: Record<string, unknown>
 }): Promise<{
   postGen?: Awaited<ReturnType<typeof runServerPostGeneration>>
+  postGenError?: string
   message: Message
   targetMessageId?: string
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
@@ -787,7 +786,7 @@ async function resolvePostGenerationResult(args: {
       targetMessageId: resolved.targetMessageId,
       chatVarMutations: postGen.mutations.chatVarMutations,
     }
-  } catch {
+  } catch (err) {
     // Derivation threw: persist the raw provider text so the result is not lost.
     const raw = buildRawModeMessage({
       input: args.input,
@@ -797,7 +796,12 @@ async function resolvePostGenerationResult(args: {
       generationInfo: args.generationInfo,
       promptInfo: args.promptInfo,
     })
-    return { message: raw.message, targetMessageId: raw.targetMessageId, chatVarMutations: [] }
+    return {
+      postGenError: errorMessage(err, 'server post-generation derivation failed'),
+      message: raw.message,
+      targetMessageId: raw.targetMessageId,
+      chatVarMutations: [],
+    }
   }
 }
 
@@ -839,17 +843,17 @@ async function buildPostGenerationFrame(args: {
   generationId: string
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
+  emit?: (event: PromptChatEvent) => void
 }): Promise<PostGenerationFrame | undefined> {
-  const { postGen, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult(
-    {
+  const { postGen, postGenError, message, targetMessageId, chatVarMutations } =
+    await resolvePostGenerationResult({
       state: args.state,
       input: args.input,
       completionText: args.completionText,
       generationId: args.generationId,
       generationInfo: args.generationInfo,
       promptInfo: args.promptInfo,
-    },
-  )
+    })
 
   let revision: number
   const persistStartedAt = protocolNowMs()
@@ -882,7 +886,15 @@ async function buildPostGenerationFrame(args: {
     chatId: args.input.chatId,
     revision,
     durationMs: protocolDurationMs(persistStartedAt),
+    ...(postGenError ? { error: postGenError } : {}),
   })
+  if (!postGen) {
+    args.emit?.({
+      type: 'warning',
+      message: 'server post-generation derivation failed; persisted the raw provider text.',
+      ...(postGenError ? { context: { error: postGenError } } : {}),
+    })
+  }
   return buildPostGenerationFrameBody(revision, postGen)
 }
 
@@ -1033,6 +1045,7 @@ async function streamAssembly(
                       generationId,
                       generationInfo,
                       promptInfo: successfulResult.prompt.promptInfo,
+                      emit,
                     })
                   : Promise.resolve(undefined),
             })
@@ -1467,16 +1480,15 @@ async function buildDurablePostGeneration(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
 }): Promise<PostGenerationFrame | undefined> {
-  const { postGen, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult(
-    {
+  const { postGen, postGenError, message, targetMessageId, chatVarMutations } =
+    await resolvePostGenerationResult({
       state: args.state,
       input: args.input,
       completionText: args.completionText,
       generationId: args.generationId,
       generationInfo: args.generationInfo,
       promptInfo: args.promptInfo,
-    },
-  )
+    })
 
   let revision: number
   const persistStartedAt = protocolNowMs()
@@ -1518,10 +1530,12 @@ async function buildDurablePostGeneration(args: {
       chatId: args.input.chatId,
       revision,
       durationMs: protocolDurationMs(persistStartedAt),
+      ...(postGenError ? { error: postGenError } : {}),
     })
     args.emit({
       type: 'warning',
       message: 'server post-generation derivation failed; persisted the raw provider text.',
+      ...(postGenError ? { context: { error: postGenError } } : {}),
     })
     return { revision }
   }

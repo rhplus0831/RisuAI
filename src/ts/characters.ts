@@ -678,7 +678,7 @@ export async function importChat() {
 export async function exportAllChats() {
   try {
     // This serializes every chat's history, so hydrate lazy chats first.
-    await ensureAllChatsHydrated()
+    await ensureAllChatsHydrated({ strict: true })
     const selectedID = get(selectedCharID)
     const db = getDatabase()
     const char = db.characters[selectedID]

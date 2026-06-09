@@ -10,8 +10,8 @@ import {
 export async function exportAsDataset() {
   // Chats and stubbed character globalLore hydrate on open; this walks every
   // character, so load all of both first.
-  await ensureAllChatsHydrated()
-  await ensureAllCharacterLorebooksHydrated()
+  await ensureAllChatsHydrated({ strict: true })
+  await ensureAllCharacterLorebooksHydrated({ strict: true })
   const db = getDatabase()
 
   let dataset = []

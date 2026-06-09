@@ -447,7 +447,17 @@ async function renderHighlightableMarkdown(data: string) {
           `<pre class="hljs" x-hl-lang="${fileExt}"><code>${highlighted}</code></pre>`,
         )
       }
-    } catch (error) {}
+    } catch (error) {
+      console.warn('Failed to render highlighted code block:', error)
+      const fallbackCode =
+        placeholder.match(
+          /<pre-hljs-placeholder lang=".+?">(.+?)<\/pre-hljs-placeholder>/ms,
+        )?.[1] ?? ''
+      rendered = rendered.replace(
+        placeholder,
+        `<pre><code>${md.utils.escapeHtml(fallbackCode)}</code></pre>`,
+      )
+    }
   }
 
   return rendered

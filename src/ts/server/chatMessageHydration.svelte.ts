@@ -82,6 +82,10 @@ interface ChatHydrationRequest {
   seedReroll?: boolean
 }
 
+interface BulkHydrationOptions {
+  strict?: boolean
+}
+
 function chatHydrationRequestKey(chatId: string, request: ChatHydrationRequest): string {
   if (!request.range) return `full:${chatId}`
   if (request.range.tail !== undefined) return `tail:${chatId}:${request.range.tail}`
@@ -139,7 +143,12 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
     try {
       const endRequest = beginHydrationRequest('chat')
       const result = await fetchServerChatMessages(chatId, request.range ?? {}).finally(endRequest)
-      if (result.status !== 'ok' || result.chatId !== chatId) {
+      if (result.status !== 'ok') {
+        hydrationWarning(`chat ${chatId}`, resultError(result, 'server projection unavailable'))
+        return
+      }
+      if (result.chatId !== chatId) {
+        hydrationWarning(`chat ${chatId}`, `response was for chat ${result.chatId}`)
         return
       }
       if (generation !== chatHydrationGeneration) {
@@ -185,35 +194,66 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
   return requestPromise
 }
 
-async function hydrateChatsBulk(chatIds: readonly string[]): Promise<void> {
+async function hydrateChatsBulk(
+  chatIds: readonly string[],
+  options: BulkHydrationOptions = {},
+): Promise<void> {
   if (!canUseServerProjection() || chatIds.length === 0) return
 
   const generation = chatHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
   const endRequest = beginHydrationRequest('chat')
   const result = await fetchServerBulkChatMessages(chatIds).finally(endRequest)
-  if (result.status !== 'ok') return
+  if (result.status !== 'ok') {
+    const message = resultError(result, 'server projection unavailable')
+    hydrationWarning('bulk chat', message)
+    if (options.strict) throw new Error(`Bulk chat hydration failed: ${message}`)
+    return
+  }
   if (generation !== chatHydrationGeneration) {
     recordHydrationStaleDrop('chat', 'generation-reset')
+    if (options.strict) throw new Error('Bulk chat hydration result was stale after a reset')
     return
   }
   if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
     recordHydrationStaleDrop('chat', 'older-than-applied-revision')
+    if (options.strict) throw new Error('Bulk chat hydration result was older than local state')
     return
   }
 
   const missing = new Set(result.missing)
+  const missingIds: string[] = []
   for (const chatId of chatIds) {
-    if (missing.has(chatId)) continue
+    if (missing.has(chatId)) {
+      missingIds.push(chatId)
+      continue
+    }
     const hydration = result.chats.find((chat) => chat.chatId === chatId)
-    if (!hydration) continue
+    if (!hydration) {
+      missingIds.push(chatId)
+      continue
+    }
     const applied = hydrateServerChatMessages(chatId, hydration.message, hydration.hypaV3Data)
-    if (!applied) continue
+    if (!applied) {
+      missingIds.push(chatId)
+      continue
+    }
     hydratedChatIds.add(chatId)
     if (activeChatId() === chatId) {
       seedRerollBufferFromAlternates(hydration.message, hydration.alternates)
     }
   }
+  if (options.strict && missingIds.length > 0) {
+    throw new Error(`Bulk chat hydration did not return messages for: ${missingIds.join(', ')}`)
+  }
+}
+
+function resultError(result: { status: string; error?: string }, fallback: string): string {
+  return result.status === 'error' && result.error ? result.error : fallback
+}
+
+function hydrationWarning(scope: string, message: string): void {
+  console.warn(`${scope} hydration failed: ${message}`)
 }
 
 /** Hydrate the currently-open chat's messages (no-op if already hydrated). */
@@ -345,7 +385,18 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
     try {
       const endRequest = beginHydrationRequest('characterLorebook')
       const result = await fetchServerCharacterLorebook(characterId).finally(endRequest)
-      if (result.status !== 'ok' || result.characterId !== characterId) {
+      if (result.status !== 'ok') {
+        hydrationWarning(
+          `character lorebook ${characterId}`,
+          resultError(result, 'server projection unavailable'),
+        )
+        return
+      }
+      if (result.characterId !== characterId) {
+        hydrationWarning(
+          `character lorebook ${characterId}`,
+          `response was for character ${result.characterId}`,
+        )
         return
       }
       if (generation !== charLorebookHydrationGeneration) {
@@ -372,7 +423,10 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
   return request
 }
 
-async function hydrateCharacterLorebooksBulk(characterIds: readonly string[]): Promise<void> {
+async function hydrateCharacterLorebooksBulk(
+  characterIds: readonly string[],
+  options: BulkHydrationOptions = {},
+): Promise<void> {
   if (!canUseServerProjection() || !DBState.db?.enableLorebookStubs || characterIds.length === 0) {
     return
   }
@@ -381,25 +435,51 @@ async function hydrateCharacterLorebooksBulk(characterIds: readonly string[]): P
   const baselineRevision = peekCachedServerCommandRevision()
   const endRequest = beginHydrationRequest('characterLorebook')
   const result = await fetchServerBulkCharacterLorebooks(characterIds).finally(endRequest)
-  if (result.status !== 'ok') return
+  if (result.status !== 'ok') {
+    const message = resultError(result, 'server projection unavailable')
+    hydrationWarning('bulk character lorebook', message)
+    if (options.strict) throw new Error(`Bulk character lorebook hydration failed: ${message}`)
+    return
+  }
   if (generation !== charLorebookHydrationGeneration) {
     recordHydrationStaleDrop('characterLorebook', 'generation-reset')
+    if (options.strict) {
+      throw new Error('Bulk character lorebook hydration result was stale after a reset')
+    }
     return
   }
   if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
     recordHydrationStaleDrop('characterLorebook', 'older-than-applied-revision')
+    if (options.strict) {
+      throw new Error('Bulk character lorebook hydration result was older than local state')
+    }
     return
   }
 
   const missing = new Set(result.missing)
+  const missingIds: string[] = []
   for (const characterId of characterIds) {
-    if (missing.has(characterId)) continue
+    if (missing.has(characterId)) {
+      missingIds.push(characterId)
+      continue
+    }
     const hydration = result.characters.find((character) => character.characterId === characterId)
-    if (!hydration) continue
+    if (!hydration) {
+      missingIds.push(characterId)
+      continue
+    }
     const applied = hydrateServerCharacterLorebook(characterId, hydration.globalLore)
-    if (!applied) continue
+    if (!applied) {
+      missingIds.push(characterId)
+      continue
+    }
     markCharacterLorebookHydrated(characterId)
     hydratedCharLorebookIds.add(characterId)
+  }
+  if (options.strict && missingIds.length > 0) {
+    throw new Error(
+      `Bulk character lorebook hydration did not return data for: ${missingIds.join(', ')}`,
+    )
   }
 }
 
@@ -415,7 +495,9 @@ export async function hydrateActiveCharacterLorebook(
  * Hydrate EVERY character's `globalLore`. Bulk readers (export, tokenizer) that
  * walk all characters' lorebooks must await this first when stubs are on.
  */
-export async function ensureAllCharacterLorebooksHydrated(): Promise<void> {
+export async function ensureAllCharacterLorebooksHydrated(
+  options: BulkHydrationOptions = {},
+): Promise<void> {
   if (!canUseServerProjection() || !DBState.db?.enableLorebookStubs) return
   const ids: string[] = []
   const pendingRequests: Promise<void>[] = []
@@ -435,7 +517,22 @@ export async function ensureAllCharacterLorebooksHydrated(): Promise<void> {
     ids.push(character.chaId)
   }
   recordBulkHydration('characterLorebook', ids.length)
-  await Promise.all([hydrateCharacterLorebooksBulk(ids), ...pendingRequests])
+  await Promise.all([hydrateCharacterLorebooksBulk(ids, options), ...pendingRequests])
+  if (options.strict) {
+    const missing: string[] = []
+    for (const character of DBState.db?.characters ?? []) {
+      if (
+        typeof character.chaId === 'string' &&
+        character.chaId &&
+        !hydratedCharLorebookIds.has(character.chaId)
+      ) {
+        missing.push(character.chaId)
+      }
+    }
+    if (missing.length > 0) {
+      throw new Error(`Character lorebook hydration incomplete for: ${missing.join(', ')}`)
+    }
+  }
 }
 
 /**
@@ -470,7 +567,7 @@ function isOlderThanBaselineRevision(revision: number, baselineRevision: number 
  * Hydrate EVERY chat's messages. Bulk readers (export-all, cold storage) that
  * walk all chats' history must await this first, since non-open chats are stubs.
  */
-export async function ensureAllChatsHydrated(): Promise<void> {
+export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {}): Promise<void> {
   if (!canUseServerProjection()) return
   const ids: string[] = []
   const pendingRequests: Promise<void>[] = []
@@ -488,7 +585,20 @@ export async function ensureAllChatsHydrated(): Promise<void> {
     }
   }
   recordBulkHydration('chat', ids.length)
-  await Promise.all([hydrateChatsBulk(ids), ...pendingRequests])
+  await Promise.all([hydrateChatsBulk(ids, options), ...pendingRequests])
+  if (options.strict) {
+    const missing: string[] = []
+    for (const character of DBState.db?.characters ?? []) {
+      for (const chat of character.chats ?? []) {
+        if (typeof chat.id === 'string' && chat.id && !hydratedChatIds.has(chat.id)) {
+          missing.push(chat.id)
+        }
+      }
+    }
+    if (missing.length > 0) {
+      throw new Error(`Chat hydration incomplete for: ${missing.join(', ')}`)
+    }
+  }
 }
 
 let wired = false

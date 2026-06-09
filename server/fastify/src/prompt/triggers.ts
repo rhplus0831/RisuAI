@@ -12,7 +12,7 @@ import { encodingForModel, tokenize } from './tokens.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
 import { applyV2DataEffect } from './triggerDataEffects.js'
 import { expandVariables, type ExpandContext } from './variables.js'
-import { runServerLua } from './luaRuntime.js'
+import { runServerLua, throwServerLuaFailure } from './luaRuntime.js'
 import {
   createTriggerRunCache,
   getCachedTriggerRegex,
@@ -1337,6 +1337,7 @@ export async function runStartTrigger(
           execBudget: ctx.luaExecBudget,
         },
       )
+      throwServerLuaFailure(result, `Lua ${mode} trigger failed`)
       return { chat: luaChat, stopSending: result.stopSending }
     },
   }

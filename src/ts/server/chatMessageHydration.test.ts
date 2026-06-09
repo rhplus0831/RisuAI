@@ -424,6 +424,25 @@ describe('chat message hydration bridge', () => {
     expect(projectionState.fetchBulkChat).toHaveBeenCalledWith(['chat-2'])
   })
 
+  it('strict all-chat hydration rejects missing bulk chat entries', async () => {
+    projectionState.fetchBulkChat.mockResolvedValueOnce({
+      status: 'ok',
+      revision: 1,
+      chats: [
+        {
+          chatId: 'chat-1',
+          message: [{ role: 'user', data: 'chat-1', chatId: 'm-chat-1' }],
+          alternates: [],
+        },
+      ],
+      missing: ['chat-2'],
+    })
+
+    await expect(ensureAllChatsHydrated({ strict: true })).rejects.toThrow(
+      /did not return messages for: chat-2/,
+    )
+  })
+
   it('drops a stale bulk chat hydration response', async () => {
     setCachedServerCommandRevision(2)
     projectionState.fetchBulkChat.mockResolvedValueOnce({
@@ -516,9 +535,15 @@ describe('isChatMessageHydrationPending', () => {
   })
 
   it('clears after a failed fetch so it never spins forever', async () => {
-    projectionState.fetchChat.mockResolvedValue({ status: 'error' })
-    await hydrateActiveChat()
-    expect(isChatMessageHydrationPending('chat-1', 0)).toBe(false)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      projectionState.fetchChat.mockResolvedValue({ status: 'error', error: 'boom' })
+      await hydrateActiveChat()
+      expect(isChatMessageHydrationPending('chat-1', 0)).toBe(false)
+      expect(warn).toHaveBeenCalledWith('chat chat-1 hydration failed: boom')
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('is never pending when messages are already present', () => {
@@ -635,6 +660,25 @@ describe('character globalLore hydration (Phase 5)', () => {
     projectionState.fetchBulkCharLore.mockClear()
     await ensureAllCharacterLorebooksHydrated()
     expect(projectionState.fetchBulkCharLore).toHaveBeenCalledWith(['char-2'])
+  })
+
+  it('strict all-character lorebook hydration rejects missing bulk entries', async () => {
+    seedManyLorebookStubCharacters(2)
+    projectionState.fetchBulkCharLore.mockResolvedValueOnce({
+      status: 'ok',
+      revision: 1,
+      characters: [
+        {
+          characterId: 'char-1',
+          globalLore: [{ key: 'char-1', content: 'lore' }],
+        },
+      ],
+      missing: ['char-2'],
+    })
+
+    await expect(ensureAllCharacterLorebooksHydrated({ strict: true })).rejects.toThrow(
+      /did not return data for: char-2/,
+    )
   })
 
   it('drops a stale bulk character lorebook hydration response', async () => {

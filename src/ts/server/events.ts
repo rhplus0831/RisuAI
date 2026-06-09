@@ -127,7 +127,10 @@ export async function subscribeServerCommandEvents(
         if (stopped) continue
         if (frame.event === 'command') {
           const event = parseCommandEvent(frame.data)
-          if (event) input.onCommandEvent(event)
+          if (!event) {
+            throw new Error('Malformed command event frame')
+          }
+          input.onCommandEvent(event)
         } else if (frame.event === 'memory') {
           const event = parseMemoryEvent(frame.data)
           if (event) input.onMemoryEvent?.(event)

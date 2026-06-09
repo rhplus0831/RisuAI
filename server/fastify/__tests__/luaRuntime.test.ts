@@ -1,9 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type {
-  Chat,
-  Database,
-  character,
-} from '../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { createTriggerVarEngine, type TriggerVarEngine } from '../src/prompt/triggerVars.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
@@ -365,7 +361,12 @@ describe('server Lua runtime — execution limit', () => {
     const { ctx } = makeRuntime()
     const started = Date.now()
     const result = await runServerLua(
-      { code: 'while true do end', mode: 'editRequest', data: rows('x'), execTimeoutMs: SHORT_LIMIT },
+      {
+        code: 'while true do end',
+        mode: 'editRequest',
+        data: rows('x'),
+        execTimeoutMs: SHORT_LIMIT,
+      },
       ctx,
     )
     const elapsed = Date.now() - started
@@ -541,14 +542,20 @@ describe('server Lua runtime — aggregate exec budget (L19)', () => {
 
     const input = rows('survives')
     const started = Date.now()
-    const out = await runLuaEditTrigger(char, 'editRequest', input, {}, {
-      ...editCtx,
-      execBudget: budget,
-    })
+    await expect(
+      runLuaEditTrigger(
+        char,
+        'editRequest',
+        input,
+        {},
+        {
+          ...editCtx,
+          execBudget: budget,
+        },
+      ),
+    ).rejects.toThrow(/Lua editRequest edit trigger failed/)
     const elapsed = Date.now() - started
 
-    // Identity fallback: every run timed out / was budget-blocked.
-    expect(out).toEqual(input)
     // Bounded by ~the budget (plus scheduling slack), well under one per-run
     // limit per hook.
     expect(elapsed).toBeLessThan(2_500)

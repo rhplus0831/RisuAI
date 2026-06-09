@@ -2803,6 +2803,51 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(done.postGeneration?.finalText).toBe('server echo reply [LUA-OUT]')
   })
 
+  it('warns and persists raw provider text when server Lua editOutput fails', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        triggerscript: [
+          {
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [
+              {
+                type: 'triggerlua',
+                code: `
+                  listenEdit('editOutput', function(id, data, meta)
+                    error('lua edit output failed')
+                  end)
+                `,
+              },
+            ],
+          },
+        ],
+      }),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    expect(events.find((event) => event.type === 'warning')?.data).toMatchObject({
+      message: 'server post-generation derivation failed; persisted the raw provider text.',
+    })
+    const done = doneFrame(events)
+    expect(done.postGeneration?.revision).toBe(2)
+    expect(done.postGeneration?.finalText).toBeUndefined()
+
+    const persisted = await persistedMessages(assertion)
+    expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo reply' })
+  })
+
   it.each([
     {
       label: 'NovelAI text',

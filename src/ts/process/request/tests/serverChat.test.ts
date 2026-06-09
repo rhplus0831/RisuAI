@@ -349,49 +349,58 @@ describe('requestServerChat', () => {
     })
   })
 
-  it('ignores unknown and warning events during generation streams', async () => {
-    vi.stubGlobal('fetch', async () => {
-      const enc = new TextEncoder()
-      const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(enc.encode('event: future_event\ndata: {"ignored":true}\n\n'))
-          controller.enqueue(enc.encode('event: warning\ndata: {"message":"careful"}\n\n'))
-          controller.enqueue(
-            enc.encode('event: prompt\ndata: {"messages":[{"role":"user","content":"hi"}]}\n\n'),
-          )
-          controller.enqueue(
-            enc.encode(
-              'event: info\ndata: {"generationId":"gen-taxonomy","generationInfo":{"generationId":"gen-taxonomy","model":"m"}}\n\n',
-            ),
-          )
-          controller.enqueue(enc.encode('event: token\ndata: {"content":"ok"}\n\n'))
-          controller.enqueue(
-            enc.encode(
-              'event: done\ndata: {"result":"ok","generationId":"gen-taxonomy","generationInfo":{"generationId":"gen-taxonomy"}}\n\n',
-            ),
-          )
-          controller.close()
-        },
+  it('ignores unknown events and captures warning events during generation streams', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      vi.stubGlobal('fetch', async () => {
+        const enc = new TextEncoder()
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(enc.encode('event: future_event\ndata: {"ignored":true}\n\n'))
+            controller.enqueue(enc.encode('event: warning\ndata: {"message":"careful"}\n\n'))
+            controller.enqueue(
+              enc.encode('event: prompt\ndata: {"messages":[{"role":"user","content":"hi"}]}\n\n'),
+            )
+            controller.enqueue(
+              enc.encode(
+                'event: info\ndata: {"generationId":"gen-taxonomy","generationInfo":{"generationId":"gen-taxonomy","model":"m"}}\n\n',
+              ),
+            )
+            controller.enqueue(enc.encode('event: token\ndata: {"content":"ok"}\n\n'))
+            controller.enqueue(
+              enc.encode(
+                'event: done\ndata: {"result":"ok","generationId":"gen-taxonomy","generationInfo":{"generationId":"gen-taxonomy"}}\n\n',
+              ),
+            )
+            controller.close()
+          },
+        })
+        return new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        })
       })
-      return new Response(stream, {
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-      })
-    })
 
-    const res = await requestServerChatGeneration(baseInput, null)
-    expect(res.status).toBe('ok')
-    if (res.status !== 'ok') return
-    expect(res.generationId).toBe('gen-taxonomy')
-    expect(res.req.type).toBe('streaming')
-    if (res.req.type !== 'streaming') return
-    const reader = res.req.result.getReader()
-    await expect(reader.read()).resolves.toEqual({
-      done: false,
-      value: { 'gen-taxonomy': 'ok' },
-    })
-    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
-    await expect(res.terminal).resolves.toMatchObject({ status: 'done' })
+      const res = await requestServerChatGeneration(baseInput, null)
+      expect(res.status).toBe('ok')
+      if (res.status !== 'ok') return
+      expect(res.generationId).toBe('gen-taxonomy')
+      expect(res.req.type).toBe('streaming')
+      if (res.req.type !== 'streaming') return
+      const reader = res.req.result.getReader()
+      await expect(reader.read()).resolves.toEqual({
+        done: false,
+        value: { 'gen-taxonomy': 'ok' },
+      })
+      await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+      await expect(res.terminal).resolves.toMatchObject({
+        status: 'done',
+        warnings: [{ message: 'careful' }],
+      })
+      expect(warn).toHaveBeenCalledWith('Server chat warning: careful', '')
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('surfaces restoration on terminal dispatch errors', async () => {

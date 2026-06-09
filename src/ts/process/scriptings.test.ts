@@ -96,6 +96,9 @@ const luaMock = vi.hoisted(() => {
         makeEngine(options),
       )
     },
+    setRejectDispatch(value: boolean) {
+      state.rejectDispatch = value
+    },
   }
 })
 
@@ -340,14 +343,16 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     expect(setVar).not.toHaveBeenCalled()
     expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.editDisplay).toBe(0)
 
-    luaMock.rejectDispatch = true
-    await runScripted('return "reject"', {
-      char,
-      chat,
-      mode: 'editDisplay',
-      data: 'body',
-      setVar,
-    })
+    luaMock.setRejectDispatch(true)
+    await expect(
+      runScripted('return "reject"', {
+        char,
+        chat,
+        mode: 'editDisplay',
+        data: 'body',
+        setVar,
+      }),
+    ).rejects.toThrow('lua dispatch failed')
 
     expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.editDisplay).toBe(0)
   })

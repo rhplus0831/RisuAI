@@ -104,9 +104,6 @@ describe('server command event subscription helper', () => {
         'event: message',
         'data: ignored',
         '',
-        'event: command',
-        'data: {"type":"broken"}',
-        '',
         'event: memory',
         `data: ${JSON.stringify(memoryEvent)}`,
         '',
@@ -134,6 +131,20 @@ describe('server command event subscription helper', () => {
       method: 'GET',
       authHeader: 'events-auth-token',
     })
+  })
+
+  it('reports malformed command events instead of dropping them', async () => {
+    stubEventsFetch('event: command\ndata: {"type":"broken"}\n\n')
+    const onError = vi.fn()
+
+    const subscription = await subscribeServerCommandEvents({
+      onCommandEvent: vi.fn(),
+      onError,
+    })
+
+    expect(subscription.status).toBe('ok')
+    await waitFor(() => onError.mock.calls.length === 1)
+    expect(onError.mock.calls[0][0]).toContain('Malformed command event frame')
   })
 
   it('returns an error for event stream HTTP failures', async () => {
