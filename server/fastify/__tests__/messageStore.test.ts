@@ -81,6 +81,23 @@ describe('messageStore CRUD', () => {
     expect(getAllChatIdsWithMessages(db)).toEqual(['chat-1'])
   })
 
+  it('reads ranges by logical row offset even when stored seq values are sparse', () => {
+    const db = makeDb(makeDataDir())
+    const messages = [
+      msg('m10', 'user', 'logical 0'),
+      msg('m20', 'char', 'logical 1'),
+      msg('m30', 'user', 'logical 2'),
+    ]
+    replaceChatMessages(db, 'chat-1', messages)
+    db.prepare('UPDATE messages SET seq = seq + 10 WHERE chat_id = ? AND alternate = 0').run(
+      'chat-1',
+    )
+
+    expect(getChatMessages(db, 'chat-1')).toEqual(messages)
+    expect(countChatMessages(db, 'chat-1')).toBe(3)
+    expect(getChatMessagesRange(db, 'chat-1', 1, 2)).toEqual([messages[1], messages[2]])
+  })
+
   it('replaceChatMessages overwrites only the target chat', () => {
     const db = makeDb(makeDataDir())
     replaceChatMessages(db, 'chat-a', [msg('a1', 'user', 'a')])

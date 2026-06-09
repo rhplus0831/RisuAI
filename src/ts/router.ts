@@ -139,12 +139,11 @@ const playgroundSlugByIndex = new Map<number, string>([
 
 let routerInstalled = false
 let applyingRoute = false
-let routeApplicationPending = true
+const initialRoute = parseRoute(typeof window === 'undefined' ? '/' : window.location.pathname)
+let routeApplicationPending = initialRoute.kind !== 'home'
 let skipNextRouteApplication = false
 
-export const currentRoute = writable<AppRoute>(
-  parseRoute(typeof window === 'undefined' ? '/' : window.location.pathname),
-)
+export const currentRoute = writable<AppRoute>(initialRoute)
 
 export function installRouter(): void {
   if (routerInstalled || typeof window === 'undefined') return

@@ -525,9 +525,9 @@ export function getChatMessagesRange(
   }
   const rows = db
     .prepare(
-      'SELECT json FROM messages WHERE chat_id = ? AND alternate = 0 AND seq >= ? AND seq < ? ORDER BY seq',
+      'SELECT json FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq LIMIT ? OFFSET ?',
     )
-    .all(chatId, start, start + limit) as { json: string }[]
+    .all(chatId, limit, start) as { json: string }[]
   return rows.map((row) => JSON.parse(row.json) as JsonRecord)
 }
 
