@@ -149,7 +149,10 @@ vi.mock('@mlc-ai/web-tokenizers', () => ({
   },
 }))
 
-import { loadFixture } from '../__fixtures__/loadFixture'
+import {
+  loadFixture,
+  markFixtureActiveChatGenerationSettingsReady,
+} from '../__fixtures__/loadFixture'
 import {
   installProviderScript,
   loadProviderScript,
@@ -245,6 +248,7 @@ describe('sendChat fixtures', () => {
   it.each(FIXTURES)('%s', async (name) => {
     const loaded = await loadFixture(name)
     cleanups.push(loaded.cleanup)
+    markFixtureActiveChatGenerationSettingsReady()
 
     // Preview-mode fixtures return before any provider call, so the upstream
     // script may be absent. Load it lazily and tolerate ENOENT.

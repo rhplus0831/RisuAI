@@ -85,7 +85,10 @@ vi.mock('@mlc-ai/web-tokenizers', () => ({
   },
 }))
 
-import { loadFixture } from '../__fixtures__/loadFixture'
+import {
+  loadFixture,
+  markFixtureActiveChatGenerationSettingsReady,
+} from '../__fixtures__/loadFixture'
 import {
   getServerCompletionCalls,
   resetServerCompletionCalls,
@@ -207,6 +210,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
   const chatCalls: RouteBackedChatCall[] = []
   const commandCalls: RouteBackedCommandCall[] = []
   const dispatchCalls: RouteBackedDispatchCall[] = []
+  let currentRevision = 0
   const generationChat: GenerationChatRouteOptions = {
     dispatchProvider(context: ChatProviderDispatchContext) {
       dispatchCalls.push({
@@ -296,6 +300,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
     },
     async seed(database: unknown) {
       const cloned = JSON.parse(JSON.stringify(database))
+      const generationSettings = readSeedGenerationSettings(cloned)
       const res = await app.inject({
         method: 'POST',
         url: '/api/v1/import/risusave',
@@ -303,6 +308,21 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
         payload: { database: cloned },
       })
       expect(res.statusCode).toBe(200)
+      currentRevision = res.json().revision
+
+      if (generationSettings) {
+        const configure = await app.inject({
+          method: 'PUT',
+          url: '/api/v1/commands/chats/chat-route-backed/generation-settings',
+          headers: { 'risu-auth': authAssertion },
+          payload: {
+            baseRevision: currentRevision,
+            generationSettings,
+          },
+        })
+        expect(configure.statusCode).toBe(200)
+        currentRevision = configure.json().revision
+      }
     },
     async close() {
       await app.close()
@@ -310,6 +330,28 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
     },
     fetch,
   }
+}
+
+function readSeedGenerationSettings(database: unknown): unknown {
+  if (!database || typeof database !== 'object' || Array.isArray(database)) return undefined
+  const characters = (database as { characters?: unknown }).characters
+  if (!Array.isArray(characters)) return undefined
+  for (const character of characters) {
+    if (!character || typeof character !== 'object' || Array.isArray(character)) continue
+    const chats = (character as { chats?: unknown }).chats
+    if (!Array.isArray(chats)) continue
+    const chat = chats.find(
+      (candidate) =>
+        candidate &&
+        typeof candidate === 'object' &&
+        !Array.isArray(candidate) &&
+        (candidate as { id?: unknown }).id === 'chat-route-backed',
+    )
+    if (chat && typeof chat === 'object' && !Array.isArray(chat)) {
+      return (chat as { generationSettings?: unknown }).generationSettings
+    }
+  }
+  return undefined
 }
 
 function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[number]): void {
@@ -345,6 +387,7 @@ function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[num
       saying: char.chaId,
     })
   }
+  markFixtureActiveChatGenerationSettingsReady()
 }
 
 async function drainRouteBackedCommands(): Promise<void> {
@@ -517,7 +560,8 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       // The route persisted the assembly-time delta itself: bootstrap shows the
       // written scriptstate. simple-send is durable, so the job also persists the
-      // result message at completion — assembly write = rev 2, result write = rev 3.
+      // result message at completion — configure = rev 2, assembly write = rev 3,
+      // result write = rev 4.
       const bootstrap = await harness.app.inject({
         method: 'GET',
         url: '/api/v1/bootstrap',
@@ -526,7 +570,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       expect(bootstrap.statusCode).toBe(200)
       const persistedChat = bootstrap.json().database.characters[0].chats[0]
       expect(persistedChat.scriptstate).toEqual({ $score: '9' })
-      expect(bootstrap.json().revision).toBe(3)
+      expect(bootstrap.json().revision).toBe(4)
       const persistedAssistant = [...(await persistedChatMessages(harness))]
         .reverse()
         .find((m: { role: string }) => m.role === 'char')
@@ -538,7 +582,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         call.url.includes('/generation-result'),
       )
       expect(generationResultPosts).toEqual([])
-      expect(await getServerCommandBaseRevision()).toBe(3)
+      expect(await getServerCommandBaseRevision()).toBe(4)
     } finally {
       await drainRouteBackedCommands()
       await harness.close()
@@ -591,7 +635,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $mood: 'happy' })
 
       // Durable: the job persisted the post-gen scriptstate delta + the result
-      // message in one bump at completion (seed = 1 → persist = 2).
+      // message in one bump at completion (configure = 2 → persist = 3).
       const bootstrap = await harness.app.inject({
         method: 'GET',
         url: '/api/v1/bootstrap',
@@ -600,7 +644,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       expect(bootstrap.statusCode).toBe(200)
       const persistedChat = bootstrap.json().database.characters[0].chats[0]
       expect(persistedChat.scriptstate).toMatchObject({ $mood: 'happy' })
-      expect(bootstrap.json().revision).toBe(2)
+      expect(bootstrap.json().revision).toBe(3)
       const persistedAssistant = [...(await persistedChatMessages(harness))]
         .reverse()
         .find((m: { role: string }) => m.role === 'char')
@@ -710,6 +754,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // pre-existing multimodal concern; clear it to `undefined` so the
       // format-order path runs and a real prompt (with the inlay row) assembles.
       ;(DBState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
+      markFixtureActiveChatGenerationSettingsReady()
 
       await harness.seed(DBState.db)
       const inlayUpload = await harness.app.inject({
@@ -821,6 +866,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
           ...(DBState.db.promptSettings ?? {}),
         }
         ;(DBState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
+        markFixtureActiveChatGenerationSettingsReady()
 
         await harness.seed(DBState.db)
         vi.stubGlobal('fetch', harness.fetch)
@@ -961,6 +1007,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   it('pins hypav3-memory server-backed prompt rows and progress side effects', async () => {
     const loaded = await loadFixture('hypav3-memory')
     cleanups.push(loaded.cleanup)
+    markFixtureActiveChatGenerationSettingsReady()
     const expected = await loadExpected('hypav3-memory')
     const providerCall = expected.providerCalls[0]
     expect(providerCall).toBeDefined()
@@ -1040,6 +1087,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   it('rolls back server-applied chat mutations when /chat dispatch fails after streaming starts', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
+    markFixtureActiveChatGenerationSettingsReady()
     const originalMessages = JSON.parse(
       JSON.stringify(DBState.db.characters[0].chats[0].message),
     ) as Chat['message']
@@ -1103,6 +1151,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   it('runs server-sent tts side effects once on successful /chat dispatch', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
+    markFixtureActiveChatGenerationSettingsReady()
     DBState.db.ttsAutoSpeech = true
 
     setServerChatPrompt(

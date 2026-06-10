@@ -8,25 +8,28 @@ continue, regenerate, or preview until the user explicitly confirms all three
 parts for that chat.
 
 Start with [`status.md`](status.md), then read [`plan.md`](plan.md), then the
-phase files under [`phases/`](phases/).
+phase files under [`phases/`](phases/). The Phase 5 closeout proof is recorded
+in [`latest-verification.md`](latest-verification.md).
 
 ## Read Order
 
 1. [`status.md`](status.md) - current phase router and open work.
 2. [`plan.md`](plan.md) - goal, contract, invariants, and non-goals.
-3. [`phases/README.md`](phases/README.md) - phase index.
-4. [`phases/phase-0-contract.md`](phases/phase-0-contract.md) - lock the data,
+3. [`latest-verification.md`](latest-verification.md) - latest closeout proof
+   and residual-gap record.
+4. [`phases/README.md`](phases/README.md) - phase index.
+5. [`phases/phase-0-contract.md`](phases/phase-0-contract.md) - lock the data,
    readiness, and error contract before runtime edits.
-5. [`phases/phase-1-chat-metadata-and-commands.md`](phases/phase-1-chat-metadata-and-commands.md)
+6. [`phases/phase-1-chat-metadata-and-commands.md`](phases/phase-1-chat-metadata-and-commands.md)
    - persist and project chat-owned settings.
-6. [`phases/phase-2-effective-generation-config.md`](phases/phase-2-effective-generation-config.md)
+7. [`phases/phase-2-effective-generation-config.md`](phases/phase-2-effective-generation-config.md)
    - server prompt gate and per-chat effective database overlay.
-7. [`phases/phase-3-ui-and-send-gating.md`](phases/phase-3-ui-and-send-gating.md)
+8. [`phases/phase-3-ui-and-send-gating.md`](phases/phase-3-ui-and-send-gating.md)
    - sidebar controls and pre-append client blocking.
-8. [`phases/phase-4-import-delete-fork-edges.md`](phases/phase-4-import-delete-fork-edges.md)
+9. [`phases/phase-4-import-delete-fork-edges.md`](phases/phase-4-import-delete-fork-edges.md)
    - lifecycle, import, fork, and deletion behavior.
-9. [`phases/phase-5-verification.md`](phases/phase-5-verification.md) - focused
-   regression and TypeScript proof.
+10. [`phases/phase-5-verification.md`](phases/phase-5-verification.md) - focused
+    regression and TypeScript proof.
 
 ## Sub-Agent Inputs
 

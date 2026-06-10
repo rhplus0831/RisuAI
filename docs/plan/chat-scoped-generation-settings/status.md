@@ -1,15 +1,15 @@
 # Chat-Scoped Generation Settings Status
 
-Date: 2026-06-10
+Date: 2026-06-11
 
-Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are complete. Phase 4 landed
-deterministic import, delete, fork/copy, and new-chat lifecycle behavior for
-chat-owned generation settings. The broader regression/TypeScript proof remains
-planned for Phase 5.
+Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, and Phase 5 are complete. Phase 5
+landed the closeout regression/TypeScript proof for the chat-scoped generation
+settings workstream.
 
 ## Snapshot
 
-- Plan state: open, Phase 4 complete; Phase 5 remains planned.
+- Plan state: open, Phase 5 complete; ready for a separate archive slice when
+  requested.
 - User decisions captured: use `personaId`, use `presetId` only, include all
   sidebar toggles, and make imported chats require explicit configuration.
 - Sub-agent investigation: complete for server/data/prompt, frontend/UI, and
@@ -52,7 +52,17 @@ planned for Phase 5.
   `pnpm exec vitest run src/ts/characterCards.pngImport.test.ts`,
   `pnpm exec tsc -p tsconfig.client-lib.json`, and
   `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`.
-- Current risk: Phase 5 still needs the planned broader verification pass.
+- Phase 5 closeout proof: [`latest-verification.md`](latest-verification.md).
+- Phase 5 validation passed:
+  `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/commandSingleRowPaths.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/plainSections.test.ts server/fastify/__tests__/staticSections.test.ts server/fastify/__tests__/templates.test.ts server/fastify/__tests__/promptVariables.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveBundleImportRoute.test.ts server/fastify/__tests__/realmImport.test.ts`
+  (`11` files, `476` tests),
+  `pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/server/commands.test.ts src/ts/process/request/tests/serverPromptAssembly.test.ts src/ts/process/request/tests/serverChat.test.ts src/ts/process/__tests__/sendChat.*.test.ts`
+  (`7` files, `191` tests),
+  `pnpm exec vitest run src/ts/chatGenerationSettings.test.ts src/ts/activeChatGenerationSettings.test.ts src/lib/SideBars/chatGenerationSettingsControls.test.ts src/lib/Setting/pickerGenerationSettings.test.ts src/ts/characters.importChat.test.ts src/ts/characterCards.pngImport.test.ts src/ts/process/__tests__/sendChatContext.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts`
+  (`8` files, `64` tests),
+  `pnpm exec tsc -p tsconfig.client-lib.json`, and
+  `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`.
+- Residual gaps: none.
 
 ## Phase Router
 
@@ -67,13 +77,13 @@ planned for Phase 5.
   blocking.
 - [Phase 4](phases/phase-4-import-delete-fork-edges.md): complete. Import,
   delete, fork, copy, and new-chat lifecycle behavior.
-- [Phase 5](phases/phase-5-verification.md): planned. Regression and
+- [Phase 5](phases/phase-5-verification.md): complete. Regression and
   TypeScript proof.
 
 ## Next Step
 
-Run Phase 5 next. Complete the broader regression and TypeScript proof for the
-chat-scoped generation settings workstream.
+No remaining phase work. Keep this plan active until a separate archive slice
+moves it to `docs/archive/`.
 
 ## Maintenance Rules
 

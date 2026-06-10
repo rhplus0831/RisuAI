@@ -4,8 +4,91 @@ import { fileURLToPath } from 'node:url'
 import type { LLMModel } from '../../model/types'
 import { DBState, selectedCharID } from '../../stores.svelte'
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
+import {
+  resolveChatGenerationControlRequirements,
+  type ChatGenerationModuleReference,
+  type ChatGenerationPersonaReference,
+  type ChatGenerationPresetReference,
+} from '../../chatGenerationSettings'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
+
+const FIXTURE_PRESET_MIRROR_KEYS: Array<[string, string]> = [
+  ['apiType', 'apiType'],
+  ['openAIKey', 'openAIKey'],
+  ['localNetworkMode', 'localNetworkMode'],
+  ['localNetworkTimeoutSec', 'localNetworkTimeoutSec'],
+  ['mainPrompt', 'mainPrompt'],
+  ['jailbreak', 'jailbreak'],
+  ['globalNote', 'globalNote'],
+  ['temperature', 'temperature'],
+  ['maxContext', 'maxContext'],
+  ['maxResponse', 'maxResponse'],
+  ['frequencyPenalty', 'frequencyPenalty'],
+  ['PresensePenalty', 'PresensePenalty'],
+  ['formatingOrder', 'formatingOrder'],
+  ['aiModel', 'aiModel'],
+  ['subModel', 'subModel'],
+  ['currentPluginProvider', 'currentPluginProvider'],
+  ['textgenWebUIStreamURL', 'textgenWebUIStreamURL'],
+  ['textgenWebUIBlockingURL', 'textgenWebUIBlockingURL'],
+  ['forceReplaceUrl', 'forceReplaceUrl'],
+  ['promptPreprocess', 'promptPreprocess'],
+  ['bias', 'bias'],
+  ['koboldURL', 'koboldURL'],
+  ['proxyKey', 'proxyKey'],
+  ['ooba', 'ooba'],
+  ['ainconfig', 'ainconfig'],
+  ['proxyRequestModel', 'proxyRequestModel'],
+  ['openrouterRequestModel', 'openrouterRequestModel'],
+  ['NAISettings', 'NAIsettings'],
+  ['promptTemplate', 'promptTemplate'],
+  ['NAIadventure', 'NAIadventure'],
+  ['NAIappendName', 'NAIappendName'],
+  ['localStopStrings', 'localStopStrings'],
+  ['autoSuggestPrompt', 'autoSuggestPrompt'],
+  ['customProxyRequestModel', 'customProxyRequestModel'],
+  ['reverseProxyOobaArgs', 'reverseProxyOobaArgs'],
+  ['top_p', 'top_p'],
+  ['promptSettings', 'promptSettings'],
+  ['repetition_penalty', 'repetition_penalty'],
+  ['min_p', 'min_p'],
+  ['top_a', 'top_a'],
+  ['openrouterProvider', 'openrouterProvider'],
+  ['useInstructPrompt', 'useInstructPrompt'],
+  ['customPromptTemplateToggle', 'customPromptTemplateToggle'],
+  ['templateDefaultVariables', 'templateDefaultVariables'],
+  ['moduleIntergration', 'moduleIntergration'],
+  ['top_k', 'top_k'],
+  ['instructChatTemplate', 'instructChatTemplate'],
+  ['JinjaTemplate', 'JinjaTemplate'],
+  ['jsonSchemaEnabled', 'jsonSchemaEnabled'],
+  ['jsonSchema', 'jsonSchema'],
+  ['strictJsonSchema', 'strictJsonSchema'],
+  ['extractJson', 'extractJson'],
+  ['seperateParametersEnabled', 'seperateParametersEnabled'],
+  ['seperateParameters', 'seperateParameters'],
+  ['customAPIFormat', 'customAPIFormat'],
+  ['systemContentReplacement', 'systemContentReplacement'],
+  ['systemRoleReplacement', 'systemRoleReplacement'],
+  ['customFlags', 'customFlags'],
+  ['enableCustomFlags', 'enableCustomFlags'],
+  ['regex', 'presetRegex'],
+  ['reasonEffort', 'reasoningEffort'],
+  ['thinkingTokens', 'thinkingTokens'],
+  ['thinkingType', 'thinkingType'],
+  ['deepseekThinkingType', 'deepseekThinkingType'],
+  ['adaptiveThinkingEffort', 'adaptiveThinkingEffort'],
+  ['deepseekReasoningEffort', 'deepseekReasoningEffort'],
+  ['outputImageModal', 'outputImageModal'],
+  ['seperateModelsForAxModels', 'seperateModelsForAxModels'],
+  ['seperateModels', 'seperateModels'],
+  ['modelTools', 'modelTools'],
+  ['fallbackModels', 'fallbackModels'],
+  ['fallbackWhenBlankResponse', 'fallbackWhenBlankResponse'],
+  ['verbosity', 'verbosity'],
+  ['dynamicOutput', 'dynamicOutput'],
+]
 
 export interface Fixture {
   /** Optional partial Database overrides merged onto the defaulted base. */
@@ -103,4 +186,132 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
       }
     },
   }
+}
+
+/**
+ * The sendChat fixture corpus predates chat-scoped generation settings. Tests
+ * that exercise successful sends must explicitly mark the active fixture chat
+ * as configured instead of relying on the product's legacy global defaults.
+ */
+export function markFixtureActiveChatGenerationSettingsReady(): void {
+  const db = DBState.db
+  const selectedCharacterIndex = getInteger(selectedCharIDValue(), 0)
+  const character = db.characters?.[selectedCharacterIndex] ?? db.characters?.[0]
+  const chatIndex = getInteger(character?.chatPage, 0)
+  const chat = character?.chats?.[chatIndex] ?? character?.chats?.[0]
+  if (!character || !chat) {
+    throw new Error('Fixture did not seed an active chat')
+  }
+
+  db.personas = Array.isArray(db.personas) ? db.personas : []
+  db.botPresets = Array.isArray(db.botPresets) ? db.botPresets : []
+
+  const personaIndex = Math.min(Math.max(getInteger(db.selectedPersona, 0), 0), db.personas.length)
+  if (!db.personas[personaIndex]) {
+    db.personas[personaIndex] = {
+      id: `fixture-persona-${personaIndex}`,
+      name: db.username ?? 'User',
+      icon: db.userIcon ?? '',
+      personaPrompt: db.personaPrompt ?? '',
+      note: db.userNote ?? '',
+      largePortrait: false,
+    }
+  }
+  const persona = db.personas[personaIndex] as ChatGenerationPersonaReference
+  if (!isNonEmptyString(persona.id)) {
+    persona.id = `fixture-persona-${personaIndex}`
+  }
+
+  const presetIndex = Math.min(Math.max(getInteger(db.botPresetsId, 0), 0), db.botPresets.length)
+  if (!db.botPresets[presetIndex]) {
+    db.botPresets[presetIndex] = {
+      id: `fixture-preset-${presetIndex}`,
+      name: 'Fixture Preset',
+    } as Database['botPresets'][number]
+  }
+  const preset = db.botPresets[presetIndex] as ChatGenerationPresetReference
+  if (!isNonEmptyString(preset.id)) {
+    preset.id = `fixture-preset-${presetIndex}`
+  }
+  mirrorFixtureDatabaseIntoPreset(db, preset)
+
+  const requirements = resolveChatGenerationControlRequirements({
+    presetId: preset.id,
+    presets: db.botPresets as unknown as ChatGenerationPresetReference[],
+    modules: (Array.isArray(db.modules) ? db.modules : []) as ChatGenerationModuleReference[],
+    enabledModuleIds: stringArray(db.enabledModules),
+    characterModuleIds: stringArray(character.modules),
+    chatModuleIds: stringArray(chat.modules),
+    moduleIntegration:
+      typeof (preset as { moduleIntergration?: unknown }).moduleIntergration === 'string'
+        ? (preset as { moduleIntergration: string }).moduleIntergration
+        : null,
+  })
+  const globalChatVariables = recordOfStrings(db.globalChatVariables)
+  const sidebarToggles = Object.fromEntries(
+    requirements.sidebarToggles.map((toggle) => [
+      toggle.key,
+      globalChatVariables[`toggle_${toggle.key}`] ?? '0',
+    ]),
+  )
+
+  chat.generationSettings = {
+    configured: true,
+    personaId: persona.id,
+    presetId: preset.id,
+    jailbreakToggle: db.jailbreakToggle === true,
+    sidebarToggles,
+  }
+}
+
+function mirrorFixtureDatabaseIntoPreset(
+  db: Database,
+  preset: ChatGenerationPresetReference,
+): void {
+  const dbRecord = db as unknown as Record<string, unknown>
+  const presetRecord = preset as unknown as Record<string, unknown>
+  for (const [presetKey, databaseKey] of FIXTURE_PRESET_MIRROR_KEYS) {
+    if (!hasOwn(dbRecord, databaseKey)) continue
+    presetRecord[presetKey] = cloneFixtureJson(dbRecord[databaseKey])
+  }
+}
+
+function selectedCharIDValue(): unknown {
+  let value: unknown
+  selectedCharID.subscribe((next) => {
+    value = next
+  })()
+  return value
+}
+
+function getInteger(value: unknown, fallback: number): number {
+  return Number.isInteger(value) ? (value as number) : fallback
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
+}
+
+function recordOfStrings(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, string> = {}
+  for (const [key, raw] of Object.entries(value)) {
+    if (typeof raw === 'string') out[key] = raw
+  }
+  return out
+}
+
+function hasOwn(value: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key)
+}
+
+function cloneFixtureJson<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
 }

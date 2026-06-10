@@ -135,9 +135,9 @@ The stable incomplete-chat error body is:
 
 ## Execution Cursor
 
-Planning is open. Phase 2 is complete; start next with Phase 3 UI and client
-send gating. Re-check the cited symbols before editing; the investigation line
-numbers were current when this plan was written but will drift.
+Phase 5 is complete. The closeout proof is recorded in
+[`latest-verification.md`](latest-verification.md). Keep the plan active until a
+separate archive slice moves it to `docs/archive/`.
 
 ## Not In This Plan
 

@@ -1,6 +1,6 @@
 # Phase 5: Verification
 
-Status: planned.
+Status: complete.
 
 Goal: prove the new chat-scoped behavior across server commands, prompt
 assembly, frontend guards, imports, and TypeScript checks.
@@ -30,22 +30,22 @@ assembly, frontend guards, imports, and TypeScript checks.
 
 ## Validation Matrix
 
-| Case | Expected |
-| --- | --- |
-| New configured chat | Send succeeds with chat-local persona, preset, and toggles. |
-| Missing `presetId` | Send and preview are blocked. |
-| Missing `personaId` | Send and preview are blocked. |
-| Missing toggle confirmation | Send and preview are blocked. |
-| Explicit off toggle | Chat remains complete when the key is present. |
-| Global selected persona/preset changed | Configured chat output is unchanged. |
-| Two chats with different toggles | Prompt sections differ only by active chat config. |
-| Deleted referenced preset/persona | Affected chats become incomplete. |
-| Deleted toggle key | Stale value is ignored; no fallback to global. |
-| Imported chat opened | Chat is visible, send is disabled/blocked. |
-| Configure imported chat then send | Send succeeds. |
-| Fork complete chat | Fork is complete. |
-| Fork incomplete chat | Fork remains incomplete. |
-| Add new displayed sidebar toggle | Existing chats require confirmation. |
+| Case                                   | Expected                                                    |
+| -------------------------------------- | ----------------------------------------------------------- |
+| New configured chat                    | Send succeeds with chat-local persona, preset, and toggles. |
+| Missing `presetId`                     | Send and preview are blocked.                               |
+| Missing `personaId`                    | Send and preview are blocked.                               |
+| Missing toggle confirmation            | Send and preview are blocked.                               |
+| Explicit off toggle                    | Chat remains complete when the key is present.              |
+| Global selected persona/preset changed | Configured chat output is unchanged.                        |
+| Two chats with different toggles       | Prompt sections differ only by active chat config.          |
+| Deleted referenced preset/persona      | Affected chats become incomplete.                           |
+| Deleted toggle key                     | Stale value is ignored; no fallback to global.              |
+| Imported chat opened                   | Chat is visible, send is disabled/blocked.                  |
+| Configure imported chat then send      | Send succeeds.                                              |
+| Fork complete chat                     | Fork is complete.                                           |
+| Fork incomplete chat                   | Fork remains incomplete.                                    |
+| Add new displayed sidebar toggle       | Existing chats require confirmation.                        |
 
 ## Validation Commands
 
@@ -82,6 +82,20 @@ with the nearest focused test or create the missing focused coverage.
 - The server TypeScript workflow passes.
 - `status.md` records the workstream as complete or lists remaining open
   phases with owners/next steps.
+
+## Closeout Proof
+
+Completed on 2026-06-11. Full command details are recorded in
+[`../latest-verification.md`](../latest-verification.md).
+
+- Required server validation command passed: 11 files / 476 tests.
+- Required client validation command passed: 7 files / 191 tests.
+- Additional scout-focused client/UI/import validation command passed: 8 files /
+  64 tests.
+- `pnpm exec tsc -p tsconfig.client-lib.json` passed with zero errors.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit` passed with zero
+  errors.
+- Residual gaps: none.
 
 ## Risks
 
