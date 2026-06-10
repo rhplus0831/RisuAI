@@ -87,6 +87,31 @@ export function restoreChatState(snapshot: ChatStateSnapshot): void {
   })
 }
 
+export function applyOptimisticCreatedChat(
+  characterId: string | undefined,
+  chat: Chat,
+  snapshot: ChatStateSnapshot,
+): boolean {
+  let applied = false
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(characterId, snapshot.selectedCharID)
+    if (!character?.chats) return
+    const existingIndex = chat.id
+      ? character.chats.findIndex((candidate) => candidate.id === chat.id)
+      : -1
+    if (existingIndex >= 0) {
+      character.chatPage = existingIndex
+      applied = true
+      return
+    }
+    character.chats.unshift(chat)
+    character.chatPage = 0
+    applied = true
+  })
+  if (applied) reloadGuiDisplay()
+  return applied
+}
+
 // Scalar chat-selection rollback (stability/perf plan, Phase 1 H2). Selecting a
 // chat only flips the owning character's `chatPage` and dispatches an
 // empty-patch select command, so its rollback never needs the heavy

@@ -37,6 +37,7 @@
   import { changeChatTo, createChatCopyName } from 'src/ts/globalApi.svelte'
   import { ensureAllChatsHydrated } from 'src/ts/server/chatMessageHydration.svelte'
   import {
+    applyOptimisticCreatedChat,
     currentChatSelectionSnapshot,
     currentChatStateSnapshot,
     dispatchCreateChat,
@@ -115,6 +116,10 @@
       id: v4(),
     }
     if (canUseServerCommands()) {
+      const applied = applyOptimisticCreatedChat(chara.chaId, chat, previous)
+      if (applied && chara.chaId && chat.id) {
+        navigate(characterRoutePath(chara.chaId, chat.id))
+      }
       dispatchCreateChat(chara.chaId, chat, previous)
       return
     }

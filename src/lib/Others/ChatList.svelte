@@ -17,6 +17,7 @@
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { changeChatTo } from 'src/ts/globalApi.svelte'
   import {
+    applyOptimisticCreatedChat,
     currentChatStateSnapshot,
     dispatchCreateChat,
     dispatchDeleteChat,
@@ -172,6 +173,11 @@
             chats.unshift(chat)
             DBState.db.characters[$selectedCharID].chats = chats
             changeChatTo(0)
+          } else {
+            const applied = applyOptimisticCreatedChat(cha.chaId, chat, previous)
+            if (applied && cha.chaId && chat.id) {
+              navigate(characterRoutePath(cha.chaId, chat.id))
+            }
           }
           dispatchCreateChat(cha.chaId, chat, previous)
           close()

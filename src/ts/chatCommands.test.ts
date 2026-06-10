@@ -29,6 +29,7 @@ import { DBState, selectedCharID } from './stores.svelte'
 import { setCurrentChat, type Chat, type Message } from './storage/database.svelte'
 import { get } from 'svelte/store'
 import {
+  applyOptimisticCreatedChat,
   appendCurrentChatUserMessageForSend,
   changedChatMetadata,
   CHAT_PATCH_ALLOWED_KEYS,
@@ -48,6 +49,7 @@ import {
   dispatchUpdateChatNoteScoped,
   restoreChatFolderRowMetadata,
   restoreChatRowMetadata,
+  restoreChatState,
   restoreChatScopedState,
   restoreChatScriptstate,
   restoreChatSelection,
@@ -214,6 +216,9 @@ beforeEach(() => {
   setServerProjectionWriteGuardEnabled(false)
   selectedCharID.set(0)
   DBState.db = {
+    enabledModules: [],
+    moduleIntergration: '',
+    modules: [],
     characters: [
       {
         chaId: 'char-a',
@@ -241,6 +246,34 @@ afterEach(() => {
 })
 
 describe('chat command projection helpers', () => {
+  it('optimistically inserts and selects a command-created chat under the projection guard', () => {
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentChatStateSnapshot()
+    const chat = {
+      id: 'chat-c',
+      name: 'Chat C',
+      note: '',
+      message: [],
+      localLore: [],
+      fmIndex: -1,
+    } as Chat
+
+    expect(applyOptimisticCreatedChat('char-a', chat, previous)).toBe(true)
+
+    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual([
+      'chat-c',
+      'chat-a',
+      'chat-b',
+    ])
+    expect(DBState.db.characters[0].chatPage).toBe(0)
+
+    restoreChatState(previous)
+    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual([
+      'chat-a',
+      'chat-b',
+    ])
+  })
+
   it('routes SideChatList chat and folder flows through commands under the projection guard', async () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
