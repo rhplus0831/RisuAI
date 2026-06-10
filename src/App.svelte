@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import {
     DynamicGUI,
     settingsOpen,
@@ -80,7 +81,9 @@
     if (!$loadedStore) return
     const route = $currentRoute
     if (consumeStateDrivenRouteUpdate()) return
-    void applyRouteToStores(route)
+    untrack(() => {
+      void applyRouteToStores(route)
+    })
   })
 
   $effect(() => {
