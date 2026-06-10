@@ -4039,6 +4039,86 @@ describe('Phase 9-3b chat record and folder commands', () => {
     await expect(persistedChatMessages(harness.app, assertion, 'chat-b')).resolves.toEqual([])
   })
 
+  it('keeps native create chats incomplete by default and persists explicit generation settings', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          customPromptTemplateToggle: 'mode=Mode',
+        },
+      ],
+      personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const omitted = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: {
+          id: 'chat-omitted',
+          name: 'Omitted settings',
+          note: '',
+          message: [],
+          localLore: [],
+        },
+      },
+    })
+    expect(omitted.statusCode).toBe(200)
+
+    const explicitSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: { mode: '1' },
+    }
+    const explicit = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: omitted.json().revision,
+        chat: {
+          id: 'chat-explicit',
+          name: 'Explicit settings',
+          note: '',
+          message: [],
+          localLore: [],
+          generationSettings: explicitSettings,
+        },
+      },
+    })
+    expect(explicit.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const chats = bootstrap.json().database.characters[0].chats as Array<{
+      id: string
+      generationSettings?: Record<string, unknown>
+    }>
+    expect(chats.find((chat) => chat.id === 'chat-omitted')?.generationSettings).toBeUndefined()
+    expect(chats.find((chat) => chat.id === 'chat-explicit')?.generationSettings).toEqual(
+      explicitSettings,
+    )
+  })
+
   it('updates chat metadata without rewriting message rows', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -4297,6 +4377,53 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toBeUndefined()
   })
 
+  it('rejects generic chat patches that include generation settings', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+      personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const patch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          generationSettings: {
+            configured: true,
+            personaId: 'persona-a',
+            presetId: 'preset-a',
+            jailbreakToggle: false,
+            sidebarToggles: {},
+          },
+        },
+      },
+    })
+
+    expect(patch.statusCode).toBe(400)
+    expect(patch.json().error).toBe('patch.generationSettings is owned by a later command slice')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toBeUndefined()
+  })
+
   it('normalizes malformed stored chat generation settings on bootstrap', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDatabase(harness.app, assertion, {
@@ -4433,6 +4560,116 @@ describe('Phase 9-3b chat record and folder commands', () => {
       jailbreakToggle: false,
       sidebarToggles: {},
     })
+  })
+
+  it('inherits source generation settings on fork unless the fork supplies an explicit override', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          customPromptTemplateToggle: 'mode=Mode',
+        },
+        {
+          id: 'preset-b',
+          name: 'Preset B',
+          customPromptTemplateToggle: 'tone=Tone',
+        },
+      ],
+      personas: [
+        { id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' },
+        { id: 'persona-b', name: 'Persona B', icon: '', personaPrompt: '', note: '' },
+      ],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const sourceSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: { mode: 'source' },
+    }
+    const saved = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationSettings: sourceSettings,
+      },
+    })
+    expect(saved.statusCode).toBe(200)
+
+    const inherited = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: saved.json().revision,
+        chat: {
+          id: 'chat-inherited',
+          name: 'Inherited fork',
+          note: '',
+          message: [],
+          localLore: [],
+        },
+      },
+    })
+    expect(inherited.statusCode).toBe(200)
+
+    const overrideSettings = {
+      configured: true,
+      personaId: 'persona-b',
+      presetId: 'preset-b',
+      jailbreakToggle: true,
+      sidebarToggles: { tone: 'warm' },
+    }
+    const overridden = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: inherited.json().revision,
+        chat: {
+          id: 'chat-overridden',
+          name: 'Overridden fork',
+          note: '',
+          message: [],
+          localLore: [],
+          generationSettings: overrideSettings,
+        },
+      },
+    })
+    expect(overridden.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const chats = bootstrap.json().database.characters[0].chats as Array<{
+      id: string
+      generationSettings?: Record<string, unknown>
+    }>
+    const sourceChat = chats.find((chat) => chat.id === 'chat-a')
+    const inheritedChat = chats.find((chat) => chat.id === 'chat-inherited')
+    const overriddenChat = chats.find((chat) => chat.id === 'chat-overridden')
+
+    expect(sourceChat?.generationSettings).toEqual(sourceSettings)
+    expect(inheritedChat?.generationSettings).toEqual(sourceSettings)
+    expect(inheritedChat?.generationSettings).not.toBe(sourceChat?.generationSettings)
+    expect(overriddenChat?.generationSettings).toEqual(overrideSettings)
   })
 
   it('rejects chat fork commands without client-supplied fork ids without bumping revision', async () => {

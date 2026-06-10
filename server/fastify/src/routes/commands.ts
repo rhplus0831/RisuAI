@@ -193,6 +193,7 @@ import {
 } from '../commands/pluginStorage.js'
 import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
+import type { ChatGenerationSettings } from '../../../../src/ts/chatGenerationSettings.js'
 import {
   activeMessageIdExistsOutsideChat,
   activeMessageIdExists,
@@ -380,6 +381,16 @@ function buildChatGenerationSettingsValidationContext(
     enabledModuleIds: ensureEnabledModules(target),
     characterModuleIds,
     chatModuleIds,
+  }
+}
+
+function cloneChatGenerationSettings(
+  settings: ChatGenerationSettings | undefined,
+): ChatGenerationSettings | undefined {
+  if (!settings) return undefined
+  return {
+    ...settings,
+    ...(settings.sidebarToggles ? { sidebarToggles: { ...settings.sidebarToggles } } : {}),
   }
 }
 
@@ -3156,6 +3167,9 @@ export function registerCommandRoutes(
               'sourcePatch.modules',
             )
           }
+          const inheritedGenerationSettings = cloneChatGenerationSettings(
+            chats[chatIndex].generationSettings,
+          )
           chats[chatIndex] = {
             ...chats[chatIndex],
             ...sourcePatch,
@@ -3185,6 +3199,8 @@ export function registerCommandRoutes(
               nextChat.generationSettings,
               buildChatGenerationSettingsValidationContext(target, character, nextChat),
             )
+          } else if (inheritedGenerationSettings) {
+            nextChat.generationSettings = inheritedGenerationSettings
           }
           chats.unshift(nextChat)
           if (selectFork) {
