@@ -779,6 +779,8 @@ export const languageEnglish = {
   description: 'Description',
   note: 'Note',
   jailbreakToggle: 'Toggle Jailbreak',
+  chatGenerationPresetUnconfigured: 'Select chat preset',
+  chatGenerationPersonaUnconfigured: 'Select chat persona',
   charIcon: 'Character Icon',
   characterDisplay: 'Character Display',
   viewScreen: 'Additional Character Screen',

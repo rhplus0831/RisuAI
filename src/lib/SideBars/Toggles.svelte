@@ -1,19 +1,20 @@
 <script lang="ts">
-  import { getModuleToggles } from 'src/ts/process/modules'
-  import { DBState, MobileGUI } from 'src/ts/stores.svelte'
-  import { parseToggleSyntax, type sidebarToggle, type sidebarToggleGroup } from 'src/ts/util'
+  import { DBState, MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
-  import type { PromptItem } from 'src/ts/process/prompt'
   import type { character } from 'src/ts/storage/database.svelte'
-  import Accordion from '../UI/Accordion.svelte'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import CustomSideBar from './CustomSidebar.svelte'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import { setCharacterSupaMemory } from 'src/ts/characterCommands'
+  import {
+    resolveActiveChatGenerationSettings,
+    saveActiveChatJailbreakToggleGenerationSettings,
+    saveActiveChatSidebarToggleGenerationSettings,
+  } from 'src/ts/activeChatGenerationSettings'
+  import type { ChatGenerationRequiredSidebarToggle } from 'src/ts/chatGenerationSettings'
 
   interface Props {
     chara?: character
@@ -22,72 +23,32 @@
 
   let { chara = $bindable(), noContainer }: Props = $props()
 
-  const globalChatVariablesDraft = createServerBackedSettingDraft<Record<string, string>>(
-    'globalChatVariables',
-    {},
+  let activeGenerationSettings = $derived.by(() =>
+    resolveActiveChatGenerationSettings({
+      selectedCharIndex: $selectedCharID,
+    }),
   )
-  const jailbreakToggleDraft = createServerBackedSettingDraft<boolean>('jailbreakToggle', false)
 
-  const jailbreakToggleToken = '{{jbtoggled}}'
-  const usesJailbreakToggle = (value?: string) =>
-    typeof value === 'string' && value.includes(jailbreakToggleToken)
-  const templateUsesJailbreakToggle = (template: PromptItem[]) =>
-    template.some((item) => {
-      if (item.type === 'jailbreak') {
-        return true
-      }
-      if ('text' in item && usesJailbreakToggle(item.text)) {
-        // plain, jailbreak, cot
-        return true
-      }
-      if ('innerFormat' in item && usesJailbreakToggle(item.innerFormat)) {
-        // persona, description, lorebook, postEverything, memory
-        return true
-      }
-      if ('defaultText' in item && usesJailbreakToggle(item.defaultText)) {
-        // author note
-        return true
-      }
-      return false
-    })
+  let hasJailbreakPrompt = $derived.by(
+    () => activeGenerationSettings.readiness.requirements.jailbreakToggle.displayed,
+  )
 
-  let hasJailbreakPrompt = $derived.by(() => {
-    const template = DBState.db.promptTemplate
-    if (!template) {
-      return (DBState.db.jailbreak ?? '').trim().length > 0
-    }
-    return templateUsesJailbreakToggle(template)
-  })
+  let requiredSidebarToggles = $derived.by(() => activeGenerationSettings.requiredSidebarToggles)
 
-  let groupedToggles = $derived.by(() => {
-    const ungrouped = parseToggleSyntax(DBState.db.customPromptTemplateToggle + getModuleToggles())
+  function getJailbreakToggleValue(): boolean {
+    return activeGenerationSettings.settings?.jailbreakToggle === true
+  }
 
-    let groupOpen = false
-    // group toggles together between group ... groupEnd
-    return ungrouped.reduce<sidebarToggle[]>((acc, toggle) => {
-      if (toggle.type === 'group') {
-        groupOpen = true
-        acc.push(toggle)
-      } else if (toggle.type === 'groupEnd') {
-        groupOpen = false
-      } else if (groupOpen) {
-        ;(acc.at(-1) as sidebarToggleGroup).children.push(toggle)
-      } else {
-        acc.push(toggle)
-      }
-      return acc
-    }, [])
-  })
+  function setJailbreakToggleValue(value: boolean): void {
+    saveActiveChatJailbreakToggleGenerationSettings(value)
+  }
 
   function getToggleValue(key: string): string {
-    return globalChatVariablesDraft.value[`toggle_${key}`] ?? ''
+    return activeGenerationSettings.settings?.sidebarToggles?.[key] ?? ''
   }
 
   function setToggleValue(key: string, value: string): void {
-    globalChatVariablesDraft.value = {
-      ...globalChatVariablesDraft.value,
-      [`toggle_${key}`]: value,
-    }
+    saveActiveChatSidebarToggleGenerationSettings(key, value)
   }
 
   function setSupaMemoryValue(value: boolean): void {
@@ -96,17 +57,11 @@
   }
 </script>
 
-{#snippet toggles(items: sidebarToggle[], reverse: boolean = false)}
-  {#each items as toggle, index}
-    {#if toggle.type === 'group' && toggle.children.length > 0}
-      <div class="w-full">
-        <Accordion styled name={toggle.value}>
-          {@render toggles((toggle as sidebarToggleGroup).children, reverse)}
-        </Accordion>
-      </div>
-    {:else if toggle.type === 'select'}
+{#snippet toggles(items: ChatGenerationRequiredSidebarToggle[], reverse: boolean = false)}
+  {#each items as toggle}
+    {#if toggle.kind === 'select'}
       <div class="w-full flex gap-2 mt-2 items-center" class:justify-end={$MobileGUI}>
-        <span>{toggle.value}</span>
+        <span>{toggle.label}</span>
         <SelectInput
           className="w-32"
           bind:value={
@@ -118,9 +73,9 @@
           {/each}
         </SelectInput>
       </div>
-    {:else if toggle.type === 'text'}
+    {:else if toggle.kind === 'text'}
       <div class="w-full flex gap-2 mt-2 items-center" class:justify-end={$MobileGUI}>
-        <span>{toggle.value}</span>
+        <span>{toggle.label}</span>
         <TextInput
           className="w-32"
           bind:value={
@@ -128,9 +83,9 @@
           }
         />
       </div>
-    {:else if toggle.type === 'textarea'}
+    {:else if toggle.kind === 'textarea'}
       <div class="w-full flex gap-2 mt-2 items-start" class:justify-end={$MobileGUI}>
-        <span class="mt-1.5">{toggle.value}</span>
+        <span class="mt-1.5">{toggle.label}</span>
         <TextAreaInput
           className="w-32"
           height="20"
@@ -139,28 +94,14 @@
           }
         />
       </div>
-    {:else if toggle.type === 'caption'}
-      <div class="w-full mt-1 text-xs text-textcolor2">
-        {toggle.value}
-      </div>
-    {:else if toggle.type === 'divider'}
-      <!-- Prevent multiple dividers appearing in a row -->
-      {#if index === 0 || items[index - 1]?.type !== 'divider' || items[index - 1]?.value !== toggle.value}
-        <div class="w-full min-h-5 flex gap-2 mt-2 items-center" class:justify-end={!reverse}>
-          {#if toggle.value}
-            <span class="shrink-0">{toggle.value}</span>
-          {/if}
-          <hr class="border-t border-darkborderc m-0 grow" />
-        </div>
-      {/if}
     {:else}
       <div class="w-full flex mt-2 items-center" class:justify-end={$MobileGUI}>
         <CheckInput
           check={getToggleValue(toggle.key) === '1'}
           {reverse}
-          name={toggle.value}
-          onChange={() => {
-            setToggleValue(toggle.key, getToggleValue(toggle.key) === '1' ? '0' : '1')
+          name={toggle.label}
+          onChange={(check) => {
+            setToggleValue(toggle.key, check ? '1' : '0')
           }}
         />
       </div>
@@ -168,7 +109,7 @@
   {/each}
 {/snippet}
 
-{#if !noContainer && groupedToggles.length > 4}
+{#if !noContainer && requiredSidebarToggles.length > 4}
   <div
     class="h-48 border-darkborderc p-2 border rounded-sm flex flex-col items-start mt-2 overflow-y-auto"
   >
@@ -177,14 +118,14 @@
     {#if hasJailbreakPrompt}
       <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
         <CheckInput
-          bind:check={jailbreakToggleDraft.value}
+          bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
           name={language.jailbreakToggle}
           reverse
         />
       </div>
     {/if}
 
-    {@render toggles(groupedToggles, true)}
+    {@render toggles(requiredSidebarToggles, true)}
     {#if chara && DBState.db.hypaV3}
       <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
         <CheckInput
@@ -201,10 +142,13 @@
 
   {#if hasJailbreakPrompt}
     <div class="flex mt-2 items-center">
-      <CheckInput bind:check={jailbreakToggleDraft.value} name={language.jailbreakToggle} />
+      <CheckInput
+        bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
+        name={language.jailbreakToggle}
+      />
     </div>
   {/if}
-  {@render toggles(groupedToggles)}
+  {@render toggles(requiredSidebarToggles)}
   {#if chara && DBState.db.hypaV3}
     <div class="flex mt-2 items-center">
       <CheckInput

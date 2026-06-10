@@ -3,8 +3,8 @@
   import {
     DBState,
     loadoutModalStore,
-    openPersonaList,
-    openPresetList,
+    openPersonaListModal,
+    openPresetListModal,
     selectedCharID,
   } from 'src/ts/stores.svelte'
   import Button from '../UI/GUI/Button.svelte'
@@ -13,30 +13,45 @@
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { getFullSettingsData } from 'src/ts/setting/utils'
   import ModelList from '../UI/ModelList.svelte'
-  import { get } from 'svelte/store'
   import SettingRenderer from '../Setting/SettingRenderer.svelte'
-  import { checkPersonaBinded, getUserName } from 'src/ts/util'
+  import { checkPersonaBinded } from 'src/ts/util'
   import { v4 } from 'uuid'
   import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 
   const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
+
+  type NamedGenerationReference = {
+    name?: string
+  }
 
   let configPage: 'list' | 'add' | 'addSettingsSubmenu' = $state('list')
   let search = $state('')
 
+  let activeGenerationSettings = $derived.by(() =>
+    resolveActiveChatGenerationSettings({
+      selectedCharIndex: $selectedCharID,
+    }),
+  )
+
   let bindedPersona = $derived.by(() => {
-    DBState.db.characters[$selectedCharID].chatPage
+    DBState.db.characters?.[$selectedCharID]?.chatPage
     return checkPersonaBinded()
   })
 
-  let personaName = $derived.by(() => {
-    if (bindedPersona) {
-      return bindedPersona?.name
-    }
-    return DBState.db.username
-  })
+  let presetName = $derived.by(
+    () =>
+      (activeGenerationSettings.preset as NamedGenerationReference | undefined)?.name ||
+      language.chatGenerationPresetUnconfigured,
+  )
+
+  let personaName = $derived.by(
+    () =>
+      (activeGenerationSettings.persona as NamedGenerationReference | undefined)?.name ||
+      language.chatGenerationPersonaUnconfigured,
+  )
 </script>
 
 <div class="rounded-sm flex flex-col w-full gap-2">
@@ -46,8 +61,8 @@
     {:else if item.type === 'preset'}
       <Button
         onclick={() => {
-          openPresetList.set(!get(openPresetList))
-        }}>{DBState.db.botPresets?.[DBState.db.botPresetsId]?.name || language.presets}</Button
+          openPresetListModal('active-chat-generation-settings')
+        }}>{presetName}</Button
       >
     {:else if item.type === 'loadout'}
       <Button
@@ -59,17 +74,11 @@
       <Button
         className="flex"
         onclick={() => {
-          if (bindedPersona) {
-            return
-          }
-          openPersonaList.set(!get(openPersonaList))
+          openPersonaListModal('active-chat-generation-settings')
         }}
       >
         <div class="flex-1 flex-col flex text-left">
           <span>{personaName}</span>
-          {#if bindedPersona?.note}
-            <span class="text-xs text-textcolor2">{bindedPersona?.note}</span>
-          {/if}
         </div>
 
         <button
