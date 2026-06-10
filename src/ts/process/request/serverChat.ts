@@ -32,6 +32,7 @@ import type {
 import type { requestDataResponse, StreamResponseChunk } from './request'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
+const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
 
 /** The request body the `/chat` route expects (mirrors server `AssembleInput`). */
 export interface ServerChatInput {
@@ -106,6 +107,22 @@ function parseData(data: string): Record<string, unknown> | null {
   } catch {
     return null
   }
+}
+
+function httpErrorReason(body: {
+  error?: unknown
+  message?: unknown
+  reason?: unknown
+}): string | null {
+  if (
+    body.error === INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR &&
+    typeof body.message === 'string'
+  ) {
+    return body.message
+  }
+  if (typeof body.error === 'string') return body.error
+  if (typeof body.reason === 'string') return body.reason
+  return null
 }
 
 /**
@@ -183,9 +200,12 @@ async function openChatResponse(
   if (!response.ok) {
     let reason = `HTTP ${response.status}`
     try {
-      const body = (await response.json()) as { error?: unknown; reason?: unknown }
-      if (typeof body?.error === 'string') reason = body.error
-      else if (typeof body?.reason === 'string') reason = body.reason
+      const body = (await response.json()) as {
+        error?: unknown
+        message?: unknown
+        reason?: unknown
+      }
+      reason = httpErrorReason(body) ?? reason
     } catch {
       // ignore parse failure
     }

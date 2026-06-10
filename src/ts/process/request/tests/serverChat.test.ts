@@ -40,6 +40,15 @@ const baseInput: ServerChatInput = {
   userMessage: 'hi',
 }
 
+const incompleteChatSettingsBody = {
+  statusCode: 409,
+  error: 'chat_generation_settings_incomplete',
+  message: 'Chat generation settings are incomplete',
+  chatId: 'chat-1',
+  missing: ['presetId'],
+  staleSidebarToggleKeys: ['legacy-provider-toggle'],
+}
+
 describe('server chat SSE taxonomy', () => {
   it('keeps the client event vocabulary aligned with the server taxonomy', () => {
     expect(CLIENT_PROMPT_CHAT_EVENT_TYPES).toEqual(PROMPT_CHAT_EVENT_TYPES)
@@ -209,6 +218,23 @@ describe('requestServerChat', () => {
 
     const res = await requestServerChat({ ...baseInput, chatId: '' }, null)
     expect(res).toEqual({ status: 'error', error: 'chatId is required' })
+  })
+
+  it('uses the stable incomplete chat settings message for prompt-only 409s', async () => {
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(JSON.stringify(incompleteChatSettingsBody), {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+
+    const res = await requestServerChat(baseInput, null)
+    expect(res).toEqual({
+      status: 'error',
+      error: 'Chat generation settings are incomplete',
+    })
   })
 
   it('handles stale writer responses before opening the stream', async () => {
@@ -462,6 +488,23 @@ describe('requestServerChat', () => {
       error: 'prompt assembly was stopped by a trigger',
       messagePatches: [patch],
       restoration,
+    })
+  })
+
+  it('uses the stable incomplete chat settings message for generation 409s', async () => {
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(JSON.stringify(incompleteChatSettingsBody), {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+
+    const res = await requestServerChatGeneration(baseInput, null)
+    expect(res).toEqual({
+      status: 'error',
+      error: 'Chat generation settings are incomplete',
     })
   })
 })
