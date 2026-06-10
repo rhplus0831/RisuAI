@@ -1,4 +1,5 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
+import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 
 const COMMAND_ENDPOINT = '/api/v1/commands'
@@ -436,6 +437,7 @@ export type ChatSnapshot = Record<string, unknown> & {
   note?: string
   name?: string
   localLore?: unknown[]
+  generationSettings?: ChatGenerationSettings
   folderId?: string | null
   bindedPersona?: string
   bookmarks?: string[]
@@ -722,6 +724,11 @@ export interface UpdateChatCommandInput extends ChatCommandInput {
   chatId: string
   patch: ChatSnapshot
   select?: boolean
+}
+
+export interface SaveChatGenerationSettingsCommandInput extends ChatCommandInput {
+  chatId: string
+  generationSettings: ChatGenerationSettings
 }
 
 export interface DeleteChatCommandInput extends ChatCommandInput {
@@ -1611,6 +1618,22 @@ export async function updateChatCommand(
       baseRevision: input.baseRevision,
       patch: input.patch,
       select: input.select,
+    },
+    signal,
+    keepalive,
+  })
+}
+
+export async function saveChatGenerationSettingsCommand(
+  input: SaveChatGenerationSettingsCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ chatId: string }>> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/generation-settings`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      generationSettings: input.generationSettings,
     },
     signal,
     keepalive,

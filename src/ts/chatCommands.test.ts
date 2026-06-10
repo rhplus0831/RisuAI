@@ -46,6 +46,7 @@ import {
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
   dispatchReplaceMessagesScoped,
+  dispatchSaveChatGenerationSettings,
   dispatchSelectChat,
   dispatchUpdateChat,
   dispatchUpdateChatNoteScoped,
@@ -152,6 +153,18 @@ function stubCommandFetch(): CapturedFetch[] {
             type: 'chat.scriptstate.updated',
             revision: 16,
             resource: 'chat',
+            id: 'chat-a',
+          },
+          chatId: 'chat-a',
+        })
+      }
+      if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+        return jsonResponse({
+          revision: 19,
+          event: {
+            type: 'chat.updated',
+            revision: 19,
+            resource: 'characterRow',
             id: 'chat-a',
           },
           chatId: 'chat-a',
@@ -415,6 +428,103 @@ describe('chat command projection helpers', () => {
         },
       },
     ])
+  })
+
+  it('saves chat generation settings through the dedicated command helper', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: '0',
+        notes: '',
+      },
+    }
+
+    expect(dispatchSaveChatGenerationSettings('chat-a', generationSettings)).toBe(true)
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettings)
+
+    await waitForCallCount(calls, 2)
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        method: 'GET',
+        authHeader: 'chat-command-token',
+        body: null,
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/generation-settings',
+        method: 'PUT',
+        authHeader: 'chat-command-token',
+        body: {
+          baseRevision: 10,
+          generationSettings,
+        },
+      },
+    ])
+  })
+
+  it('rolls back a failed generation settings save without touching sibling rows', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+          return jsonResponse({ error: 'nope' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setServerProjectionWriteGuardEnabled(true)
+
+    const nextGenerationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mode: '1',
+      },
+    }
+
+    expect(DBState.db.characters[0].chats[0]).not.toHaveProperty('generationSettings')
+    expect(dispatchSaveChatGenerationSettings('chat-a', nextGenerationSettings)).toBe(true)
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextGenerationSettings)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].message.push({
+        role: 'char',
+        data: 'concurrent same-chat message',
+        chatId: 'msg-concurrent',
+      })
+      DBState.db.characters[0].chats[1].name = 'Concurrent sibling edit'
+    })
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats[0]).not.toHaveProperty('generationSettings')
+    })
+    expect(DBState.db.characters[0].chats[0].message).toEqual([
+      {
+        role: 'char',
+        data: 'concurrent same-chat message',
+        chatId: 'msg-concurrent',
+      },
+    ])
+    expect(DBState.db.characters[0].chats[1].name).toBe('Concurrent sibling edit')
   })
 
   it('routes DevTool-style scriptstate edits through the chat scriptstate command', async () => {
@@ -1057,6 +1167,34 @@ describe('Phase 2 chat-metadata-row rollback', () => {
 })
 
 describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
+  it('keeps generationSettings out of generic chat metadata patching', () => {
+    const previous = orderedChatMetadata({
+      name: 'Same chat',
+    })
+    const current = orderedChatMetadata({
+      name: 'Same chat',
+    })
+    previous.generationSettings = {
+      configured: true,
+      personaId: 'persona-old',
+      presetId: 'preset-old',
+      jailbreakToggle: false,
+    }
+    current.generationSettings = {
+      configured: true,
+      personaId: 'persona-new',
+      presetId: 'preset-new',
+      jailbreakToggle: true,
+      sidebarToggles: { mode: '1' },
+    }
+
+    expect(CHAT_PATCH_ALLOWED_KEYS.has('generationSettings')).toBe(false)
+    expect(sanitizeChatPatch(current as unknown as ChatSnapshot)).not.toHaveProperty(
+      'generationSettings',
+    )
+    expect(changedChatMetadata(previous, current)).toEqual({})
+  })
+
   it('M9: allowed metadata diffs match the previous clone-sanitize patch bytes', () => {
     const previous = orderedChatMetadata({
       name: 'Old chat',

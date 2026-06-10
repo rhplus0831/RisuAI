@@ -13,6 +13,7 @@ import {
   reorderChatsCommand,
   replaceMessagesCommand,
   runServerCommand,
+  saveChatGenerationSettingsCommand,
   truncateMessagesCommand,
   updateChatCommand,
   updateChatFolderCommand,
@@ -29,6 +30,7 @@ import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.
 import { isServerChatMessagePlaceholder } from './server/chatMessagePlaceholders'
 import { DBState, reloadGuiDisplay, selectedCharID } from './stores.svelte'
 import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
+import type { ChatGenerationSettings } from './chatGenerationSettings'
 import { v4 } from 'uuid'
 
 export interface ChatStateSnapshot {
@@ -205,6 +207,13 @@ export interface ChatScopedSnapshot {
   chat: Chat | undefined
 }
 
+export interface ChatGenerationSettingsSnapshot {
+  characterId: string | undefined
+  chatId: string
+  hadGenerationSettings: boolean
+  generationSettings?: ChatGenerationSettings
+}
+
 export interface MutateChatScopedOptions {
   selectedChar?: number
   selectedChat?: number
@@ -230,6 +239,36 @@ export function restoreChatScopedState(snapshot: ChatScopedSnapshot): void {
     const index = locateChatIndex(character, snapshot.chatId)
     if (index < 0) return
     character.chats[index] = cloneJsonValue(snapshot.chat) as Chat
+  })
+}
+
+export function currentChatGenerationSettingsSnapshot(
+  chatId: string,
+): ChatGenerationSettingsSnapshot | null {
+  const location = locateChatById(chatId)
+  if (!location) return null
+  const chatRecord = location.chat as unknown as Record<string, unknown>
+  return {
+    characterId: location.character.chaId,
+    chatId,
+    hadGenerationSettings: Object.prototype.propertyIsEnumerable.call(
+      chatRecord,
+      'generationSettings',
+    ),
+    generationSettings: cloneJsonValue(location.chat.generationSettings),
+  }
+}
+
+export function restoreChatGenerationSettings(snapshot: ChatGenerationSettingsSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const location = locateChatById(snapshot.chatId, snapshot.characterId)
+    if (!location) return
+    const row = location.chat as unknown as Record<string, unknown>
+    if (snapshot.hadGenerationSettings) {
+      row.generationSettings = cloneJsonValue(snapshot.generationSettings)
+    } else {
+      delete row.generationSettings
+    }
   })
 }
 
@@ -309,6 +348,25 @@ function locateScriptstateChat(snapshot: ChatScriptstateSnapshot): Chat | undefi
   }
   const character = DBState.db.characters?.[snapshot.selectedCharID]
   return character?.chats?.[character.chatPage]
+}
+
+function locateChatById(
+  chatId: string,
+  preferredCharacterId?: string,
+): { character: character; chat: Chat } | null {
+  if (preferredCharacterId) {
+    const character = DBState.db.characters?.find(
+      (candidate) => candidate.chaId === preferredCharacterId,
+    )
+    const chat = character?.chats?.find((candidate) => candidate.id === chatId)
+    if (character && chat) return { character, chat }
+  }
+
+  for (const character of DBState.db.characters ?? []) {
+    const chat = character.chats?.find((candidate) => candidate.id === chatId)
+    if (chat) return { character, chat }
+  }
+  return null
 }
 
 // Narrow chat-metadata-row rollback for the server-backed chat-metadata watcher.
@@ -538,6 +596,41 @@ export function dispatchUpdateChatScoped(
       }),
     () => restoreChatScopedState(previous),
   )
+}
+
+export function dispatchSaveChatGenerationSettings(
+  chatId: string,
+  generationSettings: ChatGenerationSettings,
+  options: ServerCommandTransportOptions = {},
+): boolean {
+  const rollback = currentChatGenerationSettingsSnapshot(chatId)
+  if (!rollback) return false
+  const commandSettings = cloneJsonValue(generationSettings)
+
+  let applied = false
+  withTrustedServerProjectionWrite(() => {
+    const location = locateChatById(chatId, rollback.characterId)
+    if (!location) return
+    location.chat.generationSettings = cloneJsonValue(commandSettings)
+    applied = true
+  })
+  if (!applied) return false
+
+  runChatCommand(
+    (baseRevision) =>
+      saveChatGenerationSettingsCommand(
+        {
+          baseRevision,
+          chatId,
+          generationSettings: commandSettings,
+        },
+        options.signal,
+        options.keepalive,
+      ),
+    () => restoreChatGenerationSettings(rollback),
+    options,
+  )
+  return true
 }
 
 export function dispatchCompatibleChatUpdate(

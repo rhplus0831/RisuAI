@@ -50,6 +50,7 @@ import {
   importPresetCommand,
   persistGenerationResultCommand,
   putPluginStorageCommand,
+  saveChatGenerationSettingsCommand,
   reorderCharactersCommand,
   reorderChatFoldersCommand,
   reorderChatsCommand,
@@ -2040,6 +2041,64 @@ describe('server command API adapter', () => {
           baseRevision: 6,
           patch: { $score: '9', $count: 2 },
           deleteKeys: ['$old'],
+        },
+      },
+    ])
+  })
+
+  it('dispatches chat generation settings through the dedicated typed helper', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/chats/chat-a/generation-settings')) {
+        return {
+          revision: 8,
+          event: {
+            type: 'chat.updated',
+            revision: 8,
+            resource: 'characterRow',
+            id: 'chat-a',
+          },
+          chatId: 'chat-a',
+        }
+      }
+      return jsonResponse({ error: 'unexpected' }, 500)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      saveChatGenerationSettingsCommand({
+        baseRevision: 7,
+        chatId: 'chat-a',
+        generationSettings: {
+          configured: true,
+          personaId: 'persona-a',
+          presetId: 'preset-a',
+          jailbreakToggle: false,
+          sidebarToggles: {
+            mode: '0',
+            notes: '',
+          },
+        },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 8, chatId: 'chat-a' })
+
+    expect(
+      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/chats/chat-a/generation-settings',
+        method: 'PUT',
+        body: {
+          baseRevision: 7,
+          generationSettings: {
+            configured: true,
+            personaId: 'persona-a',
+            presetId: 'preset-a',
+            jailbreakToggle: false,
+            sidebarToggles: {
+              mode: '0',
+              notes: '',
+            },
+          },
         },
       },
     ])
