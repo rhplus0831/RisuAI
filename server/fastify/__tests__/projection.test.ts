@@ -811,6 +811,65 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(viaParent.characterId).toBe('char-a')
   })
 
+  it('projects chat generation settings on stubbed character rows', async () => {
+    const revision = await importDatabase({
+      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+      personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          chats: [
+            {
+              id: 'chat-a',
+              message: [{ role: 'user', data: 'hi', chatId: 'msg-a' }],
+              hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+            },
+          ],
+        },
+        {
+          chaId: 'char-b',
+          name: 'Babbage',
+          chats: [{ id: 'chat-b', message: [{ role: 'user', data: 'yo' }] }],
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+    const generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+
+    const saved = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationSettings,
+      },
+    })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json().event.resource).toBe('characterRow')
+
+    const broad = (await getProjection('character')).json()
+    expect(broad.mode).toBe('fields')
+    expect(broad.fields.characters[0].chats[0].message).toEqual([])
+    expect(broad.fields.characters[0].chats[0]).not.toHaveProperty('hypaV3Data')
+    expect(broad.fields.characters[0].chats[0].generationSettings).toEqual(generationSettings)
+
+    const row = (await getProjection('characterRow', '?parentId=char-a')).json()
+    expect(row.mode).toBe('character-row')
+    expect(row.characterId).toBe('char-a')
+    expect(row.character.chats[0].message).toEqual([])
+    expect(row.character.chats[0]).not.toHaveProperty('hypaV3Data')
+    expect(row.character.chats[0].generationSettings).toEqual(generationSettings)
+    expect(JSON.stringify(row)).not.toContain('Babbage')
+  })
+
   it('narrows a generation.persisted refresh to the changed chat messages', async () => {
     // Phase 5 character-chat-projection slice: generation.persisted (the one
     // foreign-firing command) ships just the changed chat's messages, keyed by
@@ -1048,6 +1107,13 @@ describe('targeted projection field loader', () => {
 
   it('selects character fields with chat and lorebook stubs', () => {
     const db = openDatabase(harness.dataDir)
+    const generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: { mode: '1' },
+    }
     try {
       writePersistedWithMessages(db, harness.dataDir, {
         _version: 1,
@@ -1062,6 +1128,7 @@ describe('targeted projection field loader', () => {
                   id: 'chat-a',
                   message: [{ data: 'hi' }],
                   hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+                  generationSettings,
                 },
               ],
             },
@@ -1082,7 +1149,7 @@ describe('targeted projection field loader', () => {
         characters: [
           {
             chaId: 'char-a',
-            chats: [{ id: 'chat-a', message: [] }],
+            chats: [{ id: 'chat-a', message: [], generationSettings }],
           },
         ],
         characterOrder: ['char-a'],

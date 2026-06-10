@@ -4569,7 +4569,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
     )
   })
 
-  it('inherits source generation settings on fork unless the fork supplies an explicit override', async () => {
+  it('inherits complete and incomplete source generation settings on fork unless the fork supplies an explicit override', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       botPresets: [
@@ -4592,7 +4592,16 @@ describe('Phase 9-3b chat record and folder commands', () => {
         {
           chaId: 'char-a',
           name: 'A',
-          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chats: [
+            { id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] },
+            {
+              id: 'chat-incomplete-source',
+              name: 'Incomplete source',
+              note: '',
+              message: [],
+              localLore: [],
+            },
+          ],
           chatFolders: [],
           chatPage: 0,
         },
@@ -4660,6 +4669,40 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
     expect(overridden.statusCode).toBe(200)
 
+    const incompleteSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+    }
+    const savedIncomplete = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-incomplete-source/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: overridden.json().revision,
+        generationSettings: incompleteSettings,
+      },
+    })
+    expect(savedIncomplete.statusCode).toBe(200)
+
+    const incompleteInherited = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-incomplete-source/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: savedIncomplete.json().revision,
+        chat: {
+          id: 'chat-incomplete-fork',
+          name: 'Incomplete fork',
+          note: '',
+          message: [],
+          localLore: [],
+        },
+      },
+    })
+    expect(incompleteInherited.statusCode).toBe(200)
+
     const bootstrap = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
@@ -4672,11 +4715,18 @@ describe('Phase 9-3b chat record and folder commands', () => {
     const sourceChat = chats.find((chat) => chat.id === 'chat-a')
     const inheritedChat = chats.find((chat) => chat.id === 'chat-inherited')
     const overriddenChat = chats.find((chat) => chat.id === 'chat-overridden')
+    const incompleteSourceChat = chats.find((chat) => chat.id === 'chat-incomplete-source')
+    const incompleteForkChat = chats.find((chat) => chat.id === 'chat-incomplete-fork')
 
     expect(sourceChat?.generationSettings).toEqual(sourceSettings)
     expect(inheritedChat?.generationSettings).toEqual(sourceSettings)
     expect(inheritedChat?.generationSettings).not.toBe(sourceChat?.generationSettings)
     expect(overriddenChat?.generationSettings).toEqual(overrideSettings)
+    expect(incompleteSourceChat?.generationSettings).toEqual(incompleteSettings)
+    expect(incompleteForkChat?.generationSettings).toEqual(incompleteSettings)
+    expect(incompleteForkChat?.generationSettings).not.toBe(
+      incompleteSourceChat?.generationSettings,
+    )
   })
 
   it('rejects chat fork commands without client-supplied fork ids without bumping revision', async () => {

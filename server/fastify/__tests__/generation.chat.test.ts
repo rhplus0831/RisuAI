@@ -254,6 +254,21 @@ async function seedDatabase(
   }
 }
 
+async function importRisuSaveDatabase(
+  app: FastifyInstance,
+  assertion: string,
+  database: unknown,
+): Promise<number> {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/v1/import/risusave',
+    headers: { 'risu-auth': assertion },
+    payload: { database },
+  })
+  expect(res.statusCode).toBe(200)
+  return res.json().revision as number
+}
+
 interface ProtocolMetric {
   metric: string
   type?: string
@@ -615,6 +630,122 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.json()).toEqual({
       error: 'regenerateMessageId is required when mode is "regenerate"',
     })
+  })
+
+  it('blocks every /generate/chat mode when chat generation settings are incomplete before provider, job, or message side effects', async () => {
+    let providerCalls = 0
+    await restartHarness({
+      dispatchProvider: () => {
+        providerCalls++
+        async function* source(): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'should not stream' }
+        }
+        return source()
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              id: 'chat-1',
+              message: [
+                { role: 'user', data: 'first', chatId: 'msg-user-1' },
+                { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+              ],
+              note: '',
+              name: 'Chat',
+              localLore: [],
+              generationSettings: undefined,
+            },
+          ],
+        },
+      ],
+    })
+
+    const beforeDb = openDatabase(harness.dataDir)
+    let eventCountBefore = 0
+    try {
+      eventCountBefore = listPersistedCommandEventHistory(beforeDb).length
+    } finally {
+      beforeDb.close()
+    }
+
+    const cases: Array<{ label: string; payload: Record<string, unknown> }> = [
+      { label: 'send', payload: basePayload },
+      {
+        label: 'continue',
+        payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'continue' },
+      },
+      {
+        label: 'regenerate',
+        payload: {
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          mode: 'regenerate',
+          regenerateMessageId: 'msg-char-1',
+        },
+      },
+      {
+        label: 'preview',
+        payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'preview' },
+      },
+    ]
+
+    for (const testCase of cases) {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: testCase.payload,
+      })
+      expect(res.statusCode, testCase.label).toBe(409)
+      expect(res.headers['content-type'], testCase.label).toMatch(/application\/json/)
+      expect(res.body, testCase.label).not.toContain('event:')
+      expect(res.json(), testCase.label).toMatchObject({
+        statusCode: 409,
+        error: 'chat_generation_settings_incomplete',
+        message: 'Chat generation settings are incomplete',
+        chatId: 'chat-1',
+        staleSidebarToggleKeys: [],
+      })
+      expect(
+        res.json().missing.map((reason: { code: string }) => reason.code),
+        testCase.label,
+      ).toContain('settings_missing')
+    }
+
+    expect(providerCalls).toBe(0)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.json().activeGenerationJobs).toEqual([])
+    const persisted = await persistedMessages(assertion)
+    expect(
+      persisted.map((message) => ({
+        role: message.role,
+        data: message.data,
+        chatId: message.chatId,
+      })),
+    ).toEqual([
+      { role: 'user', data: 'first', chatId: 'msg-user-1' },
+      { role: 'char', data: 'old reply', chatId: 'msg-char-1' },
+    ])
+
+    const afterDb = openDatabase(harness.dataDir)
+    try {
+      expect(listPersistedCommandEventHistory(afterDb)).toHaveLength(eventCountBefore)
+    } finally {
+      afterDb.close()
+    }
   })
 
   it('streams a regenerate message patch and assembled prompt for the truncated transcript', async () => {
@@ -2342,6 +2473,106 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(typeof events.at(-1)?.data.generationId).toBe('string')
   })
 
+  it('lets an imported incomplete chat be configured and then sent through server generation', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importRisuSaveDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'echo_model',
+      echoMessage: 'configured import reply',
+      echoDelay: 0,
+      botPresets: [{ id: 'preset-import', name: 'Import Preset' }],
+      botPresetsId: 0,
+      personas: [
+        {
+          id: 'persona-import',
+          name: 'Import Persona',
+          icon: '',
+          personaPrompt: '',
+          note: '',
+        },
+      ],
+      selectedPersona: 0,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chaId: 'char-import',
+          chats: [
+            {
+              id: 'chat-import',
+              message: [],
+              note: '',
+              name: 'Imported Chat',
+              localLore: [],
+            },
+          ],
+        },
+      ],
+    })
+
+    const importedBootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(importedBootstrap.statusCode).toBe(200)
+    expect(
+      importedBootstrap.json().database.characters[0].chats[0].generationSettings,
+    ).toBeUndefined()
+
+    const blocked = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-import',
+        characterId: 'char-import',
+        mode: 'send',
+        userMessage: 'hello imported chat',
+      },
+    })
+    expect(blocked.statusCode).toBe(409)
+    expect(blocked.json().error).toBe('chat_generation_settings_incomplete')
+
+    const configuredSettings = {
+      configured: true,
+      personaId: 'persona-import',
+      presetId: 'preset-import',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+    const configured = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-import/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationSettings: configuredSettings,
+      },
+    })
+    expect(configured.statusCode).toBe(200)
+
+    const sent = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-import',
+        characterId: 'char-import',
+        mode: 'send',
+        userMessage: 'hello imported chat',
+      },
+    })
+    expect(sent.statusCode).toBe(200)
+    const events = parseEvents(sent.body)
+    expect(events.find((event) => event.type === 'prompt')).toBeDefined()
+    expect(events.find((event) => event.type === 'info')).toBeDefined()
+    expect(events.at(-2)).toEqual({ type: 'token', data: { content: 'configured import reply' } })
+    expect(doneFrame(events).postGeneration?.revision).toBe(configured.json().revision + 1)
+    await expect(persistedMessages(assertion, 'chat-import')).resolves.toEqual([
+      expect.objectContaining({ role: 'char', data: 'configured import reply' }),
+    ])
+  })
+
   it('uses the production server dispatcher for generating modes', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, {
@@ -3638,6 +3869,79 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       personaId: 'persona-deleted',
       presetId: 'preset-survivor',
     })
+  })
+
+  it('makes an otherwise configured chat incomplete when its selected preset displays a new required toggle', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+      personas: [
+        {
+          id: 'persona-a',
+          name: 'Persona A',
+          icon: '',
+          personaPrompt: '',
+          note: '',
+        },
+      ],
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              ...fixtureDatabase.characters[0].chats[0],
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-a',
+                presetId: 'preset-a',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const before = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: previewPayload,
+    })
+    expect(before.statusCode).toBe(200)
+
+    const patchedPreset = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/preset-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { customPromptTemplateToggle: 'mode=Mode' },
+      },
+    })
+    expect(patchedPreset.statusCode).toBe(200)
+
+    const after = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: previewPayload,
+    })
+    expect(after.statusCode).toBe(409)
+    expect(after.json()).toMatchObject({
+      statusCode: 409,
+      error: 'chat_generation_settings_incomplete',
+      chatId: 'chat-1',
+      staleSidebarToggleKeys: [],
+    })
+    expect(after.json().missing).toContainEqual(
+      expect.objectContaining({
+        code: 'sidebar_toggle_missing',
+        toggleKey: 'mode',
+      }),
+    )
   })
 
   it('returns 404 when no database is persisted', async () => {

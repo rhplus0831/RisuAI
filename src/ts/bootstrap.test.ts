@@ -600,6 +600,20 @@ describe('web bootstrap startup source', () => {
   })
 
   it('applies a character-row projection to one character, preserving hydrated chats', async () => {
+    const initialGenerationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+    const projectedGenerationSettings = {
+      configured: true,
+      personaId: 'persona-b',
+      presetId: 'preset-b',
+      jailbreakToggle: true,
+      sidebarToggles: { mode: 'fast' },
+    }
     serverBootstrapState.response = {
       status: 'ok',
       projection: {
@@ -609,7 +623,13 @@ describe('web bootstrap startup source', () => {
             {
               chaId: 'char-a',
               name: 'Ada',
-              chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hi' }] }],
+              chats: [
+                {
+                  id: 'chat-a',
+                  message: [{ role: 'user', data: 'hi' }],
+                  generationSettings: initialGenerationSettings,
+                },
+              ],
             },
             { chaId: 'char-b', name: 'Babbage', chats: [{ id: 'chat-b', message: [] }] },
           ],
@@ -630,7 +650,17 @@ describe('web bootstrap startup source', () => {
       mode: 'character-row' as const,
       characterId: 'char-a',
       // Shipped row is message-free (stubbed chats).
-      character: { chaId: 'char-a', name: 'Ada Lovelace', chats: [{ id: 'chat-a', message: [] }] },
+      character: {
+        chaId: 'char-a',
+        name: 'Ada Lovelace',
+        chats: [
+          {
+            id: 'chat-a',
+            message: [],
+            generationSettings: projectedGenerationSettings,
+          },
+        ],
+      },
     }))
 
     const subscription = serverEventsState.subscriptions[0]
@@ -651,6 +681,9 @@ describe('web bootstrap startup source', () => {
     // char-a's metadata updated; its already-hydrated chat messages are kept.
     expect(DBState.db.characters?.[0].name).toBe('Ada Lovelace')
     expect(DBState.db.characters?.[0].chats?.[0].message).toEqual([{ role: 'user', data: 'hi' }])
+    expect(DBState.db.characters?.[0].chats?.[0].generationSettings).toEqual(
+      projectedGenerationSettings,
+    )
     // char-b is untouched.
     expect(DBState.db.characters?.[1].name).toBe('Babbage')
     // No broad characters merge → no chat re-stub / re-hydration / full bootstrap.
