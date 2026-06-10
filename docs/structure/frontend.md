@@ -21,7 +21,7 @@ There is no SvelteKit `src/routes/`; navigation is store/render-switch driven.
 
 Vite dev (`pnpm dev`) uses strict port 5174 and proxies `/api` to
 `RISU_API_PROXY_TARGET` or `http://localhost:6002`. `pnpm build` and
-`pnpm buildsite` produce the production bundle.
+`pnpm build:site` produce the production bundle.
 
 ## Component Directories
 

@@ -5,21 +5,21 @@ generated, local-only, historical, vendored, or intentionally no-port.
 
 ## Do Not Hand-Edit As Source
 
-| Path                                            | Why                                                                                                                                                   |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dist/`                                         | Vite build output plus client-lib declarations under `dist/client-types`. Regenerate with `pnpm build`/`pnpm buildsite` or the client-lib `tsc` step. |
-| `node_modules/`, `server/fastify/node_modules/` | Installed dependencies.                                                                                                                               |
-| `test-results/`                                 | Playwright/test output.                                                                                                                               |
-| `*.tsbuildinfo`                                 | TypeScript incremental build artifacts, including `tsconfig.client-lib.tsbuildinfo`.                                                                  |
-| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth, optional `data/dev`, legacy import artifacts. Useful for debugging, not source.        |
-| `scripts/` when present                         | Ignored local scratch/tooling directory.                                                                                                              |
-| `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                           |
-| `public/assets/`                                | Bundled Bergamot/browser translator workers. Only touch when intentionally updating vendor assets.                                                    |
-| `public/plugin_start.7z`                        | Packaged starter plugin archive.                                                                                                                      |
-| `src/ts/rpack/`                                 | Vendored rpack implementation; excluded from Prettier.                                                                                                |
-| `src/ts/process/__fixtures__/expected/`         | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`.                                                                               |
-| `src/ts/process/__fixtures__/upstream/`         | Upstream fixture corpus for request/provider tests.                                                                                                   |
-| `*.snap` under test fixtures                    | Vitest snapshots; update through the relevant test workflow.                                                                                          |
+| Path                                            | Why                                                                                                                                                    |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dist/`                                         | Vite build output plus client-lib declarations under `dist/client-types`. Regenerate with `pnpm build`/`pnpm build:site` or the client-lib `tsc` step. |
+| `node_modules/`, `server/fastify/node_modules/` | Installed dependencies.                                                                                                                                |
+| `test-results/`                                 | Playwright/test output.                                                                                                                                |
+| `*.tsbuildinfo`                                 | TypeScript incremental build artifacts, including `tsconfig.client-lib.tsbuildinfo`.                                                                   |
+| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth, optional `data/dev`, legacy import artifacts. Useful for debugging, not source.         |
+| `scripts/` when present                         | Ignored local scratch/tooling directory.                                                                                                               |
+| `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                            |
+| `public/assets/`                                | Bundled Bergamot/browser translator workers. Only touch when intentionally updating vendor assets.                                                     |
+| `public/plugin_start.7z`                        | Packaged starter plugin archive.                                                                                                                       |
+| `src/ts/rpack/`                                 | Vendored rpack implementation; excluded from Prettier.                                                                                                 |
+| `src/ts/process/__fixtures__/expected/`         | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`.                                                                                |
+| `src/ts/process/__fixtures__/upstream/`         | Upstream fixture corpus for request/provider tests.                                                                                                    |
+| `*.snap` under test fixtures                    | Vitest snapshots; update through the relevant test workflow.                                                                                           |
 
 `docs/archive/` files are source documentation, but they are historical. They
 may contain present-tense statements that were true at closeout and are now

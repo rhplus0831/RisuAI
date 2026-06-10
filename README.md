@@ -75,7 +75,7 @@ The Vite dev server proxies `/api/*` requests to the Fastify server at `http://l
 To build the web client with the self-host legal flag and serve it through Fastify:
 
 ```
-pnpm buildsite
+pnpm build:site
 pnpm api:start
 ```
 

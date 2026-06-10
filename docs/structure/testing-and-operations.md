@@ -12,7 +12,7 @@ is root-only; there is no `server/fastify/package.json`.
 | `pnpm api:dev:flag`                | Start Fastify through `util/api-flag-dev.ts`; restarts only when `.risu-api-restart` is touched/created.      |
 | `pnpm api:start`                   | Start Fastify once with `tsx server/fastify/src/index.ts`.                                                    |
 | `pnpm build`                       | Vite build with sourcemaps.                                                                                   |
-| `pnpm buildsite`                   | Production client build with `VITE_RISU_LEGAL_CONFIGURED=TRUE`.                                               |
+| `pnpm build:site`                  | Production client build with `VITE_RISU_LEGAL_CONFIGURED=TRUE`.                                               |
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                |
 | `pnpm test`                        | Run root/browser Vitest tests.                                                                                |
@@ -56,7 +56,7 @@ served; `src/ts/platform.ts` still makes the browser Fastify-backed.
 To serve a built SPA through Fastify:
 
 ```sh
-pnpm buildsite
+pnpm build:site
 pnpm api:start
 ```
 
