@@ -4516,13 +4516,6 @@ describe('Phase 9-3b chat record and folder commands', () => {
               note: '',
               message: [],
               localLore: [],
-              generationSettings: {
-                configured: true,
-                personaId: 'persona-a',
-                presetId: 'preset-a',
-                jailbreakToggle: false,
-                sidebarToggles: {},
-              },
             },
           ],
           chatFolders: [],
@@ -4531,12 +4524,30 @@ describe('Phase 9-3b chat record and folder commands', () => {
       ],
       characterOrder: ['char-a'],
     })
+    const chatGenerationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+
+    const savedSettings = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationSettings: chatGenerationSettings,
+      },
+    })
+    expect(savedSettings.statusCode).toBe(200)
 
     const persona = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/personas/select',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, personaId: 'persona-b' },
+      payload: { baseRevision: savedSettings.json().revision, personaId: 'persona-b' },
     })
     expect(persona.statusCode).toBe(200)
 
@@ -4553,13 +4564,9 @@ describe('Phase 9-3b chat record and folder commands', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual({
-      configured: true,
-      personaId: 'persona-a',
-      presetId: 'preset-a',
-      jailbreakToggle: false,
-      sidebarToggles: {},
-    })
+    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual(
+      chatGenerationSettings,
+    )
   })
 
   it('inherits source generation settings on fork unless the fork supplies an explicit override', async () => {

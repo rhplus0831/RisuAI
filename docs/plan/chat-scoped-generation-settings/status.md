@@ -2,16 +2,14 @@
 
 Date: 2026-06-10
 
-Phase 0, Phase 1, Phase 2, and Phase 3 are complete. Phase 3 landed the
-active-chat UI controls and client send guards for chat-owned generation
-settings. Import normalization and delete/fork lifecycle behavior remain future
-Phase 4 work, and the broader regression/TypeScript proof remains planned for
-Phase 5.
+Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are complete. Phase 4 landed
+deterministic import, delete, fork/copy, and new-chat lifecycle behavior for
+chat-owned generation settings. The broader regression/TypeScript proof remains
+planned for Phase 5.
 
 ## Snapshot
 
-- Plan state: open, Phase 3 complete; Phase 4 is next and Phase 5 remains
-  planned.
+- Plan state: open, Phase 4 complete; Phase 5 remains planned.
 - User decisions captured: use `personaId`, use `presetId` only, include all
   sidebar toggles, and make imported chats require explicit configuration.
 - Sub-agent investigation: complete for server/data/prompt, frontend/UI, and
@@ -38,9 +36,23 @@ Phase 5.
 - Phase 3 focused validation passed:
   `pnpm exec vitest run src/ts/activeChatGenerationSettings.test.ts src/lib/SideBars/chatGenerationSettingsControls.test.ts src/lib/Setting/pickerGenerationSettings.test.ts src/ts/chatCommands.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts src/ts/process/__tests__/sendChatContext.test.ts`
   (`6` files, `87` tests).
-- Current risk: Phase 4 still needs import, delete, fork, copy, and new-chat
-  lifecycle behavior. Phase 5 still needs the planned broader verification
-  pass.
+- Phase 4 output: native create-chat remains incomplete by default unless a
+  valid explicit `generationSettings` payload is supplied; server fork/copy
+  inherits source chat settings unless explicitly overridden; full-database,
+  `.risu`, bundle, legacy `.bin`, browser chat-file, Realm, and character-card
+  imports leave chats incomplete until local confirmation; imported future-format
+  values are preserved only as incomplete UI prefill where command-safe; preset
+  and persona deletion leaves chat-owned ids intact and invalidates only affected
+  chats; Realm starter chats now persist with generated chat ids.
+- Phase 4 focused validation passed:
+  `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts`,
+  `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveBundleImportRoute.test.ts server/fastify/__tests__/risuSaveCodec.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts server/fastify/__tests__/risuSaveBundleExportRoute.test.ts`,
+  `pnpm exec vitest run src/ts/characters.importChat.test.ts src/ts/chatCommands.test.ts`,
+  `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/realmImport.test.ts`,
+  `pnpm exec vitest run src/ts/characterCards.pngImport.test.ts`,
+  `pnpm exec tsc -p tsconfig.client-lib.json`, and
+  `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`.
+- Current risk: Phase 5 still needs the planned broader verification pass.
 
 ## Phase Router
 
@@ -53,16 +65,15 @@ Phase 5.
 - [Phase 3](phases/phase-3-ui-and-send-gating.md): complete. Active-chat
   helper, sidebar controls, picker behavior, and pre-append/lower-level send
   blocking.
-- [Phase 4](phases/phase-4-import-delete-fork-edges.md): planned. Import,
+- [Phase 4](phases/phase-4-import-delete-fork-edges.md): complete. Import,
   delete, fork, copy, and new-chat lifecycle behavior.
 - [Phase 5](phases/phase-5-verification.md): planned. Regression and
   TypeScript proof.
 
 ## Next Step
 
-Run Phase 4 next. Import, delete, fork, copy, and new-chat lifecycle behavior
-still need to preserve the chat-owned generation settings contract without
-claiming imported chats are configured.
+Run Phase 5 next. Complete the broader regression and TypeScript proof for the
+chat-scoped generation settings workstream.
 
 ## Maintenance Rules
 

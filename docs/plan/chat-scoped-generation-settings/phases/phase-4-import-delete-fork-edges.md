@@ -1,6 +1,6 @@
 # Phase 4: Import, Delete & Fork Edges
 
-Status: planned.
+Status: complete.
 
 Goal: make every chat lifecycle path produce deterministic generation settings
 state, especially imports and deleted references.
@@ -69,16 +69,26 @@ state, especially imports and deleted references.
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts \
-  server/fastify/__tests__/repository.test.ts \
   server/fastify/__tests__/bootstrap.test.ts \
   server/fastify/__tests__/risuSaveImportRoute.test.ts \
   server/fastify/__tests__/risuSaveBundleImportRoute.test.ts \
   server/fastify/__tests__/realmImport.test.ts \
   server/fastify/__tests__/commands.test.ts
-pnpm exec vitest run src/ts/characters.test.ts src/ts/characterCards.test.ts \
+pnpm exec vitest run src/ts/characters.importChat.test.ts \
+  src/ts/characterCards.pngImport.test.ts \
   src/ts/chatCommands.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+```
+
+Focused execution for this phase also covered import/export codec regressions:
+
+```bash
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/risuSaveCodec.test.ts \
+  server/fastify/__tests__/risuSaveExportRoute.test.ts \
+  server/fastify/__tests__/risuSaveBundleExportRoute.test.ts \
+  server/fastify/__tests__/generation.chat.test.ts
 ```
 
 ## Risks
