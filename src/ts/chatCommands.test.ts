@@ -30,6 +30,7 @@ import { setCurrentChat, type Chat, type Message } from './storage/database.svel
 import { get } from 'svelte/store'
 import {
   applyOptimisticCreatedChat,
+  applyOptimisticDeletedChat,
   appendCurrentChatUserMessageForSend,
   changedChatMetadata,
   CHAT_PATCH_ALLOWED_KEYS,
@@ -39,6 +40,7 @@ import {
   currentChatStateSnapshot,
   dispatchCreateChat,
   dispatchCreateChatFolder,
+  dispatchDeleteChat,
   dispatchPatchChatScriptstate,
   dispatchPatchChatScriptstateScoped,
   dispatchReorderChatFoldersByIds,
@@ -108,6 +110,14 @@ function stubCommandFetch(): CapturedFetch[] {
         })
       }
       if (url === '/api/v1/commands/chats/chat-a') {
+        if (init.method === 'DELETE') {
+          return jsonResponse({
+            revision: 18,
+            event: { type: 'chat.deleted', revision: 18, resource: 'chat', id: 'chat-a' },
+            chatId: 'chat-a',
+            selectedChatId: 'chat-b',
+          })
+        }
         return jsonResponse({
           revision: 13,
           event: { type: 'chat.updated', revision: 13, resource: 'chat' },
@@ -274,6 +284,25 @@ describe('chat command projection helpers', () => {
     ])
   })
 
+  it('optimistically removes a command-deleted chat under the projection guard', () => {
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentChatStateSnapshot()
+
+    expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
+      applied: true,
+      selectedChatId: 'chat-b',
+    })
+
+    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-b'])
+    expect(DBState.db.characters[0].chatPage).toBe(0)
+
+    restoreChatState(previous)
+    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual([
+      'chat-a',
+      'chat-b',
+    ])
+  })
+
   it('routes SideChatList chat and folder flows through commands under the projection guard', async () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
@@ -314,6 +343,9 @@ describe('chat command projection helpers', () => {
     dispatchReorderChatFoldersByIds('char-a', ['folder-a'], previous, 'chat-a')
 
     await waitForCallCount(calls, 6)
+    dispatchDeleteChat('chat-a', previous)
+
+    await waitForCallCount(calls, 7)
     expect(() => {
       DBState.db.characters[0].chatFolders.push({ id: 'direct-folder', name: 'Direct' } as any)
     }).toThrow()
@@ -372,6 +404,14 @@ describe('chat command projection helpers', () => {
           baseRevision: expect.any(Number),
           folderIds: ['folder-a'],
           selectedChatId: 'chat-a',
+        },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a',
+        method: 'DELETE',
+        authHeader: 'chat-command-token',
+        body: {
+          baseRevision: expect.any(Number),
         },
       },
     ])

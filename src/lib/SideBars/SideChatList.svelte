@@ -38,6 +38,7 @@
   import { ensureAllChatsHydrated } from 'src/ts/server/chatMessageHydration.svelte'
   import {
     applyOptimisticCreatedChat,
+    applyOptimisticDeletedChat,
     currentChatSelectionSnapshot,
     currentChatStateSnapshot,
     dispatchCreateChat,
@@ -156,6 +157,30 @@
       return
     }
     folder.name = name
+  }
+
+  async function deleteChat(chat: Chat, index: number): Promise<void> {
+    if (chara.chats.length === 1) {
+      alertError(language.errors.onlyOneChat)
+      return
+    }
+    const confirmed = await alertConfirm(`${language.removeConfirm}${chat.name}`)
+    if (!confirmed || !chat.id) return
+
+    const previous = currentChatStateSnapshot()
+    if (canUseServerCommands()) {
+      const result = applyOptimisticDeletedChat(chara.chaId, chat.id, previous)
+      if (result.applied && chara.chaId && result.selectedChatId) {
+        navigate(characterRoutePath(chara.chaId, result.selectedChatId), { replace: true })
+      }
+    } else {
+      changeChatTo(0)
+      const chats = chara.chats
+      chats.splice(index, 1)
+      chara.chats = chats
+      reloadGuiDisplay()
+    }
+    dispatchDeleteChat(chat.id, previous)
   }
 
   const createStb = () => {
@@ -587,24 +612,7 @@
                         class="text-textcolor2 hover:text-green-500 cursor-pointer"
                         onclick={async (e) => {
                           e.stopPropagation()
-                          if (chara.chats.length === 1) {
-                            alertError(language.errors.onlyOneChat)
-                            return
-                          }
-                          const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
-                          if (d) {
-                            const previous = currentChatStateSnapshot()
-                            if (!canUseServerCommands()) {
-                              changeChatTo(0)
-                            }
-                            reloadGuiDisplay()
-                            if (!canUseServerCommands()) {
-                              let chats = chara.chats
-                              chats.splice(chara.chats.indexOf(chat), 1)
-                              chara.chats = chats
-                            }
-                            dispatchDeleteChat(chat.id, previous)
-                          }
+                          await deleteChat(chat, chara.chats.indexOf(chat))
                         }}
                       >
                         <TrashIcon size={18} />
@@ -739,24 +747,7 @@
                   class="text-textcolor2 hover:text-green-500 cursor-pointer"
                   onclick={async (e) => {
                     e.stopPropagation()
-                    if (chara.chats.length === 1) {
-                      alertError(language.errors.onlyOneChat)
-                      return
-                    }
-                    const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
-                    if (d) {
-                      const previous = currentChatStateSnapshot()
-                      if (!canUseServerCommands()) {
-                        changeChatTo(0)
-                      }
-                      reloadGuiDisplay()
-                      if (!canUseServerCommands()) {
-                        let chats = chara.chats
-                        chats.splice(i, 1)
-                        chara.chats = chats
-                      }
-                      dispatchDeleteChat(chat.id, previous)
-                    }
+                    await deleteChat(chat, i)
                   }}
                 >
                   <TrashIcon size={18} />

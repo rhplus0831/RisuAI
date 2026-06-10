@@ -18,6 +18,7 @@
   import { changeChatTo } from 'src/ts/globalApi.svelte'
   import {
     applyOptimisticCreatedChat,
+    applyOptimisticDeletedChat,
     currentChatStateSnapshot,
     dispatchCreateChat,
     dispatchDeleteChat,
@@ -136,8 +137,17 @@
               }
               const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
               if (d) {
+                if (!chat.id) return
                 const previous = currentChatStateSnapshot()
-                if (!canUseServerCommands()) {
+                const cha = DBState.db.characters[$selectedCharID]
+                if (canUseServerCommands()) {
+                  const result = applyOptimisticDeletedChat(cha.chaId, chat.id, previous)
+                  if (result.applied && cha.chaId && result.selectedChatId) {
+                    navigate(characterRoutePath(cha.chaId, result.selectedChatId), {
+                      replace: true,
+                    })
+                  }
+                } else {
                   changeChatTo(0)
                   let chats = DBState.db.characters[$selectedCharID].chats
                   chats.splice(i, 1)

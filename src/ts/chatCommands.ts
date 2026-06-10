@@ -112,6 +112,38 @@ export function applyOptimisticCreatedChat(
   return applied
 }
 
+export interface OptimisticDeletedChatResult {
+  applied: boolean
+  selectedChatId: string | undefined
+}
+
+export function applyOptimisticDeletedChat(
+  characterId: string | undefined,
+  chatId: string | undefined,
+  snapshot: ChatStateSnapshot,
+): OptimisticDeletedChatResult {
+  const result: OptimisticDeletedChatResult = {
+    applied: false,
+    selectedChatId: undefined,
+  }
+  if (!chatId) return result
+
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(characterId, snapshot.selectedCharID)
+    const chats = character?.chats
+    if (!character || !chats || chats.length <= 1) return
+    const chatIndex = chats.findIndex((candidate) => candidate.id === chatId)
+    if (chatIndex < 0) return
+
+    chats.splice(chatIndex, 1)
+    normalizeChatPage(character)
+    result.applied = true
+    result.selectedChatId = chats[character.chatPage]?.id
+  })
+  if (result.applied) reloadGuiDisplay()
+  return result
+}
+
 // Scalar chat-selection rollback (stability/perf plan, Phase 1 H2). Selecting a
 // chat only flips the owning character's `chatPage` and dispatches an
 // empty-patch select command, so its rollback never needs the heavy
@@ -253,6 +285,19 @@ function locateChatIndex(character: character, chatId: string | undefined): numb
   }
   const page = character.chatPage ?? 0
   return page >= 0 && page < (character.chats?.length ?? 0) ? page : -1
+}
+
+function normalizeChatPage(character: character): void {
+  const chatsLength = character.chats?.length ?? 0
+  if (!Number.isInteger(character.chatPage)) {
+    character.chatPage = chatsLength > 0 ? 0 : -1
+  }
+  if (character.chatPage >= chatsLength) {
+    character.chatPage = chatsLength > 0 ? chatsLength - 1 : -1
+  }
+  if (character.chatPage < -1) {
+    character.chatPage = chatsLength > 0 ? 0 : -1
+  }
 }
 
 function locateScriptstateChat(snapshot: ChatScriptstateSnapshot): Chat | undefined {
