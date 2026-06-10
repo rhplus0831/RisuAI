@@ -1,7 +1,8 @@
 # Phase Index
 
-Use these files as implementation handoff boundaries. Each phase can be split
-into smaller slices during execution if the patch becomes too broad.
+Archived phase index. All phases are complete; these files remain as the
+historical implementation handoff boundaries used while the workstream was
+active.
 
 - [Phase 0: Contract](phase-0-contract.md)
 - [Phase 1: Chat Metadata & Commands](phase-1-chat-metadata-and-commands.md)
@@ -10,7 +11,7 @@ into smaller slices during execution if the patch becomes too broad.
 - [Phase 4: Import, Delete & Fork Edges](phase-4-import-delete-fork-edges.md)
 - [Phase 5: Verification](phase-5-verification.md)
 
-## Slice Rules
+## Historical Slice Rules
 
 - Keep server/data, prompt, UI, import, and verification changes in separate
   patches unless a helper is shared and small.

@@ -4,12 +4,11 @@ Date: 2026-06-11
 
 Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, and Phase 5 are complete. Phase 5
 landed the closeout regression/TypeScript proof for the chat-scoped generation
-settings workstream.
+settings workstream. The workstream was closed and archived on 2026-06-11.
 
 ## Snapshot
 
-- Plan state: open, Phase 5 complete; ready for a separate archive slice when
-  requested.
+- Plan state: closed and archived on 2026-06-11 with Phase 5 complete.
 - User decisions captured: use `personaId`, use `presetId` only, include all
   sidebar toggles, and make imported chats require explicit configuration.
 - Sub-agent investigation: complete for server/data/prompt, frontend/UI, and
@@ -80,14 +79,14 @@ settings workstream.
 - [Phase 5](phases/phase-5-verification.md): complete. Regression and
   TypeScript proof.
 
-## Next Step
+## Archive State
 
-No remaining phase work. Keep this plan active until a separate archive slice
-moves it to `docs/archive/`.
+No remaining phase or archive work. This record now lives under
+`docs/archive/chat-scoped-generation-settings/`.
 
-## Maintenance Rules
+## Historical Maintenance Notes
 
-- Keep `status.md` as the active router.
+- This status file is the closed historical router for the archived phases.
 - Keep cross-phase decisions in [`plan.md`](plan.md); keep per-phase scope in
   [`phases/`](phases/).
 - Any implementation phase that changes UI text must add keys under `src/lang`.

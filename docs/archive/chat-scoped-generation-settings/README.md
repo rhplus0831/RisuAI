@@ -2,7 +2,12 @@
 
 Date: 2026-06-10
 
-This active workstream moves generation-affecting persona, preset, and sidebar
+Archived: 2026-06-11. Closed with Phase 5 proof green: server closeout coverage
+passed 11 files / 476 tests, client request/send coverage passed 7 files / 191
+tests, focused chat-settings/import/UI coverage passed 8 files / 64 tests, and
+both TypeScript checks passed with zero errors. Residual gaps: none.
+
+This archived workstream moved generation-affecting persona, preset, and sidebar
 toggle selections from global settings onto each chat. A chat cannot send,
 continue, regenerate, or preview until the user explicitly confirms all three
 parts for that chat.
@@ -13,7 +18,7 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Read Order
 
-1. [`status.md`](status.md) - current phase router and open work.
+1. [`status.md`](status.md) - closed status and archive record.
 2. [`plan.md`](plan.md) - goal, contract, invariants, and non-goals.
 3. [`latest-verification.md`](latest-verification.md) - latest closeout proof
    and residual-gap record.

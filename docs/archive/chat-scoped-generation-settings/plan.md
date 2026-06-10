@@ -136,8 +136,8 @@ The stable incomplete-chat error body is:
 ## Execution Cursor
 
 Phase 5 is complete. The closeout proof is recorded in
-[`latest-verification.md`](latest-verification.md). Keep the plan active until a
-separate archive slice moves it to `docs/archive/`.
+[`latest-verification.md`](latest-verification.md). This workstream was archived
+on 2026-06-11 under `docs/archive/chat-scoped-generation-settings/`.
 
 ## Not In This Plan
 

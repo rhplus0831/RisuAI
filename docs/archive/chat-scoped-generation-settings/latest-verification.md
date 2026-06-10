@@ -3,8 +3,8 @@
 Date: 2026-06-11
 
 This file holds the closeout proof for the chat-scoped generation settings
-workstream. The plan remains under `docs/plan/` for this slice and has not been
-moved to `docs/archive/`.
+workstream. This proof closed the plan before it was archived on 2026-06-11
+under `docs/archive/chat-scoped-generation-settings/`.
 
 ## Latest Run
 
