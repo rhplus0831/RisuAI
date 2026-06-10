@@ -135,9 +135,9 @@ The stable incomplete-chat error body is:
 
 ## Execution Cursor
 
-Planning is open. Start with Phase 0 before runtime implementation. Re-check
-the cited symbols before editing; the investigation line numbers were current
-when this plan was written but will drift.
+Planning is open. Phase 2 is complete; start next with Phase 3 UI and client
+send gating. Re-check the cited symbols before editing; the investigation line
+numbers were current when this plan was written but will drift.
 
 ## Not In This Plan
 

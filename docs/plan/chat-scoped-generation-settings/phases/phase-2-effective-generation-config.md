@@ -1,6 +1,15 @@
 # Phase 2: Effective Generation Config
 
-Status: planned.
+Status: complete.
+
+Phase 2 landed server-side incomplete-chat gating for prompt assembly, prompt
+preview, continue/regenerate, and live send job creation. Configured chats now
+assemble through a non-persisted effective database overlay that applies the
+chat-owned preset, persona, jailbreak toggle, and sidebar toggle values, and
+provider dispatch reads scoped preset fields from that overlay.
+
+Validation covered the focused server/client prompt and dispatch tests plus the
+client-lib and strict Fastify TypeScript checks listed below.
 
 Goal: make server prompt assembly and provider dispatch consume only the active
 chat's configured generation settings.

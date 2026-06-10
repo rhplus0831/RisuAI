@@ -2,14 +2,14 @@
 
 Date: 2026-06-10
 
-Phase 0 and Phase 1 are complete. Phase 1 landed the chat-owned
-`generationSettings` metadata command on the server and client command
-surfaces. Runtime prompt assembly/send gating, UI controls, import
-normalization, and delete/fork lifecycle behavior remain future phases.
+Phase 0, Phase 1, and Phase 2 are complete. Phase 2 landed the server-side
+generation gate and effective database overlay for chat-owned generation
+settings. UI controls, import normalization, and delete/fork lifecycle behavior
+remain future phases.
 
 ## Snapshot
 
-- Plan state: open, Phase 1 complete; Phase 2 is next.
+- Plan state: open, Phase 2 complete; Phase 3 is next.
 - User decisions captured: use `personaId`, use `presetId` only, include all
   sidebar toggles, and make imported chats require explicit configuration.
 - Sub-agent investigation: complete for server/data/prompt, frontend/UI, and
@@ -23,10 +23,14 @@ normalization, and delete/fork lifecycle behavior remain future phases.
   `dispatchSaveChatGenerationSettings` persist validated chat-owned metadata,
   project it with chat rows, repair malformed stored values back to incomplete
   state, and keep `generationSettings` out of generic chat patching.
-- Current risk: Phase 2 must make server prompt assembly and generation dispatch
-  consume only chat-owned settings. Until Phase 2+ lands, the metadata command
-  does not block sends, prompt preview, continue, regenerate, UI interactions,
-  or import/delete/fork lifecycle paths.
+- Phase 2 output: server prompt assembly, prompt preview, continue/regenerate,
+  and provider dispatch now resolve chat-owned persona, preset, jailbreak, and
+  sidebar toggle values through an assembly-only effective database overlay, and
+  return the stable incomplete-chat error before appending messages or creating
+  jobs.
+- Current risk: Phase 3 must make sidebar controls and client send gating edit
+  the active chat before optimistic lifecycle work. Import/delete/fork lifecycle
+  paths remain future phases.
 
 ## Phase Router
 
@@ -34,9 +38,9 @@ normalization, and delete/fork lifecycle behavior remain future phases.
   error shape, and edge policies are locked.
 - [Phase 1](phases/phase-1-chat-metadata-and-commands.md): complete. Chat row
   metadata, commands, validation, projection, and repair.
-- [Phase 2](phases/phase-2-effective-generation-config.md): next. Server
+- [Phase 2](phases/phase-2-effective-generation-config.md): complete. Server
   generation gate and effective database overlay.
-- [Phase 3](phases/phase-3-ui-and-send-gating.md): planned. Sidebar controls,
+- [Phase 3](phases/phase-3-ui-and-send-gating.md): next. Sidebar controls,
   picker behavior, and pre-append send blocking.
 - [Phase 4](phases/phase-4-import-delete-fork-edges.md): planned. Import,
   delete, fork, copy, and new-chat lifecycle behavior.
@@ -45,10 +49,10 @@ normalization, and delete/fork lifecycle behavior remain future phases.
 
 ## Next Step
 
-Run Phase 2 as the server prompt/generation pass. Reuse the Phase 0 readiness
-and incomplete-chat error helpers plus the Phase 1 chat-owned settings metadata;
-do not add global persona, preset, jailbreak, or `globalChatVariables` fallbacks
-while building the effective database overlay.
+Run Phase 3 as the UI and client send-gating pass. Sidebar persona, preset,
+jailbreak, and prompt/module toggle controls should edit the active chat's
+`generationSettings`, and client send paths should block incomplete chats before
+optimistic append or lifecycle work.
 
 ## Maintenance Rules
 
