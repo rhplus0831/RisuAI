@@ -9,11 +9,13 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { listPersistedCommandEventHistory } from '../src/commands/events.js'
 import { openDatabase } from '../src/db.js'
+import { applyImport } from '../src/repository.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
   createRequestScopedStoredAssetResolver,
   type GenerationChatRouteOptions,
 } from '../src/routes/generationChat.js'
+import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
 import { saveCurrentPresetSnapshot } from '../src/commands/presets.js'
 import { saveSelectedPersonaSnapshot } from '../src/commands/personas.js'
 import { LLMFormat } from '../../../src/ts/model/types'
@@ -235,17 +237,21 @@ function isJsonRecord(value: unknown): value is JsonRecord {
 }
 
 async function seedDatabase(
-  app: FastifyInstance,
-  assertion: string,
+  _app: FastifyInstance,
+  _assertion: string,
   database: unknown,
-): Promise<void> {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/v1/import/risusave',
-    headers: { 'risu-auth': assertion },
-    payload: { database: normalizeGenerationFixtureDatabase(database) },
-  })
-  expect(res.statusCode).toBe(200)
+): Promise<number> {
+  const db = openDatabase(harness.dataDir)
+  try {
+    const result = applyImport(
+      db,
+      harness.dataDir,
+      normalizeRisuSaveSnapshotDatabase(normalizeGenerationFixtureDatabase(database)),
+    )
+    return result.revision
+  } finally {
+    db.close()
+  }
 }
 
 interface ProtocolMetric {
@@ -2704,7 +2710,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     assertion: string,
     messages: Array<Record<string, unknown>>,
     echoMessage: string,
-  ): Promise<void> {
+  ): Promise<number> {
     return seedDatabase(harness.app, assertion, {
       ...fixtureDatabase,
       aiModel: 'echo_model',
@@ -3493,6 +3499,147 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     )
   })
 
+  it('keeps deleted preset and persona references scoped to affected configured chats', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    let revision = await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      selectedPersona: 1,
+      botPresetsId: 1,
+      personas: [
+        {
+          id: 'persona-survivor',
+          name: 'Survivor Persona',
+          icon: '',
+          personaPrompt: 'Survivor persona prompt',
+          note: '',
+        },
+        {
+          id: 'persona-deleted',
+          name: 'Deleted Persona',
+          icon: '',
+          personaPrompt: 'Deleted persona prompt',
+          note: '',
+        },
+      ],
+      botPresets: [
+        {
+          id: 'preset-survivor',
+          name: 'Survivor Preset',
+          mainPrompt: 'SURVIVOR MAIN',
+          maxContext: 100_000,
+          maxResponse: 50,
+        },
+        {
+          id: 'preset-deleted',
+          name: 'Deleted Preset',
+          mainPrompt: 'DELETED MAIN',
+          maxContext: 100_000,
+          maxResponse: 50,
+        },
+      ],
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            configuredChat('chat-ok', {
+              personaId: 'persona-survivor',
+              presetId: 'preset-survivor',
+            }),
+            configuredChat('chat-deleted-preset', {
+              personaId: 'persona-survivor',
+              presetId: 'preset-deleted',
+            }),
+            configuredChat('chat-deleted-persona', {
+              personaId: 'persona-deleted',
+              presetId: 'preset-survivor',
+            }),
+          ],
+        },
+      ],
+    })
+
+    const deletePreset = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/presets/preset-deleted',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+    expect(deletePreset.statusCode).toBe(200)
+    expect(deletePreset.json()).toMatchObject({
+      presetId: 'preset-deleted',
+      selectedPresetId: 'preset-survivor',
+    })
+    revision = deletePreset.json().revision as number
+
+    const deletePersona = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/personas/persona-deleted',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+    expect(deletePersona.statusCode).toBe(200)
+    expect(deletePersona.json()).toMatchObject({
+      personaId: 'persona-deleted',
+      selectedPersonaId: 'persona-survivor',
+    })
+
+    const preview = (chatId: string) =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/preview-prompt',
+        headers: { 'risu-auth': assertion },
+        payload: { chatId, characterId: 'char-1' },
+      })
+
+    const ok = await preview('chat-ok')
+    expect(ok.statusCode).toBe(200)
+
+    const deletedPreset = await preview('chat-deleted-preset')
+    expect(deletedPreset.statusCode).toBe(409)
+    expectMissingCodes(deletedPreset.json(), ['preset_missing'], ['persona_missing'])
+    expect(deletedPreset.json().missing).toContainEqual(
+      expect.objectContaining({
+        code: 'preset_missing',
+        presetId: 'preset-deleted',
+      }),
+    )
+
+    const deletedPersona = await preview('chat-deleted-persona')
+    expect(deletedPersona.statusCode).toBe(409)
+    expectMissingCodes(deletedPersona.json(), ['persona_missing'], ['preset_missing'])
+    expect(deletedPersona.json().missing).toContainEqual(
+      expect.objectContaining({
+        code: 'persona_missing',
+        personaId: 'persona-deleted',
+      }),
+    )
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    const chats = bootstrap.json().database.characters[0].chats as Array<{
+      id: string
+      generationSettings?: Record<string, unknown>
+    }>
+    const deletedPresetSettings = chats.find(
+      (chat) => chat.id === 'chat-deleted-preset',
+    )?.generationSettings
+    const deletedPersonaSettings = chats.find(
+      (chat) => chat.id === 'chat-deleted-persona',
+    )?.generationSettings
+    expect(deletedPresetSettings).toMatchObject({
+      personaId: 'persona-survivor',
+      presetId: 'preset-deleted',
+    })
+    expect(deletedPersonaSettings).toMatchObject({
+      personaId: 'persona-deleted',
+      presetId: 'preset-survivor',
+    })
+  })
+
   it('returns 404 when no database is persisted', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
@@ -3505,3 +3652,37 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(String(res.json().error)).toMatch(/database not found/)
   })
 })
+
+function configuredChat(
+  id: string,
+  settings: { personaId: string; presetId: string },
+): Record<string, unknown> {
+  return {
+    id,
+    message: [],
+    note: '',
+    name: id,
+    localLore: [],
+    generationSettings: {
+      configured: true,
+      personaId: settings.personaId,
+      presetId: settings.presetId,
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    },
+  }
+}
+
+function expectMissingCodes(
+  body: { missing?: Array<{ code?: string }> },
+  expected: string[],
+  unexpected: string[],
+): void {
+  const codes = body.missing?.map((reason) => reason.code) ?? []
+  for (const code of expected) {
+    expect(codes).toContain(code)
+  }
+  for (const code of unexpected) {
+    expect(codes).not.toContain(code)
+  }
+}

@@ -321,9 +321,39 @@ describe('PNG character card import', () => {
     ])
     expect(alertState.alertNormal).toHaveBeenCalledWith('Imported character')
   })
+
+  it('creates PNG card starter chats without generationSettings', async () => {
+    const fixture = await createPngCardFixture({
+      risuaiExtension: {
+        generationSettings: {
+          configured: true,
+          personaId: 'source-persona',
+          presetId: 'source-preset',
+          jailbreakToggle: true,
+          sidebarToggles: { mode: 'source' },
+        },
+      },
+    })
+
+    await importCharacterProcess({
+      name: 'source-generation-settings.png',
+      data: fixture.png,
+    })
+
+    const chat = dbState.db.characters[0].chats[0]
+    expect(chat).toMatchObject({
+      message: [],
+      note: '',
+      name: 'Chat 1',
+      localLore: [],
+    })
+    expect(chat).not.toHaveProperty('generationSettings')
+  })
 })
 
-async function createPngCardFixture() {
+async function createPngCardFixture(
+  options: { risuaiExtension?: Record<string, unknown> } = {},
+) {
   const assetPayloads = [new Uint8Array([7, 8, 9]), new Uint8Array([1, 3, 5, 7])]
   const assetBase64Values = assetPayloads.map((asset) => Buffer.from(asset).toString('base64'))
   const card = {
@@ -343,7 +373,7 @@ async function createPngCardFixture() {
       creator: '',
       character_version: '1',
       extensions: {
-        risuai: {},
+        risuai: options.risuaiExtension ?? {},
       },
       assets: [
         {

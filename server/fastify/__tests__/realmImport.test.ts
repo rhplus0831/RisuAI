@@ -504,6 +504,18 @@ function progressPercents(frames: Array<{ event: string; data: unknown }>): numb
     .map((frame) => (frame.data as { percent: number }).percent)
 }
 
+function expectStarterChatWithoutGenerationSettings(character: Record<string, unknown>): void {
+  const chats = character.chats as Array<Record<string, unknown>>
+  expect(chats).toHaveLength(1)
+  expect(chats[0]).toMatchObject({
+    id: expect.any(String),
+    note: '',
+    name: 'Chat 1',
+    localLore: [],
+  })
+  expect(chats[0]).not.toHaveProperty('generationSettings')
+}
+
 let harness: Harness
 let echo: EchoServer
 
@@ -723,6 +735,30 @@ describe('Realm character import route', () => {
     expect(character.vits).toMatchObject({
       files: { 'voice.wav': expect.stringMatching(/^[a-f0-9]{64}$/) },
     })
+  })
+
+  it('creates Realm starter chats without generation settings', async () => {
+    echo.setResponder((req, res) => {
+      if (respondRealmJsonCard(req, res)) return
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> })
+      .characters[0]
+    expectStarterChatWithoutGenerationSettings(character)
   })
 
   it('L23: JSON Realm card asset import uses one batched asset revision and event', async () => {

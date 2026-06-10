@@ -22,6 +22,7 @@ import {
   type JsonCommandMutationResult,
 } from '../commands/mutations.js'
 import { createCharacterRecord } from '../commands/characters.js'
+import { ensureCharacterChats } from '../commands/chats.js'
 import {
   ValidationError,
   addAsset,
@@ -820,6 +821,7 @@ function appendRealmCharacter(args: {
 }): JsonCommandMutationResult<{ characterId: string }> {
   const baseRevision = getSchemaState(args.db).revision
   const characterRecord = createCharacterRecord(args.character, { assetDb: args.db })
+  const chats = ensureCharacterChats(characterRecord)
   return applyTargetedCommandMutation<{ characterId: string }>({
     db: args.db,
     dataDir: args.dataDir,
@@ -833,7 +835,7 @@ function appendRealmCharacter(args: {
       }
       const position = nextCharacterRowPosition(innerDb)
       insertCharacterRow(innerDb, position, characterRecord)
-      insertRealmCharacterChats(innerDb, characterRecord.chaId, characterRecord)
+      insertRealmCharacterChats(innerDb, characterRecord.chaId, chats)
       updateSettingsForCharacterAppend(
         innerDb,
         characterRecord.chaId,
@@ -851,9 +853,8 @@ function appendRealmCharacter(args: {
 function insertRealmCharacterChats(
   db: DatabaseSync,
   characterId: string,
-  character: JsonRecord,
+  chats: readonly JsonRecord[],
 ): void {
-  const chats = Array.isArray(character.chats) ? character.chats : []
   for (let position = 0; position < chats.length; position++) {
     const chat = readOptionalRecord(chats[position])
     if (!chat || typeof chat.id !== 'string') continue
