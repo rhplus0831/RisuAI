@@ -33,6 +33,13 @@ export const botMakerMode = writable(false)
 export const moduleBackgroundEmbedding = writable('')
 export const openPresetList = writable(false)
 export const openPersonaList = writable(false)
+export type GenerationSettingsPickerMode = 'global' | 'active-chat-generation-settings'
+export const presetListModalStore = $state({
+  mode: 'global' as GenerationSettingsPickerMode,
+})
+export const personaListModalStore = $state({
+  mode: 'global' as GenerationSettingsPickerMode,
+})
 export const bookmarkListOpen = writable(false)
 export const MobileGUI = writable(false)
 export const MobileGUIStack = writable(0)
@@ -103,6 +110,36 @@ window.addEventListener('resize', updateSize)
 export const DBState = $state({
   db: {} as any as Database,
 })
+
+openPresetList.subscribe((open) => {
+  if (!open) {
+    presetListModalStore.mode = 'global'
+  }
+})
+
+openPersonaList.subscribe((open) => {
+  if (!open) {
+    personaListModalStore.mode = 'global'
+  }
+})
+
+export function openPresetListModal(mode: GenerationSettingsPickerMode = 'global') {
+  presetListModalStore.mode = mode
+  openPresetList.set(true)
+}
+
+export function closePresetListModal() {
+  openPresetList.set(false)
+}
+
+export function openPersonaListModal(mode: GenerationSettingsPickerMode = 'global') {
+  personaListModalStore.mode = mode
+  openPersonaList.set(true)
+}
+
+export function closePersonaListModal() {
+  openPersonaList.set(false)
+}
 
 export const LoadingStatusState = $state({
   text: '',

@@ -10,8 +10,13 @@
     importPreset,
     reorderPresets,
     updatePreset,
+    type botPreset,
   } from '../../ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import {
+    DBState,
+    selectedCharID,
+    type GenerationSettingsPickerMode,
+  } from 'src/ts/stores.svelte'
   import {
     CopyIcon,
     Share2Icon,
@@ -26,6 +31,10 @@
   import { prebuiltPresets } from 'src/ts/process/templates/templates'
   import { ShowRealmFrameStore } from 'src/ts/stores.svelte'
   import PromptDiffModal from '../Others/PromptDiffModal.svelte'
+  import {
+    resolveActiveChatGenerationSettings,
+    saveActiveChatGenerationSettingsSelection,
+  } from 'src/ts/activeChatGenerationSettings'
 
   let editMode = $state(false)
   let isDragging = $state(false)
@@ -33,14 +42,24 @@
 
   interface Props {
     close?: any
+    mode?: GenerationSettingsPickerMode
   }
 
-  let { close = () => {} }: Props = $props()
+  let { close = () => {}, mode = 'global' }: Props = $props()
 
   let showDiffModal = $state(false)
   let selectedDiffPreset = $state<number | null>(null)
   let firstPresetId = $state<number | null>(null)
   let secondPresetId = $state<number | null>(null)
+  let isChatGenerationSelectionMode = $derived(mode === 'active-chat-generation-settings')
+  let activeChatPresetId = $derived.by(() => {
+    if (!isChatGenerationSelectionMode) return null
+    return (
+      resolveActiveChatGenerationSettings({
+        selectedCharIndex: $selectedCharID,
+      }).settings?.presetId ?? null
+    )
+  })
 
   function movePreset(fromIndex: number, toIndex: number) {
     reorderPresets(fromIndex, toIndex)
@@ -87,6 +106,34 @@
   function renamePreset(index: number, name: string) {
     updatePreset(index, { name })
   }
+
+  function nonEmptyId(id: unknown): string | null {
+    return typeof id === 'string' && id.trim().length > 0 ? id : null
+  }
+
+  function selectPreset(preset: botPreset | undefined, index: number) {
+    if (editMode) return
+
+    if (isChatGenerationSelectionMode) {
+      const presetId = nonEmptyId(preset?.id)
+      if (!presetId) return
+      if (saveActiveChatGenerationSettingsSelection({ presetId })) {
+        close()
+      }
+      return
+    }
+
+    changeToPreset(index)
+    close()
+  }
+
+  function isPresetSelected(preset: botPreset | undefined, index: number) {
+    if (!isChatGenerationSelectionMode) {
+      return index === DBState.db.botPresetsId
+    }
+    const presetId = nonEmptyId(preset?.id)
+    return !!presetId && presetId === activeChatPresetId
+  }
 </script>
 
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
@@ -128,13 +175,10 @@
 
       <button
         onclick={() => {
-          if (!editMode) {
-            changeToPreset(i)
-            close()
-          }
+          selectPreset(preset, i)
         }}
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-        class:bg-selected={i === DBState.db.botPresetsId}
+        class:bg-selected={isPresetSelected(preset, i)}
         class:draggable-preset={!editMode}
         draggable={!editMode ? 'true' : 'false'}
         ondragstart={(e) => {

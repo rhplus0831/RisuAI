@@ -7,6 +7,10 @@
     ShowRealmFrameStore,
     openPresetList,
     openPersonaList,
+    closePresetListModal,
+    closePersonaListModal,
+    presetListModalStore,
+    personaListModalStore,
     CustomGUISettingMenuStore,
     loadedStore,
     alertStore,
@@ -301,16 +305,14 @@
   {/if}
   {#if $openPresetList}
     <Botpreset
-      close={() => {
-        $openPresetList = false
-      }}
+      mode={presetListModalStore.mode}
+      close={closePresetListModal}
     />
   {/if}
   {#if $openPersonaList}
     <ListedPersona
-      close={() => {
-        $openPersonaList = false
-      }}
+      mode={personaListModalStore.mode}
+      close={closePersonaListModal}
     />
   {/if}
   {#if $bookmarkListOpen}
