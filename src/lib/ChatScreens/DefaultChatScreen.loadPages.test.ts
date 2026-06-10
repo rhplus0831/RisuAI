@@ -19,6 +19,7 @@ const loadPageMocks = vi.hoisted(() => ({
   processMultiCommand: vi.fn(async () => false),
   sendChat: vi.fn(async () => true),
   sleep: vi.fn(async () => undefined),
+  guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
   hydrateActiveChatFully: vi.fn(async () => undefined),
   hydrateActiveChatWindow: vi.fn(async () => undefined),
   toCanvas: vi.fn(),
@@ -144,6 +145,10 @@ vi.mock('src/ts/chatCommands', () => ({
   currentChatStateSnapshot: vi.fn(() => ({ before: 'chat-state' })),
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchUpdateChat: vi.fn(),
+}))
+
+vi.mock('src/ts/activeChatGenerationSettings', () => ({
+  guardActiveChatGenerationSettingsForSend: loadPageMocks.guardActiveChatGenerationSettingsForSend,
 }))
 
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
@@ -329,6 +334,7 @@ beforeEach(() => {
   loadPageMocks.toCanvas.mockImplementation(async () => createCanvas())
   loadPageMocks.hydrateActiveChatFully.mockClear()
   loadPageMocks.hydrateActiveChatWindow.mockClear()
+  loadPageMocks.guardActiveChatGenerationSettingsForSend.mockReturnValue({ status: 'ok' })
 })
 
 afterEach(() => {
@@ -440,5 +446,42 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(messageRowIndexes()).not.toContain(0)
     expect(loadPageMocks.downloadFile).not.toHaveBeenCalled()
     expect(consoleErrorSpy).toHaveBeenCalled()
+  })
+
+  it('blocks an incomplete-chat send without clearing the composer or appending', async () => {
+    seedDatabase([1])
+    const originalHistory = JSON.parse(JSON.stringify(DBState.db.characters[0].chats[0].message))
+    loadPageMocks.guardActiveChatGenerationSettingsForSend.mockReturnValue({
+      status: 'error',
+      error: 'Chat generation settings are incomplete. Missing: Persona.',
+    })
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('textarea')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('textarea')!
+    textarea.value = 'Keep this draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    loadPageMocks.hydrateActiveChatFully.mockClear()
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockClear()
+    loadPageMocks.sendChat.mockClear()
+
+    const sendButton = target.querySelector<HTMLButtonElement>('.button-icon-send')
+    expect(sendButton).toBeTruthy()
+    sendButton!.click()
+
+    await waitFor(() => {
+      expect(loadPageMocks.alertError).toHaveBeenCalledWith(
+        'Chat generation settings are incomplete. Missing: Persona.',
+      )
+    })
+    expect(textarea.value).toBe('Keep this draft')
+    expect(DBState.db.characters[0].chats[0].message).toEqual(originalHistory)
+    expect(loadPageMocks.hydrateActiveChatFully).not.toHaveBeenCalled()
+    expect(loadPageMocks.processMultiCommand).not.toHaveBeenCalled()
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 })

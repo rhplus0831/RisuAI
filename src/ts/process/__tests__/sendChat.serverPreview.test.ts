@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 // Preview-path wiring. In Fastify mode, preview / previewPrompt calls
 // short-circuit to the `/chat` route (stubbed by serverChatFetch) and thread the
@@ -100,9 +101,52 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-async function seedEcho(): Promise<void> {
+function markActiveChatGenerationSettingsReady(): void {
+  const db = DBState.db as typeof DBState.db & {
+    personas?: Array<Record<string, unknown>>
+    botPresets?: Array<Record<string, unknown>>
+  }
+  db.personas = Array.isArray(db.personas) ? db.personas : []
+  db.botPresets = Array.isArray(db.botPresets) ? db.botPresets : []
+
+  const personaId = 'test-chat-persona'
+  if (!db.personas.some((persona) => persona.id === personaId)) {
+    db.personas.push({
+      id: personaId,
+      name: db.username ?? 'User',
+      icon: db.userIcon ?? '',
+      personaPrompt: db.personaPrompt ?? '',
+      note: db.userNote ?? '',
+      largePortrait: false,
+    })
+  }
+
+  const presetId = 'test-chat-preset'
+  if (!db.botPresets.some((preset) => preset.id === presetId)) {
+    db.botPresets.push({
+      id: presetId,
+      name: 'Chat Test Preset',
+    })
+  }
+
+  const character = db.characters?.[0]
+  const chat = character?.chats?.[character.chatPage ?? 0]
+  if (!chat) throw new Error('Fixture did not seed an active chat')
+  chat.generationSettings = {
+    configured: true,
+    personaId,
+    presetId,
+    jailbreakToggle: false,
+    sidebarToggles: {},
+  }
+}
+
+async function seedEcho(options: { ready?: boolean } = {}): Promise<void> {
   const loaded = await loadFixture('echo-basic')
   cleanups.push(loaded.cleanup)
+  if (options.ready !== false) {
+    markActiveChatGenerationSettingsReady()
+  }
 }
 
 describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
@@ -140,6 +184,32 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(chatModule.previewBody).toBe('FLATTENED PROMPT')
     expect(getServerChatCalls()[0]).toMatchObject({ mode: 'preview_prompt' })
   })
+
+  it.each([
+    ['send', {}],
+    ['continue', { continue: true }],
+    ['regenerate', { regenerateMessageId: 'msg-assistant-1' }],
+    ['preview', { preview: true }],
+    ['previewPrompt', { previewPrompt: true }],
+  ] as const)(
+    'blocks %s before /chat, doingChat, and lifecycle writes when chat settings are incomplete',
+    async (_mode, args) => {
+      await seedEcho({ ready: false })
+      vi.stubGlobal('fetch', serverChatFetch)
+      const beforeLastInteraction = DBState.db.characters[0].lastInteraction
+
+      const ok = await chatModule.sendChat(-1, args)
+
+      expect(ok).toBe(false)
+      expect(getServerChatCalls()).toHaveLength(0)
+      expect(get(doingChat)).toBe(false)
+      expect(get(chatProcessStage)).toBe(0)
+      expect(DBState.db.characters[0].lastInteraction).toBe(beforeLastInteraction)
+      expect(DBState.db.characters[0].chats[0].message).toEqual([
+        { role: 'user', data: 'ping', chatId: 'msg-user-1', time: 0 },
+      ])
+    },
+  )
 
   it('routes regenerate to /chat with regenerateMessageId and no userMessage', async () => {
     await seedEcho()

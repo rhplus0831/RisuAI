@@ -20,6 +20,8 @@ import {
   createSendChatCharacterCache,
   runSendChatMessageVariables,
 } from './sendChatPromptAssembly'
+import { guardActiveChatGenerationSettingsForSend } from '../activeChatGenerationSettings'
+import { alertError } from '../alert'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -142,6 +144,15 @@ export async function sendChat(
       return false
     }
   }
+
+  if (!arg.reattachJobId) {
+    const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
+    if (generationSettingsGuard.status === 'error') {
+      alertError(generationSettingsGuard.error)
+      return false
+    }
+  }
+
   // iOwnDoingChat contract: this call sets `doingChat = true` on entry and
   // the `finally` clears it on exit only when this flag is true. Three states:
   //   (a) own         — fresh call, finally clears.

@@ -1,5 +1,6 @@
 import { get } from 'svelte/store'
 import {
+  CHAT_GENERATION_SETTINGS_INCOMPLETE_MESSAGE,
   resolveChatGenerationSettingsReadiness,
   type ChatGenerationModuleReference,
   type ChatGenerationPersonaReference,
@@ -10,6 +11,7 @@ import {
   type ChatGenerationSettingsReadiness,
 } from './chatGenerationSettings'
 import { dispatchSaveChatGenerationSettings } from './chatCommands'
+import { language } from '../lang'
 import type { ServerCommandTransportOptions } from './server/commands'
 import { DBState, selectedCharID } from './stores.svelte'
 import type { Chat, Database, character } from './storage/database.svelte'
@@ -44,6 +46,10 @@ export interface ResolveActiveChatGenerationSettingsOptions {
   db?: Database
   selectedCharIndex?: number
 }
+
+export type ActiveChatGenerationSettingsGuardResult =
+  | { status: 'ok'; state: ActiveChatGenerationSettingsState }
+  | { status: 'error'; error: string; state: ActiveChatGenerationSettingsState }
 
 export type ActiveChatGenerationSettingsPatch = Partial<
   Omit<ChatGenerationSettings, 'sidebarToggles' | 'configured'>
@@ -113,6 +119,35 @@ export function getActiveChatRequiredSidebarToggles(): ChatGenerationRequiredSid
 
 export function getActiveChatGenerationSettingsMissingLabels(): string[] {
   return resolveActiveChatGenerationSettings().missingLabels
+}
+
+export function guardActiveChatGenerationSettingsForSend(
+  state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
+): ActiveChatGenerationSettingsGuardResult {
+  if (state.readiness.ready) {
+    return { status: 'ok', state }
+  }
+  return {
+    status: 'error',
+    error: createActiveChatGenerationSettingsIncompleteMessage(state),
+    state,
+  }
+}
+
+export function createActiveChatGenerationSettingsIncompleteMessage(
+  state: Pick<ActiveChatGenerationSettingsState, 'missingLabels'>,
+): string {
+  const base = translatedIncompleteBaseMessage()
+  if (state.missingLabels.length === 0) {
+    return base
+  }
+
+  const missing = state.missingLabels.join(', ')
+  const formatter = translatedIncompleteMissingFormatter()
+  if (formatter) {
+    return formatter(missing)
+  }
+  return `${base} Missing: ${missing}.`
 }
 
 export function createChatGenerationSettingsMissingLabels(
@@ -374,4 +409,17 @@ function isRecord(value: unknown): value is Record<string, string> {
 
 function hasOwn(value: object, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key)
+}
+
+function translatedIncompleteBaseMessage(): string {
+  const errors = language.errors as Record<string, unknown> | undefined
+  return typeof errors?.chatGenerationSettingsIncomplete === 'string'
+    ? errors.chatGenerationSettingsIncomplete
+    : CHAT_GENERATION_SETTINGS_INCOMPLETE_MESSAGE
+}
+
+function translatedIncompleteMissingFormatter(): ((missing: string) => string) | undefined {
+  const errors = language.errors as Record<string, unknown> | undefined
+  const formatter = errors?.chatGenerationSettingsIncompleteWithMissing
+  return typeof formatter === 'function' ? (formatter as (missing: string) => string) : undefined
 }

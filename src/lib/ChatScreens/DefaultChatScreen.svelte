@@ -101,6 +101,7 @@
     getLoadPagesForMessageJump,
   } from './DefaultChatScreen.loadPages'
   import { normalizeChatDisplayTailCount } from 'src/ts/chatDisplayTailCount'
+  import { guardActiveChatGenerationSettingsForSend } from 'src/ts/activeChatGenerationSettings'
 
   const loadPlaygroundMenu = () =>
     import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
@@ -325,6 +326,14 @@
     }
     preparingSend = true
     try {
+      const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
+      if (generationSettingsGuard.status === 'error') {
+        alertError(generationSettingsGuard.error)
+        await sleep(10)
+        updateInputSizeAll()
+        return
+      }
+
       resetRerollOnCharChange()
       const targetIdentity = getActiveTranscriptWindowIdentity()
       await hydrateActiveChatFully()

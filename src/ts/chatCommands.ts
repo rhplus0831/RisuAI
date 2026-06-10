@@ -1014,6 +1014,13 @@ export function dispatchAppendMessage(
 export async function appendCurrentChatUserMessageForSend(
   input: string | Message,
 ): Promise<AppendCurrentChatUserMessageResult> {
+  const readiness = await import('./activeChatGenerationSettings').then((module) =>
+    module.guardActiveChatGenerationSettingsForSend(),
+  )
+  if (readiness.status === 'error') {
+    return { status: 'error', error: readiness.error }
+  }
+
   const selectedChar = get(selectedCharID)
   const message: Message =
     typeof input === 'string'

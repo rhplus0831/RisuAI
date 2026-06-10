@@ -62,6 +62,20 @@ function makeChar(overrides: Partial<character> = {}): character {
   } as unknown as character
 }
 
+function makeChat(
+  overrides: Partial<character['chats'][number]> = {},
+): character['chats'][number] {
+  return {
+    name: 'main',
+    note: '',
+    localLore: [],
+    scriptstate: {},
+    fmIndex: -1,
+    message: [],
+    ...overrides,
+  } as character['chats'][number]
+}
+
 function seedDb(extra: Partial<Database> = {}) {
   const seed = {
     aiModel: 'gpt-4o',
@@ -132,31 +146,49 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   vi.unstubAllGlobals()
   toastCalls.calls = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/v1/bootstrap') {
+        return jsonResponse({ revision: 21 })
+      }
+      if (url.startsWith('/api/v1/commands/')) {
+        const event: CommandEvent = {
+          type: 'context.updated',
+          revision: 22,
+          resource: 'context',
+        }
+        return jsonResponse({ revision: 22, event })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
 })
 
 describe('setupSendChatContext - preset chain', () => {
-  it('runs preset chain selection when chatProcessIndex=-1 and finds a match', () => {
+  it('does not run preset chain selection in server-backed mode when a match exists', () => {
     seedDb({
       presetChain: 'Beta',
       botPresets: [{ name: 'Alpha' }, { name: 'Beta' }] as unknown as Database['botPresets'],
       botPresetsId: 0,
     })
     setupSendChatContext({ chatProcessIndex: -1 })
-    // changeToPreset mutates db.botPresetsId to the selected index.
-    expect(DBState.db.botPresetsId).toBe(1)
+    // Server-backed generation uses chat.generationSettings.presetId instead
+    // of letting presetChain retarget the global editing preset.
+    expect(DBState.db.botPresetsId).toBe(0)
     expect(toastCalls.calls).toEqual([])
   })
 
-  it('alerts on miss when preset chain name is not found', () => {
+  it('does not alert on preset chain misses in server-backed mode', () => {
     seedDb({
       presetChain: 'Ghost',
       botPresets: [{ name: 'Alpha' }] as unknown as Database['botPresets'],
       botPresetsId: 0,
     })
     setupSendChatContext({ chatProcessIndex: -1 })
-    // No preset switch on miss; botPresetsId stays unchanged.
     expect(DBState.db.botPresetsId).toBe(0)
-    expect(toastCalls.calls).toEqual(['Cannot find preset: Ghost'])
+    expect(toastCalls.calls).toEqual([])
   })
 
   it('skips preset chain when chatProcessIndex !== -1 (reentrant call)', () => {
@@ -343,58 +375,122 @@ describe('setupSendChatContext - promptInfo seed', () => {
     expect(ctx.promptInfo).toEqual({})
   })
 
-  it('returns promptName when promptInfoInsideChat=true with a valid botPresetsId', () => {
+  it('returns promptName from the active chat selected preset in server-backed mode', () => {
     seedDb({
       promptInfoInsideChat: true,
-      botPresets: [{ name: 'My Preset' }] as unknown as Database['botPresets'],
+      botPresets: [
+        { id: 'global-preset', name: 'Global Preset' },
+        { id: 'chat-preset', name: 'Chat Preset' },
+      ] as unknown as Database['botPresets'],
       botPresetsId: 0,
+      characters: [
+        makeChar({
+          chats: [
+            makeChat({
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-a',
+                presetId: 'chat-preset',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
     })
     const ctx = setupSendChatContext({ chatProcessIndex: -1 })
-    expect(ctx.promptInfo.promptName).toBe('My Preset')
+    expect(ctx.promptInfo.promptName).toBe('Chat Preset')
     expect(ctx.promptInfo.promptToggles).toEqual([])
+    expect(DBState.db.botPresetsId).toBe(0)
   })
 
-  it('emits boolean toggle as ON when globalChatVariables.toggle_<key> === "1"', () => {
+  it('seeds chat-scoped boolean, select, text, and module toggles without global overrides', () => {
     seedDb({
       promptInfoInsideChat: true,
-      botPresets: [{ name: 'P' }] as unknown as Database['botPresets'],
+      botPresets: [
+        {
+          id: 'global-preset',
+          name: 'Global Preset',
+          customPromptTemplateToggle: 'legacy=Legacy',
+        },
+        {
+          id: 'chat-preset',
+          name: 'Chat Preset',
+          customPromptTemplateToggle: 'flag=Flag\ntone=Tone=select=warm,formal,curt\nnote=Note=text',
+          moduleIntergration: 'chat-integrated-space',
+        },
+      ] as unknown as Database['botPresets'],
       botPresetsId: 0,
-      customPromptTemplateToggle: 'mode=Mode',
+      customPromptTemplateToggle: 'globalOnly=Global Only',
       globalChatVariables: {
-        toggle_mode: '1',
+        toggle_flag: '0',
+        toggle_tone: '0',
+        toggle_note: 'global note',
+        toggle_globalModule: '0',
+        toggle_chatModule: '1',
+        toggle_characterModule: '0',
+        toggle_integratedModule: '0',
+        toggle_globalIntegratedModule: '1',
+        toggle_globalOnly: '1',
       } as unknown as Database['globalChatVariables'],
+      enabledModules: ['global-module'],
+      moduleIntergration: 'global-integrated-space',
+      modules: [
+        { id: 'global-module', customModuleToggle: 'globalModule=Global module' },
+        { id: 'chat-module', customModuleToggle: 'chatModule=Chat module' },
+        { id: 'character-module', customModuleToggle: 'characterModule=Character module' },
+        {
+          id: 'integrated-module',
+          namespace: 'chat-integrated-space',
+          customModuleToggle: 'integratedModule=Integrated module',
+        },
+        {
+          id: 'global-integrated-module',
+          namespace: 'global-integrated-space',
+          customModuleToggle: 'globalIntegratedModule=Global integrated module',
+        },
+      ] as unknown as Database['modules'],
+      characters: [
+        makeChar({
+          modules: ['character-module'],
+          chats: [
+            makeChat({
+              modules: ['chat-module'],
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-a',
+                presetId: 'chat-preset',
+                jailbreakToggle: false,
+                sidebarToggles: {
+                  flag: '1',
+                  tone: '1',
+                  note: 'chat note',
+                  globalModule: '1',
+                  chatModule: '0',
+                  characterModule: '1',
+                  integratedModule: '1',
+                  globalIntegratedModule: '1',
+                  globalOnly: '1',
+                },
+              },
+            }),
+          ],
+        }),
+      ],
     })
     const ctx = setupSendChatContext({ chatProcessIndex: -1 })
-    expect(ctx.promptInfo.promptToggles).toEqual([{ key: 'Mode', value: 'ON' }])
-  })
-
-  it('omits boolean toggle when globalChatVariables.toggle_<key> !== "1"', () => {
-    seedDb({
-      promptInfoInsideChat: true,
-      botPresets: [{ name: 'P' }] as unknown as Database['botPresets'],
-      botPresetsId: 0,
-      customPromptTemplateToggle: 'mode=Mode',
-      globalChatVariables: {
-        toggle_mode: '0',
-      } as unknown as Database['globalChatVariables'],
+    expect(ctx.promptInfo).toEqual({
+      promptName: 'Chat Preset',
+      promptToggles: [
+        { key: 'Flag', value: 'ON' },
+        { key: 'Tone', value: 'formal' },
+        { key: 'Note', value: 'chat note' },
+        { key: 'Global module', value: 'ON' },
+        { key: 'Character module', value: 'ON' },
+        { key: 'Integrated module', value: 'ON' },
+      ],
     })
-    const ctx = setupSendChatContext({ chatProcessIndex: -1 })
-    expect(ctx.promptInfo.promptToggles).toEqual([])
-  })
-
-  it('select toggle indexes options[] by raw value', () => {
-    seedDb({
-      promptInfoInsideChat: true,
-      botPresets: [{ name: 'P' }] as unknown as Database['botPresets'],
-      botPresetsId: 0,
-      // select type uses `options` (CSV after = separator).
-      customPromptTemplateToggle: 'tone=Tone=select=warm,formal,curt',
-      globalChatVariables: {
-        toggle_tone: '1',
-      } as unknown as Database['globalChatVariables'],
-    })
-    const ctx = setupSendChatContext({ chatProcessIndex: -1 })
-    expect(ctx.promptInfo.promptToggles).toEqual([{ key: 'Tone', value: 'formal' }])
   })
 })
 

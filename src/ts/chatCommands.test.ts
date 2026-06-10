@@ -234,6 +234,29 @@ function orderedChatMetadata(values: Record<string, unknown>): Chat {
   return chat as unknown as Chat
 }
 
+function seedReadyActiveChatGenerationSettings(): void {
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.personas = [
+      {
+        id: 'persona-a',
+        name: 'Persona A',
+        personaPrompt: '',
+        icon: '',
+        note: '',
+        largePortrait: false,
+      },
+    ] as any
+    DBState.db.botPresets = [{ id: 'preset-a', name: 'Preset A' }] as any
+    DBState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+  })
+}
+
 beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
@@ -565,6 +588,7 @@ describe('chat command projection helpers', () => {
 
   it('appends DevTool Autopilot user messages through an awaited message command', async () => {
     const calls = stubCommandFetch()
+    seedReadyActiveChatGenerationSettings()
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
@@ -606,8 +630,24 @@ describe('chat command projection helpers', () => {
     ])
   })
 
+  it('blocks direct send appends when active-chat generation settings are incomplete', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const result = await appendCurrentChatUserMessageForSend('autopilot row')
+
+    expect(result).toEqual({
+      status: 'error',
+      error:
+        'Chat generation settings are incomplete. Missing: Generation settings, Configuration confirmation, Persona, Preset, Jailbreak toggle.',
+    })
+    expect(calls).toEqual([])
+    expect(DBState.db.characters[0].chats[0].message).toEqual([])
+  })
+
   it('appends prepared plain-send user messages through one-message POST bodies', async () => {
     const calls = stubCommandFetch()
+    seedReadyActiveChatGenerationSettings()
     setServerProjectionWriteGuardEnabled(true)
     const prepared: Message = {
       role: 'user',
@@ -708,6 +748,7 @@ describe('chat command projection helpers', () => {
       }) as unknown as typeof fetch,
     )
     setServerProjectionWriteGuardEnabled(true)
+    seedReadyActiveChatGenerationSettings()
     withTrustedServerProjectionWrite(() => {
       DBState.db.characters[0].chats[0].message.push({
         role: 'char',
@@ -760,6 +801,7 @@ describe('chat command projection helpers', () => {
       }) as unknown as typeof fetch,
     )
     setServerProjectionWriteGuardEnabled(true)
+    seedReadyActiveChatGenerationSettings()
     withTrustedServerProjectionWrite(() => {
       DBState.db.characters[0].chats[1].message.push({
         role: 'char',

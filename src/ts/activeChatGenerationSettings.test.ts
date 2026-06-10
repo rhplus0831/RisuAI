@@ -18,6 +18,7 @@ import { DBState, selectedCharID } from './stores.svelte'
 import {
   createActiveChatGenerationSettingsPatch,
   createActiveChatGenerationSettingsSelectionPatch,
+  guardActiveChatGenerationSettingsForSend,
   resolveActiveChatGenerationSettings,
   saveActiveChatGenerationSettings,
   saveActiveChatGenerationSettingsPatch,
@@ -200,6 +201,23 @@ describe('active chat generation settings helper', () => {
       'Character module',
       'Integrated module',
     ])
+  })
+
+  it('returns a stable guard error with active-chat missing labels', () => {
+    DBState.db.characters[0].chats[0].generationSettings = {
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      sidebarToggles: {},
+    }
+
+    const guard = guardActiveChatGenerationSettingsForSend()
+
+    expect(guard.status).toBe('error')
+    if (guard.status === 'error') {
+      expect(guard.error).toBe(
+        'Chat generation settings are incomplete. Missing: Configuration confirmation, Jailbreak toggle, Mode, Global module, Chat module, Character module, Integrated module.',
+      )
+    }
   })
 
   it('ignores global moduleIntergration when the selected preset does not link integrated modules', () => {

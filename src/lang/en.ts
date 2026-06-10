@@ -32,6 +32,9 @@ export const languageEnglish = {
     requestLogRemovedDesc: 'This request log removes when client is refreshed or reloaded.',
     coldStorageWriteFailed: 'Cold storage write failed. Your chat data has been preserved.',
     coldStorageVerifyFailed: 'Cold storage verification failed. Your chat data has been preserved.',
+    chatGenerationSettingsIncomplete: 'Chat generation settings are incomplete.',
+    chatGenerationSettingsIncompleteWithMissing: (missing: string) =>
+      `Chat generation settings are incomplete. Missing: ${missing}.`,
   },
   showHelp: 'Show Help',
   help: {

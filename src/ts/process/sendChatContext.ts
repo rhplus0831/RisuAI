@@ -12,6 +12,8 @@ import { selectedCharID } from '../stores.svelte'
 import { ChatTokenizer } from '../tokenizer'
 import { parseToggleSyntax } from '../util'
 import { runOptimisticCommandSequence, toMessageSnapshot } from '../chatCommands'
+import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
+import type { ChatGenerationRequiredSidebarToggle } from '../chatGenerationSettings'
 import {
   canUseServerCommands,
   replaceMessagesCommand,
@@ -96,12 +98,11 @@ function locateSendSnapshotChatIndex(character: character, snapshot: SendRollbac
 }
 
 /**
- * Run the sendChat entry-context setup: optional preset-chain switch on
- * fresh calls, stats counter, character + chat lookup, lastInteraction
- * stamp, chatId backfill, promptInfo seed (gated on
+ * Run the sendChat entry-context setup: legacy preset-chain switch on
+ * non-server-backed fresh calls, stats counter, character + chat lookup,
+ * lastInteraction stamp, chatId backfill, promptInfo seed (gated on
  * `promptInfoInsideChat`), and tokenizer creation. Mutates DBState
- * (`statics.messages`, character `lastInteraction`, message `chatId`)
- * and may call `changeToPreset` as a side effect.
+ * (`statics.messages`, character `lastInteraction`, message `chatId`).
  *
  * The coordinator handles the closures (`throwError`,
  * `runCurrentChatFunction`, etc.) and the `doingChat` lifecycle around
@@ -112,8 +113,9 @@ export function setupSendChatContext(args: {
   chatAdditonalTokens?: number
 }): SendChatContextResult {
   const { chatProcessIndex, chatAdditonalTokens: argChatAdditonalTokens } = args
+  const serverBacked = canUseServerCommands()
 
-  if (chatProcessIndex === -1 && DBState.db.presetChain) {
+  if (!serverBacked && chatProcessIndex === -1 && DBState.db.presetChain) {
     const names = DBState.db.presetChain.split(',').map((v) => v.trim())
     const randomSelect = Math.floor(Math.random() * names.length)
     const ele = names[randomSelect]
@@ -129,7 +131,6 @@ export function setupSendChatContext(args: {
     }
   }
 
-  const serverBacked = canUseServerCommands()
   if (!serverBacked) {
     DBState.db.statics.messages += 1
   }
@@ -209,27 +210,7 @@ export function setupSendChatContext(args: {
   const nowChatroom = DBState.db.characters[selectedChar]
   const selectedChat = nowChatroom.chatPage
 
-  let promptInfo: MessagePresetInfo = {}
-  if (DBState.db.promptInfoInsideChat) {
-    const initialPresetName = DBState.db.botPresets[DBState.db.botPresetsId]?.name ?? ''
-    const initialPromptToggles = parseToggleSyntax(
-      DBState.db.customPromptTemplateToggle + getModuleToggles(),
-    ).flatMap((toggle) => {
-      const raw = DBState.db.globalChatVariables[`toggle_${toggle.key}`]
-      if (toggle.type === 'select' || toggle.type === 'text') {
-        return [{ key: toggle.value, value: toggle.options[raw] }]
-      }
-      if (raw === '1') {
-        return [{ key: toggle.value, value: 'ON' }]
-      }
-      return []
-    })
-
-    promptInfo = {
-      promptName: initialPresetName,
-      promptToggles: initialPromptToggles,
-    }
-  }
+  const promptInfo = createInitialPromptInfo(serverBacked)
 
   let caculatedChatTokens = 0
   if (DBState.db.aiModel.startsWith('gpt')) {
@@ -253,4 +234,65 @@ export function setupSendChatContext(args: {
     tokenizer,
     maxContextTokens,
   }
+}
+
+function createInitialPromptInfo(serverBacked: boolean): MessagePresetInfo {
+  if (!DBState.db.promptInfoInsideChat) return {}
+  return serverBacked ? createServerBackedPromptInfo() : createLegacyPromptInfo()
+}
+
+function createServerBackedPromptInfo(): MessagePresetInfo {
+  const activeSettings = resolveActiveChatGenerationSettings()
+  return {
+    promptName: stringProperty(activeSettings.preset, 'name'),
+    promptToggles: activeSettings.requiredSidebarToggles.flatMap((toggle) =>
+      formatChatScopedPromptToggle(toggle, activeSettings.settings?.sidebarToggles?.[toggle.key]),
+    ),
+  }
+}
+
+function formatChatScopedPromptToggle(
+  toggle: ChatGenerationRequiredSidebarToggle,
+  raw: string | undefined,
+): { key: string; value: string }[] {
+  if (toggle.kind === 'select') {
+    if (typeof raw !== 'string') return []
+    const optionIndex = Number(raw)
+    const selectedOption = Number.isInteger(optionIndex) ? toggle.options[optionIndex] : undefined
+    return [{ key: toggle.label, value: selectedOption ?? raw }]
+  }
+  if (toggle.kind === 'text' || toggle.kind === 'textarea') {
+    return typeof raw === 'string' ? [{ key: toggle.label, value: raw }] : []
+  }
+  if (raw === '1') {
+    return [{ key: toggle.label, value: 'ON' }]
+  }
+  return []
+}
+
+function createLegacyPromptInfo(): MessagePresetInfo {
+  const initialPresetName = DBState.db.botPresets[DBState.db.botPresetsId]?.name ?? ''
+  const initialPromptToggles = parseToggleSyntax(
+    DBState.db.customPromptTemplateToggle + getModuleToggles(),
+  ).flatMap((toggle) => {
+    const raw = DBState.db.globalChatVariables[`toggle_${toggle.key}`]
+    if (toggle.type === 'select' || toggle.type === 'text') {
+      return [{ key: toggle.value, value: toggle.options[raw] }]
+    }
+    if (raw === '1') {
+      return [{ key: toggle.value, value: 'ON' }]
+    }
+    return []
+  })
+
+  return {
+    promptName: initialPresetName,
+    promptToggles: initialPromptToggles,
+  }
+}
+
+function stringProperty(value: unknown, key: string): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
+  const raw = (value as Record<string, unknown>)[key]
+  return typeof raw === 'string' ? raw : ''
 }
