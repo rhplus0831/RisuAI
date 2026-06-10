@@ -13,6 +13,7 @@ const chatListMocks = vi.hoisted(() => {
   let serverCommandsEnabled = false
   let pendingCreateCommand: DeferredCommand | undefined
   let pendingDeleteCommand: DeferredCommand | undefined
+  let pendingSelectCommand: DeferredCommand | undefined
 
   function createDeferredCommand(): DeferredCommand {
     let resolveCommand!: (value: unknown) => void
@@ -45,6 +46,11 @@ const chatListMocks = vi.hoisted(() => {
     return pendingDeleteCommand
   }
 
+  function createDeferredSelectCommand(): DeferredCommand {
+    pendingSelectCommand = createDeferredCommand()
+    return pendingSelectCommand
+  }
+
   function okCommandResult() {
     return {
       revision: 1,
@@ -70,6 +76,7 @@ const chatListMocks = vi.hoisted(() => {
     createChatFolderCommand: unusedCommand,
     createDeferredCreateCommand,
     createDeferredDeleteCommand,
+    createDeferredSelectCommand,
     deleteChatCommand: vi.fn((input: unknown) => {
       if (!pendingDeleteCommand) {
         throw new Error('No deferred delete-chat command was prepared')
@@ -91,6 +98,7 @@ const chatListMocks = vi.hoisted(() => {
     resetCommandHarness: () => {
       pendingCreateCommand = undefined
       pendingDeleteCommand = undefined
+      pendingSelectCommand = undefined
       serverCommandsEnabled = false
     },
     runServerCommand: vi.fn(
@@ -115,7 +123,16 @@ const chatListMocks = vi.hoisted(() => {
       serverCommandsEnabled = enabled
     },
     truncateMessagesCommand: unusedCommand,
-    updateChatCommand: unusedCommand,
+    updateChatCommand: vi.fn((input: unknown) => {
+      if ((input as { select?: boolean }).select) {
+        if (!pendingSelectCommand) {
+          throw new Error('No deferred select-chat command was prepared')
+        }
+        pendingSelectCommand.input = input
+        return pendingSelectCommand.promise
+      }
+      return okCommandResult()
+    }),
     updateChatFolderCommand: unusedCommand,
     updateMessageCommand: unusedCommand,
     watchServerBackedChatMetadata: vi.fn(() => vi.fn()),
@@ -205,6 +222,7 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
 
 import ChatList from './ChatList.svelte'
 import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import { currentChatSelectionSnapshot, dispatchSelectChat } from 'src/ts/chatCommands'
 import type { Chat, character } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -300,6 +318,28 @@ function selectedCharacter(): character {
   return DBState.db.characters[0]
 }
 
+function removeCharacterId(chara: character): void {
+  ;(chara as { chaId?: string }).chaId = undefined
+}
+
+function changeChatToLikeReal(idOrIndex: string | number): void {
+  const previous = currentChatSelectionSnapshot()
+  const chara = selectedCharacter()
+  let index = -1
+
+  if (typeof idOrIndex === 'number') {
+    index = idOrIndex
+  } else {
+    index = chara.chats.findIndex((chat) => chat.id === idOrIndex)
+  }
+
+  if (index < 0) return
+
+  chara.chatPage = index
+  const chatId = chara.chats[index]?.id
+  if (chatId) dispatchSelectChat(chatId, previous)
+}
+
 async function flushCommandWork(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
@@ -313,6 +353,7 @@ describe('ChatList DOM contract harness', () => {
     document.body.appendChild(target)
     chatListMocks.resetCommandHarness()
     vi.clearAllMocks()
+    chatListMocks.changeChatTo.mockImplementation(changeChatToLikeReal)
   })
 
   afterEach(() => {
@@ -341,6 +382,69 @@ describe('ChatList DOM contract harness', () => {
     expect(rowByText('Modal Chat A').classList.contains('bg-selected')).toBe(false)
     expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(false)
     expect(chatListMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
+  })
+
+  it('navigates when selecting a modal row and reflects the route-applied selection', async () => {
+    const chara = seedModalDatabase()
+    const close = vi.fn()
+
+    component = mount(ChatList, { target, props: { close } })
+    await tick()
+
+    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(true)
+
+    rowByText('Modal Chat C').click()
+    await tick()
+
+    expect(chatListMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-c')
+    expect(chatListMocks.updateChatCommand).not.toHaveBeenCalled()
+    expect(close).toHaveBeenCalledOnce()
+    expect(chara.chatPage).toBe(1)
+    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(true)
+    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(false)
+
+    chara.chatPage = 2
+    await tick()
+
+    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(false)
+    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(true)
+  })
+
+  it('optimistically selects a modal row through command fallback and restores on failure', async () => {
+    const chara = seedModalDatabase()
+    chara.chatPage = 0
+    removeCharacterId(chara)
+    chatListMocks.setServerCommandsEnabled(true)
+    const command = chatListMocks.createDeferredSelectCommand()
+    const close = vi.fn()
+
+    component = mount(ChatList, { target, props: { close } })
+    await tick()
+
+    expect(rowByText('Modal Chat A').classList.contains('bg-selected')).toBe(true)
+    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(false)
+
+    rowByText('Modal Chat C').click()
+    await tick()
+
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
+    expect(close).toHaveBeenCalledOnce()
+    expect(command.settled).toBe(false)
+    expect(command.input).toMatchObject({
+      chatId: 'chat-c',
+      patch: {},
+      select: true,
+    })
+    expect(chara.chatPage).toBe(2)
+    expect(rowByText('Modal Chat A').classList.contains('bg-selected')).toBe(false)
+    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(true)
+
+    command.resolve({ error: 'select failed', status: 'error' })
+    await flushCommandWork()
+
+    expect(chara.chatPage).toBe(0)
+    expect(rowByText('Modal Chat A').classList.contains('bg-selected')).toBe(true)
+    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(false)
   })
 
   it('shows a newly created modal chat before the command resolves and closes', async () => {

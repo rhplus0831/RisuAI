@@ -28,6 +28,7 @@ const sidebarMocks = vi.hoisted(() => {
   let serverCommandsEnabled = false
   let pendingCreateCommand: DeferredCommand | undefined
   let pendingDeleteCommand: DeferredCommand | undefined
+  let pendingSelectCommand: DeferredCommand | undefined
 
   function createDeferredCommand(): DeferredCommand {
     let resolveCommand!: (value: unknown) => void
@@ -60,6 +61,11 @@ const sidebarMocks = vi.hoisted(() => {
     return pendingDeleteCommand
   }
 
+  function createDeferredSelectCommand(): DeferredCommand {
+    pendingSelectCommand = createDeferredCommand()
+    return pendingSelectCommand
+  }
+
   function okCommandResult() {
     return {
       revision: 1,
@@ -88,6 +94,7 @@ const sidebarMocks = vi.hoisted(() => {
     }),
     createDeferredCreateCommand,
     createDeferredDeleteCommand,
+    createDeferredSelectCommand,
     createChatCopyName: vi.fn((name: string, suffix: string) => `${name} ${suffix}`),
     createChatFolderCommand: unusedCommand,
     deleteChatCommand: vi.fn((input: unknown) => {
@@ -104,7 +111,6 @@ const sidebarMocks = vi.hoisted(() => {
     dispatchForkChat: vi.fn(),
     dispatchReorderChats: vi.fn(),
     dispatchReorderChatsByIds: vi.fn(),
-    dispatchSelectChat: vi.fn(),
     dispatchUpdateChat: vi.fn(),
     dispatchUpdateChatFolder: vi.fn(),
     exportAllChats: vi.fn(),
@@ -119,6 +125,7 @@ const sidebarMocks = vi.hoisted(() => {
     resetCommandHarness: () => {
       pendingCreateCommand = undefined
       pendingDeleteCommand = undefined
+      pendingSelectCommand = undefined
       serverCommandsEnabled = false
     },
     runServerCommand: vi.fn(
@@ -144,7 +151,16 @@ const sidebarMocks = vi.hoisted(() => {
       serverCommandsEnabled = enabled
     },
     truncateMessagesCommand: unusedCommand,
-    updateChatCommand: unusedCommand,
+    updateChatCommand: vi.fn((input: unknown) => {
+      if ((input as { select?: boolean }).select) {
+        if (!pendingSelectCommand) {
+          throw new Error('No deferred select-chat command was prepared')
+        }
+        pendingSelectCommand.input = input
+        return pendingSelectCommand.promise
+      }
+      return okCommandResult()
+    }),
     updateChatFolderCommand: unusedCommand,
     updateMessageCommand: unusedCommand,
     watchServerBackedChatMetadata: vi.fn(() => vi.fn()),
@@ -192,7 +208,6 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
     dispatchForkChat: sidebarMocks.dispatchForkChat,
     dispatchReorderChats: sidebarMocks.dispatchReorderChats,
     dispatchReorderChatsByIds: sidebarMocks.dispatchReorderChatsByIds,
-    dispatchSelectChat: sidebarMocks.dispatchSelectChat,
     dispatchUpdateChat: sidebarMocks.dispatchUpdateChat,
     dispatchUpdateChatFolder: sidebarMocks.dispatchUpdateChatFolder,
     runOptimisticCommandSequence: sidebarMocks.runOptimisticCommandSequence,
@@ -362,6 +377,10 @@ function selectedCharacter(): character {
   return DBState.db.characters[0]
 }
 
+function removeCharacterId(chara: character): void {
+  ;(chara as { chaId?: string }).chaId = undefined
+}
+
 async function flushCommandWork(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
@@ -404,6 +423,65 @@ describe('SideChatList DOM contract harness', () => {
     expect(rowByText('Root Chat A').classList.contains('bg-selected')).toBe(false)
     expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(false)
     expect(sidebarMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
+  })
+
+  it('navigates when selecting a sidebar row and reflects the route-applied selection', async () => {
+    const chara = seedSidebarDatabase()
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
+
+    rowByText('Root Chat B').click()
+    await tick()
+
+    expect(sidebarMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-root-b')
+    expect(sidebarMocks.updateChatCommand).not.toHaveBeenCalled()
+    expect(chara.chatPage).toBe(1)
+    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
+    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(false)
+
+    chara.chatPage = 2
+    await tick()
+
+    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(false)
+    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(true)
+  })
+
+  it('optimistically selects a sidebar row through command fallback and restores on failure', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chatPage = 0
+    removeCharacterId(chara)
+    sidebarMocks.setServerCommandsEnabled(true)
+    const command = sidebarMocks.createDeferredSelectCommand()
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    expect(rowByText('Root Chat A').classList.contains('bg-selected')).toBe(true)
+    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(false)
+
+    rowByText('Root Chat B').click()
+    await tick()
+
+    expect(sidebarMocks.navigate).not.toHaveBeenCalled()
+    expect(command.settled).toBe(false)
+    expect(command.input).toMatchObject({
+      chatId: 'chat-root-b',
+      patch: {},
+      select: true,
+    })
+    expect(chara.chatPage).toBe(2)
+    expect(rowByText('Root Chat A').classList.contains('bg-selected')).toBe(false)
+    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(true)
+
+    command.resolve({ error: 'select failed', status: 'error' })
+    await flushCommandWork()
+
+    expect(chara.chatPage).toBe(0)
+    expect(rowByText('Root Chat A').classList.contains('bg-selected')).toBe(true)
+    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(false)
   })
 
   it('shows a newly created sidebar chat before the command resolves', async () => {
