@@ -27,8 +27,9 @@ const sidebarMocks = vi.hoisted(() => {
 
   let serverCommandsEnabled = false
   let pendingCreateCommand: DeferredCommand | undefined
+  let pendingDeleteCommand: DeferredCommand | undefined
 
-  function createDeferredCreateCommand(): DeferredCommand {
+  function createDeferredCommand(): DeferredCommand {
     let resolveCommand!: (value: unknown) => void
     let rejectCommand!: (reason?: unknown) => void
     const command: DeferredCommand = {
@@ -46,8 +47,17 @@ const sidebarMocks = vi.hoisted(() => {
       },
       settled: false,
     }
-    pendingCreateCommand = command
     return command
+  }
+
+  function createDeferredCreateCommand(): DeferredCommand {
+    pendingCreateCommand = createDeferredCommand()
+    return pendingCreateCommand
+  }
+
+  function createDeferredDeleteCommand(): DeferredCommand {
+    pendingDeleteCommand = createDeferredCommand()
+    return pendingDeleteCommand
   }
 
   function okCommandResult() {
@@ -66,7 +76,6 @@ const sidebarMocks = vi.hoisted(() => {
     alertError: vi.fn(),
     alertNormal: vi.fn(),
     alertSelect: vi.fn(async () => '0'),
-    applyOptimisticDeletedChat: vi.fn(() => ({ applied: false, selectedChatId: null })),
     appendMessageCommand: unusedCommand,
     changeChatTo: vi.fn(),
     canUseServerCommands: vi.fn(() => serverCommandsEnabled),
@@ -78,13 +87,19 @@ const sidebarMocks = vi.hoisted(() => {
       return pendingCreateCommand.promise
     }),
     createDeferredCreateCommand,
+    createDeferredDeleteCommand,
     createChatCopyName: vi.fn((name: string, suffix: string) => `${name} ${suffix}`),
     createChatFolderCommand: unusedCommand,
-    deleteChatCommand: unusedCommand,
+    deleteChatCommand: vi.fn((input: unknown) => {
+      if (!pendingDeleteCommand) {
+        throw new Error('No deferred delete-chat command was prepared')
+      }
+      pendingDeleteCommand.input = input
+      return pendingDeleteCommand.promise
+    }),
     deleteChatFolderCommand: unusedCommand,
     deleteMessageCommand: unusedCommand,
     dispatchCreateChatFolder: vi.fn(),
-    dispatchDeleteChat: vi.fn(),
     dispatchDeleteChatFolder: vi.fn(),
     dispatchForkChat: vi.fn(),
     dispatchReorderChats: vi.fn(),
@@ -103,6 +118,7 @@ const sidebarMocks = vi.hoisted(() => {
     replaceMessagesCommand: unusedCommand,
     resetCommandHarness: () => {
       pendingCreateCommand = undefined
+      pendingDeleteCommand = undefined
       serverCommandsEnabled = false
     },
     runServerCommand: vi.fn(
@@ -171,9 +187,7 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/chatCommands')>()
   return {
     ...actual,
-    applyOptimisticDeletedChat: sidebarMocks.applyOptimisticDeletedChat,
     dispatchCreateChatFolder: sidebarMocks.dispatchCreateChatFolder,
-    dispatchDeleteChat: sidebarMocks.dispatchDeleteChat,
     dispatchDeleteChatFolder: sidebarMocks.dispatchDeleteChatFolder,
     dispatchForkChat: sidebarMocks.dispatchForkChat,
     dispatchReorderChats: sidebarMocks.dispatchReorderChats,
@@ -337,6 +351,13 @@ function createButton(): HTMLButtonElement {
   return button!
 }
 
+function deleteButtonForRow(row: HTMLElement): HTMLElement {
+  const actions = Array.from(row.querySelectorAll<HTMLElement>('[role="button"]'))
+  const action = actions[actions.length - 1]
+  expect(action, 'delete chat action').toBeTruthy()
+  return action!
+}
+
 function selectedCharacter(): character {
   return DBState.db.characters[0]
 }
@@ -447,5 +468,100 @@ describe('SideChatList DOM contract harness', () => {
     expect(selectedCharacter().chatPage).toBe(1)
     expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
     expect(target.textContent).not.toContain('New Chat 4')
+  })
+
+  it('removes a confirmed root sidebar chat before the delete command resolves', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chatPage = 2
+    sidebarMocks.setServerCommandsEnabled(true)
+    sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
+    const command = sidebarMocks.createDeferredDeleteCommand()
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(true)
+
+    deleteButtonForRow(rowByText('Root Chat B')).click()
+    await flushCommandWork()
+
+    expect(command.settled).toBe(false)
+    expect(command.input).toMatchObject({ chatId: 'chat-root-b' })
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
+      'Root Chat A',
+      'Foldered Chat',
+    ])
+    expect(selectedCharacter().chatPage).toBe(1)
+    expect(target.textContent).not.toContain('Root Chat B')
+    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
+    expect(sidebarMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-foldered', {
+      replace: true,
+    })
+
+    command.resolve({ revision: 12, status: 'ok' })
+    await flushCommandWork()
+  })
+
+  it('restores a failed optimistic foldered sidebar chat delete in state and DOM', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+    sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
+    const command = sidebarMocks.createDeferredDeleteCommand()
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
+
+    deleteButtonForRow(rowByText('Foldered Chat')).click()
+    await flushCommandWork()
+
+    expect(command.settled).toBe(false)
+    expect(command.input).toMatchObject({ chatId: 'chat-foldered' })
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
+      'Root Chat A',
+      'Root Chat B',
+    ])
+    expect(selectedCharacter().chatPage).toBe(1)
+    expect(target.textContent).not.toContain('Foldered Chat')
+    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(true)
+
+    command.resolve({ error: 'delete failed', status: 'error' })
+    await flushCommandWork()
+
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
+      'Root Chat A',
+      'Foldered Chat',
+      'Root Chat B',
+    ])
+    expect(selectedCharacter().chatPage).toBe(1)
+    expect(chatRows().map((row) => row.textContent?.trim())).toEqual([
+      'Foldered Chat',
+      'Root Chat A',
+      'Root Chat B',
+    ])
+    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
+  })
+
+  it('reports the one-chat sidebar delete guard and leaves the row unchanged', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chatPage = 0
+    chara.chatFolders = []
+    chara.chats = [makeChat('chat-only', 'Only Chat')]
+    sidebarMocks.setServerCommandsEnabled(true)
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    deleteButtonForRow(rowByText('Only Chat')).click()
+    await tick()
+
+    expect(sidebarMocks.alertError).toHaveBeenCalledWith('Only one chat')
+    expect(sidebarMocks.alertConfirm).not.toHaveBeenCalled()
+    expect(sidebarMocks.deleteChatCommand).not.toHaveBeenCalled()
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Only Chat'])
+    expect(selectedCharacter().chatPage).toBe(0)
+    expect(chatRows().map((row) => row.textContent?.trim())).toEqual(['Only Chat'])
+    expect(rowByText('Only Chat').classList.contains('bg-selected')).toBe(true)
   })
 })

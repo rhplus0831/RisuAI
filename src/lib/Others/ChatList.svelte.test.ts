@@ -12,8 +12,9 @@ const chatListMocks = vi.hoisted(() => {
 
   let serverCommandsEnabled = false
   let pendingCreateCommand: DeferredCommand | undefined
+  let pendingDeleteCommand: DeferredCommand | undefined
 
-  function createDeferredCreateCommand(): DeferredCommand {
+  function createDeferredCommand(): DeferredCommand {
     let resolveCommand!: (value: unknown) => void
     let rejectCommand!: (reason?: unknown) => void
     const command: DeferredCommand = {
@@ -31,8 +32,17 @@ const chatListMocks = vi.hoisted(() => {
       },
       settled: false,
     }
-    pendingCreateCommand = command
     return command
+  }
+
+  function createDeferredCreateCommand(): DeferredCommand {
+    pendingCreateCommand = createDeferredCommand()
+    return pendingCreateCommand
+  }
+
+  function createDeferredDeleteCommand(): DeferredCommand {
+    pendingDeleteCommand = createDeferredCommand()
+    return pendingDeleteCommand
   }
 
   function okCommandResult() {
@@ -47,7 +57,6 @@ const chatListMocks = vi.hoisted(() => {
   return {
     alertConfirm: vi.fn(async () => false),
     alertError: vi.fn(),
-    applyOptimisticDeletedChat: vi.fn(() => ({ applied: false, selectedChatId: null })),
     appendMessageCommand: unusedCommand,
     canUseServerCommands: vi.fn(() => serverCommandsEnabled),
     changeChatTo: vi.fn(),
@@ -60,10 +69,16 @@ const chatListMocks = vi.hoisted(() => {
     }),
     createChatFolderCommand: unusedCommand,
     createDeferredCreateCommand,
-    deleteChatCommand: unusedCommand,
+    createDeferredDeleteCommand,
+    deleteChatCommand: vi.fn((input: unknown) => {
+      if (!pendingDeleteCommand) {
+        throw new Error('No deferred delete-chat command was prepared')
+      }
+      pendingDeleteCommand.input = input
+      return pendingDeleteCommand.promise
+    }),
     deleteChatFolderCommand: unusedCommand,
     deleteMessageCommand: unusedCommand,
-    dispatchDeleteChat: vi.fn(),
     dispatchUpdateChat: vi.fn(),
     exportChat: vi.fn(),
     forkChatCommand: unusedCommand,
@@ -75,6 +90,7 @@ const chatListMocks = vi.hoisted(() => {
     replaceMessagesCommand: unusedCommand,
     resetCommandHarness: () => {
       pendingCreateCommand = undefined
+      pendingDeleteCommand = undefined
       serverCommandsEnabled = false
     },
     runServerCommand: vi.fn(
@@ -129,8 +145,6 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/chatCommands')>()
   return {
     ...actual,
-    applyOptimisticDeletedChat: chatListMocks.applyOptimisticDeletedChat,
-    dispatchDeleteChat: chatListMocks.dispatchDeleteChat,
     dispatchUpdateChat: chatListMocks.dispatchUpdateChat,
   }
 })
@@ -255,8 +269,11 @@ function seedModalDatabase(): character {
 }
 
 function chatRows(): HTMLButtonElement[] {
-  return Array.from(target.querySelectorAll<HTMLButtonElement>('button')).filter((button) =>
-    /Modal Chat|New Chat/.test(button.textContent ?? ''),
+  return Array.from(target.querySelectorAll<HTMLButtonElement>('button')).filter(
+    (button) =>
+      Boolean(button.querySelector('span')) &&
+      button.classList.contains('items-center') &&
+      button.classList.contains('border-t-1'),
   )
 }
 
@@ -270,6 +287,13 @@ function createButton(): HTMLButtonElement {
   const button = target.querySelector<HTMLButtonElement>('div.flex.mt-2.items-center > button')
   expect(button, 'create chat button').toBeTruthy()
   return button!
+}
+
+function deleteButtonForRow(row: HTMLElement): HTMLElement {
+  const actions = Array.from(row.querySelectorAll<HTMLElement>('[role="button"]'))
+  const action = actions[actions.length - 1]
+  expect(action, 'delete chat action').toBeTruthy()
+  return action!
 }
 
 function selectedCharacter(): character {
@@ -385,5 +409,70 @@ describe('ChatList DOM contract harness', () => {
     expect(selectedCharacter().chatPage).toBe(1)
     expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(true)
     expect(target.textContent).not.toContain('New Chat 4')
+  })
+
+  it('removes a confirmed modal chat before the command resolves and restores on failure', async () => {
+    seedModalDatabase()
+    chatListMocks.setServerCommandsEnabled(true)
+    chatListMocks.alertConfirm.mockResolvedValueOnce(true)
+    const command = chatListMocks.createDeferredDeleteCommand()
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+
+    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(true)
+
+    deleteButtonForRow(rowByText('Modal Chat B')).click()
+    await flushCommandWork()
+
+    expect(command.settled).toBe(false)
+    expect(command.input).toMatchObject({ chatId: 'chat-b' })
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
+      'Modal Chat A',
+      'Modal Chat C',
+    ])
+    expect(selectedCharacter().chatPage).toBe(1)
+    expect(target.textContent).not.toContain('Modal Chat B')
+    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(true)
+    expect(chatListMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-c', {
+      replace: true,
+    })
+
+    command.resolve({ error: 'delete failed', status: 'error' })
+    await flushCommandWork()
+
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
+      'Modal Chat A',
+      'Modal Chat B',
+      'Modal Chat C',
+    ])
+    expect(selectedCharacter().chatPage).toBe(1)
+    expect(chatRows().map((row) => row.textContent?.trim())).toEqual([
+      'Modal Chat A',
+      'Modal Chat B',
+      'Modal Chat C',
+    ])
+    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(true)
+  })
+
+  it('reports the one-chat modal delete guard and leaves the row unchanged', async () => {
+    const chara = seedModalDatabase()
+    chara.chatPage = 0
+    chara.chats = [makeChat('chat-only', 'Only Chat')]
+    chatListMocks.setServerCommandsEnabled(true)
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+
+    deleteButtonForRow(rowByText('Only Chat')).click()
+    await tick()
+
+    expect(chatListMocks.alertError).toHaveBeenCalledWith('Only one chat')
+    expect(chatListMocks.alertConfirm).not.toHaveBeenCalled()
+    expect(chatListMocks.deleteChatCommand).not.toHaveBeenCalled()
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Only Chat'])
+    expect(selectedCharacter().chatPage).toBe(0)
+    expect(chatRows().map((row) => row.textContent?.trim())).toEqual(['Only Chat'])
+    expect(rowByText('Only Chat').classList.contains('bg-selected')).toBe(true)
   })
 })
