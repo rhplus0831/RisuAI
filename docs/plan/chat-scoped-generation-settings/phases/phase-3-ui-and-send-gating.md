@@ -1,24 +1,23 @@
 # Phase 3: UI & Send Gating
 
-Status: planned.
+Status: complete.
 
 Goal: make the visible chat controls edit the active chat and block generation
 early enough that the user's draft text and chat history are untouched.
 
-## Scope
+## Completed Scope
 
-- Add a frontend resolver for active-chat generation settings, missing reasons,
-  display labels, and update patches.
-- Make sidebar persona and preset controls show the active chat's selection or
-  an unconfigured state.
-- Make picker selection update chat metadata instead of global selection state.
-- Make jailbreak and all displayed prompt/module toggles read/write the active
-  chat settings with optimistic patch and rollback.
-- Block sends in the UI before clearing the composer or appending a user
-  message.
-- Add a lower-level `sendChat` guard before lifecycle work so hotkeys, direct
-  callers, slash commands, continue, regenerate, and preview cannot bypass the
-  check.
+- Added the active-chat frontend helper for generation settings, missing
+  reasons, display labels, and update patches.
+- Added chat-scoped picker mode so preset/persona selection writes active-chat
+  metadata instead of global selection state.
+- Made sidebar preset, persona, jailbreak, and displayed sidebar toggle controls
+  read/write the active chat's `generationSettings`.
+- Added the client pre-append guard, the lower-level `sendChat` guard, and the
+  direct append guard so incomplete chats block before draft clearing,
+  optimistic user-message append, or send lifecycle work.
+- Kept server-backed sends from letting `presetChain` or `promptInfo` override
+  the chat-scoped preset/toggle values.
 
 ## Anchors
 
@@ -36,7 +35,7 @@ early enough that the user's draft text and chat history are untouched.
 - `src/ts/process/serverBackedSendChat.ts`
 - `src/lang`
 
-## Target Shape
+## Landed Shape
 
 - Two chats can show different persona, preset, jailbreak, and toggle values
   while switching between them.
@@ -70,22 +69,17 @@ early enough that the user's draft text and chat history are untouched.
 
 ## Validation
 
+Focused Phase 3 validation passed:
+
 ```bash
-pnpm exec vitest run src/ts/chatCommands.test.ts \
-  src/ts/process/__tests__/sendChatContext.test.ts \
-  src/ts/process/__tests__/sendChat.*.test.ts
-pnpm exec vitest run src/lib/SideBars/*.test.ts \
-  src/lib/ChatScreens/*.test.ts
-pnpm exec tsc -p tsconfig.client-lib.json
-pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+pnpm exec vitest run src/ts/activeChatGenerationSettings.test.ts src/lib/SideBars/chatGenerationSettingsControls.test.ts src/lib/Setting/pickerGenerationSettings.test.ts src/ts/chatCommands.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts src/ts/process/__tests__/sendChatContext.test.ts
 ```
 
-Adjust the component-test list to the tests that exist when this phase starts.
+Result: `6` test files passed, `87` tests passed.
 
-## Risks
+The broader regression and TypeScript proof remains planned for Phase 5.
 
-- The current preset/persona modals mix "select for current use" with library
-  management. Chat-selection mode must avoid accidental global apply while
-  preserving edit/reorder/export actions.
-- Guarding after input clearing or after `doingChat` changes would create a
-  visible failed-send artifact even though the server blocks correctly.
+## Remaining Work
+
+- Import, delete, fork, copy, and new-chat lifecycle behavior remains Phase 4.
+- Full planned verification remains Phase 5.
