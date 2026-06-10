@@ -81,6 +81,7 @@ import {
   requireLoadoutIndex,
 } from '../commands/loadouts.js'
 import {
+  type CharacterRecord,
   buildPatchedCharacterCollectionRow,
   createCharacterRecord,
   ensureCharacterCollection,
@@ -105,6 +106,7 @@ import {
   readChatFolderId,
   readChatFolderIdList,
   readChatFolderPatch,
+  readChatGenerationSettingsSave,
   readChatId,
   readChatIdList,
   readChatPatch,
@@ -359,6 +361,28 @@ function writeLorebookTableMutation(
   }
 }
 
+function buildChatGenerationSettingsValidationContext(
+  target: Record<string, unknown>,
+  character: CharacterRecord,
+  chat: Record<string, unknown>,
+) {
+  const characterModuleIds = Array.isArray(character.modules)
+    ? character.modules.filter((id): id is string => typeof id === 'string')
+    : []
+  const chatModuleIds = Array.isArray(chat.modules)
+    ? chat.modules.filter((id): id is string => typeof id === 'string')
+    : []
+
+  return {
+    personas: ensurePersonaCollection(target),
+    presets: ensurePresetCollection(target),
+    modules: ensureModuleRecords(target),
+    enabledModuleIds: ensureEnabledModules(target),
+    characterModuleIds,
+    chatModuleIds,
+  }
+}
+
 const COLLECTION_SCOPED_READS = {
   presets: ['botPresets'],
   presetsWithPromptTemplate: ['botPresets', 'promptTemplate'],
@@ -436,6 +460,7 @@ interface CharacterCommandBody {
 interface ChatCommandBody {
   baseRevision?: unknown
   chat?: unknown
+  generationSettings?: unknown
   patch?: unknown
   deleteKeys?: unknown
   chatIds?: unknown
@@ -2887,6 +2912,12 @@ export function registerCommandRoutes(
               throw new ValidationError(`Unknown chat folder id: ${chat.folderId}`)
             }
           }
+          if (Object.prototype.hasOwnProperty.call(chat, 'generationSettings')) {
+            chat.generationSettings = readChatGenerationSettingsSave(
+              chat.generationSettings,
+              buildChatGenerationSettingsValidationContext(target, character, chat),
+            )
+          }
           chats.unshift(chat)
           if (selectCreated) {
             character.chatPage = 0
@@ -2968,6 +2999,45 @@ export function registerCommandRoutes(
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatUpdated, id: chatId, parentId: character.chaId },
             extra: { chatId, selectedChatId: selectedChatId(character) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/chats/:chatId/generation-settings', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as ChatCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation<{ chatId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        mutate(database, innerDb) {
+          const target = ensureModuleCommandDatabase(database)
+          const characters = normalizeAllCharacterChats(target)
+          const { character, chat } = requireChatLocation(characters, chatId)
+          chat.generationSettings = readChatGenerationSettingsSave(
+            body.generationSettings,
+            buildChatGenerationSettingsValidationContext(target, character, chat),
+          )
+          writeSingleChatRow(innerDb, chatId, chat)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.chatUpdated, id: chatId, parentId: character.chaId },
+            extra: { chatId },
           }
         },
       })
@@ -3109,6 +3179,12 @@ export function registerCommandRoutes(
           }
           if (nextChat.folderId && !folders.some((existing) => existing.id === nextChat.folderId)) {
             throw new ValidationError(`Unknown chat folder id: ${nextChat.folderId}`)
+          }
+          if (Object.prototype.hasOwnProperty.call(nextChat, 'generationSettings')) {
+            nextChat.generationSettings = readChatGenerationSettingsSave(
+              nextChat.generationSettings,
+              buildChatGenerationSettingsValidationContext(target, character, nextChat),
+            )
           }
           chats.unshift(nextChat)
           if (selectFork) {

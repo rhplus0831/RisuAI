@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { createInitialDatabase } from './databaseDefaults.js'
+import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
 import { getSchemaState } from './db.js'
 import {
   COMMAND_EVENT_CATALOG,
@@ -311,7 +312,7 @@ function loadCharactersFromSqlite(db: DatabaseSync): unknown[] {
 
   const chatsByCharId = new Map<string, unknown[]>()
   for (const row of chatRows) {
-    const chat = JSON.parse(row.data_json) as Record<string, unknown>
+    const chat = parseStoredChatRow(row.data_json)
     const list = chatsByCharId.get(row.character_id) ?? []
     list.push(chat)
     chatsByCharId.set(row.character_id, list)
@@ -356,6 +357,7 @@ export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown)
       const chatId = chat.id
       if (typeof chatId !== 'string') continue
       const { message: _msg, hypaV3Data: _hypa, ...chatClean } = chat
+      repairStoredChatGenerationSettings(chatClean)
       insertChat.run(chatId, chaId, j, JSON.stringify(chatClean))
     }
   }
@@ -493,6 +495,7 @@ export function insertCharacterRow(
  *  stripped to match the storage contract (they live in the message store). */
 export function writeSingleChatRow(db: DatabaseSync, chatId: string, chat: JsonRecord): void {
   const { message: _msg, hypaV3Data: _hypa, ...chatClean } = chat
+  repairStoredChatGenerationSettings(chatClean)
   recordTableWrite('chats')
   db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chatClean), chatId)
 }
@@ -549,6 +552,7 @@ export function writeCharacterChatRows(
     const chatId = chat.id
     if (typeof chatId !== 'string') continue
     const { message: _msg, hypaV3Data: _hypa, ...chatClean } = chat
+    repairStoredChatGenerationSettings(chatClean)
     stmt.run(i, JSON.stringify(chatClean), chatId, characterId)
   }
 }
@@ -567,6 +571,7 @@ export function insertCharacterChatRow(
     throw new ValidationError('chat.id must be a non-empty string')
   }
   const { message: _msg, hypaV3Data: _hypa, ...chatClean } = chat
+  repairStoredChatGenerationSettings(chatClean)
   recordTableWrite('chats')
   db.prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)').run(
     chatId,
@@ -1039,7 +1044,7 @@ export function loadSingleCharacterStubRow(
     )
     .all(charRow.id) as unknown as ChatRow[]
   character.chats = chatRows.map((row) => {
-    const chat = JSON.parse(row.data_json) as unknown
+    const chat = parseStoredChatRow(row.data_json)
     if (isRecord(chat)) {
       chat.message = []
       delete chat.hypaV3Data
@@ -1087,6 +1092,12 @@ type JsonRecord = Record<string, unknown>
 
 function isRecord(value: unknown): value is JsonRecord {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function parseStoredChatRow(dataJson: string): unknown {
+  const chat = JSON.parse(dataJson) as unknown
+  if (isRecord(chat)) repairStoredChatGenerationSettings(chat)
+  return chat
 }
 
 function eachChat(database: unknown, visit: (chat: JsonRecord) => void): void {
@@ -1214,7 +1225,7 @@ export function loadPersistedForChatMutation(
 
   const character = JSON.parse(charRow.data_json) as Record<string, unknown>
   if (!isRecord(character)) return loadPersisted(db, dataDir)
-  const chat = JSON.parse(chatRow.data_json) as unknown
+  const chat = parseStoredChatRow(chatRow.data_json)
   const chatRows = db
     .prepare('SELECT id, position FROM chats WHERE character_id = ? ORDER BY position')
     .all(chatRow.character_id) as unknown as Array<Pick<ChatRow, 'id' | 'position'>>
@@ -1685,7 +1696,7 @@ function getChatRowsByIds(db: DatabaseSync, chatIds: readonly string[]): Map<str
       .prepare(`SELECT id, data_json FROM chats WHERE id IN (${placeholders})`)
       .all(...chunk) as unknown as Array<{ id: string; data_json: string }>
     for (const row of rows) {
-      const parsed = JSON.parse(row.data_json) as unknown
+      const parsed = parseStoredChatRow(row.data_json)
       if (isRecord(parsed)) byId.set(row.id, parsed)
     }
   }

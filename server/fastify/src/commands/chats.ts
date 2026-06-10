@@ -1,6 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import {
+  CHAT_GENERATION_SETTINGS_FIELD,
+  resolveChatGenerationSettingsReadiness,
+  type ChatGenerationModuleReference,
+  type ChatGenerationPersonaReference,
+  type ChatGenerationPresetReference,
+  type ChatGenerationSettings,
+} from '../../../../src/ts/chatGenerationSettings.js'
+import { repairStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
+import {
   type CharacterRecord,
   ensureCharacterCollection,
   readCharacterId,
@@ -18,6 +27,7 @@ export interface ChatRecord extends JsonRecord {
   scriptstate?: Record<string, string | number | boolean>
   folderId?: string | null
   modules?: string[]
+  generationSettings?: ChatGenerationSettings
 }
 
 export interface ChatFolderRecord extends JsonRecord {
@@ -32,6 +42,19 @@ export interface ChatLocation {
   characterIndex: number
   chat: ChatRecord
   chatIndex: number
+}
+
+type ChatGenerationPresetWithModuleIntegration = ChatGenerationPresetReference & {
+  moduleIntergration?: unknown
+}
+
+export interface ChatGenerationSettingsValidationContext {
+  personas: readonly ChatGenerationPersonaReference[]
+  presets: readonly ChatGenerationPresetWithModuleIntegration[]
+  modules?: readonly ChatGenerationModuleReference[]
+  enabledModuleIds?: readonly string[]
+  characterModuleIds?: readonly string[]
+  chatModuleIds?: readonly string[]
 }
 
 const ALLOWED_CHAT_PATCH_KEYS = new Set([
@@ -171,6 +194,7 @@ function repairChatRecord(input: unknown, label = 'chat'): ChatRecord {
   chat.note = typeof chat.note === 'string' ? chat.note : ''
   chat.name = typeof chat.name === 'string' && chat.name.trim() ? chat.name : 'New Chat'
   chat.localLore = Array.isArray(chat.localLore) ? chat.localLore : []
+  repairStoredChatGenerationSettings(chat)
   validateChatRecord(chat, label)
   return chat
 }
@@ -300,6 +324,93 @@ export function validateChatScriptstateCommand(
     }
     seenDeleteKeys.add(key)
   }
+}
+
+export function readChatGenerationSettingsSave(
+  input: unknown,
+  context: ChatGenerationSettingsValidationContext,
+  label = CHAT_GENERATION_SETTINGS_FIELD,
+): ChatGenerationSettings {
+  const raw = readJsonObject(input, label)
+  const normalized: ChatGenerationSettings = {}
+
+  for (const key of Object.keys(raw)) {
+    if (
+      key !== 'configured' &&
+      key !== 'personaId' &&
+      key !== 'presetId' &&
+      key !== 'jailbreakToggle' &&
+      key !== 'sidebarToggles'
+    ) {
+      throw new ValidationError(`${label}.${key} is not supported`)
+    }
+  }
+
+  if (hasOwn(raw, 'configured')) {
+    if (typeof raw.configured !== 'boolean') {
+      throw new ValidationError(`${label}.configured must be a boolean`)
+    }
+    normalized.configured = raw.configured
+  }
+
+  if (hasOwn(raw, 'personaId')) {
+    if (typeof raw.personaId !== 'string') {
+      throw new ValidationError(`${label}.personaId must be a string`)
+    }
+    normalized.personaId = raw.personaId
+    if (
+      raw.personaId.trim() !== '' &&
+      !context.personas.some((persona) => persona.id === raw.personaId)
+    ) {
+      throw new ValidationError(`Unknown persona id in ${label}.personaId: ${raw.personaId}`)
+    }
+  }
+
+  if (hasOwn(raw, 'presetId')) {
+    if (typeof raw.presetId !== 'string') {
+      throw new ValidationError(`${label}.presetId must be a string`)
+    }
+    normalized.presetId = raw.presetId
+    if (
+      raw.presetId.trim() !== '' &&
+      !context.presets.some((preset) => preset.id === raw.presetId)
+    ) {
+      throw new ValidationError(`Unknown preset id in ${label}.presetId: ${raw.presetId}`)
+    }
+  }
+
+  if (!hasOwn(raw, 'jailbreakToggle')) {
+    throw new ValidationError(`${label}.jailbreakToggle must be present`)
+  }
+  if (typeof raw.jailbreakToggle !== 'boolean') {
+    throw new ValidationError(`${label}.jailbreakToggle must be a boolean`)
+  }
+  normalized.jailbreakToggle = raw.jailbreakToggle
+
+  if (hasOwn(raw, 'sidebarToggles')) {
+    normalized.sidebarToggles = readSidebarToggleValueMap(
+      raw.sidebarToggles,
+      `${label}.sidebarToggles`,
+    )
+  }
+
+  const selectedPreset = isNonEmptyString(normalized.presetId)
+    ? context.presets.find((preset) => preset.id === normalized.presetId)
+    : undefined
+  const readiness = resolveChatGenerationSettingsReadiness({
+    ...context,
+    settings: normalized,
+    moduleIntegration: readOptionalStringValue(selectedPreset?.moduleIntergration),
+  })
+  if (readiness.staleSidebarToggleKeys.length > 0 && normalized.sidebarToggles) {
+    const pruned = { ...normalized.sidebarToggles }
+    for (const key of readiness.staleSidebarToggleKeys) {
+      delete pruned[key]
+    }
+    normalized.sidebarToggles = pruned
+  }
+
+  return normalized
 }
 
 export function requireChatLocation(
@@ -584,6 +695,39 @@ function validateStringRecord(value: unknown, label: string): void {
       throw new ValidationError(`${label}.${key} must be a string`)
     }
   }
+}
+
+function readSidebarToggleValueMap(value: unknown, label: string): Record<string, string> {
+  if (!isJsonRecord(value)) {
+    throw new ValidationError(`${label} must be an object`)
+  }
+  const normalized: Record<string, string> = {}
+  for (const [key, toggleValue] of Object.entries(value)) {
+    if (key.trim() === '') {
+      throw new ValidationError(`${label} key must be a non-empty string`)
+    }
+    if (typeof toggleValue !== 'string') {
+      throw new ValidationError(`${label}.${key} must be a string`)
+    }
+    normalized[key] = toggleValue
+  }
+  return normalized
+}
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasOwn(value: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key)
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function readOptionalStringValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
 }
 
 function validateScriptstateKey(key: string, label: string): void {

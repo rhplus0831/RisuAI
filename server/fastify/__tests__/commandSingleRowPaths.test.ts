@@ -54,6 +54,8 @@ function seedDatabase(): Record<string, unknown> {
     currentChar: 0,
     theme: 'dark',
     characterOrder: ['char-a', 'char-b'],
+    botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
     modules: [
       { id: 'mod-a', name: 'Module A' },
       { id: 'mod-b', name: 'Module B' },
@@ -408,6 +410,44 @@ describe('Phase 3 single chat-row paths', () => {
     assertCommandMetricGate(metric)
     expectNoChurn(before)
     expect(readChat('chat-a-1').name).toBe('A1 renamed')
+  })
+
+  it('PUT chats/:id/generation-settings writes only the chat row', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric, body } = await runCommand({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a-1/generation-settings',
+      payload: {
+        baseRevision: revision,
+        generationSettings: {
+          configured: true,
+          personaId: 'persona-a',
+          presetId: 'preset-a',
+          jailbreakToggle: false,
+          sidebarToggles: {},
+        },
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-chat-row')
+    expect(metric.writtenTables).toEqual(['chats'])
+    assertCommandMetricGate(metric)
+    expectNoChurn(before)
+    expect(body.event).toMatchObject({
+      type: 'chat.updated',
+      resource: 'characterRow',
+      id: 'chat-a-1',
+      parentId: 'char-a',
+    })
+    expect(readChat('chat-a-1').generationSettings).toEqual({
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    })
   })
 
   it('PATCH chats/:id with select:true co-writes the parent character row', async () => {

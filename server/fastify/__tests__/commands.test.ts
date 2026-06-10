@@ -4111,6 +4111,330 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
   })
 
+  it('persists chat generation settings with explicit off values and prunes stale toggles', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      enabledModules: ['mod-global'],
+      botPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          jailbreak: 'jailbreak text',
+          customPromptTemplateToggle: 'mode=Mode\nnotes=Notes=text',
+          moduleIntergration: 'preset-space',
+        },
+      ],
+      personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
+      modules: [
+        { id: 'mod-global', name: 'Global', description: '', customModuleToggle: 'global=Global' },
+        {
+          id: 'mod-chat',
+          name: 'Chat',
+          description: '',
+          customModuleToggle: 'chatMode=Chat Mode=select=on,off',
+        },
+        {
+          id: 'mod-character',
+          name: 'Character',
+          description: '',
+          customModuleToggle: 'charText=Character Text=text',
+        },
+        {
+          id: 'mod-integrated',
+          namespace: 'preset-space',
+          name: 'Integrated',
+          description: '',
+          customModuleToggle: 'integrated=Integrated=textarea',
+        },
+      ],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          modules: ['mod-character'],
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              modules: ['mod-chat'],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const saved = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationSettings: {
+          configured: true,
+          personaId: 'persona-a',
+          presetId: 'preset-a',
+          jailbreakToggle: false,
+          sidebarToggles: {
+            mode: '0',
+            notes: '',
+            global: '1',
+            chatMode: 'off',
+            charText: '',
+            integrated: '',
+            deleted: '1',
+          },
+        },
+      },
+    })
+
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json()).toMatchObject({
+      revision: revision + 1,
+      chatId: 'chat-a',
+      event: {
+        type: 'chat.updated',
+        resource: 'characterRow',
+        id: 'chat-a',
+        parentId: 'char-a',
+      },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual({
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: '0',
+        notes: '',
+        global: '1',
+        chatMode: 'off',
+        charText: '',
+        integrated: '',
+      },
+    })
+  })
+
+  it('rejects invalid chat generation settings without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+      personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const validBase = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {},
+    }
+    const cases = [
+      {
+        generationSettings: { ...validBase, personaId: 'missing-persona' },
+        error: 'Unknown persona id in generationSettings.personaId: missing-persona',
+      },
+      {
+        generationSettings: { ...validBase, presetId: 'missing-preset' },
+        error: 'Unknown preset id in generationSettings.presetId: missing-preset',
+      },
+      {
+        generationSettings: { ...validBase, sidebarToggles: { mode: 1 } },
+        error: 'generationSettings.sidebarToggles.mode must be a string',
+      },
+      {
+        generationSettings: {
+          configured: true,
+          personaId: 'persona-a',
+          presetId: 'preset-a',
+          sidebarToggles: {},
+        },
+        error: 'generationSettings.jailbreakToggle must be present',
+      },
+    ]
+
+    for (const testCase of cases) {
+      const res = await harness.app.inject({
+        method: 'PUT',
+        url: '/api/v1/commands/chats/chat-a/generation-settings',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          generationSettings: testCase.generationSettings,
+        },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error).toBe(testCase.error)
+    }
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toBeUndefined()
+  })
+
+  it('normalizes malformed stored chat generation settings on bootstrap', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDatabase(harness.app, assertion, {
+      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+      personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            { id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] },
+            { id: 'chat-b', name: 'B chat', note: '', message: [], localLore: [] },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    writeJsonRow('chats', 'chat-a', {
+      ...readJsonRow('chats', 'chat-a'),
+      generationSettings: {
+        configured: true,
+        personaId: 123,
+        presetId: 'preset-a',
+        jailbreakToggle: 'bad',
+        sidebarToggles: {
+          valid: 'on',
+          invalid: 1,
+          '': 'blank-key',
+        },
+        unsupported: 'drop-me',
+      },
+    })
+    writeJsonRow('chats', 'chat-b', {
+      ...readJsonRow('chats', 'chat-b'),
+      generationSettings: {
+        personaId: 123,
+        jailbreakToggle: 'bad',
+        sidebarToggles: { invalid: false },
+        unsupported: 'drop-me',
+      },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+
+    expect(bootstrap.statusCode).toBe(200)
+    const chats = bootstrap.json().database.characters[0].chats as Array<{
+      generationSettings?: Record<string, unknown>
+    }>
+    expect(chats[0].generationSettings).toEqual({
+      configured: true,
+      presetId: 'preset-a',
+      sidebarToggles: { valid: 'on' },
+    })
+    expect(Object.keys(chats[0].generationSettings ?? {}).sort()).toEqual([
+      'configured',
+      'presetId',
+      'sidebarToggles',
+    ])
+    expect(chats[1].generationSettings).toBeUndefined()
+  })
+
+  it('leaves chat generation settings unchanged when global persona and preset selections move', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'Preset A', mainPrompt: 'a' },
+        { id: 'preset-b', name: 'Preset B', mainPrompt: 'b' },
+      ],
+      botPresetsId: 0,
+      personas: [
+        { id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: 'a', note: '' },
+        { id: 'persona-b', name: 'Persona B', icon: '', personaPrompt: 'b', note: '' },
+      ],
+      selectedPersona: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-a',
+                presetId: 'preset-a',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const persona = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/personas/select',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, personaId: 'persona-b' },
+    })
+    expect(persona.statusCode).toBe(200)
+
+    const preset = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: persona.json().revision, presetId: 'preset-b' },
+    })
+    expect(preset.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual({
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    })
+  })
+
   it('rejects chat fork commands without client-supplied fork ids without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

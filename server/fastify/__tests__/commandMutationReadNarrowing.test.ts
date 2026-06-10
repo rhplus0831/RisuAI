@@ -389,6 +389,44 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     expect(scoped.statusCode).toBe(200)
   })
 
+  it('chat generation settings save avoids message and hypa payload reads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+
+    const { result: res, loadCountByTable } = await withServerLoadInstrumentation(() =>
+      command('PUT', `/api/v1/commands/chats/${fixture.hot.chatId}/generation-settings`, {
+        baseRevision: revision,
+        generationSettings: {
+          configured: true,
+          personaId: 'corpus-persona-0',
+          presetId: 'corpus-preset-0',
+          jailbreakToggle: false,
+          sidebarToggles: {},
+        },
+      }),
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(loadCountByTable.messages ?? 0).toBe(0)
+    expect(loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const row = db
+        .prepare('SELECT data_json FROM chats WHERE id = ?')
+        .get(fixture.hot.chatId) as { data_json: string }
+      expect(JSON.parse(row.data_json).generationSettings).toEqual({
+        configured: true,
+        personaId: 'corpus-persona-0',
+        presetId: 'corpus-preset-0',
+        jailbreakToggle: false,
+        sidebarToggles: {},
+      })
+    } finally {
+      db.close()
+    }
+  })
+
   it('L13: single-key plugin-storage PUT/DELETE skip database loads while bulk merge still reads current storage', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)
