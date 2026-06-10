@@ -366,11 +366,58 @@ function createButton(): HTMLButtonElement {
   return button!
 }
 
-function deleteButtonForRow(row: HTMLElement): HTMLElement {
+function rowActionButton(row: HTMLElement, actionIndex: number): HTMLElement {
   const actions = Array.from(row.querySelectorAll<HTMLElement>('[role="button"]'))
-  const action = actions[actions.length - 1]
-  expect(action, 'delete chat action').toBeTruthy()
+  const action = actions[actionIndex]
+  expect(action, `chat row action ${actionIndex}`).toBeTruthy()
   return action!
+}
+
+function editButtonForRow(row: HTMLElement): HTMLElement {
+  return rowActionButton(row, 1)
+}
+
+function deleteButtonForRow(row: HTMLElement): HTMLElement {
+  return rowActionButton(row, row.querySelectorAll<HTMLElement>('[role="button"]').length - 1)
+}
+
+function folderHeader(folder: HTMLElement): HTMLButtonElement {
+  const header = Array.from(folder.children).find(
+    (child): child is HTMLButtonElement => child instanceof HTMLButtonElement,
+  )
+  expect(header, 'folder header').toBeTruthy()
+  return header!
+}
+
+function folderElementByText(text: string): HTMLElement {
+  const folder = Array.from(
+    target.querySelectorAll<HTMLElement>('[data-risu-chat-folder-idx]'),
+  ).find((candidate) => folderHeader(candidate).textContent?.includes(text))
+  expect(folder, `folder row ${text}`).toBeTruthy()
+  return folder!
+}
+
+function folderChatContainer(folder: HTMLElement): HTMLElement {
+  const container = Array.from(folder.children).find(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement && child.classList.contains('risu-chat'),
+  )
+  expect(container, 'folder chat container').toBeTruthy()
+  return container!
+}
+
+function inputByValue(value: string): HTMLInputElement {
+  const input = Array.from(target.querySelectorAll<HTMLInputElement>('input')).find(
+    (candidate) => candidate.value === value,
+  )
+  expect(input, `input with value ${value}`).toBeTruthy()
+  return input!
+}
+
+async function setTextInputValue(input: HTMLInputElement, value: string): Promise<void> {
+  input.value = value
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
 }
 
 function selectedCharacter(): character {
@@ -423,6 +470,93 @@ describe('SideChatList DOM contract harness', () => {
     expect(rowByText('Root Chat A').classList.contains('bg-selected')).toBe(false)
     expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(false)
     expect(sidebarMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
+  })
+
+  it('keeps foldered chat row indexes tied to original chat positions', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chats.push(makeChat('chat-foldered-second', 'Second Foldered Chat', 'folder-a'))
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    expect(
+      chatRows().map((row) => ({
+        index: row.dataset.risuChatIdx,
+        text: row.textContent?.trim(),
+      })),
+    ).toEqual([
+      { index: '1', text: 'Foldered Chat' },
+      { index: '3', text: 'Second Foldered Chat' },
+      { index: '0', text: 'Root Chat A' },
+      { index: '2', text: 'Root Chat B' },
+    ])
+  })
+
+  it('hides folded folder rows without losing selected chat state', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chatFolders[0].folded = true
+    chara.chatPage = 1
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    const folder = folderElementByText('Pinned Folder')
+    const folderRows = folderChatContainer(folder)
+    const selectedRow = rowByText('Foldered Chat')
+
+    expect(folderRows.classList.contains('hidden')).toBe(true)
+    expect(chara.chatPage).toBe(1)
+    expect(chara.chats[chara.chatPage]?.id).toBe('chat-foldered')
+    expect(selectedRow.dataset.risuChatIdx).toBe('1')
+    expect(selectedRow.classList.contains('bg-selected')).toBe(true)
+    expect(rowByText('Root Chat A').classList.contains('bg-selected')).toBe(false)
+    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(false)
+  })
+
+  it('dispatches chat and folder rename commands with stable ids from edit mode', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    editButtonForRow(rowByText('Foldered Chat')).click()
+    await tick()
+
+    const chatNameInput = inputByValue('Foldered Chat')
+    const folderNameInput = inputByValue('Pinned Folder')
+
+    await setTextInputValue(chatNameInput, 'Renamed Foldered Chat')
+    await setTextInputValue(folderNameInput, 'Renamed Folder')
+
+    expect(sidebarMocks.dispatchUpdateChat).toHaveBeenCalledWith(
+      'chat-foldered',
+      { name: 'Renamed Foldered Chat' },
+      expect.any(Object),
+    )
+    expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith(
+      'folder-a',
+      { name: 'Renamed Folder' },
+      expect.any(Object),
+    )
+  })
+
+  it('dispatches folder folded toggles with the folder stable id', async () => {
+    const chara = seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    folderHeader(folderElementByText('Pinned Folder')).click()
+    await tick()
+
+    expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith(
+      'folder-a',
+      { folded: true },
+      expect.any(Object),
+    )
+    expect(chara.chatFolders[0].folded).toBe(false)
   })
 
   it('navigates when selecting a sidebar row and reflects the route-applied selection', async () => {
