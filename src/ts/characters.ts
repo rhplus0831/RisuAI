@@ -54,6 +54,10 @@ import {
   dispatchCreateChat,
   dispatchCreateChatFolder,
 } from './chatCommands'
+import {
+  CHAT_GENERATION_SETTINGS_FIELD,
+  type ChatGenerationSettings,
+} from './chatGenerationSettings'
 import { getColdStorageItem } from './process/coldstorage.svelte'
 import {
   currentCharacterRowSnapshot,
@@ -582,6 +586,7 @@ export async function importChat() {
             chat.folderId = folderIdMap[chat.folderId]
           }
           chat.id = v4()
+          normalizeImportedChatGenerationSettings(chat)
         })
         withTrustedServerProjectionWrite(() => {
           DBState.db.characters[selectedID].chats.unshift(...chats)
@@ -605,6 +610,7 @@ export async function importChat() {
               v.localLore = []
             }
             v.fmIndex ??= -1
+            normalizeImportedChatGenerationSettings(v)
             return v
           })
           withTrustedServerProjectionWrite(() => {
@@ -634,6 +640,7 @@ export async function importChat() {
         ) {
           das.fmIndex ??= -1
           das.id = v4()
+          normalizeImportedChatGenerationSettings(das)
           withTrustedServerProjectionWrite(() => {
             DBState.db.characters[selectedID].chats.unshift(das)
           })
@@ -659,6 +666,7 @@ export async function importChat() {
       const json = JSON.parse(chat)
       if (json.message && json.note && json.name && json.localLore) {
         json.id = typeof json.id === 'string' && json.id ? json.id : v4()
+        normalizeImportedChatGenerationSettings(json)
         withTrustedServerProjectionWrite(() => {
           DBState.db.characters[selectedID].chats.unshift(json)
         })
@@ -673,6 +681,88 @@ export async function importChat() {
   } catch (error) {
     alertError(error)
   }
+}
+
+function normalizeImportedChatGenerationSettings(chat: unknown): void {
+  if (!isRecord(chat)) return
+  const normalized = normalizeImportedGenerationSettingsValue(chat[CHAT_GENERATION_SETTINGS_FIELD])
+  if (normalized) {
+    chat[CHAT_GENERATION_SETTINGS_FIELD] = normalized
+  } else {
+    delete chat[CHAT_GENERATION_SETTINGS_FIELD]
+  }
+}
+
+function normalizeImportedGenerationSettingsValue(
+  value: unknown,
+): ChatGenerationSettings | undefined {
+  if (!isRecord(value)) return undefined
+
+  const normalized: ChatGenerationSettings = {
+    configured: false,
+  }
+  let hasPrefill = false
+
+  const personaId = normalizeImportedPersonaId(value.personaId)
+  if (personaId) {
+    normalized.personaId = personaId
+    hasPrefill = true
+  }
+
+  const presetId = normalizeImportedPresetId(value.presetId)
+  if (presetId) {
+    normalized.presetId = presetId
+    hasPrefill = true
+  }
+
+  if (typeof value.jailbreakToggle === 'boolean') {
+    normalized.jailbreakToggle = value.jailbreakToggle
+    hasPrefill = true
+  }
+
+  if (isRecord(value.sidebarToggles)) {
+    const sidebarToggles: Record<string, string> = {}
+    for (const [key, toggleValue] of Object.entries(value.sidebarToggles)) {
+      if (key.trim() !== '' && typeof toggleValue === 'string') {
+        sidebarToggles[key] = toggleValue
+      }
+    }
+    if (Object.keys(sidebarToggles).length > 0 || hasPrefill) {
+      normalized.sidebarToggles = sidebarToggles
+    }
+    if (Object.keys(sidebarToggles).length > 0) {
+      hasPrefill = true
+    }
+  }
+
+  if (!hasPrefill) return undefined
+
+  // The server create-chat command validates any present generationSettings as
+  // save-shaped data. Supply a local false value only to keep valid prefills
+  // command-safe; configured:false still forces explicit user confirmation.
+  normalized.jailbreakToggle ??= false
+
+  return normalized
+}
+
+function normalizeImportedPersonaId(value: unknown): string | undefined {
+  if (!isNonEmptyString(value)) return undefined
+  const personas = Array.isArray(DBState.db.personas) ? DBState.db.personas : []
+  return personas.some((persona) => persona?.id === value) ? value : undefined
+}
+
+function normalizeImportedPresetId(value: unknown): string | undefined {
+  if (!isNonEmptyString(value)) return undefined
+  const presets = Array.isArray(DBState.db.botPresets) ? DBState.db.botPresets : []
+  return presets.some((preset) => preset?.id === value) ? value : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 export async function exportAllChats() {

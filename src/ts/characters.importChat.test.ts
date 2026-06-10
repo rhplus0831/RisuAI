@@ -90,10 +90,46 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
-async function waitForCommand(calls: CapturedFetch[]): Promise<void> {
+function createChatCalls(calls: CapturedFetch[]): CapturedFetch[] {
+  return calls.filter((call) => call.url === '/api/v1/commands/characters/char-a/chats')
+}
+
+async function waitForCreateChatCalls(
+  calls: CapturedFetch[],
+  expectedCount = 1,
+): Promise<CapturedFetch[]> {
   await vi.waitFor(() => {
-    expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a/chats')).toBe(true)
+    expect(createChatCalls(calls)).toHaveLength(expectedCount)
   })
+  return createChatCalls(calls)
+}
+
+function selectJsonFile(name: string, payload: unknown): void {
+  selectedFileState.file = {
+    name,
+    data: Buffer.from(JSON.stringify(payload)),
+  }
+}
+
+function selectHtmlChatFile(chat: Record<string, unknown>): void {
+  selectedFileState.file = {
+    name: 'chat.html',
+    data: Buffer.from(
+      `<html><body><div class="idat">${JSON.stringify(chat)
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')}</div></body></html>`,
+    ),
+  }
+}
+
+function importedChat(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    message: [{ role: 'user', data: 'hello' }],
+    note: 'note',
+    name: 'Imported Chat',
+    localLore: [],
+    ...overrides,
+  }
 }
 
 beforeEach(() => {
@@ -103,6 +139,24 @@ beforeEach(() => {
   selectedCharID.set(0)
   selectedFileState.file = null
   DBState.db = {
+    personas: [
+      { id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' },
+      { id: 'persona-b', name: 'Persona B', personaPrompt: '', icon: '', note: '' },
+    ],
+    botPresets: [
+      {
+        id: 'preset-a',
+        name: 'Preset A',
+        jailbreak: 'Jailbreak',
+        customPromptTemplateToggle: 'mode=Mode=select=warm,cold',
+      },
+      {
+        id: 'preset-b',
+        name: 'Preset B',
+        jailbreak: '',
+        customPromptTemplateToggle: '',
+      },
+    ],
     characters: [
       {
         chaId: 'char-a',
@@ -123,21 +177,11 @@ afterEach(() => {
 describe('chat import projection helpers', () => {
   it('imports a chat through a trusted optimistic projection write and create-chat command', async () => {
     const calls = stubCommandFetch()
-    selectedFileState.file = {
-      name: 'chat.json',
-      data: Buffer.from(
-        JSON.stringify({
-          type: 'risuChat',
-          ver: 1,
-          data: {
-            message: [{ role: 'user', data: 'hello' }],
-            note: '',
-            name: 'Imported Chat',
-            localLore: [],
-          },
-        }),
-      ),
-    }
+    selectJsonFile('chat.json', {
+      type: 'risuChat',
+      ver: 1,
+      data: importedChat({ note: '' }),
+    })
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
@@ -153,8 +197,8 @@ describe('chat import projection helpers', () => {
     expect(() => {
       DBState.db.characters[0].chats.unshift({ id: 'direct-2', name: 'Direct', message: [] } as any)
     }).toThrow()
-    await waitForCommand(calls)
-    expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-a/chats')).toEqual({
+    const [createCall] = await waitForCreateChatCalls(calls)
+    expect(createCall).toEqual({
       url: '/api/v1/commands/characters/char-a/chats',
       method: 'POST',
       authHeader: 'chat-import-token',
@@ -166,6 +210,163 @@ describe('chat import projection helpers', () => {
           fmIndex: -1,
         }),
         select: false,
+      },
+    })
+  })
+
+  it('normalizes risuChat v1 generation settings to incomplete prefill before create-chat dispatch', async () => {
+    const calls = stubCommandFetch()
+    selectJsonFile('chat.json', {
+      type: 'risuChat',
+      ver: 1,
+      data: importedChat({
+        generationSettings: {
+          configured: true,
+          personaId: 'persona-a',
+          presetId: 'preset-a',
+          jailbreakToggle: true,
+          sidebarToggles: {
+            mode: 'warm',
+            ignoredInvalid: false,
+          },
+        },
+      }),
+    })
+
+    await importChat()
+
+    const expectedGenerationSettings = {
+      configured: false,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mode: 'warm',
+      },
+    }
+    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+      generationSettings: expectedGenerationSettings,
+    })
+    const [createCall] = await waitForCreateChatCalls(calls)
+    expect(createCall.body).toMatchObject({
+      chat: {
+        generationSettings: expectedGenerationSettings,
+      },
+    })
+  })
+
+  it('normalizes v2 all-chat imports and drops invalid generation settings', async () => {
+    const calls = stubCommandFetch()
+    selectJsonFile('chats.json', {
+      type: 'risuAllChats',
+      ver: 2,
+      data: [
+        importedChat({
+          name: 'Configured V2',
+          generationSettings: {
+            configured: true,
+            personaId: 'persona-b',
+            presetId: 'preset-b',
+            jailbreakToggle: false,
+            sidebarToggles: {},
+          },
+        }),
+        importedChat({
+          name: 'Invalid V2',
+          generationSettings: {
+            configured: true,
+            personaId: 42,
+            presetId: 'missing-preset',
+            jailbreakToggle: 'yes',
+            sidebarToggles: {
+              mode: false,
+              '': 'bad',
+            },
+            unsupported: 'field',
+          },
+        }),
+      ],
+      folders: [],
+    })
+
+    await importChat()
+
+    const [configuredChat, invalidChat] = DBState.db.characters[0].chats
+    expect(configuredChat).toMatchObject({
+      name: 'Configured V2',
+      generationSettings: {
+        configured: false,
+        personaId: 'persona-b',
+        presetId: 'preset-b',
+        jailbreakToggle: false,
+        sidebarToggles: {},
+      },
+    })
+    expect(invalidChat).toMatchObject({ name: 'Invalid V2' })
+    expect(invalidChat).not.toHaveProperty('generationSettings')
+
+    const createCalls = await waitForCreateChatCalls(calls, 2)
+    expect(createCalls[0].body).toMatchObject({
+      chat: {
+        name: 'Configured V2',
+        generationSettings: {
+          configured: false,
+          personaId: 'persona-b',
+          presetId: 'preset-b',
+          jailbreakToggle: false,
+          sidebarToggles: {},
+        },
+      },
+    })
+    expect(createCalls[1].body).toMatchObject({
+      chat: {
+        name: 'Invalid V2',
+      },
+    })
+    expect((createCalls[1].body as any).chat).not.toHaveProperty('generationSettings')
+  })
+
+  it('normalizes HTML idat generation settings before create-chat dispatch', async () => {
+    const calls = stubCommandFetch()
+    selectHtmlChatFile(
+      importedChat({
+        generationSettings: {
+          configured: true,
+          personaId: 'persona-a',
+          presetId: 'preset-a',
+          jailbreakToggle: false,
+          sidebarToggles: {
+            mode: 'cold',
+          },
+        },
+      }),
+    )
+
+    await importChat()
+
+    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+      generationSettings: {
+        configured: false,
+        personaId: 'persona-a',
+        presetId: 'preset-a',
+        jailbreakToggle: false,
+        sidebarToggles: {
+          mode: 'cold',
+        },
+      },
+    })
+    const [createCall] = await waitForCreateChatCalls(calls)
+    expect(createCall.body).toMatchObject({
+      chat: {
+        generationSettings: {
+          configured: false,
+          personaId: 'persona-a',
+          presetId: 'preset-a',
+          jailbreakToggle: false,
+          sidebarToggles: {
+            mode: 'cold',
+          },
+        },
       },
     })
   })
