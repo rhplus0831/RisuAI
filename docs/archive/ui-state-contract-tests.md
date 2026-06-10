@@ -2,12 +2,36 @@
 
 Date: 2026-06-10
 
-Status: open, compact workstream.
+Status: archived, completed.
 
-This is a live `docs/plan/` workstream. It borrows the invariant-and-regression
-discipline from the archived v3 stability/performance plan, but it does not
-reopen v3 and should not grow into another broad audit unless new evidence says
-the bug family is larger than the chat/list pilot.
+Archived: 2026-06-10.
+
+This archived workstream borrowed the invariant-and-regression discipline from
+the archived v3 stability/performance plan, but it did not reopen v3 or grow
+into another broad audit.
+
+## Completion Summary
+
+Completed on 2026-06-10 with the requested implementation-agent then
+verification-agent loop for each slice.
+
+Landed commits:
+
+- `250d380c6 test: add chat list optimistic create DOM coverage`
+- `a9e1e2799 test: add chat list optimistic delete DOM coverage`
+- `eb863b3be test: add chat list selection DOM coverage`
+- `9499a7bff test: add chat folder edit DOM coverage`
+
+Delivered focused Svelte DOM contract coverage for `SideChatList.svelte` and
+`ChatList.svelte`: baseline harnesses, optimistic create/delete visibility and
+rollback, route/select DOM class movement, command fallback rollback, and
+sidebar folder/edit parity.
+
+Final focused validation passed:
+
+- `pnpm exec vitest run src/lib/SideBars/SideChatList.svelte.test.ts`
+- `pnpm exec vitest run src/lib/SideBars/SideChatList.svelte.test.ts src/lib/Others/ChatList.svelte.test.ts`
+- `pnpm exec prettier --check src/lib/SideBars/SideChatList.svelte.test.ts`
 
 ## Goal
 
