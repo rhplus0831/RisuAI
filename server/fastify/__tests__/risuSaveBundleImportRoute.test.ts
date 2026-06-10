@@ -75,12 +75,20 @@ function persistDatabaseWithAsset(dataDir: string): void {
                 name: 'Bundle Import Chat',
                 note: '',
                 localLore: [],
+                generationSettings: {
+                  configured: true,
+                  personaId: 'persona-a',
+                  presetId: 'preset-a',
+                  jailbreakToggle: false,
+                  sidebarToggles: { mode: 'source-mode' },
+                },
                 message: [{ role: 'user', data: 'hello', chatId: 'bundle-import-message' }],
               },
             ],
           },
         ],
         characterOrder: ['bundle-import-char'],
+        personas: [{ id: 'persona-a', name: 'Persona A' }],
         botPresets: [{ id: 'preset-a', name: 'Preset A' }],
         modules: [{ id: 'module-a', name: 'Module A' }],
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
@@ -181,6 +189,11 @@ describe('repository .risu bundle import route', () => {
       const body = imported.json() as Record<string, unknown>
       expect(body.format).toBe('risu-bundle-zip')
       expect(body.envelope).toBe('risusave-blocks')
+      expect(body.importReport).toEqual({
+        incompleteChatCount: 1,
+        unsupportedReferenceCount: 0,
+        unsupportedReferences: [],
+      })
       expect(body.bundleReport).toEqual({ includedAssetCount: 1, assetsCreated: true })
       expect(body.assetReport).toMatchObject({ referencedCount: 1, missingCount: 0 })
       expect(typeof body.revision).toBe('number')
@@ -193,7 +206,22 @@ describe('repository .risu bundle import route', () => {
       expect(asset.statusCode).toBe(200)
       expect(Buffer.from(asset.rawPayload).equals(ASSET_BYTES)).toBe(true)
 
-      // The database is restored: the character that references the asset is back.
+      // The database is restored with imported chats requiring local confirmation.
+      const bootstrap = await fresh.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': freshAssertion },
+      })
+      expect(bootstrap.statusCode).toBe(200)
+      expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual({
+        configured: false,
+        personaId: 'persona-a',
+        presetId: 'preset-a',
+        jailbreakToggle: false,
+        sidebarToggles: { mode: 'source-mode' },
+      })
+
+      // The character that references the asset is exportable after import.
       const exported = await fresh.app.inject({
         method: 'GET',
         url: '/api/v1/export/risusave',
@@ -243,6 +271,11 @@ describe('repository .risu bundle import route', () => {
       expect(imported.statusCode).toBe(200)
       const body = imported.json() as Record<string, unknown>
       expect(body.format).toBe('legacy-local-backup')
+      expect(body.importReport).toEqual({
+        incompleteChatCount: 1,
+        unsupportedReferenceCount: 0,
+        unsupportedReferences: [],
+      })
       // Only the media record registered; the cold-storage `.json` was skipped.
       expect(body.bundleReport).toEqual({ includedAssetCount: 1, assetsCreated: true })
       expect(body.assetReport).toMatchObject({ referencedCount: 1, missingCount: 0 })

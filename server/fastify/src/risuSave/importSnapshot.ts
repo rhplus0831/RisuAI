@@ -23,6 +23,8 @@ import { ensurePluginCustomStorage } from '../commands/pluginStorage.js'
 import { ensureGlobalLorebookCollection, ensureAllChildLorebooks } from '../commands/lorebooks.js'
 import { normalizeScriptDefinitionCollection } from '../commands/scriptDefinitions.js'
 import { normalizeDatabaseDefaults } from '../databaseDefaults.js'
+import { normalizeStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
+import { CHAT_GENERATION_SETTINGS_FIELD } from '../../../../src/ts/chatGenerationSettings.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -45,7 +47,13 @@ export interface RisuSaveImportUnsupportedReference {
 export interface RisuSaveImportSnapshot {
   envelope: RisuSaveEnvelopeKind
   database: JsonRecord
+  incompleteChatCount: number
   unsupportedReferences: RisuSaveImportUnsupportedReference[]
+}
+
+interface RisuSaveImportDatabaseNormalization {
+  database: JsonRecord
+  incompleteChatCount: number
 }
 
 export function decodeRisuSaveImportSnapshot(
@@ -60,7 +68,7 @@ export function decodeRisuSaveImportSnapshot(
   ) {
     return {
       envelope,
-      database: normalizeImportDatabase(
+      ...normalizeImportDatabase(
         decodeEnvelopeAsValidation(() => decodeLegacyRisuSaveEnvelope(data, options)),
       ),
       unsupportedReferences: [],
@@ -74,7 +82,7 @@ export function decodeRisuSaveImportSnapshot(
   const decoded = decodeEnvelopeAsValidation(() => decodeRisuSaveBlockEnvelope(data, options))
   return {
     envelope,
-    database: normalizeImportDatabase(assembleBlockDatabase(decoded.blocks)),
+    ...normalizeImportDatabase(assembleBlockDatabase(decoded.blocks)),
     unsupportedReferences: decoded.unsupportedReferences,
   }
 }
@@ -95,7 +103,11 @@ function decodeEnvelopeAsValidation<T>(decode: () => T): T {
 }
 
 export function normalizeRisuSaveImportDatabase(database: unknown): JsonRecord {
-  return normalizeImportDatabase(database)
+  return normalizeImportDatabase(database).database
+}
+
+export function normalizeRisuSaveSnapshotDatabase(database: unknown): JsonRecord {
+  return normalizeImportDatabaseShape(database)
 }
 
 function assembleBlockDatabase(
@@ -171,7 +183,15 @@ function assembleBlockDatabase(
   return database
 }
 
-function normalizeImportDatabase(database: unknown): JsonRecord {
+function normalizeImportDatabase(database: unknown): RisuSaveImportDatabaseNormalization {
+  const target = normalizeImportDatabaseShape(database)
+  return {
+    database: target,
+    incompleteChatCount: normalizeImportedChatGenerationSettings(target),
+  }
+}
+
+function normalizeImportDatabaseShape(database: unknown): JsonRecord {
   const target = readJsonObject(cloneJson(database), 'database')
   normalizeAllChatMessages(target)
   normalizeCharacterCollection(target)
@@ -204,6 +224,34 @@ function normalizeImportDatabase(database: unknown): JsonRecord {
   normalizeScriptDefinitionCollection(target)
 
   return normalizeDatabaseDefaults(target, { providerDefaults: false })
+}
+
+function normalizeImportedChatGenerationSettings(database: JsonRecord): number {
+  if (!Array.isArray(database.characters)) return 0
+
+  let chatCount = 0
+  for (const character of database.characters) {
+    if (!isJsonRecord(character) || !Array.isArray(character.chats)) continue
+    for (const chat of character.chats) {
+      if (!isJsonRecord(chat)) continue
+      chatCount += 1
+      if (!hasOwn(chat, CHAT_GENERATION_SETTINGS_FIELD)) continue
+
+      const normalized = normalizeStoredChatGenerationSettings(
+        chat[CHAT_GENERATION_SETTINGS_FIELD],
+      )
+      if (normalized) {
+        chat[CHAT_GENERATION_SETTINGS_FIELD] = {
+          ...normalized,
+          configured: false,
+        }
+      } else {
+        delete chat[CHAT_GENERATION_SETTINGS_FIELD]
+      }
+    }
+  }
+
+  return chatCount
 }
 
 function parseBlockJson(name: string, content: string): unknown {
@@ -241,6 +289,14 @@ function omitDirectory(root: JsonRecord): JsonRecord {
 
 function hasAnyKey(record: JsonRecord, keys: readonly string[]): boolean {
   return keys.some((key) => Object.prototype.hasOwnProperty.call(record, key))
+}
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasOwn(value: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key)
 }
 
 function cloneJson<T>(value: T): T {

@@ -4,7 +4,7 @@ import {
   type LegacyRisuSaveEnvelopeKind,
   encodeLegacyRisuSaveEnvelope,
 } from './legacyEnvelopeCodec.js'
-import { normalizeRisuSaveImportDatabase } from './importSnapshot.js'
+import { normalizeRisuSaveSnapshotDatabase } from './importSnapshot.js'
 import { type Persisted, ValidationError, loadPersistedWithMessages } from '../repository.js'
 
 type JsonRecord = Record<string, unknown>
@@ -44,7 +44,7 @@ export function buildRisuSaveExportSnapshotFromPersisted(
     throw new ValidationError('database payload missing')
   }
   return {
-    database: normalizeRisuSaveImportDatabase(persisted.database),
+    database: normalizeRisuSaveSnapshotDatabase(persisted.database),
   }
 }
 

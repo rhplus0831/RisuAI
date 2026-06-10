@@ -296,6 +296,72 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
   })
 
+  it('forces JSON database imported chat generation settings incomplete while preserving prefill', async () => {
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          version: 1,
+          selectedPersona: 'global-persona-must-not-configure-chat',
+          botPresetsId: 0,
+          jailbreakToggle: true,
+          globalChatVariables: { toggle_mode: 'global-mode' },
+          personas: [{ id: 'persona-a', name: 'Persona A' }],
+          botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+          characters: [
+            {
+              chaId: 'char-generation-settings-json',
+              name: 'Generation Settings JSON',
+              chats: [
+                {
+                  id: 'chat-generation-settings-json',
+                  name: 'Configured In Source',
+                  note: '',
+                  localLore: [],
+                  message: [],
+                  generationSettings: {
+                    configured: true,
+                    personaId: 'persona-a',
+                    presetId: 'preset-a',
+                    jailbreakToggle: false,
+                    sidebarToggles: {
+                      mode: 'source-mode',
+                      invalid: 1,
+                    },
+                    unsupported: 'dropped',
+                  },
+                },
+                {
+                  id: 'chat-without-generation-settings-json',
+                  name: 'No Settings',
+                  note: '',
+                  localLore: [],
+                  message: [],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    expect(imported.statusCode).toBe(200)
+
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const chats = bootstrap.json().database.characters[0].chats as Array<{
+      generationSettings?: Record<string, unknown>
+    }>
+    expect(chats[0].generationSettings).toEqual({
+      configured: false,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: { mode: 'source-mode' },
+    })
+    expect(chats[1].generationSettings).toBeUndefined()
+  })
+
   it('repairs legacy lorebook key arrays and external aliases during imports', async () => {
     const imported = await authedInject({
       method: 'POST',
@@ -598,6 +664,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
       },
       envelope: 'legacy-raw',
       importReport: {
+        incompleteChatCount: 1,
         unsupportedReferenceCount: 0,
         unsupportedReferences: [],
       },
@@ -622,6 +689,75 @@ describe('Phase 9-8a multipart .risu import route', () => {
     } finally {
       verifyDb.close()
     }
+  })
+
+  it('forces multipart .risu imported chat generation settings incomplete and reports the count', async () => {
+    const upload = multipartRisuSave(
+      encodeLegacyRisuSaveEnvelope(
+        {
+          version: 1,
+          personas: [{ id: 'persona-risu', name: 'Persona Risu' }],
+          botPresets: [{ id: 'preset-risu', name: 'Preset Risu' }],
+          characters: [
+            {
+              chaId: 'char-generation-settings-risu',
+              name: 'Generation Settings Risu',
+              chats: [
+                {
+                  id: 'chat-generation-settings-risu',
+                  name: 'Configured In Source',
+                  note: '',
+                  localLore: [],
+                  message: [],
+                  generationSettings: {
+                    configured: true,
+                    personaId: 'persona-risu',
+                    presetId: 'preset-risu',
+                    jailbreakToggle: true,
+                    sidebarToggles: { tone: 'warm' },
+                  },
+                },
+                {
+                  id: 'chat-generation-settings-risu-empty',
+                  name: 'No Settings',
+                  note: '',
+                  localLore: [],
+                  message: [],
+                },
+              ],
+            },
+          ],
+        },
+        'legacy-raw',
+      ),
+    )
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(200)
+    expect(imported.json().importReport).toEqual({
+      incompleteChatCount: 2,
+      unsupportedReferenceCount: 0,
+      unsupportedReferences: [],
+    })
+
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const chats = bootstrap.json().database.characters[0].chats as Array<{
+      generationSettings?: Record<string, unknown>
+    }>
+    expect(chats[0].generationSettings).toEqual({
+      configured: false,
+      personaId: 'persona-risu',
+      presetId: 'preset-risu',
+      jailbreakToggle: true,
+      sidebarToggles: { tone: 'warm' },
+    })
+    expect(chats[1].generationSettings).toBeUndefined()
   })
 
   it('rejects legacy uploads whose expanded payload exceeds the import limit', async () => {
@@ -668,6 +804,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
       },
       envelope: 'risusave-blocks',
       importReport: {
+        incompleteChatCount: 0,
         unsupportedReferenceCount: 1,
         unsupportedReferences: [
           { name: 'remote-char', type: RisuSaveBlockType.REMOTE, kind: 'remote' },
