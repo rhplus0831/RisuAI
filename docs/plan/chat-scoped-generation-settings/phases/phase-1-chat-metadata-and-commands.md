@@ -1,9 +1,18 @@
 # Phase 1: Chat Metadata & Commands
 
-Status: planned.
+Status: complete.
 
 Goal: persist, validate, project, and reconcile chat-owned generation settings
 without changing prompt assembly yet.
+
+## Completion Note
+
+Closed after `adb21a849` and `9cbd388f3`. The server landed the dedicated
+chat generation settings command, create-time validation, single-chat row writes,
+and stored-value repair; the client landed the matching command wrapper,
+optimistic one-chat rollback, and generic patch exclusion for
+`generationSettings`. Prompt assembly, send gating, UI controls, and import or
+fork/delete lifecycle behavior are intentionally left to later phases.
 
 ## Scope
 
