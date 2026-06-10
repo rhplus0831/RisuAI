@@ -37,9 +37,9 @@ End state:
 
 ## Target Contract
 
-The planned durable shape is one chat-owned generation settings object. Phase 0
-may adjust the object name to match local conventions, but the contract must
-preserve these fields:
+Phase 0 locked the durable chat-owned object name as
+`generationSettings`. The shared contract/helper lives at
+`src/ts/chatGenerationSettings.ts`.
 
 ```ts
 type ChatGenerationSettings = {
@@ -51,22 +51,49 @@ type ChatGenerationSettings = {
 }
 ```
 
+`sidebarToggles` is keyed by the unprefixed sidebar toggle key from toggle
+syntax, for example `mode`, not `toggle_mode`. Its values are the raw strings
+that will later overlay `globalChatVariables["toggle_<key>"]` for prompt
+assembly.
+
 `configured: true` records that the user explicitly confirmed this chat's
 settings. It is not enough by itself. Readiness is always recomputed from the
 current database:
 
 - `personaId` resolves to an existing persona.
 - `presetId` resolves to an existing preset.
-- `jailbreakToggle` is present, including explicit `false`.
+- `jailbreakToggle` is present on the settings object, including explicit
+  `false`. The shared resolver also reports whether the selected preset would
+  currently display the jailbreak control, but readiness still requires an
+  explicit chat-owned value so generation never falls back to the global toggle.
 - `sidebarToggles` has an explicit raw value for every currently displayed
   prompt-affecting sidebar toggle for the chat. Explicit off values count when
   the key exists; missing keys do not.
 - Unknown or stale toggle keys are ignored and pruned on the next save.
 
-The exact toggle-definition resolver is a Phase 0 deliverable. It must resolve
-the selected preset before checking preset-owned toggles, include active
-module/sidebar toggles, and treat a newly added displayed toggle as required for
-existing chats.
+The required-toggle resolver is
+`resolveChatGenerationControlRequirements()` /
+`resolveRequiredSidebarToggles()`. It resolves the selected preset by
+`presetId`, reads the selected preset's `customPromptTemplateToggle`, then adds
+active module toggles. Active modules are the union of globally enabled module
+ids, chat module ids, character module ids, and `moduleIntergration`
+namespaces, matched against module `id` or `namespace` in module collection
+order. Required toggle keys are deduped by storage key, preserving first
+definition. A newly added displayed toggle is therefore required for existing
+configured chats.
+
+The stable incomplete-chat error body is:
+
+```ts
+{
+  statusCode: 409,
+  error: 'chat_generation_settings_incomplete',
+  message: 'Chat generation settings are incomplete',
+  chatId?: string,
+  missing: ChatGenerationSettingsMissingReason[],
+  staleSidebarToggleKeys: string[]
+}
+```
 
 ## Invariants
 

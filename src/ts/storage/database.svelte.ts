@@ -51,6 +51,7 @@ import {
   DEFAULT_CHAT_DISPLAY_TAIL_COUNT,
   normalizeChatDisplayTailCount,
 } from '../chatDisplayTailCount'
+import type { ChatGenerationSettings } from '../chatGenerationSettings'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = 'Fastify Variant Version: Alpha' //<APP_VERSION_POINT>
@@ -2191,6 +2192,7 @@ export interface Chat {
   note: string
   name: string
   localLore: loreBook[]
+  generationSettings?: ChatGenerationSettings
   sdData?: string
   lastMemory?: string
   suggestMessages?: string[]

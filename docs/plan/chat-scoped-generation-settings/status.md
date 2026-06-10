@@ -2,25 +2,30 @@
 
 Date: 2026-06-10
 
-This active plan is ready for Phase 0. No runtime implementation has landed in
-this workstream yet.
+Phase 0 is complete as a contract/helper scaffold. No runtime send behavior,
+chat settings persistence commands, UI controls, import normalization, or
+delete/fork behavior has landed in this workstream yet.
 
 ## Snapshot
 
-- Plan state: open, planned.
+- Plan state: open, Phase 0 complete.
 - User decisions captured: use `personaId`, use `presetId` only, include all
   sidebar toggles, and make imported chats require explicit configuration.
 - Sub-agent investigation: complete for server/data/prompt, frontend/UI, and
   test/import/compat/rollout scope.
-- Current risk: Phase 0 must define the required toggle resolver carefully
-  because displayed toggles are dynamic and may depend on the selected preset
-  and active modules.
+- Phase 0 output: `src/ts/chatGenerationSettings.ts` owns the
+  `generationSettings` object contract, readiness reason codes, required
+  sidebar toggle resolver, stale-key reporting, and the stable incomplete-chat
+  error body.
+- Current risk: Phase 1 must persist and validate the contract without
+  accidentally treating legacy global persona, preset, jailbreak, or
+  `globalChatVariables` values as readiness fallbacks.
 
 ## Phase Router
 
-- [Phase 0](phases/phase-0-contract.md): planned. Contract, readiness helper,
-  error shape, and edge policies.
-- [Phase 1](phases/phase-1-chat-metadata-and-commands.md): planned. Chat row
+- [Phase 0](phases/phase-0-contract.md): complete. Contract, readiness helper,
+  error shape, and edge policies are locked.
+- [Phase 1](phases/phase-1-chat-metadata-and-commands.md): next. Chat row
   metadata, commands, validation, projection, and repair.
 - [Phase 2](phases/phase-2-effective-generation-config.md): planned. Server
   generation gate and effective database overlay.
@@ -33,15 +38,9 @@ this workstream yet.
 
 ## Next Step
 
-Run Phase 0 as a contract pass. The output should be a small implementation
-brief or first patch that proves:
-
-- the exact chat settings object name and field names;
-- the exact resolver for required sidebar toggles;
-- the exact structured error shape for incomplete chats;
-- whether delete invalidation clears references immediately or treats missing
-  references as incomplete at read time;
-- the places where server and client readiness helpers will live.
+Run Phase 1 as the metadata/command pass. Use the Phase 0 helper instead of
+redefining field names, missing reason codes, sidebar toggle resolution, stale
+key behavior, or incomplete-chat error shape.
 
 ## Maintenance Rules
 
