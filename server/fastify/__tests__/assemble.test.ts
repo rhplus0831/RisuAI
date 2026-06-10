@@ -202,6 +202,29 @@ const baseInput = (overrides: Partial<AssembleInput> = {}): AssembleInput => ({
   ...overrides,
 })
 
+function expectIncompleteAssembly(
+  db: Database,
+  expectedCodes: string[],
+): ChatGenerationSettingsIncompleteAssemblyError {
+  try {
+    beginAssembly(baseInput(), depsFor(db))
+  } catch (err) {
+    expect(err).toBeInstanceOf(ChatGenerationSettingsIncompleteAssemblyError)
+    const incomplete = err as ChatGenerationSettingsIncompleteAssemblyError
+    expect(incomplete.body).toMatchObject({
+      statusCode: 409,
+      error: 'chat_generation_settings_incomplete',
+      chatId: 'chat-1',
+    })
+    const actualCodes = incomplete.body.missing.map((reason) => reason.code)
+    for (const code of expectedCodes) {
+      expect(actualCodes).toContain(code)
+    }
+    return incomplete
+  }
+  throw new Error('Expected ChatGenerationSettingsIncompleteAssemblyError')
+}
+
 describe('Phase 7 L1 async asset reads', () => {
   it('L1: repeated asset prompt refs share one async stored-asset read during assembly', async () => {
     const assetId = 'c'.repeat(64)
@@ -569,21 +592,140 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(
       ChatGenerationSettingsIncompleteAssemblyError,
     )
-    try {
-      beginAssembly(baseInput(), depsFor(db))
-    } catch (err) {
-      expect(err).toBeInstanceOf(ChatGenerationSettingsIncompleteAssemblyError)
-      expect((err as ChatGenerationSettingsIncompleteAssemblyError).body).toMatchObject({
-        statusCode: 409,
-        error: 'chat_generation_settings_incomplete',
-        chatId: 'chat-1',
-      })
-      expect(
-        (err as ChatGenerationSettingsIncompleteAssemblyError).body.missing.map(
-          (reason: { code: string }) => reason.code,
-        ),
-      ).toContain('settings_missing')
-    }
+    expectIncompleteAssembly(db, ['settings_missing'])
+  })
+
+  it('returns the stable incomplete error for an imported chat with absent settings', () => {
+    const db = makeDatabase({
+      characters: [makeCharacter({ chats: [makeChat({ id: 'chat-1' })] })],
+    } as unknown as Partial<Database>)
+    delete db.characters[0].chats[0].generationSettings
+
+    expectIncompleteAssembly(db, ['settings_missing', 'settings_not_configured'])
+  })
+
+  it('returns the stable incomplete error for an imported chat not marked configured', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: false,
+                personaId: 'persona-default',
+                presetId: 'preset-default',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    expectIncompleteAssembly(db, ['settings_not_configured'])
+  })
+
+  it('treats deleted preset and persona references as incomplete chat settings', () => {
+    const deletedPresetDb = makeDatabase({
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                presetId: 'deleted-preset',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+    expectIncompleteAssembly(deletedPresetDb, ['preset_missing'])
+
+    const deletedPersonaDb = makeDatabase({
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'deleted-persona',
+                presetId: 'preset-default',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+    expectIncompleteAssembly(deletedPersonaDb, ['persona_missing'])
+  })
+
+  it('requires displayed sidebar toggles and preserves explicit off values', () => {
+    const baseWithToggle = {
+      botPresets: [
+        {
+          id: 'preset-default',
+          name: 'Default',
+          mainPrompt: '{{#when::toggle::mode}}ON{{/when}}{{#when::mode::tis::0}}OFF{{/when}}',
+          customPromptTemplateToggle: 'mode=Mode',
+        },
+      ],
+    } as unknown as Partial<Database>
+    const missingToggleDb = makeDatabase({
+      ...baseWithToggle,
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                presetId: 'preset-default',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    expectIncompleteAssembly(missingToggleDb, ['sidebar_toggle_missing'])
+
+    const explicitOffDb = makeDatabase({
+      ...baseWithToggle,
+      globalChatVariables: { toggle_mode: '1' },
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                presetId: 'preset-default',
+                jailbreakToggle: false,
+                sidebarToggles: { mode: '0' },
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const state = beginAssembly(baseInput(), depsFor(explicitOffDb))
+    fillStaticSlots(state)
+
+    expect(state.database.globalChatVariables.toggle_mode).toBe('0')
+    expect(state.unformated.main.map((row) => row.content)).toEqual(['OFF'])
   })
 
   it('builds an effective prompt database from chat-owned preset, persona, and toggles', () => {
@@ -703,14 +845,79 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     )
   })
 
+  it('lets two chats produce different persona, preset, and toggle prompt output without global changes', () => {
+    const db = makeDatabase({
+      mainPrompt: 'GLOBAL MAIN',
+      personaPrompt: 'GLOBAL PERSONA',
+      globalChatVariables: { toggle_mode: 'global' },
+      personas: [
+        { id: 'persona-a', name: 'A', icon: '', personaPrompt: 'PERSONA A', note: '' },
+        { id: 'persona-b', name: 'B', icon: '', personaPrompt: 'PERSONA B', note: '' },
+      ],
+      botPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          mainPrompt: 'MAIN A {{#when::toggle::mode}}TOGGLE A{{/when}}',
+          customPromptTemplateToggle: 'mode=Mode',
+        },
+        {
+          id: 'preset-b',
+          name: 'Preset B',
+          mainPrompt: 'MAIN B {{#when::mode::tis::0}}TOGGLE B OFF{{/when}}',
+          customPromptTemplateToggle: 'mode=Mode',
+        },
+      ],
+      botPresetsId: 0,
+      selectedPersona: 0,
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-a',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-a',
+                presetId: 'preset-a',
+                jailbreakToggle: false,
+                sidebarToggles: { mode: '1' },
+              },
+            }),
+            makeChat({
+              id: 'chat-b',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-b',
+                presetId: 'preset-b',
+                jailbreakToggle: false,
+                sidebarToggles: { mode: '0' },
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    const chatA = beginAssembly(baseInput({ chatId: 'chat-a' }), depsFor(db))
+    fillStaticSlots(chatA)
+    const chatB = beginAssembly(baseInput({ chatId: 'chat-b' }), depsFor(db))
+    fillStaticSlots(chatB)
+
+    expect(chatA.unformated.main.map((row) => row.content)).toEqual(['MAIN A TOGGLE A'])
+    expect(chatA.unformated.personaPrompt.map((row) => row.content)).toEqual(['PERSONA A'])
+    expect(chatB.unformated.main.map((row) => row.content)).toEqual(['MAIN B TOGGLE B OFF'])
+    expect(chatB.unformated.personaPrompt.map((row) => row.content)).toEqual(['PERSONA B'])
+    expect(db.mainPrompt).toBe('GLOBAL MAIN')
+    expect(db.personaPrompt).toBe('GLOBAL PERSONA')
+    expect(db.globalChatVariables).toEqual({ toggle_mode: 'global' })
+  })
+
   it('does not mutate a frozen input database while building the effective config', () => {
     const db = freezeDeep(
       makeDatabase({
         mainPrompt: 'GLOBAL MAIN',
         personaPrompt: 'GLOBAL PERSONA',
-        botPresets: [
-          { id: 'preset-default', name: 'Default', mainPrompt: 'CHAT MAIN' },
-        ],
+        botPresets: [{ id: 'preset-default', name: 'Default', mainPrompt: 'CHAT MAIN' }],
         personas: [
           {
             id: 'persona-default',
@@ -2118,6 +2325,78 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     expect(result.prompt?.promptInfo?.promptText).toBeDefined()
   })
 
+  it('captures prompt-info text from the chat-scoped preset, persona, and toggles', async () => {
+    const db = fullDb({
+      username: 'Global User',
+      promptInfoInsideChat: true,
+      promptTextInfoInsideChat: true,
+      promptTemplate: [{ type: 'plain', type2: 'main', text: 'GLOBAL PLAIN', role: 'system' }],
+      globalChatVariables: { toggle_mode: '0' },
+      personas: [
+        {
+          id: 'persona-global',
+          name: 'Global User',
+          icon: '',
+          personaPrompt: 'GLOBAL P',
+          note: '',
+        },
+        { id: 'persona-chat', name: 'Chat User', icon: '', personaPrompt: 'CHAT P', note: '' },
+      ],
+      botPresets: [
+        {
+          id: 'preset-global',
+          name: 'Global',
+          promptTemplate: [{ type: 'plain', type2: 'main', text: 'GLOBAL PLAIN', role: 'system' }],
+        },
+        {
+          id: 'preset-chat',
+          name: 'Chat',
+          promptTemplate: [
+            {
+              type: 'plain',
+              type2: 'main',
+              text: 'CHAT PLAIN {{#when::toggle::mode}}CHAT TOGGLE{{/when}}',
+              role: 'system',
+            },
+            { type: 'persona', innerFormat: 'persona for {{user}}: {{slot}}' },
+            { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
+          ],
+          customPromptTemplateToggle: 'mode=Mode',
+        },
+      ],
+      botPresetsId: 0,
+      selectedPersona: 0,
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          desc: 'DESC',
+          firstMessage: 'Greetings.',
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [msg('user', 'hello', 'msg-1')],
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-chat',
+                presetId: 'preset-chat',
+                jailbreakToggle: false,
+                sidebarToggles: { mode: '1' },
+              },
+            }),
+          ],
+        } as Partial<character>),
+      ],
+    } as unknown as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+    const promptText = result.prompt?.promptInfo?.promptText as OpenAIChat[] | undefined
+
+    expect(promptText?.map((row) => row.content)).toEqual(
+      expect.arrayContaining(['CHAT PLAIN CHAT TOGGLE', 'persona for Chat User: {{slot}}']),
+    )
+    expect(promptText?.map((row) => row.content)).not.toContain('GLOBAL PLAIN')
+  })
+
   it('pushes the continue marker when mode is continue under a continue-marker model', async () => {
     const db = fullDb({ aiModel: 'gpt-4' } as Partial<Database>)
     const result = await assemblePrompt(baseInput({ mode: 'continue' }), depsFor(db))
@@ -3351,9 +3630,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
           chats: [
             makeChat({
               id: 'chat-1',
-              message: [
-                msg('user', 'cat marker {{getvar::__internal_ka_lore-keep}}', 'msg-1'),
-              ],
+              message: [msg('user', 'cat marker {{getvar::__internal_ka_lore-keep}}', 'msg-1')],
             }),
           ],
         }),

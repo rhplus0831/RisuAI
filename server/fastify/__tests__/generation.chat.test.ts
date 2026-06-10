@@ -3210,6 +3210,95 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(bootstrap.json().activeGenerationJobs).toEqual([])
   })
 
+  it("dispatches with the active chat's preset overlay instead of request or global preset", async () => {
+    let providerBody: Record<string, unknown> | undefined
+    let authorization: string | undefined
+    vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+      providerBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      const headers = init?.headers as Record<string, string> | undefined
+      authorization = headers?.authorization
+      return new Response(
+        JSON.stringify({
+          model: 'gpt-5.4',
+          choices: [{ message: { content: 'chat preset reply' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'echo_model',
+      echoMessage: 'global echo reply',
+      openAIKey: 'sk-global',
+      temperature: 11,
+      maxContext: 1111,
+      maxResponse: 11,
+      botPresets: [
+        {
+          id: 'preset-global',
+          name: 'Global',
+          aiModel: 'echo_model',
+          echoMessage: 'global echo reply',
+          openAIKey: 'sk-global',
+          temperature: 11,
+          maxContext: 1111,
+          maxResponse: 11,
+        },
+        {
+          id: 'preset-chat',
+          name: 'Chat',
+          aiModel: 'gpt-5.4',
+          openAIKey: 'sk-chat',
+          temperature: 73,
+          maxContext: 3737,
+          maxResponse: 37,
+        },
+      ],
+      botPresetsId: 0,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              ...fixtureDatabase.characters[0].chats[0],
+              generationSettings: {
+                configured: true,
+                personaId: DEFAULT_TEST_PERSONA_ID,
+                presetId: 'preset-chat',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, presetId: 'preset-global' },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    const info = events.find((event) => event.type === 'info')
+    expect(info?.data.generationInfo).toMatchObject({
+      model: 'gpt-5.4',
+      outputTokens: 37,
+      maxContext: 3737,
+    })
+    expect(providerBody).toMatchObject({
+      model: 'gpt-5.4',
+      temperature: 0.73,
+      max_tokens: 37,
+    })
+    expect(authorization).toBe('Bearer sk-chat')
+    expect(events.at(-1)?.data).toMatchObject({ result: 'chat preset reply' })
+  })
+
   it('omits disabled temperature and unsupported bias fields from default OpenAI dispatch', async () => {
     const captured: Array<{ url: string; body: Record<string, unknown> }> = []
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
