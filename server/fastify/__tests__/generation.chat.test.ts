@@ -14,6 +14,8 @@ import {
   createRequestScopedStoredAssetResolver,
   type GenerationChatRouteOptions,
 } from '../src/routes/generationChat.js'
+import { saveCurrentPresetSnapshot } from '../src/commands/presets.js'
+import { saveSelectedPersonaSnapshot } from '../src/commands/personas.js'
 import { LLMFormat } from '../../../src/ts/model/types'
 import {
   BROAD_WRITE_TABLES,
@@ -158,6 +160,80 @@ const fixtureDatabase = {
   maxResponse: 50,
 }
 
+type JsonRecord = Record<string, unknown>
+
+const DEFAULT_TEST_PERSONA_ID = 'persona-default'
+const DEFAULT_TEST_PRESET_ID = 'preset-default'
+
+function normalizeGenerationFixtureDatabase(database: unknown): unknown {
+  const normalized = structuredClone(database)
+  if (!isJsonRecord(normalized)) return normalized
+
+  ensureDefaultFixturePersona(normalized)
+  ensureDefaultFixturePreset(normalized)
+  fillDefaultChatGenerationSettings(normalized)
+
+  return normalized
+}
+
+function ensureDefaultFixturePersona(database: JsonRecord): void {
+  if (!Array.isArray(database.personas) || database.personas.length === 0) {
+    const personas: Parameters<typeof saveSelectedPersonaSnapshot>[1] = [
+      {
+        id: DEFAULT_TEST_PERSONA_ID,
+        name: 'User',
+        icon: '',
+        personaPrompt: '',
+        note: '',
+      },
+    ]
+    database.personas = personas
+    database.selectedPersona = 0
+    saveSelectedPersonaSnapshot(database, personas)
+  }
+}
+
+function ensureDefaultFixturePreset(database: JsonRecord): void {
+  if (!Array.isArray(database.botPresets) || database.botPresets.length === 0) {
+    const presets: Parameters<typeof saveCurrentPresetSnapshot>[1] = [
+      { id: DEFAULT_TEST_PRESET_ID, name: 'Default' },
+    ]
+    database.botPresets = presets
+    database.botPresetsId = 0
+    saveCurrentPresetSnapshot(database, presets)
+  }
+}
+
+function fillDefaultChatGenerationSettings(database: JsonRecord): void {
+  const personaId = firstId(database.personas, DEFAULT_TEST_PERSONA_ID)
+  const presetId = firstId(database.botPresets, DEFAULT_TEST_PRESET_ID)
+  const characters = Array.isArray(database.characters) ? database.characters : []
+  for (const character of characters) {
+    if (!isJsonRecord(character) || !Array.isArray(character.chats)) continue
+    for (const chat of character.chats) {
+      if (!isJsonRecord(chat)) continue
+      if (Object.prototype.hasOwnProperty.call(chat, 'generationSettings')) continue
+      chat.generationSettings = {
+        configured: true,
+        personaId,
+        presetId,
+        jailbreakToggle: database.jailbreakToggle === true,
+        sidebarToggles: {},
+      }
+    }
+  }
+}
+
+function firstId(collection: unknown, fallback: string): string {
+  if (!Array.isArray(collection)) return fallback
+  const first = collection.find((item) => isJsonRecord(item) && typeof item.id === 'string')
+  return isJsonRecord(first) && typeof first.id === 'string' ? first.id : fallback
+}
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 async function seedDatabase(
   app: FastifyInstance,
   assertion: string,
@@ -167,7 +243,7 @@ async function seedDatabase(
     method: 'POST',
     url: '/api/v1/import/risusave',
     headers: { 'risu-auth': assertion },
-    payload: { database },
+    payload: { database: normalizeGenerationFixtureDatabase(database) },
   })
   expect(res.statusCode).toBe(200)
 }
@@ -3088,6 +3164,52 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect((body as Record<string, unknown>).biases).toBeUndefined()
   })
 
+  it('returns a structured generation settings 409 body before opening SSE for durable chat', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              ...fixtureDatabase.characters[0].chats[0],
+              generationSettings: undefined,
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, durable: true },
+    })
+    expect(res.statusCode).toBe(409)
+    expect(res.headers['content-type']).toMatch(/application\/json/)
+    expect(res.body).not.toContain('job_accepted')
+    const body = res.json()
+    expect(body).toMatchObject({
+      statusCode: 409,
+      error: 'chat_generation_settings_incomplete',
+      message: 'Chat generation settings are incomplete',
+      chatId: 'chat-1',
+    })
+    expect(body.missing.map((reason: { code: string }) => reason.code)).toContain(
+      'settings_missing',
+    )
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().activeGenerationJobs).toEqual([])
+  })
+
   it('omits disabled temperature and unsupported bias fields from default OpenAI dispatch', async () => {
     const captured: Array<{ url: string; body: Record<string, unknown> }> = []
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
@@ -3243,6 +3365,43 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     })
     expect(res.statusCode).toBe(404)
     expect(String(res.json().error)).toMatch(/character not found/)
+  })
+
+  it('returns the structured generation settings 409 body for preview-prompt', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              ...fixtureDatabase.characters[0].chats[0],
+              generationSettings: undefined,
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: previewPayload,
+    })
+    expect(res.statusCode).toBe(409)
+    expect(res.headers['content-type']).toMatch(/application\/json/)
+    expect(res.json()).toMatchObject({
+      statusCode: 409,
+      error: 'chat_generation_settings_incomplete',
+      message: 'Chat generation settings are incomplete',
+      chatId: 'chat-1',
+      staleSidebarToggleKeys: [],
+    })
+    expect(res.json().missing.map((reason: { code: string }) => reason.code)).toContain(
+      'settings_missing',
+    )
   })
 
   it('returns 404 when no database is persisted', async () => {

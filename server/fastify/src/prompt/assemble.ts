@@ -93,6 +93,7 @@ import {
   bumpAssemblyCbsHistoryGeneration,
   createAssemblyCbsCallbackMemo,
 } from './cbsCallbackMemo.js'
+import { buildEffectiveGenerationConfig } from './effectiveGenerationConfig.js'
 
 /**
  * Root prompt assembly entry point.
@@ -391,7 +392,7 @@ export interface AssemblyState {
    * a card stacking runaway hooks cannot stall assembly indefinitely.
    */
   luaExecBudget?: LuaExecBudget
-  /** Recorded identity only; applying a non-active preset/loadout happens elsewhere. */
+  /** Recorded identity only; live assembly config comes from chat.generationSettings. */
   presetId?: string
   loadoutId?: string
   // --- Lorebook placement + token preflight (set by `fillLorebookSlots`) ---
@@ -532,7 +533,21 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
   }
   const currentChat = structuredClone(currentChar.chats[chatPage])
 
-  return { database, currentChar, currentChat, selectedCharID, chatPage }
+  const effective = buildEffectiveGenerationConfig({
+    database,
+    currentChar,
+    currentChat,
+    selectedCharID,
+    chatPage,
+  })
+
+  return {
+    database: effective.database,
+    currentChar: effective.currentChar,
+    currentChat: effective.currentChat,
+    selectedCharID,
+    chatPage,
+  }
 }
 
 /**
@@ -577,7 +592,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     signal: deps.signal,
     luaExecBudget,
     isContinue: input.mode === 'continue',
-    presetId: input.presetId,
+    presetId: currentChat.generationSettings?.presetId,
     loadoutId: input.loadoutId,
     initialMessages,
     messageMutationCheckpoint: initialMessages,

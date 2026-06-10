@@ -38,6 +38,7 @@ import {
   type AssembleDeps,
   type AssembleInput,
 } from '../src/prompt/assemble.js'
+import { ChatGenerationSettingsIncompleteAssemblyError } from '../src/prompt/effectiveGenerationConfig.js'
 import { applyDepthPrompts, buildHistoryWindow } from '../src/prompt/history.js'
 import { buildAssetLookup } from '../src/prompt/assetLookup.js'
 import { createRequestScopedStoredAssetResolver } from '../src/routes/generationChat.js'
@@ -113,9 +114,17 @@ function makeCharacter(overrides: Partial<character> = {}): character {
 }
 
 function makeDatabase(overrides: Partial<Database> = {}): Database {
-  return {
+  const database = {
     currentChar: 0,
     characters: [makeCharacter()],
+    personas: [{ id: 'persona-default', name: 'User', icon: '', personaPrompt: '', note: '' }],
+    selectedPersona: 0,
+    botPresets: [{ id: 'preset-default', name: 'Default' }],
+    botPresetsId: 0,
+    modules: [],
+    enabledModules: [],
+    globalChatVariables: {},
+    jailbreakToggle: false,
     formatingOrder: ['main', 'description', 'chats'],
     promptSettings: {
       assistantPrefill: '',
@@ -126,6 +135,46 @@ function makeDatabase(overrides: Partial<Database> = {}): Database {
     },
     ...overrides,
   } as unknown as Database
+  if (!overrides.personas) {
+    database.personas = [
+      {
+        id: 'persona-default',
+        name: database.username ?? 'User',
+        icon: database.userIcon ?? '',
+        personaPrompt: database.personaPrompt ?? '',
+        note: database.userNote ?? '',
+      },
+    ]
+  }
+  if (!overrides.botPresets) {
+    database.botPresets = [
+      {
+        id: 'preset-default',
+        name: 'Default',
+        mainPrompt: database.mainPrompt,
+        jailbreak: database.jailbreak,
+        globalNote: database.globalNote,
+        promptTemplate: database.promptTemplate,
+        customPromptTemplateToggle: database.customPromptTemplateToggle,
+        moduleIntergration: database.moduleIntergration,
+        formatingOrder: database.formatingOrder,
+        promptSettings: database.promptSettings,
+      },
+    ] as unknown as Database['botPresets']
+  }
+  for (const character of database.characters ?? []) {
+    for (const chat of character.chats ?? []) {
+      if (Object.prototype.hasOwnProperty.call(chat, 'generationSettings')) continue
+      chat.generationSettings = {
+        configured: true,
+        personaId: database.personas[0]?.id ?? 'persona-default',
+        presetId: database.botPresets[0]?.id ?? 'preset-default',
+        jailbreakToggle: database.jailbreakToggle === true,
+        sidebarToggles: {},
+      }
+    }
+  }
+  return database
 }
 
 function depsFor(
@@ -187,7 +236,7 @@ describe('Phase 7 L1 async asset reads', () => {
           ],
         } as Partial<character>),
       ],
-    } as Partial<Database>)
+    } as unknown as Partial<Database>)
 
     const currentChar = db.characters[0]
     const currentChat = currentChar.chats[0]
@@ -261,7 +310,7 @@ describe('Phase 7 L6 per-assembly asset table', () => {
           ],
         }),
       ],
-    } as Partial<Database>)
+    } as unknown as Partial<Database>)
     const currentChar = db.characters[0]
     const currentChat = currentChar.chats[0]
     const lookup = buildAssetLookup({
@@ -494,13 +543,193 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
           chats: [makeChat({ id: 'b0' }), makeChat({ id: 'b1', name: 'second' })],
         }),
       ],
-    } as Partial<Database>)
+    } as unknown as Partial<Database>)
 
     const state = beginAssembly(baseInput({ characterId: 'char-b', chatId: 'b1' }), depsFor(db))
     expect(state.selectedCharID).toBe(1)
     expect(state.chatPage).toBe(1)
     expect(state.currentChar.chaId).toBe('char-b')
     expect(state.currentChat.id).toBe('b1')
+  })
+
+  it('throws a structured incomplete-chat error before assembly work', () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: undefined,
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(
+      ChatGenerationSettingsIncompleteAssemblyError,
+    )
+    try {
+      beginAssembly(baseInput(), depsFor(db))
+    } catch (err) {
+      expect(err).toBeInstanceOf(ChatGenerationSettingsIncompleteAssemblyError)
+      expect((err as ChatGenerationSettingsIncompleteAssemblyError).body).toMatchObject({
+        statusCode: 409,
+        error: 'chat_generation_settings_incomplete',
+        chatId: 'chat-1',
+      })
+      expect(
+        (err as ChatGenerationSettingsIncompleteAssemblyError).body.missing.map(
+          (reason: { code: string }) => reason.code,
+        ),
+      ).toContain('settings_missing')
+    }
+  })
+
+  it('builds an effective prompt database from chat-owned preset, persona, and toggles', () => {
+    const db = makeDatabase({
+      mainPrompt: 'GLOBAL MAIN',
+      jailbreak: 'GLOBAL JB',
+      globalNote: 'GLOBAL NOTE',
+      personaPrompt: 'GLOBAL PERSONA',
+      jailbreakToggle: false,
+      globalChatVariables: { toggle_mode: 'global', kept: 'yes' },
+      personas: [
+        {
+          id: 'persona-global',
+          name: 'Global User',
+          icon: 'global-icon',
+          personaPrompt: 'GLOBAL PERSONA',
+          note: 'GLOBAL NOTE',
+        },
+        {
+          id: 'persona-chat',
+          name: 'Chat User',
+          icon: 'chat-icon',
+          personaPrompt: 'CHAT PERSONA',
+          note: 'CHAT NOTE',
+        },
+      ],
+      botPresets: [
+        { id: 'preset-global', name: 'Global', mainPrompt: 'GLOBAL MAIN' },
+        {
+          id: 'preset-chat',
+          name: 'Chat',
+          mainPrompt: 'CHAT MAIN {{toggle::mode::Mode}}',
+          jailbreak: 'CHAT JB',
+          globalNote: 'CHAT GLOBAL NOTE',
+          customPromptTemplateToggle: 'mode=Mode',
+        },
+      ],
+      botPresetsId: 0,
+      selectedPersona: 0,
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-chat',
+                presetId: 'preset-chat',
+                jailbreakToggle: true,
+                sidebarToggles: { mode: '1' },
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    const state = beginAssembly(baseInput({ presetId: 'request-ignored' }), depsFor(db))
+
+    expect(state.database).not.toBe(db)
+    expect(state.ctx.database).toBe(state.database)
+    expect(state.presetId).toBe('preset-chat')
+    expect(state.database.botPresetsId).toBe(1)
+    expect(state.database.mainPrompt).toBe('CHAT MAIN {{toggle::mode::Mode}}')
+    expect(state.database.jailbreak).toBe('CHAT JB')
+    expect(state.database.globalNote).toBe('CHAT GLOBAL NOTE')
+    expect(state.database.selectedPersona).toBe(1)
+    expect(state.database.username).toBe('Chat User')
+    expect(state.database.userIcon).toBe('chat-icon')
+    expect(state.database.personaPrompt).toBe('CHAT PERSONA')
+    expect(state.database.userNote).toBe('CHAT NOTE')
+    expect(state.database.globalChatVariables).toMatchObject({ kept: 'yes', toggle_mode: '1' })
+    expect(state.database.jailbreakToggle).toBe(true)
+
+    expect(db.botPresetsId).toBe(0)
+    expect(db.selectedPersona).toBe(0)
+    expect(db.mainPrompt).toBe('GLOBAL MAIN')
+    expect(db.globalChatVariables).toEqual({ toggle_mode: 'global', kept: 'yes' })
+    expect(db.jailbreakToggle).toBe(false)
+  })
+
+  it('uses selected preset module integration when resolving required sidebar toggles', () => {
+    const db = makeDatabase({
+      modules: [
+        { id: 'module-a', namespace: 'ns-a', customModuleToggle: 'moduleMode=Module Mode' },
+      ] as Database['modules'],
+      enabledModules: [],
+      moduleIntergration: '',
+      botPresets: [
+        {
+          id: 'preset-chat',
+          name: 'Chat',
+          moduleIntergration: 'ns-a',
+        },
+      ],
+      characters: [
+        makeCharacter({
+          modules: [],
+          chats: [
+            makeChat({
+              modules: [],
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                presetId: 'preset-chat',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(
+      ChatGenerationSettingsIncompleteAssemblyError,
+    )
+  })
+
+  it('does not mutate a frozen input database while building the effective config', () => {
+    const db = freezeDeep(
+      makeDatabase({
+        mainPrompt: 'GLOBAL MAIN',
+        personaPrompt: 'GLOBAL PERSONA',
+        botPresets: [
+          { id: 'preset-default', name: 'Default', mainPrompt: 'CHAT MAIN' },
+        ],
+        personas: [
+          {
+            id: 'persona-default',
+            name: 'Chat User',
+            icon: '',
+            personaPrompt: 'CHAT PERSONA',
+            note: '',
+          },
+        ],
+      } as unknown as Partial<Database>),
+    )
+
+    const state = beginAssembly(baseInput(), depsFor(db))
+
+    expect(state.database).not.toBe(db)
+    expect(state.database.mainPrompt).toBe('CHAT MAIN')
+    expect(state.database.personaPrompt).toBe('CHAT PERSONA')
+    expect(db.mainPrompt).toBe('GLOBAL MAIN')
+    expect(db.personaPrompt).toBe('GLOBAL PERSONA')
   })
 
   it('resolves an active character / chat (default-active consistency)', () => {
@@ -608,19 +837,20 @@ describe('Phase 7-11a beginAssembly context + template normalization', () => {
   it('builds the ExpandContext and empty slots', () => {
     const db = makeDatabase()
     const state = beginAssembly(baseInput(), depsFor(db))
-    expect(state.ctx).toMatchObject({ database: db, selectedCharID: 0, chatPage: 0 })
+    expect(state.ctx).toMatchObject({ database: state.database, selectedCharID: 0, chatPage: 0 })
+    expect(state.database).not.toBe(db)
     expect(state.ctx.cbsCallbackMemo).toBe(state.cbsCallbackMemo)
     expect(state.unformated.chats).toEqual([])
     expect(state.unformated.description).toEqual([])
   })
 
-  it('records the preset / loadout identity', () => {
+  it('records the chat preset / loadout identity', () => {
     const db = makeDatabase()
     const state = beginAssembly(
       baseInput({ presetId: 'preset-x', loadoutId: 'loadout-y' }),
       depsFor(db),
     )
-    expect(state.presetId).toBe('preset-x')
+    expect(state.presetId).toBe('preset-default')
     expect(state.loadoutId).toBe('loadout-y')
   })
 
@@ -2907,10 +3137,15 @@ describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
     expect(first.mutations?.chatVarMutations).toEqual([
       { key: '$__internal_da_lore-dont', before: null, after: 'true' },
     ])
-    expect(db.characters[0].chats[0].scriptstate).toEqual({
+    expect(first.state?.database.characters[0].chats[0].scriptstate).toEqual({
       '$__internal_da_lore-dont': 'true',
     })
-    expect(first.state?.currentChat.scriptstate).toBe(db.characters[0].chats[0].scriptstate)
+    expect(first.state?.currentChat.scriptstate).toBe(
+      first.state?.database.characters[0].chats[0].scriptstate,
+    )
+    expect(db.characters[0].chats[0].scriptstate).toBeUndefined()
+
+    db.characters[0].chats[0].scriptstate = structuredClone(first.state?.currentChat.scriptstate)
 
     const second = await assemblePrompt(baseInput({ userMessage: 'cat' }), depsFor(db))
 
@@ -3046,7 +3281,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(first).toContain('first Alex')
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(1)
 
-    db.characters[0].chats[0].message.push(msg('user', 'second {{user}}', 'msg-2'))
+    state.database.characters[0].chats[0].message.push(msg('user', 'second {{user}}', 'msg-2'))
     bumpAssemblyCbsHistoryGeneration(state.cbsCallbackMemo)
 
     const second = read()
@@ -3082,8 +3317,11 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(first).toContain('Local one')
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.lorebook).toBe(1)
 
-    db.characters[0].globalLore.push(lore({ id: 'global-two', content: 'Global two' }))
-    db.characters[0].chats[0].localLore.push(lore({ id: 'local-two', content: 'Local two' }))
+    state.currentChar.globalLore.push(lore({ id: 'global-two', content: 'Global two' }))
+    state.database.characters[0].chats[0].localLore.push(
+      lore({ id: 'local-two', content: 'Local two' }),
+    )
+    state.currentChat.localLore.push(lore({ id: 'local-two', content: 'Local two' }))
 
     const second = read()
     expect(second).toContain('Global one')
@@ -3132,7 +3370,10 @@ describe('Phase 3 M4 CBS callback memo', () => {
 
     expect(firstHistoryData(second)).toBe('cat marker true')
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(2)
-    expect(db.characters[0].chats[0].scriptstate?.['$__internal_ka_lore-keep']).toBe('true')
+    expect(state.database.characters[0].chats[0].scriptstate?.['$__internal_ka_lore-keep']).toBe(
+      'true',
+    )
+    expect(db.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 
   it('L10: run-var chat-var-only writes invalidate cached history output', () => {

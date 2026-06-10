@@ -27,6 +27,10 @@ import {
   type AssemblyState,
   type PromptAssemblyStage,
 } from '../prompt/assemble.js'
+import {
+  buildEffectiveGenerationConfig,
+  isChatGenerationSettingsIncompleteAssemblyError,
+} from '../prompt/effectiveGenerationConfig.js'
 import type { ResolveStoredAsset, StoredAssetPurpose } from '../prompt/assetLookup.js'
 import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
 import { createMessageRecord, validateUniqueMessageIds } from '../commands/messages.js'
@@ -92,6 +96,17 @@ interface ChatRequestBody {
 type SuccessfulAssembleResult = AssembleResult & {
   stopSending: false
   prompt: Omit<PromptEvent, 'type'>
+}
+
+type PromptAssemblyRun = Awaited<ReturnType<typeof assemblePromptWithMetrics>>
+
+type AssemblyPreflightResult =
+  | { status: 'ready' }
+  | { status: 'handled' }
+  | { status: 'defer'; failure: AssemblyDeferredFailure }
+
+interface AssemblyDeferredFailure {
+  error: unknown
 }
 
 export interface ChatProviderDispatchContext {
@@ -431,6 +446,84 @@ async function assemblePromptWithMetrics(
     })
     throw err
   }
+}
+
+function preflightChatGenerationSettings(
+  reply: FastifyReply,
+  input: AssembleInput,
+  dataDir: string,
+  db: DatabaseSync,
+): AssemblyPreflightResult {
+  try {
+    const database = loadPersistedForAssembly(db, dataDir, input.chatId).database as Database | null
+    if (!database) {
+      return { status: 'defer', failure: { error: new EntityNotFoundError('database not found') } }
+    }
+
+    const selectedCharID = database.characters.findIndex((c) => c.chaId === input.characterId)
+    if (selectedCharID === -1) {
+      return {
+        status: 'defer',
+        failure: { error: new EntityNotFoundError(`character not found: ${input.characterId}`) },
+      }
+    }
+    const currentChar = database.characters[selectedCharID]
+    if (!currentChar) {
+      return {
+        status: 'defer',
+        failure: { error: new EntityNotFoundError(`character not found: ${input.characterId}`) },
+      }
+    }
+
+    const chatPage = currentChar.chats.findIndex((ch) => ch.id === input.chatId)
+    if (chatPage === -1) {
+      return {
+        status: 'defer',
+        failure: { error: new EntityNotFoundError(`chat not found: ${input.chatId}`) },
+      }
+    }
+    const currentChat = currentChar.chats[chatPage]
+    if (!currentChat) {
+      return {
+        status: 'defer',
+        failure: { error: new EntityNotFoundError(`chat not found: ${input.chatId}`) },
+      }
+    }
+
+    buildEffectiveGenerationConfig({
+      database,
+      currentChar,
+      currentChat: structuredClone(currentChat),
+      selectedCharID,
+      chatPage,
+    })
+    return { status: 'ready' }
+  } catch (err) {
+    if (isChatGenerationSettingsIncompleteAssemblyError(err)) {
+      reply.code(err.statusCode).send(err.body)
+      return { status: 'handled' }
+    }
+    return { status: 'defer', failure: { error: err } }
+  }
+}
+
+function sendAssemblyHttpError(reply: FastifyReply, err: unknown): boolean {
+  if (isChatGenerationSettingsIncompleteAssemblyError(err)) {
+    reply.code(err.statusCode).send(err.body)
+    return true
+  }
+  if (err instanceof EntityNotFoundError) {
+    reply.code(404).send({ error: err.message })
+    return true
+  }
+  return false
+}
+
+function retargetAssemblySignal(assembly: PromptAssemblyRun, signal?: AbortSignal): void {
+  const state = assembly.result.state
+  if (!state) return
+  state.signal = signal
+  state.ctx.signal = signal
 }
 
 function shouldDispatchProvider(
@@ -914,8 +1007,11 @@ async function streamAssembly(
   dataDir: string,
   eventSink: CommandEventSink,
   options: GenerationChatRouteOptions = {},
+  preparedAssembly?: PromptAssemblyRun,
+  deferredFailure?: AssemblyDeferredFailure,
+  requestAbort = attachAbort(req),
 ): Promise<void> {
-  const { signal, refresh, abort, cleanup } = attachAbort(req)
+  const { signal, refresh, abort, cleanup } = requestAbort
   let terminalDoneEmitted = false
   try {
     reply.raw.writeHead(200, {
@@ -934,8 +1030,10 @@ async function streamAssembly(
     emit({ type: 'stage', stage: 'prompt', status: 'start' })
 
     try {
-      const { result, deps, promptMs } = await assemblePromptWithMetrics(input, dataDir, db, signal)
-      const database = deps.getDatabase()
+      if (deferredFailure) throw deferredFailure.error
+      const { result, deps, promptMs } =
+        preparedAssembly ?? (await assemblePromptWithMetrics(input, dataDir, db, signal))
+      const database = result.state?.database ?? deps.getDatabase()
       // The route owns assembly-time chat-var writes and post-`editinput`
       // submit-transcript writes for persisting modes. This runs for both success
       // and `stopSending` so aborted sends do not lose the assembly mutations.
@@ -1613,8 +1711,20 @@ async function runGenerationJob(args: {
   dataDir: string
   eventSink: CommandEventSink
   options: GenerationChatRouteOptions
+  preparedAssembly?: PromptAssemblyRun
+  deferredFailure?: AssemblyDeferredFailure
 }): Promise<void> {
-  const { registry, job, db, input, dataDir, eventSink, options } = args
+  const {
+    registry,
+    job,
+    db,
+    input,
+    dataDir,
+    eventSink,
+    options,
+    preparedAssembly,
+    deferredFailure,
+  } = args
   const emit = (event: PromptChatEvent): void =>
     registry.registry.pushRaw(job, formatPromptChatFrame(event))
   const signal = job.abortController.signal
@@ -1626,8 +1736,11 @@ async function runGenerationJob(args: {
     emit({ type: 'stage', stage: 'prompt', status: 'start' })
 
     try {
-      const { result, deps, promptMs } = await assemblePromptWithMetrics(input, dataDir, db, signal)
-      const database = deps.getDatabase()
+      if (deferredFailure) throw deferredFailure.error
+      if (preparedAssembly) retargetAssemblySignal(preparedAssembly, signal)
+      const { result, deps, promptMs } =
+        preparedAssembly ?? (await assemblePromptWithMetrics(input, dataDir, db, signal))
+      const database = result.state?.database ?? deps.getDatabase()
       const persistedRevision =
         isPersistingMode(input.mode) && result.mutations
           ? persistAssemblyMutations({
@@ -1823,6 +1936,8 @@ function startDurableGeneration(args: {
   eventSink: CommandEventSink
   options: GenerationChatRouteOptions
   generationJobs: GenerationJobRegistry
+  preparedAssembly?: PromptAssemblyRun
+  deferredFailure?: AssemblyDeferredFailure
 }): void {
   const { req, reply, input, generationJobs } = args
   if (generationJobs.hasRunningJob(input.chatId)) {
@@ -1857,6 +1972,8 @@ function startDurableGeneration(args: {
       dataDir: args.dataDir,
       eventSink: args.eventSink,
       options: args.options,
+      preparedAssembly: args.preparedAssembly,
+      deferredFailure: args.deferredFailure,
     }),
   )
 }
@@ -1883,6 +2000,13 @@ export function registerGenerationChatRoutes(
       }
 
       const input = toAssembleInput(body)
+      const requestAbort = attachAbort(req)
+      const preflight = preflightChatGenerationSettings(reply, input, dataDir, db)
+      if (preflight.status === 'handled') {
+        requestAbort.cleanup()
+        return
+      }
+
       // Durable path for persisting generation modes. The active-writer submission
       // gate ran in the global preHandler; here we add the one-job-per-chat rule
       // and hand off to the detached runner.
@@ -1896,11 +2020,24 @@ export function registerGenerationChatRoutes(
           eventSink,
           options,
           generationJobs,
+          deferredFailure: preflight.status === 'defer' ? preflight.failure : undefined,
         })
+        requestAbort.cleanup()
         return
       }
 
-      await streamAssembly(req, reply, db, input, dataDir, eventSink, options)
+      await streamAssembly(
+        req,
+        reply,
+        db,
+        input,
+        dataDir,
+        eventSink,
+        options,
+        undefined,
+        preflight.status === 'defer' ? preflight.failure : undefined,
+        requestAbort,
+      )
     },
   )
 
@@ -1962,10 +2099,7 @@ export function registerGenerationChatRoutes(
         }
         return result.prompt
       } catch (err) {
-        if (err instanceof EntityNotFoundError) {
-          reply.code(404)
-          return { error: err.message }
-        }
+        if (sendAssemblyHttpError(reply, err)) return
         throw err
       } finally {
         cleanup()
