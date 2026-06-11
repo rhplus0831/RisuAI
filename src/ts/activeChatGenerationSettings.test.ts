@@ -220,6 +220,54 @@ describe('active chat generation settings helper', () => {
     }
   })
 
+  it('blocks send when deleted preset and persona ids remain on the active chat', () => {
+    DBState.db.selectedPersona = 0
+    DBState.db.botPresetsId = 0
+    DBState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'deleted-persona',
+      presetId: 'deleted-preset',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        global: '1',
+        chat: '1',
+        character: '1',
+      },
+    }
+
+    const state = resolveActiveChatGenerationSettings()
+
+    expect(state.persona).toBeUndefined()
+    expect(state.preset).toBeUndefined()
+    expect(state.readiness.ready).toBe(false)
+    expect(state.readiness.missing).toEqual([
+      {
+        code: 'persona_missing',
+        field: 'generationSettings.personaId',
+        personaId: 'deleted-persona',
+      },
+      {
+        code: 'preset_missing',
+        field: 'generationSettings.presetId',
+        presetId: 'deleted-preset',
+      },
+    ])
+    expect(state.missingLabels).toEqual(['Persona', 'Preset'])
+
+    const guard = guardActiveChatGenerationSettingsForSend(state)
+
+    expect(guard.status).toBe('error')
+    if (guard.status === 'error') {
+      expect(guard.error).toBe('Chat generation settings are incomplete. Missing: Persona, Preset.')
+    }
+    expect(DBState.db.characters[0].chats[0].generationSettings).toMatchObject({
+      personaId: 'deleted-persona',
+      presetId: 'deleted-preset',
+    })
+    expect(DBState.db.selectedPersona).toBe(0)
+    expect(DBState.db.botPresetsId).toBe(0)
+  })
+
   it('ignores global moduleIntergration when the selected preset does not link integrated modules', () => {
     DBState.db.characters[0].chats[0].generationSettings = {
       configured: true,

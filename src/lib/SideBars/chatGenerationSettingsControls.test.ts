@@ -349,6 +349,78 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerControl('persona').textContent).toContain('Select chat persona')
   })
 
+  it('keeps deleted preset and persona ids unconfigured without selecting global rows', async () => {
+    const missingPresetId = 'deleted-preset'
+    const missingPersonaId = 'deleted-persona'
+    activeChat().generationSettings = {
+      configured: true,
+      personaId: missingPersonaId,
+      presetId: missingPresetId,
+      jailbreakToggle: false,
+      sidebarToggles: {
+        moduleFlag: '1',
+      },
+    }
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    const state = resolveActiveChatGenerationSettings()
+    expect(state.persona).toBeUndefined()
+    expect(state.preset).toBeUndefined()
+    expect(state.readiness.ready).toBe(false)
+    expect(state.readiness.missing.map((reason) => reason.code)).toEqual([
+      'persona_missing',
+      'preset_missing',
+    ])
+    expect(state.missingLabels).toEqual(['Persona', 'Preset'])
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe(missingPresetId)
+    expect(pickerControl('preset').textContent).toContain('Select chat preset')
+    expect(pickerControl('preset').textContent).not.toContain('Preset Alpha')
+    expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe(missingPersonaId)
+    expect(pickerControl('persona').textContent).toContain('Select chat persona')
+    expect(pickerControl('persona').textContent).not.toContain('Persona Alpha')
+    expect(activeChat().generationSettings).toMatchObject({
+      personaId: missingPersonaId,
+      presetId: missingPresetId,
+    })
+    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.selectedPersona).toBe(0)
+
+    pickerButton('preset').click()
+    await tick()
+
+    expect(get(openPresetList)).toBe(true)
+    expect(presetListModalStore.mode).toBe('active-chat-generation-settings')
+    expect(pickerRow('preset', 'preset-a').dataset.risuSelected).toBe('false')
+    expect(pickerRow('preset', 'preset-a').getAttribute('aria-current')).toBeNull()
+    expect(pickerRow('preset', 'preset-b').dataset.risuSelected).toBe('false')
+    expect(pickerRow('preset', 'preset-b').getAttribute('aria-current')).toBeNull()
+
+    closePresetListModal()
+    await tick()
+
+    pickerButton('persona').click()
+    await tick()
+
+    expect(get(openPersonaList)).toBe(true)
+    expect(personaListModalStore.mode).toBe('active-chat-generation-settings')
+    expect(pickerRow('persona', 'persona-a').dataset.risuSelected).toBe('false')
+    expect(pickerRow('persona', 'persona-a').getAttribute('aria-current')).toBeNull()
+    expect(pickerRow('persona', 'persona-b').dataset.risuSelected).toBe('false')
+    expect(pickerRow('persona', 'persona-b').getAttribute('aria-current')).toBeNull()
+
+    closePersonaListModal()
+    await tick()
+
+    expect(activeChat().generationSettings).toMatchObject({
+      personaId: missingPersonaId,
+      presetId: missingPresetId,
+    })
+    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.selectedPersona).toBe(0)
+  })
+
   it('remediates a prefilled incomplete chat through visible generation-settings controls', async () => {
     const calls = stubCommandFetch()
     activeChat().generationSettings = {

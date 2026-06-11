@@ -164,6 +164,45 @@ describe('chat generation settings contract', () => {
     })
   })
 
+  it('reports deleted preset and persona references without retargeting to available rows', () => {
+    const settings = {
+      configured: true,
+      personaId: 'deleted-persona',
+      presetId: 'deleted-preset',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+
+    const readiness = resolveChatGenerationSettingsReadiness(
+      readinessInput({
+        personas: [{ id: 'persona-a' }],
+        presets: [{ id: 'preset-a', customPromptTemplateToggle: 'mode=Mode' }],
+        settings,
+      }),
+    )
+
+    expect(readiness.ready).toBe(false)
+    expect(readiness.requirements.preset).toBeUndefined()
+    expect(readiness.requirements.presetFound).toBe(false)
+    expect(readiness.requirements.sidebarToggles).toEqual([])
+    expect(readiness.missing).toEqual([
+      {
+        code: 'persona_missing',
+        field: 'generationSettings.personaId',
+        personaId: 'deleted-persona',
+      },
+      {
+        code: 'preset_missing',
+        field: 'generationSettings.presetId',
+        presetId: 'deleted-preset',
+      },
+    ])
+    expect(settings).toMatchObject({
+      personaId: 'deleted-persona',
+      presetId: 'deleted-preset',
+    })
+  })
+
   it('ignores stale sidebar toggle keys for readiness and reports them for pruning', () => {
     const readiness = resolveChatGenerationSettingsReadiness(
       readinessInput({
