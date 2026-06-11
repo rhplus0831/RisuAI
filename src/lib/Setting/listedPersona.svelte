@@ -60,6 +60,9 @@
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
   <div
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-96 max-h-full overflow-y-auto"
+    data-risu-generation-picker
+    data-risu-picker-kind="persona"
+    data-risu-picker-mode={mode}
   >
     <div class="flex items-center text-textcolor mb-4">
       <h2 class="mt-0 mb-0 font-bold">{language.persona}</h2>
@@ -79,6 +82,13 @@
         }}
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
         class:bg-selected={isPersonaSelected(i)}
+        data-risu-generation-picker-row
+        data-risu-picker-kind="persona"
+        data-risu-picker-mode={mode}
+        data-risu-row-id={nonEmptyId(persona.id) ?? ''}
+        data-risu-row-index={i}
+        data-risu-selected={isPersonaSelected(i) ? 'true' : 'false'}
+        aria-current={isPersonaSelected(i) ? 'true' : undefined}
       >
         <span class="overflow-x-auto whitespace-nowrap w-full text-left">
           <span class="font-medium">{persona.name}</span>

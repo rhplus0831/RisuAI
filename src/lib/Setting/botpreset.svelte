@@ -139,6 +139,9 @@
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
   <div
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-124 max-h-full overflow-y-auto"
+    data-risu-generation-picker
+    data-risu-picker-kind="preset"
+    data-risu-picker-mode={mode}
   >
     <div class="flex items-center text-textcolor mb-4">
       <h2 class="mt-0 mb-0">{language.presets}</h2>
@@ -180,6 +183,13 @@
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
         class:bg-selected={isPresetSelected(preset, i)}
         class:draggable-preset={!editMode}
+        data-risu-generation-picker-row
+        data-risu-picker-kind="preset"
+        data-risu-picker-mode={mode}
+        data-risu-row-id={nonEmptyId(preset?.id) ?? ''}
+        data-risu-row-index={i}
+        data-risu-selected={isPresetSelected(preset, i) ? 'true' : 'false'}
+        aria-current={isPresetSelected(preset, i) ? 'true' : undefined}
         draggable={!editMode ? 'true' : 'false'}
         ondragstart={(e) => {
           if (editMode) {

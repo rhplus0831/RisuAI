@@ -54,16 +54,27 @@
   )
 </script>
 
-<div class="rounded-sm flex flex-col w-full gap-2">
+<div
+  class="rounded-sm flex flex-col w-full gap-2"
+  data-risu-generation-settings-picker-controls
+  data-risu-picker-mode="active-chat-generation-settings"
+>
   {#each DBState.db.customSidebarItems as item}
     {#if item.type === 'model'}
       <ModelList bind:value={aiModelDraft.value} noMargin />
     {:else if item.type === 'preset'}
-      <Button
-        onclick={() => {
-          openPresetListModal('active-chat-generation-settings')
-        }}>{presetName}</Button
+      <div
+        data-risu-generation-picker-control
+        data-risu-picker-kind="preset"
+        data-risu-picker-mode="active-chat-generation-settings"
+        data-risu-picker-selected-id={activeGenerationSettings.settings?.presetId ?? ''}
       >
+        <Button
+          onclick={() => {
+            openPresetListModal('active-chat-generation-settings')
+          }}>{presetName}</Button
+        >
+      </div>
     {:else if item.type === 'loadout'}
       <Button
         onclick={() => {
@@ -71,43 +82,52 @@
         }}>{DBState.db.lastLoadedLoadoutName || language.loadouts}</Button
       >
     {:else if item.type === 'persona'}
-      <Button
-        className="flex"
-        onclick={() => {
-          openPersonaListModal('active-chat-generation-settings')
-        }}
+      <div
+        data-risu-generation-picker-control
+        data-risu-picker-kind="persona"
+        data-risu-picker-mode="active-chat-generation-settings"
+        data-risu-picker-selected-id={activeGenerationSettings.settings?.personaId ?? ''}
       >
-        <div class="flex-1 flex-col flex text-left">
-          <span>{personaName}</span>
-        </div>
-
-        <button
-          class={{
-            'ml-2': true,
-            'text-textcolor2': !bindedPersona,
-            'text-textcolor': bindedPersona,
-          }}
-          onclick={(e) => {
-            e.stopPropagation()
-            const previous = currentChatStateSnapshot()
-            const chatIndex = DBState.db.characters[$selectedCharID].chatPage
-            const chat = DBState.db.characters[$selectedCharID].chats[chatIndex]
-            const persona = DBState.db.personas[DBState.db.selectedPersona]
-            const bindedPersona = checkPersonaBinded() ? '' : (persona.id ?? v4())
-            if (!canUseServerCommands()) {
-              if (!persona.id) {
-                persona.id = bindedPersona
-              }
-              chat.bindedPersona = bindedPersona
-            }
-            if (chat.id) {
-              dispatchUpdateChat(chat.id, { bindedPersona }, previous)
-            }
+        <Button
+          className="flex"
+          onclick={() => {
+            openPersonaListModal('active-chat-generation-settings')
           }}
         >
-          <PinIcon size={20} />
-        </button>
-      </Button>
+          <div class="flex-1 flex-col flex text-left">
+            <span>{personaName}</span>
+          </div>
+
+          <button
+            class={{
+              'ml-2': true,
+              'text-textcolor2': !bindedPersona,
+              'text-textcolor': bindedPersona,
+            }}
+            onclick={(e) => {
+              e.stopPropagation()
+              const previous = currentChatStateSnapshot()
+              const chatIndex = DBState.db.characters[$selectedCharID].chatPage
+              const chat = DBState.db.characters[$selectedCharID].chats[chatIndex]
+              const persona = DBState.db.personas[DBState.db.selectedPersona]
+              const bindedPersona = checkPersonaBinded() ? '' : (persona.id ?? v4())
+              if (!canUseServerCommands()) {
+                if (!persona.id) {
+                  persona.id = bindedPersona
+                }
+                chat.bindedPersona = bindedPersona
+              }
+              if (chat.id) {
+                dispatchUpdateChat(chat.id, { bindedPersona }, previous)
+              }
+            }}
+            data-risu-generation-picker-action="bind-persona"
+            aria-pressed={!!bindedPersona}
+          >
+            <PinIcon size={20} />
+          </button>
+        </Button>
+      </div>
     {:else if item.type === 'setting'}
       <SettingRenderer items={[getFullSettingsData().find((s) => s.id === item.subType)]} />
     {/if}

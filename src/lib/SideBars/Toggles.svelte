@@ -60,7 +60,14 @@
 {#snippet toggles(items: ChatGenerationRequiredSidebarToggle[], reverse: boolean = false)}
   {#each items as toggle}
     {#if toggle.kind === 'select'}
-      <div class="w-full flex gap-2 mt-2 items-center" class:justify-end={$MobileGUI}>
+      <div
+        class="w-full flex gap-2 mt-2 items-center"
+        class:justify-end={$MobileGUI}
+        data-risu-generation-toggle-control
+        data-risu-toggle-key={toggle.key}
+        data-risu-toggle-kind={toggle.kind}
+        data-risu-input-kind="select"
+      >
         <span>{toggle.label}</span>
         <SelectInput
           className="w-32"
@@ -74,7 +81,14 @@
         </SelectInput>
       </div>
     {:else if toggle.kind === 'text'}
-      <div class="w-full flex gap-2 mt-2 items-center" class:justify-end={$MobileGUI}>
+      <div
+        class="w-full flex gap-2 mt-2 items-center"
+        class:justify-end={$MobileGUI}
+        data-risu-generation-toggle-control
+        data-risu-toggle-key={toggle.key}
+        data-risu-toggle-kind={toggle.kind}
+        data-risu-input-kind="text"
+      >
         <span>{toggle.label}</span>
         <TextInput
           className="w-32"
@@ -84,7 +98,14 @@
         />
       </div>
     {:else if toggle.kind === 'textarea'}
-      <div class="w-full flex gap-2 mt-2 items-start" class:justify-end={$MobileGUI}>
+      <div
+        class="w-full flex gap-2 mt-2 items-start"
+        class:justify-end={$MobileGUI}
+        data-risu-generation-toggle-control
+        data-risu-toggle-key={toggle.key}
+        data-risu-toggle-kind={toggle.kind}
+        data-risu-input-kind="textarea"
+      >
         <span class="mt-1.5">{toggle.label}</span>
         <TextAreaInput
           className="w-32"
@@ -95,7 +116,15 @@
         />
       </div>
     {:else}
-      <div class="w-full flex mt-2 items-center" class:justify-end={$MobileGUI}>
+      <div
+        class="w-full flex mt-2 items-center"
+        class:justify-end={$MobileGUI}
+        data-risu-generation-toggle-control
+        data-risu-toggle-key={toggle.key}
+        data-risu-toggle-kind={toggle.kind}
+        data-risu-input-kind="checkbox"
+        data-risu-selected={getToggleValue(toggle.key) === '1' ? 'true' : 'false'}
+      >
         <CheckInput
           check={getToggleValue(toggle.key) === '1'}
           {reverse}
@@ -116,7 +145,15 @@
     <CustomSideBar />
 
     {#if hasJailbreakPrompt}
-      <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
+      <div
+        class="flex mt-2 items-center w-full"
+        class:justify-end={$MobileGUI}
+        data-risu-generation-jailbreak-control
+        data-risu-toggle-key="jailbreakToggle"
+        data-risu-toggle-kind="jailbreak"
+        data-risu-input-kind="checkbox"
+        data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}
+      >
         <CheckInput
           bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
           name={language.jailbreakToggle}
@@ -141,7 +178,14 @@
   <CustomSideBar />
 
   {#if hasJailbreakPrompt}
-    <div class="flex mt-2 items-center">
+    <div
+      class="flex mt-2 items-center"
+      data-risu-generation-jailbreak-control
+      data-risu-toggle-key="jailbreakToggle"
+      data-risu-toggle-kind="jailbreak"
+      data-risu-input-kind="checkbox"
+      data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}
+    >
       <CheckInput
         bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
         name={language.jailbreakToggle}

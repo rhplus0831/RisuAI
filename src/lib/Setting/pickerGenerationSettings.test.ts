@@ -212,12 +212,34 @@ function seedDb(): void {
   } as any
 }
 
-function rowButton(label: string): HTMLButtonElement {
-  const button = Array.from(target.querySelectorAll('button')).find((candidate) =>
-    candidate.textContent?.includes(label),
+function elementBySelector<T extends Element>(selector: string, label: string): T {
+  const element = target.querySelector<T>(selector)
+  expect(element, label).toBeTruthy()
+  return element!
+}
+
+function pickerRoot(kind: 'preset' | 'persona', mode: GenerationSettingsPickerMode): HTMLElement {
+  return elementBySelector<HTMLElement>(
+    `[data-risu-generation-picker][data-risu-picker-kind="${kind}"][data-risu-picker-mode="${mode}"]`,
+    `${kind} ${mode} picker root`,
   )
-  expect(button, `row button ${label}`).toBeTruthy()
-  return button as HTMLButtonElement
+}
+
+function pickerRow(kind: 'preset' | 'persona', id: string): HTMLButtonElement {
+  return elementBySelector<HTMLButtonElement>(
+    `button[data-risu-generation-picker-row][data-risu-picker-kind="${kind}"][data-risu-row-id="${id}"]`,
+    `${kind} row ${id}`,
+  )
+}
+
+function expectPickerRowSelection(
+  kind: 'preset' | 'persona',
+  id: string,
+  selected: boolean,
+): void {
+  const row = pickerRow(kind, id)
+  expect(row.dataset.risuSelected).toBe(selected ? 'true' : 'false')
+  expect(row.getAttribute('aria-current')).toBe(selected ? 'true' : null)
 }
 
 function mountPresetPicker(mode: GenerationSettingsPickerMode, close = vi.fn()) {
@@ -261,10 +283,13 @@ describe('generation settings picker mode', () => {
     const calls = stubCommandFetch()
     const close = mountPresetPicker('active-chat-generation-settings')
 
-    expect(rowButton('Preset A').className).not.toContain('bg-selected')
-    expect(rowButton('Preset B').className).toContain('bg-selected')
+    expect(pickerRoot('preset', 'active-chat-generation-settings')).toBeTruthy()
+    expect(pickerRow('preset', 'preset-a').dataset.risuRowIndex).toBe('0')
+    expect(pickerRow('preset', 'preset-b').dataset.risuRowIndex).toBe('1')
+    expectPickerRowSelection('preset', 'preset-a', false)
+    expectPickerRowSelection('preset', 'preset-b', true)
 
-    rowButton('Preset A').click()
+    pickerRow('preset', 'preset-a').click()
     await tick()
     await waitForCommandFetches(calls)
 
@@ -294,10 +319,11 @@ describe('generation settings picker mode', () => {
     const calls = stubCommandFetch()
     const close = mountPresetPicker('global')
 
-    expect(rowButton('Preset A').className).toContain('bg-selected')
-    expect(rowButton('Preset B').className).not.toContain('bg-selected')
+    expect(pickerRoot('preset', 'global')).toBeTruthy()
+    expectPickerRowSelection('preset', 'preset-a', true)
+    expectPickerRowSelection('preset', 'preset-b', false)
 
-    rowButton('Preset B').click()
+    pickerRow('preset', 'preset-b').click()
     await tick()
 
     expect(presetSpies.changeToPreset).toHaveBeenCalledWith(1)
@@ -310,10 +336,13 @@ describe('generation settings picker mode', () => {
     const calls = stubCommandFetch()
     const close = mountPersonaPicker('active-chat-generation-settings')
 
-    expect(rowButton('Persona A').className).not.toContain('bg-selected')
-    expect(rowButton('Persona B').className).toContain('bg-selected')
+    expect(pickerRoot('persona', 'active-chat-generation-settings')).toBeTruthy()
+    expect(pickerRow('persona', 'persona-a').dataset.risuRowIndex).toBe('0')
+    expect(pickerRow('persona', 'persona-b').dataset.risuRowIndex).toBe('1')
+    expectPickerRowSelection('persona', 'persona-a', false)
+    expectPickerRowSelection('persona', 'persona-b', true)
 
-    rowButton('Persona A').click()
+    pickerRow('persona', 'persona-a').click()
     await tick()
     await waitForCommandFetches(calls)
 
@@ -343,10 +372,11 @@ describe('generation settings picker mode', () => {
     const calls = stubCommandFetch()
     const close = mountPersonaPicker('global')
 
-    expect(rowButton('Persona A').className).toContain('bg-selected')
-    expect(rowButton('Persona B').className).not.toContain('bg-selected')
+    expect(pickerRoot('persona', 'global')).toBeTruthy()
+    expectPickerRowSelection('persona', 'persona-a', true)
+    expectPickerRowSelection('persona', 'persona-b', false)
 
-    rowButton('Persona B').click()
+    pickerRow('persona', 'persona-b').click()
     await tick()
 
     expect(personaSpies.changeUserPersona).toHaveBeenCalledWith(1)

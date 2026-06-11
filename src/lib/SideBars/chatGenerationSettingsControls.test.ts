@@ -218,29 +218,70 @@ function mountToggles(): void {
   })
 }
 
-function buttonContaining(label: string): HTMLButtonElement {
-  const button = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
-    (candidate) => candidate.textContent?.includes(label),
+function elementBySelector<T extends Element>(selector: string, label: string): T {
+  const element = target.querySelector<T>(selector)
+  expect(element, label).toBeTruthy()
+  return element!
+}
+
+function pickerControl(kind: 'preset' | 'persona'): HTMLElement {
+  return elementBySelector<HTMLElement>(
+    `[data-risu-generation-picker-control][data-risu-picker-kind="${kind}"]`,
+    `${kind} picker control`,
   )
-  expect(button, `button containing ${label}`).toBeTruthy()
-  return button!
 }
 
-function checkboxByName(name: string): HTMLInputElement {
-  const input = target.querySelector<HTMLInputElement>(`input[type="checkbox"][alt="${name}"]`)
-  expect(input, `checkbox ${name}`).toBeTruthy()
+function pickerButton(kind: 'preset' | 'persona'): HTMLButtonElement {
+  const input = pickerControl(kind).querySelector<HTMLButtonElement>('button')
+  expect(input, `${kind} picker button`).toBeTruthy()
   return input!
 }
 
-function textInput(): HTMLInputElement {
-  const input = target.querySelector<HTMLInputElement>('input[type="text"]')
-  expect(input, 'text toggle input').toBeTruthy()
+function toggleControl(key: string): HTMLElement {
+  return elementBySelector<HTMLElement>(
+    `[data-risu-generation-toggle-control][data-risu-toggle-key="${key}"]`,
+    `${key} toggle control`,
+  )
+}
+
+function jailbreakControl(): HTMLElement {
+  return elementBySelector<HTMLElement>(
+    '[data-risu-generation-jailbreak-control]',
+    'jailbreak toggle control',
+  )
+}
+
+function checkboxWithin(container: HTMLElement, label: string): HTMLInputElement {
+  const input = container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+  expect(input, `${label} checkbox`).toBeTruthy()
   return input!
 }
 
-function selectInput(): HTMLSelectElement {
-  const select = target.querySelector<HTMLSelectElement>('select')
-  expect(select, 'select toggle input').toBeTruthy()
+function toggleCheckbox(key: string): HTMLInputElement {
+  const control = toggleControl(key)
+  expect(control.dataset.risuInputKind).toBe('checkbox')
+  return checkboxWithin(control, key)
+}
+
+function jailbreakCheckbox(): HTMLInputElement {
+  const control = jailbreakControl()
+  expect(control.dataset.risuInputKind).toBe('checkbox')
+  return checkboxWithin(control, 'jailbreak')
+}
+
+function textToggleInput(key: string): HTMLInputElement {
+  const control = toggleControl(key)
+  expect(control.dataset.risuInputKind).toBe('text')
+  const input = control.querySelector<HTMLInputElement>('input[type="text"]')
+  expect(input, `${key} text toggle input`).toBeTruthy()
+  return input!
+}
+
+function selectToggleInput(key: string): HTMLSelectElement {
+  const control = toggleControl(key)
+  expect(control.dataset.risuInputKind).toBe('select')
+  const select = control.querySelector<HTMLSelectElement>('select')
+  expect(select, `${key} select toggle input`).toBeTruthy()
   return select!
 }
 
@@ -281,38 +322,48 @@ describe('sidebar chat generation settings controls', () => {
     mountToggles()
     await tick()
 
-    expect(buttonContaining('Select chat preset')).toBeTruthy()
-    expect(buttonContaining('Select chat persona')).toBeTruthy()
+    expect(pickerControl('preset').dataset.risuPickerMode).toBe('active-chat-generation-settings')
+    expect(pickerControl('preset').textContent).toContain('Select chat preset')
+    expect(pickerControl('persona').dataset.risuPickerMode).toBe('active-chat-generation-settings')
+    expect(pickerControl('persona').textContent).toContain('Select chat persona')
   })
 
   it('renders preset, persona, and toggle values from the active chat while switching chats', async () => {
     mountToggles()
     await tick()
 
-    expect(buttonContaining('Preset Alpha')).toBeTruthy()
-    expect(buttonContaining('Persona Alpha')).toBeTruthy()
-    expect(selectInput().value).toBe('1')
-    expect(textInput().value).toBe('alpha-note')
-    expect(checkboxByName('Flag').checked).toBe(true)
-    expect(checkboxByName('Module Flag').checked).toBe(true)
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
+    expect(pickerControl('persona').textContent).toContain('Persona Alpha')
+    expect(selectToggleInput('mood').value).toBe('1')
+    expect(textToggleInput('note').value).toBe('alpha-note')
+    expect(toggleCheckbox('flag').checked).toBe(true)
+    expect(toggleControl('flag').dataset.risuSelected).toBe('true')
+    expect(toggleCheckbox('moduleFlag').checked).toBe(true)
+    expect(toggleControl('moduleFlag').dataset.risuSelected).toBe('true')
     expect(target.textContent).not.toContain('Legacy Toggle')
 
     DBState.db.characters[0].chatPage = 1
     await tick()
 
-    expect(buttonContaining('Preset Beta')).toBeTruthy()
-    expect(buttonContaining('Persona Beta')).toBeTruthy()
-    expect(selectInput().value).toBe('0')
-    expect(textInput().value).toBe('beta-note')
-    expect(checkboxByName('Flag').checked).toBe(false)
-    expect(checkboxByName('Module Flag').checked).toBe(false)
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-b')
+    expect(pickerControl('preset').textContent).toContain('Preset Beta')
+    expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-b')
+    expect(pickerControl('persona').textContent).toContain('Persona Beta')
+    expect(selectToggleInput('mood').value).toBe('0')
+    expect(textToggleInput('note').value).toBe('beta-note')
+    expect(toggleCheckbox('flag').checked).toBe(false)
+    expect(toggleControl('flag').dataset.risuSelected).toBe('false')
+    expect(toggleCheckbox('moduleFlag').checked).toBe(false)
+    expect(toggleControl('moduleFlag').dataset.risuSelected).toBe('false')
   })
 
   it('opens preset and persona pickers in active-chat generation-settings mode', async () => {
     mountToggles()
     await tick()
 
-    buttonContaining('Preset Alpha').click()
+    pickerButton('preset').click()
     await tick()
 
     expect(get(openPresetList)).toBe(true)
@@ -321,7 +372,7 @@ describe('sidebar chat generation settings controls', () => {
     closePresetListModal()
     await tick()
 
-    buttonContaining('Persona Alpha').click()
+    pickerButton('persona').click()
     await tick()
 
     expect(get(openPersonaList)).toBe(true)
@@ -333,30 +384,34 @@ describe('sidebar chat generation settings controls', () => {
     mountToggles()
     await tick()
 
-    checkboxByName('Toggle Jailbreak').click()
+    jailbreakCheckbox().click()
     await tick()
     await waitForFetchCount(calls, 2)
 
     expect(activeChat().generationSettings?.jailbreakToggle).toBe(false)
+    expect(jailbreakControl().dataset.risuSelected).toBe('false')
     expect(DBState.db.jailbreakToggle).toBe(true)
 
-    checkboxByName('Flag').click()
+    toggleCheckbox('flag').click()
     await tick()
     await waitForFetchCount(calls, 3)
 
     expect(activeChat().generationSettings?.sidebarToggles?.flag).toBe('0')
+    expect(toggleControl('flag').dataset.risuSelected).toBe('false')
     expect(DBState.db.globalChatVariables.toggle_flag).toBe('global-flag')
 
-    selectInput().value = '0'
-    selectInput().dispatchEvent(new Event('change', { bubbles: true }))
+    const moodSelect = selectToggleInput('mood')
+    moodSelect.value = '0'
+    moodSelect.dispatchEvent(new Event('change', { bubbles: true }))
     await tick()
     await waitForFetchCount(calls, 4)
 
     expect(activeChat().generationSettings?.sidebarToggles?.mood).toBe('0')
     expect(DBState.db.globalChatVariables.toggle_mood).toBe('global-mood')
 
-    textInput().value = 'updated-note'
-    textInput().dispatchEvent(new Event('input', { bubbles: true }))
+    const noteInput = textToggleInput('note')
+    noteInput.value = 'updated-note'
+    noteInput.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
     await waitForFetchCount(calls, 5)
 
