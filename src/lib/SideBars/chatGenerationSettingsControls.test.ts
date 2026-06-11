@@ -48,6 +48,7 @@ import {
 } from 'src/ts/stores.svelte'
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
+import { mergeServerProjectionCharacterRow } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -521,6 +522,65 @@ describe('sidebar chat generation settings controls', () => {
     expect(toggleControl('flag').dataset.risuSelected).toBe('false')
     expect(toggleCheckbox('moduleFlag').checked).toBe(false)
     expect(toggleControl('moduleFlag').dataset.risuSelected).toBe('false')
+  })
+
+  it('updates mounted active-chat controls after a character-row projection changes generation settings', async () => {
+    mountToggles()
+    await tick()
+
+    const mountedControls = elementBySelector<HTMLElement>(
+      '[data-risu-generation-settings-picker-controls]',
+      'mounted generation settings controls',
+    )
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
+    expect(pickerControl('persona').textContent).toContain('Persona Alpha')
+    expect(selectToggleInput('mood').value).toBe('1')
+    expect(textToggleInput('note').value).toBe('alpha-note')
+    expect(toggleControl('flag').dataset.risuSelected).toBe('true')
+    expect(jailbreakControl().dataset.risuSelected).toBe('true')
+
+    const applied = mergeServerProjectionCharacterRow({
+      ...DBState.db.characters[0],
+      name: 'Character Alpha Projected',
+      chats: DBState.db.characters[0].chats.map((chat) => ({
+        ...chat,
+        message: [],
+        generationSettings:
+          chat.id === 'chat-a'
+            ? {
+                configured: true,
+                personaId: 'persona-b',
+                presetId: 'preset-b',
+                jailbreakToggle: false,
+                sidebarToggles: {
+                  mood: '0',
+                  flag: '0',
+                  note: 'projected-note',
+                  moduleFlag: '0',
+                },
+              }
+            : chat.generationSettings,
+      })),
+    })
+    expect(applied).toBe(true)
+    await tick()
+
+    expect(mountedControls.isConnected).toBe(true)
+    expect(target.contains(mountedControls)).toBe(true)
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-b')
+    expect(pickerControl('preset').textContent).toContain('Preset Beta')
+    expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-b')
+    expect(pickerControl('persona').textContent).toContain('Persona Beta')
+    expect(selectToggleInput('mood').value).toBe('0')
+    expect(textToggleInput('note').value).toBe('projected-note')
+    expect(toggleCheckbox('flag').checked).toBe(false)
+    expect(toggleControl('flag').dataset.risuSelected).toBe('false')
+    expect(toggleCheckbox('moduleFlag').checked).toBe(false)
+    expect(toggleControl('moduleFlag').dataset.risuSelected).toBe('false')
+    expect(jailbreakCheckbox().checked).toBe(false)
+    expect(jailbreakControl().dataset.risuSelected).toBe('false')
   })
 
   it('opens preset and persona pickers in active-chat generation-settings mode', async () => {
