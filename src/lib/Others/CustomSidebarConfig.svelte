@@ -95,18 +95,6 @@
       <Button
         onclick={() => {
           addCustomSidebarItem({
-            type: 'preset',
-            subType: 'none',
-            label: language.presets,
-          })
-        }}
-      >
-        {language.presets}
-      </Button>
-
-      <Button
-        onclick={() => {
-          addCustomSidebarItem({
             type: 'loadout',
             subType: 'none',
             label: language.loadouts,
@@ -114,18 +102,6 @@
         }}
       >
         {language.loadouts}
-      </Button>
-
-      <Button
-        onclick={() => {
-          addCustomSidebarItem({
-            type: 'persona',
-            subType: 'none',
-            label: language.persona,
-          })
-        }}
-      >
-        {language.persona}
       </Button>
 
       <Button

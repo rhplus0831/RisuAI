@@ -164,10 +164,7 @@ function seedDb(): void {
       toggle_note: 'global-note',
     },
     customPromptTemplateToggle: 'legacy=Legacy Toggle',
-    customSidebarItems: [
-      { id: 'preset-control', type: 'preset', subType: '', label: '' },
-      { id: 'persona-control', type: 'persona', subType: '', label: '' },
-    ],
+    customSidebarItems: [],
     lastLoadedLoadoutName: '',
     hypaV3: false,
     personas: [
@@ -374,6 +371,43 @@ afterEach(() => {
 })
 
 describe('sidebar chat generation settings controls', () => {
+  it('always shows chat setup controls without custom sidebar configuration', async () => {
+    DBState.db.customSidebarItems = []
+    DBState.db.characters[0].chats[0].generationSettings = {
+      configured: false,
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+
+    mountToggles()
+    await tick()
+
+    expect(pickerControl('preset').textContent).toContain('Select chat preset')
+    expect(pickerControl('persona').textContent).toContain('Select chat persona')
+  })
+
+  it('does not duplicate chat setup controls from legacy custom sidebar items', async () => {
+    const legacyDb = DBState.db as { customSidebarItems: unknown }
+    legacyDb.customSidebarItems = [
+      { id: 'preset-control', type: 'preset', subType: '', label: '' },
+      { id: 'persona-control', type: 'persona', subType: '', label: '' },
+    ]
+
+    mountToggles()
+    await tick()
+
+    expect(
+      target.querySelectorAll(
+        '[data-risu-generation-picker-control][data-risu-picker-kind="preset"]',
+      ),
+    ).toHaveLength(1)
+    expect(
+      target.querySelectorAll(
+        '[data-risu-generation-picker-control][data-risu-picker-kind="persona"]',
+      ),
+    ).toHaveLength(1)
+  })
+
   it('shows clear chat setup labels when preset and persona are not configured', async () => {
     DBState.db.characters[0].chats[0].generationSettings = {
       configured: false,

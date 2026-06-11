@@ -7,6 +7,7 @@
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
+  import ChatGenerationSettingsControls from './ChatGenerationSettingsControls.svelte'
   import CustomSideBar from './CustomSidebar.svelte'
   import { setCharacterSupaMemory } from 'src/ts/characterCommands'
   import {
@@ -142,6 +143,7 @@
   <div
     class="h-48 border-darkborderc p-2 border rounded-sm flex flex-col items-start mt-2 overflow-y-auto"
   >
+    <ChatGenerationSettingsControls />
     <CustomSideBar />
 
     {#if hasJailbreakPrompt}
@@ -175,6 +177,7 @@
     {/if}
   </div>
 {:else}
+  <ChatGenerationSettingsControls />
   <CustomSideBar />
 
   {#if hasJailbreakPrompt}

@@ -920,13 +920,14 @@ export function setDatabase(data: Database) {
   data.keepSessionAlive ??= 'off'
   data.loadouts ??= []
   data.longPressToPopupEditor ??= false
-  data.customSidebarItems ??= []
+  data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
   changeLanguage(data.language)
   setDatabaseLite(data)
 }
 
 export function applyServerProjectionDatabase(data: Database) {
   return withServerProjectionApply(() => {
+    data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
     changeLanguage(data.language)
     setDatabaseLite(data)
   })
@@ -943,7 +944,7 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
   return withServerProjectionApply(() => {
     const db = DBState.db as unknown as Record<string, unknown>
     for (const [key, value] of Object.entries(fields)) {
-      db[key] = value
+      db[key] = key === 'customSidebarItems' ? normalizeCustomSidebarItems(value) : value
     }
   })
 }
@@ -1701,9 +1702,18 @@ export interface Database {
 
 export interface CustomSideBarItem {
   id: string
-  type: 'model' | 'databaseKey' | 'loadout' | 'persona' | 'preset' | 'setting'
+  type: 'model' | 'databaseKey' | 'loadout' | 'setting'
   subType: string
   label: string
+}
+
+function normalizeCustomSidebarItems(value: unknown): CustomSideBarItem[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is CustomSideBarItem => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+    const type = (item as { type?: unknown }).type
+    return type !== 'preset' && type !== 'persona'
+  })
 }
 
 export interface SeparateParameters {
