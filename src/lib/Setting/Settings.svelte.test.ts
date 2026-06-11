@@ -1,10 +1,13 @@
 import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SUPPORTER_ENDPOINT } from './Pages/supporters'
 
 const alertSpies = vi.hoisted(() => ({
   alertConfirm: vi.fn(async () => false),
+}))
+
+const supporterSpies = vi.hoisted(() => ({
+  loadSupporters: vi.fn(),
 }))
 
 vi.mock('src/ts/alert', async (importActual) => {
@@ -23,10 +26,30 @@ vi.mock('src/ts/globalApi.svelte', async (importActual) => {
   }
 })
 
+vi.mock('./Pages/supporters', async (importActual) => {
+  const actual = await importActual<typeof import('./Pages/supporters')>()
+  supporterSpies.loadSupporters.mockImplementation(async () => {
+    const supp = await fetch(actual.SUPPORTER_ENDPOINT)
+    if (!supp.ok) {
+      throw new Error(`Failed to load supporters (${supp.status})`)
+    }
+
+    await supp.json()
+    return actual.createEmptySupporterBuckets()
+  })
+
+  return {
+    ...actual,
+    loadSupporters: supporterSpies.loadSupporters,
+  }
+})
+
+import { SUPPORTER_ENDPOINT } from './Pages/supporters'
 import Settings from './Settings.svelte'
 import { language } from 'src/lang'
 import { additionalSettingsMenu, DBState, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
 import { isLite } from 'src/ts/lite'
+import { applyRouteToStores, currentRoute, navigate } from 'src/ts/router'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -46,8 +69,15 @@ async function flushClick() {
   await tick()
 }
 
+async function applyNavigatedRoute() {
+  await applyRouteToStores(get(currentRoute))
+  await tick()
+  await Promise.resolve()
+}
+
 describe('Settings supporter tab', () => {
   beforeEach(() => {
+    navigate('/')
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 })
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 })
     additionalSettingsMenu.splice(0)
@@ -61,6 +91,7 @@ describe('Settings supporter tab', () => {
     SettingsMenuIndex.set(-1)
     alertSpies.alertConfirm.mockReset()
     alertSpies.alertConfirm.mockResolvedValue(false)
+    supporterSpies.loadSupporters.mockClear()
     vi.stubGlobal('fetch', vi.fn())
 
     target = document.createElement('div')
@@ -76,14 +107,20 @@ describe('Settings supporter tab', () => {
     vi.unstubAllGlobals()
     target.remove()
     document.body.innerHTML = ''
+    navigate('/')
   })
 
   it('does not navigate or fetch supporters when the user cancels', async () => {
+    const initialPath = window.location.pathname
+
     supporterButton().click()
     await flushClick()
 
     expect(alertSpies.alertConfirm).toHaveBeenCalledWith(language.sendExternalServerWarning)
+    expect(window.location.pathname).toBe(initialPath)
+    expect(get(currentRoute)).toMatchObject({ kind: 'home', path: initialPath })
     expect(get(SettingsMenuIndex)).toBe(-1)
+    expect(supporterSpies.loadSupporters).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
   })
 
@@ -97,7 +134,16 @@ describe('Settings supporter tab', () => {
     supporterButton().click()
     await flushClick()
 
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/supporter',
+      section: 'supporter',
+      index: 77,
+    })
+    await applyNavigatedRoute()
+
     expect(get(SettingsMenuIndex)).toBe(77)
+    expect(supporterSpies.loadSupporters).toHaveBeenCalledOnce()
     expect(fetch).toHaveBeenCalledWith(SUPPORTER_ENDPOINT)
   })
 
@@ -108,6 +154,16 @@ describe('Settings supporter tab', () => {
     await flushClick()
 
     expect(alertSpies.alertConfirm).not.toHaveBeenCalled()
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/supporter',
+      section: 'supporter',
+      index: 77,
+    })
+    await applyNavigatedRoute()
+
     expect(get(SettingsMenuIndex)).toBe(77)
+    expect(supporterSpies.loadSupporters).toHaveBeenCalledOnce()
+    expect(fetch).toHaveBeenCalledWith(SUPPORTER_ENDPOINT)
   })
 })
