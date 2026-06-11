@@ -349,8 +349,13 @@
   })
 </script>
 
-<div class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)]">
-  <Button className="relative bottom-2" onclick={createChat}>{language.newChat}</Button>
+<div
+  data-risu-chat-list="sidebar"
+  class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)]"
+>
+  <div data-risu-chat-action="create">
+    <Button className="relative bottom-2" onclick={createChat}>{language.newChat}</Button>
+  </div>
 
   {#key sorted}
     <div class="flex flex-col mt-2 overflow-y-auto grow" bind:this={listEle}>
@@ -360,10 +365,13 @@
         {#each chara.chatFolders as folder, i}
           <div
             data-risu-chat-folder-idx={i}
+            data-risu-chat-folder-id={folder.id}
+            data-risu-chat-folder-folded={folder.folded ? 'true' : 'false'}
             class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md"
           >
             <!-- folder header -->
             <button
+              data-risu-chat-action="toggle-folder"
               onclick={() => {
                 if (!editMode) {
                   const previous = currentChatStateSnapshot()
@@ -395,6 +403,7 @@
               {/if}
               <div class="grow flex justify-end">
                 <div
+                  data-risu-chat-action="folder-options"
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => {
@@ -434,6 +443,7 @@
                   <MenuIcon size={18} />
                 </div>
                 <div
+                  data-risu-chat-action="folder-edit"
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => {
@@ -450,6 +460,7 @@
                   <PencilIcon size={18} />
                 </div>
                 <div
+                  data-risu-chat-action="folder-delete"
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => {
@@ -484,6 +495,8 @@
             </button>
             <!-- chats in folder -->
             <div
+              data-risu-chat-folder-panel-id={folder.id}
+              hidden={folder.folded}
               class="risu-chat flex flex-col w-full text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md {folder.folded
                 ? 'hidden'
                 : ''}"
@@ -495,6 +508,9 @@
                 {#each chatsByFolderId.get(folder.id) ?? [] as { chat, index }}
                   <button
                     data-risu-chat-idx={index}
+                    data-risu-chat-id={chat.id ?? ''}
+                    data-risu-chat-folder-id={chat.folderId ?? ''}
+                    data-risu-chat-selected={index === chara.chatPage ? 'true' : 'false'}
                     onclick={() => {
                       if (!editMode) {
                         selectChat(index)
@@ -515,6 +531,7 @@
                     {/if}
                     <div class="grow flex justify-end">
                       <div
+                        data-risu-chat-action="options"
                         role="button"
                         tabindex="0"
                         onkeydown={(e) => {
@@ -570,6 +587,7 @@
                         <MenuIcon size={18} />
                       </div>
                       <div
+                        data-risu-chat-action="edit"
                         role="button"
                         tabindex="0"
                         onkeydown={(e) => {
@@ -586,6 +604,7 @@
                         <PencilIcon size={18} />
                       </div>
                       <div
+                        data-risu-chat-action="export"
                         role="button"
                         tabindex="0"
                         onkeydown={(e) => {
@@ -602,6 +621,7 @@
                         <DownloadIcon size={18} />
                       </div>
                       <div
+                        data-risu-chat-action="delete"
                         role="button"
                         tabindex="0"
                         onkeydown={(e) => {
@@ -631,6 +651,9 @@
           {#if chat.folderId == null}
             <button
               data-risu-chat-idx={i}
+              data-risu-chat-id={chat.id ?? ''}
+              data-risu-chat-folder-id={chat.folderId ?? ''}
+              data-risu-chat-selected={i === chara.chatPage ? 'true' : 'false'}
               onclick={() => {
                 if (!editMode) {
                   selectChat(i)
@@ -651,6 +674,7 @@
               {/if}
               <div class="grow flex justify-end">
                 <div
+                  data-risu-chat-action="options"
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => {
@@ -705,6 +729,7 @@
                   <MenuIcon size={18} />
                 </div>
                 <div
+                  data-risu-chat-action="edit"
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => {
@@ -721,6 +746,7 @@
                   <PencilIcon size={18} />
                 </div>
                 <div
+                  data-risu-chat-action="export"
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => {
@@ -737,6 +763,7 @@
                   <DownloadIcon size={18} />
                 </div>
                 <div
+                  data-risu-chat-action="delete"
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => {
@@ -763,6 +790,7 @@
   <div class="border-t border-selected mt-2">
     <div class="flex mt-2 ml-2 items-center">
       <button
+        data-risu-chat-action="export-all"
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={() => {
           exportAllChats()
@@ -771,6 +799,7 @@
         <DownloadIcon size={18} />
       </button>
       <button
+        data-risu-chat-action="import"
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={() => {
           importChat()
@@ -779,6 +808,7 @@
         <HardDriveUploadIcon size={18} />
       </button>
       <button
+        data-risu-chat-action="edit-list"
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={() => {
           editMode = !editMode
@@ -787,6 +817,7 @@
         <PencilIcon size={18} />
       </button>
       <button
+        data-risu-chat-action="branches"
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={async () => {
           // Branch tree hashes require all lazily-loaded chats first.
@@ -805,6 +836,7 @@
         <SplitIcon size={18} />
       </button>
       <button
+        data-risu-chat-action="bookmarks"
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={() => {
           $bookmarkListOpen = true
@@ -813,6 +845,7 @@
         <BookmarkCheckIcon size={18} />
       </button>
       <button
+        data-risu-chat-action="create-folder"
         class="ml-auto text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={() => {
           const previous = currentChatStateSnapshot()

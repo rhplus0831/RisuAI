@@ -286,32 +286,40 @@ function seedModalDatabase(): character {
   return DBState.db.characters[0]
 }
 
-function chatRows(): HTMLButtonElement[] {
-  return Array.from(target.querySelectorAll<HTMLButtonElement>('button')).filter(
-    (button) =>
-      Boolean(button.querySelector('span')) &&
-      button.classList.contains('items-center') &&
-      button.classList.contains('border-t-1'),
-  )
+function modalRoot(): HTMLElement {
+  const root = target.querySelector<HTMLElement>('[data-risu-chat-list="modal"]')
+  expect(root, 'modal chat list root').toBeTruthy()
+  return root!
 }
 
-function rowByText(text: string): HTMLButtonElement {
-  const row = chatRows().find((candidate) => candidate.textContent?.includes(text))
-  expect(row, `chat row ${text}`).toBeTruthy()
+function chatRows(): HTMLButtonElement[] {
+  return Array.from(modalRoot().querySelectorAll<HTMLButtonElement>('button[data-risu-chat-id]'))
+}
+
+function rowByChatId(chatId: string): HTMLButtonElement {
+  const row = chatRows().find((candidate) => candidate.dataset.risuChatId === chatId)
+  expect(row, `chat row ${chatId}`).toBeTruthy()
   return row!
 }
 
 function createButton(): HTMLButtonElement {
-  const button = target.querySelector<HTMLButtonElement>('div.flex.mt-2.items-center > button')
+  const button = modalRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="create"]')
   expect(button, 'create chat button').toBeTruthy()
   return button!
 }
 
-function deleteButtonForRow(row: HTMLElement): HTMLElement {
-  const actions = Array.from(row.querySelectorAll<HTMLElement>('[role="button"]'))
-  const action = actions[actions.length - 1]
-  expect(action, 'delete chat action').toBeTruthy()
+function rowActionButton(row: HTMLElement, actionKind: string): HTMLElement {
+  const action = row.querySelector<HTMLElement>(`[data-risu-chat-action="${actionKind}"]`)
+  expect(action, `${actionKind} chat action`).toBeTruthy()
   return action!
+}
+
+function deleteButtonForRow(row: HTMLElement): HTMLElement {
+  return rowActionButton(row, 'delete')
+}
+
+function expectRowSelected(chatId: string, selected: boolean): void {
+  expect(rowByChatId(chatId).dataset.risuChatSelected).toBe(selected ? 'true' : 'false')
 }
 
 function selectedCharacter(): character {
@@ -367,20 +375,17 @@ describe('ChatList DOM contract harness', () => {
     DBState.db = {} as never
   })
 
-  it('renders seeded chat rows with the selected row class', async () => {
+  it('renders seeded chat rows with the selected row selector', async () => {
     seedModalDatabase()
 
     component = mount(ChatList, { target, props: { close: vi.fn() } })
     await tick()
 
-    expect(chatRows().map((row) => row.textContent?.trim())).toEqual([
-      'Modal Chat A',
-      'Modal Chat B',
-      'Modal Chat C',
-    ])
-    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(true)
-    expect(rowByText('Modal Chat A').classList.contains('bg-selected')).toBe(false)
-    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(false)
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+    expect(chatRows().map((row) => row.dataset.risuChatIdx)).toEqual(['0', '1', '2'])
+    expectRowSelected('chat-b', true)
+    expectRowSelected('chat-a', false)
+    expectRowSelected('chat-c', false)
     expect(chatListMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
   })
 
@@ -391,23 +396,23 @@ describe('ChatList DOM contract harness', () => {
     component = mount(ChatList, { target, props: { close } })
     await tick()
 
-    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-b', true)
 
-    rowByText('Modal Chat C').click()
+    rowByChatId('chat-c').click()
     await tick()
 
     expect(chatListMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-c')
     expect(chatListMocks.updateChatCommand).not.toHaveBeenCalled()
     expect(close).toHaveBeenCalledOnce()
     expect(chara.chatPage).toBe(1)
-    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(true)
-    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(false)
+    expectRowSelected('chat-b', true)
+    expectRowSelected('chat-c', false)
 
     chara.chatPage = 2
     await tick()
 
-    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(false)
-    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-b', false)
+    expectRowSelected('chat-c', true)
   })
 
   it('optimistically selects a modal row through command fallback and restores on failure', async () => {
@@ -421,10 +426,10 @@ describe('ChatList DOM contract harness', () => {
     component = mount(ChatList, { target, props: { close } })
     await tick()
 
-    expect(rowByText('Modal Chat A').classList.contains('bg-selected')).toBe(true)
-    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(false)
+    expectRowSelected('chat-a', true)
+    expectRowSelected('chat-c', false)
 
-    rowByText('Modal Chat C').click()
+    rowByChatId('chat-c').click()
     await tick()
 
     expect(chatListMocks.navigate).not.toHaveBeenCalled()
@@ -436,15 +441,15 @@ describe('ChatList DOM contract harness', () => {
       select: true,
     })
     expect(chara.chatPage).toBe(2)
-    expect(rowByText('Modal Chat A').classList.contains('bg-selected')).toBe(false)
-    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-a', false)
+    expectRowSelected('chat-c', true)
 
     command.resolve({ error: 'select failed', status: 'error' })
     await flushCommandWork()
 
     expect(chara.chatPage).toBe(0)
-    expect(rowByText('Modal Chat A').classList.contains('bg-selected')).toBe(true)
-    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(false)
+    expectRowSelected('chat-a', true)
+    expectRowSelected('chat-c', false)
   })
 
   it('shows a newly created modal chat before the command resolves and closes', async () => {
@@ -464,7 +469,7 @@ describe('ChatList DOM contract harness', () => {
     expect(command.settled).toBe(false)
     expect(createdChat.name).toBe('New Chat 4')
     expect(chara.chatPage).toBe(0)
-    expect(rowByText('New Chat 4').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected(createdChat.id, true)
     expect(chatListMocks.navigate).toHaveBeenCalledWith(`/character/char-a/${createdChat.id}`)
     expect(command.input).toMatchObject({
       characterId: 'char-a',
@@ -488,7 +493,8 @@ describe('ChatList DOM contract harness', () => {
     createButton().click()
     await tick()
 
-    expect(rowByText('New Chat 4').classList.contains('bg-selected')).toBe(true)
+    const createdChat = selectedCharacter().chats[0]
+    expectRowSelected(createdChat.id, true)
     expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
       'New Chat 4',
       'Modal Chat A',
@@ -500,18 +506,14 @@ describe('ChatList DOM contract harness', () => {
     command.resolve({ error: 'create failed', status: 'error' })
     await flushCommandWork()
 
-    expect(chatRows().map((row) => row.textContent?.trim())).toEqual([
-      'Modal Chat A',
-      'Modal Chat B',
-      'Modal Chat C',
-    ])
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
       'Modal Chat A',
       'Modal Chat B',
       'Modal Chat C',
     ])
     expect(selectedCharacter().chatPage).toBe(1)
-    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-b', true)
     expect(target.textContent).not.toContain('New Chat 4')
   })
 
@@ -524,9 +526,9 @@ describe('ChatList DOM contract harness', () => {
     component = mount(ChatList, { target, props: { close: vi.fn() } })
     await tick()
 
-    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-b', true)
 
-    deleteButtonForRow(rowByText('Modal Chat B')).click()
+    deleteButtonForRow(rowByChatId('chat-b')).click()
     await flushCommandWork()
 
     expect(command.settled).toBe(false)
@@ -537,7 +539,7 @@ describe('ChatList DOM contract harness', () => {
     ])
     expect(selectedCharacter().chatPage).toBe(1)
     expect(target.textContent).not.toContain('Modal Chat B')
-    expect(rowByText('Modal Chat C').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-c', true)
     expect(chatListMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-c', {
       replace: true,
     })
@@ -551,12 +553,8 @@ describe('ChatList DOM contract harness', () => {
       'Modal Chat C',
     ])
     expect(selectedCharacter().chatPage).toBe(1)
-    expect(chatRows().map((row) => row.textContent?.trim())).toEqual([
-      'Modal Chat A',
-      'Modal Chat B',
-      'Modal Chat C',
-    ])
-    expect(rowByText('Modal Chat B').classList.contains('bg-selected')).toBe(true)
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+    expectRowSelected('chat-b', true)
   })
 
   it('reports the one-chat modal delete guard and leaves the row unchanged', async () => {
@@ -568,7 +566,7 @@ describe('ChatList DOM contract harness', () => {
     component = mount(ChatList, { target, props: { close: vi.fn() } })
     await tick()
 
-    deleteButtonForRow(rowByText('Only Chat')).click()
+    deleteButtonForRow(rowByChatId('chat-only')).click()
     await tick()
 
     expect(chatListMocks.alertError).toHaveBeenCalledWith('Only one chat')
@@ -576,7 +574,7 @@ describe('ChatList DOM contract harness', () => {
     expect(chatListMocks.deleteChatCommand).not.toHaveBeenCalled()
     expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Only Chat'])
     expect(selectedCharacter().chatPage).toBe(0)
-    expect(chatRows().map((row) => row.textContent?.trim())).toEqual(['Only Chat'])
-    expect(rowByText('Only Chat').classList.contains('bg-selected')).toBe(true)
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-only'])
+    expectRowSelected('chat-only', true)
   })
 })

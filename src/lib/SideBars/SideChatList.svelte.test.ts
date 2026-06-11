@@ -348,70 +348,85 @@ function seedSidebarDatabase(): character {
   return DBState.db.characters[0]
 }
 
-function chatRows(): HTMLButtonElement[] {
-  return Array.from(target.querySelectorAll<HTMLButtonElement>('button[data-risu-chat-idx]'))
+function sidebarRoot(): HTMLElement {
+  const root = target.querySelector<HTMLElement>('[data-risu-chat-list="sidebar"]')
+  expect(root, 'sidebar chat list root').toBeTruthy()
+  return root!
 }
 
-function rowByText(text: string): HTMLButtonElement {
-  const row = chatRows().find((candidate) => candidate.textContent?.includes(text))
-  expect(row, `chat row ${text}`).toBeTruthy()
+function chatRows(): HTMLButtonElement[] {
+  return Array.from(
+    sidebarRoot().querySelectorAll<HTMLButtonElement>(
+      'button[data-risu-chat-idx][data-risu-chat-id]',
+    ),
+  )
+}
+
+function rowByChatId(chatId: string): HTMLButtonElement {
+  const row = chatRows().find((candidate) => candidate.dataset.risuChatId === chatId)
+  expect(row, `chat row ${chatId}`).toBeTruthy()
   return row!
 }
 
 function createButton(): HTMLButtonElement {
-  const button = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
-    (candidate) => candidate.textContent?.trim() === 'New Chat',
-  )
+  const action = sidebarRoot().querySelector<HTMLElement>('[data-risu-chat-action="create"]')
+  const button =
+    action instanceof HTMLButtonElement
+      ? action
+      : action?.querySelector<HTMLButtonElement>('button')
   expect(button, 'create chat button').toBeTruthy()
   return button!
 }
 
-function rowActionButton(row: HTMLElement, actionIndex: number): HTMLElement {
-  const actions = Array.from(row.querySelectorAll<HTMLElement>('[role="button"]'))
-  const action = actions[actionIndex]
-  expect(action, `chat row action ${actionIndex}`).toBeTruthy()
+function rowActionButton(row: HTMLElement, actionKind: string): HTMLElement {
+  const action = row.querySelector<HTMLElement>(`[data-risu-chat-action="${actionKind}"]`)
+  expect(action, `${actionKind} chat action`).toBeTruthy()
   return action!
 }
 
 function editButtonForRow(row: HTMLElement): HTMLElement {
-  return rowActionButton(row, 1)
+  return rowActionButton(row, 'edit')
 }
 
 function deleteButtonForRow(row: HTMLElement): HTMLElement {
-  return rowActionButton(row, row.querySelectorAll<HTMLElement>('[role="button"]').length - 1)
+  return rowActionButton(row, 'delete')
 }
 
 function folderHeader(folder: HTMLElement): HTMLButtonElement {
   const header = Array.from(folder.children).find(
-    (child): child is HTMLButtonElement => child instanceof HTMLButtonElement,
+    (child): child is HTMLButtonElement =>
+      child instanceof HTMLButtonElement && child.dataset.risuChatAction === 'toggle-folder',
   )
   expect(header, 'folder header').toBeTruthy()
   return header!
 }
 
-function folderElementByText(text: string): HTMLElement {
+function folderElementById(folderId: string): HTMLElement {
   const folder = Array.from(
-    target.querySelectorAll<HTMLElement>('[data-risu-chat-folder-idx]'),
-  ).find((candidate) => folderHeader(candidate).textContent?.includes(text))
-  expect(folder, `folder row ${text}`).toBeTruthy()
+    sidebarRoot().querySelectorAll<HTMLElement>(
+      '[data-risu-chat-folder-idx][data-risu-chat-folder-id]',
+    ),
+  ).find((candidate) => candidate.dataset.risuChatFolderId === folderId)
+  expect(folder, `folder row ${folderId}`).toBeTruthy()
   return folder!
 }
 
-function folderChatContainer(folder: HTMLElement): HTMLElement {
-  const container = Array.from(folder.children).find(
-    (child): child is HTMLElement =>
-      child instanceof HTMLElement && child.classList.contains('risu-chat'),
+function folderPanelById(folderId: string): HTMLElement {
+  const panel = sidebarRoot().querySelector<HTMLElement>(
+    `[data-risu-chat-folder-panel-id="${folderId}"]`,
   )
-  expect(container, 'folder chat container').toBeTruthy()
-  return container!
+  expect(panel, `folder panel ${folderId}`).toBeTruthy()
+  return panel!
 }
 
-function inputByValue(value: string): HTMLInputElement {
-  const input = Array.from(target.querySelectorAll<HTMLInputElement>('input')).find(
-    (candidate) => candidate.value === value,
-  )
-  expect(input, `input with value ${value}`).toBeTruthy()
+function inputIn(element: HTMLElement, description: string): HTMLInputElement {
+  const input = element.querySelector<HTMLInputElement>('input')
+  expect(input, description).toBeTruthy()
   return input!
+}
+
+function expectRowSelected(chatId: string, selected: boolean): void {
+  expect(rowByChatId(chatId).dataset.risuChatSelected).toBe(selected ? 'true' : 'false')
 }
 
 async function setTextInputValue(input: HTMLInputElement, value: string): Promise<void> {
@@ -454,21 +469,25 @@ describe('SideChatList DOM contract harness', () => {
     DBState.db = {} as never
   })
 
-  it('renders seeded root and folder chat rows with the selected row class', async () => {
+  it('renders seeded root and folder chat rows with selected and folder selectors', async () => {
     seedSidebarDatabase()
 
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    expect(chatRows().map((row) => row.textContent?.trim())).toEqual([
-      'Foldered Chat',
-      'Root Chat A',
-      'Root Chat B',
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual([
+      'chat-foldered',
+      'chat-root-a',
+      'chat-root-b',
     ])
-    expect(rowByText('Foldered Chat').dataset.risuChatIdx).toBe('1')
-    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
-    expect(rowByText('Root Chat A').classList.contains('bg-selected')).toBe(false)
-    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(false)
+    expect(rowByChatId('chat-foldered').dataset.risuChatIdx).toBe('1')
+    expect(rowByChatId('chat-foldered').dataset.risuChatFolderId).toBe('folder-a')
+    expect(rowByChatId('chat-root-a').dataset.risuChatFolderId).toBe('')
+    expect(rowByChatId('chat-root-b').dataset.risuChatFolderId).toBe('')
+    expect(folderElementById('folder-a').dataset.risuChatFolderFolded).toBe('false')
+    expectRowSelected('chat-foldered', true)
+    expectRowSelected('chat-root-a', false)
+    expectRowSelected('chat-root-b', false)
     expect(sidebarMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
   })
 
@@ -481,14 +500,14 @@ describe('SideChatList DOM contract harness', () => {
 
     expect(
       chatRows().map((row) => ({
+        id: row.dataset.risuChatId,
         index: row.dataset.risuChatIdx,
-        text: row.textContent?.trim(),
       })),
     ).toEqual([
-      { index: '1', text: 'Foldered Chat' },
-      { index: '3', text: 'Second Foldered Chat' },
-      { index: '0', text: 'Root Chat A' },
-      { index: '2', text: 'Root Chat B' },
+      { id: 'chat-foldered', index: '1' },
+      { id: 'chat-foldered-second', index: '3' },
+      { id: 'chat-root-a', index: '0' },
+      { id: 'chat-root-b', index: '2' },
     ])
   })
 
@@ -500,17 +519,19 @@ describe('SideChatList DOM contract harness', () => {
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    const folder = folderElementByText('Pinned Folder')
-    const folderRows = folderChatContainer(folder)
-    const selectedRow = rowByText('Foldered Chat')
+    const folder = folderElementById('folder-a')
+    const folderPanel = folderPanelById('folder-a')
+    const selectedRow = rowByChatId('chat-foldered')
 
-    expect(folderRows.classList.contains('hidden')).toBe(true)
+    expect(folder.dataset.risuChatFolderFolded).toBe('true')
+    expect(folderPanel.hidden).toBe(true)
     expect(chara.chatPage).toBe(1)
     expect(chara.chats[chara.chatPage]?.id).toBe('chat-foldered')
     expect(selectedRow.dataset.risuChatIdx).toBe('1')
-    expect(selectedRow.classList.contains('bg-selected')).toBe(true)
-    expect(rowByText('Root Chat A').classList.contains('bg-selected')).toBe(false)
-    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(false)
+    expect(selectedRow.dataset.risuChatFolderId).toBe('folder-a')
+    expectRowSelected('chat-foldered', true)
+    expectRowSelected('chat-root-a', false)
+    expectRowSelected('chat-root-b', false)
   })
 
   it('dispatches chat and folder rename commands with stable ids from edit mode', async () => {
@@ -520,11 +541,11 @@ describe('SideChatList DOM contract harness', () => {
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    editButtonForRow(rowByText('Foldered Chat')).click()
+    editButtonForRow(rowByChatId('chat-foldered')).click()
     await tick()
 
-    const chatNameInput = inputByValue('Foldered Chat')
-    const folderNameInput = inputByValue('Pinned Folder')
+    const chatNameInput = inputIn(rowByChatId('chat-foldered'), 'chat name input')
+    const folderNameInput = inputIn(folderElementById('folder-a'), 'folder name input')
 
     await setTextInputValue(chatNameInput, 'Renamed Foldered Chat')
     await setTextInputValue(folderNameInput, 'Renamed Folder')
@@ -548,7 +569,7 @@ describe('SideChatList DOM contract harness', () => {
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    folderHeader(folderElementByText('Pinned Folder')).click()
+    folderHeader(folderElementById('folder-a')).click()
     await tick()
 
     expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith(
@@ -565,22 +586,22 @@ describe('SideChatList DOM contract harness', () => {
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-foldered', true)
 
-    rowByText('Root Chat B').click()
+    rowByChatId('chat-root-b').click()
     await tick()
 
     expect(sidebarMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-root-b')
     expect(sidebarMocks.updateChatCommand).not.toHaveBeenCalled()
     expect(chara.chatPage).toBe(1)
-    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
-    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(false)
+    expectRowSelected('chat-foldered', true)
+    expectRowSelected('chat-root-b', false)
 
     chara.chatPage = 2
     await tick()
 
-    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(false)
-    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-foldered', false)
+    expectRowSelected('chat-root-b', true)
   })
 
   it('optimistically selects a sidebar row through command fallback and restores on failure', async () => {
@@ -593,10 +614,10 @@ describe('SideChatList DOM contract harness', () => {
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    expect(rowByText('Root Chat A').classList.contains('bg-selected')).toBe(true)
-    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(false)
+    expectRowSelected('chat-root-a', true)
+    expectRowSelected('chat-root-b', false)
 
-    rowByText('Root Chat B').click()
+    rowByChatId('chat-root-b').click()
     await tick()
 
     expect(sidebarMocks.navigate).not.toHaveBeenCalled()
@@ -607,15 +628,15 @@ describe('SideChatList DOM contract harness', () => {
       select: true,
     })
     expect(chara.chatPage).toBe(2)
-    expect(rowByText('Root Chat A').classList.contains('bg-selected')).toBe(false)
-    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-root-a', false)
+    expectRowSelected('chat-root-b', true)
 
     command.resolve({ error: 'select failed', status: 'error' })
     await flushCommandWork()
 
     expect(chara.chatPage).toBe(0)
-    expect(rowByText('Root Chat A').classList.contains('bg-selected')).toBe(true)
-    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(false)
+    expectRowSelected('chat-root-a', true)
+    expectRowSelected('chat-root-b', false)
   })
 
   it('shows a newly created sidebar chat before the command resolves', async () => {
@@ -634,7 +655,7 @@ describe('SideChatList DOM contract harness', () => {
     expect(command.settled).toBe(false)
     expect(createdChat.name).toBe('New Chat 4')
     expect(chara.chatPage).toBe(0)
-    expect(rowByText('New Chat 4').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected(createdChat.id, true)
     expect(sidebarMocks.navigate).toHaveBeenCalledWith(`/character/char-a/${createdChat.id}`)
     expect(command.input).toMatchObject({
       characterId: 'char-a',
@@ -656,7 +677,8 @@ describe('SideChatList DOM contract harness', () => {
     createButton().click()
     await tick()
 
-    expect(rowByText('New Chat 4').classList.contains('bg-selected')).toBe(true)
+    const createdChat = selectedCharacter().chats[0]
+    expectRowSelected(createdChat.id, true)
     expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
       'New Chat 4',
       'Root Chat A',
@@ -667,10 +689,10 @@ describe('SideChatList DOM contract harness', () => {
     command.resolve({ error: 'create failed', status: 'error' })
     await flushCommandWork()
 
-    expect(chatRows().map((row) => row.textContent?.trim())).toEqual([
-      'Foldered Chat',
-      'Root Chat A',
-      'Root Chat B',
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual([
+      'chat-foldered',
+      'chat-root-a',
+      'chat-root-b',
     ])
     expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
       'Root Chat A',
@@ -678,7 +700,7 @@ describe('SideChatList DOM contract harness', () => {
       'Root Chat B',
     ])
     expect(selectedCharacter().chatPage).toBe(1)
-    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-foldered', true)
     expect(target.textContent).not.toContain('New Chat 4')
   })
 
@@ -692,9 +714,9 @@ describe('SideChatList DOM contract harness', () => {
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-root-b', true)
 
-    deleteButtonForRow(rowByText('Root Chat B')).click()
+    deleteButtonForRow(rowByChatId('chat-root-b')).click()
     await flushCommandWork()
 
     expect(command.settled).toBe(false)
@@ -705,7 +727,7 @@ describe('SideChatList DOM contract harness', () => {
     ])
     expect(selectedCharacter().chatPage).toBe(1)
     expect(target.textContent).not.toContain('Root Chat B')
-    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-foldered', true)
     expect(sidebarMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-foldered', {
       replace: true,
     })
@@ -723,9 +745,9 @@ describe('SideChatList DOM contract harness', () => {
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-foldered', true)
 
-    deleteButtonForRow(rowByText('Foldered Chat')).click()
+    deleteButtonForRow(rowByChatId('chat-foldered')).click()
     await flushCommandWork()
 
     expect(command.settled).toBe(false)
@@ -736,7 +758,7 @@ describe('SideChatList DOM contract harness', () => {
     ])
     expect(selectedCharacter().chatPage).toBe(1)
     expect(target.textContent).not.toContain('Foldered Chat')
-    expect(rowByText('Root Chat B').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-root-b', true)
 
     command.resolve({ error: 'delete failed', status: 'error' })
     await flushCommandWork()
@@ -747,12 +769,12 @@ describe('SideChatList DOM contract harness', () => {
       'Root Chat B',
     ])
     expect(selectedCharacter().chatPage).toBe(1)
-    expect(chatRows().map((row) => row.textContent?.trim())).toEqual([
-      'Foldered Chat',
-      'Root Chat A',
-      'Root Chat B',
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual([
+      'chat-foldered',
+      'chat-root-a',
+      'chat-root-b',
     ])
-    expect(rowByText('Foldered Chat').classList.contains('bg-selected')).toBe(true)
+    expectRowSelected('chat-foldered', true)
   })
 
   it('reports the one-chat sidebar delete guard and leaves the row unchanged', async () => {
@@ -765,7 +787,7 @@ describe('SideChatList DOM contract harness', () => {
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    deleteButtonForRow(rowByText('Only Chat')).click()
+    deleteButtonForRow(rowByChatId('chat-only')).click()
     await tick()
 
     expect(sidebarMocks.alertError).toHaveBeenCalledWith('Only one chat')
@@ -773,7 +795,7 @@ describe('SideChatList DOM contract harness', () => {
     expect(sidebarMocks.deleteChatCommand).not.toHaveBeenCalled()
     expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Only Chat'])
     expect(selectedCharacter().chatPage).toBe(0)
-    expect(chatRows().map((row) => row.textContent?.trim())).toEqual(['Only Chat'])
-    expect(rowByText('Only Chat').classList.contains('bg-selected')).toBe(true)
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-only'])
+    expectRowSelected('chat-only', true)
   })
 })

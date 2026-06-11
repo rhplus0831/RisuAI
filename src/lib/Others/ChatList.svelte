@@ -76,7 +76,10 @@
   }
 </script>
 
-<div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
+<div
+  data-risu-chat-list="modal"
+  class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center"
+>
   <div
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-72 max-h-full overflow-y-auto"
   >
@@ -84,6 +87,7 @@
       <h2 class="mt-0 mb-0">{language.chatList}</h2>
       <div class="grow flex justify-end">
         <button
+          data-risu-chat-action="close"
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
           onclick={close}
         >
@@ -93,6 +97,11 @@
     </div>
     {#each DBState.db.characters[$selectedCharID].chats as chat, i}
       <button
+        data-risu-chat-id={chat.id ?? ''}
+        data-risu-chat-idx={i}
+        data-risu-chat-selected={i === DBState.db.characters[$selectedCharID].chatPage
+          ? 'true'
+          : 'false'}
         onclick={() => {
           if (!editMode) {
             openChatRoute(i)
@@ -114,6 +123,7 @@
         {/if}
         <div class="grow flex justify-end">
           <div
+            data-risu-chat-action="export"
             class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
             role="button"
             tabindex="0"
@@ -126,6 +136,7 @@
             <DownloadIcon size={18} />
           </div>
           <div
+            data-risu-chat-action="delete"
             class="text-textcolor2 hover:text-green-500 cursor-pointer"
             role="button"
             tabindex="0"
@@ -165,6 +176,7 @@
     {/each}
     <div class="flex mt-2 items-center">
       <button
+        data-risu-chat-action="create"
         class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
         onclick={() => {
           const previous = currentChatStateSnapshot()
@@ -196,6 +208,7 @@
         <PlusIcon />
       </button>
       <button
+        data-risu-chat-action="import"
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={() => {
           importChat()
@@ -204,6 +217,7 @@
         <HardDriveUploadIcon size={18} />
       </button>
       <button
+        data-risu-chat-action="edit"
         class="text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={() => {
           editMode = !editMode
