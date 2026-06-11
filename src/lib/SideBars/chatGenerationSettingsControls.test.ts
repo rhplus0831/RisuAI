@@ -34,6 +34,7 @@ vi.mock('src/ts/setting/utils', () => ({
 }))
 
 import Toggles from './Toggles.svelte'
+import GenerationSettingsPickerHost from './GenerationSettingsPickerHost.testHarness.svelte'
 import {
   closePersonaListModal,
   closePresetListModal,
@@ -43,7 +44,9 @@ import {
   personaListModalStore,
   presetListModalStore,
   selectedCharID,
+  type GenerationSettingsPickerMode,
 } from 'src/ts/stores.svelte'
+import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -218,6 +221,10 @@ function mountToggles(): void {
   })
 }
 
+function mountGenerationSettingsPickerHost(): void {
+  component = mount(GenerationSettingsPickerHost, { target })
+}
+
 function elementBySelector<T extends Element>(selector: string, label: string): T {
   const element = target.querySelector<T>(selector)
   expect(element, label).toBeTruthy()
@@ -235,6 +242,20 @@ function pickerButton(kind: 'preset' | 'persona'): HTMLButtonElement {
   const input = pickerControl(kind).querySelector<HTMLButtonElement>('button')
   expect(input, `${kind} picker button`).toBeTruthy()
   return input!
+}
+
+function pickerRoot(kind: 'preset' | 'persona', mode: GenerationSettingsPickerMode): HTMLElement {
+  return elementBySelector<HTMLElement>(
+    `[data-risu-generation-picker][data-risu-picker-kind="${kind}"][data-risu-picker-mode="${mode}"]`,
+    `${kind} ${mode} picker root`,
+  )
+}
+
+function pickerRow(kind: 'preset' | 'persona', id: string): HTMLButtonElement {
+  return elementBySelector<HTMLButtonElement>(
+    `button[data-risu-generation-picker-row][data-risu-picker-kind="${kind}"][data-risu-row-id="${id}"]`,
+    `${kind} picker row ${id}`,
+  )
 }
 
 function toggleControl(key: string): HTMLElement {
@@ -377,6 +398,112 @@ describe('sidebar chat generation settings controls', () => {
 
     expect(get(openPersonaList)).toBe(true)
     expect(personaListModalStore.mode).toBe('active-chat-generation-settings')
+  })
+
+  it('selects preset and persona through composed sidebar pickers without retargeting globals', async () => {
+    const calls = stubCommandFetch()
+    activeChat().generationSettings = {
+      configured: false,
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        flag: '1',
+        note: 'ready-note',
+        moduleFlag: '1',
+      },
+    }
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(false)
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('')
+    expect(pickerControl('preset').textContent).toContain('Select chat preset')
+    expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('')
+    expect(pickerControl('persona').textContent).toContain('Select chat persona')
+
+    pickerButton('preset').click()
+    await tick()
+
+    expect(get(openPresetList)).toBe(true)
+    expect(presetListModalStore.mode).toBe('active-chat-generation-settings')
+    expect(pickerRoot('preset', 'active-chat-generation-settings')).toBeTruthy()
+    expect(pickerRow('preset', 'preset-b').textContent).toContain('Preset Beta')
+    expect(pickerRow('preset', 'preset-b').dataset.risuSelected).toBe('false')
+
+    pickerRow('preset', 'preset-b').click()
+    await tick()
+    await waitForFetchCount(calls, 2)
+
+    expect(get(openPresetList)).toBe(false)
+    expect(activeChat().generationSettings?.presetId).toBe('preset-b')
+    expect(activeChat().generationSettings?.personaId).toBeUndefined()
+    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.selectedPersona).toBe(0)
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-b')
+    expect(pickerControl('preset').textContent).toContain('Preset Beta')
+    expect(pickerControl('persona').textContent).toContain('Select chat persona')
+
+    pickerButton('persona').click()
+    await tick()
+
+    expect(get(openPersonaList)).toBe(true)
+    expect(personaListModalStore.mode).toBe('active-chat-generation-settings')
+    expect(pickerRoot('persona', 'active-chat-generation-settings')).toBeTruthy()
+    expect(pickerRow('persona', 'persona-b').textContent).toContain('Persona Beta')
+    expect(pickerRow('persona', 'persona-b').dataset.risuSelected).toBe('false')
+
+    pickerRow('persona', 'persona-b').click()
+    await tick()
+    await waitForFetchCount(calls, 3)
+
+    expect(get(openPersonaList)).toBe(false)
+    expect(activeChat().generationSettings).toMatchObject({
+      configured: true,
+      presetId: 'preset-b',
+      personaId: 'persona-b',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        flag: '1',
+        note: 'ready-note',
+        moduleFlag: '1',
+      },
+    })
+    expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(true)
+    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.selectedPersona).toBe(0)
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-b')
+    expect(pickerControl('preset').textContent).toContain('Preset Beta')
+    expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-b')
+    expect(pickerControl('persona').textContent).toContain('Persona Beta')
+    expect(target.textContent).not.toContain('Select chat preset')
+    expect(target.textContent).not.toContain('Select chat persona')
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      authHeader: 'sidebar-generation-settings-token',
+      body: {
+        baseRevision: 300,
+        generationSettings: expect.objectContaining({
+          configured: true,
+          presetId: 'preset-b',
+        }),
+      },
+    })
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      authHeader: 'sidebar-generation-settings-token',
+      body: {
+        baseRevision: 301,
+        generationSettings: expect.objectContaining({
+          configured: true,
+          presetId: 'preset-b',
+          personaId: 'persona-b',
+        }),
+      },
+    })
   })
 
   it('writes jailbreak and sidebar toggles to active chat settings without touching global state', async () => {
