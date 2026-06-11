@@ -106,7 +106,7 @@
 </script>
 
 <script lang="ts">
-  import { DBState } from 'src/ts/stores.svelte'
+  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { addCharacter, changeChar, getCharImage } from 'src/ts/characters'
   import { MobileSearch } from 'src/ts/stores.svelte'
@@ -146,13 +146,21 @@
     <button
       class="flex p-2 border-t-darkborderc gap-2 w-full"
       class:border-t={char.sortedIndex !== 0}
+      data-risu-mobile-character-row
+      data-risu-row-id={char.chaId ?? ''}
+      data-risu-row-index={char.index}
+      data-risu-row-sorted-index={char.sortedIndex}
+      data-risu-list-kind={hideTrash ? 'active' : 'all'}
+      data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
+      data-risu-mobile-character-action="open"
+      aria-current={char.index === $selectedCharID ? 'true' : undefined}
       onclick={() => {
         openCharacterRoute(char.index)
       }}
     >
       <BarIcon additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
       <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
-        <span>{char.name}</span>
+        <span data-risu-mobile-character-name>{char.name}</span>
         <div class="text-sm text-textcolor2 flex items-center w-full flex-wrap">
           <span class="mr-1">{char.chats}</span>
           <MessageSquareIcon size={14} />
@@ -166,6 +174,7 @@
 
 <button
   class="p-4 rounded-full absolute bottom-2 right-2 bg-borderc"
+  data-risu-mobile-character-action="create"
   onclick={() => {
     addCharacter()
   }}

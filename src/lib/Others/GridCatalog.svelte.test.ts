@@ -60,6 +60,8 @@ interface CharacterFixtureOptions {
 let target: HTMLElement
 let component: MountedComponent | undefined
 
+type GridCatalogListKind = 'simple' | 'grid' | 'list' | 'trash'
+
 function makeCharacter(options: CharacterFixtureOptions) {
   let currentName = options.name
   const char: Record<string, unknown> = {
@@ -138,11 +140,23 @@ function mountMobileCharacters(props: { hideTrash?: boolean; search?: string } =
   component = mount(MobileCharacters, { target, props })
 }
 
-async function clickButton(label: string) {
-  const button = Array.from(target.querySelectorAll('button')).find(
-    (candidate) => candidate.textContent?.trim() === label,
+function catalogRoot() {
+  const root = target.querySelector<HTMLElement>('[data-risu-grid-catalog]')
+  expect(root, 'grid catalog root').toBeTruthy()
+  return root!
+}
+
+function catalogTab(listKind: GridCatalogListKind) {
+  const tab = target.querySelector<HTMLElement>(
+    `[data-risu-grid-tab][data-risu-list-kind="${listKind}"]`,
   )
-  expect(button, `button ${label}`).toBeTruthy()
+  expect(tab, `grid catalog tab ${listKind}`).toBeTruthy()
+  return tab!
+}
+
+async function clickCatalogTab(listKind: GridCatalogListKind) {
+  const button = catalogTab(listKind).querySelector<HTMLButtonElement>('button')
+  expect(button, `grid catalog tab button ${listKind}`).toBeTruthy()
   button!.click()
   await tick()
 }
@@ -156,28 +170,45 @@ async function updateSearch(value: string) {
 }
 
 function catalogCountText() {
-  const count = Array.from(target.querySelectorAll('span.text-textcolor2.text-sm')).find((span) =>
-    span.textContent?.includes('Character'),
-  )
+  const count = target.querySelector<HTMLElement>('[data-risu-grid-catalog-count]')
+  expect(count, 'grid catalog count').toBeTruthy()
   return count?.textContent?.replace(/\s+/g, '')
 }
 
-function listHeadings() {
-  return Array.from(target.querySelectorAll('h4')).map((heading) => heading.textContent?.trim())
+function gridRows(listKind: GridCatalogListKind) {
+  return Array.from(
+    target.querySelectorAll<HTMLElement>(
+      `[data-risu-grid-character-row][data-risu-list-kind="${listKind}"]`,
+    ),
+  )
+}
+
+function listHeadings(listKind: GridCatalogListKind) {
+  return gridRows(listKind).map((row) =>
+    row.querySelector('[data-risu-character-name]')?.textContent?.trim(),
+  )
 }
 
 function mobileRowNames() {
-  return Array.from(target.querySelectorAll('button.border-t-darkborderc')).map((button) =>
-    button.querySelector('div.flex-1 span')?.textContent?.trim(),
+  return Array.from(target.querySelectorAll<HTMLElement>('[data-risu-mobile-character-row]')).map(
+    (button) => button.querySelector('[data-risu-mobile-character-name]')?.textContent?.trim(),
   )
 }
 
-function rowForHeading(name: string) {
-  const heading = Array.from(target.querySelectorAll('h4')).find(
-    (candidate) => candidate.textContent?.trim() === name,
+function rowForCharacterId(listKind: GridCatalogListKind, characterId: string) {
+  const row = gridRows(listKind).find(
+    (candidate) => candidate.getAttribute('data-risu-row-id') === characterId,
   )
-  expect(heading, `row heading ${name}`).toBeTruthy()
-  return heading!.closest('div.flex.p-2') as HTMLElement
+  expect(row, `grid catalog ${listKind} row ${characterId}`).toBeTruthy()
+  return row!
+}
+
+function gridAction(listKind: GridCatalogListKind, characterId: string, actionKind: string) {
+  const action = rowForCharacterId(listKind, characterId).querySelector<HTMLButtonElement>(
+    `button[data-risu-grid-action="${actionKind}"]`,
+  )
+  expect(action, `grid catalog ${listKind} row ${characterId} action ${actionKind}`).toBeTruthy()
+  return action!
 }
 
 beforeEach(() => {
@@ -201,18 +232,20 @@ afterEach(() => {
 describe('GridCatalog derived lists', () => {
   it('L42: GridCatalog filters active and trash lists with shared count and stable order', async () => {
     mountCatalog()
-    await clickButton('Grid')
+    await clickCatalogTab('grid')
     await updateSearch('AL PHA')
 
+    expect(catalogRoot().getAttribute('data-risu-list-kind')).toBe('grid')
+    expect(catalogTab('grid').getAttribute('data-risu-selected')).toBe('true')
     expect(catalogCountText()).toBe('2Character')
 
-    await clickButton('List')
-    expect(listHeadings()).toEqual(['AlphaHero', 'Alpha Sidekick'])
+    await clickCatalogTab('list')
+    expect(listHeadings('list')).toEqual(['AlphaHero', 'Alpha Sidekick'])
     expect(target.textContent).toContain('Lead alpha')
     expect(target.textContent).toContain('Side alpha')
 
-    await clickButton('Trash')
-    expect(listHeadings()).toEqual(['Trashed Alpha'])
+    await clickCatalogTab('trash')
+    expect(listHeadings('trash')).toEqual(['Trashed Alpha'])
     expect(target.textContent).toContain('Trash alpha')
   })
 
@@ -220,7 +253,7 @@ describe('GridCatalog derived lists', () => {
     const readCounter = { count: 0 }
     seedCatalog(readCounter)
     mountCatalog()
-    await clickButton('Grid')
+    await clickCatalogTab('grid')
 
     readCounter.count = 0
     await updateSearch('alpha')
@@ -229,18 +262,18 @@ describe('GridCatalog derived lists', () => {
     await updateSearch('beta')
     expect(readCounter.count).toBe(DBState.db.characters.length * 2)
 
-    await clickButton('List')
-    await clickButton('Trash')
+    await clickCatalogTab('list')
+    await clickCatalogTab('trash')
     expect(readCounter.count).toBe(DBState.db.characters.length * 2)
   })
 
   it('L42: GridCatalog trash actions keep restore and permanent-delete targets', async () => {
     mountCatalog()
-    await clickButton('Trash')
+    await clickCatalogTab('trash')
 
-    const betaRow = rowForHeading('Beta Backlog')
-    const [, restoreBeta] = Array.from(betaRow.querySelectorAll('button'))
-    restoreBeta.click()
+    const betaRow = rowForCharacterId('trash', 'trash-beta')
+    expect(betaRow.getAttribute('data-risu-row-index')).toBe('1')
+    gridAction('trash', 'trash-beta', 'restore').click()
     await tick()
 
     expect(globalApiSpies.checkCharOrder).toHaveBeenCalledOnce()
@@ -251,10 +284,8 @@ describe('GridCatalog derived lists', () => {
       { snapshot: 'before-trash-restore' },
     )
 
-    await clickButton('Trash')
-    const alphaRow = rowForHeading('Trashed Alpha')
-    const [, , deleteAlpha] = Array.from(alphaRow.querySelectorAll('button'))
-    deleteAlpha.click()
+    await clickCatalogTab('trash')
+    gridAction('trash', 'trash-alpha', 'delete-permanent').click()
     await tick()
 
     expect(characterSpies.removeChar).toHaveBeenCalledWith(4, 'Trashed Alpha', 'permanent')

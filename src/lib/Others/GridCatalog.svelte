@@ -79,6 +79,9 @@
   let selected = $state(3)
   let normalizedSearch = $derived(normalizeGridCatalogSearch(search))
   let catalogCharacters = $derived(formatGridCatalogCharacterLists(DBState.db, normalizedSearch))
+  let selectedListKind = $derived(
+    selected === 0 ? 'grid' : selected === 1 ? 'list' : selected === 2 ? 'trash' : 'simple',
+  )
 
   function openCharacterRoute(index: number) {
     const character = DBState.db.characters?.[index]
@@ -90,11 +93,16 @@
   }
 </script>
 
-<div class="h-full w-full flex justify-center">
+<div
+  class="h-full w-full flex justify-center"
+  data-risu-grid-catalog
+  data-risu-list-kind={selectedListKind}
+>
   <div class="h-full p-6 bg-darkbg max-w-full w-2xl flex flex-col overflow-y-auto">
     <div class="mx-4 mb-6 flex flex-col">
       <div class="flex items-center gap-3 mb-2">
         <button
+          data-risu-grid-action="back"
           class="flex items-center justify-center p-2 rounded-lg hover:bg-selected transition-colors shrink-0"
           onclick={() => endGrid()}
           title="Back"
@@ -112,162 +120,232 @@
         </div>
       </div>
       <div class="flex flex-wrap gap-2 mt-2">
-        <Button
-          styled={selected === 3 ? 'primary' : 'outlined'}
-          size="sm"
-          onclick={() => {
-            selected = 3
-          }}
+        <span
+          data-risu-grid-tab
+          data-risu-list-kind="simple"
+          data-risu-selected={selected === 3 ? 'true' : 'false'}
         >
-          {language.simple}
-        </Button>
-        <Button
-          styled={selected === 0 ? 'primary' : 'outlined'}
-          size="sm"
-          onclick={() => {
-            selected = 0
-          }}
+          <Button
+            styled={selected === 3 ? 'primary' : 'outlined'}
+            size="sm"
+            onclick={() => {
+              selected = 3
+            }}
+          >
+            {language.simple}
+          </Button>
+        </span>
+        <span
+          data-risu-grid-tab
+          data-risu-list-kind="grid"
+          data-risu-selected={selected === 0 ? 'true' : 'false'}
         >
-          {language.grid}
-        </Button>
-        <Button
-          styled={selected === 1 ? 'primary' : 'outlined'}
-          size="sm"
-          onclick={() => {
-            selected = 1
-          }}
+          <Button
+            styled={selected === 0 ? 'primary' : 'outlined'}
+            size="sm"
+            onclick={() => {
+              selected = 0
+            }}
+          >
+            {language.grid}
+          </Button>
+        </span>
+        <span
+          data-risu-grid-tab
+          data-risu-list-kind="list"
+          data-risu-selected={selected === 1 ? 'true' : 'false'}
         >
-          {language.list}
-        </Button>
-        <Button
-          styled={selected === 2 ? 'primary' : 'outlined'}
-          size="sm"
-          onclick={() => {
-            selected = 2
-          }}
+          <Button
+            styled={selected === 1 ? 'primary' : 'outlined'}
+            size="sm"
+            onclick={() => {
+              selected = 1
+            }}
+          >
+            {language.list}
+          </Button>
+        </span>
+        <span
+          data-risu-grid-tab
+          data-risu-list-kind="trash"
+          data-risu-selected={selected === 2 ? 'true' : 'false'}
         >
-          {language.trash}
-        </Button>
+          <Button
+            styled={selected === 2 ? 'primary' : 'outlined'}
+            size="sm"
+            onclick={() => {
+              selected = 2
+            }}
+          >
+            {language.trash}
+          </Button>
+        </span>
         <div class="grow"></div>
-        <span class="text-textcolor2 text-sm">
+        <span class="text-textcolor2 text-sm" data-risu-grid-catalog-count>
           {catalogCharacters.active.length}
           {language.character}
         </span>
       </div>
     </div>
     {#if selected === 0}
-      <div class="w-full flex justify-center">
+      <div class="w-full flex justify-center" data-risu-grid-list data-risu-list-kind="grid">
         <div class="flex flex-wrap gap-2 w-full justify-center">
           {#each catalogCharacters.active as char (gridCatalogCharacterKey(char))}
-            <div class="flex items-center text-textcolor">
+            <div
+              class="flex items-center text-textcolor"
+              data-risu-grid-character-row
+              data-risu-row-id={char.chaId ?? ''}
+              data-risu-row-index={char.index}
+              data-risu-list-kind="grid"
+              data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
+              aria-current={char.index === $selectedCharID ? 'true' : undefined}
+            >
               {#if char.image}
-                <BarIcon
-                  onClick={() => {
-                    openCharacterRoute(char.index)
-                  }}
-                  additionalStyle={getCharImage(char.image, 'css')}
-                ></BarIcon>
+                <span data-risu-grid-action="open">
+                  <BarIcon
+                    onClick={() => {
+                      openCharacterRoute(char.index)
+                    }}
+                    additionalStyle={getCharImage(char.image, 'css')}
+                  ></BarIcon>
+                </span>
               {:else}
-                <BarIcon
-                  onClick={() => {
-                    openCharacterRoute(char.index)
-                  }}
-                  additionalStyle={char.index === $selectedCharID
-                    ? 'background:var(--risu-theme-selected)'
-                    : ''}
-                >
-                  <User />
-                </BarIcon>
+                <span data-risu-grid-action="open">
+                  <BarIcon
+                    onClick={() => {
+                      openCharacterRoute(char.index)
+                    }}
+                    additionalStyle={char.index === $selectedCharID
+                      ? 'background:var(--risu-theme-selected)'
+                      : ''}
+                  >
+                    <User />
+                  </BarIcon>
+                </span>
               {/if}
             </div>
           {/each}
         </div>
       </div>
     {:else if selected === 1}
-      {#each catalogCharacters.active as char (gridCatalogCharacterKey(char))}
-        <div class="flex p-2 border border-darkborderc rounded-md mb-2">
-          <BarIcon
-            onClick={() => {
-              openCharacterRoute(char.index)
-            }}
-            additionalStyle={getCharImage(char.image, 'css')}
-          ></BarIcon>
-          <div class="flex-1 flex flex-col ml-2">
-            <h4 class="text-textcolor font-bold text-lg mb-1">{char.name || 'Unnamed'}</h4>
-            <span class="text-textcolor2"
-              >{parseMultilangString(char.desc)['en'] ||
-                parseMultilangString(char.desc)['xx'] ||
-                'No description'}</span
-            >
-            <div class="flex gap-2 justify-end">
-              <button
-                class="hover:text-textcolor text-textcolor2"
-                onclick={() => {
+      <div class="contents" data-risu-grid-list data-risu-list-kind="list">
+        {#each catalogCharacters.active as char (gridCatalogCharacterKey(char))}
+          <div
+            class="flex p-2 border border-darkborderc rounded-md mb-2"
+            data-risu-grid-character-row
+            data-risu-row-id={char.chaId ?? ''}
+            data-risu-row-index={char.index}
+            data-risu-list-kind="list"
+            data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
+            aria-current={char.index === $selectedCharID ? 'true' : undefined}
+          >
+            <span data-risu-grid-action="open">
+              <BarIcon
+                onClick={() => {
                   openCharacterRoute(char.index)
                 }}
+                additionalStyle={getCharImage(char.image, 'css')}
+              ></BarIcon>
+            </span>
+            <div class="flex-1 flex flex-col ml-2">
+              <h4 class="text-textcolor font-bold text-lg mb-1" data-risu-character-name>
+                {char.name || 'Unnamed'}
+              </h4>
+              <span class="text-textcolor2"
+                >{parseMultilangString(char.desc)['en'] ||
+                  parseMultilangString(char.desc)['xx'] ||
+                  'No description'}</span
               >
-                <SquareMousePointer />
-              </button>
-              <button
-                class="hover:text-textcolor text-textcolor2"
-                onclick={() => {
-                  removeChar(char.index, char.name)
-                }}
-              >
-                <TrashIcon />
-              </button>
+              <div class="flex gap-2 justify-end">
+                <button
+                  data-risu-grid-action="open"
+                  class="hover:text-textcolor text-textcolor2"
+                  onclick={() => {
+                    openCharacterRoute(char.index)
+                  }}
+                >
+                  <SquareMousePointer />
+                </button>
+                <button
+                  data-risu-grid-action="delete"
+                  class="hover:text-textcolor text-textcolor2"
+                  onclick={() => {
+                    removeChar(char.index, char.name)
+                  }}
+                >
+                  <TrashIcon />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      {/each}
+        {/each}
+      </div>
     {:else if selected === 2}
-      <span class="text-textcolor2 text-sm mb-2">{language.trashDesc}</span>
-      {#each catalogCharacters.trash as char (gridCatalogCharacterKey(char))}
-        <div class="flex p-2 border border-darkborderc rounded-md mb-2">
-          <BarIcon
-            onClick={() => {
-              openCharacterRoute(char.index)
-            }}
-            additionalStyle={getCharImage(char.image, 'css')}
-          ></BarIcon>
-          <div class="flex-1 flex flex-col ml-2">
-            <h4 class="text-textcolor font-bold text-lg mb-1">{char.name || 'Unnamed'}</h4>
-            <span class="text-textcolor2"
-              >{parseMultilangString(char.desc)['en'] ||
-                parseMultilangString(char.desc)['xx'] ||
-                'No description'}</span
-            >
-            <div class="flex gap-2 justify-end">
-              <button
-                class="hover:text-textcolor text-textcolor2"
-                onclick={() => {
-                  const previous = currentCharacterStateSnapshot()
-                  const characterId = DBState.db.characters[char.index].chaId
-                  if (!canUseServerCommands()) {
-                    DBState.db.characters[char.index].trashTime = undefined
-                    checkCharOrder()
-                  }
-                  if (characterId) {
-                    dispatchUpdateCharacter(characterId, { trashTime: null }, previous)
-                  }
+      <div class="contents" data-risu-grid-list data-risu-list-kind="trash">
+        <span class="text-textcolor2 text-sm mb-2">{language.trashDesc}</span>
+        {#each catalogCharacters.trash as char (gridCatalogCharacterKey(char))}
+          <div
+            class="flex p-2 border border-darkborderc rounded-md mb-2"
+            data-risu-grid-character-row
+            data-risu-row-id={char.chaId ?? ''}
+            data-risu-row-index={char.index}
+            data-risu-list-kind="trash"
+            data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
+            aria-current={char.index === $selectedCharID ? 'true' : undefined}
+          >
+            <span data-risu-grid-action="open">
+              <BarIcon
+                onClick={() => {
+                  openCharacterRoute(char.index)
                 }}
+                additionalStyle={getCharImage(char.image, 'css')}
+              ></BarIcon>
+            </span>
+            <div class="flex-1 flex flex-col ml-2">
+              <h4 class="text-textcolor font-bold text-lg mb-1" data-risu-character-name>
+                {char.name || 'Unnamed'}
+              </h4>
+              <span class="text-textcolor2"
+                >{parseMultilangString(char.desc)['en'] ||
+                  parseMultilangString(char.desc)['xx'] ||
+                  'No description'}</span
               >
-                <Undo2Icon />
-              </button>
-              <button
-                class="hover:text-textcolor text-textcolor2"
-                onclick={() => {
-                  removeChar(char.index, char.name, 'permanent')
-                }}
-              >
-                <TrashIcon />
-              </button>
+              <div class="flex gap-2 justify-end">
+                <button
+                  data-risu-grid-action="restore"
+                  class="hover:text-textcolor text-textcolor2"
+                  onclick={() => {
+                    const previous = currentCharacterStateSnapshot()
+                    const characterId = DBState.db.characters[char.index].chaId
+                    if (!canUseServerCommands()) {
+                      DBState.db.characters[char.index].trashTime = undefined
+                      checkCharOrder()
+                    }
+                    if (characterId) {
+                      dispatchUpdateCharacter(characterId, { trashTime: null }, previous)
+                    }
+                  }}
+                >
+                  <Undo2Icon />
+                </button>
+                <button
+                  data-risu-grid-action="delete-permanent"
+                  class="hover:text-textcolor text-textcolor2"
+                  onclick={() => {
+                    removeChar(char.index, char.name, 'permanent')
+                  }}
+                >
+                  <TrashIcon />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      {/each}
+        {/each}
+      </div>
     {:else if selected === 3}
-      <MobileCharacters {endGrid} {search} hideTrash={true} />
+      <div class="contents" data-risu-grid-list data-risu-list-kind="simple">
+        <MobileCharacters {endGrid} {search} hideTrash={true} />
+      </div>
     {/if}
   </div>
 </div>

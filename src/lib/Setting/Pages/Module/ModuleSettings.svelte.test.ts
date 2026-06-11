@@ -146,44 +146,54 @@ function mountSettings() {
   component = mount(ModuleSettings, { target })
 }
 
+function moduleRows() {
+  return Array.from(target.querySelectorAll<HTMLElement>('[data-risu-module-row]'))
+}
+
 function moduleRowNames() {
-  return Array.from(target.querySelectorAll('span.text-lg')).map((span) =>
-    span.textContent?.trim(),
+  return moduleRows().map((row) =>
+    row.querySelector('[data-risu-module-name]')?.textContent?.trim(),
   )
 }
 
-function rowForModuleName(name: string) {
-  const label = Array.from(target.querySelectorAll('span.text-lg')).find(
-    (candidate) => candidate.textContent?.trim() === name,
+function rowForModuleId(moduleId: string) {
+  const row = moduleRows().find(
+    (candidate) => candidate.getAttribute('data-risu-row-id') === moduleId,
   )
-  expect(label, `module row ${name}`).toBeTruthy()
-  return label!.closest('div.pl-3') as HTMLElement
+  expect(row, `module row ${moduleId}`).toBeTruthy()
+  return row!
+}
+
+function moduleAction(moduleId: string, actionKind: string) {
+  const action = rowForModuleId(moduleId).querySelector<HTMLButtonElement>(
+    `button[data-risu-module-action="${actionKind}"]`,
+  )
+  expect(action, `module ${moduleId} action ${actionKind}`).toBeTruthy()
+  return action!
+}
+
+function moduleSurfaceAction(actionKind: string) {
+  const actionRoot = target.querySelector<HTMLElement>(`[data-risu-module-action="${actionKind}"]`)
+  expect(actionRoot, `module surface action ${actionKind}`).toBeTruthy()
+  if (actionRoot instanceof HTMLButtonElement) return actionRoot
+
+  const button = actionRoot!.querySelector<HTMLButtonElement>('button')
+  expect(button, `module surface action ${actionKind} button`).toBeTruthy()
+  return button!
 }
 
 async function updateSearch(value: string) {
-  const input = target.querySelector(`input[placeholder="${language.search}"]`) as
-    | HTMLInputElement
-    | null
+  const input = target.querySelector(
+    `input[placeholder="${language.search}"]`,
+  ) as HTMLInputElement | null
   expect(input).toBeTruthy()
   input!.value = value
   input!.dispatchEvent(new Event('input', { bubbles: true }))
   await tick()
 }
 
-async function clickFooterCreate() {
-  const buttons = Array.from(target.querySelectorAll('button'))
-  const createButton = buttons[buttons.length - 3]
-  expect(createButton).toBeTruthy()
-  createButton.click()
-  await tick()
-}
-
-async function clickButtonText(text: string) {
-  const button = Array.from(target.querySelectorAll('button')).find(
-    (candidate) => candidate.textContent?.trim() === text,
-  )
-  expect(button, `button ${text}`).toBeTruthy()
-  button!.click()
+async function clickModuleSurfaceAction(actionKind: string) {
+  moduleSurfaceAction(actionKind).click()
   await tick()
 }
 
@@ -208,12 +218,7 @@ describe('ModuleSettings derived module rows', () => {
   it('L43: ModuleSettings empty search shows every module in lowercase sorted order', () => {
     mountSettings()
 
-    expect(moduleRowNames()).toEqual([
-      'Alpha Module',
-      'beta Module',
-      'MCP Tools',
-      'zulu module',
-    ])
+    expect(moduleRowNames()).toEqual(['Alpha Module', 'beta Module', 'MCP Tools', 'zulu module'])
   })
 
   it('L43: ModuleSettings filtered rows keep action targets by module id', async () => {
@@ -223,19 +228,19 @@ describe('ModuleSettings derived module rows', () => {
 
     expect(moduleRowNames()).toEqual(['beta Module'])
 
-    const betaRow = rowForModuleName('beta Module')
-    const [enableBeta, exportBeta, , deleteBeta] = Array.from(betaRow.querySelectorAll('button'))
-    expect(enableBeta.className).toContain('text-amber-500')
+    const betaRow = rowForModuleId('beta-id')
+    expect(betaRow.getAttribute('data-risu-enabled')).toBe('false')
+    expect(betaRow.getAttribute('data-risu-integration-state')).toBe('integrated')
 
-    enableBeta.click()
+    moduleAction('beta-id', 'toggle-enabled').click()
     await tick()
     expect(moduleCommandSpies.setGlobalModuleEnabled).toHaveBeenCalledWith('beta-id', true)
 
-    exportBeta.click()
+    moduleAction('beta-id', 'export').click()
     await tick()
     expect(moduleProcessSpies.exportModule).toHaveBeenCalledWith(DBState.db.modules[2])
 
-    deleteBeta.click()
+    moduleAction('beta-id', 'delete').click()
     await tick()
     await Promise.resolve()
     expect(moduleCommandSpies.deleteGlobalModule).toHaveBeenCalledWith('beta-id')
@@ -245,12 +250,10 @@ describe('ModuleSettings derived module rows', () => {
     mountSettings()
     await updateSearch('beta')
 
-    const betaRow = rowForModuleName('beta Module')
-    const [, , editBeta] = Array.from(betaRow.querySelectorAll('button'))
-    editBeta.click()
+    moduleAction('beta-id', 'edit').click()
     await tick()
 
-    await clickButtonText(language.editModule)
+    await clickModuleSurfaceAction('submit-edit')
 
     expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledOnce()
     expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledWith(
@@ -269,11 +272,11 @@ describe('ModuleSettings derived module rows', () => {
 
     readCounter.count = 0
     await updateSearch('ALPHA')
-    expect(readCounter.count).toBe(DBState.db.modules.length)
+    expect(readCounter.count).toBe(DBState.db.modules.length + moduleRows().length)
 
     readCounter.count = 0
-    await clickFooterCreate()
-    await clickButtonText(language.createModule)
-    expect(readCounter.count).toBe(1)
+    await clickModuleSurfaceAction('create')
+    await clickModuleSurfaceAction('submit-create')
+    expect(readCounter.count).toBe(moduleRows().length)
   })
 })

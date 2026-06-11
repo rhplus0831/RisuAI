@@ -94,6 +94,15 @@
     parseModuleIntegrationNamespaces(DBState.db.moduleIntergration),
   )
 
+  function isModuleEnabled(moduleId: string) {
+    return DBState.db.enabledModules.includes(moduleId)
+  }
+
+  function moduleIntegrationState(rmodule: RisuModule) {
+    if (!rmodule.namespace) return 'none'
+    return moduleIntegrationNamespaces.has(rmodule.namespace) ? 'integrated' : 'unmatched'
+  }
+
   onDestroy(() => {
     refreshModules()
   })
@@ -116,17 +125,24 @@
           <div class="border-t-1 border-selected"></div>
         {/if}
 
-        <div class="pl-3 pt-3 text-left flex items-center">
+        <div
+          class="pl-3 pt-3 text-left flex items-center"
+          data-risu-module-row
+          data-risu-row-id={rmodule.id}
+          data-risu-row-index={moduleRow.index}
+          data-risu-enabled={isModuleEnabled(rmodule.id) ? 'true' : 'false'}
+          data-risu-integration-state={moduleIntegrationState(rmodule)}
+        >
           {#if rmodule.mcp}
             <Waypoints size={18} class="mr-2" />
           {/if}
-          <span class="text-lg">{rmodule.name}</span>
+          <span class="text-lg" data-risu-module-name>{rmodule.name}</span>
           <div class="grow flex justify-end">
             <button
-              class={DBState.db.enabledModules.includes(rmodule.id)
+              data-risu-module-action="toggle-enabled"
+              class={isModuleEnabled(rmodule.id)
                 ? 'mr-2 cursor-pointer text-blue-500'
-                : rmodule.namespace &&
-                    moduleIntegrationNamespaces.has(rmodule.namespace)
+                : rmodule.namespace && moduleIntegrationNamespaces.has(rmodule.namespace)
                   ? 'text-amber-500 hover:text-green-500 mr-2 cursor-pointer'
                   : 'text-textcolor2 hover:text-green-500 mr-2 cursor-pointer'}
               use:tooltip={language.enableGlobal}
@@ -140,6 +156,7 @@
             </button>
             {#if !rmodule.mcp}
               <button
+                data-risu-module-action="export"
                 class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
                 use:tooltip={language.download}
                 onclick={async (e) => {
@@ -150,6 +167,7 @@
                 <Share2Icon size={18} />
               </button>
               <button
+                data-risu-module-action="edit"
                 class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
                 use:tooltip={language.edit}
                 onclick={async (e) => {
@@ -162,14 +180,25 @@
                 <SquarePen size={18} />
               </button>
             {:else}
-              <button class="text-textcolor2 mr-2 cursor-not-allowed">
+              <button
+                data-risu-module-action="export"
+                data-risu-action-state="disabled"
+                aria-disabled="true"
+                class="text-textcolor2 mr-2 cursor-not-allowed"
+              >
                 <Share2Icon size={18} />
               </button>
-              <button class="text-textcolor2 mr-2 cursor-not-allowed">
+              <button
+                data-risu-module-action="edit"
+                data-risu-action-state="disabled"
+                aria-disabled="true"
+                class="text-textcolor2 mr-2 cursor-not-allowed"
+              >
                 <SquarePen size={18} />
               </button>
             {/if}
             <button
+              data-risu-module-action="delete"
               class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
               use:tooltip={language.remove}
               onclick={async (e) => {
@@ -195,6 +224,7 @@
 
   <div class="flex mr-2 mt-4">
     <button
+      data-risu-module-action="create"
       class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
       onclick={async () => {
         tempModule = {
@@ -208,6 +238,7 @@
       <PlusIcon />
     </button>
     <button
+      data-risu-module-action="import-mcp"
       class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
       onclick={async () => {
         importMCPModule()
@@ -216,6 +247,7 @@
       <Waypoints />
     </button>
     <button
+      data-risu-module-action="import"
       class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
       onclick={async () => {
         importModule()
@@ -227,23 +259,27 @@
 {:else if mode === 1}
   <h2 class="mb-2 text-2xl font-bold mt-2">{language.createModule}</h2>
   <ModuleMenu bind:currentModule={tempModule} />
-  <Button
-    className="mt-6"
-    onclick={() => {
-      createGlobalModule(cloneJsonValue(tempModule))
-      mode = 0
-    }}>{language.createModule}</Button
-  >
+  <div class="contents" data-risu-module-action="submit-create">
+    <Button
+      className="mt-6"
+      onclick={() => {
+        createGlobalModule(cloneJsonValue(tempModule))
+        mode = 0
+      }}>{language.createModule}</Button
+    >
+  </div>
 {:else if mode === 2}
   <h2 class="mb-2 text-2xl font-bold mt-2">{language.editModule}</h2>
   <ModuleMenu bind:currentModule={tempModule} />
   {#if tempModule.name !== ''}
-    <Button
-      className="mt-6"
-      onclick={() => {
-        updateGlobalModule(tempModule.id, cloneJsonValue(tempModule))
-        mode = 0
-      }}>{language.editModule}</Button
-    >
+    <div class="contents" data-risu-module-action="submit-edit">
+      <Button
+        className="mt-6"
+        onclick={() => {
+          updateGlobalModule(tempModule.id, cloneJsonValue(tempModule))
+          mode = 0
+        }}>{language.editModule}</Button
+      >
+    </div>
   {/if}
 {/if}
