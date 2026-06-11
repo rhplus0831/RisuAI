@@ -25,12 +25,18 @@ Date: 2026-06-11
   the opt-in UI coverage map passes with text, JSON summary, and HTML reports
   under ignored local `coverage/ui-map` artifacts. No coverage thresholds are
   claimed.
+- Phase 6 final validation was executed on 2026-06-11 by the
+  final-validation-matrix slice, but the matrix is not green. Focused App/UI
+  Vitest proof, browser smoke, coverage map, the client-lib TypeScript build,
+  and `git diff --check` passed; broad `pnpm test`, `pnpm api:test`,
+  `pnpm check`, and strict Fastify server TypeScript failed. Archive remains
+  pending.
 - A ten-sub-agent audit completed on 2026-06-11 and found the plan valid after
   corrections for slice dependencies, Phase 5 coverage output, Phase 6 closeout
   validation, and Phase 3 sidebar selectors. See [`audit.md`](audit.md).
-- Phase 6 is planned next. Execute it by dependency-aware slices, with focused
-  verification before moving to dependent slices. Independent slices with
-  disjoint write scopes may run in parallel.
+- Phase 6 closeout is not ready for archive. The failed broad validation rows
+  are recorded in [`latest-verification.md`](latest-verification.md) and need
+  fixes or explicit residual acceptance before archive closeout.
 - No new fix-completeness gate is scheduled. The archived v1/v2/v3 gates remain
   archive-owned, and this plan should not parse archived finding IDs.
 - The archived UI-state pilot and chat-scoped generation-settings workstream
@@ -54,15 +60,16 @@ Date: 2026-06-11
 - [Phase 5](phases/phase-5-browser-smoke-and-coverage-map.md): complete. Added
   thin visible assertions to Fastify browser smoke and an opt-in coverage-map
   command/profile with text, JSON summary, and HTML reporters.
-- [Phase 6](phases/phase-6-verification-closeout.md): planned next. Run focused
-  and broad proof, including the Phase 5 coverage-map command and `pnpm check`,
-  record results, and archive this workstream only after all required phases are
-  done.
+- [Phase 6](phases/phase-6-verification-closeout.md): validation attempted, not
+  green. Final validation results are recorded; archive closeout remains pending
+  because broad client tests, API tests, `pnpm check`, and strict Fastify server
+  TypeScript failed.
 
 ## Next Steps
 
-1. Assign Phase 6:
-   [`phase-6-verification-closeout.md`](phases/phase-6-verification-closeout.md).
-2. Keep write scopes disjoint when multiple agents work in parallel.
-3. Update this status file and [`latest-verification.md`](latest-verification.md)
-   after each phase lands.
+1. Triage the non-green Phase 6 validation rows recorded in
+   [`latest-verification.md`](latest-verification.md).
+2. Re-run the Phase 6 final-validation matrix after fixes or explicit residual
+   acceptance.
+3. Keep archive movement pending until closeout proof is green or accepted with
+   documented residual gaps.
