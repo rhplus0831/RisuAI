@@ -364,20 +364,25 @@ export async function importModule() {
   alertNormal(language.errors.noData)
 }
 
+const emptyModuleList: RisuModule[] = []
+
+function getDatabaseModules(db: ReturnType<typeof getDatabase> = getDatabase()) {
+  return Array.isArray(db.modules) ? db.modules : emptyModuleList
+}
+
 function getModuleById(id: string) {
-  const db = getDatabase()
-  for (let i = 0; i < db.modules.length; i++) {
-    if (db.modules[i].id === id) {
-      return db.modules[i]
+  const modules = getDatabaseModules()
+  for (let i = 0; i < modules.length; i++) {
+    if (modules[i].id === id) {
+      return modules[i]
     }
   }
   return null
 }
 
 function getModuleByIds(ids: string[]) {
-  const db = getDatabase()
   const idSet = new Set(ids)
-  const modules = db.modules.filter(
+  const modules = getDatabaseModules().filter(
     (m) => idSet.has(m.id) || (m.namespace && idSet.has(m.namespace)),
   )
   return deduplicateModuleById(modules)
@@ -403,7 +408,7 @@ export function getModules() {
   const currentChat = getCurrentChat()
   const character = getCurrentCharacter()
   const db = getDatabase()
-  const moduleSource = db.modules
+  const moduleSource = getDatabaseModules(db)
   let ids = db.enabledModules ?? []
   if (currentChat) {
     ids = ids.concat(currentChat.modules ?? [])
