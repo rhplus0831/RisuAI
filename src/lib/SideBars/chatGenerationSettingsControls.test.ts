@@ -104,6 +104,45 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
+function stubDeferredFailedGenerationSettingsFetch(): {
+  calls: CapturedFetch[]
+  failGenerationSettingsSave: () => void
+} {
+  const calls: CapturedFetch[] = []
+  let completeGenerationSettingsSave = () => {
+    throw new Error('generation settings save was not requested')
+  }
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 300 })
+      if (url.endsWith('/generation-settings')) {
+        return new Promise<Response>((resolve) => {
+          completeGenerationSettingsSave = () => {
+            resolve(jsonResponse({ error: 'forced rollback' }, 500))
+          }
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+
+  return {
+    calls,
+    failGenerationSettingsSave: () => completeGenerationSettingsSave(),
+  }
+}
+
 async function waitForFetchCount(calls: CapturedFetch[], expected: number): Promise<void> {
   for (let attempt = 0; attempt < 20 && calls.length < expected; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -477,6 +516,66 @@ describe('sidebar chat generation settings controls', () => {
     expect(jailbreakControl().dataset.risuSelected).toBe('false')
     expect(target.textContent).not.toContain('Select chat preset')
     expect(target.textContent).not.toContain('Select chat persona')
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      authHeader: 'sidebar-generation-settings-token',
+      body: {
+        baseRevision: 300,
+        generationSettings: expect.objectContaining({
+          configured: true,
+          personaId: 'persona-a',
+          presetId: 'preset-a',
+          jailbreakToggle: false,
+        }),
+      },
+    })
+  })
+
+  it('restores visible active-chat controls when a generation settings save fails', async () => {
+    const { calls, failGenerationSettingsSave } = stubDeferredFailedGenerationSettingsFetch()
+    mountToggles()
+    await tick()
+
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
+    expect(pickerControl('persona').textContent).toContain('Persona Alpha')
+    expect(jailbreakCheckbox().checked).toBe(true)
+    expect(jailbreakControl().dataset.risuSelected).toBe('true')
+
+    jailbreakCheckbox().click()
+    await tick()
+    await waitForFetchCount(calls, 2)
+
+    expect(activeChat().generationSettings?.jailbreakToggle).toBe(false)
+    expect(jailbreakCheckbox().checked).toBe(false)
+    expect(jailbreakControl().dataset.risuSelected).toBe('false')
+
+    failGenerationSettingsSave()
+    await vi.waitFor(() => {
+      expect(activeChat().generationSettings?.jailbreakToggle).toBe(true)
+    })
+    await tick()
+
+    expect(activeChat().generationSettings).toMatchObject({
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        flag: '1',
+        note: 'alpha-note',
+        moduleFlag: '1',
+      },
+    })
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
+    expect(pickerControl('persona').textContent).toContain('Persona Alpha')
+    expect(jailbreakCheckbox().checked).toBe(true)
+    expect(jailbreakControl().dataset.risuSelected).toBe('true')
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
