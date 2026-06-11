@@ -885,6 +885,9 @@
             devTool = false
             botMakerMode.set(false)
           }}
+          data-risu-sidebar-tab="chat"
+          data-risu-sidebar-tab-active={!$botMakerMode && !devTool ? 'true' : 'false'}
+          aria-current={!$botMakerMode && !devTool ? 'true' : undefined}
           class="grow border-r border-r-selected rounded-bl-md"
           class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button
         >
@@ -893,6 +896,9 @@
             devTool = false
             botMakerMode.set(true)
           }}
+          data-risu-sidebar-tab="character"
+          data-risu-sidebar-tab-active={$botMakerMode && !devTool ? 'true' : 'false'}
+          aria-current={$botMakerMode && !devTool ? 'true' : undefined}
           class="grow rounded-br-md"
           class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button
         >
@@ -913,9 +919,13 @@
       {:else if devTool}
         <DevTool />
       {:else if $botMakerMode}
-        <CharConfig />
+        <div class="contents" data-risu-sidebar-panel="character">
+          <CharConfig />
+        </div>
       {:else}
-        <SideChatList bind:chara={DBState.db.characters[$selectedCharID]} />
+        <div class="contents" data-risu-sidebar-panel="chat">
+          <SideChatList bind:chara={DBState.db.characters[$selectedCharID]} />
+        </div>
       {/if}
     {/if}
   {/if}
