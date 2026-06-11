@@ -36,7 +36,7 @@ they are not the source of current behavior.
 | `server/fastify/`                                                                                       | Fastify API, SQLite persistence, route tests, browser smoke tests.                                   |
 | `public/`, `resources/`                                                                                 | Vite-copied static assets and packaging icon/splash source images.                                   |
 | `util/`                                                                                                 | Tracked helper tools: API flag runner, audits, database analyzer, userscript bridge.                 |
-| `docs/plan/`                                                                                            | Active implementation plans and phase routers.                                                       |
+| `docs/plan/`                                                                                            | Active implementation plans and phase routers when present.                                          |
 | `docs/structure/`                                                                                       | Current structure notes for agents.                                                                  |
 | `docs/archive/`                                                                                         | Closed workstreams and dated reports. Expect stale present tense; prefer code and `docs/structure/`. |
 | `tsconfig*.json`, `vitest*.ts`, `playwright*.ts`                                                        | TypeScript, Vitest, and Playwright config.                                                           |

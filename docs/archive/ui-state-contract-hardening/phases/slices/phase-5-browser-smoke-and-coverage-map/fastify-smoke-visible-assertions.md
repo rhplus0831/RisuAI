@@ -3,7 +3,7 @@
 Phase: [5](../../phase-5-browser-smoke-and-coverage-map.md). Browser smoke test
 change.
 
-Status: planned. Depends on relevant Phase 2 selectors.
+Status: complete. Depended on relevant Phase 2 selectors.
 
 ## Scope
 

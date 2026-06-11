@@ -3,7 +3,7 @@
 Phase: [6](../../phase-6-verification-closeout.md). Documentation/archive
 change.
 
-Status: planned. Depends on
+Status: complete. Depends on
 [`final-validation-matrix.md`](final-validation-matrix.md).
 
 ## Scope
@@ -15,11 +15,11 @@ This is the only planned archive edit beyond navigation notes.
 
 ## Anchors
 
-- `docs/plan/ui-state-contract-hardening/`
+- `docs/archive/ui-state-contract-hardening/`
 - `docs/archive/README.md`
 - `STRUCTURE.md`
-- `docs/plan/ui-state-contract-hardening/latest-verification.md`
-- `docs/plan/ui-state-contract-hardening/status.md`
+- `docs/archive/ui-state-contract-hardening/latest-verification.md`
+- `docs/archive/ui-state-contract-hardening/status.md`
 
 ## Target Shape
 

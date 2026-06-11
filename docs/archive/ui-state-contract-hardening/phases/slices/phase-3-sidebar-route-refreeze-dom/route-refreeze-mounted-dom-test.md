@@ -2,7 +2,7 @@
 
 Phase: [3](../../phase-3-sidebar-route-refreeze-dom.md). Test change.
 
-Status: planned. Depends on Phase 2
+Status: complete. Depended on Phase 2
 [`sidebar-tab-selectors.md`](../phase-2-selector-hardening/sidebar-tab-selectors.md).
 
 ## Scope

@@ -1,6 +1,6 @@
 # Phase 6: Verification Closeout
 
-Status: planned.
+Status: complete.
 
 Goal: prove the complete UI-state contract hardening workstream and archive it
 only after all required phases are done.
@@ -27,8 +27,8 @@ only after all required phases are done.
 
 - Phase statuses are all complete.
 - `latest-verification.md` contains a dated closeout proof.
-- If archived, `docs/archive/README.md` gains a workstream row and
-  `STRUCTURE.md` no longer implies this active plan is open.
+- `docs/archive/README.md` gains a workstream row and `STRUCTURE.md` no longer
+  implies this active plan is open.
 
 ## Invariants
 
@@ -42,9 +42,9 @@ only after all required phases are done.
 
 ## Slices
 
-- Final validation matrix:
+- Final validation matrix, complete:
   [`slices/phase-6-verification-closeout/final-validation-matrix.md`](slices/phase-6-verification-closeout/final-validation-matrix.md).
-- Archive closeout:
+- Archive closeout, complete:
   [`slices/phase-6-verification-closeout/archive-closeout.md`](slices/phase-6-verification-closeout/archive-closeout.md).
 
 ## Validation

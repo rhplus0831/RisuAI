@@ -2,7 +2,7 @@
 
 Phase: [4](../../phase-4-composed-generation-settings-ui.md). No runtime change.
 
-Status: planned. Depends on the required Phase 4 test slices.
+Status: complete. Depended on the required Phase 4 test slices.
 
 ## Scope
 

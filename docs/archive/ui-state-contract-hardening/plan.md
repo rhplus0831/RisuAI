@@ -32,13 +32,13 @@ End state:
   [`../../structure/frontend.md`](../../structure/frontend.md),
   [`../../structure/server-projection-and-bridges.md`](../../structure/server-projection-and-bridges.md).
 - The archived UI-state pilot supplies the invariant and test-ring precedent:
-  [`../../archive/ui-state-contract-tests.md`](../../archive/ui-state-contract-tests.md).
+  [`../ui-state-contract-tests.md`](../ui-state-contract-tests.md).
 - The archived v2 plan supplies the structure pattern for phases, source
   anchors, invariants, done criteria, and validation:
-  [`../../archive/audit-stability-and-performance-v2/`](../../archive/audit-stability-and-performance-v2/).
+  [`../audit-stability-and-performance-v2/`](../audit-stability-and-performance-v2/).
 - The archived chat-scoped generation-settings plan supplies context only; it
   remains closed and is not extended here:
-  [`../../archive/chat-scoped-generation-settings/`](../../archive/chat-scoped-generation-settings/).
+  [`../chat-scoped-generation-settings/`](../chat-scoped-generation-settings/).
 - The codebase remains the source of truth when docs or line numbers drift.
 
 ## Current Baseline
@@ -98,21 +98,23 @@ Every implementation phase must preserve these:
 - [6. Verification Closeout](phases/phase-6-verification-closeout.md): run the
   focused and broad proof set, record results, then archive the workstream.
 
-## Execution Cursor
+## Archive State
 
-Phases 0-2 are complete. Phase 3 is the next implementation batch. The
-sub-agent audit split every phase into concrete slices under `phases/slices/`.
+Phases 0-6 are complete, and the workstream was archived on 2026-06-11. The
+sub-agent audit split every phase into concrete slices under `phases/slices/`;
+the final validation rerun and archive closeout proof are recorded in
+[`latest-verification.md`](latest-verification.md).
 
 Execution order is phase-gated for dependencies, not for unrelated files:
 
 - Phase 1 completed before runtime UI changes, so the current policy is live.
 - Phase 2 completed by selector slices with disjoint write scopes and focused
   proof after each slice.
-- Phase 3 can start now that the Phase 2 sidebar-tab selector slice has landed.
-- Phase 4 can reuse the Phase 2 generation-settings and composer selectors.
-- Phase 5 can use the Phase 2 visible selectors for browser-smoke assertions.
-- Phase 6 starts only after all required implementation and proof-refresh slices
-  are complete.
+- Phase 3 landed after the Phase 2 sidebar-tab selector slice.
+- Phase 4 reused the Phase 2 generation-settings and composer selectors.
+- Phase 5 used the Phase 2 visible selectors for browser-smoke assertions.
+- Phase 6 ran after all required implementation and proof-refresh slices were
+  complete.
 
 ## Implementation Agent Rules
 

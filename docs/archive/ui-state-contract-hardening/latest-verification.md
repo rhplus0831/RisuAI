@@ -2,8 +2,8 @@
 
 Date: 2026-06-11
 
-This file records proof for the active UI state contract hardening plan. Update
-it after each phase lands.
+This file records proof for the archived UI state contract hardening workstream.
+Historical command rows are preserved as they were recorded during the plan.
 
 ## Setup Proof
 
@@ -213,3 +213,16 @@ ran before the strict Fastify server check.
 | `pnpm exec tsc -p tsconfig.client-lib.json`                                                                                                                                                                                                                                 | Passed.                                                                                                                                                                                                                                                                                                                              |
 | `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit --pretty false`                                                                                                                                                                                                     | Passed. The client-lib check ran first.                                                                                                                                                                                                                                                                                              |
 | `git diff --check && git status --short`                                                                                                                                                                                                                                    | Passed with no output.                                                                                                                                                                                                                                                                                                               |
+
+## Archive Closeout Proof
+
+Recorded on 2026-06-11 after moving the completed workstream from
+`docs/plan/ui-state-contract-hardening/` to
+`docs/archive/ui-state-contract-hardening/`, updating archive navigation, and
+refreshing `STRUCTURE.md` current-state wording. This proof preserves the red
+Phase 6 attempt and the green rerun above as historical closeout context.
+
+| Command                                                                                                             | Result  |
+| ------------------------------------------------------------------------------------------------------------------- | ------- |
+| `pnpm exec prettier --check STRUCTURE.md docs/archive/README.md 'docs/archive/ui-state-contract-hardening/**/*.md'` | Passed. |
+| `git diff --check`                                                                                                  | Passed. |

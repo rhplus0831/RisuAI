@@ -2,7 +2,7 @@
 
 Phase: [5](../../phase-5-browser-smoke-and-coverage-map.md). No runtime change.
 
-Status: planned. Depends on
+Status: complete. Depended on
 [`fastify-smoke-visible-assertions.md`](fastify-smoke-visible-assertions.md) and
 [`coverage-map-profile.md`](coverage-map-profile.md).
 

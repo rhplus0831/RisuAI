@@ -2,7 +2,7 @@
 
 Phase: [6](../../phase-6-verification-closeout.md). No runtime change.
 
-Status: planned. Depends on all required implementation and proof-refresh slices.
+Status: complete. Depended on all required implementation and proof-refresh slices.
 
 ## Scope
 

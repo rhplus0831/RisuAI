@@ -2,7 +2,7 @@
 
 Date: 2026-06-11
 
-Status: completed read-only audit; plan remains active.
+Status: archived; completed read-only audit.
 
 Post-implementation note: this audit captured the pre-implementation baseline.
 Phases 1 and 2 are now complete; prefer [`status.md`](status.md) and

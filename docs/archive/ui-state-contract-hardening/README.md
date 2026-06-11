@@ -1,14 +1,14 @@
-# UI State Contract Hardening Plan
+# UI State Contract Hardening
 
 Date: 2026-06-11
 
-Status: active.
+Status: archived complete on 2026-06-11.
 
-This workstream turns the completed UI-state pilot into current policy and
-adds the missing coverage layer for recent state-to-visible-UI regressions. It
-uses the archived v2 remediation structure as a reference for phase routing,
-slice scope, and proof discipline, but it does not reopen v2 or any archived
-chat-scoped generation-settings phase.
+This archived workstream turned the completed UI-state pilot into current
+policy and added the missing coverage layer for recent state-to-visible-UI
+regressions. It uses the archived v2 remediation structure as a reference for
+phase routing, slice scope, and proof discipline, but it does not reopen v2 or
+any archived chat-scoped generation-settings phase.
 
 Start with [`status.md`](status.md), then read [`plan.md`](plan.md). The
 sub-agent audit and validity notes live in [`audit.md`](audit.md). Phase scope
@@ -46,9 +46,9 @@ This plan was re-audited with ten read-only sub-agent passes:
 ## Source Anchors
 
 - Policy precedent:
-  [`../../archive/ui-state-contract-tests.md`](../../archive/ui-state-contract-tests.md).
+  [`../ui-state-contract-tests.md`](../ui-state-contract-tests.md).
 - Reference structure:
-  [`../../archive/audit-stability-and-performance-v2/`](../../archive/audit-stability-and-performance-v2/).
+  [`../audit-stability-and-performance-v2/`](../audit-stability-and-performance-v2/).
 - Current testing docs:
   [`../../structure/testing-and-operations.md`](../../structure/testing-and-operations.md),
   [`../../structure/frontend.md`](../../structure/frontend.md),
@@ -74,12 +74,14 @@ This plan was re-audited with ten read-only sub-agent passes:
   `playwright.fastify-smoke.config.ts`,
   `src/ts/server/browserSmoke.ts`.
 
-## Current Entry Point
+## Archive Summary
 
-The next implementation batch is Phase 6:
-[`phases/phase-6-verification-closeout.md`](phases/phase-6-verification-closeout.md).
+All phases are complete. Phase 6 finished final validation and archive closeout
+on 2026-06-11, with proof recorded in
+[`latest-verification.md`](latest-verification.md). The archived record
+preserves both the historical red Phase 6 attempt and the green rerun proof.
 
-Phases 0-5 are complete. Phase 5 landed visible Fastify browser smoke
-assertions and an opt-in UI coverage-map command that emits text, JSON summary,
-and HTML reports under ignored local `coverage/ui-map` artifacts; proof is
-recorded in [`latest-verification.md`](latest-verification.md).
+Delivered coverage includes visible-state testing policy, stable UI selectors,
+sidebar route/refreeze DOM regression coverage, composed generation-settings UI
+proofs, visible Fastify browser smoke assertions, and an opt-in UI coverage map.
+Residual gaps: none.

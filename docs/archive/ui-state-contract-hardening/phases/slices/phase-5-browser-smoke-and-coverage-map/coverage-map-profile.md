@@ -3,7 +3,7 @@
 Phase: [5](../../phase-5-browser-smoke-and-coverage-map.md). Tooling/docs
 change.
 
-Status: planned.
+Status: complete.
 
 ## Scope
 

@@ -4,7 +4,7 @@ Date: 2026-06-11
 
 ## Snapshot
 
-- Plan state: active, green for archive closeout.
+- Plan state: archived complete on 2026-06-11.
 - Phase 0 is complete: current package scripts and current docs now use
   `pnpm build:site`, including `smoke:fastify-browser`.
 - Phase 1 is complete: the visible-state docs policy and structure-doc pointers
@@ -35,8 +35,9 @@ Date: 2026-06-11
 - A ten-sub-agent audit completed on 2026-06-11 and found the plan valid after
   corrections for slice dependencies, Phase 5 coverage output, Phase 6 closeout
   validation, and Phase 3 sidebar selectors. See [`audit.md`](audit.md).
-- Phase 6 closeout is ready for archive movement. Archive closeout remains the
-  next pending action; this status refresh does not archive or move files.
+- Phase 6 archive closeout is complete: the workstream moved from `docs/plan/`
+  to `docs/archive/`, archive navigation and `STRUCTURE.md` were updated, and
+  archive-slice validation passed.
 - No new fix-completeness gate is scheduled. The archived v1/v2/v3 gates remain
   archive-owned, and this plan should not parse archived finding IDs.
 - The archived UI-state pilot and chat-scoped generation-settings workstream
@@ -61,12 +62,12 @@ Date: 2026-06-11
   thin visible assertions to Fastify browser smoke and an opt-in coverage-map
   command/profile with text, JSON summary, and HTML reporters.
 - [Phase 6](phases/phase-6-verification-closeout.md): complete. Final
-  validation rerun passed after repairs, and archive closeout remains pending as
-  the next action.
+  validation rerun passed after repairs, and archive closeout completed on
+  2026-06-11.
 
-## Next Steps
+## Closeout
 
-1. Perform archive closeout in the next slice; do not move or archive files as
-   part of this proof refresh.
-2. Preserve the historical red Phase 6 attempt and the green rerun proof in
-   [`latest-verification.md`](latest-verification.md) for closeout context.
+- Archived under `docs/archive/ui-state-contract-hardening/` on 2026-06-11.
+- Preserve the historical red Phase 6 attempt and the green rerun proof in
+  [`latest-verification.md`](latest-verification.md) for closeout context.
+- Residual gaps: none.

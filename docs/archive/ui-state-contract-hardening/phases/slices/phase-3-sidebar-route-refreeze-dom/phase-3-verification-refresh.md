@@ -2,7 +2,7 @@
 
 Phase: [3](../../phase-3-sidebar-route-refreeze-dom.md). No runtime change.
 
-Status: planned. Depends on
+Status: complete. Depended on
 [`route-refreeze-mounted-dom-test.md`](route-refreeze-mounted-dom-test.md).
 
 ## Scope

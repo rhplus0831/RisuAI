@@ -2,9 +2,8 @@
 
 Date: 2026-06-11
 
-Concrete phase scope lives in this directory. Use these files as the phase
-router for implementation agents. Concrete agent-executable slices live under
-[`slices/`](slices/), following the archived v2 layout pattern.
+Archived phase scope lives in this directory. Concrete agent-executable slices
+live under [`slices/`](slices/), following the archived v2 layout pattern.
 
 - Phase 0, complete:
   [`phase-0-command-baseline.md`](phase-0-command-baseline.md).
@@ -18,10 +17,10 @@ router for implementation agents. Concrete agent-executable slices live under
   [`phase-4-composed-generation-settings-ui.md`](phase-4-composed-generation-settings-ui.md).
 - Phase 5, complete:
   [`phase-5-browser-smoke-and-coverage-map.md`](phase-5-browser-smoke-and-coverage-map.md).
-- Phase 6, planned next:
+- Phase 6, complete:
   [`phase-6-verification-closeout.md`](phase-6-verification-closeout.md).
 
-## Slice Rules
+## Historical Slice Rules
 
 - One phase should land as one or more small implementation slices under
   `slices/[phase-slug]/`.

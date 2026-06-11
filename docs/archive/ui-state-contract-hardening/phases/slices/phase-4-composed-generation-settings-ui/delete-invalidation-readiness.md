@@ -2,7 +2,7 @@
 
 Phase: [4](../../phase-4-composed-generation-settings-ui.md). Test change.
 
-Status: planned. Depends on Phase 2
+Status: complete. Depended on Phase 2
 [`generation-settings-selectors.md`](../phase-2-selector-hardening/generation-settings-selectors.md).
 
 ## Scope
