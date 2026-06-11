@@ -66,6 +66,9 @@ Detailed bootstrap, targeted projection, hydration, SSE reconcile, projection
 write guard, and bridge watcher rules live in
 `server-projection-and-bridges.md`.
 
+When startup, projection, or component changes affect visible state, follow the
+visible-state testing policy in `testing-and-operations.md`.
+
 ## Generation Client
 
 `sendChat` in `src/ts/process/index.svelte.ts` is the browser coordinator.

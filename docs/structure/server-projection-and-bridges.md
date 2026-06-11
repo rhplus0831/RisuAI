@@ -79,6 +79,10 @@ The guard also advances a projection-apply epoch. Bridge watchers use that epoch
 to refresh baselines after passive projection updates without echoing them back
 as commands.
 
+Tests for guard, hydration, event reconcile, or watcher changes that affect
+rendered state should follow the visible-state policy in
+`testing-and-operations.md`.
+
 ## Bridge Watchers
 
 | File                               | Role                                                                               |
