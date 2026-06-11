@@ -9,10 +9,15 @@ Date: 2026-06-11
   `pnpm build:site`, including `smoke:fastify-browser`.
 - Phase 1 is complete: the visible-state docs policy and structure-doc pointers
   are landed, and docs-only validation passed on 2026-06-11.
+- Phase 2 is complete: selector hardening landed for chat lists, generation
+  settings controls/pickers, composer/message rows, module/grid catalog, and
+  sidebar tabs. Focused selector Vitest proof passed on 2026-06-11; broad
+  `pnpm check` still fails on the pre-existing baseline recorded in
+  [`latest-verification.md`](latest-verification.md).
 - A ten-sub-agent audit completed on 2026-06-11 and found the plan valid after
   corrections for slice dependencies, Phase 5 coverage output, Phase 6 closeout
   validation, and Phase 3 sidebar selectors. See [`audit.md`](audit.md).
-- Phases 2-6 are planned. Execute them by dependency-aware slices, with focused
+- Phases 3-6 are planned. Execute them by dependency-aware slices, with focused
   verification before moving to dependent slices. Independent slices with
   disjoint write scopes may run in parallel.
 - No new fix-completeness gate is scheduled. The archived v1/v2/v3 gates remain
@@ -26,12 +31,12 @@ Date: 2026-06-11
   spelling repaired in current scripts and current docs.
 - [Phase 1](phases/phase-1-current-doc-policy.md): complete. Visible-state test
   policy and structure-doc pointers landed, with docs-only proof recorded.
-- [Phase 2](phases/phase-2-selector-hardening.md): planned. Add stable
-  selectors to fragile UI surfaces and migrate nearby tests away from
+- [Phase 2](phases/phase-2-selector-hardening.md): complete. Stable selectors
+  were added to fragile UI surfaces and nearby tests were migrated away from
   structure/style-sensitive queries through six surface/proof slices.
-- [Phase 3](phases/phase-3-sidebar-route-refreeze-dom.md): planned. Backfill the
-  sidebar tab route/refreeze regression with a real mounted DOM contract after
-  the Phase 2 sidebar-tab selector slice lands.
+- [Phase 3](phases/phase-3-sidebar-route-refreeze-dom.md): planned next.
+  Backfill the sidebar tab route/refreeze regression with a real mounted DOM
+  contract now that the Phase 2 sidebar-tab selector slice has landed.
 - [Phase 4](phases/phase-4-composed-generation-settings-ui.md): planned. Add a
   small set of composed generation-settings UI workflow tests without reopening
   the archived generation-settings workstream.
@@ -45,8 +50,8 @@ Date: 2026-06-11
 
 ## Next Steps
 
-1. Assign the first Phase 2 selector-hardening implementation slice:
-   [`chat-list-selectors.md`](phases/slices/phase-2-selector-hardening/chat-list-selectors.md).
+1. Assign Phase 3:
+   [`phase-3-sidebar-route-refreeze-dom.md`](phases/phase-3-sidebar-route-refreeze-dom.md).
 2. Keep write scopes disjoint when multiple agents work in parallel.
 3. Update this status file and [`latest-verification.md`](latest-verification.md)
    after each phase lands.

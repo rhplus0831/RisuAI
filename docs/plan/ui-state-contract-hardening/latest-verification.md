@@ -69,3 +69,25 @@ coverage-map, or closeout phases.
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `pnpm exec prettier --check STRUCTURE.md docs/archive/README.md docs/structure/testing-and-operations.md docs/structure/frontend.md docs/structure/server-projection-and-bridges.md 'docs/plan/**/*.md'` | Passed. |
 | `git diff --check`                                                                                                                                                                                       | Passed. |
+
+## Phase 2 Selector Hardening Proof
+
+Recorded on 2026-06-11 after the Phase 2 selector-hardening slices landed. This
+proof covers selector availability and migrated focused tests for chat lists,
+generation settings controls/pickers, composer/message load pages, module
+settings, grid catalog, and sidebar-tab prerequisites for Phase 3.
+
+| Command                                                                                                                                                                                                             | Result                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm exec vitest run src/lib/SideBars/SideChatList.svelte.test.ts src/lib/Others/ChatList.svelte.test.ts src/lib/SideBars/chatGenerationSettingsControls.test.ts src/lib/Setting/pickerGenerationSettings.test.ts` | Passed: 4 files / 27 tests.                                                                                                                                                                                                                                                                                                                                         |
+| `pnpm exec vitest run src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts src/lib/Others/GridCatalog.svelte.test.ts src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`                                 | Passed: 3 files / 16 tests. Svelte emitted the existing `state_referenced_locally` warning for `src/lib/SideBars/LoreBook/LoreBookData.svelte:86`.                                                                                                                                                                                                                  |
+| `pnpm check`                                                                                                                                                                                                        | Failed on the broad pre-existing baseline: `svelte-check` reported 34 errors and 1 warning in 21 files. Examples include missing `PromptItemSnapshot` in `PromptSettings.svelte`, fixture shape errors in generation-settings tests, SQLite row cast errors in `server/fastify/src/repository.ts`, and command/generation union-narrowing errors in Fastify routes. |
+| `git diff --check`                                                                                                                                                                                                  | Passed.                                                                                                                                                                                                                                                                                                                                                             |
+
+`pnpm check` does implicate Phase 2 validation files:
+`src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`,
+`src/lib/Setting/pickerGenerationSettings.test.ts`, and
+`src/lib/SideBars/chatGenerationSettingsControls.test.ts`. The focused Vitest
+commands above passed for those files; the broad-check diagnostics are type
+fixture/baseline issues rather than selector assertion failures. No Phase
+2-owned selector component/runtime file was called out by `pnpm check`.
