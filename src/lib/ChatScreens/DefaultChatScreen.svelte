@@ -811,6 +811,7 @@
         {/if}
 
         <textarea
+          data-testid="default-chat-composer"
           class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
           bind:value={messageInput}
           bind:this={inputEle}
@@ -886,6 +887,7 @@
           </button>
         {:else}
           <button
+            data-testid="default-chat-send-button"
             onclick={send}
             class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send"
             style:height={inputHeight}

@@ -377,6 +377,14 @@
     ((message === '{{none}}' || message === '{{blank}}' || message === '') && idx === -1) ||
       isComment,
   )
+  let messageRowId = $derived.by(() => {
+    const character = DBState.db.characters?.[selIdState.selId]
+    const chatPage = character?.chatPage
+    if (idx < 0 || chatPage === undefined || chatPage === null) {
+      return ''
+    }
+    return character.chats?.[chatPage]?.message?.[idx]?.chatId ?? ''
+  })
 
   $effect.pre(() => {
     void $ReloadGUIPointer
@@ -1553,9 +1561,9 @@
 <div
   class="flex max-w-full justify-center risu-chat"
   data-chat-index={idx}
-  data-chat-id={DBState.db.characters?.[selIdState.selId]?.chats?.[
-    DBState.db.characters?.[selIdState.selId]?.chatPage
-  ]?.message?.[idx]?.chatId ?? ''}
+  data-chat-id={messageRowId}
+  data-risu-message-index={idx}
+  data-risu-message-id={messageRowId}
   style={isLastMemory
     ? `border-top:${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);`
     : ''}

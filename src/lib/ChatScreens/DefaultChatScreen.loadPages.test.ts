@@ -458,9 +458,11 @@ describe('DefaultChatScreen transcript window state', () => {
     mountScreen()
 
     await waitFor(() => {
-      expect(target.querySelector('textarea')).toBeTruthy()
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
     })
-    const textarea = target.querySelector<HTMLTextAreaElement>('textarea')!
+    const textarea = target.querySelector<HTMLTextAreaElement>(
+      '[data-testid="default-chat-composer"]',
+    )!
     textarea.value = 'Keep this draft'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
@@ -468,7 +470,9 @@ describe('DefaultChatScreen transcript window state', () => {
     loadPageMocks.appendCurrentChatUserMessageForSend.mockClear()
     loadPageMocks.sendChat.mockClear()
 
-    const sendButton = target.querySelector<HTMLButtonElement>('.button-icon-send')
+    const sendButton = target.querySelector<HTMLButtonElement>(
+      '[data-testid="default-chat-send-button"]',
+    )
     expect(sendButton).toBeTruthy()
     sendButton!.click()
 
