@@ -80,6 +80,23 @@ Prompt/generation fixtures live in `src/ts/process/__fixtures__/`; set
 live in `server/fastify/__fixtures__/risuSave/`. The architecture audit can be
 scoped with `CLIENT_THINNING_AUDIT_CHECK_IDS`.
 
+## Visible State Test Contract
+
+This is policy guidance for choosing current Fastify tests, not a new gate. When
+a change affects state the user can see, validation must assert the rendered
+result after the same transition that changes state. Helper/state assertions,
+command payload assertions, and fetch mocks can support the test, but they are
+not enough for stale-visible-UI bugs. If behavior includes optimistic updates or
+rollback, assert both the visible optimistic change and the visible rollback.
+
+Use helper Vitest for pure helpers and projection calculations, Svelte DOM
+Vitest for state-to-DOM contracts, and sparse Fastify browser smoke for
+end-to-end boot/API/SSE wiring. Add state-to-DOM coverage when touching
+`DBState`, `selectedCharID`, `chatPage`, `loadedStore`, projection writes,
+bootstrap/resync/SSE, optimistic command helpers, bridge watchers, router
+selection, array create/delete/reorder flows, `$derived`, `$effect`, keyed lists,
+memo signatures, or render dependency keys.
+
 ## TypeScript And Formatting
 
 - Root `tsconfig.json` is browser-oriented, `strict: false`, allows JS, and uses
