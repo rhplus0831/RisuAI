@@ -16,6 +16,7 @@ is root-only; there is no `server/fastify/package.json`.
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                |
 | `pnpm test`                        | Run root/browser Vitest tests.                                                                                |
+| `pnpm coverage:ui-map`             | Run the opt-in focused UI coverage map and write reports to `coverage/ui-map`.                                |
 | `pnpm api:test`                    | Run Fastify/server Vitest tests.                                                                              |
 | `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                        |
 | `pnpm client-thinning:audit`       | Run `util/client-thinning-audit.ts`.                                                                          |
@@ -65,15 +66,22 @@ disables Fastify static serving.
 
 ## Tests And Checks
 
-| Area                        | Command/config                                                     | Environment | Locations                                                                   |
-| --------------------------- | ------------------------------------------------------------------ | ----------- | --------------------------------------------------------------------------- |
-| Browser/client/domain tests | `pnpm test`, `vitest.config.ts`                                    | `happy-dom` | Root suite outside `server/**`, including `src/**` and `util/**/*.test.ts`. |
-| Fastify/server tests        | `pnpm api:test`, `server/fastify/vitest.config.ts`                 | Node        | `server/fastify/__tests__/**/*.test.ts`.                                    |
-| Browser smoke               | `pnpm smoke:fastify-browser`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`.                                            |
-| Architecture audit          | `pnpm client-thinning:audit`                                       | ts-morph    | Invariant checks in `util/client-thinning-audit.ts`.                        |
+| Area                        | Command/config                                                     | Environment | Locations                                                                                                                  |
+| --------------------------- | ------------------------------------------------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Browser/client/domain tests | `pnpm test`, `vitest.config.ts`                                    | `happy-dom` | Root suite outside `server/**`, including `src/**` and `util/**/*.test.ts`.                                                |
+| UI coverage map             | `pnpm coverage:ui-map`, `vitest.config.ts`                         | `happy-dom` | Focused UI integration tests mapped over `src/lib/ChatScreens`, `src/lib/Others`, `src/lib/SideBars`, and `src/ts/server`. |
+| Fastify/server tests        | `pnpm api:test`, `server/fastify/vitest.config.ts`                 | Node        | `server/fastify/__tests__/**/*.test.ts`.                                                                                   |
+| Browser smoke               | `pnpm smoke:fastify-browser`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`.                                                                                           |
+| Architecture audit          | `pnpm client-thinning:audit`                                       | ts-morph    | Invariant checks in `util/client-thinning-audit.ts`.                                                                       |
 
 Pick the smallest command that covers the changed area. On a fresh machine, run
 `pnpm exec playwright install chromium` before browser smoke.
+
+`pnpm coverage:ui-map` is an opt-in map for Phase 5/6 UI state coverage, not a
+default test gate. It uses `@vitest/coverage-v8`, runs the focused ChatScreens,
+Others, and SideBars UI test files, and emits `text`, `json-summary`, and `html`
+reports under `coverage/ui-map`. The repository ignores `coverage/`; keep these
+reports local unless a plan slice explicitly asks for extracted results.
 
 Prompt/generation fixtures live in `src/ts/process/__fixtures__/`; set
 `UPDATE_FIXTURES=1` to rewrite expected fixtures. Server `.risu` fixture helpers
