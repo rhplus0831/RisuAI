@@ -60,6 +60,14 @@ export interface LargeCorpusMessage {
   time: number
 }
 
+export interface LargeCorpusGenerationSettings {
+  configured: true
+  personaId: string
+  presetId: string
+  jailbreakToggle: boolean
+  sidebarToggles: Record<string, string>
+}
+
 export interface LargeCorpusChat {
   id: string
   name: string
@@ -69,6 +77,7 @@ export interface LargeCorpusChat {
   localLore: unknown[]
   scriptstate: Record<string, string>
   fmIndex: number
+  generationSettings: LargeCorpusGenerationSettings
   hypaV3Data?: {
     summaries: { text: string; chatMemos: string[]; isImportant: boolean }[]
     lastSelectedSummaries: number[]
@@ -143,6 +152,8 @@ export function buildLargeCorpusFixture(options: LargeCorpusOptions = {}): Large
   const embeddingDim = options.embeddingDim ?? 64
   const characterBulkBytes = options.characterBulkBytes ?? 2048
 
+  const personaId = 'corpus-persona-0'
+  const presetId = 'corpus-preset-0'
   const body = 'x'.repeat(messageBodySize)
   const cardBody = 'A character card paragraph. '.repeat(Math.ceil(characterBulkBytes / 28))
   const characters: LargeCorpusCharacter[] = []
@@ -173,6 +184,13 @@ export function buildLargeCorpusFixture(options: LargeCorpusOptions = {}): Large
         localLore: [lorebookEntry(`local-${c}-${t}`, 0)],
         scriptstate: { $corpusScore: String(c * 10 + t) },
         fmIndex: -1,
+        generationSettings: {
+          configured: true,
+          personaId,
+          presetId,
+          jailbreakToggle: false,
+          sidebarToggles: {},
+        },
       }
       if (isHot) {
         chat.hypaV3Data = {

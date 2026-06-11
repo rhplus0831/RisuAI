@@ -9,11 +9,7 @@ import {
 } from '../process/__fixtures__/mocks/serverChatFetch'
 import { clearCachedServerCommandRevision } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
-import {
-  setDatabase,
-  type Database,
-  type character,
-} from '../storage/database.svelte'
+import { setDatabase, type Database, type character } from '../storage/database.svelte'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { appendCurrentChatUserMessageForSend } from '../chatCommands'
 import {
@@ -76,6 +72,8 @@ const DEFAULT_HYDRATED_MESSAGE_COUNT = 40
 const DEFAULT_MESSAGE_BODY_SIZE = 200
 const DEFAULT_USER_MESSAGE = 'probe plain send'
 const CLONE_JSON_STACK_NEEDLE = 'cloneJsonValue'
+const PROBE_PERSONA_ID = 'probe-persona'
+const PROBE_PRESET_ID = 'probe-preset'
 
 function normalizeProbeCharacter(row: character, index: number): character {
   const record = row as character & Record<string, unknown>
@@ -98,6 +96,13 @@ function normalizeProbeCharacter(row: character, index: number): character {
     chat.scriptstate ??= {}
     chat.fmIndex ??= -1
     chat.note ??= ''
+    chat.generationSettings ??= {
+      configured: true,
+      personaId: PROBE_PERSONA_ID,
+      presetId: PROBE_PRESET_ID,
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
   }
   return record
 }
@@ -119,10 +124,30 @@ function seedProbeDb(options: Required<SendCloneCountProbeOptions>): SendCloneCo
     statics: { messages: 0 } as unknown as Database['statics'],
     promptInfoInsideChat: false,
     promptTextInfoInsideChat: false,
+    selectedPersona: 0,
+    personas: [
+      {
+        id: PROBE_PERSONA_ID,
+        name: 'Probe User',
+        personaPrompt: 'probe persona prompt',
+        icon: '',
+        note: '',
+      },
+    ],
+    botPresetsId: 0,
+    botPresets: [
+      {
+        id: PROBE_PRESET_ID,
+        name: 'Probe Preset',
+        customPromptTemplateToggle: '',
+      },
+    ],
     customPromptTemplateToggle: '',
     globalChatVariables: {},
     echoMessage: 'probe assistant reply',
     echoDelay: 0,
+    modules: [],
+    enabledModules: [],
     characters: characters as unknown as Database['characters'],
   } as unknown as Database)
   selectedCharID.set(0)

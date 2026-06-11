@@ -83,6 +83,8 @@ interface Harness {
   dataDir: string
 }
 
+type JsonRecord = Record<string, unknown>
+
 interface MemorySummaryPayloadReadObservation {
   method: 'all' | 'get' | 'iterate'
   sql: string
@@ -138,25 +140,117 @@ async function importDatabase(database: unknown): Promise<number> {
     payload: { database },
   })
   expect(res.statusCode).toBe(200)
-  return res.json().revision as number
+  const imported = res.json() as { revision: number }
+  return configureImportedCurrentChatGenerationSettings(database, imported.revision)
+}
+
+async function configureImportedCurrentChatGenerationSettings(
+  database: unknown,
+  baseRevision: number,
+): Promise<number> {
+  const chatSettings = activeChatGenerationSettings(database)
+  if (!chatSettings) return baseRevision
+
+  const res = await harness.app.inject({
+    method: 'PUT',
+    url: `/api/v1/commands/chats/${encodeURIComponent(chatSettings.chatId)}/generation-settings`,
+    headers: { 'risu-auth': assertion },
+    payload: {
+      baseRevision,
+      generationSettings: {
+        ...chatSettings.generationSettings,
+        configured: true,
+      },
+    },
+  })
+  expect(res.statusCode).toBe(200)
+  return (res.json() as { revision: number }).revision
+}
+
+function activeChatGenerationSettings(
+  database: unknown,
+): { chatId: string; generationSettings: JsonRecord } | null {
+  if (!isJsonRecord(database)) return null
+  const characters = Array.isArray(database.characters) ? database.characters : []
+  const currentCharIndex = Number.isInteger(database.currentChar as number)
+    ? (database.currentChar as number)
+    : 0
+  const character = findRecordAt(characters, currentCharIndex) ?? findRecordAt(characters, 0)
+  if (!character) return null
+
+  const chats = Array.isArray(character.chats) ? character.chats : []
+  const chatPage = Number.isInteger(character.chatPage as number)
+    ? (character.chatPage as number)
+    : 0
+  const chat = findRecordAt(chats, chatPage) ?? findRecordAt(chats, 0)
+  if (!chat || typeof chat.id !== 'string') return null
+  const generationSettings = chat.generationSettings
+  if (!isJsonRecord(generationSettings)) return null
+  if (!generationSettingReferencesExist(database, generationSettings)) return null
+
+  return {
+    chatId: chat.id,
+    generationSettings,
+  }
+}
+
+function generationSettingReferencesExist(database: JsonRecord, settings: JsonRecord): boolean {
+  return (
+    typeof settings.personaId === 'string' &&
+    collectionHasId(database.personas, settings.personaId) &&
+    typeof settings.presetId === 'string' &&
+    collectionHasId(database.botPresets, settings.presetId)
+  )
+}
+
+function collectionHasId(collection: unknown, id: string): boolean {
+  return Array.isArray(collection) && collection.some((row) => isJsonRecord(row) && row.id === id)
+}
+
+function findRecordAt(collection: unknown[], index: number): JsonRecord | null {
+  const value = collection[index]
+  return isJsonRecord(value) ? value : null
+}
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
 function promptReadyLargeCorpusDatabase(fixture: LargeCorpusFixture): Record<string, unknown> {
-  return {
+  const promptSettings = {
+    assistantPrefill: '',
+    postEndInnerFormat: '',
+    sendChatAsSystem: false,
+    sendName: false,
+    utilOverride: false,
+  }
+  const database = {
     ...structuredClone(fixture.database),
     promptTemplate: undefined,
     formatingOrder: ['main', 'description', 'chats', 'lastChat'],
-    promptSettings: {
-      assistantPrefill: '',
-      postEndInnerFormat: '',
-      sendChatAsSystem: false,
-      sendName: false,
-      utilOverride: false,
-    },
+    promptSettings,
     mainPrompt: 'MAIN',
     maxContext: 100_000,
     maxResponse: 50,
   }
+  const botPresets = Array.isArray(database.botPresets)
+    ? (database.botPresets as Array<Record<string, unknown>>)
+    : []
+  if (botPresets[0]) {
+    const promptReadyPreset = {
+      ...botPresets[0],
+      mainPrompt: database.mainPrompt,
+      formatingOrder: database.formatingOrder,
+      promptSettings,
+      maxContext: database.maxContext,
+      maxResponse: database.maxResponse,
+      customPromptTemplateToggle: '',
+    }
+    delete promptReadyPreset.promptTemplate
+    botPresets[0] = promptReadyPreset
+    database.botPresets = botPresets
+  }
+  return database
 }
 
 function isMemorySummaryPayloadRead(sql: string): boolean {
@@ -1050,19 +1144,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
   it('L20: prompt memory cleanup and selection share one summary payload read', async () => {
     const fixture = buildLargeCorpusFixture({ hotChatMessageCount: 12 })
     await importDatabase({
-      ...fixture.database,
-      promptTemplate: undefined,
-      formatingOrder: ['main', 'description', 'chats', 'lastChat'],
-      promptSettings: {
-        assistantPrefill: '',
-        postEndInnerFormat: '',
-        sendChatAsSystem: false,
-        sendName: false,
-        utilOverride: false,
-      },
-      mainPrompt: 'MAIN',
-      maxContext: 100_000,
-      maxResponse: 50,
+      ...promptReadyLargeCorpusDatabase(fixture),
       hypaV3: true,
       hypaModel: 'embedding-model',
       characters: fixture.characters.map((character, index) =>

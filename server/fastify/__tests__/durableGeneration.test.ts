@@ -27,6 +27,8 @@ interface Harness {
   baseUrl: string
 }
 
+type JsonRecord = Record<string, unknown>
+
 // The injected provider is swapped per test through this stable indirection, so the
 // app is built once per test with a provider that delegates to the current impl.
 let providerImpl: ChatProviderDispatcher = () => {
@@ -36,6 +38,16 @@ let providerImpl: ChatProviderDispatcher = () => {
   return g()
 }
 let failNextGenerationPersistEvent = false
+
+const DURABLE_PERSONA_ID = 'durable-persona'
+const DURABLE_PRESET_ID = 'durable-preset'
+const durablePromptSettings = {
+  assistantPrefill: '',
+  postEndInnerFormat: '',
+  sendChatAsSystem: false,
+  sendName: false,
+  utilOverride: false,
+}
 
 const openControllers = new Set<AbortController>()
 
@@ -89,6 +101,27 @@ function createRetryTestCommandSink(): CommandEventSink {
   }
 }
 
+function durableGenerationSettings(): Record<string, unknown> {
+  return {
+    configured: true,
+    personaId: DURABLE_PERSONA_ID,
+    presetId: DURABLE_PRESET_ID,
+    jailbreakToggle: false,
+    sidebarToggles: {},
+  }
+}
+
+function durableChat(messages: Array<Record<string, unknown>> = []): Record<string, unknown> {
+  return {
+    id: 'chat-1',
+    message: messages,
+    note: '',
+    name: 'Chat',
+    localLore: [],
+    generationSettings: durableGenerationSettings(),
+  }
+}
+
 const fixtureDatabase = {
   currentChar: 0,
   characters: [
@@ -100,17 +133,36 @@ const fixtureDatabase = {
       chatPage: 0,
       desc: 'DESC',
       firstMessage: 'Greetings.',
-      chats: [{ id: 'chat-1', message: [], note: '', name: 'Chat', localLore: [] }],
+      chats: [durableChat()],
     },
   ],
+  selectedPersona: 0,
+  personas: [
+    {
+      id: DURABLE_PERSONA_ID,
+      name: 'Durable User',
+      personaPrompt: 'durable persona prompt',
+      icon: '',
+      note: '',
+    },
+  ],
+  botPresetsId: 0,
+  botPresets: [
+    {
+      id: DURABLE_PRESET_ID,
+      name: 'Durable Preset',
+      mainPrompt: 'MAIN',
+      maxContext: 100_000,
+      maxResponse: 50,
+      formatingOrder: ['main', 'description', 'chats'],
+      promptSettings: durablePromptSettings,
+      customPromptTemplateToggle: '',
+    },
+  ],
+  modules: [],
+  enabledModules: [],
   formatingOrder: ['main', 'description', 'chats'],
-  promptSettings: {
-    assistantPrefill: '',
-    postEndInnerFormat: '',
-    sendChatAsSystem: false,
-    sendName: false,
-    utilOverride: false,
-  },
+  promptSettings: durablePromptSettings,
   mainPrompt: 'MAIN',
   maxContext: 100_000,
   maxResponse: 50,
@@ -140,12 +192,105 @@ afterEach(async () => {
 })
 
 async function seedDatabase(database: unknown): Promise<void> {
-  const res = await fetch(`${harness.baseUrl}/api/v1/import/risusave`, {
+  await seedDatabaseForHarness(harness, assertion, database)
+}
+
+async function seedDatabaseForHarness(
+  target: Harness,
+  targetAssertion: string,
+  database: unknown,
+): Promise<number> {
+  const res = await fetch(`${target.baseUrl}/api/v1/import/risusave`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'risu-auth': assertion },
+    headers: { 'content-type': 'application/json', 'risu-auth': targetAssertion },
     body: JSON.stringify({ database }),
   })
   expect(res.status).toBe(200)
+  const imported = (await res.json()) as { revision: number }
+  return configureImportedCurrentChatGenerationSettings(
+    target,
+    targetAssertion,
+    database,
+    imported.revision,
+  )
+}
+
+async function configureImportedCurrentChatGenerationSettings(
+  target: Harness,
+  targetAssertion: string,
+  database: unknown,
+  baseRevision: number,
+): Promise<number> {
+  const chatSettings = activeChatGenerationSettings(database)
+  if (!chatSettings) return baseRevision
+
+  const res = await fetch(
+    `${target.baseUrl}/api/v1/commands/chats/${encodeURIComponent(
+      chatSettings.chatId,
+    )}/generation-settings`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'risu-auth': targetAssertion },
+      body: JSON.stringify({
+        baseRevision,
+        generationSettings: {
+          ...chatSettings.generationSettings,
+          configured: true,
+        },
+      }),
+    },
+  )
+  expect(res.status).toBe(200)
+  return ((await res.json()) as { revision: number }).revision
+}
+
+function activeChatGenerationSettings(
+  database: unknown,
+): { chatId: string; generationSettings: JsonRecord } | null {
+  if (!isJsonRecord(database)) return null
+  const characters = Array.isArray(database.characters) ? database.characters : []
+  const currentCharIndex = Number.isInteger(database.currentChar as number)
+    ? (database.currentChar as number)
+    : 0
+  const character = findRecordAt(characters, currentCharIndex) ?? findRecordAt(characters, 0)
+  if (!character) return null
+
+  const chats = Array.isArray(character.chats) ? character.chats : []
+  const chatPage = Number.isInteger(character.chatPage as number)
+    ? (character.chatPage as number)
+    : 0
+  const chat = findRecordAt(chats, chatPage) ?? findRecordAt(chats, 0)
+  if (!chat || typeof chat.id !== 'string') return null
+  const generationSettings = chat.generationSettings
+  if (!isJsonRecord(generationSettings)) return null
+  if (!generationSettingReferencesExist(database, generationSettings)) return null
+
+  return {
+    chatId: chat.id,
+    generationSettings,
+  }
+}
+
+function generationSettingReferencesExist(database: JsonRecord, settings: JsonRecord): boolean {
+  return (
+    typeof settings.personaId === 'string' &&
+    collectionHasId(database.personas, settings.personaId) &&
+    typeof settings.presetId === 'string' &&
+    collectionHasId(database.botPresets, settings.presetId)
+  )
+}
+
+function collectionHasId(collection: unknown, id: string): boolean {
+  return Array.isArray(collection) && collection.some((row) => isJsonRecord(row) && row.id === id)
+}
+
+function findRecordAt(collection: unknown[], index: number): JsonRecord | null {
+  const value = collection[index]
+  return isJsonRecord(value) ? value : null
+}
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -323,7 +468,7 @@ async function seedChatWithMessages(messages: Array<Record<string, unknown>>): P
     characters: [
       {
         ...fixtureDatabase.characters[0],
-        chats: [{ id: 'chat-1', message: messages, note: '', name: 'Chat', localLore: [] }],
+        chats: [durableChat(messages)],
       },
     ],
   })
@@ -1102,12 +1247,7 @@ describe('Durable generation (Milestone 1)', () => {
     let localDataDirKept: string | null = local.dataDir
     try {
       const { assertion: localAssertion } = await setupAuthedClient(local.app)
-      const seeded = await fetch(`${local.baseUrl}/api/v1/import/risusave`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'risu-auth': localAssertion },
-        body: JSON.stringify({ database: fixtureDatabase }),
-      })
-      expect(seeded.status).toBe(200)
+      await seedDatabaseForHarness(local, localAssertion, fixtureDatabase)
 
       const controller = newController()
       const res = await fetch(`${local.baseUrl}/api/v1/generate/chat`, {
@@ -1155,12 +1295,7 @@ describe('Durable generation (Milestone 1)', () => {
     const local = await startHarness({ viewerHeartbeatMs: 25 })
     try {
       const { assertion: localAssertion } = await setupAuthedClient(local.app)
-      const seeded = await fetch(`${local.baseUrl}/api/v1/import/risusave`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'risu-auth': localAssertion },
-        body: JSON.stringify({ database: fixtureDatabase }),
-      })
-      expect(seeded.status).toBe(200)
+      await seedDatabaseForHarness(local, localAssertion, fixtureDatabase)
 
       const controller = newController()
       const res = await fetch(`${local.baseUrl}/api/v1/generate/chat`, {
