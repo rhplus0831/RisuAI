@@ -224,7 +224,7 @@ function promptReadyLargeCorpusDatabase(fixture: LargeCorpusFixture): Record<str
     sendName: false,
     utilOverride: false,
   }
-  const database = {
+  const database: Record<string, unknown> = {
     ...structuredClone(fixture.database),
     promptTemplate: undefined,
     formatingOrder: ['main', 'description', 'chats', 'lastChat'],
@@ -237,7 +237,7 @@ function promptReadyLargeCorpusDatabase(fixture: LargeCorpusFixture): Record<str
     ? (database.botPresets as Array<Record<string, unknown>>)
     : []
   if (botPresets[0]) {
-    const promptReadyPreset = {
+    const promptReadyPreset: Record<string, unknown> = {
       ...botPresets[0],
       mainPrompt: database.mainPrompt,
       formatingOrder: database.formatingOrder,
