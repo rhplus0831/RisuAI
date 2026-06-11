@@ -15,6 +15,7 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "declarationDir": "dist/client-types",
+    "tsBuildInfoFile": "dist/client-types/tsconfig.client-lib.tsbuildinfo",
     "sourceMap": false,
     "declarationMap": false
   },
