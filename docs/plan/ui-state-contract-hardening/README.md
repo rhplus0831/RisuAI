@@ -76,10 +76,10 @@ This plan was re-audited with ten read-only sub-agent passes:
 
 ## Current Entry Point
 
-The next implementation batch is Phase 5:
-[`phases/phase-5-browser-smoke-and-coverage-map.md`](phases/phase-5-browser-smoke-and-coverage-map.md).
+The next implementation batch is Phase 6:
+[`phases/phase-6-verification-closeout.md`](phases/phase-6-verification-closeout.md).
 
-Phases 0-4 are complete. Phase 4 landed composed generation-settings UI
-workflow tests for sidebar pickers, incomplete-chat remediation, missing
-references, mounted projection updates, and visible rollback; proof is recorded
-in [`latest-verification.md`](latest-verification.md).
+Phases 0-5 are complete. Phase 5 landed visible Fastify browser smoke
+assertions and an opt-in UI coverage-map command that emits text, JSON summary,
+and HTML reports under ignored local `coverage/ui-map` artifacts; proof is
+recorded in [`latest-verification.md`](latest-verification.md).

@@ -1,6 +1,6 @@
 # Phase 5: Browser Smoke And Coverage Map
 
-Status: planned.
+Status: complete.
 
 Goal: make browser smoke prove a tiny number of visible app states and add an
 opt-in coverage-map workflow for critical UI integration paths.

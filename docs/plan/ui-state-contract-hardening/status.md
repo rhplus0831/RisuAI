@@ -21,10 +21,14 @@ Date: 2026-06-11
   sidebar-to-picker readiness, incomplete-chat remediation/send guarding,
   missing-reference readiness, mounted projection updates, and visible rollback.
   Focused client and Fastify command/import proof passed on 2026-06-11.
+- Phase 5 is complete: Fastify browser smoke passes with visible assertions, and
+  the opt-in UI coverage map passes with text, JSON summary, and HTML reports
+  under ignored local `coverage/ui-map` artifacts. No coverage thresholds are
+  claimed.
 - A ten-sub-agent audit completed on 2026-06-11 and found the plan valid after
   corrections for slice dependencies, Phase 5 coverage output, Phase 6 closeout
   validation, and Phase 3 sidebar selectors. See [`audit.md`](audit.md).
-- Phases 5-6 are planned. Execute them by dependency-aware slices, with focused
+- Phase 6 is planned next. Execute it by dependency-aware slices, with focused
   verification before moving to dependent slices. Independent slices with
   disjoint write scopes may run in parallel.
 - No new fix-completeness gate is scheduled. The archived v1/v2/v3 gates remain
@@ -47,18 +51,18 @@ Date: 2026-06-11
 - [Phase 4](phases/phase-4-composed-generation-settings-ui.md): complete. Added
   composed generation-settings UI workflow tests without reopening the archived
   generation-settings workstream.
-- [Phase 5](phases/phase-5-browser-smoke-and-coverage-map.md): planned next.
-  Add thin visible assertions to Fastify browser smoke and add an opt-in
-  coverage-map command/profile with text, JSON summary, and HTML reporters.
-- [Phase 6](phases/phase-6-verification-closeout.md): planned. Run focused and
-  broad proof, including the Phase 5 coverage-map command and `pnpm check`,
+- [Phase 5](phases/phase-5-browser-smoke-and-coverage-map.md): complete. Added
+  thin visible assertions to Fastify browser smoke and an opt-in coverage-map
+  command/profile with text, JSON summary, and HTML reporters.
+- [Phase 6](phases/phase-6-verification-closeout.md): planned next. Run focused
+  and broad proof, including the Phase 5 coverage-map command and `pnpm check`,
   record results, and archive this workstream only after all required phases are
   done.
 
 ## Next Steps
 
-1. Assign Phase 5:
-   [`phase-5-browser-smoke-and-coverage-map.md`](phases/phase-5-browser-smoke-and-coverage-map.md).
+1. Assign Phase 6:
+   [`phase-6-verification-closeout.md`](phases/phase-6-verification-closeout.md).
 2. Keep write scopes disjoint when multiple agents work in parallel.
 3. Update this status file and [`latest-verification.md`](latest-verification.md)
    after each phase lands.
