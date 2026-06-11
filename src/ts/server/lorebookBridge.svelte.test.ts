@@ -88,6 +88,7 @@ import {
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
 type Entry = { key?: string; content?: string; id?: string; folder?: string }
+type GlobalLorebookFixture = { id: string; name: string; data: Entry[] }
 
 const DELAY = 50
 
@@ -102,9 +103,7 @@ function setupCharacter(globalLore: unknown): void {
 }
 
 function setupGlobalLorebooks(
-  loreBook: Array<{ id: string; name: string; data: Entry[] }> = [
-    { id: 'g1', name: 'Initial', data: [] },
-  ],
+  loreBook: GlobalLorebookFixture[] = [{ id: 'g1', name: 'Initial', data: [] }],
   loreBookPage = 0,
 ): void {
   ;(DBState as { db: unknown }).db = {
@@ -114,6 +113,10 @@ function setupGlobalLorebooks(
     modules: [],
   }
   selectedCharID.set(-1)
+}
+
+function globalLorebookIds(): string[] {
+  return (DBState.db.loreBook as unknown as GlobalLorebookFixture[]).map((lorebook) => lorebook.id)
 }
 
 function characterReplaceCommands(): Array<Record<string, unknown> & { rollback?: () => void }> {
@@ -338,7 +341,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
           dispatchCreateGlobalLorebook(created, previous)
         },
         expectRestored: () => {
-          expect(DBState.db.loreBook.map((lorebook) => lorebook.id)).toEqual(['g1'])
+          expect(globalLorebookIds()).toEqual(['g1'])
         },
       },
       {
@@ -354,7 +357,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
           dispatchDeleteGlobalLorebook('g2', previous)
         },
         expectRestored: () => {
-          expect(DBState.db.loreBook.map((lorebook) => lorebook.id)).toEqual(['g1', 'g2'])
+          expect(globalLorebookIds()).toEqual(['g1', 'g2'])
         },
       },
       {
@@ -370,7 +373,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
           dispatchReorderGlobalLorebooks(previous)
         },
         expectRestored: () => {
-          expect(DBState.db.loreBook.map((lorebook) => lorebook.id)).toEqual(['g1', 'g2'])
+          expect(globalLorebookIds()).toEqual(['g1', 'g2'])
         },
       },
       {
@@ -507,7 +510,9 @@ function chatReplaceChatIds(): string[] {
     .map((c) => (c.a as { chatId?: string }).chatId ?? '')
 }
 
-function chatReplaceCommands(): Array<Record<string, unknown> & { a?: unknown }> {
+function chatReplaceCommands(): Array<
+  Record<string, unknown> & { a?: unknown; rollback?: () => void }
+> {
   return recorded.commands.filter((c) => c.kind === 'replaceChat')
 }
 

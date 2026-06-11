@@ -353,7 +353,7 @@ function seedStores() {
     roundIcons: false,
     showFolderName: true,
     showMenuChatList: false,
-  } as Database
+  } as unknown as Database
 
   loadedStore.set(true)
   selectedCharID.set(0)

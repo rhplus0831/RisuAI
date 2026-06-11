@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import type { LLMModel } from '../../model/modellist'
 import type { InlayAsset } from '../../process/files/inlays'
 import { DBState } from '../../stores.svelte'
 import {
@@ -15,6 +16,15 @@ const mocks = vi.hoisted(() => ({
     hideAllImages: false,
   },
   getInlayAssetBlob: vi.fn(),
+  modelInfo: {
+    id: 'test-model',
+    name: 'Test Model',
+    provider: 14,
+    flags: [],
+    format: 19,
+    parameters: [],
+    tokenizer: 0,
+  } satisfies LLMModel,
 }))
 
 vi.mock(
@@ -56,11 +66,11 @@ vi.mock(import('../../process/modules'), () => ({
 }))
 
 vi.mock(import('../../process/scripts'), () => ({
-  processScriptFull: async (_char: unknown, data: string) => ({ data }),
+  processScriptFull: async (_char: unknown, data: string) => ({ data, emoChanged: false }),
 }))
 
 vi.mock(import('../../model/modellist'), () => ({
-  getModelInfo: () => ({}),
+  getModelInfo: () => mocks.modelInfo,
 }))
 
 let nextBlobUrlId = 0

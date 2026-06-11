@@ -102,6 +102,7 @@ function stubCommandFetch(): CapturedFetch[] {
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 200 })
       if (url.endsWith('/generation-settings')) {
         return jsonResponse({
+          status: 'ok',
           revision: 201,
           event: {
             type: 'chat.updated',
@@ -232,11 +233,7 @@ function pickerRow(kind: 'preset' | 'persona', id: string): HTMLButtonElement {
   )
 }
 
-function expectPickerRowSelection(
-  kind: 'preset' | 'persona',
-  id: string,
-  selected: boolean,
-): void {
+function expectPickerRowSelection(kind: 'preset' | 'persona', id: string, selected: boolean): void {
   const row = pickerRow(kind, id)
   expect(row.dataset.risuSelected).toBe(selected ? 'true' : 'false')
   expect(row.getAttribute('aria-current')).toBe(selected ? 'true' : null)

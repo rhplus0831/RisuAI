@@ -56,6 +56,7 @@ function stubCommandFetch(): CapturedFetch[] {
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 100 })
       if (url.endsWith('/generation-settings')) {
         return jsonResponse({
+          status: 'ok',
           revision: 101,
           event: {
             type: 'chat.updated',

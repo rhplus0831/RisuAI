@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { RPCToolCallImageAudioContent } from './mcplib'
 
 const pdfMocks = vi.hoisted(() => ({
   convertPdfToImages: vi.fn(),
@@ -74,7 +75,9 @@ function clientWithDirectory(entries: Record<string, TestEntry>) {
   return client
 }
 
-function bytes(length: number): Uint8Array {
+type ImageToolContent = RPCToolCallImageAudioContent & { type: 'image' }
+
+function bytes(length: number): Uint8Array<ArrayBuffer> {
   const output = new Uint8Array(length)
   for (let i = 0; i < output.length; i += 1) {
     output[i] = i % 251
@@ -126,7 +129,7 @@ describe('FileSystem MCP read caps', () => {
       limit: readLimit,
     })
 
-    const image = result.find((item) => item.type === 'image')
+    const image = result.find((item): item is ImageToolContent => item.type === 'image')
     expect(image?.type).toBe('image')
     expect(base64ToBytes(image!.data)).toEqual(payload.slice(0, readLimit))
     expect(btoaChunks.length).toBeGreaterThan(1)

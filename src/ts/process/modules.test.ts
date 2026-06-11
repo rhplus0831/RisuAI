@@ -10,7 +10,12 @@ const alertError = vi.hoisted(() => vi.fn())
 const saveAsset = vi.hoisted(() => vi.fn())
 const createGlobalModule = vi.hoisted(() => vi.fn())
 const getCurrentCharacter = vi.hoisted(() => vi.fn())
-const getDatabase = vi.hoisted(() => vi.fn(() => ({ modules: [] })))
+type ModuleDatabaseFixture = {
+  enabledModules?: string[]
+  moduleIntergration?: string
+  modules: Array<Record<string, unknown>>
+}
+const getDatabase = vi.hoisted(() => vi.fn((): ModuleDatabaseFixture => ({ modules: [] })))
 const dispatchReplaceCharacterLorebooks = vi.hoisted(() => vi.fn())
 const dispatchReplaceCharacterScripts = vi.hoisted(() => vi.fn())
 const dispatchReplaceCharacterTriggers = vi.hoisted(() => vi.fn())

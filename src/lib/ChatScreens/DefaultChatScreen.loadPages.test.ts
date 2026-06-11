@@ -192,7 +192,7 @@ import {
   ScrollToMessageStore,
   selectedCharID,
 } from 'src/ts/stores.svelte'
-import type { Database } from 'src/ts/storage/database.svelte'
+import { presetTemplate, type Database } from 'src/ts/storage/database.svelte'
 import {
   createActiveChatGenerationSettingsIncompleteMessage,
   resolveActiveChatGenerationSettings,
@@ -260,7 +260,7 @@ function seedDatabase(messageCounts: number[]) {
     fixedChatTextarea: false,
     hypaV3: false,
     newMessageButtonStyle: 'bottom-center',
-    personas: [{ name: 'User', icon: '', largePortrait: false }],
+    personas: [{ name: 'User', icon: '', largePortrait: false, personaPrompt: '' }],
     playMessage: false,
     selectedPersona: 0,
     showMenuChatList: false,
@@ -466,10 +466,12 @@ describe('DefaultChatScreen transcript window state', () => {
         name: 'Persona Alpha',
         icon: '',
         largePortrait: false,
+        personaPrompt: '',
       },
     ]
     DBState.db.botPresets = [
       {
+        ...presetTemplate,
         id: 'preset-a',
         name: 'Preset Alpha',
         jailbreak: 'Jailbreak',

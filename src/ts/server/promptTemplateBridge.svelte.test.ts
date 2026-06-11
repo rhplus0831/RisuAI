@@ -65,7 +65,7 @@ vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   watchServerBackedSettings: vi.fn(() => () => {}),
 }))
 
-import type { PromptItem } from '../process/prompt'
+import type { PromptItem, PromptSettings as PromptSettingsFixture } from '../process/prompt'
 import { DBState } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import PromptSettings from 'src/lib/Setting/Pages/PromptSettings.svelte'
@@ -83,6 +83,14 @@ import {
 
 const BIG = 'x'.repeat(5000)
 type MountedComponent = Parameters<typeof unmount>[0]
+
+const minimalPromptSettings: PromptSettingsFixture = {
+  assistantPrefill: '',
+  postEndInnerFormat: '',
+  sendChatAsSystem: false,
+  sendName: false,
+  utilOverride: false,
+}
 
 function item(id: string, text: string): PromptItem {
   return { id, type: 'plain', type2: 'normal', role: 'system', text } as PromptItem
@@ -246,7 +254,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     }
     queuePromptItemProjectionUpdateForPromptSettings(binding, 'p-0', item('p-0', 'small'), 500)
     DBState.db.promptTemplate = []
-    DBState.db.promptSettings = {}
+    DBState.db.promptSettings = { ...minimalPromptSettings }
 
     const target = document.createElement('div')
     document.body.appendChild(target)

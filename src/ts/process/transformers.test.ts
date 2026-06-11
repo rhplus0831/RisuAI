@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const testState = vi.hoisted(() => ({
-  decodeError: null as Error | null,
+  decodeError: null as DOMException | null,
   env: {} as Record<string, unknown>,
   pipeline: vi.fn(),
 }))
@@ -140,7 +140,7 @@ describe('runVITS lifecycle', () => {
   it('L52: decodeAudioData errors reject through the callback path', async () => {
     const synth = makeSynthesizer()
     testState.pipeline.mockResolvedValue(synth)
-    testState.decodeError = new Error('decode failed')
+    testState.decodeError = new DOMException('decode failed')
     const { runVITS } = await importTransformers()
 
     await expect(runVITS('hello', 'model-a')).rejects.toThrow('decode failed')

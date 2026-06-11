@@ -88,6 +88,7 @@ function stubCommandFetch(): CapturedFetch[] {
       if (url.endsWith('/generation-settings')) {
         revision += 1
         return jsonResponse({
+          status: 'ok',
           revision,
           event: {
             type: 'chat.updated',
@@ -109,7 +110,7 @@ function stubDeferredFailedGenerationSettingsFetch(): {
   failGenerationSettingsSave: () => void
 } {
   const calls: CapturedFetch[] = []
-  let completeGenerationSettingsSave = () => {
+  let completeGenerationSettingsSave: () => void = () => {
     throw new Error('generation settings save was not requested')
   }
 

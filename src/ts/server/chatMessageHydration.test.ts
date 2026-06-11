@@ -249,7 +249,8 @@ describe('chat message hydration bridge', () => {
       start: 0,
       limit: 3,
     })
-    expect(db().characters[0].chats[0].message.map((message) => message.data)).toEqual([
+    const messages = db().characters[0].chats[0].message as Array<{ data: string }>
+    expect(messages.map((message) => message.data)).toEqual([
       'older-1',
       'older-2',
       'older-3',

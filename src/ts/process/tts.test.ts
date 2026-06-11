@@ -185,6 +185,8 @@ function makeFishSpeechCharacter(): character {
       chunk_length: 200,
       model: {
         _id: 'fish-voice',
+        title: 'Fish Voice',
+        description: 'Fish speech voice fixture',
       },
       normalize: true,
     },

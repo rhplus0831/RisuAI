@@ -6,9 +6,8 @@ const ONE_MIB = 1024 * 1024
 
 const globalApiState = vi.hoisted(() => ({
   saveAsset: vi.fn(async () => 'saved-hash-signal'),
-  saveAssets: vi.fn(
-    async (assets: readonly { data: Uint8Array }[]) =>
-      assets.map((asset, index) => `saved-${index}-${asset.data.byteLength}-${asset.data[0] ?? 0}`),
+  saveAssets: vi.fn(async (assets: readonly { data: Uint8Array }[]) =>
+    assets.map((asset, index) => `saved-${index}-${asset.data.byteLength}-${asset.data[0] ?? 0}`),
   ),
   appendable: {
     nextId: 0,
@@ -98,7 +97,8 @@ vi.mock('../parser/parser.svelte', () => ({
 }))
 
 vi.mock('../util', () => ({
-  asBuffer: (data: Uint8Array) => data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+  asBuffer: (data: Uint8Array) =>
+    data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
 }))
 
 import { CharXImporter, CharXWriter } from './processzip'
@@ -108,9 +108,8 @@ const encoder = new TextEncoder()
 function resetMocks() {
   globalApiState.saveAsset.mockClear()
   globalApiState.saveAssets.mockClear()
-  globalApiState.saveAssets.mockImplementation(
-    async (assets: readonly { data: Uint8Array }[]) =>
-      assets.map((asset, index) => `saved-${index}-${asset.data.byteLength}-${asset.data[0] ?? 0}`),
+  globalApiState.saveAssets.mockImplementation(async (assets: readonly { data: Uint8Array }[]) =>
+    assets.map((asset, index) => `saved-${index}-${asset.data.byteLength}-${asset.data[0] ?? 0}`),
   )
   globalApiState.appendable.nextId = 0
   globalApiState.appendable.instances = []
@@ -360,6 +359,7 @@ describe('CharXWriter media cleanup', () => {
       return originalCreateElement(tag)
     })
     const writer = new CharXWriter({
+      buf: undefined as never,
       close: vi.fn(async () => {}),
       write: vi.fn(async () => {}),
     })

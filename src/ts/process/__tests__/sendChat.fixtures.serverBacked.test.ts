@@ -231,6 +231,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
       port: 0,
       dataDir,
       bodyLimit: 1024 * 1024,
+      importMaxBytes: Number.POSITIVE_INFINITY,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },

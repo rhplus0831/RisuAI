@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Chat } from '../../../storage/database.svelte'
+import type { Chat, Message } from '../../../storage/database.svelte'
 import type { ServerChatMessagePatch } from '../serverChatEvents'
 import { applyServerMessagePatch } from '../serverMessagePatch'
 
@@ -58,7 +58,8 @@ describe('applyServerMessagePatch', () => {
       },
     ])
     expect(chat.message[0]).not.toBe(serverMessage)
-    expect(chat.message[0].generationInfo).not.toBe(serverMessage.generationInfo)
+    const appliedMessage = chat.message[0] as Message
+    expect(appliedMessage.generationInfo).not.toBe(serverMessage.generationInfo)
 
     serverMessage.data = 'mutated after apply'
     serverMessage.generationInfo = { model: 'mutated model' }

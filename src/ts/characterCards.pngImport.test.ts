@@ -247,9 +247,8 @@ beforeEach(() => {
   globalApiState.saveAsset.mockReset()
   globalApiState.saveAsset.mockImplementation(async () => 'primary-image')
   globalApiState.saveAssets.mockReset()
-  globalApiState.saveAssets.mockImplementation(
-    async (assets: readonly { data: Uint8Array }[]) =>
-      assets.map((asset, index) => `asset-${index}-${Buffer.from(asset.data).toString('hex')}`),
+  globalApiState.saveAssets.mockImplementation(async (assets: readonly { data: Uint8Array }[]) =>
+    assets.map((asset, index) => `asset-${index}-${Buffer.from(asset.data).toString('hex')}`),
   )
   globalApiState.readImage.mockReset()
   globalApiState.readImage.mockImplementation(async () => BASE_PNG)
@@ -281,9 +280,9 @@ describe('PNG character card import', () => {
     for (const chunkText of fixture.assetChunkTexts) {
       expect(counters.chunkSliceCounts.get(chunkText)).toBe(1)
     }
-    expect(globalApiState.saveAssets.mock.calls[0][0].map((asset) => Array.from(asset.data))).toEqual(
-      fixture.assetPayloads.map((asset) => Array.from(asset)),
-    )
+    expect(
+      globalApiState.saveAssets.mock.calls[0][0].map((asset) => Array.from(asset.data)),
+    ).toEqual(fixture.assetPayloads.map((asset) => Array.from(asset)))
   })
 
   it('L51: preserves multi-asset PNG import output and progress order', async () => {
@@ -296,9 +295,9 @@ describe('PNG character card import', () => {
 
     expect(alertState.alertError).not.toHaveBeenCalled()
     expect(globalApiState.saveAsset).toHaveBeenCalledTimes(1)
-    expect(globalApiState.saveAssets.mock.calls[0][0].map((asset) => Array.from(asset.data))).toEqual(
-      fixture.assetPayloads.map((asset) => Array.from(asset)),
-    )
+    expect(
+      globalApiState.saveAssets.mock.calls[0][0].map((asset) => Array.from(asset.data)),
+    ).toEqual(fixture.assetPayloads.map((asset) => Array.from(asset)))
     expect(dbState.db.characters).toHaveLength(1)
     expect(dbState.db.characters[0]).toMatchObject({
       name: 'PNG Multi Asset',
@@ -351,9 +350,7 @@ describe('PNG character card import', () => {
   })
 })
 
-async function createPngCardFixture(
-  options: { risuaiExtension?: Record<string, unknown> } = {},
-) {
+async function createPngCardFixture(options: { risuaiExtension?: Record<string, unknown> } = {}) {
   const assetPayloads = [new Uint8Array([7, 8, 9]), new Uint8Array([1, 3, 5, 7])]
   const assetBase64Values = assetPayloads.map((asset) => Buffer.from(asset).toString('base64'))
   const card = {
@@ -431,16 +428,18 @@ function installPngReadCounters(assetChunkTexts: string[], assetBase64Values: st
   vi.stubGlobal('TextDecoder', CountingTextDecoder)
 
   const originalSlice = Uint8Array.prototype.slice
-  const sliceSpy = vi
-    .spyOn(Uint8Array.prototype, 'slice')
-    .mockImplementation(function (this: Uint8Array, start?: number, end?: number): Uint8Array {
-      const result = originalSlice.call(this, start, end)
-      const value = realDecoder.decode(result)
-      if (chunkSliceCounts.has(value)) {
-        chunkSliceCounts.set(value, chunkSliceCounts.get(value)! + 1)
-      }
-      return result
-    })
+  const sliceSpy = vi.spyOn(Uint8Array.prototype, 'slice').mockImplementation(function (
+    this: Uint8Array,
+    start?: number,
+    end?: number,
+  ): Uint8Array<ArrayBuffer> {
+    const result = new Uint8Array(originalSlice.call(this, start, end))
+    const value = realDecoder.decode(result)
+    if (chunkSliceCounts.has(value)) {
+      chunkSliceCounts.set(value, chunkSliceCounts.get(value)! + 1)
+    }
+    return result
+  })
 
   return {
     chunkSliceCounts,
