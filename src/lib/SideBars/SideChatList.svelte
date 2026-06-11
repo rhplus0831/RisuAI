@@ -353,8 +353,8 @@
   data-risu-chat-list="sidebar"
   class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)]"
 >
-  <div data-risu-chat-action="create">
-    <Button className="relative bottom-2" onclick={createChat}>{language.newChat}</Button>
+  <div class="w-full" data-risu-chat-action="create">
+    <Button className="relative bottom-2 w-full" onclick={createChat}>{language.newChat}</Button>
   </div>
 
   {#key sorted}
