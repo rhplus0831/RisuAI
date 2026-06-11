@@ -2,7 +2,7 @@
 
 Phase: [1](../../phase-1-current-doc-policy.md). No runtime change.
 
-Status: planned. Depends on
+Status: complete. Depends on
 [`current-testing-policy.md`](current-testing-policy.md) and
 [`structure-doc-pointers.md`](structure-doc-pointers.md).
 
@@ -33,8 +33,8 @@ This slice does not change runtime code.
 
 ## Done Criteria
 
-- Phase 1 docs are formatted.
-- `status.md` and `latest-verification.md` are updated.
+- [x] Phase 1 docs are formatted.
+- [x] `status.md` and `latest-verification.md` are updated.
 
 ## Validation
 

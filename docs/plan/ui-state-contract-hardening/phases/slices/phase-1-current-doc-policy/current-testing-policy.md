@@ -2,7 +2,7 @@
 
 Phase: [1](../../phase-1-current-doc-policy.md). No runtime change.
 
-Status: planned.
+Status: complete.
 
 ## Scope
 
@@ -46,9 +46,9 @@ see, validation must assert the rendered result after the same transition.
 
 ## Done Criteria
 
-- `docs/structure/testing-and-operations.md` contains the visible-state
-  contract and test-ring guidance.
-- The section uses current Fastify-only structure terms.
+- [x] `docs/structure/testing-and-operations.md` contains the visible-state
+      contract and test-ring guidance.
+- [x] The section uses current Fastify-only structure terms.
 
 ## Validation
 

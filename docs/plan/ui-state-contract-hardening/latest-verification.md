@@ -57,3 +57,15 @@ Audit artifacts added:
 
 These results are docs-only audit proof, not implementation closeout proof for
 future phase edits.
+
+## Phase 1 Current Doc Policy Proof
+
+Recorded on 2026-06-11 after the policy-core and structure-doc pointer slices
+landed. This proof covers only the current-doc visible-state policy and pointers;
+it does not prove later runtime selector, DOM workflow, browser smoke,
+coverage-map, or closeout phases.
+
+| Command                                                                                                                                                                                                  | Result  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `pnpm exec prettier --check STRUCTURE.md docs/archive/README.md docs/structure/testing-and-operations.md docs/structure/frontend.md docs/structure/server-projection-and-bridges.md 'docs/plan/**/*.md'` | Passed. |
+| `git diff --check`                                                                                                                                                                                       | Passed. |

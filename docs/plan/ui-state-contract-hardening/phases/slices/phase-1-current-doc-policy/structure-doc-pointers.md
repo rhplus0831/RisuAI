@@ -2,7 +2,7 @@
 
 Phase: [1](../../phase-1-current-doc-policy.md). No runtime change.
 
-Status: planned. Depends on
+Status: complete. Depends on
 [`current-testing-policy.md`](current-testing-policy.md).
 
 ## Scope
@@ -39,8 +39,8 @@ visible-state policy before changing state-to-render behavior.
 
 ## Done Criteria
 
-- Both current structure docs include a pointer to the policy.
-- The pointers do not conflict with the Fastify-only architecture map.
+- [x] Both current structure docs include a pointer to the policy.
+- [x] The pointers do not conflict with the Fastify-only architecture map.
 
 ## Validation
 

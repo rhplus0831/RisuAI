@@ -7,10 +7,12 @@ Date: 2026-06-11
 - Plan state: active.
 - Phase 0 is complete: current package scripts and current docs now use
   `pnpm build:site`, including `smoke:fastify-browser`.
+- Phase 1 is complete: the visible-state docs policy and structure-doc pointers
+  are landed, and docs-only validation passed on 2026-06-11.
 - A ten-sub-agent audit completed on 2026-06-11 and found the plan valid after
   corrections for slice dependencies, Phase 5 coverage output, Phase 6 closeout
   validation, and Phase 3 sidebar selectors. See [`audit.md`](audit.md).
-- Phases 1-6 are planned. Execute them by dependency-aware slices, with focused
+- Phases 2-6 are planned. Execute them by dependency-aware slices, with focused
   verification before moving to dependent slices. Independent slices with
   disjoint write scopes may run in parallel.
 - No new fix-completeness gate is scheduled. The archived v1/v2/v3 gates remain
@@ -22,8 +24,8 @@ Date: 2026-06-11
 
 - [Phase 0](phases/phase-0-command-baseline.md): complete. Build/smoke command
   spelling repaired in current scripts and current docs.
-- [Phase 1](phases/phase-1-current-doc-policy.md): planned. Promote the visible
-  state contract into current structure docs through three docs/proof slices.
+- [Phase 1](phases/phase-1-current-doc-policy.md): complete. Visible-state test
+  policy and structure-doc pointers landed, with docs-only proof recorded.
 - [Phase 2](phases/phase-2-selector-hardening.md): planned. Add stable
   selectors to fragile UI surfaces and migrate nearby tests away from
   structure/style-sensitive queries through six surface/proof slices.
@@ -43,8 +45,8 @@ Date: 2026-06-11
 
 ## Next Steps
 
-1. Assign the Phase 1 policy-core slice to an implementation agent:
-   [`current-testing-policy.md`](phases/slices/phase-1-current-doc-policy/current-testing-policy.md).
+1. Assign the first Phase 2 selector-hardening implementation slice:
+   [`chat-list-selectors.md`](phases/slices/phase-2-selector-hardening/chat-list-selectors.md).
 2. Keep write scopes disjoint when multiple agents work in parallel.
 3. Update this status file and [`latest-verification.md`](latest-verification.md)
    after each phase lands.

@@ -1,6 +1,6 @@
 # Phase 1: Current Doc Policy
 
-Status: planned.
+Status: complete.
 
 Goal: make the visible-state test contract part of current testing guidance.
 
@@ -47,17 +47,17 @@ Current docs should state:
 
 ## Done Criteria
 
-- Current docs include the visible-state contract and test rings.
-- Phase status and latest verification are updated.
-- Docs-only validation passes.
+- [x] Current docs include the visible-state contract and test rings.
+- [x] Phase status and latest verification are updated.
+- [x] Docs-only validation passes.
 
 ## Slices
 
-- Policy core:
+- Completed policy core:
   [`slices/phase-1-current-doc-policy/current-testing-policy.md`](slices/phase-1-current-doc-policy/current-testing-policy.md).
-- Cross-doc pointers:
+- Completed cross-doc pointers:
   [`slices/phase-1-current-doc-policy/structure-doc-pointers.md`](slices/phase-1-current-doc-policy/structure-doc-pointers.md).
-- Proof refresh:
+- Completed proof refresh:
   [`slices/phase-1-current-doc-policy/phase-1-verification-refresh.md`](slices/phase-1-current-doc-policy/phase-1-verification-refresh.md).
 
 ## Validation
