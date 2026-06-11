@@ -76,10 +76,10 @@ This plan was re-audited with ten read-only sub-agent passes:
 
 ## Current Entry Point
 
-The next implementation batch is Phase 3:
-[`phases/phase-3-sidebar-route-refreeze-dom.md`](phases/phase-3-sidebar-route-refreeze-dom.md).
+The next implementation batch is Phase 5:
+[`phases/phase-5-browser-smoke-and-coverage-map.md`](phases/phase-5-browser-smoke-and-coverage-map.md).
 
-Phases 0-2 are complete. Phase 2 landed selector hardening for chat lists,
-generation-settings controls and pickers, composer/message rows, module/grid
-catalog surfaces, and sidebar tabs; proof is recorded in
-[`latest-verification.md`](latest-verification.md).
+Phases 0-4 are complete. Phase 4 landed composed generation-settings UI
+workflow tests for sidebar pickers, incomplete-chat remediation, missing
+references, mounted projection updates, and visible rollback; proof is recorded
+in [`latest-verification.md`](latest-verification.md).

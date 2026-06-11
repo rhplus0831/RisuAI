@@ -17,10 +17,14 @@ Date: 2026-06-11
 - Phase 3 is complete: the mounted sidebar route/refreeze DOM regression test
   landed and focused App route plus sidebar/router baseline Vitest proof passed
   on 2026-06-11.
+- Phase 4 is complete: composed generation-settings UI workflow tests now cover
+  sidebar-to-picker readiness, incomplete-chat remediation/send guarding,
+  missing-reference readiness, mounted projection updates, and visible rollback.
+  Focused client and Fastify command/import proof passed on 2026-06-11.
 - A ten-sub-agent audit completed on 2026-06-11 and found the plan valid after
   corrections for slice dependencies, Phase 5 coverage output, Phase 6 closeout
   validation, and Phase 3 sidebar selectors. See [`audit.md`](audit.md).
-- Phases 4-6 are planned. Execute them by dependency-aware slices, with focused
+- Phases 5-6 are planned. Execute them by dependency-aware slices, with focused
   verification before moving to dependent slices. Independent slices with
   disjoint write scopes may run in parallel.
 - No new fix-completeness gate is scheduled. The archived v1/v2/v3 gates remain
@@ -40,12 +44,12 @@ Date: 2026-06-11
 - [Phase 3](phases/phase-3-sidebar-route-refreeze-dom.md): complete. Backfilled
   the sidebar tab route/refreeze regression with a mounted DOM contract and kept
   the existing source-shape guard.
-- [Phase 4](phases/phase-4-composed-generation-settings-ui.md): planned next.
-  Add a small set of composed generation-settings UI workflow tests without
-  reopening the archived generation-settings workstream.
-- [Phase 5](phases/phase-5-browser-smoke-and-coverage-map.md): planned. Add thin
-  visible assertions to Fastify browser smoke and add an opt-in coverage-map
-  command/profile with text, JSON summary, and HTML reporters.
+- [Phase 4](phases/phase-4-composed-generation-settings-ui.md): complete. Added
+  composed generation-settings UI workflow tests without reopening the archived
+  generation-settings workstream.
+- [Phase 5](phases/phase-5-browser-smoke-and-coverage-map.md): planned next.
+  Add thin visible assertions to Fastify browser smoke and add an opt-in
+  coverage-map command/profile with text, JSON summary, and HTML reporters.
 - [Phase 6](phases/phase-6-verification-closeout.md): planned. Run focused and
   broad proof, including the Phase 5 coverage-map command and `pnpm check`,
   record results, and archive this workstream only after all required phases are
@@ -53,8 +57,8 @@ Date: 2026-06-11
 
 ## Next Steps
 
-1. Assign Phase 4:
-   [`phase-4-composed-generation-settings-ui.md`](phases/phase-4-composed-generation-settings-ui.md).
+1. Assign Phase 5:
+   [`phase-5-browser-smoke-and-coverage-map.md`](phases/phase-5-browser-smoke-and-coverage-map.md).
 2. Keep write scopes disjoint when multiple agents work in parallel.
 3. Update this status file and [`latest-verification.md`](latest-verification.md)
    after each phase lands.

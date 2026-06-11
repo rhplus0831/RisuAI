@@ -1,6 +1,6 @@
 # Phase 4: Composed Generation Settings UI
 
-Status: planned.
+Status: complete.
 
 Goal: keep existing lower-layer generation-settings coverage, then add only the
 missing visible composed workflows.

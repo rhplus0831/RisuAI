@@ -14,9 +14,9 @@ router for implementation agents. Concrete agent-executable slices live under
   [`phase-2-selector-hardening.md`](phase-2-selector-hardening.md).
 - Phase 3, complete:
   [`phase-3-sidebar-route-refreeze-dom.md`](phase-3-sidebar-route-refreeze-dom.md).
-- Phase 4, planned next:
+- Phase 4, complete:
   [`phase-4-composed-generation-settings-ui.md`](phase-4-composed-generation-settings-ui.md).
-- Phase 5, planned:
+- Phase 5, planned next:
   [`phase-5-browser-smoke-and-coverage-map.md`](phase-5-browser-smoke-and-coverage-map.md).
 - Phase 6, planned:
   [`phase-6-verification-closeout.md`](phase-6-verification-closeout.md).

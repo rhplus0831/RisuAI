@@ -109,3 +109,30 @@ Formatting note: an initial
 `pnpm exec prettier --check docs/plan/ui-state-contract-hardening/status.md docs/plan/ui-state-contract-hardening/latest-verification.md docs/plan/ui-state-contract-hardening/phases/README.md docs/plan/ui-state-contract-hardening/phases/phase-3-sidebar-route-refreeze-dom.md`
 run failed because `latest-verification.md` needed Prettier formatting. After
 `pnpm exec prettier --write` on the same files, the same Prettier check passed.
+
+## Phase 4 Composed Generation Settings UI Proof
+
+Recorded on 2026-06-11 after the composed generation-settings UI slices landed
+as `2841acfd1`, `90035dbc7`, `2139c7d22`, `28a64e5ba`, and `b6627d2a8`.
+This proof covers the required lower-layer generation-settings coverage plus
+the new visible workflow tests for:
+
+- sidebar `Toggles` plus app-level preset/persona pickers selecting chat-owned
+  settings without retargeting global preset/persona state;
+- incomplete imported-chat setup labels, send guarding, composer preservation,
+  and visible remediation to ready state;
+- missing/deleted preset or persona readiness without silently selecting
+  global/default rows;
+- mounted `characterRow` projection updates to labels and controls without a
+  remount;
+- failed optimistic save rollback visibly restoring chat-owned labels and
+  controls.
+
+No Phase 4 feasibility assertion was skipped.
+
+| Command                                                                                                                                                                                                                                                                                                                                                       | Result                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `pnpm exec vitest run src/ts/chatGenerationSettings.test.ts src/ts/activeChatGenerationSettings.test.ts src/lib/SideBars/chatGenerationSettingsControls.test.ts src/lib/Setting/pickerGenerationSettings.test.ts src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts src/ts/process/__tests__/sendChat.serverPreview.test.ts src/ts/chatCommands.test.ts` | Passed: 7 files / 89 tests.  |
+| `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveBundleImportRoute.test.ts server/fastify/__tests__/realmImport.test.ts`                                                                                        | Passed: 4 files / 176 tests. |
+| `pnpm exec prettier --check docs/plan/ui-state-contract-hardening/README.md docs/plan/ui-state-contract-hardening/status.md docs/plan/ui-state-contract-hardening/latest-verification.md docs/plan/ui-state-contract-hardening/phases/README.md docs/plan/ui-state-contract-hardening/phases/phase-4-composed-generation-settings-ui.md`                      | Passed.                      |
+| `git diff --check`                                                                                                                                                                                                                                                                                                                                            | Passed.                      |
