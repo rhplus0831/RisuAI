@@ -1,6 +1,6 @@
 # Phase 3: Sidebar Route/Refreeze DOM Backfill
 
-Status: planned.
+Status: complete.
 
 Goal: add a visible DOM regression test for the sidebar tab stability bug fixed
 by `09eae20d3`.

@@ -91,3 +91,21 @@ settings, grid catalog, and sidebar-tab prerequisites for Phase 3.
 commands above passed for those files; the broad-check diagnostics are type
 fixture/baseline issues rather than selector assertion failures. No Phase
 2-owned selector component/runtime file was called out by `pnpm check`.
+
+## Phase 3 Sidebar Route/Refreeze DOM Proof
+
+Recorded on 2026-06-11 after the mounted DOM backfill landed as `65e869016`.
+This proof covers the real mounted sidebar route/refreeze regression test, the
+existing App route source-shape guard, and the nearby sidebar/router baseline.
+`pnpm check` was not run for this proof-refresh slice.
+
+| Command                                                                                   | Result                      |
+| ----------------------------------------------------------------------------------------- | --------------------------- |
+| `pnpm exec vitest run src/App.routeEffect.test.ts src/App.routeEffect.dom.test.ts`        | Passed: 2 files / 2 tests.  |
+| `pnpm exec vitest run src/lib/SideBars/SideChatList.svelte.test.ts src/ts/router.test.ts` | Passed: 2 files / 14 tests. |
+| `git diff --check`                                                                        | Passed.                     |
+
+Formatting note: an initial
+`pnpm exec prettier --check docs/plan/ui-state-contract-hardening/status.md docs/plan/ui-state-contract-hardening/latest-verification.md docs/plan/ui-state-contract-hardening/phases/README.md docs/plan/ui-state-contract-hardening/phases/phase-3-sidebar-route-refreeze-dom.md`
+run failed because `latest-verification.md` needed Prettier formatting. After
+`pnpm exec prettier --write` on the same files, the same Prettier check passed.
