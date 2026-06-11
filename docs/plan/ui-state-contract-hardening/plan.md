@@ -100,18 +100,17 @@ Every implementation phase must preserve these:
 
 ## Execution Cursor
 
-Phase 0 is complete. Phase 1 is the next implementation batch. The sub-agent
-audit split every phase into concrete slices under `phases/slices/`.
+Phases 0-2 are complete. Phase 3 is the next implementation batch. The
+sub-agent audit split every phase into concrete slices under `phases/slices/`.
 
 Execution order is phase-gated for dependencies, not for unrelated files:
 
-- Complete Phase 1 before runtime UI changes so the current policy is live.
-- Phase 2 selector slices may run in parallel when their write scopes are
-  disjoint.
-- Phase 3 depends on the Phase 2 sidebar-tab selector slice.
-- Phase 4 depends on the Phase 2 generation-settings and composer selector
-  slices.
-- Phase 5 should land after the visible selectors it asserts are present.
+- Phase 1 completed before runtime UI changes, so the current policy is live.
+- Phase 2 completed by selector slices with disjoint write scopes and focused
+  proof after each slice.
+- Phase 3 can start now that the Phase 2 sidebar-tab selector slice has landed.
+- Phase 4 can reuse the Phase 2 generation-settings and composer selectors.
+- Phase 5 can use the Phase 2 visible selectors for browser-smoke assertions.
 - Phase 6 starts only after all required implementation and proof-refresh slices
   are complete.
 

@@ -2,8 +2,8 @@
 
 Phase: [2](../../phase-2-selector-hardening.md). No runtime change.
 
-Status: planned. Depends on the Phase 2 selector slices that land in the current
-batch.
+Status: complete. Depends on the Phase 2 selector slices that landed in the
+current batch.
 
 ## Scope
 

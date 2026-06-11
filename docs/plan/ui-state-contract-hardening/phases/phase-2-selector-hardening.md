@@ -1,6 +1,6 @@
 # Phase 2: Selector Hardening
 
-Status: planned.
+Status: complete.
 
 Goal: add stable selectors to critical UI surfaces so DOM tests can assert
 domain state instead of styling, layout, or action order.
@@ -55,19 +55,27 @@ Recommended selector contracts:
 - Selected/active state assertions no longer depend only on `bg-selected`.
 - Phase 3 and Phase 4 tests have stable selectors available.
 
+## Completed Shape
+
+- Chat-list, generation-settings, composer/message, module/grid, and sidebar-tab
+  selector slices landed as separate commits.
+- Focused selector Vitest proof passed for the Phase 2 surfaces.
+- `pnpm check` still fails on the recorded broad baseline; see
+  [`../latest-verification.md`](../latest-verification.md) for details.
+
 ## Slices
 
-- Chat lists:
+- Chat lists, complete:
   [`slices/phase-2-selector-hardening/chat-list-selectors.md`](slices/phase-2-selector-hardening/chat-list-selectors.md).
-- Generation settings controls and pickers:
+- Generation settings controls and pickers, complete:
   [`slices/phase-2-selector-hardening/generation-settings-selectors.md`](slices/phase-2-selector-hardening/generation-settings-selectors.md).
-- Composer and message rows:
+- Composer and message rows, complete:
   [`slices/phase-2-selector-hardening/composer-message-selectors.md`](slices/phase-2-selector-hardening/composer-message-selectors.md).
-- Module and grid catalog:
+- Module and grid catalog, complete:
   [`slices/phase-2-selector-hardening/module-grid-selectors.md`](slices/phase-2-selector-hardening/module-grid-selectors.md).
-- Sidebar tabs for Phase 3:
+- Sidebar tabs for Phase 3, complete:
   [`slices/phase-2-selector-hardening/sidebar-tab-selectors.md`](slices/phase-2-selector-hardening/sidebar-tab-selectors.md).
-- Proof refresh:
+- Proof refresh, complete:
   [`slices/phase-2-selector-hardening/phase-2-verification-refresh.md`](slices/phase-2-selector-hardening/phase-2-verification-refresh.md).
 
 ## Validation

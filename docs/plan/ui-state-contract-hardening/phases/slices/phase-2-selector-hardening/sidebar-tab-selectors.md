@@ -3,7 +3,7 @@
 Phase: [2](../../phase-2-selector-hardening.md). Runtime selector and test
 change.
 
-Status: planned.
+Status: complete.
 
 ## Scope
 

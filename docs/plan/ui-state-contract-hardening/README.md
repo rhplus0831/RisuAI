@@ -60,10 +60,15 @@ This plan was re-audited with ten read-only sub-agent passes:
   `src/lib/SideBars/SideChatList.svelte`,
   `src/lib/Others/ChatList.svelte`,
   `src/lib/ChatScreens/DefaultChatScreen.svelte`,
+  `src/lib/ChatScreens/Chat.svelte`,
   `src/lib/Setting/botpreset.svelte`,
   `src/lib/Setting/listedPersona.svelte`,
   `src/lib/SideBars/Toggles.svelte`,
-  `src/lib/SideBars/CustomSidebar.svelte`.
+  `src/lib/SideBars/CustomSidebar.svelte`,
+  `src/lib/SideBars/Sidebar.svelte`,
+  `src/lib/Setting/Pages/Module/ModuleSettings.svelte`,
+  `src/lib/Others/GridCatalog.svelte`,
+  `src/lib/Mobile/MobileCharacters.svelte`.
 - Browser smoke:
   `server/fastify/browser-smoke/`,
   `playwright.fastify-smoke.config.ts`,
@@ -71,7 +76,10 @@ This plan was re-audited with ten read-only sub-agent passes:
 
 ## Current Entry Point
 
-The next implementation batch is the Phase 1 policy-core slice:
-[`phases/slices/phase-1-current-doc-policy/current-testing-policy.md`](phases/slices/phase-1-current-doc-policy/current-testing-policy.md).
-Phase 0 was completed during plan setup by fixing the current `build:site`
-script references.
+The next implementation batch is Phase 3:
+[`phases/phase-3-sidebar-route-refreeze-dom.md`](phases/phase-3-sidebar-route-refreeze-dom.md).
+
+Phases 0-2 are complete. Phase 2 landed selector hardening for chat lists,
+generation-settings controls and pickers, composer/message rows, module/grid
+catalog surfaces, and sidebar tabs; proof is recorded in
+[`latest-verification.md`](latest-verification.md).
