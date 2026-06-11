@@ -349,6 +349,77 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerControl('persona').textContent).toContain('Select chat persona')
   })
 
+  it('remediates a prefilled incomplete chat through visible generation-settings controls', async () => {
+    const calls = stubCommandFetch()
+    activeChat().generationSettings = {
+      configured: false,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        flag: '1',
+        note: 'imported-note',
+        moduleFlag: '1',
+      },
+    }
+
+    mountToggles()
+    await tick()
+
+    expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(false)
+    expect(resolveActiveChatGenerationSettings().missingLabels).toEqual([
+      'Configuration confirmation',
+    ])
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
+    expect(pickerControl('persona').textContent).toContain('Persona Alpha')
+    expect(selectToggleInput('mood').value).toBe('1')
+    expect(textToggleInput('note').value).toBe('imported-note')
+    expect(toggleCheckbox('flag').checked).toBe(true)
+    expect(jailbreakControl().dataset.risuSelected).toBe('true')
+
+    jailbreakCheckbox().click()
+    await tick()
+    await waitForFetchCount(calls, 2)
+
+    expect(activeChat().generationSettings).toMatchObject({
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mood: '1',
+        flag: '1',
+        note: 'imported-note',
+        moduleFlag: '1',
+      },
+    })
+    expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(true)
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
+    expect(pickerControl('persona').textContent).toContain('Persona Alpha')
+    expect(jailbreakControl().dataset.risuSelected).toBe('false')
+    expect(target.textContent).not.toContain('Select chat preset')
+    expect(target.textContent).not.toContain('Select chat persona')
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      authHeader: 'sidebar-generation-settings-token',
+      body: {
+        baseRevision: 300,
+        generationSettings: expect.objectContaining({
+          configured: true,
+          personaId: 'persona-a',
+          presetId: 'preset-a',
+          jailbreakToggle: false,
+        }),
+      },
+    })
+  })
+
   it('renders preset, persona, and toggle values from the active chat while switching chats', async () => {
     mountToggles()
     await tick()

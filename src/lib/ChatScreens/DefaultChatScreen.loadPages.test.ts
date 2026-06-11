@@ -144,12 +144,18 @@ vi.mock('src/ts/chatCommands', () => ({
   currentChatScopedSnapshot: vi.fn(() => ({ before: 'chat-scoped' })),
   currentChatStateSnapshot: vi.fn(() => ({ before: 'chat-state' })),
   dispatchReplaceMessagesScoped: vi.fn(),
+  dispatchSaveChatGenerationSettings: vi.fn(() => true),
   dispatchUpdateChat: vi.fn(),
 }))
 
-vi.mock('src/ts/activeChatGenerationSettings', () => ({
-  guardActiveChatGenerationSettingsForSend: loadPageMocks.guardActiveChatGenerationSettingsForSend,
-}))
+vi.mock('src/ts/activeChatGenerationSettings', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/activeChatGenerationSettings')>()
+  return {
+    ...actual,
+    guardActiveChatGenerationSettingsForSend:
+      loadPageMocks.guardActiveChatGenerationSettingsForSend,
+  }
+})
 
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   applyServerBackedSetting: vi.fn(),
@@ -187,6 +193,10 @@ import {
   selectedCharID,
 } from 'src/ts/stores.svelte'
 import type { Database } from 'src/ts/storage/database.svelte'
+import {
+  createActiveChatGenerationSettingsIncompleteMessage,
+  resolveActiveChatGenerationSettings,
+} from 'src/ts/activeChatGenerationSettings'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -448,14 +458,52 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(consoleErrorSpy).toHaveBeenCalled()
   })
 
-  it('blocks an incomplete-chat send without clearing the composer or appending', async () => {
+  it('blocks a prefilled incomplete-chat send without clearing the composer or appending', async () => {
     seedDatabase([1])
+    DBState.db.personas = [
+      {
+        id: 'persona-a',
+        name: 'Persona Alpha',
+        icon: '',
+        largePortrait: false,
+      },
+    ]
+    DBState.db.botPresets = [
+      {
+        id: 'preset-a',
+        name: 'Preset Alpha',
+        jailbreak: 'Jailbreak',
+        customPromptTemplateToggle: 'mood=Mood=select=Calm,Spicy\nflag=Flag\nnote=Note=text',
+      },
+    ]
+    DBState.db.characters[0].chats[0].generationSettings = {
+      configured: false,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        flag: '1',
+        note: 'imported-note',
+      },
+    }
     const originalHistory = JSON.parse(JSON.stringify(DBState.db.characters[0].chats[0].message))
-    loadPageMocks.guardActiveChatGenerationSettingsForSend.mockReturnValue({
-      status: 'error',
-      error: 'Chat generation settings are incomplete. Missing: Persona.',
+    loadPageMocks.guardActiveChatGenerationSettingsForSend.mockImplementation(() => {
+      const state = resolveActiveChatGenerationSettings()
+      if (state.readiness.ready) {
+        return { status: 'ok', state }
+      }
+      return {
+        status: 'error',
+        error: createActiveChatGenerationSettingsIncompleteMessage(state),
+        state,
+      }
     })
     mountScreen()
+
+    expect(resolveActiveChatGenerationSettings().missingLabels).toEqual([
+      'Configuration confirmation',
+    ])
 
     await waitFor(() => {
       expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
@@ -477,10 +525,11 @@ describe('DefaultChatScreen transcript window state', () => {
     sendButton!.click()
 
     await waitFor(() => {
-      expect(loadPageMocks.alertError).toHaveBeenCalledWith(
-        'Chat generation settings are incomplete. Missing: Persona.',
-      )
+      expect(loadPageMocks.alertError).toHaveBeenCalledTimes(1)
     })
+    const [guardError] = loadPageMocks.alertError.mock.calls[0] ?? []
+    expect(guardError).toContain('Chat generation settings are incomplete')
+    expect(guardError).toContain('Configuration confirmation')
     expect(textarea.value).toBe('Keep this draft')
     expect(DBState.db.characters[0].chats[0].message).toEqual(originalHistory)
     expect(loadPageMocks.hydrateActiveChatFully).not.toHaveBeenCalled()
