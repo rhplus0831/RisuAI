@@ -13,6 +13,7 @@ Prioritize these surfaces:
 - `src/lib/SideBars/SideChatList.svelte`
 - `src/lib/SideBars/Toggles.svelte`
 - `src/lib/SideBars/CustomSidebar.svelte`
+- `src/lib/SideBars/Sidebar.svelte`
 - `src/lib/Setting/botpreset.svelte`
 - `src/lib/Setting/listedPersona.svelte`
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`
@@ -36,6 +37,8 @@ Recommended selector contracts:
 - Preset/persona rows: id/index/selected plus `aria-selected` or
   `aria-current` where appropriate.
 - Module and grid rows: stable row ids, state attributes, and action kinds.
+- Sidebar tabs: stable chat/character tab selectors and panel markers for the
+  Phase 3 route/refreeze DOM test.
 
 ## Invariants
 
@@ -51,6 +54,21 @@ Recommended selector contracts:
   picker actions.
 - Selected/active state assertions no longer depend only on `bg-selected`.
 - Phase 3 and Phase 4 tests have stable selectors available.
+
+## Slices
+
+- Chat lists:
+  [`slices/phase-2-selector-hardening/chat-list-selectors.md`](slices/phase-2-selector-hardening/chat-list-selectors.md).
+- Generation settings controls and pickers:
+  [`slices/phase-2-selector-hardening/generation-settings-selectors.md`](slices/phase-2-selector-hardening/generation-settings-selectors.md).
+- Composer and message rows:
+  [`slices/phase-2-selector-hardening/composer-message-selectors.md`](slices/phase-2-selector-hardening/composer-message-selectors.md).
+- Module and grid catalog:
+  [`slices/phase-2-selector-hardening/module-grid-selectors.md`](slices/phase-2-selector-hardening/module-grid-selectors.md).
+- Sidebar tabs for Phase 3:
+  [`slices/phase-2-selector-hardening/sidebar-tab-selectors.md`](slices/phase-2-selector-hardening/sidebar-tab-selectors.md).
+- Proof refresh:
+  [`slices/phase-2-selector-hardening/phase-2-verification-refresh.md`](slices/phase-2-selector-hardening/phase-2-verification-refresh.md).
 
 ## Validation
 

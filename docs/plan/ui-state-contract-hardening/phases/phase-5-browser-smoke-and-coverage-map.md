@@ -11,6 +11,8 @@ opt-in coverage-map workflow for critical UI integration paths.
 - Avoid growing `window.__RISU_FASTIFY_BROWSER_SMOKE__` into a UI driver.
 - Add a dedicated coverage-map script/profile or documented command. Do not
   enable coverage on default `pnpm test`.
+- Decide whether to ignore repo-local coverage artifacts or require cleanup after
+  running the map.
 
 ## Anchors
 
@@ -55,10 +57,26 @@ Coverage map:
 - Coverage-map command/profile is documented or scripted.
 - Status and latest verification are updated.
 
+## Slices
+
+- Visible browser smoke assertions:
+  [`slices/phase-5-browser-smoke-and-coverage-map/fastify-smoke-visible-assertions.md`](slices/phase-5-browser-smoke-and-coverage-map/fastify-smoke-visible-assertions.md).
+- Coverage-map profile:
+  [`slices/phase-5-browser-smoke-and-coverage-map/coverage-map-profile.md`](slices/phase-5-browser-smoke-and-coverage-map/coverage-map-profile.md).
+- Proof refresh:
+  [`slices/phase-5-browser-smoke-and-coverage-map/phase-5-verification-refresh.md`](slices/phase-5-browser-smoke-and-coverage-map/phase-5-verification-refresh.md).
+
 ## Validation
 
 ```bash
 pnpm smoke:fastify-browser
+pnpm coverage:ui-map
+```
+
+If Phase 5 chooses a documented command instead of a package script, it must be
+equivalent to:
+
+```bash
 pnpm exec vitest run \
   src/lib/Others/GridCatalog.svelte.test.ts \
   src/lib/Others/ChatList.svelte.test.ts \
@@ -69,6 +87,11 @@ pnpm exec vitest run \
   --coverage \
   --coverage.provider=v8 \
   --coverage.reportsDirectory=coverage/ui-map \
+  --coverage.include='src/lib/ChatScreens/**/*.{ts,svelte}' \
+  --coverage.include='src/lib/Others/**/*.{ts,svelte}' \
+  --coverage.include='src/lib/SideBars/**/*.{ts,svelte}' \
+  --coverage.include='src/ts/server/**/*.{ts,svelte}' \
   --coverage.reporter=text \
-  --coverage.reporter=json-summary
+  --coverage.reporter=json-summary \
+  --coverage.reporter=html
 ```

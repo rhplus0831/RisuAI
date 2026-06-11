@@ -10,6 +10,8 @@ only after all required phases are done.
 - Re-run focused tests for every changed surface.
 - Run broader client/server checks according to touched code.
 - Run browser smoke after Phase 5.
+- Re-run the Phase 5 coverage-map command/profile.
+- Run `pnpm check` and record any pre-existing baseline honestly.
 - Record command outcomes in `latest-verification.md`.
 - Move this workstream to `docs/archive/` only after closeout proof is green.
 
@@ -35,6 +37,15 @@ only after all required phases are done.
 - Do not replace a failed broad command with narrower proof.
 - Do not archive until required validation passes or residual gaps are
   explicitly documented and accepted.
+- Use the actual Phase 3 DOM-test filename if it differs from
+  `src/App.routeEffect.dom.test.ts`.
+
+## Slices
+
+- Final validation matrix:
+  [`slices/phase-6-verification-closeout/final-validation-matrix.md`](slices/phase-6-verification-closeout/final-validation-matrix.md).
+- Archive closeout:
+  [`slices/phase-6-verification-closeout/archive-closeout.md`](slices/phase-6-verification-closeout/archive-closeout.md).
 
 ## Validation
 
@@ -49,6 +60,8 @@ pnpm exec vitest run \
 pnpm test
 pnpm api:test
 pnpm smoke:fastify-browser
+pnpm coverage:ui-map
+pnpm check
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check

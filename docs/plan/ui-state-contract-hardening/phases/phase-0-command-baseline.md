@@ -31,6 +31,11 @@ depends on browser smoke.
 - [x] Current docs repaired.
 - [x] `pnpm run` shows the corrected script.
 
+## Slices
+
+- Completed proof:
+  [`slices/phase-0-command-baseline/command-baseline-proof.md`](slices/phase-0-command-baseline/command-baseline-proof.md).
+
 ## Validation
 
 ```bash

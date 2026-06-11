@@ -10,8 +10,10 @@ uses the archived v2 remediation structure as a reference for phase routing,
 slice scope, and proof discipline, but it does not reopen v2 or any archived
 chat-scoped generation-settings phase.
 
-Start with [`status.md`](status.md), then read [`plan.md`](plan.md). Phase
-scope lives under [`phases/`](phases/), and proof updates live in
+Start with [`status.md`](status.md), then read [`plan.md`](plan.md). The
+sub-agent audit and validity notes live in [`audit.md`](audit.md). Phase scope
+lives under [`phases/`](phases/), concrete implementation slices live under
+[`phases/slices/`](phases/slices/), and proof updates live in
 [`latest-verification.md`](latest-verification.md).
 
 ## Read Order
@@ -19,22 +21,27 @@ scope lives under [`phases/`](phases/), and proof updates live in
 1. [`status.md`](status.md) - current snapshot and phase router.
 2. [`plan.md`](plan.md) - goal, boundary sources, baseline, invariants, phase
    order, and non-goals.
-3. [`phases/README.md`](phases/README.md) - phase index and implementation
+3. [`audit.md`](audit.md) - sub-agent audit verdict, validity notes,
+   unexpected work, and slice map.
+4. [`phases/README.md`](phases/README.md) - phase index and implementation
    rules.
-4. [`latest-verification.md`](latest-verification.md) - recorded command proof
+5. [`latest-verification.md`](latest-verification.md) - recorded command proof
    and audit notes.
-5. Phase files under [`phases/`](phases/) - concrete implementation scope,
+6. Phase files under [`phases/`](phases/) - concrete implementation scope,
    anchors, done criteria, and validation.
 
 ## Sub-Agent Inputs
 
-This plan consolidates five read-only audit passes:
+This plan was re-audited with ten read-only sub-agent passes:
 
 - Documentation and policy promotion.
 - Selector hardening and Svelte DOM test fragility.
 - Sidebar tab stability after route/projection refreeze.
 - Chat-scoped generation settings UI and lifecycle visibility.
 - Fastify browser smoke and coverage-map workflow.
+- Active-plan and archived v2 slice-structure conventions.
+- Current test-suite executability and command proof.
+- Code-level UI state contract surfaces.
 
 ## Source Anchors
 
@@ -64,7 +71,7 @@ This plan consolidates five read-only audit passes:
 
 ## Current Entry Point
 
-The next implementation batch is Phase 1:
-[`phases/phase-1-current-doc-policy.md`](phases/phase-1-current-doc-policy.md).
+The next implementation batch is the Phase 1 policy-core slice:
+[`phases/slices/phase-1-current-doc-policy/current-testing-policy.md`](phases/slices/phase-1-current-doc-policy/current-testing-policy.md).
 Phase 0 was completed during plan setup by fixing the current `build:site`
 script references.

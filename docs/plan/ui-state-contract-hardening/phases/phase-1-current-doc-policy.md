@@ -51,6 +51,15 @@ Current docs should state:
 - Phase status and latest verification are updated.
 - Docs-only validation passes.
 
+## Slices
+
+- Policy core:
+  [`slices/phase-1-current-doc-policy/current-testing-policy.md`](slices/phase-1-current-doc-policy/current-testing-policy.md).
+- Cross-doc pointers:
+  [`slices/phase-1-current-doc-policy/structure-doc-pointers.md`](slices/phase-1-current-doc-policy/structure-doc-pointers.md).
+- Proof refresh:
+  [`slices/phase-1-current-doc-policy/phase-1-verification-refresh.md`](slices/phase-1-current-doc-policy/phase-1-verification-refresh.md).
+
 ## Validation
 
 ```bash

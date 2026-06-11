@@ -8,6 +8,7 @@ missing visible composed workflows.
 ## Existing Coverage To Preserve
 
 - `src/ts/activeChatGenerationSettings.test.ts`
+- `src/ts/chatGenerationSettings.test.ts`
 - `src/lib/SideBars/chatGenerationSettingsControls.test.ts`
 - `src/lib/Setting/pickerGenerationSettings.test.ts`
 - `src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`
@@ -22,6 +23,10 @@ missing visible composed workflows.
 
 ## Missing Composed Contracts
 
+These are current UI-state coverage gaps only. Do not reopen the archived
+chat-scoped generation-settings workstream or expand server/state behavior unless
+the composed visible proof exposes a current defect.
+
 - Real sidebar path with `Toggles` plus `CustomSidebar` opens preset/persona
   pickers, selects rows, writes active-chat settings, and does not mutate global
   preset/persona state.
@@ -32,6 +37,9 @@ missing visible composed workflows.
   reports readiness as missing instead of retargeting to a global/default row.
 - A chat-row projection update while controls are mounted updates labels and
   toggles without requiring a remount.
+- Save failure rollback visibly restores generation-settings labels or controls,
+  or the phase records why lower-layer rollback proof plus visible success proof
+  is sufficient.
 
 ## Anchors
 
@@ -58,12 +66,29 @@ missing visible composed workflows.
 - Delete invalidation is pinned with server or helper coverage plus a visible
   readiness assertion.
 - Projection-update-while-mounted behavior is covered if implementation proves
-  feasible without brittle mocks.
+  feasible without brittle mocks. If skipped, record the reason in
+  `latest-verification.md`.
+
+## Slices
+
+- Composed sidebar-to-picker ready path:
+  [`slices/phase-4-composed-generation-settings-ui/composed-sidebar-picker-ready.md`](slices/phase-4-composed-generation-settings-ui/composed-sidebar-picker-ready.md).
+- Imported/incomplete remediation and send guard:
+  [`slices/phase-4-composed-generation-settings-ui/incomplete-remediation-send-guard.md`](slices/phase-4-composed-generation-settings-ui/incomplete-remediation-send-guard.md).
+- Delete invalidation readiness:
+  [`slices/phase-4-composed-generation-settings-ui/delete-invalidation-readiness.md`](slices/phase-4-composed-generation-settings-ui/delete-invalidation-readiness.md).
+- Mounted projection update:
+  [`slices/phase-4-composed-generation-settings-ui/mounted-projection-update.md`](slices/phase-4-composed-generation-settings-ui/mounted-projection-update.md).
+- Save rollback visibility:
+  [`slices/phase-4-composed-generation-settings-ui/generation-settings-rollback.md`](slices/phase-4-composed-generation-settings-ui/generation-settings-rollback.md).
+- Proof refresh:
+  [`slices/phase-4-composed-generation-settings-ui/phase-4-verification-refresh.md`](slices/phase-4-composed-generation-settings-ui/phase-4-verification-refresh.md).
 
 ## Validation
 
 ```bash
 pnpm exec vitest run \
+  src/ts/chatGenerationSettings.test.ts \
   src/ts/activeChatGenerationSettings.test.ts \
   src/lib/SideBars/chatGenerationSettingsControls.test.ts \
   src/lib/Setting/pickerGenerationSettings.test.ts \

@@ -100,8 +100,20 @@ Every implementation phase must preserve these:
 
 ## Execution Cursor
 
-Phase 0 is complete. Phase 1 is the next implementation batch. Later phases may
-run in parallel only when write scopes do not overlap.
+Phase 0 is complete. Phase 1 is the next implementation batch. The sub-agent
+audit split every phase into concrete slices under `phases/slices/`.
+
+Execution order is phase-gated for dependencies, not for unrelated files:
+
+- Complete Phase 1 before runtime UI changes so the current policy is live.
+- Phase 2 selector slices may run in parallel when their write scopes are
+  disjoint.
+- Phase 3 depends on the Phase 2 sidebar-tab selector slice.
+- Phase 4 depends on the Phase 2 generation-settings and composer selector
+  slices.
+- Phase 5 should land after the visible selectors it asserts are present.
+- Phase 6 starts only after all required implementation and proof-refresh slices
+  are complete.
 
 ## Implementation Agent Rules
 
@@ -111,6 +123,8 @@ run in parallel only when write scopes do not overlap.
 - Update `status.md` and `latest-verification.md` after each phase lands.
 - Prefer focused validation first; run broader checks only when the phase scope
   warrants it.
+- Record a reason in `latest-verification.md` for any optional slice or
+  feasibility-dependent assertion that is skipped.
 
 ## Not In This Plan
 
@@ -120,3 +134,6 @@ run in parallel only when write scopes do not overlap.
 - No new v1/v2/v3-style completeness gate by default.
 - No blanket Playwright conversion.
 - No archive edits except navigation notes that would otherwise become false.
+  Phase 6 closeout is the explicit exception: moving this workstream to
+  `docs/archive/` and updating active/archive navigation is part of closeout
+  only after proof is green.

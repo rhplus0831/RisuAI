@@ -10,6 +10,11 @@ by `09eae20d3`.
 Add a sibling test such as `src/App.routeEffect.dom.test.ts`. Keep the existing
 `src/App.routeEffect.test.ts` source-shape guard.
 
+Dependency: the Phase 2
+[`sidebar-tab-selectors.md`](slices/phase-2-selector-hardening/sidebar-tab-selectors.md)
+slice should land before this phase so the DOM test can click and assert sidebar
+tabs semantically.
+
 ## Visible Contract
 
 On a loaded character route such as `/character/char-a/chat-a`, after the user
@@ -47,6 +52,8 @@ selected character, and selected chat should remain stable.
 - Seed `modules: []` or mock `moduleUpdate` to avoid unrelated store setup
   errors.
 - Keep mocks local to this test.
+- If the test filename differs from `src/App.routeEffect.dom.test.ts`, update
+  Phase 6 validation and proof logs with the actual path.
 
 ## Done Criteria
 
@@ -54,6 +61,13 @@ selected character, and selected chat should remain stable.
   projection reads again.
 - Existing source-shape test still passes.
 - Status and verification logs are updated.
+
+## Slices
+
+- Mounted DOM backfill:
+  [`slices/phase-3-sidebar-route-refreeze-dom/route-refreeze-mounted-dom-test.md`](slices/phase-3-sidebar-route-refreeze-dom/route-refreeze-mounted-dom-test.md).
+- Proof refresh:
+  [`slices/phase-3-sidebar-route-refreeze-dom/phase-3-verification-refresh.md`](slices/phase-3-sidebar-route-refreeze-dom/phase-3-verification-refresh.md).
 
 ## Validation
 

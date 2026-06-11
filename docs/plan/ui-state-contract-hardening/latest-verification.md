@@ -35,3 +35,25 @@ Supervisor-local commands after creating the active plan:
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `pnpm exec prettier --check package.json README.md STRUCTURE.md docs/archive/README.md docs/structure/testing-and-operations.md docs/structure/frontend.md docs/structure/generated-and-legacy.md 'docs/plan/**/*.md'` | Passed. |
 | `git diff --check`                                                                                                                                                                                                     | Passed. |
+
+## Sub-Agent Audit And Slice Split Refresh
+
+Recorded on 2026-06-11 after ten read-only sub-agent audit passes and
+supervisor-local plan updates. The audit found the plan valid after corrections
+for slice dependencies, Phase 3 sidebar selector prerequisites, Phase 4
+feasibility/rollback notes, Phase 5 coverage-map output, and Phase 6 closeout
+validation.
+
+| Command                                                                      | Result  |
+| ---------------------------------------------------------------------------- | ------- |
+| `pnpm exec prettier --check 'docs/plan/ui-state-contract-hardening/**/*.md'` | Passed. |
+| `git diff --check`                                                           | Passed. |
+
+Audit artifacts added:
+
+- [`audit.md`](audit.md): validity verdict, unexpected work, and slice map.
+- [`phases/slices/`](phases/slices/): 23 agent-executable slices across Phases
+  0-6.
+
+These results are docs-only audit proof, not implementation closeout proof for
+future phase edits.
