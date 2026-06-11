@@ -1376,13 +1376,15 @@ function persistServerGenerationResult(args: {
       }
       const record = createMessageRecord(structuredClone(args.message), 'generationResult.message')
       const write = writeGenerationChatMessage(targetDb, args.chatId, record, args.targetMessageId)
-      if (!write.ok) {
-        if (write.reason === 'missing-target') {
-          throw new EntityNotFoundError(
-            `Message not found for chat ${args.chatId}: ${write.targetMessageId}`,
-          )
+      if (write.ok === false) {
+        switch (write.reason) {
+          case 'missing-target':
+            throw new EntityNotFoundError(
+              `Message not found for chat ${args.chatId}: ${write.targetMessageId}`,
+            )
+          case 'duplicate':
+            throw new ValidationError(`Duplicate message id: ${write.messageId}`)
         }
-        throw new ValidationError(`Duplicate message id: ${write.messageId}`)
       }
       // Reroll buffer ("don't lose a rerolled result"):
       //  - regenerate (`targetMessageId` set) REPLACES a candidate; preserve BOTH the

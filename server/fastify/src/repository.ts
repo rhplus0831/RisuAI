@@ -374,7 +374,7 @@ export function loadCharacterSelectionRows(
 
   const row = db
     .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
-    .get(characterId) as CharacterRow | undefined
+    .get(characterId) as unknown as CharacterRow | undefined
   if (!row) {
     throw new EntityNotFoundError(`Character not found: ${characterId}`)
   }
@@ -898,7 +898,7 @@ export function loadPersistedForCharacterMutation(
 
   const charRow = db
     .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
-    .get(target.characterId) as CharacterRow | undefined
+    .get(target.characterId) as unknown as CharacterRow | undefined
   if (!charRow) return loadPersisted(db, dataDir)
 
   const character = JSON.parse(charRow.data_json) as unknown
@@ -1032,7 +1032,7 @@ export function loadSingleCharacterStubRow(
 
   const charRow = db
     .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
-    .get(characterId) as CharacterRow | undefined
+    .get(characterId) as unknown as CharacterRow | undefined
   if (!charRow) return loadSingleCharacterStubRowBroad(db, dataDir, characterId)
 
   const character = JSON.parse(charRow.data_json) as unknown
@@ -1215,12 +1215,12 @@ export function loadPersistedForChatMutation(
 
   const chatRow = db
     .prepare('SELECT id, character_id, position, data_json FROM chats WHERE id = ?')
-    .get(chatId) as ChatRow | undefined
+    .get(chatId) as unknown as ChatRow | undefined
   if (!chatRow) return loadPersisted(db, dataDir)
 
   const charRow = db
     .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
-    .get(chatRow.character_id) as CharacterRow | undefined
+    .get(chatRow.character_id) as unknown as CharacterRow | undefined
   if (!charRow) return loadPersisted(db, dataDir)
 
   const character = JSON.parse(charRow.data_json) as Record<string, unknown>

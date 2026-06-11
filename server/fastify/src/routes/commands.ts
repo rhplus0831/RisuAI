@@ -3717,7 +3717,7 @@ export function registerCommandRoutes(
           const characters = normalizeAllCharacterChats(database)
           requireChatLocation(characters, chatId)
           const truncated = truncateActiveChatMessages(targetDb, chatId, afterMessageId)
-          if (!truncated.ok) {
+          if (truncated.ok === false) {
             throw new EntityNotFoundError(
               `Message not found for chat ${chatId}: ${truncated.afterMessageId}`,
             )
@@ -3807,13 +3807,15 @@ export function registerCommandRoutes(
             generationResult.message,
             generationResult.targetMessageId,
           )
-          if (!write.ok) {
-            if (write.reason === 'missing-target') {
-              throw new EntityNotFoundError(
-                `Message not found for chat ${chatId}: ${write.targetMessageId}`,
-              )
+          if (write.ok === false) {
+            switch (write.reason) {
+              case 'missing-target':
+                throw new EntityNotFoundError(
+                  `Message not found for chat ${chatId}: ${write.targetMessageId}`,
+                )
+              case 'duplicate':
+                throw new ValidationError(`Duplicate message id: ${write.messageId}`)
             }
-            throw new ValidationError(`Duplicate message id: ${write.messageId}`)
           }
           if (generationResult.targetMessageId) {
             if (write.displaced) addAlternateMessage(targetDb, chatId, write.displaced)
