@@ -49,7 +49,15 @@ test.beforeAll(async () => {
         chaId: 'char-smoke',
         type: 'character',
         name: 'Smoke Character',
-        chats: [],
+        chats: [
+          {
+            id: 'chat-smoke',
+            name: 'Smoke Chat',
+            note: '',
+            localLore: [],
+            message: [],
+          },
+        ],
         chatPage: 0,
         customscript: [],
         firstMessage: '',
@@ -156,6 +164,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
       ].join('\n'),
     )
   }
+  await expect(page.locator('[data-char-id="char-smoke"]')).toBeVisible()
 
   await expect
     .poll(() => apiRequests.filter((entry) => entry === 'GET /api/v1/bootstrap').length)

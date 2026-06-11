@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -22,6 +22,7 @@ declare global {
       activeWriterHeaders: () => Promise<Record<string, string>>
       getDatabaseSnapshot: () => Record<string, unknown>
       getRerollCandidates: () => string[]
+      refreshActiveChatMessages: () => Promise<void>
       selectCharacter: (index: number) => void
       swipeRerollBack: () => Promise<void>
       waitForLoaded: () => Promise<void>
@@ -56,9 +57,13 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
     })
     .toBe(true)
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForLoaded())
+  await expectLoadedCharacterVisible(page)
+  await markRerollChatGenerationSettingsReady(page)
 
-  // Open the character (bootstrap lands on the character list) → chat hydrates.
+  // Ensure the fixture character is open, then let the chat hydrate.
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.selectCharacter(0))
+  await expectVisibleChatRow(page, 0, 'greet me')
+  await expectVisibleChatRow(page, 1, 'old reply')
 
   // The open chat hydrates to [user, char 'old reply'].
   await expect
@@ -102,8 +107,12 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
     })
     .toBe(true)
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForLoaded())
-  // Re-open the character after the reload (selection resets to the char list).
+  await expectLoadedCharacterVisible(page)
+  // Ensure the fixture character is open after the reload.
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.selectCharacter(0))
+  await expectVisibleChatRow(page, 0, 'greet me')
+  await expectVisibleChatRow(page, 1, 'rerolled reply')
+  await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.refreshActiveChatMessages())
 
   // The reroll buffer is reconstructed: the displaced 'old reply' is recoverable
   // alongside the new active candidate.
@@ -148,7 +157,42 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
       { timeout: 15_000 },
     )
     .toContain('old reply')
+  await expectVisibleChatRow(page, 1, 'old reply')
 })
+
+async function expectLoadedCharacterVisible(page: Page): Promise<void> {
+  await expect(page.locator('[data-char-id="char-1"]')).toBeVisible()
+}
+
+async function expectVisibleChatRow(page: Page, index: number, text: string): Promise<void> {
+  const row = page.locator(`.default-chat-screen .risu-chat[data-chat-index="${index}"]`)
+  await expect(row).toBeVisible()
+  await expect(row).toContainText(text)
+}
+
+async function markRerollChatGenerationSettingsReady(page: Page): Promise<void> {
+  const result = await page.evaluate(async () => {
+    const headers = await window.__RISU_FASTIFY_BROWSER_SMOKE__!.activeWriterHeaders()
+    const bootstrap = await fetch('/api/v1/bootstrap', { headers })
+    const bootstrapBody = (await bootstrap.json()) as { revision?: unknown }
+    const res = await fetch('/api/v1/commands/chats/chat-1/generation-settings', {
+      method: 'PUT',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        baseRevision: bootstrapBody.revision,
+        generationSettings: {
+          configured: true,
+          personaId: 'persona-reroll-smoke',
+          presetId: 'preset-reroll-smoke',
+          jailbreakToggle: false,
+          sidebarToggles: {},
+        },
+      }),
+    })
+    return { body: await res.json(), status: res.status }
+  })
+  expect(result, JSON.stringify(result.body)).toMatchObject({ status: 200 })
+}
 
 function rerollFixtureDatabase(): Record<string, unknown> {
   return {
@@ -193,12 +237,20 @@ function rerollFixtureDatabase(): Record<string, unknown> {
       sendName: false,
       utilOverride: false,
     },
-    botPresets: [],
+    botPresets: [{ id: 'preset-reroll-smoke', name: 'Reroll Smoke Preset' }],
     loadouts: [],
     modules: [],
     username: 'User',
     selectedPersona: 0,
-    personas: [{ name: 'User', icon: '', largePortrait: false, personaPrompt: '' }],
+    personas: [
+      {
+        id: 'persona-reroll-smoke',
+        name: 'User',
+        icon: '',
+        largePortrait: false,
+        personaPrompt: '',
+      },
+    ],
     plugins: [],
     pluginCustomStorage: {},
     language: 'en',

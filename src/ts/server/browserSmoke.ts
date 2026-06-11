@@ -3,6 +3,7 @@ import { loadedStore, selectedCharID } from '../stores.svelte'
 import { getDatabase, type Database } from '../storage/database.svelte'
 import { getRerollBuffer, reroll, unReroll } from '../process/rerollNavigation.svelte'
 import { activeWriterSessionHeader } from './activeWriterSession'
+import { hydrateActiveChatFully } from './chatMessageHydration.svelte'
 import { patchRuntimeSettings, runServerCommand, type ServerCommandResult } from './commands'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 
@@ -21,6 +22,7 @@ declare global {
       // reconstructed reroll candidates, and drive the swipe controls.
       selectCharacter: (index: number) => void
       getRerollCandidates: () => string[]
+      refreshActiveChatMessages: () => Promise<void>
       swipeRerollBack: () => Promise<void>
       swipeRerollForward: () => Promise<void>
     }
@@ -55,6 +57,7 @@ export function installFastifyBrowserSmokeHook() {
         const last = entry.at(-1) as { data?: unknown } | undefined
         return typeof last?.data === 'string' ? last.data : ''
       }),
+    refreshActiveChatMessages: () => hydrateActiveChatFully({ force: true }),
     swipeRerollBack: () => unReroll(),
     swipeRerollForward: () => reroll({ sendChatMain: async () => {}, closeMenu: () => {} }),
   }
