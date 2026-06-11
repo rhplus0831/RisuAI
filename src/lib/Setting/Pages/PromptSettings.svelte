@@ -39,6 +39,7 @@
     peekCachedServerCommandRevision,
     reorderPromptItemsCommand,
     runServerCommand,
+    type PromptItemSnapshot,
     type SettingsPatch,
   } from 'src/ts/server/commands'
 
