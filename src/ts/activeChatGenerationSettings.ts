@@ -1,7 +1,9 @@
 import { get } from 'svelte/store'
 import {
   CHAT_GENERATION_SETTINGS_INCOMPLETE_MESSAGE,
+  resolveDisplayedSidebarToggles,
   resolveChatGenerationSettingsReadiness,
+  type ChatGenerationDisplayedSidebarToggle,
   type ChatGenerationModuleReference,
   type ChatGenerationPersonaReference,
   type ChatGenerationPresetReference,
@@ -38,6 +40,7 @@ export interface ActiveChatGenerationSettingsState {
   preset?: ChatGenerationPresetReference
   readiness: ChatGenerationSettingsReadiness
   requiredSidebarToggles: ChatGenerationRequiredSidebarToggle[]
+  displayedSidebarToggles: ChatGenerationDisplayedSidebarToggle[]
   staleSidebarToggleKeys: string[]
   missingLabels: string[]
 }
@@ -93,6 +96,7 @@ export function resolveActiveChatGenerationSettings(
     preset: findById(presets, settings?.presetId),
     readiness,
     requiredSidebarToggles: readiness.requirements.sidebarToggles,
+    displayedSidebarToggles: resolveDisplayedToggles(db, character, chat, settings),
     staleSidebarToggleKeys: readiness.staleSidebarToggleKeys,
     missingLabels: createChatGenerationSettingsMissingLabels(readiness.missing, readiness.requirements.sidebarToggles),
   }
@@ -311,6 +315,31 @@ function resolveReadiness(
     personas: safeArray<ChatGenerationPersonaReference>(
       db.personas as unknown as ChatGenerationPersonaReference[] | undefined,
     ),
+    presets,
+    modules: safeArray<ChatGenerationModuleReference>(
+      db.modules as unknown as ChatGenerationModuleReference[] | undefined,
+    ),
+    enabledModuleIds: stringArray(db.enabledModules),
+    chatModuleIds: stringArray(chat?.modules),
+    characterModuleIds: stringArray(character?.modules),
+    moduleIntegration:
+      typeof selectedPreset?.moduleIntergration === 'string' ? selectedPreset.moduleIntergration : null,
+  })
+}
+
+function resolveDisplayedToggles(
+  db: Database,
+  character: character | undefined,
+  chat: Chat | undefined,
+  settings: ChatGenerationSettings | undefined,
+): ChatGenerationDisplayedSidebarToggle[] {
+  const presets = safeArray<ActiveChatGenerationPresetReference>(
+    db.botPresets as unknown as ActiveChatGenerationPresetReference[] | undefined,
+  )
+  const selectedPreset = findById(presets, settings?.presetId)
+
+  return resolveDisplayedSidebarToggles({
+    presetId: settings?.presetId,
     presets,
     modules: safeArray<ChatGenerationModuleReference>(
       db.modules as unknown as ChatGenerationModuleReference[] | undefined,

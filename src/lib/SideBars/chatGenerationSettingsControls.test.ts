@@ -650,6 +650,30 @@ describe('sidebar chat generation settings controls', () => {
     expect(toggleControl('moduleFlag').dataset.risuSelected).toBe('false')
   })
 
+  it('renders custom toggle group and groupEnd rows as an accordion', async () => {
+    DBState.db.botPresets[0].customPromptTemplateToggle =
+      '=Preset Group=group\nmood=Mood=select=Calm,Spicy\nflag=Flag\n==groupend\nnote=Note=text'
+
+    mountToggles()
+    await tick()
+
+    const group = elementBySelector<HTMLElement>(
+      '[data-risu-generation-toggle-group][data-risu-toggle-label="Preset Group"]',
+      'preset toggle group',
+    )
+    expect(group.textContent).toContain('Preset Group')
+    expect(target.querySelector('[data-risu-generation-toggle-control][data-risu-toggle-key="mood"]')).toBeNull()
+    expect(textToggleInput('note').value).toBe('alpha-note')
+
+    const groupButton = group.querySelector<HTMLButtonElement>('button')
+    expect(groupButton, 'preset toggle group button').toBeTruthy()
+    groupButton!.click()
+    await tick()
+
+    expect(selectToggleInput('mood').value).toBe('1')
+    expect(toggleCheckbox('flag').checked).toBe(true)
+  })
+
   it('updates mounted active-chat controls after a character-row projection changes generation settings', async () => {
     mountToggles()
     await tick()

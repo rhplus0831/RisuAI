@@ -7,6 +7,7 @@
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
+  import Accordion from '../UI/Accordion.svelte'
   import ChatGenerationSettingsControls from './ChatGenerationSettingsControls.svelte'
   import CustomSideBar from './CustomSidebar.svelte'
   import { setCharacterSupaMemory } from 'src/ts/characterCommands'
@@ -15,7 +16,14 @@
     saveActiveChatJailbreakToggleGenerationSettings,
     saveActiveChatSidebarToggleGenerationSettings,
   } from 'src/ts/activeChatGenerationSettings'
-  import type { ChatGenerationRequiredSidebarToggle } from 'src/ts/chatGenerationSettings'
+  import type { ChatGenerationDisplayedSidebarToggle } from 'src/ts/chatGenerationSettings'
+
+  type GroupedSidebarToggle =
+    | ChatGenerationDisplayedSidebarToggle
+    | (ChatGenerationDisplayedSidebarToggle & {
+        kind: 'group'
+        children: GroupedSidebarToggle[]
+      })
 
   interface Props {
     chara?: character
@@ -32,7 +40,7 @@
 
   let hasJailbreakPrompt = $derived.by(() => activeGenerationSettings.readiness.requirements.jailbreakToggle.displayed)
 
-  let requiredSidebarToggles = $derived.by(() => activeGenerationSettings.requiredSidebarToggles)
+  let displayedSidebarToggles = $derived.by(() => groupSidebarToggles(activeGenerationSettings.displayedSidebarToggles))
 
   function getJailbreakToggleValue(): boolean {
     return activeGenerationSettings.settings?.jailbreakToggle === true
@@ -54,11 +62,68 @@
     if (!chara?.chaId) return
     setCharacterSupaMemory(chara.chaId, value)
   }
+
+  function groupSidebarToggles(items: ChatGenerationDisplayedSidebarToggle[]): GroupedSidebarToggle[] {
+    const grouped: GroupedSidebarToggle[] = []
+    const stack: Extract<GroupedSidebarToggle, { kind: 'group' }>[] = []
+
+    for (const item of items) {
+      if (item.kind === 'group') {
+        const group = { ...item, children: [] }
+        appendGroupedToggle(grouped, stack, group)
+        stack.push(group)
+        continue
+      }
+      if (item.kind === 'groupEnd') {
+        stack.pop()
+        continue
+      }
+      appendGroupedToggle(grouped, stack, item)
+    }
+
+    return grouped
+  }
+
+  function appendGroupedToggle(
+    grouped: GroupedSidebarToggle[],
+    stack: Extract<GroupedSidebarToggle, { kind: 'group' }>[],
+    item: GroupedSidebarToggle,
+  ): void {
+    const parent = stack.at(-1)
+    if (parent) {
+      parent.children.push(item)
+    } else {
+      grouped.push(item)
+    }
+  }
 </script>
 
-{#snippet toggles(items: ChatGenerationRequiredSidebarToggle[], reverse: boolean = false)}
-  {#each items as toggle}
-    {#if toggle.kind === 'select'}
+{#snippet toggles(items: GroupedSidebarToggle[], reverse: boolean = false)}
+  {#each items as toggle, index}
+    {#if toggle.kind === 'group'}
+      {#if toggle.children.length > 0}
+        <div class="w-full" data-risu-generation-toggle-group data-risu-toggle-label={toggle.label}>
+          <Accordion styled name={toggle.label}>
+            {@render toggles(toggle.children, reverse)}
+          </Accordion>
+        </div>
+      {/if}
+    {:else if toggle.kind === 'caption'}
+      <div class="w-full mt-1 text-xs text-textcolor2" data-risu-generation-toggle-caption>
+        {toggle.label}
+      </div>
+    {:else if toggle.kind === 'divider'}
+      {#if index === 0 || items[index - 1]?.kind !== 'divider' || items[index - 1]?.label !== toggle.label}
+        <div class="w-full min-h-5 flex gap-2 mt-2 items-center" class:justify-end={!reverse}>
+          {#if toggle.label}
+            <span class="shrink-0">{toggle.label}</span>
+          {/if}
+          <hr class="border-t border-darkborderc m-0 grow" />
+        </div>
+      {/if}
+    {:else if toggle.kind === 'groupEnd'}
+      <!-- groupEnd only closes groups while building the display tree. -->
+    {:else if toggle.kind === 'select'}
       <div
         class="w-full flex gap-2 mt-2 items-center"
         class:justify-end={$MobileGUI}
@@ -123,7 +188,7 @@
   {/each}
 {/snippet}
 
-{#if !noContainer && requiredSidebarToggles.length > 4}
+{#if !noContainer && displayedSidebarToggles.length > 4}
   <div class="border-darkborderc p-2 border rounded-sm flex flex-col items-start mt-2">
     <ChatGenerationSettingsControls />
     <CustomSideBar />
@@ -144,7 +209,7 @@
       </div>
     {/if}
 
-    {@render toggles(requiredSidebarToggles, true)}
+    {@render toggles(displayedSidebarToggles, true)}
     {#if chara && DBState.db.hypaV3}
       <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
         <CheckInput check={chara.supaMemory} reverse name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />
@@ -168,7 +233,7 @@
         name={language.jailbreakToggle} />
     </div>
   {/if}
-  {@render toggles(requiredSidebarToggles)}
+  {@render toggles(displayedSidebarToggles)}
   {#if chara && DBState.db.hypaV3}
     <div class="flex mt-2 items-center">
       <CheckInput check={chara.supaMemory} name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />

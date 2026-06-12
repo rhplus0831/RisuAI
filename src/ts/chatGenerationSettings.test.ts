@@ -5,6 +5,7 @@ import {
   CHAT_GENERATION_SETTINGS_INCOMPLETE_STATUS,
   createChatGenerationSettingsIncompleteError,
   resolveChatGenerationControlRequirements,
+  resolveDisplayedSidebarToggles,
   resolveChatGenerationSettingsReadiness,
   resolveRequiredSidebarToggles,
   type ChatGenerationPresetReference,
@@ -79,6 +80,31 @@ describe('chat generation settings contract', () => {
       ['chat', 'select', 'module', 'chat-module'],
       ['character', 'text', 'module', 'character-module'],
       ['integrated', 'textarea', 'module', 'integrated-module'],
+    ])
+  })
+
+  it('preserves layout-only rows for display without making them required', () => {
+    const presets: ChatGenerationPresetReference[] = [
+      {
+        id: 'preset-a',
+        customPromptTemplateToggle:
+          '=Preset Group=group\nmode=Mode\n=Group note=caption\n==groupend\n=Outside=divider\noutside=Outside',
+      },
+    ]
+
+    const input = {
+      presetId: 'preset-a',
+      presets,
+    }
+
+    expect(resolveRequiredSidebarToggles(input).map((toggle) => toggle.key)).toEqual(['mode', 'outside'])
+    expect(resolveDisplayedSidebarToggles(input).map((toggle) => [toggle.kind, toggle.label])).toEqual([
+      ['group', 'Preset Group'],
+      ['boolean', 'Mode'],
+      ['caption', 'Group note'],
+      ['groupEnd', ''],
+      ['divider', 'Outside'],
+      ['boolean', 'Outside'],
     ])
   })
 

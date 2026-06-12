@@ -39,6 +39,11 @@ export interface ChatGenerationModuleReference {
 }
 
 export type ChatGenerationSidebarToggleKind = 'boolean' | 'select' | 'text' | 'textarea'
+export type ChatGenerationSidebarToggleLayoutKind = 'group' | 'groupEnd' | 'divider' | 'caption'
+
+type ChatGenerationSidebarToggleSource =
+  | { source: 'preset'; presetId: string }
+  | { source: 'module'; moduleId: string; moduleNamespace?: string }
 
 export interface ChatGenerationRequiredSidebarToggle {
   key: string
@@ -50,6 +55,21 @@ export interface ChatGenerationRequiredSidebarToggle {
   moduleId?: string
   moduleNamespace?: string
 }
+
+export interface ChatGenerationSidebarToggleLayout {
+  key?: string
+  label: string
+  kind: ChatGenerationSidebarToggleLayoutKind
+  options: []
+  source: 'preset' | 'module'
+  presetId?: string
+  moduleId?: string
+  moduleNamespace?: string
+}
+
+export type ChatGenerationDisplayedSidebarToggle =
+  | ChatGenerationRequiredSidebarToggle
+  | ChatGenerationSidebarToggleLayout
 
 export interface ChatGenerationJailbreakToggleRequirement {
   field: 'jailbreakToggle'
@@ -176,6 +196,12 @@ export function resolveRequiredSidebarToggles(
   input: ResolveChatGenerationRequirementsInput,
 ): ChatGenerationRequiredSidebarToggle[] {
   return collectRequiredSidebarToggles(input)
+}
+
+export function resolveDisplayedSidebarToggles(
+  input: ResolveChatGenerationRequirementsInput,
+): ChatGenerationDisplayedSidebarToggle[] {
+  return collectDisplayedSidebarToggles(input)
 }
 
 export function resolveChatGenerationControlRequirements(
@@ -350,6 +376,39 @@ function collectRequiredSidebarToggles(
   return toggles
 }
 
+function collectDisplayedSidebarToggles(
+  input: ResolveChatGenerationRequirementsInput,
+): ChatGenerationDisplayedSidebarToggle[] {
+  const toggles: ChatGenerationDisplayedSidebarToggle[] = []
+  const seenKeys = new Set<string>()
+  const preset = resolvePreset(input.presets, input.presetId)
+
+  if (preset?.id) {
+    appendUniqueDisplayedToggles(
+      toggles,
+      seenKeys,
+      parseDisplayedSidebarToggleSyntax(preset.customPromptTemplateToggle ?? '', {
+        source: 'preset',
+        presetId: preset.id,
+      }),
+    )
+  }
+
+  for (const module of resolveActiveModules(input)) {
+    appendUniqueDisplayedToggles(
+      toggles,
+      seenKeys,
+      parseDisplayedSidebarToggleSyntax(module.customModuleToggle ?? '', {
+        source: 'module',
+        moduleId: module.id,
+        moduleNamespace: module.namespace ?? undefined,
+      }),
+    )
+  }
+
+  return toggles
+}
+
 function appendUniqueToggles(
   target: ChatGenerationRequiredSidebarToggle[],
   seenKeys: Set<string>,
@@ -362,19 +421,57 @@ function appendUniqueToggles(
   }
 }
 
+function appendUniqueDisplayedToggles(
+  target: ChatGenerationDisplayedSidebarToggle[],
+  seenKeys: Set<string>,
+  toggles: readonly ChatGenerationDisplayedSidebarToggle[],
+): void {
+  for (const toggle of toggles) {
+    if (isRequiredSidebarToggle(toggle)) {
+      if (seenKeys.has(toggle.key)) continue
+      seenKeys.add(toggle.key)
+    }
+    target.push(toggle)
+  }
+}
+
 function parseSidebarToggleSyntax(
   syntax: string,
-  source: { source: 'preset'; presetId: string } | { source: 'module'; moduleId: string; moduleNamespace?: string },
+  source: ChatGenerationSidebarToggleSource,
 ): ChatGenerationRequiredSidebarToggle[] {
+  return parseDisplayedSidebarToggleSyntax(syntax, source).filter(isRequiredSidebarToggle)
+}
+
+function parseDisplayedSidebarToggleSyntax(
+  syntax: string,
+  source: ChatGenerationSidebarToggleSource,
+): ChatGenerationDisplayedSidebarToggle[] {
   if (!syntax) return []
 
-  const toggles: ChatGenerationRequiredSidebarToggle[] = []
+  const toggles: ChatGenerationDisplayedSidebarToggle[] = []
   for (const line of syntax.split('\n')) {
     const [key, label, rawType, optionText] = line.split('=')
-    if (rawType === 'group' || rawType === 'groupEnd' || rawType === 'divider') {
+    const layoutKind = normalizeSidebarToggleLayoutKind(rawType)
+    if (layoutKind === 'group' || layoutKind === 'groupEnd' || layoutKind === 'divider') {
+      toggles.push({
+        key: key || undefined,
+        label: label ?? '',
+        kind: layoutKind,
+        options: [],
+        ...source,
+      })
       continue
     }
-    if (rawType === 'caption') {
+    if (layoutKind === 'caption') {
+      if (label) {
+        toggles.push({
+          key: key || undefined,
+          label,
+          kind: layoutKind,
+          options: [],
+          ...source,
+        })
+      }
       continue
     }
     if (!key || !label) {
@@ -391,6 +488,20 @@ function parseSidebarToggleSyntax(
     })
   }
   return toggles
+}
+
+function normalizeSidebarToggleLayoutKind(rawType: string | undefined): ChatGenerationSidebarToggleLayoutKind | null {
+  if (rawType === 'group' || rawType === 'groupEnd' || rawType === 'divider' || rawType === 'caption') {
+    return rawType
+  }
+  if (rawType === 'groupend') return 'groupEnd'
+  return null
+}
+
+function isRequiredSidebarToggle(
+  toggle: ChatGenerationDisplayedSidebarToggle,
+): toggle is ChatGenerationRequiredSidebarToggle {
+  return toggle.kind === 'boolean' || toggle.kind === 'select' || toggle.kind === 'text' || toggle.kind === 'textarea'
 }
 
 function resolvePreset(
